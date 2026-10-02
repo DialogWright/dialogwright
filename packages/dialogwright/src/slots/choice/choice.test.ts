@@ -63,8 +63,6 @@ describe('a choice slot built from the defaults', () => {
     expect(speed.config).toEqual({
       options: { standard: { say: 'standard delivery' }, express: { say: 'express delivery' }, next_day: { say: 'next-day delivery', means: 'Delivery on the next day, whatever it is called' } },
       means: 'The caller names {say}',
-      none: 'Names none of these',
-      instructions: 'Read asr.text. Which of these does the caller name?',
       keypad: true,
       fillAt: 'SLOT_CHOICE_FILL',
       confirm: 'summary',
@@ -141,11 +139,10 @@ describe('the keypad', () => {
 });
 
 describe('the words', () => {
-  it('instructions, none and means (a template over {say} and {key}) replace the defaults word for word', () => {
+  it('text.instructions, text.none and means (a template over {say} and {key}) replace the defaults word for word', () => {
     const slot = defineSlot('colour', {
       type: 'choice',
-      instructions: 'Which colour of case?',
-      none: 'No colour',
+      text: { instructions: 'Which colour of case?', none: 'No colour' },
       means: 'The {key} case, said as {say}',
       options: { black: 'black', forest: { say: 'forest green' }, white: { say: 'white', means: 'White, {say} or cream' } },
     });
@@ -187,7 +184,7 @@ describe('the options', () => {
 
   it('cannot be called none, and are named as an id, which also keeps their order', () => {
     expect(problems({ options: { none: 'None' } })).toEqual([
-      '(code)  s.options.none  "none" is the label the model chooses when the caller names no option, so an option cannot be called that  ->  rename the option; set the criterion of "none" with the `none` option',
+      '(code)  s.options.none  "none" is the label the model chooses when the caller names no option, so an option cannot be called that  ->  rename the option; set the criterion of "none" with `text.none`',
     ]);
     expect(problems({ options: { 'next day': 'Next day' } })).toEqual([
       '(code)  s.options["next day"]  the option key "next day" is not valid: it must start with a letter and use only letters, digits and underscores  ->  rename it using only letters, digits and underscores, starting with a letter (for example "next_day")',
@@ -231,8 +228,7 @@ describe('the testkit\'s delivery part, written as configuration', () => {
   // migration uses: its own words, the ids it was recorded with, its keypad.
   const library = defineSlot('deliveryPart', {
     type: 'choice',
-    instructions: 'Read asr.text alone. Which part of the day do these words name for a delivery?',
-    none: 'Names no part of the day',
+    text: { instructions: 'Read asr.text alone. Which part of the day do these words name for a delivery?', none: 'Names no part of the day' },
     keypad: true,
     options: {
       morning: { say: DAY_PART_DISPLAY.morning, means: 'The morning, before noon' },
@@ -283,7 +279,7 @@ describe('the library fixture\'s book and branch, written as configuration', () 
     },
     display: (value) => options[value as keyof typeof options] ?? value,
   };
-  const library = defineSlot('book', { type: 'choice', instructions: 'Read asr.text. Which book in the catalog does the caller name?', options });
+  const library = defineSlot('book', { type: 'choice', text: { instructions: 'Read asr.text. Which book in the catalog does the caller name?' }, options });
   const shadow = shadowSlot(legacy, library);
 
   it('asks the same question and fills the same way, probabilities away from the threshold', () => {
@@ -301,7 +297,7 @@ describe('the docs', () => {
   it('the README names every option', () => {
     const readme = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(choiceType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['confirm', 'fillAt', 'ids', 'instructions', 'keypad', 'means', 'none', 'options']);
-    for (const option of options) expect(readme, option).toContain(`\`${option}\``);
+    expect(options.sort()).toEqual(['confirm', 'fillAt', 'ids', 'keypad', 'means', 'options', 'text']);
+    for (const option of [...options, 'instructions', 'none', 'choice']) expect(readme, option).toContain(`\`${option}\``);
   });
 });

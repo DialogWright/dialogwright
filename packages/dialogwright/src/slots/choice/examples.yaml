@@ -44,7 +44,8 @@
   about: The shorthand (a bare string for what the option says), with a question of its own and no keypad.
   slot: branch
   config:
-    instructions: Read asr.text. Which library branch does the caller name?
+    text:
+      instructions: Read asr.text. Which library branch does the caller name?
     options:
       north: North
       riverside: Riverside
@@ -64,12 +65,13 @@
       expect: { kind: absent }
 
 - name: colour
-  about: Every text in its own words (`means` on an option, `none`, a template for the rest, a question id kept), a stricter threshold, and a keypad.
+  about: Every text in its own words (the question and `none` under `text`, `means` on an option and a template for the rest, a question id kept), a stricter threshold, and a keypad.
   slot: colour
   config:
-    instructions: Read asr.text alone. Which colour of case does the caller want?
+    text:
+      instructions: Read asr.text alone. Which colour of case does the caller want?
+      none: Names no colour of case
     means: A request for the {key} case, said as {say}
-    none: Names no colour of case
     fillAt: SLOT_CHOICE_CONFIRM
     keypad: true
     ids:

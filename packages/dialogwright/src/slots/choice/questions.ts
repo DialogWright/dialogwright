@@ -1,6 +1,6 @@
 import type { QuestionMap } from '../../jev/types';
 import { renderTemplate } from '../parts/template';
-import type { ChoiceOptions } from './options';
+import { CHOICE_PARTS, type ChoiceOptions } from './options';
 
 /** The id of a choice slot's question: the slot's own id (a question named after its slot), unless `ids.choice` says otherwise. */
 export const choiceIdOf = (slot: string, o: Pick<ChoiceOptions, 'ids'>): string => o.ids?.choice ?? slot;
@@ -20,6 +20,7 @@ export function choiceQuestions(slot: string, o: ChoiceOptions): () => QuestionM
   const id = choiceIdOf(slot, o);
   const criteria: Record<string, string> = {};
   for (const key of Object.keys(o.options)) criteria[key] = meansOf(key, o);
-  criteria.none = o.none;
-  return () => ({ [id]: { type: 'choice', instructions: o.instructions, criteria: { ...criteria } } });
+  criteria.none = CHOICE_PARTS.render('none', o.text, {});
+  const instructions = CHOICE_PARTS.render('instructions', o.text, {});
+  return () => ({ [id]: { type: 'choice', instructions, criteria: { ...criteria } } });
 }

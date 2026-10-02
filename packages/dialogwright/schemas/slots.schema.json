@@ -223,19 +223,24 @@
             "minLength": 1,
             "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
           },
-          "none": {
-            "default": "Names none of these",
-            "description": "The criterion of the \"none\" label, which the model chooses when the caller names no option.",
-            "type": "string",
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
-          },
-          "instructions": {
-            "default": "Read asr.text. Which of these does the caller name?",
-            "description": "The question, sent to the model exactly as written.",
-            "type": "string",
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none.",
+            "type": "object",
+            "properties": {
+              "instructions": {
+                "description": "The question that asks which option the caller names, sent to the model in place of the default.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "none": {
+                "description": "What the question's \"none\" label means: the caller names no option.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
           },
           "keypad": {
             "default": false,

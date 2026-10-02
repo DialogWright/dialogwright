@@ -12,12 +12,20 @@ Reach for it when the caller's answer is one of a short list you can write down.
 |---|---|---|
 | `options` | none | The options the caller can choose, in order, as `key: Say` or `key: { say, means }`. The key is the value the slot takes and the label the model chooses (a letter first, then letters, digits and underscores; not `none`). `say` is how a line, the summary and the model's turn state say the option. `means` is the text of the option's criterion, sent exactly as written. At least one is needed. |
 | `means` | `The caller names {say}` | The criterion for each option that has no `means` of its own, as a template over `{say}` and `{key}`. |
-| `none` | `Names none of these` | The criterion of the `none` label, which the model chooses when the caller names no option. |
-| `instructions` | `Read asr.text. Which of these does the caller name?` | The question, sent to the model exactly as written. One line. |
+| `text` | none | A literal for any text part (below), sent to the model exactly as written in place of the default. One line each. |
 | `keypad` | `false` | The caller can key the option by its position (1 for the first, 2 for the second) after spoken answers missed. One digit, so at most 9 options. Needs an `ask_<slot>_dtmf` line. |
 | `fillAt` | `SLOT_CHOICE_FILL` | The threshold the model's probability for the option must reach: `SLOT_CHOICE_FILL` or the lower `SLOT_CHOICE_CONFIRM`. |
 | `confirm` | `summary` | `summary`: a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. |
 | `ids` | none | `ids.choice`: the question's id in place of the slot's own id, to keep the id an existing slot was recorded with. |
+
+### Text parts
+
+| Part | Default | What it is |
+|---|---|---|
+| `instructions` | `Read asr.text. Which of these does the caller name?` | The question. |
+| `none` | `Names none of these` | The criterion of the `none` label, which the model chooses when the caller names no option. |
+
+Question wording an app overrides lives under `text:`, as in every type: `text.<part>` is a literal, sent word for word. The criteria of the options are not text parts. Each is data about one option: its own `means`, or the `means` template filled from it (`{say}` and `{key}`), the way a record slot's `label` is a template over each record. So `means` stays an option of its own and is never under `text:`.
 
 The order of `options` matters in two places. It is the keypad order, and it is the order of the labels the model is offered, which is also the order a stub model chooses from.
 
@@ -58,7 +66,7 @@ the question, sent to the model, is:
 
 ## Examples
 
-`examples.yaml` beside this file has three configurations with starter utterances and keypad keys: a delivery speed with a keypad, a branch written in the shorthand with a question of its own, and a colour with every text in its own words and a lower threshold. In an app's `slots.yaml`:
+`examples.yaml` beside this file has three configurations with starter utterances and keypad keys: a delivery speed with a keypad, a branch written in the shorthand with a question of its own (`text.instructions`), and a colour with every text in its own words and a lower threshold. In an app's `slots.yaml`:
 
 ```yaml
 speed:

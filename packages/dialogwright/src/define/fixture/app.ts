@@ -54,14 +54,14 @@ export const cardSlot = defineSlot('card', {
  */
 export const bookSlot = defineSlot('book', {
   type: 'choice',
-  instructions: 'Read asr.text. Which book in the catalog does the caller name?',
+  text: { instructions: 'Read asr.text. Which book in the catalog does the caller name?' },
   options: BOOKS,
 });
 
 /** The branch the caller names: a library `choice` slot over BRANCHES. */
 export const branchSlot = defineSlot('branch', {
   type: 'choice',
-  instructions: 'Read asr.text. Which library branch does the caller name?',
+  text: { instructions: 'Read asr.text. Which library branch does the caller name?' },
   options: BRANCHES,
 });
 

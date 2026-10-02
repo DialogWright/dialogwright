@@ -1,16 +1,27 @@
 import { z } from 'zod';
 import { placeholdersOf } from '../parts/template';
-import { questionParts, questionText } from '../parts/text';
+import { questionParts, questionText, textParts } from '../parts/text';
 
 /** The question id of a choice slot's one question: the slot's id unless `ids.choice` says otherwise. */
 export const CHOICE_QUESTIONS = questionParts({ choice: 'which of the options the caller names' });
 
-/** What the question says to the model, unless `instructions` says otherwise. */
+/** What the question says to the model, unless `text.instructions` says otherwise. */
 export const DEFAULT_INSTRUCTIONS = 'Read asr.text. Which of these does the caller name?';
 /** What each option's criterion says, unless `means` or the option's own `means` says otherwise. */
 export const DEFAULT_MEANS = 'The caller names {say}';
-/** What the criterion of the `none` label says, unless `none` says otherwise. */
+/** What the criterion of the `none` label says, unless `text.none` says otherwise. */
 export const DEFAULT_NONE = 'Names none of these';
+
+/**
+ * The text parts of a `choice` slot: its question and the criterion of its `none` label, each
+ * replaced word for word by `text.<part>`. The options' criteria are not text parts: each is the
+ * option's own `means`, or the `means` template filled from the option, so they are options of
+ * their own (as a record slot's `label` is).
+ */
+export const CHOICE_PARTS = textParts('choice', {
+  instructions: { template: DEFAULT_INSTRUCTIONS, vars: [], about: 'The question that asks which option the caller names, sent to the model in place of the default.' },
+  none: { template: DEFAULT_NONE, vars: [], about: 'What the question\'s "none" label means: the caller names no option.' },
+});
 /** The variables `means` may use: the option's key and what it says. */
 export const MEANS_VARS = ['key', 'say'] as const;
 /** The most options a keypad can choose among (the digits 1 to 9). */
@@ -48,8 +59,7 @@ export const choiceOptions = z
     means: questionText()
       .default(DEFAULT_MEANS)
       .describe('The criterion the model is given for each option that has no `means` of its own, as a template over `{say}` and `{key}`.'),
-    none: questionText().default(DEFAULT_NONE).describe('The criterion of the "none" label, which the model chooses when the caller names no option.'),
-    instructions: questionText().default(DEFAULT_INSTRUCTIONS).describe('The question, sent to the model exactly as written.'),
+    text: CHOICE_PARTS.schema,
     keypad: z.boolean().default(false).describe('Whether the caller can key the option, by its position (1 for the first), after spoken answers missed. At most 9 options. Needs an ask_<slot>_dtmf line.'),
     fillAt: z
       .enum(FILL_AT)
@@ -77,7 +87,7 @@ export const choiceOptions = z
           code: 'custom',
           path: ['options', key],
           message: '"none" is the label the model chooses when the caller names no option, so an option cannot be called that',
-          params: { fix: 'rename the option; set the criterion of "none" with the `none` option' },
+          params: { fix: 'rename the option; set the criterion of "none" with `text.none`' },
         });
       } else if (!OPTION_KEY.test(key)) {
         ctx.addIssue({

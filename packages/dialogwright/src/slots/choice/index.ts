@@ -8,7 +8,7 @@ import { choiceOptions, type ChoiceOptions } from './options';
 import { choiceIdOf, choiceQuestions } from './questions';
 
 export {
-  choiceOptions, CHOICE_QUESTIONS, DEFAULT_INSTRUCTIONS, DEFAULT_MEANS, DEFAULT_NONE, FILL_AT, MAX_KEYPAD_OPTIONS, MEANS_VARS,
+  choiceOptions, CHOICE_PARTS, CHOICE_QUESTIONS, DEFAULT_INSTRUCTIONS, DEFAULT_MEANS, DEFAULT_NONE, FILL_AT, MAX_KEYPAD_OPTIONS, MEANS_VARS,
 } from './options';
 export type { ChoiceOptions, ChoiceOption } from './options';
 export { choiceDisplay } from './display';

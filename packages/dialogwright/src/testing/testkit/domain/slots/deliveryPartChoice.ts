@@ -10,8 +10,10 @@ import { DAY_PART_DISPLAY } from './deliveryPart';
  */
 export const deliveryPartChoiceSlot = defineSlot('deliveryPart', {
   type: 'choice',
-  instructions: 'Read asr.text alone. Which part of the day do these words name for a delivery?',
-  none: 'Names no part of the day',
+  text: {
+    instructions: 'Read asr.text alone. Which part of the day do these words name for a delivery?',
+    none: 'Names no part of the day',
+  },
   keypad: true,
   options: {
     morning: { say: DAY_PART_DISPLAY.morning, means: 'The morning, before noon' },
