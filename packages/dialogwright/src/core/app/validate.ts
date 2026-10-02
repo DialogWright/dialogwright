@@ -1,4 +1,5 @@
 import { isRuleId } from '../../gate/policy';
+import { clashMessage, declaredQuestionIdClashes } from '../questionIds';
 import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import type { App, ConfigHashes } from './types';
@@ -46,6 +47,9 @@ export function validateApp(app: App): void {
   }
   for (const slot of app.identity?.factorSlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`identity factor slot "${slot}" is not a slot`);
   for (const slot of app.carrySlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`carried slot "${slot}" is not a slot`);
+  // A slot that declares its question ids (SlotSpec.questionIds) is checked here; one that does
+  // not, turn by turn (core/questions.ts buildQuestions).
+  for (const clash of declaredQuestionIdClashes(app.slots)) fail(clashMessage(clash));
   if (app.locales) {
     if (typeof app.locales.default !== 'string' || app.locales.default === '') fail('locales has no default locale');
     // The default locale's lines are the manifest; a second copy would be one that is never read.

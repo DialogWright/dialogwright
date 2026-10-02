@@ -33,6 +33,10 @@ function choiceSlot(id: string, options: Readonly<Record<string, string>>, instr
   return {
     id,
     spokenConfirm: 'summary',
+    // One question, named after the slot; nothing said beyond its ask and retry (a summary slot is
+    // neither acknowledged nor read back on its own).
+    questionIds: [id],
+    prompts: [],
     questions: () => ({
       [id]: {
         type: 'choice',
@@ -66,6 +70,12 @@ export const cardSlot: SlotSpec = {
   redact: 'last4',
   handoff: 'last4',
   detect: true,
+  questionIds: ['cardGiven', 'cardSpan', 'cardComplete'],
+  prompts: [
+    { id: 'ask_card_length', why: 'the caller said a number that is not eight digits (the fill\'s retryPromptId)' },
+    { id: 'ack_card', why: 'it acknowledges a card number it is less sure of', vars: ['card'] },
+    { id: 'ask_card_dtmf', why: 'it asks for the card number on the keypad after spoken answers missed' },
+  ],
 
   questions(ctx) {
     const criteria: Record<string, string | null> = {};

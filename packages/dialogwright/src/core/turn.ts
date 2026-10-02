@@ -22,7 +22,7 @@ import { auditDrafts } from './audit';
 import type { AuditDraft } from '../audit/types';
 import { decisionToActions, spokenText, type RenderContext } from '../prompts/render';
 import { saidCode } from './spokenCode';
-import { matchLocale } from './locale';
+import { matchLocale, slotLocaleOf } from './locale';
 
 export interface TurnContext {
   nowMs: number;
@@ -185,8 +185,13 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
     window: null,
     current: null,
     prompted: false,
+    // The session's language, only for an app that declares locales: any other app's slots see the
+    // context they always have.
+    ...withLocale(slotLocaleOf(session)),
   };
 }
+
+const withLocale = (locale: string | undefined): { locale?: string } => (locale === undefined ? {} : { locale });
 
 /** Gate 8's threshold per slot kind: a detected slot (SlotSpec.detect) against SLOT_DETECT, a picked one against SLOT_CHOICE_CONFIRM. */
 function slotThreshold(app: App, slot: SlotId, t: Thresholds): number {

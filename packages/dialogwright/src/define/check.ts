@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
-import { CODE_FILE, crossLink, isAppDefinitionError, type AppCode } from './defineApp';
+import { CODE_FILE, codePath, crossLink, isAppDefinitionError, type AppCode } from './defineApp';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES } from './schema/index';
@@ -20,6 +20,8 @@ import { FILE_NAMES } from './schema/index';
  *    folder has (crossLink checks the default locale's when it runs; without the code, this does);
  *  - every prompt the engine itself says exists in every locale (ENGINE_PROMPTS below, and the
  *    lines it builds from a slot's id or a policy's reason: enginePrompts);
+ *  - every line a slot declares (SlotSpec.prompts) exists in every locale, and uses only the
+ *    variables the slot declares for it;
  *  - every line of another locale is a line prompts.yaml has, and uses no variable the
  *    prompts.yaml line lacks (the code fills the default line's variables, and no others);
  *  - every intent has examples in the app's corpus, when app.yaml names a fixtures directory;
@@ -98,8 +100,9 @@ export const DEFAULT_ROLE_PERSON_REASON = 'role-person';
  * (`spokenConfirm: always`, whose declined or unanswered read-back goes to the keypad),
  * `confirm_<slot>` for that read-back, `ack_<slot>` when a spoken value may be acknowledged
  * (`spokenConfirm: by-confidence`), and the spec's `partialPromptId`. And the handoff line for R5's
- * reason, when a role's access to a tool is `person`. `disambiguate_<slot>` is not here: the engine
- * says it only when a slot's fill offers two values, which only the code knows it does.
+ * reason, when a role's access to a tool is `person`. And every line a slot declares it can lead
+ * the engine to say (SlotSpec.prompts: e.g. `disambiguate_<slot>`, a help prompt, a retryPromptId),
+ * which only the code knows; a slot that declares none adds none.
  */
 export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: string; why: string }[] {
   const greetings = config.app.prompts?.greetings;
@@ -109,9 +112,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
     ...Object.entries(ENGINE_PROMPTS).map(([id, why]) => ({ id, why })),
   ];
   if (config.intents.menu.length > 0) needs.push(MENU_PROMPT);
-  const slots = new Set<string>(Object.values(config.forms.forms).flatMap((form) => form.slots));
-  for (const slot of config.identity?.factorSlots ?? []) slots.add(slot);
-  for (const slot of slots) {
+  for (const slot of askedSlots(config)) {
     needs.push({ id: `ask_${slot}`, why: `it asks for the slot "${slot}"` });
     needs.push({ id: `ask_${slot}_retry`, why: `it asks for the slot "${slot}" again after an answer that missed` });
     const spec = code?.slots && Object.hasOwn(code.slots, slot) ? code.slots[slot] : undefined;
@@ -124,6 +125,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
     if (spec.spokenConfirm === 'always') needs.push({ id: `confirm_${slot}`, why: `it reads a spoken value of the slot "${slot}" back for a yes (its slot spec's spokenConfirm is "always")` });
     if (spec.spokenConfirm === 'by-confidence') needs.push({ id: `ack_${slot}`, why: `it acknowledges a value it heard for the slot "${slot}" (its slot spec's spokenConfirm is "by-confidence")` });
     if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
+    for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)` });
   }
   const roles = Object.values(config.policy.roles ?? {});
   if (roles.some((byRole) => Object.values(byRole).includes('person'))) {
@@ -137,6 +139,13 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
   if (code?.portal) needs.push(...PORTAL_PROMPTS);
   const seen = new Set<string>();
   return needs.filter(({ id }) => !seen.has(id) && seen.add(id));
+}
+
+/** The slots a form or identity asks for, whose lines the engine says: each form's, then the identity factors. */
+function askedSlots(config: LoadedConfig): Set<string> {
+  const slots = new Set<string>(Object.values(config.forms.forms).flatMap((form) => form.slots));
+  for (const slot of config.identity?.factorSlots ?? []) slots.add(slot);
+  return slots;
 }
 
 /** The files an app's module may be, in the order they are looked for. */
@@ -182,7 +191,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     problems.push(...crossLink(config, code, locate, codeFile, loaded.locateKey));
     linked = true;
   }
-  problems.push(...checkPrompts(config, locate, code, linked));
+  problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
   return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
 }
@@ -271,7 +280,7 @@ const promptsFile = (locale: string, config: LoadedConfig): string => (locale ==
  * The prompts a locale lacks. `linked` says crossLink has already checked the references against
  * the default locale's prompts, so those are not reported twice.
  */
-function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: AppCode | undefined, linked: boolean): Problem[] {
+function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: AppCode | undefined, linked: boolean, codeFile: string = CODE_FILE): Problem[] {
   const problems: Problem[] = [];
   const refs = referencesOf(config);
   const engine = enginePrompts(config, code);
@@ -305,10 +314,51 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
     for (const { id, why } of engine) {
       if (!has(prompts, id) && !reported.has(id)) missing(id, `the engine says it when ${why}`);
     }
+    problems.push(...checkSlotPromptVariables(config, locale, prompts, file, locate, code, codeFile));
     if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));
   }
   return problems;
 }
+
+/**
+ * The lines a slot declares (SlotSpec.prompts) against the variables it says it gives them: a line
+ * that uses another fails when it is said, in whichever locale has it.
+ */
+function checkSlotPromptVariables(
+  config: LoadedConfig,
+  locale: string,
+  prompts: LoadedConfig['prompts'][string],
+  file: string,
+  locate: LoadResult['locate'],
+  code: AppCode | undefined,
+  codeFile: string,
+): Problem[] {
+  const problems: Problem[] = [];
+  const reported = new Set<string>();
+  for (const slot of askedSlots(config)) {
+    const spec = code?.slots && Object.hasOwn(code.slots, slot) ? code.slots[slot] : undefined;
+    for (const { id, vars } of spec?.prompts ?? []) {
+      if (!has(prompts, id) || reported.has(id)) continue;
+      const allowed = vars ?? [];
+      const extra = variablesOf(prompts[id]!.text).filter((name) => !allowed.includes(name));
+      if (extra.length === 0) continue;
+      reported.add(id);
+      const at = locate(file, ['prompts', id, 'text']) ?? { line: 1, column: 1 };
+      const names = extra.map((name) => `{${name}}`).join(', ');
+      const given = allowed.length > 0 ? allowed.map((name) => `{${name}}`).join(', ') : 'no variables';
+      const line = locale === config.defaultLocale ? `the line "${id}"` : `the ${locale} line "${id}"`;
+      problems.push({
+        file,
+        ...at,
+        path: formatPath(['prompts', id, 'text']),
+        message: `${line} uses ${names}, which the slot "${slot}" does not give it (its prompts declare ${given} for this line), so saying it would fail`,
+        fix: `${allowed.length > 0 ? `use only ${given} in this line (check the spelling)` : 'write this line without variables'}, or add ${extra.map((name) => `"${name}"`).join(', ')} to the vars of "${id}" in ${codeFile} (${codePath('slots', slot, 'prompts')}) if the slot gives ${extra.length === 1 ? 'it' : 'them'}`,
+      });
+    }
+  }
+  return problems;
+}
+
 
 /** The variables a line's text uses, in order, each once. */
 function variablesOf(text: string): string[] {

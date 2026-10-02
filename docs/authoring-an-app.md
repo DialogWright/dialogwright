@@ -172,7 +172,7 @@ prompts:
 - Variables in braces are filled by the engine (`{intentLabel}`) or by the app's code (`{book}`, `{due}`).
 - `interruptible: false` for a line that must be heard whole (a keypad instruction, a statement).
 - `mode` can only be `fixed` (the default). A model chooses among these lines; it never writes one. Generated wording is a later phase.
-- The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. Some lines depend on the slot's spec in the code: `ask_<slot>_dtmf` for a slot with a keypad rung (`dtmf`), `confirm_<slot>` and `ask_<slot>_dtmf` for a slot whose every spoken value is read back (`spokenConfirm: 'always'`), `ack_<slot>` for one acknowledged by confidence (`spokenConfirm: 'by-confidence'`), and the slot's `partialPromptId`. A role whose access to a tool is `person` needs the handoff line for policy.yaml's `rolePersonReason` (`handoff_role_person` by default). `pnpm check` lists any that are missing and says when the engine says each (section 6). It cannot see the lines a slot's `fill` names (`disambiguate_<slot>`, a `retryPromptId`, a help prompt), so those are yours to add (section 4).
+- The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. Some lines depend on the slot's spec in the code: `ask_<slot>_dtmf` for a slot with a keypad rung (`dtmf`), `confirm_<slot>` and `ask_<slot>_dtmf` for a slot whose every spoken value is read back (`spokenConfirm: 'always'`), `ack_<slot>` for one acknowledged by confidence (`spokenConfirm: 'by-confidence'`), and the slot's `partialPromptId`. A role whose access to a tool is `person` needs the handoff line for policy.yaml's `rolePersonReason` (`handoff_role_person` by default). `pnpm check` lists any that are missing and says when the engine says each (section 6). It cannot see the lines a slot's `fill` names (`disambiguate_<slot>`, a `retryPromptId`, a help prompt) unless the slot declares them in its `prompts` (section 4).
 
 ### policy.yaml
 
@@ -296,16 +296,18 @@ The library has both kinds of slot. `book` and `branch` are choices from a fixed
 interface SlotSpec {
   id: SlotId;
   spokenConfirm: 'always' | 'by-confidence' | 'summary';
+  questionIds?: readonly string[];
+  prompts?: readonly SlotPrompt[]; // { id, why, vars? }
   questions(ctx: SlotContext): QuestionMap;
   fill(answers: AnswerMap, ctx: SlotContext): SlotOutcome;
   dtmf?: { length: number; parse(digits: string, ctx: SlotContext): SlotCandidate | null };
-  display(value: string): string;
+  display(value: string, locale?: string): string;
   redact?: 'last4' | 'mask' | 'length';
   handoff?: 'last4' | 'verified';
   valueKind?: 'date';
   detect?: boolean;
   partialPromptId?: string;
-  partialVars?(window: SlotPartial): Record<string, string>;
+  partialVars?(window: SlotPartial, locale?: string): Record<string, string>;
 }
 ```
 
@@ -321,7 +323,7 @@ No slot in the repository uses a score question; the engine's own frustration qu
 
 Some rules about questions:
 
-- **Ids are shared.** Every slot's questions and the engine's own go into one map for the turn, and a question with the same id as another replaces it without a word. Start each id with the slot's id (`cardGiven`, `cardSpan`). The console groups questions under a slot by that prefix (app.yaml `console.questionPrefixes` names others) and shows an id ending in `Given` against the detection threshold (`console.detectQuestions` names others).
+- **Ids are shared.** Every slot's questions and the engine's own go into one map for the turn, so no two may share an id: a turn on which a slot asks an id the engine asks (`ENGINE_QUESTION_IDS`, such as `urgency`) or another slot asks throws. Start each id with the slot's id (`cardGiven`, `cardSpan`), and list them in `questionIds` (the library's slots do): then a collision is refused when the app is defined, `pnpm check` included, rather than on the turn that meets it, and the slot may ask no id it has not listed. The console groups questions under a slot by that prefix (app.yaml `console.questionPrefixes` names others) and shows an id ending in `Given` against the detection threshold (`console.detectQuestions` names others).
 - **The words are the request.** `instructions` and the criteria are sent to the model as written. Changing them changes what a recorded cassette holds.
 - **Every slot listens on every turn.** The engine asks the questions of every slot the turn listens for, not only the one it just asked about: inside a form, the form's slots (and, while an anonymous caller is still to be verified, the identity factors); outside a form, every slot the app has. That is what lets "what do I have out on card 5552 0417" fill the card on the opening turn. It also means `fill` must return `absent` when the words say nothing about its slot.
 
@@ -337,6 +339,7 @@ Some rules about questions:
 | `current` | This slot's value already on file, or null (null during a correction at the summary). |
 | `records` | The app's records a slot may choose among (`App.facts.forSlots`), opaque to the engine; empty when the app has none. |
 | `prompted` | Whether the last prompt asked for this slot. |
+| `locale` | The language the session speaks, for an app that declares locales (section 7); absent otherwise. A slot that formats its value for the language reads it here. |
 
 `fill(answers, ctx)` returns a `SlotOutcome`. Each kind, when to return it, and what the engine then does:
 
@@ -351,7 +354,7 @@ Some rules about questions:
 
 The retry ladder. A missed answer adds one to the slot's attempts. With `MAX_ATTEMPTS` at its default of 3: the first miss re-asks with `ask_<slot>_retry` (or the outcome's `retryPromptId`, or the partial prompt when a partial is pending); the second asks for the keypad with `ask_<slot>_dtmf` when the slot has `dtmf` and the channel has a keypad, and re-asks with the retry line otherwise; the third hands the call to a person (`max-attempts`). Silence counts as a miss too, but its first re-ask is the plain `ask_<slot>` after "I didn't hear anything".
 
-For every slot a form or identity.yaml names, `check` requires `ask_<slot>`, `ask_<slot>_retry` and the lines below that the spec's fields call for. It cannot see the prompts a `fill` returns, so `disambiguate_<slot>`, a `retryPromptId` and a help `promptId` are yours to add, in every locale.
+For every slot a form or identity.yaml names, `check` requires `ask_<slot>`, `ask_<slot>_retry` and the lines below that the spec's fields call for. It cannot see the prompts a `fill` returns, so declare them in the spec's `prompts` (`disambiguate_<slot>` with `vars: ['a', 'b']`, a `retryPromptId`, a help `promptId`; the library's card declares `ask_card_length`): `check` then requires each in every locale, and refuses a line that uses a variable the slot does not declare for it.
 
 ### Thresholds
 
@@ -526,6 +529,12 @@ export const cardSlot: SlotSpec = {
   redact: 'last4',
   handoff: 'last4',
   detect: true,
+  questionIds: ['cardGiven', 'cardSpan', 'cardComplete'],
+  prompts: [
+    { id: 'ask_card_length', why: 'the caller said a number that is not eight digits (the fill\'s retryPromptId)' },
+    { id: 'ack_card', why: 'it acknowledges a card number it is less sure of', vars: ['card'] },
+    { id: 'ask_card_dtmf', why: 'it asks for the card number on the keypad after spoken answers missed' },
+  ],
   questions(ctx) { /* cardGiven, cardSpan, cardComplete */ },
   fill(answers, ctx): SlotOutcome { /* absent, invalid, or filled */ },
   dtmf: {

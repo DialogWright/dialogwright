@@ -4,6 +4,7 @@ import type {
 } from '../core/app/types';
 import type { SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
+import { clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { VAR } from '../prompts/segments';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { RULE_IDS, isRuleId } from '../gate/policy';
@@ -383,6 +384,15 @@ export function crossLink(
   // The code alone
   for (const [id, spec] of Object.entries(code.slots ?? {})) {
     if (spec?.id !== id) inTs(['slots', id], `the slot spec filed under "${id}" has the id "${String(spec?.id)}"`, `file it under ${codePath('slots', String(spec?.id))}, or give it the id "${id}"`);
+  }
+  // The question ids a slot declares (SlotSpec.questionIds): none the engine asks, none another slot declares.
+  for (const clash of declaredQuestionIdClashes(code.slots ?? {})) {
+    const where = inCode('slots', clash.slot, 'questionIds');
+    const own = `${clash.slot}${clash.id.charAt(0).toUpperCase()}${clash.id.slice(1)}`;
+    const fix = clash.with === 'twice'
+      ? `list it once in ${where}`
+      : `give the question an id of the slot's own, such as "${own}", in the slot's questions and in ${where}`;
+    inTs(['slots', clash.slot, 'questionIds'], clashMessage(clash), fix);
   }
 
   return sortProblems(problems, codeFile);

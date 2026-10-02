@@ -6,6 +6,7 @@ import { handoffPromptId } from '../prompts/render';
 import { maskId } from '../gate/principal';
 import type { Ack } from './fia';
 import type { Session } from './session';
+import { slotLocaleOf } from './locale';
 
 export interface PromptDecision {
   kind: 'prompt';
@@ -97,5 +98,5 @@ export function offerTransfer(acks: Ack[] = []): PromptDecision {
 export function askSlot(s: Session, slot: SlotId, window: SlotPartial | null, acks: Ack[]): PromptDecision {
   const spec = slotSpecOf(appOf(s), slot);
   const partial = window ? spec.partialPromptId : undefined;
-  return prompt(partial ?? `ask_${slot}`, slot, window ? (spec.partialVars?.(window) ?? {}) : {}, acks);
+  return prompt(partial ?? `ask_${slot}`, slot, window ? (spec.partialVars?.(window, slotLocaleOf(s)) ?? {}) : {}, acks);
 }

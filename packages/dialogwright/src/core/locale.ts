@@ -49,3 +49,12 @@ export function matchLocale(app: App, requested: string): string | null {
 export function localeOf(s: { readonly appId?: string; readonly locale?: string }): string {
   return s.locale ?? defaultLocaleOf(appOf(s));
 }
+
+/**
+ * The locale a session's slots hear and say their values in (SlotContext.locale, a partialVars
+ * call): the session's (localeOf) for an app that declares locales, and none for an app that does
+ * not, whose slots then format as they always have.
+ */
+export function slotLocaleOf(s: { readonly appId?: string; readonly locale?: string }): string | undefined {
+  return appOf(s).locales ? localeOf(s) : undefined;
+}

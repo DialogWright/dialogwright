@@ -616,7 +616,9 @@ export interface App {
    * `nameSpan`). An app question's id names what it asks (`timeOfDay`, `timePreference`) and never
    * reuses a slot question's id, even one whose slot is not on the same form: the collision throws
    * only on a turn that asks both, so it would surface mid-call rather than at registration.
-   * validateApp cannot catch it, since both sets are built per turn.
+   * validateApp cannot catch it, since the app's questions are built per turn; an id a slot declares
+   * (SlotSpec.questionIds) throws on any turn that asks the app's question, whether or not the slot
+   * is asked on it.
    */
   questions?(s: Session, ctx: SlotContext): QuestionMap;
   /** The app's name and mark on the console. Without it, the app id. */

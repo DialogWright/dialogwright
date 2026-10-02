@@ -195,6 +195,31 @@ describe('shadowSlot', () => {
     expect(mismatchOf(() => shadowSlot(legacy, candidate).display('1234')).mismatch.method).toBe('display');
   });
 
+  it('compares display and partialVars in the context\'s locale, and names it in the inputs', () => {
+    const candidate = rebuilt({
+      display: (v, locale) => (locale === 'es' ? `${v} (es)` : legacy.display(v)),
+      partialVars: (w, locale) => (locale === 'es' ? { head: 'es' } : legacy.partialVars!(w)),
+    });
+    // Without a locale (an app without locales) the two agree.
+    const plain = createShadowReport();
+    shadowSlot(legacy, candidate, { report: plain }).fill(CODE_GIVEN, said('my code is 4 7 1 2'));
+    expect(plain.mismatches).toEqual([]);
+    const viaFill = mismatchOf(() => shadowSlot(legacy, candidate).fill(CODE_GIVEN, said('mi código es 4 7 1 2', { locale: 'es' })));
+    expect(viaFill.mismatch.method).toBe('display');
+    expect(viaFill.message).toContain('inputs: value "4712" · locale es');
+    expect(mismatchOf(() => shadowSlot(legacy, candidate).fill(HALF_GIVEN, said('cuatro siete', { locale: 'es' }))).mismatch.method).toBe('partialVars');
+    expect(mismatchOf(() => shadowSlot(legacy, candidate).partialVars!({ kind: 'code', head: '47' }, 'es')).message).toContain('inputs: window {"kind":"code","head":"47"} · locale es');
+    expect(mismatchOf(() => shadowSlot(legacy, candidate).display('4712', 'es')).message).toContain('legacy "4 7 1 2", candidate "4712 (es)"');
+  });
+
+  it('carries the legacy spec\'s declared question ids and lines, and does not compare the candidate\'s', () => {
+    const declared = { ...legacy, questionIds: ['parcelCodeGiven', 'parcelCodeSpan'], prompts: [{ id: 'ask_parcelCode_rest', why: 'two digits heard', vars: ['head'] }] };
+    const spec = shadowSlot(declared, rebuilt());
+    expect(spec.questionIds).toEqual(declared.questionIds);
+    expect(spec.prompts).toEqual(declared.prompts);
+    expect(shadowSlot(legacy, { ...rebuilt(), questionIds: ['parcelCodeGiven', 'parcelCodeSpan'] }).questionIds).toBeUndefined();
+  });
+
   it('compares a method that throws by its message, and rethrows the legacy error', () => {
     const boom = (): never => { throw new Error('boom'); };
     const both = shadowSlot({ ...legacy, display: boom }, { ...rebuilt(), display: boom });

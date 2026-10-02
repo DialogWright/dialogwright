@@ -10,7 +10,7 @@ describe('the package entry', () => {
       // the app definition: a folder's YAML joined with the app's code
       'defineApp', 'AppDefinitionError', 'isAppDefinitionError', 'formatProblem', 'checkApp', 'loadAppFolder',
       // the languages an app speaks
-      'DEFAULT_LOCALE', 'defaultLocaleOf', 'localesOf', 'matchLocale', 'localeOf',
+      'DEFAULT_LOCALE', 'defaultLocaleOf', 'localesOf', 'matchLocale', 'localeOf', 'slotLocaleOf',
       'serviceResultEvent', 'speechEvent', 'sayAction', 'endAction', 'transferAction', 'VOICE_RELAY', 'WEB_CHAT',
       'isAnonymous', 'isParty', 'ANONYMOUS',
       'startServer', 'serverMain', 'validateRoutes', 'routeOwns',
@@ -22,7 +22,7 @@ describe('the package entry', () => {
       'candidateSpans', 'candidateWordSpans',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
-      'buildQuestions', 'buildTurnState', 'FixtureStubClient', 'HeuristicStubClient', 'digitSpanLabel', 'dobParts', 'saysDob', 'saysExplicitYear',
+      'buildQuestions', 'ENGINE_QUESTION_IDS', 'buildTurnState', 'FixtureStubClient', 'HeuristicStubClient', 'digitSpanLabel', 'dobParts', 'saysDob', 'saysExplicitYear',
       'loadCorpus', 'parseCorpus', 'normalizeText', 'buildClient', 'buildThresholds', 'defaultCorpusFile', 'scenariosDir', 'loadScenarios',
       'readBaseline', 'REGRESS_TODAY', 'runAll',
     ]) expect(typeof (entry as Record<string, unknown>)[name], name).not.toBe('undefined');

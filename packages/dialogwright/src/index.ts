@@ -28,7 +28,7 @@ export { formOf, slotSpecOf, toolOf } from './core/app/lookup';
 export { intentList, formIntents, isFormIntent, intentLabel, informationalPrompt, informationalIntents, intentCriteria } from './core/app/intents';
 
 // The languages an app speaks (App.locales) and the one a session speaks.
-export { DEFAULT_LOCALE, defaultLocaleOf, localesOf, matchLocale, localeOf } from './core/locale';
+export { DEFAULT_LOCALE, defaultLocaleOf, localesOf, matchLocale, localeOf, slotLocaleOf } from './core/locale';
 
 // The app definition: an app folder's YAML joined with its TypeScript parts into the App above.
 export { defineApp, AppDefinitionError, isAppDefinitionError } from './define/defineApp';
@@ -120,7 +120,7 @@ export type { TurnContext, TurnResult } from './core/turn';
 export { mockCodeVerifier } from './core/tools';
 export { spokenText } from './prompts/render';
 // What the model would be asked on a turn: the questions and the state it reads.
-export { buildQuestions } from './core/questions';
+export { buildQuestions, ENGINE_QUESTION_IDS } from './core/questions';
 export { buildTurnState } from './core/state';
 export type { TurnState, TurnInput } from './core/state';
 
