@@ -15,7 +15,7 @@ import { mockCodeVerifier } from '../core/tools';
 import { spokenText } from '../prompts/render';
 import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap } from '../jev/types';
-import { AppDefinitionError, defineApp, localePromptsOf, type AppCode } from './defineApp';
+import { AppDefinitionError, defineApp, type AppCode } from './defineApp';
 import { libraryApp, libraryCode, LibrarySystems, LIBRARY_DIR } from './fixture/app';
 import { loadAppFolder } from './load';
 import { formatProblem } from './problems';
@@ -63,7 +63,7 @@ describe('defineApp: the library fixture', () => {
   });
 
   it('keeps the contract\'s field order, the files\' map order, and no key standing for nothing', () => {
-    expect(Object.keys(libraryApp)).toEqual(['id', 'intents', 'menu', 'forms', 'slots', 'tools', 'policy', 'systems', 'wording', 'carrySlots', 'brand', 'console', 'voice', 'prompts']);
+    expect(Object.keys(libraryApp)).toEqual(['id', 'intents', 'menu', 'forms', 'slots', 'tools', 'policy', 'systems', 'wording', 'carrySlots', 'brand', 'console', 'voice', 'prompts', 'locales']);
     expect(Object.keys(libraryApp.intents)).toEqual(['renew_loan', 'check_hold', 'hours', 'agent', 'repeat_prompt', 'done', 'other', 'none']);
     expect(libraryApp.intents.hours).toEqual({ criteria: 'Asks when the library is open', label: 'hear the opening hours', kind: 'informational', promptId: 'hours' });
     expect(Object.keys(libraryApp.intents.renew_loan!)).toEqual(['criteria', 'label', 'kind']);
@@ -100,12 +100,26 @@ describe('defineApp: the library fixture', () => {
     expect(libraryApp.carrySlots).toEqual(['branch']);
   });
 
-  it('keeps every locale\'s prompts beside the App, the default locale\'s being its manifest', () => {
-    const locales = localePromptsOf(libraryApp);
-    expect(locales?.defaultLocale).toBe('en-US');
-    expect(Object.keys(locales!.byLocale)).toEqual(['en-US']);
-    expect(locales!.byLocale['en-US']).toEqual(libraryApp.prompts.manifest);
-    expect(localePromptsOf({ ...libraryApp })).toBeNull();
+  it('puts every locale on the App: the default\'s lines are its manifest, each other\'s are App.locales.prompts', () => {
+    expect(libraryApp.locales?.default).toBe('en-US');
+    expect(Object.keys(libraryApp.locales!.prompts)).toEqual(['es']);
+    const es = libraryApp.locales!.prompts.es!;
+    expect(es.greeting).toEqual({ text: 'Gracias por llamar a la Biblioteca de Example Town. Puedo renovar un libro o revisar una reserva. ¿En qué puedo ayudarle?', interruptible: true });
+    // es leaves no_hold out: it is said from the manifest
+    expect(Object.hasOwn(es, 'no_hold')).toBe(false);
+    expect(libraryApp.prompts.manifest.greeting!.text).toMatch(/^Thanks for calling/);
+  });
+
+  it('gives a folder that declares no locale (no locale: in app.yaml, no locale/ folder) no locales, as an app written without them', () => {
+    const dir = folder({ 'app.yaml': readFileSync(join(LIBRARY_DIR, 'app.yaml'), 'utf8').replace('locale: en-US\n', '') });
+    rmSync(join(dir, 'locale'), { recursive: true });
+    const plain = defineApp(dir, libraryCode);
+    expect(Object.hasOwn(plain, 'locales')).toBe(false);
+    expect(plain.prompts).toStrictEqual(libraryApp.prompts);
+    // app.yaml's locale: alone declares one: a single-language app whose language is named
+    const named = folder();
+    rmSync(join(named, 'locale'), { recursive: true });
+    expect(defineApp(named, libraryCode).locales).toEqual({ default: 'en-US', prompts: {} });
   });
 });
 

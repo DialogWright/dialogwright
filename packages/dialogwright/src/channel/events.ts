@@ -7,8 +7,12 @@ import type { Principal } from '../gate/types';
  */
 export const DEFAULT_LANG = 'en-US';
 
-/** A session began. Provider details (call ids, numbers, custom parameters) are opaque to the core. */
-export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>> }
+/**
+ * A session began. Provider details (call ids, numbers, custom parameters) are opaque to the core.
+ * `locale` is the language the channel asks the session to speak (a language tag, e.g. es-US), when
+ * it names one: the session speaks it where the app has it (App.locales), its default otherwise.
+ */
+export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string }
 /** Recognized speech. Only a final transcript is a turn; a partial one holds. */
 export interface UserSpeech { type: 'user.speech'; text: string; final: boolean; lang: string }
 /** Typed text: always final. */
@@ -37,8 +41,8 @@ export interface SignedIn { type: 'auth.signed_in'; principal: Principal }
  */
 export type SessionEvent = SessionStart | UserSpeech | UserText | UserKey | UserInterrupt | UserSilence | ChannelError | ServiceResult | SignedIn;
 
-export function startEvent(provider: Readonly<Record<string, string>> = {}): SessionStart {
-  return { type: 'session.start', provider };
+export function startEvent(provider: Readonly<Record<string, string>> = {}, locale?: string): SessionStart {
+  return locale === undefined ? { type: 'session.start', provider } : { type: 'session.start', provider, locale };
 }
 export function speechEvent(text: string, final = true, lang = DEFAULT_LANG): UserSpeech {
   return { type: 'user.speech', text, final, lang };

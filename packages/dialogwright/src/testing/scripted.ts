@@ -153,6 +153,6 @@ export function replayRecords(records: TraceRecord[]): Array<TraceRecord & { spo
   const app = getApp(defaultAppId());
   return records.map((raw) => {
     const r = redactRecord(redactRecordSlots(upgradeTraceRecord(raw), 'length'));
-    return { ...r, spokenText: spokenText(app, r.decision) };
+    return { ...r, spokenText: spokenText(app, r.decision, r.locale) };
   });
 }

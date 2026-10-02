@@ -7,6 +7,7 @@ import {
   type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type PolicyYaml, type PromptYaml, type PromptsYaml,
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
+import { DEFAULT_LOCALE } from '../core/locale';
 
 export type { Problem } from './problems';
 
@@ -54,8 +55,8 @@ export interface LoadResult {
   locate(file: string, path: DataPath): { line: number; column: number } | null;
 }
 
-/** The locale an app has when it does not say. */
-export const DEFAULT_LOCALE = 'en-US';
+/** The locale an app has when it does not say (core/locale.ts). */
+export { DEFAULT_LOCALE };
 
 /** A YAML file bigger than this is refused: configuration is hand-written text, and parsing is bounded by size. */
 const MAX_FILE_BYTES = 1024 * 1024;

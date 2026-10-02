@@ -8,7 +8,9 @@ describe('the package entry', () => {
       'registerApp', 'getApp', 'defaultAppId', 'appOf', 'resetAppsForTest',
       'validateApp', 'formOf', 'slotSpecOf', 'toolOf',
       // the app definition: a folder's YAML joined with the app's code
-      'defineApp', 'AppDefinitionError', 'localePromptsOf', 'formatProblem',
+      'defineApp', 'AppDefinitionError', 'formatProblem',
+      // the languages an app speaks
+      'DEFAULT_LOCALE', 'defaultLocaleOf', 'localesOf', 'matchLocale', 'localeOf',
       'serviceResultEvent', 'speechEvent', 'sayAction', 'endAction', 'transferAction', 'VOICE_RELAY', 'WEB_CHAT',
       'isAnonymous', 'isParty', 'ANONYMOUS',
       'startServer', 'serverMain', 'validateRoutes', 'routeOwns',

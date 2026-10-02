@@ -35,7 +35,7 @@ export function makeObserver(bus: DashboardBus, store: ObservedCalls, callSid: s
     // The published record is redacted: the dashboard route is unauthenticated, and a setup
     // record carries the caller's whole number. The trace file on disk (written by opts.trace)
     // keeps the caller's number, with the identity slots masked by the writer.
-    turn: (record, at) => bus.publish({ type: 'turn', callSid, at, record: redactRecord(record), spoken: spokenText(appOf(store.get(callSid)?.session ?? {}), record.decision) }),
+    turn: (record, at) => bus.publish({ type: 'turn', callSid, at, record: redactRecord(record), spoken: spokenText(appOf(store.get(callSid)?.session ?? {}), record.decision, record.locale) }),
     // Entries are built free of PHI in the core, so they are published as chained. The call's own
     // entry keeps them too, but that is the run path's job (adapter.ts, chatTurn.ts), so the handoff
     // summary has them with the console off.

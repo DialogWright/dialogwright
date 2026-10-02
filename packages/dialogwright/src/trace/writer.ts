@@ -66,6 +66,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     pendingConfirmation: result.session.pendingConfirmation ? { ...result.session.pendingConfirmation } : null,
     promptedFor: result.session.promptedFor,
     completed: [...result.session.completed],
+    // Only a session of an app that declares locales has one; every other record is as it was.
+    ...(result.session.locale !== undefined ? { locale: result.session.locale } : {}),
     screen: result.screen ? { ...result.screen } : null,
     quarantined: result.quarantined,
     // Added for the dashboard's stages, gate and source-of-truth cards: every gate

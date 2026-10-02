@@ -27,9 +27,12 @@ export { validateApp, CONSOLE_ELEMENT_IDS, CONTROL_INTENTS, REQUIRED_CONTROL_INT
 export { formOf, slotSpecOf, toolOf } from './core/app/lookup';
 export { intentList, formIntents, isFormIntent, intentLabel, informationalPrompt, informationalIntents, intentCriteria } from './core/app/intents';
 
+// The languages an app speaks (App.locales) and the one a session speaks.
+export { DEFAULT_LOCALE, defaultLocaleOf, localesOf, matchLocale, localeOf } from './core/locale';
+
 // The app definition: an app folder's YAML joined with its TypeScript parts into the App above.
-export { defineApp, AppDefinitionError, localePromptsOf } from './define/defineApp';
-export type { AppCode, FormHooks, LocalePrompts, ManifestEntry } from './define/defineApp';
+export { defineApp, AppDefinitionError } from './define/defineApp';
+export type { AppCode, FormHooks } from './define/defineApp';
 export { formatProblem } from './define/problems';
 export type { Problem } from './define/problems';
 

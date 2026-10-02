@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=../../../../../schemas/prompts.schema.json
+# The library line in Spanish. A line left out here (no_hold) is said from prompts.yaml.
+prompts:
+  # The opening lines and the engine's own lines
+  greeting:
+    text: Gracias por llamar a la Biblioteca de Example Town. Puedo renovar un libro o revisar una reserva. ¿En qué puedo ayudarle?
+    interruptible: true
+  greeting_chat:
+    text: Hola, le atiende la Biblioteca de Example Town. Puedo renovar un libro o revisar una reserva. ¿En qué puedo ayudarle?
+    interruptible: true
+  ask_intent:
+    text: ¿En qué puedo ayudarle hoy?
+    interruptible: true
+  nomatch_open:
+    text: Perdone, no le entendí. Puede pedir renovar un libro o revisar una reserva.
+    interruptible: true
+  nomatch_dtmf_menu:
+    text: Probemos con el teclado. Para renovar un libro marque 1. Para revisar una reserva marque 2. Para hablar con alguien marque 0.
+    interruptible: true
+  no_input:
+    text: No oí nada.
+    interruptible: false
+  ack_intent:
+    text: Claro, puedo ayudarle a {intentLabel}.
+    interruptible: false
+  confirm_intent_explicit:
+    text: Para confirmar, ¿quiere {intentLabel}? Sí o no.
+    interruptible: false
+  disambiguate_intent:
+    text: ¿Quiere {a}, o {b}?
+    interruptible: true
+  ack_intent_then:
+    text: Claro, puedo ayudarle a {a}, y después {b}.
+    interruptible: false
+  ack_queued:
+    text: Claro, después de esto vamos a {intentLabel}.
+    interruptible: false
+  bridge_next:
+    text: Ahora, vamos a {intentLabel}.
+    interruptible: false
+  ack_frustration:
+    text: Le entiendo, vamos a resolverlo.
+    interruptible: false
+  offer_transfer:
+    text: ¿Quiere que le comunique con un bibliotecario, o seguimos?
+    interruptible: true
+  ack_declined:
+    text: Muy bien, sigamos.
+    interruptible: false
+  system_slow_dtmf_hint:
+    text: Perdone la demora. También puede usar el teclado.
+    interruptible: true
+  system_slow_chat:
+    text: Perdone, tengo un problema de mi lado. Envíelo otra vez, por favor.
+    interruptible: true
+  ask_change:
+    text: ¿Qué debo cambiar?
+    interruptible: true
+  confirm_dtmf:
+    text: Marque 1 para confirmar, o 2 para cambiar algo.
+    interruptible: false
+  anything_else:
+    text: ¿Hay algo más en que pueda ayudarle?
+    interruptible: true
+  goodbye:
+    text: Adiós.
+    interruptible: false
+  goodbye_chat:
+    text: Gracias por escribir a la Biblioteca de Example Town. Adiós.
+    interruptible: false
+  screen_reprompt:
+    text: Puedo ayudarle a renovar un libro o revisar una reserva.
+    interruptible: true
+  screen_reprompt_form:
+    text: Sigamos.
+    interruptible: true
+  handoff_live_agent:
+    text: Un momento, le comunico con un bibliotecario.
+    interruptible: false
+  handoff_frustrated:
+    text: Le paso con alguien que pueda ayudarle.
+    interruptible: false
+  handoff_max_attempts:
+    text: Le paso con alguien que le ayude con eso.
+    interruptible: false
+  handoff_system_failure:
+    text: Tengo un problema en este momento. Le comunico con alguien.
+    interruptible: false
+  handoff_needs_human:
+    text: Esto necesita a una persona. Le comunico con un bibliotecario.
+    interruptible: false
+  handoff_security:
+    text: Le comunico con alguien que pueda ayudarle.
+    interruptible: false
+
+  # The informational intent
+  hours:
+    text: Todas las sucursales abren de nueve a seis, de lunes a sábado.
+    interruptible: true
+
+  # The slots
+  ask_book:
+    text: ¿Qué libro es?
+    interruptible: true
+  ask_book_retry:
+    text: Perdone, ¿qué libro? Por ejemplo, The River Atlas.
+    interruptible: true
+  ask_branch:
+    text: ¿En qué sucursal está la reserva, North o Riverside?
+    interruptible: true
+  ask_branch_retry:
+    text: Perdone, ¿la reserva está en la sucursal North o en la sucursal Riverside?
+    interruptible: true
+
+  # The forms
+  confirm_renew:
+    text: Quiere renovar {book} por dos semanas más. ¿Lo hago?
+    interruptible: true
+  renewed:
+    text: Listo. Ahora {book} se devuelve {due}.
+    interruptible: false
+  hold_ready:
+    text: Buenas noticias, {book} le espera en la sucursal {branch}.
+    interruptible: false
+  hold_waiting:
+    text: '{book} está reservado para usted en la sucursal {branch}, pero todavía no ha llegado.'
+    interruptible: false

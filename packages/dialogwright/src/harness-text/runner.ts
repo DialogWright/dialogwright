@@ -122,7 +122,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     formOf(app, answered.form).onEntry?.(session, value);
     session.promptedFor = 'intent';
     session.lastPromptId = 'anything_else';
-    session.lastPromptText = promptText(app, 'anything_else', {});
+    session.lastPromptText = promptText(app, 'anything_else', {}, session.locale);
     session.lastPromptOptions = [];
     return session;
   }
@@ -154,7 +154,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     // beyond the slots (a record found, an option offered) is in the text the caller answers.
     const read = renderSummary(session, prompt(promptId, 'confirm', summaryVars(session), [], ['yes', 'no']), tc, newTurnOut());
     session.lastPromptId = read.promptId;
-    session.lastPromptText = promptText(app, read.promptId, read.vars);
+    session.lastPromptText = promptText(app, read.promptId, read.vars, session.locale);
     // The summary has been spoken, so its values are what a yes arms (gate R3): renderSummary took
     // their hash as it read them.
     session.lastPromptOptions = ['yes', 'no'];
@@ -166,7 +166,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     session.pendingConfirmation = { target: 'transfer', attempts: 0 };
     session.promptedFor = 'confirm';
     session.lastPromptId = 'offer_transfer';
-    session.lastPromptText = promptText(app, 'offer_transfer', {});
+    session.lastPromptText = promptText(app, 'offer_transfer', {}, session.locale);
     session.lastPromptOptions = ['yes', 'no'];
     session.frustratedTurns = 2;
     return session;
@@ -174,7 +174,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   const slot = identity ? entry.prompted! : stopAt ?? null;
   session.promptedFor = slot;
   session.lastPromptId = slot ? `ask_${slot}` : null;
-  session.lastPromptText = slot ? promptText(app, `ask_${slot}`, {}) : '';
+  session.lastPromptText = slot ? promptText(app, `ask_${slot}`, {}, session.locale) : '';
   return session;
 }
 

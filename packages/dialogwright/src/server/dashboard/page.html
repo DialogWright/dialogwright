@@ -823,7 +823,9 @@
     const channel = el('channel');
     channel.hidden = !v.callSid;
     const chat = v.channel === 'chat';
-    channel.innerHTML = chat ? `<span>Chat</span>${v.caller ? `<span class="k">· ${esc(v.caller)}</span>` : ''}` : '<span>Voice</span>';
+    // The language, only for a call of an app that declares locales (View.locale).
+    const locale = v.locale ? `<span class="k locale">· ${esc(v.locale)}</span>` : '';
+    channel.innerHTML = (chat ? `<span>Chat</span>${v.caller ? `<span class="k">· ${esc(v.caller)}</span>` : ''}` : '<span>Voice</span>') + locale;
     const level = Math.max(0, Math.min(2, Number(v.level) || 0));
     const badge = el('level');
     badge.className = `badge level l${level}${acc.levelOn ? ' pulse' : ''}`;

@@ -51,7 +51,7 @@ function spokenOf(record: TraceRecord): string {
   // A trace record does not carry its session's app, so a stored trace is read as the default app's.
   const app = getApp(defaultAppId());
   try {
-    const text = spokenText(app, record.decision);
+    const text = spokenText(app, record.decision, record.locale);
     return typeof text === 'string' ? text : '';
   } catch {
     return '';

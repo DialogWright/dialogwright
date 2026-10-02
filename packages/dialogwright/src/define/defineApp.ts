@@ -1,6 +1,6 @@
 import type {
-  App, AppBrand, ConsoleConfig, FormDef, FormId, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
-  RoleAccess, SlotId, SpokenDigitRule, ToolDef, ToolName, VoiceConfig,
+  App, AppBrand, AppLocales, ConsoleConfig, FormDef, FormId, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
+  PromptManifestEntry, RoleAccess, SlotId, SpokenDigitRule, ToolDef, ToolName, VoiceConfig,
 } from '../core/app/types';
 import type { SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
@@ -59,19 +59,6 @@ export interface AppCode {
   identity?: { sendCodeParams?: IdentityConfig['sendCodeParams'] };
 }
 
-/** One prompt as a locale's manifest holds it. */
-export interface ManifestEntry {
-  text: string;
-  interruptible: boolean;
-}
-
-/** Every locale's prompts of an app built by defineApp: the default locale's are App.prompts.manifest. */
-export interface LocalePrompts {
-  defaultLocale: string;
-  /** By locale tag, then prompt id. */
-  byLocale: Record<string, Record<string, ManifestEntry>>;
-}
-
 /** Thrown by defineApp when the folder, the code or the two together are not a valid app: every problem, in one message. */
 export class AppDefinitionError extends Error {
   readonly problems: readonly Problem[];
@@ -86,14 +73,6 @@ export class AppDefinitionError extends Error {
 
 /** The file a problem in the app's code is reported against: the code has no YAML line to point at. */
 export const CODE_FILE = 'app.ts';
-
-/** The locale prompts of each app defineApp built (Task 5 reads them; the App contract is unchanged until then). */
-const localePrompts = new WeakMap<App, LocalePrompts>();
-
-/** The prompts of every locale of an app built by defineApp; null for an app written in TypeScript. */
-export function localePromptsOf(app: App): LocalePrompts | null {
-  return localePrompts.get(app) ?? null;
-}
 
 /**
  * Builds the app in the folder `dir` with its TypeScript parts `code`. Throws an AppDefinitionError
@@ -115,10 +94,6 @@ export function defineApp(dir: string, code: AppCode): App {
       { file: '.', line: 0, column: 0, path: WHOLE_FILE, message: `validateApp refused the app: ${message}`, fix: 'correct the reference it names, in the YAML file or in app.ts' },
     ]);
   }
-  localePrompts.set(app, {
-    defaultLocale: loaded.config.defaultLocale,
-    byLocale: Object.fromEntries(Object.entries(loaded.config.prompts).map(([locale, prompts]) => [locale, manifestOf(prompts)])),
-  });
   return app;
 }
 
@@ -353,7 +328,7 @@ function put<T extends object, K extends keyof T>(target: T, key: K, value: T[K]
   if (value !== undefined) target[key] = value;
 }
 
-function manifestOf(prompts: Readonly<Record<string, { text: string; interruptible: boolean }>>): Record<string, ManifestEntry> {
+function manifestOf(prompts: Readonly<Record<string, { text: string; interruptible: boolean }>>): Record<string, PromptManifestEntry> {
   return Object.fromEntries(Object.entries(prompts).map(([id, p]) => [id, { text: p.text, interruptible: p.interruptible }]));
 }
 
@@ -388,6 +363,7 @@ function buildApp(config: LoadedConfig, code: AppCode): App {
   put(app, 'voice', a.voice ? voiceOf(a.voice) : undefined);
   put(app, 'handoff', a.handoff as HandoffWording | undefined);
   app.prompts = promptsOf(config, a);
+  put(app, 'locales', localesOf(config));
   put(app, 'principals', code.principals);
   put(app, 'portal', code.portal);
   put(app, 'testing', code.testing);
@@ -460,6 +436,17 @@ function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {
   put(config, 'hints', voice.hints);
   put(config, 'spokenDigits', voice.spokenDigits?.map(({ pattern, spell }) => ({ pattern: new RegExp(pattern, 'g'), spell })));
   return config;
+}
+
+/**
+ * The app's locales (App.locales), for a folder that declares any: app.yaml's `locale:` (the
+ * default, whose lines are prompts.yaml), and each locale/<tag>/prompts.yaml. A folder with neither
+ * has none, so its App and every session of it are those of an app written without locales.
+ */
+function localesOf(config: LoadedConfig): AppLocales | undefined {
+  const others = Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale);
+  if (config.app.locale === undefined && others.length === 0) return undefined;
+  return { default: config.defaultLocale, prompts: Object.fromEntries(others.map(([locale, prompts]) => [locale, manifestOf(prompts)])) };
 }
 
 function promptsOf(config: LoadedConfig, a: AppYaml): App['prompts'] {

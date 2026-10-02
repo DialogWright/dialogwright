@@ -319,7 +319,10 @@ describe('dialogwright check', () => {
       'prompts.yaml:2:1  prompts  prompt "goodbye" is missing from prompts.yaml; the engine says it when a call ends  ->  add "goodbye:" with its text and interruptible to prompts.yaml',
       expect.stringContaining('"ask_amount" is missing'),
       expect.stringContaining('"ask_amount_retry" is missing'),
-      `4 problems in ${dir}`,
+      // the library also speaks es (locale/es), which lacks the new slot's lines too
+      'locale/es/prompts.yaml:3:1  prompts  prompt "ask_amount" is missing from the es prompts; the engine says it when it asks for the slot "amount"  ->  add "ask_amount:" with its text and interruptible to locale/es/prompts.yaml',
+      expect.stringContaining('"ask_amount_retry" is missing from the es prompts'),
+      `6 problems in ${dir}`,
     ]);
   });
 

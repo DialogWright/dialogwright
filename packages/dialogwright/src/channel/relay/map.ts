@@ -14,7 +14,9 @@ export function isInboundFrameType(type: unknown): type is InboundFrame['type'] 
 /**
  * The core's event for a ConversationRelay message (or a server-made frame read back from a log).
  * A setup's call ids and custom parameters become the event's opaque provider details, the
- * parameters prefixed `param.`; the core reads none of them.
+ * parameters prefixed `param.`; the core reads none of them. A custom parameter named `locale` (a
+ * `<Parameter name="locale" value="es-US"/>` in the TwiML that opened the relay) is also the
+ * locale the session is asked to speak (SessionStart.locale).
  */
 export function frameToEvent(f: InboundFrame): SessionEvent {
   switch (f.type) {
@@ -23,7 +25,8 @@ export function frameToEvent(f: InboundFrame): SessionEvent {
       const provider: Record<string, string> = {};
       for (const [k, v] of Object.entries(ids)) if (typeof v === 'string') provider[k] = v;
       if (typeof customParameters === 'object' && customParameters !== null) for (const [k, v] of Object.entries(customParameters)) provider[`param.${k}`] = v;
-      return { type: 'session.start', provider };
+      const locale = typeof customParameters === 'object' && customParameters !== null && Object.hasOwn(customParameters, 'locale') ? customParameters.locale : undefined;
+      return typeof locale === 'string' ? { type: 'session.start', provider, locale } : { type: 'session.start', provider };
     }
     case 'prompt': return { type: 'user.speech', text: f.voicePrompt, final: f.last, lang: f.lang };
     case 'dtmf': return { type: 'user.key', digit: f.digit };

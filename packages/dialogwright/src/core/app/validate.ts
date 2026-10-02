@@ -45,6 +45,11 @@ export function validateApp(app: App): void {
   }
   for (const slot of app.identity?.factorSlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`identity factor slot "${slot}" is not a slot`);
   for (const slot of app.carrySlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`carried slot "${slot}" is not a slot`);
+  if (app.locales) {
+    if (typeof app.locales.default !== 'string' || app.locales.default === '') fail('locales has no default locale');
+    // The default locale's lines are the manifest; a second copy would be one that is never read.
+    for (const locale of Object.keys(app.locales.prompts)) if (locale.toLowerCase() === app.locales.default.toLowerCase()) fail(`locale "${locale}" is the default locale, whose lines are prompts.manifest`);
+  }
   for (const [name, value] of Object.entries(app.thresholds ?? {})) {
     if (Object.hasOwn(DEFAULT_THRESHOLDS, name)) fail(`threshold "${name}" is one of the engine's`);
     if (typeof value !== 'number' || !Number.isFinite(value)) fail(`threshold "${name}" is not a number`);

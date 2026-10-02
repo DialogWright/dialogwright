@@ -43,7 +43,7 @@ export async function runChatTurn(d: ChatTurnDeps, entry: ChatTurnEntry, event: 
   entry.session = r.result.session;
   // Kept on the session's own entry whether or not the console is on: the handoff summary reads it.
   entry.auditEntries.push(...r.audit);
-  const text = spokenText(appOf(entry.session), r.result.decision);
+  const text = spokenText(appOf(entry.session), r.result.decision, entry.session.locale);
   if (text) out.push(text);
   const decision = r.result.decision;
   if (decision.kind === 'handoff') {

@@ -57,6 +57,11 @@ export interface TraceRecord {
   /** Added later: the forms completed on the call so far. Optional so older records still load. */
   completed?: FormId[];
   /**
+   * The language the session speaks after this turn (Session.locale), which only a session of an app
+   * that declares locales (App.locales) has; absent otherwise, and in records written before locales.
+   */
+  locale?: string;
+  /**
    * Added later: the injection screen's reading of this turn (null when it was not asked), and
    * whether it quarantined the turn. A quarantined record keeps `answers` for debugging, but nothing
    * acted on them. Optional so older records still load. The screen's usage is included in `usage`.

@@ -665,6 +665,8 @@ export function reduce(events, opts) {
         v.thresholds = e.thresholds ?? {};
         v.channel = e.channel ?? null;
         v.caller = e.caller ?? null;
+        // A view has a locale only once a turn of a call that speaks one says so (below).
+        delete v.locale;
         break;
       case 'asked': {
         live();
@@ -679,6 +681,8 @@ export function reduce(events, opts) {
       }
       case 'turn': {
         const r = e.record;
+        // The language the session speaks, which only an app that declares locales records.
+        if (typeof r.locale === 'string') v.locale = r.locale;
         const consulted = r.questions !== null && r.questions !== undefined;
         // An interrupt or a relay error resolves to `ignore`: the record repeats the last turn's
         // index, says nothing, and asks for nothing. It must not be counted as a turn or blank
