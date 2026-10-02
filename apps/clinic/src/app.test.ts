@@ -5,11 +5,12 @@ import { checkApp, formatProblem, loadAppFolder, testSlotContext, type LibrarySl
 import { afterAll, describe, expect, it } from 'vitest';
 import { CLINIC_DIR, clinicApp, code } from './app';
 import { CLINIC_FORM_HOOKS } from './domain/forms';
-import { PROVIDERS } from './domain/roster';
+import { EXCLUDED_NAME_TOKENS, PROVIDERS } from './domain/roster';
 import { ALL_SLOTS, SLOTS } from './domain/slots';
 import { dateSlot } from './domain/slots/date';
 import { dobSlot } from './domain/slots/dob';
 import { memberIdSlot } from './domain/slots/memberId';
+import { nameSlot } from './domain/slots/name';
 
 /**
  * The clinic as its folder builds it: a few pinned facts about what the YAML holds and how it meets
@@ -64,13 +65,43 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
 });
 
 describe('the clinic folder: slots.yaml', () => {
-  it('lists all five slots, two as code, the birth date as a library birthdate slot, the member ID as a library digits slot and the day as a library date slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
+  it('lists all five slots, one as code, the name as a library name slot, the birth date as a library birthdate slot, the member ID as a library digits slot and the day as a library date slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
     const slots = loadAppFolder(CLINIC_DIR).config?.slots;
     expect(Object.keys(slots ?? {})).toEqual([...ALL_SLOTS]);
-    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['code', 'birthdate', 'digits', 'code', 'date']);
+    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['name', 'birthdate', 'digits', 'code', 'date']);
     expect(Object.keys(clinicApp.slots)).toEqual(Object.keys(slots ?? {}));
     expect(Object.keys(clinicApp.slots)).toEqual([...ALL_SLOTS]);
     for (const id of Object.keys(SLOTS)) expect(clinicApp.slots[id], id).toBe(SLOTS[id as keyof typeof SLOTS]);
+  });
+
+  it('configures the name as the hand-written slot was: the words withheld are the roster\'s, its two questions word for word and its ids', () => {
+    const lib = clinicApp.slots.name as LibrarySlotSpec;
+    expect(lib.type).toBe('name');
+    const q = nameSlot.questions(testSlotContext('')) as Record<string, { instructions: string; criteria: Record<string, string | null> }>;
+    const given = nameSlot.questions(testSlotContext('')).nameGiven as { criteria: Record<string, string> };
+    expect(lib.config).toEqual({
+      exclude: ['dr', 'doctor', 'chen', 'cheng', 'patel', 'okafor', 'nguyen', 'rossi', 'kim', 'alvarez'],
+      redact: 'none', handoff: 'display',
+      text: { givenFalse: given.criteria.false, span: q.nameSpan!.instructions },
+    });
+    expect(lib).toMatchObject({ id: nameSlot.id, spokenConfirm: nameSlot.spokenConfirm, detect: true });
+    expect(lib.redact).toBeUndefined();
+    expect(lib.handoff).toBeUndefined();
+    expect(lib.dtmf).toBeUndefined();
+    expect(lib.questionIds).toEqual(['nameGiven', 'nameSpan']);
+    expect(lib.prompts).toEqual([]);
+  });
+
+  it('withholds from the name exactly the roster\'s words: the list in slots.yaml is the one EXCLUDED_NAME_TOKENS derives from PROVIDERS, so adding a provider fails here until the list follows', () => {
+    const listed = ((clinicApp.slots.name as LibrarySlotSpec).config as { exclude: string[] }).exclude;
+    expect(new Set(listed)).toEqual(new Set(EXCLUDED_NAME_TOKENS));
+    expect(listed).toEqual([...EXCLUDED_NAME_TOKENS]);
+    expect(new Set(listed).size).toBe(listed.length);
+    for (const p of PROVIDERS) {
+      expect(listed, p.key).toContain(p.key);
+      for (const word of p.name.toLowerCase().split(/\s+/)) expect(listed, p.name).toContain(word);
+    }
+    expect(listed).toEqual(expect.arrayContaining(['dr', 'doctor']));
   });
 
   it('configures the birth date as the hand-written slot was: its wording, its ids, the keypad, the year line, masked to its year', () => {

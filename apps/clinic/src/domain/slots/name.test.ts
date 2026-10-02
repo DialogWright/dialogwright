@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { candidateWordSpans, choice, noul, testSlotContext as ctx } from 'dialogwright';
-import { nameSlot, titleCase } from './name';
+import { candidateWordSpans, choice, noul, testSlotContext as ctx, type SlotSpec } from 'dialogwright';
+import { clinicApp } from '../../app';
+import { nameSlot as handWritten, titleCase } from './name';
 
-const spanKeys = (text: string) => Object.keys((nameSlot.questions(ctx(text)).nameSpan as { criteria: Record<string, string | null> }).criteria);
+/** The same expectations of the hand-written slot and of the library `name` slot slots.yaml builds in its place. */
+describe.each<[string, SlotSpec]>([
+  ['the hand-written nameSlot', handWritten],
+  ['the library name slot (slots.yaml)', clinicApp.slots.name!],
+])('%s', (_name, nameSlot) => {
+  const spanKeys = (text: string) => Object.keys((nameSlot.questions(ctx(text)).nameSpan as { criteria: Record<string, string | null> }).criteria);
 
-describe('nameSlot', () => {
   it('asks for a name check and a span choice over the word candidates', () => {
     const q = nameSlot.questions(ctx('my name is Morgan Ellis'));
     expect(q.nameGiven?.type).toBe('noul');
@@ -61,6 +66,12 @@ describe('nameSlot', () => {
     expect(nameSlot).toMatchObject({ spokenConfirm: 'summary', detect: true });
   });
 
+  it('title-cases each word', () => {
+    expect(nameSlot.display('mary kate o neil')).toBe('Mary Kate O Neil');
+  });
+});
+
+describe('titleCase', () => {
   it('title-cases each word', () => {
     expect(titleCase('mary kate o neil')).toBe('Mary Kate O Neil');
   });

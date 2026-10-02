@@ -8,10 +8,11 @@ import { clinicApp, registerClinic } from './index';
 import { dateSlot } from './domain/slots/date';
 import { dobSlot } from './domain/slots/dob';
 import { memberIdSlot } from './domain/slots/memberId';
+import { nameSlot } from './domain/slots/name';
 import { CLINIC_SHADOW_PAIRS } from './testing/shadowPairs';
 
 /**
- * The shadow harness over whole runs of the clinic. First the birth date, the member ID and the day
+ * The shadow harness over whole runs of the clinic. First the name, the birth date, the member ID and the day
  * against the hand-written slots they replaced (CLINIC_SHADOW_PAIRS), then every clinic slot shadowed by a copy of itself
  * (the same behavior, so any mismatch is the harness's own), through the full stub regression and
  * the full replay of the recorded calls. Nothing may change: the stub run is the committed
@@ -48,7 +49,7 @@ describe('the shadow harness on the clinic', () => {
 
   /** The library slots and the methods every whole run must have compared for each. */
   const PAIRED = {
-    dob: ['questions', 'fill', 'display', 'partialVars'], memberId: ['questions', 'fill', 'display'], date: ['questions', 'fill', 'display', 'partialVars', 'dtmf.parse'],
+    name: ['questions', 'fill', 'display'], dob: ['questions', 'fill', 'display', 'partialVars'], memberId: ['questions', 'fill', 'display'], date: ['questions', 'fill', 'display', 'partialVars', 'dtmf.parse'],
   } as const;
 
   function expectPairsAgree(report: ShadowReport): void {
@@ -58,11 +59,13 @@ describe('the shadow harness on the clinic', () => {
     }
   }
 
-  it('pairs the birth date, the member ID and the day, now library slots, with the hand-written slots they replaced', () => {
-    expect(CLINIC_SHADOW_PAIRS.map((s) => s.id)).toEqual(['dob', 'memberId', 'date']);
-    expect(CLINIC_SHADOW_PAIRS[0]).toBe(dobSlot);
-    expect(CLINIC_SHADOW_PAIRS[1]).toBe(memberIdSlot);
-    expect(CLINIC_SHADOW_PAIRS[2]).toBe(dateSlot);
+  it('pairs the name, the birth date, the member ID and the day, now library slots, with the hand-written slots they replaced', () => {
+    expect(CLINIC_SHADOW_PAIRS.map((s) => s.id)).toEqual(['name', 'dob', 'memberId', 'date']);
+    expect(CLINIC_SHADOW_PAIRS[0]).toBe(nameSlot);
+    expect(CLINIC_SHADOW_PAIRS[1]).toBe(dobSlot);
+    expect(CLINIC_SHADOW_PAIRS[2]).toBe(memberIdSlot);
+    expect(CLINIC_SHADOW_PAIRS[3]).toBe(dateSlot);
+    expect((clinicApp.slots.name as LibrarySlotSpec).type).toBe('name');
     expect((clinicApp.slots.dob as LibrarySlotSpec).type).toBe('birthdate');
     expect((clinicApp.slots.memberId as LibrarySlotSpec).type).toBe('digits');
     expect((clinicApp.slots.date as LibrarySlotSpec).type).toBe('date');
@@ -75,6 +78,69 @@ describe('the shadow harness on the clinic', () => {
     expect(actual.scenarios).toEqual(expected.scenarios);
     expect(actual.corpus).toEqual(expected.corpus);
     expectPairsAgree(report);
+  });
+
+  /**
+   * Every mix of answers the name reads. Over texts that give a name alone, a name beside each
+   * provider and each title, a correction to a provider's name, a surname that holds a provider's name
+   * as a part, a literal "none", a single word and a long opener, and on a stricter and a laxer
+   * SLOT_DETECT: the question for each, then the first question at, below and above the threshold
+   * against every span the engine finds in the text (offered or withheld), spans it never found
+   * (reversed, odd spacing and case, empty, a provider's alone) and none, at two probabilities, with
+   * and without the choice's own probabilities; a span answer of the wrong kind and answers missing.
+   */
+  function nameGrid(shadow: SlotSpec): void {
+    const T = buildThresholds([]);
+    const texts = [
+      '', 'my name is Morgan Ellis', "it's Cher", 'this is Dana Whitfield', 'Priya Raghunathan', 'none of your business', 'no, it\'s Sam Lee',
+      'this is Morgan Ellis, seeing Dr. Chen', 'this is Morgan Ellis calling for doctor Patel', 'not Chen, Cheng', "not Dr. Alder, Dr. Ames", 'Cheng, not Chen',
+      'my name is Kim Alvarez', 'this is Dana Kim', 'Okafor', 'it is Chenoweth Drummond', 'Nguyen Rossi', 'I want to see Dr Okafor, my name is Anna Petrov',
+      "it's Mary Kate O'Neil", 'yes', 'um uh hello hi', 'one two three', 'the quick brown fox jumps over the lazy dog and then my name is Alex Moreno',
+    ];
+    const answers = (given: number, span: string, p: number, own: boolean): AnswerMap => ({
+      nameGiven: noul(given),
+      nameSpan: own ? { type: 'choice', choice: span, probabilities: { [span]: p, none: 1 - p }, confidence: p } : { type: 'choice', choice: span, probabilities: {}, confidence: p },
+    });
+    for (const text of texts) {
+      for (const todayIso of ['2026-09-18']) {
+        for (const thresholds of [T, { ...T, SLOT_DETECT: 0.95 }, { ...T, SLOT_DETECT: 0.2 }]) {
+          const c = testSlotContext(text, { todayIso, thresholds });
+          shadow.questions(c);
+          shadow.fill({}, c);
+          shadow.fill({ nameGiven: noul(0.9) }, c);
+          shadow.fill({ nameGiven: noul(0.9), nameSpan: noul(0.9) }, c);
+          shadow.fill({ nameSpan: choice({ none: 1 }) }, c);
+          const spans = [...c.candidateWordSpans, 'none', '', 'someone else', 'ellis morgan', ' morgan   ellis ', 'MORGAN ELLIS', 'chen', 'dr', 'dr chen', 'doctor patel', 'kim alvarez'];
+          for (const given of [0, 0.2, 0.59, T.SLOT_DETECT, T.SLOT_DETECT + 0.001, 0.8, 0.95, 1]) {
+            for (const span of spans) {
+              for (const p of [0.3, 0.9]) {
+                shadow.fill(answers(given, span, p, true), c);
+                shadow.fill(answers(given, span, p, false), c);
+              }
+            }
+            shadow.fill({ nameGiven: noul(given), nameSpan: choice({ none: 1 }) }, c);
+          }
+        }
+      }
+    }
+    for (const value of ['morgan ellis', 'cher', 'mary kate o neil', 'MORGAN', '', 'o neil', 'anna-maria']) shadow.display(value);
+  }
+
+  it('the names agree on branches no run reaches: every mix of texts, spans offered and withheld, and answers around the threshold', () => {
+    const report = createShadowReport();
+    nameGrid(shadowSlot(nameSlot, clinicApp.slots.name!, { report }));
+    expect(report.mismatches).toEqual([]);
+    expect(report.calls['name.fill']).toBeGreaterThan(30_000);
+    expect(report.calls['name.questions']).toBeGreaterThan(60);
+    expect(report.calls['name.display']).toBeGreaterThan(0);
+  });
+
+  it('the name\'s grid would find a slot that differs by one option (one word of the roster not withheld)', () => {
+    const config = (clinicApp.slots.name as LibrarySlotSpec).config as { exclude: string[] };
+    const off = defineSlot('name', { ...config, type: 'name', exclude: config.exclude.filter((w) => w !== 'alvarez') });
+    expect(() => nameGrid(shadowSlot(nameSlot, off))).toThrow(/questions/);
+    const nothing = defineSlot('name', { ...config, type: 'name', exclude: [] });
+    expect(() => nameGrid(shadowSlot(nameSlot, nothing))).toThrow(/questions/);
   });
 
   it('the member IDs agree on branches no run reaches: every mix of answers around the thresholds, spans, and keypad entries', () => {

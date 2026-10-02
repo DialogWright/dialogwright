@@ -1,12 +1,24 @@
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
 # Every slot the clinic has, in the order the engine works through them. This file is the one place
 # that says which slots there are and in what order. `type: code` names a slot the code supplies
-# (src/domain/slots/); the birth date is a library `birthdate` slot, the member ID a library `digits`
-# slot and the appointment day a library `date` slot, each configured here with the clinic's own
-# wording. The order matters: outside a form the engine fills slots in it, says their
+# (src/domain/slots/); the caller's name is a library `name` slot, the birth date a library
+# `birthdate` slot, the member ID a library `digits` slot and the appointment day a library `date`
+# slot, each configured here with the clinic's own wording. The order matters: outside a form the engine fills slots in it, says their
 # acknowledgements in it, and when two slots each want to ask the caller to choose between two
 # values, the first one asks. The model's turn state and a transfer's handoff list the slots in it too.
-name: { type: code }
+name:
+  type: name
+  # The caller's own name, picked as a span of their words; never a doctor's. No span holding a
+  # provider's name (a surname, in the roster) or a doctor's title is offered: a caller correcting
+  # the doctor ("not Chen, Cheng") can read to a model as the caller naming themselves, and a name the
+  # caller never said is worse than no name. The list is the roster's own words (EXCLUDED_NAME_TOKENS
+  # in src/domain/roster.ts, which is where a provider is added); the clinic's tests fail when the
+  # two differ. The questions keep the wording they were recorded with: the library's defaults, with
+  # the doctor named in the "false" criterion and in the span question.
+  exclude: [dr, doctor, chen, cheng, patel, okafor, nguyen, rossi, kim, alvarez]
+  text:
+    givenFalse: "No personal name, or a name that is not the caller's, such as a doctor's name, or a correction to the doctor's name"
+    span: "Read asr.text. Which of these spans is the caller's own full name as they say it, first and last when both are given? Do not include words such as my name is or this is, and do not choose a provider's name or anyone else's. When `slots.name` is already set and the caller gives a different name for themselves, as in no, it's Sam Lee, choose that span; correcting the doctor's name, as in not Dr. Alder, Dr. Ames, is not the caller's name. A single word can be the whole name, as in Prince. Choose none if no span is the caller's name."
 dob:
   type: birthdate
   # The caller's date of birth: month, day and year read separately, so a month and day alone ask for
