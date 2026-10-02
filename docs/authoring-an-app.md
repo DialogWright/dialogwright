@@ -320,7 +320,7 @@ An app outside the engine package imports only from `'dialogwright'` (the clinic
 
 A slot is one value a form collects: a book, a day, a card number. Its `SlotSpec` says what the decision model is asked about the caller's words and how the answers become a value. The model never writes the value: it answers typed questions (yes or no, which of these labels), and the slot's code turns the answers into a value and decides whether it is good. The types are in `packages/dialogwright/src/core/slots/types.ts` and are exported by `'dialogwright'`.
 
-The library has both kinds of slot. `book` and `branch` are choices from a fixed list (`choiceSlot` in its `app.ts`). `card`, the library card number, is a value no list holds, and it is the worked example at the end of this section. It is a slot of the library's `digits` type (`defineSlot` in `app.ts`, with options rather than code): the hand-written slot shown in the sections below is what that type generalizes, and what a slot of your own that no library type fits looks like.
+The library has both kinds of slot. `book` and `branch` are choices from a fixed list: slots of the library's `choice` type (`defineSlot` in its `app.ts`, with the options as `key: title`). `card`, the library card number, is a value no list holds, and it is the worked example at the end of this section. It is a slot of the library's `digits` type (`defineSlot` in `app.ts`, with options rather than code): the hand-written slot shown in the sections below is what that type generalizes, and what a slot of your own that no library type fits looks like.
 
 ### The contract
 

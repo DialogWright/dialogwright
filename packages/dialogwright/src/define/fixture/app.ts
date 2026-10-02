@@ -1,15 +1,16 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  addDays, defineApp, defineSlot, describeDay, isChoice,
-  type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotOutcome, type SlotSpec, type ToolDef,
+  addDays, defineApp, defineSlot, describeDay,
+  type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotSpec, type ToolDef,
 } from '../../index';
 
 /**
  * Example Town Library: a small, fictional library's phone line, written as an app folder. The YAML
  * beside this file holds its intents, forms, prompts, policy and presentation; this file holds what
- * runs: three slots (a book from the catalog and a branch, written here as choices, and a library card number, a library `digits` slot), three tools, one rule
- * of the app's own, and the three forms' hooks. A caller renews a book (a confirmed write, so the
+ * runs: three slots (a book from the catalog and a branch, library `choice` slots, and a library
+ * card number, a library `digits` slot), three tools, one rule of the app's own, and the three
+ * forms' hooks. A caller renews a book (a confirmed write, so the
  * gate's R3 holds it to the title read back), asks whether a hold is ready at a branch, or asks what
  * is checked out on their card. The engine's tests build it with defineApp and run calls through it.
  */
@@ -26,34 +27,6 @@ export const BOOKS: Readonly<Record<string, string>> = {
 
 /** The branches a hold can be at. */
 export const BRANCHES: Readonly<Record<string, string>> = { north: 'North', riverside: 'Riverside' };
-
-/** A choice slot over a fixed list: the model picks an id, the line says its name. */
-function choiceSlot(id: string, options: Readonly<Record<string, string>>, instructions: string): SlotSpec {
-  const display = (value: string): string => options[value] ?? value;
-  return {
-    id,
-    spokenConfirm: 'summary',
-    // One question, named after the slot; nothing said beyond its ask and retry (a summary slot is
-    // neither acknowledged nor read back on its own).
-    questionIds: [id],
-    prompts: [],
-    questions: () => ({
-      [id]: {
-        type: 'choice',
-        instructions,
-        criteria: { ...Object.fromEntries(Object.entries(options).map(([key, name]) => [key, `The caller names ${name}`])), none: 'Names none of these' },
-      },
-    }),
-    fill(answers, ctx): SlotOutcome {
-      const a = answers[id];
-      if (!isChoice(a) || !Object.hasOwn(options, a.choice)) return { kind: 'absent' };
-      const p = a.probabilities[a.choice] ?? a.confidence;
-      if (p < ctx.thresholds.SLOT_CHOICE_FILL) return { kind: 'absent' };
-      return { kind: 'filled', value: a.choice, display: display(a.choice), confidence: p, confirm: 'none' };
-    },
-    display,
-  };
-}
 
 /**
  * The library card number: a value no list holds, so the model cannot choose it from one. It is
@@ -74,11 +47,25 @@ export const cardSlot = defineSlot('card', {
   lengthRetryPromptId: 'ask_card_length',
 });
 
-export const LIBRARY_SLOTS: Record<string, SlotSpec> = {
-  book: choiceSlot('book', BOOKS, 'Read asr.text. Which book in the catalog does the caller name?'),
-  branch: choiceSlot('branch', BRANCHES, 'Read asr.text. Which library branch does the caller name?'),
-  card: cardSlot,
-};
+/**
+ * The book the caller names: a library `choice` slot over the catalog (BOOKS, each key with its
+ * title). The model picks a key; the line says the title. One question, `book`, whose criteria are
+ * "The caller names <title>" for each book and "Names none of these".
+ */
+export const bookSlot = defineSlot('book', {
+  type: 'choice',
+  instructions: 'Read asr.text. Which book in the catalog does the caller name?',
+  options: BOOKS,
+});
+
+/** The branch the caller names: a library `choice` slot over BRANCHES. */
+export const branchSlot = defineSlot('branch', {
+  type: 'choice',
+  instructions: 'Read asr.text. Which library branch does the caller name?',
+  options: BRANCHES,
+});
+
+export const LIBRARY_SLOTS: Record<string, SlotSpec> = { book: bookSlot, branch: branchSlot, card: cardSlot };
 
 /** What a hold looks like in the library's systems. */
 export type HoldStatus = 'ready' | 'waiting';

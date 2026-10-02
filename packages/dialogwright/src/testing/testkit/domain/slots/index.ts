@@ -3,7 +3,7 @@ import { accountIdDigitsSlot } from './accountIdDigits';
 import { dobSlot } from './dob';
 import { parcelSelectSlot } from './parcelSelect';
 import { deliveryDaySlot } from './deliveryDay';
-import { deliveryPartSlot } from './deliveryPart';
+import { deliveryPartChoiceSlot } from './deliveryPartChoice';
 import { missingNoteTextSlot } from './missingNoteText';
 import { expectedDateSlot } from './expectedDate';
 
@@ -17,7 +17,8 @@ export const SLOTS: Record<TestkitSlot, SlotSpec> = {
   dob: dobSlot,
   parcelSelect: parcelSelectSlot,
   deliveryDay: deliveryDaySlot,
-  deliveryPart: deliveryPartSlot,
+  // A library `choice` slot; deliveryPart.ts (hand-written) is what the shadow pair compares it with.
+  deliveryPart: deliveryPartChoiceSlot,
   // A library `text` slot; missingNote.ts (hand-written) is what the shadow pair compares it with.
   missingNote: missingNoteTextSlot,
   expectedDate: expectedDateSlot,
