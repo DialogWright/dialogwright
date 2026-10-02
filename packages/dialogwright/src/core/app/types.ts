@@ -709,9 +709,10 @@ export interface App {
 
 /**
  * The content hashes of an app's configuration files (App.configHashes; core/app/configHash.ts).
- * Each is a SHA-256, 64 lowercase hex characters, of the file's parsed content as canonical JSON
- * (object keys sorted at every level, arrays in order, no whitespace): comments, whitespace, key
- * order and quoting style do not change it; any value does.
+ * Each is a SHA-256, 64 lowercase hex characters, of the file's parsed content as JSON with object
+ * keys in document order at every level, arrays in order and no whitespace: comments, whitespace,
+ * flow or block style and quoting do not change it; any value does, and so does the order of keys
+ * (slots.yaml's key order is the app's slot order).
  */
 export interface ConfigHashes {
   /** The combined hash: SHA-256 of the files' `<file>:<hash>` lines, sorted by file and joined by newlines (configHashLines). */

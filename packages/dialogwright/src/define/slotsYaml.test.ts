@@ -103,6 +103,9 @@ describe('slots.yaml: the loader', () => {
     // comments, quoting and spacing do not change it (the hash is over the parsed content)
     const same = folder({ 'slots.yaml': `# another comment\nbook: {type: "code"}\nbranch: { type: code }\ncard:\n  type: code\n` });
     expect(defineApp(same, libraryCode).configHashes!.files['slots.yaml']).toBe(withFile.files['slots.yaml']);
+    // the order of its keys is the order of the app's slots, so a reorder changes it
+    const reordered = folder({ 'slots.yaml': 'card: { type: code }\nbook: { type: code }\nbranch: { type: code }\n' });
+    expect(defineApp(reordered, libraryCode).configHashes!.files['slots.yaml']).not.toBe(withFile.files['slots.yaml']);
     // a changed value does
     const other = folder({ 'slots.yaml': 'book: { type: code }\nbranch: { type: code }\ncard: { type: code }\nnote: { type: text, what: a note }\n' });
     expect(defineApp(other, libraryCode).configHashes!.files['slots.yaml']).not.toBe(withFile.files['slots.yaml']);

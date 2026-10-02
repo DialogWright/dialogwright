@@ -54,8 +54,8 @@ export interface LoadedConfig {
   /**
    * The content hash of every file read (app.yaml, ..., identity.yaml and slots.yaml when there are, and each
    * locale/<tag>/prompts.yaml), by its path in the folder, and the combined hash (App.configHashes;
-   * core/app/configHash.ts). Each is taken over the file's parsed content, so comments, whitespace,
-   * key order and quoting do not change it.
+   * core/app/configHash.ts). Each is taken over the file's parsed content, so comments, whitespace
+   * and quoting do not change it; key order does, since it is meaning (slots.yaml's is the slot order).
    */
   hashes: ConfigHashes;
 }
