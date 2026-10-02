@@ -40,6 +40,8 @@ Five YAML files are required (app, intents, forms, prompts, policy). `identity.y
 
 The code lives in `app.ts` in the folder, or in `src/app.ts` when the folder is also a package (the clinic). `dialogwright check` looks in both. The module exports the code parts as `code` (an `AppCode`), and may also call `defineApp` itself to build the app, as both examples do. A module that does so must import without starting anything else: `check` imports it.
 
+`dialogwright check` imports the folder's app module, and importing a module runs it. Never run `check` on a folder whose code you would not run yourself.
+
 Nothing in the YAML is ever run. Prompt text, model criteria and wording templates are strings; the only expression is a spoken-digits pattern, which becomes a regular expression.
 
 ## 2. The files, one by one
@@ -86,7 +88,7 @@ prompts:
 - `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech.
 - `wording` is the engine's own questions to the decision model, in the app's words (whom the caller is addressing, what counts as a hedge). Every string is sent to the model as written.
 - `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again).
-- `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. `check` then requires every intent to have examples there.
+- `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. The folder is relative to the app's package root, which is the folder its commands run in: the engine reads it from the working directory, and an app's `regress`, `cli` and `serve` scripts run in its package. It must stay inside the package, so an absolute path or one with `..` is refused. `check` then requires every intent to have examples there.
 - `prompts` holds what is said about prompts besides their text: which opening lines to use, which variables are always spoken by text to speech, the clips' vocabulary.
 
 ### intents.yaml
@@ -108,6 +110,10 @@ intents:
     criteria: Asks to speak with a person, a librarian, or the front desk
     label: speak with someone
     kind: control
+  repeat_prompt:
+    criteria: Asks the system to repeat what it just said
+    label: hear that again
+    kind: control
 
 menu:
   - digit: "1"
@@ -118,7 +124,7 @@ menu:
 
 - `criteria` is sent to the decision model as written, so changing it changes what the model sees (a recorded cassette then misses). `label` is how the line says the intent ("Sure, I can help you renew a book").
 - `kind: form` starts the form with the same id in forms.yaml. `kind: informational` plays its `promptId` and goes back to where the caller was. `kind: control` is the engine's own.
-- Five control intents are required: `agent`, `repeat_prompt`, `done`, `other` and `none`. The library file above shows all five.
+- Two control intents are required, because the engine reads them by name: `agent` and `repeat_prompt`. The snippet above shows both. The other control intents (`done`, `other`, `none`) are optional; the library has all three, and the clinic leaves out `done`, since its calls end when a task completes.
 - Keypad digits are quoted strings.
 
 ### forms.yaml
@@ -165,7 +171,7 @@ prompts:
 - Variables in braces are filled by the engine (`{intentLabel}`) or by the app's code (`{book}`, `{due}`).
 - `interruptible: false` for a line that must be heard whole (a keypad instruction, a statement).
 - `mode` can only be `fixed` (the default). A model chooses among these lines; it never writes one. Generated wording is a later phase.
-- The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. `pnpm check` lists any that are missing and says when the engine says each (section 5).
+- The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. Some lines depend on the slot's spec in the code: `ask_<slot>_dtmf` for a slot with a keypad rung (`dtmf`), `confirm_<slot>` and `ask_<slot>_dtmf` for a slot whose every spoken value is read back (`spokenConfirm: 'always'`), `ack_<slot>` for one acknowledged by confidence (`spokenConfirm: 'by-confidence'`), and the slot's `partialPromptId`. A role whose access to a tool is `person` needs the handoff line for policy.yaml's `rolePersonReason` (`handoff_role_person` by default). `pnpm check` lists any that are missing and says when the engine says each (section 5).
 
 ### policy.yaml
 
@@ -309,9 +315,10 @@ At the repository root, `pnpm check` finds every folder under `apps/` that has a
 It checks, in one pass:
 
 1. **Each file against its schema.** Unknown keys, wrong types, a missing required file, a YAML syntax error. A misspelt name offers the near match.
-2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has a policy row; every custom rule the code defines is named in `rulesFor`; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; and the whole app passes the engine's own `validateApp`.
-3. **The engine's own lines in every locale**: every line the engine says by name, and `ask_<slot>` and `ask_<slot>_retry` for every slot, exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`.
-4. **The corpus**: every intent has at least one labelled example in `corpus.jsonl`, when app.yaml names a fixtures directory.
+2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has a policy row; every custom rule the code defines is named in `rulesFor`; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; a tool that runs R3 has `confirmedFields` and a form with `confirmedParams` to confirm it; and the whole app passes the engine's own `validateApp`.
+3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for R5's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`.
+4. **Each locale against prompts.yaml**: a translated line uses only the variables the prompts.yaml line has (the code fills those and no others, so another would fail when it is said), and a locale has no line that prompts.yaml does not (it would never be said).
+5. **The corpus**: every intent has at least one labelled example in `corpus.jsonl`, when app.yaml names a fixtures directory. The corpus must be inside the package (a link that leads out is refused) and at most 16 MB.
 
 The format is one line per problem, `file:line:column  path  message  ->  fix`, and then a summary line (`N problems in <folder>`, or `<folder>: ok`). A problem in the code has no YAML line, so it reads `app.ts` (or `src/app.ts`) and a code path such as `code.forms.renew_loan.entry`.
 
@@ -325,7 +332,7 @@ policy.yaml:9:14  maxAttempts  "maxAttempts" must be a number, but is text ("thr
 2 problems in broken-library
 ```
 
-After fixing those two, with these further edits made at the same time (the slot `branch` misspelt in forms.yaml, the hook `entry` listed for `renew_loan` but not written, the `goodbye` prompt deleted, an intent naming a prompt that does not exist, `known-branch` misspelt in policy.yaml, and a Spanish line deleted):
+After fixing those two, with these further edits made at the same time (the slot `branch` misspelt `branche` in forms.yaml, the hook `entry` listed for `renew_loan` but not written, the `goodbye` prompt deleted, the `hours` intent naming a prompt `opening_hours` that does not exist, `known-branch` misspelt `known_branch` in policy.yaml, and the Spanish `anything_else` line deleted):
 
 ```
 intents.yaml:15:15  intents.hours.promptId  prompt "opening_hours" is not in prompts.yaml  ->  add "opening_hours:" to prompts.yaml with its text and interruptible
@@ -333,13 +340,17 @@ forms.yaml:6:13  forms.renew_loan.hooks[0]  form "renew_loan" declares the hook 
 forms.yaml:8:19  forms.check_hold.slots[1]  slot "branche" is not defined  ->  rename it to "branch", or add it to the app's slots in app.ts (code.slots.branche)
 prompts.yaml:2:1  prompts  prompt "goodbye" is missing from prompts.yaml; the engine says it when a call ends  ->  add "goodbye:" with its text and interruptible to prompts.yaml
 prompts.yaml:2:1  prompts  prompt "ask_branche" is missing from prompts.yaml; the engine says it when it asks for the slot "branche"  ->  rename "ask_branch" to "ask_branche" if that is the line, or add "ask_branche:" with its text and interruptible to prompts.yaml
+prompts.yaml:2:1  prompts  prompt "ask_branche_retry" is missing from prompts.yaml; the engine says it when it asks for the slot "branche" again after an answer that missed  ->  rename "ask_branch_retry" to "ask_branche_retry" if that is the line, or add "ask_branche_retry:" with its text and interruptible to prompts.yaml
 policy.yaml:5:1  rulesFor  custom rule "known-branch" (code.customRules["known-branch"]) is not named under rulesFor, so it never runs  ->  add "known-branch" to the rules of the tool it guards, or delete the rule from app.ts (code.customRules["known-branch"])
 policy.yaml:7:18  rulesFor.findHold[1]  rule "known_branch" is not a built-in rule (R1, R2, R3, R5, R6, R7) and the code defines no custom rule by that name  ->  rename it to "known-branch", or add it to app.ts (code.customRules.known_branch), or name a built-in rule instead
 locale/es/prompts.yaml:3:1  prompts  prompt "opening_hours" is missing from the es prompts; intents.yaml:15 (intents.hours.promptId) says it  ->  add "opening_hours:" with its text and interruptible to locale/es/prompts.yaml
-11 problems in broken-library
+locale/es/prompts.yaml:3:1  prompts  prompt "anything_else" is missing from the es prompts; the engine says it when a form is done and it asks whether there is more  ->  add "anything_else:" with its text and interruptible to locale/es/prompts.yaml
+locale/es/prompts.yaml:3:1  prompts  prompt "ask_branche" is missing from the es prompts; the engine says it when it asks for the slot "branche"  ->  rename "ask_branch" to "ask_branche" if that is the line, or add "ask_branche:" with its text and interruptible to locale/es/prompts.yaml
+locale/es/prompts.yaml:3:1  prompts  prompt "ask_branche_retry" is missing from the es prompts; the engine says it when it asks for the slot "branche" again after an answer that missed  ->  rename "ask_branch_retry" to "ask_branche_retry" if that is the line, or add "ask_branche_retry:" with its text and interruptible to locale/es/prompts.yaml
+12 problems in broken-library
 ```
 
-(The folder name is whatever you pass, and three lines of the real output are left out: `ask_branche_retry` missing from prompts.yaml, and `ask_branche` and `ask_branche_retry` missing from the Spanish prompts. They are the same mistake again.) One mistake can show up in several places: the single typo `branche` produced the unknown slot and four missing prompts, and renaming the slot back to `branch` clears all of them. Fix from the top down and run it again.
+(The folder name is whatever you pass.) One mistake can show up in several places: the single typo `branche` produced the unknown slot and four missing prompts, and renaming the slot back to `branch` clears all of them. Fix from the top down and run it again.
 
 A corpus problem reads:
 
@@ -348,6 +359,19 @@ intents.yaml:11:3  intents.hours  intent "hours" has no examples in the corpus (
 ```
 
 If the folder has no app module, `check` checks the YAML only and says so (`<dir>: checked the YAML only; there is no app.ts (or src/app.ts) to check it against`). An app module that cannot be imported is reported as a problem against that file, with how to see the full error.
+
+An app's own tests can run the same check, so a broken folder fails `pnpm test` as well. `checkApp` is exported by `'dialogwright'`; pass the app's code so nothing is imported, and expect no problems (the clinic's `src/app.test.ts` does this):
+
+```ts
+import { checkApp, formatProblem } from 'dialogwright';
+import { CLINIC_DIR, code } from './app';
+
+it('passes dialogwright check', async () => {
+  expect((await checkApp(CLINIC_DIR, { code })).map(formatProblem)).toEqual([]);
+});
+```
+
+`loadAppFolder` (the YAML alone, with each problem) and the `DefineAppOptions` and `CheckOptions` types are exported too.
 
 `pnpm verify` is a different command: the type check and the unit tests (`pnpm typecheck && pnpm test`). Run both before committing an app change, then the regressions the root CLAUDE.md names.
 
@@ -364,12 +388,20 @@ prompts:
     interruptible: true
 ```
 
-- **What `check` requires.** In every locale: each prompt an intent, form, identity.yaml or app.yaml names, each line the engine says, and `ask_<slot>` and `ask_<slot>_retry` for each slot. A line that only the app's code says (the library's `no_hold`) may be left out of a translation.
+- **What `check` requires.** In every locale: each prompt an intent, form, identity.yaml or app.yaml names, and each line the engine says (section 2, prompts.yaml). A line that only the app's code says (the library's `no_hold`) may be left out of a translation. A translated line may use only the variables of its prompts.yaml line, and a locale may not have a line prompts.yaml lacks.
+- **Folders.** `locale/` holds one folder per locale, named by its language tag. A file there is a problem, and so are two folders whose names differ only in letter case (`pt-BR` and `pt-br`), which would be one locale.
 - **Fallback.** A line missing from a locale is said from the default locale, one line at a time, so a half-translated app still works.
 - **Choosing the locale.** The session starts in the default locale. A channel can name another: the `session.start` event carries a `locale`, and the ConversationRelay adapter reads it from a custom parameter named `locale`. It is matched against the app's locales: the same tag (letter case aside), else the app's locale that is the request's language alone (`es-US` finds `es`), else the app's first locale in that language (`es` finds `es-MX`), else the default. The request is untrusted: it is only compared, and what is used is always one of the app's own tags.
 - **Spoken text.** A translated line is spoken by text to speech. Recorded clips are in the default language only.
-- **Known limits.** Outbound ConversationRelay text frames still say `lang: en-US`. Intent labels (`label:` in intents.yaml) and slot displays stay in the default language, so a Spanish line that says "Claro, puedo ayudarle a {intentLabel}" still ends with the English label. Both are for later phases (see the roadmap).
-- An app without `locale/` folders behaves exactly as before: its sessions carry no locale and nothing it writes changes.
+- **Known limits.** Today a locale is chosen and its lines are said, but no channel yet carries the language end to end:
+  - The server's ConversationRelay TwiML (`server/twiml.ts`) sends no `locale` parameter and sets no `language`, `ttsLanguage` or `transcriptionLanguage`, and the engine never emits the `set_language` action. So a voice session in a locale other than the default is transcribed and voiced with the relay's defaults (English), even when its lines are Spanish.
+  - The chat channel has no way to ask for a locale, so every chat session speaks the default.
+  - Outbound ConversationRelay text frames say `lang: en-US` whatever the session's locale.
+  - Intent labels (`label:` in intents.yaml) and slot displays stay in the default language, so a Spanish line that says "Claro, puedo ayudarle a {intentLabel}" still ends with the English label.
+  - Matching a requested locale looks at the language and the whole tag, not at a script subtag: a request for `zh-Hant` in an app with only `zh-Hans` finds `zh-Hans` by its language, `zh`.
+
+  The channel parts (the TwiML's language attributes and `locale` parameter, `set_language`, a chat request for a locale, the text frames' language tag) belong to Phase 7 (Channels); localized labels and displays come with the slot library (Phase 3). See the roadmap in [design.md](design.md).
+- An app with neither `locale:` in app.yaml nor a `locale/` folder behaves exactly as before: its App has no locales, its sessions carry no locale, and nothing it writes changes. `locale:` alone (as the clinic has) gives the App its locales, the default's and no others.
 
 ## 7. Configuration hashes
 

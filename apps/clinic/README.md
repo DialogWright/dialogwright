@@ -54,7 +54,7 @@ pnpm check                                               # at the repository roo
 pnpm --filter dialogwright check ../../apps/clinic       # or just this one
 ```
 
-The check reads each file against its schema, imports `src/app.ts` (it looks there when the folder has no `app.ts` of its own) and checks the folder against the `code` it exports: every slot, tool, hook and prompt the YAML names exists, every tool has a policy row, every line the engine says is in prompts.yaml, and every intent has examples in the corpus. Each problem is printed with its file, line, the path in the file, and the fix; the summary line reads `apps/clinic: ok` when there are none. CI runs it on every push.
+The check reads each file against its schema, imports `src/app.ts` (it looks there when the folder has no `app.ts` of its own) and checks the folder against the `code` it exports: every slot, tool, hook and prompt the YAML names exists, every tool has a policy row, every line the engine says is in prompts.yaml, and every intent has examples in the corpus. Each problem is printed with its file, line, the path in the file, and the fix; the summary line reads `apps/clinic: ok` when there are none. CI runs it on every push, and `src/app.test.ts` runs the same check (`checkApp` from `'dialogwright'`) so a broken folder fails the clinic's tests too.
 
 A change to the words in the YAML is a change to what the model is sent: the criteria, the labels, the wording and the lines are all in the model's request, so the recorded replay (below) reports each changed request as a cassette miss until the cassette is recorded again. A change to a slot list, a summary, a hook list or a policy row is a change in behavior, and the stub regression shows it against the baseline.
 
