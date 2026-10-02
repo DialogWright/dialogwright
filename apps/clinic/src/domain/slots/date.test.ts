@@ -108,7 +108,7 @@ describe.each<[string, SlotSpec]>([
 });
 
 describe('the slot registry', () => {
-  it('has the one slot written in code (the name, the birth date, the member ID and the day are library slots, configured in slots.yaml)', () => {
-    expect(Object.keys(SLOTS)).toEqual(['provider']);
+  it('has no slot written in code (the name, the birth date, the member ID, the provider and the day are library slots, configured in slots.yaml)', () => {
+    expect(Object.keys(SLOTS)).toEqual([]);
   });
 });

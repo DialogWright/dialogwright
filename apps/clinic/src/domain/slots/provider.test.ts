@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { choice, noul, testSlotContext } from 'dialogwright';
-import { otherProviderNamed, providerSlot } from './provider';
+import { choice, noul, testSlotContext, type SlotContext, type SlotSpec } from 'dialogwright';
+import { clinicApp } from '../../app';
+import { otherProviderNamed, providerSlot as handWritten } from './provider';
 
-const ctx = testSlotContext('');
+/**
+ * A turn's context as the engine gives it: the engine's thresholds and the clinic's own
+ * (PROVIDER_UNSURE, from app.yaml) side by side, as every turn has them.
+ */
+const turn = (text: string, over: Partial<SlotContext> = {}): SlotContext => {
+  const base = testSlotContext(text, over);
+  return { ...base, thresholds: { PROVIDER_UNSURE: clinicApp.thresholds!.PROVIDER_UNSURE!, ...base.thresholds } };
+};
+const ctx = turn('');
 
-describe('providerSlot', () => {
+/** The same expectations of the hand-written slot and of the library `choice` slot slots.yaml builds in its place. */
+describe.each<[string, SlotSpec]>([
+  ['the hand-written providerSlot', handWritten],
+  ['the library provider slot (slots.yaml)', clinicApp.slots.provider!],
+])('%s', (_name, providerSlot) => {
   it('asks the roster choice, an unsure question, and whether the caller knows the name', () => {
     const q = providerSlot.questions(ctx);
     expect(q.provider?.type).toBe('choice');
@@ -63,7 +76,7 @@ describe('providerSlot', () => {
   it('reads PROVIDER_UNSURE, at it counting as unsure, and an override in the run', () => {
     expect(providerSlot.fill({ provider: choice({ chen: 0.91, none: 0.09 }), providerUnsure: noul(0.3) }, ctx)).toMatchObject({ confirm: 'none' });
     expect(providerSlot.fill({ provider: choice({ chen: 0.91, none: 0.09 }), providerUnsure: noul(0.45) }, ctx)).toMatchObject({ confirm: 'implicit' });
-    const strict = testSlotContext('', { thresholds: { ...ctx.thresholds, PROVIDER_UNSURE: 0.8 } });
+    const strict = turn('', { thresholds: { ...ctx.thresholds, PROVIDER_UNSURE: 0.8 } });
     expect(providerSlot.fill({ provider: choice({ chen: 0.91, none: 0.09 }), providerUnsure: noul(0.5) }, strict)).toMatchObject({ confirm: 'none' });
   });
 
@@ -78,32 +91,40 @@ describe('providerSlot', () => {
     const recordedHedge = { provider: choice({ chen: 0.73, none: 0.18, cheng: 0.09 }), providerUnsure: noul(0.97) };
 
     it('asks which of the two, though the model put its weight on one', () => {
-      expect(providerSlot.fill(recordedHedge, testSlotContext("either Dr. Chen or Dr. Cheng, I'm not sure which")))
+      expect(providerSlot.fill(recordedHedge, turn("either Dr. Chen or Dr. Cheng, I'm not sure which")))
         .toEqual({ kind: 'disambiguate', a: { value: 'chen', display: 'Dr. Chen' }, b: { value: 'cheng', display: 'Dr. Cheng' } });
-      expect(providerSlot.fill({ provider: choice({ chen: 0.86, none: 0.08, cheng: 0.06 }), providerUnsure: noul(0.96) }, testSlotContext("I'm seeing Dr. Chen, or Cheng, I'm not sure")))
+      expect(providerSlot.fill({ provider: choice({ chen: 0.86, none: 0.08, cheng: 0.06 }), providerUnsure: noul(0.96) }, turn("I'm seeing Dr. Chen, or Cheng, I'm not sure")))
         .toMatchObject({ kind: 'disambiguate', a: { value: 'chen' }, b: { value: 'cheng' } });
       // The second name is any on the roster, and the one the words say first when they say more.
-      expect(providerSlot.fill({ provider: choice({ kim: 0.9, none: 0.1 }), providerUnsure: noul(0.9) }, testSlotContext('Dr. Kim or maybe Dr. Rossi, or Patel')))
+      expect(providerSlot.fill({ provider: choice({ kim: 0.9, none: 0.1 }), providerUnsure: noul(0.9) }, turn('Dr. Kim or maybe Dr. Rossi, or Patel')))
         .toMatchObject({ kind: 'disambiguate', a: { value: 'kim' }, b: { value: 'rossi' } });
     });
 
     it('leaves a correction alone: it is not unsure, so the name it lands on fills', () => {
-      expect(providerSlot.fill({ provider: choice({ cheng: 0.67, none: 0.3, patel: 0.03 }), providerUnsure: noul(0.12) }, testSlotContext('Cheng, not Chen')))
+      expect(providerSlot.fill({ provider: choice({ cheng: 0.67, none: 0.3, patel: 0.03 }), providerUnsure: noul(0.12) }, turn('Cheng, not Chen')))
         .toMatchObject({ kind: 'filled', value: 'cheng' });
-      expect(providerSlot.fill({ provider: choice({ cheng: 0.96, none: 0.03, patel: 0.01 }), providerUnsure: noul(0.19) }, testSlotContext('not Chen, Cheng')))
+      expect(providerSlot.fill({ provider: choice({ cheng: 0.96, none: 0.03, patel: 0.01 }), providerUnsure: noul(0.19) }, turn('not Chen, Cheng')))
         .toMatchObject({ kind: 'filled', value: 'cheng', confirm: 'none' });
     });
 
     it('reads a hedged single name back, as before', () => {
-      expect(providerSlot.fill({ provider: choice({ kim: 0.98, none: 0.02 }), providerUnsure: noul(0.9) }, testSlotContext('it might be Dr. Kim')))
+      expect(providerSlot.fill({ provider: choice({ kim: 0.98, none: 0.02 }), providerUnsure: noul(0.9) }, turn('it might be Dr. Kim')))
         .toMatchObject({ kind: 'filled', value: 'kim', confirm: 'implicit' });
     });
 
     it('matches a whole word only: Chen is not inside Cheng, nor Cheng inside Chen', () => {
-      expect(otherProviderNamed('Dr. Cheng, I think', 'cheng')).toBeNull();
-      expect(otherProviderNamed('Dr. Chen, I think', 'chen')).toBeNull();
-      expect(otherProviderNamed('Dr. Cheng or Chen', 'cheng')).toBe('chen');
-      expect(otherProviderNamed('kimberly said', 'chen')).toBeNull();
+      // The hand-written slot's reader, and the library slot's own, seen through a hedged fill.
+      const hedged = (text: string, top: string): string | null => {
+        const o = providerSlot.fill({ provider: choice({ [top]: 0.95, none: 0.05 }), providerUnsure: noul(0.9) }, turn(text));
+        return o.kind === 'disambiguate' ? o.b.value : null;
+      };
+      for (const named of [otherProviderNamed, hedged]) {
+        expect(named('Dr. Cheng, I think', 'cheng')).toBeNull();
+        expect(named('Dr. Chen, I think', 'chen')).toBeNull();
+        expect(named('Dr. Cheng or Chen', 'cheng')).toBe('chen');
+        expect(named('kimberly said', 'chen')).toBeNull();
+        expect(named('Kim or maybe Rossi, or Patel', 'chen')).toBe('kim');
+      }
     });
   });
 });

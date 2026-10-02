@@ -9,10 +9,11 @@ import { dateSlot } from './domain/slots/date';
 import { dobSlot } from './domain/slots/dob';
 import { memberIdSlot } from './domain/slots/memberId';
 import { nameSlot } from './domain/slots/name';
+import { providerSlot } from './domain/slots/provider';
 import { CLINIC_SHADOW_PAIRS } from './testing/shadowPairs';
 
 /**
- * The shadow harness over whole runs of the clinic. First the name, the birth date, the member ID and the day
+ * The shadow harness over whole runs of the clinic. First the name, the birth date, the member ID, the provider and the day
  * against the hand-written slots they replaced (CLINIC_SHADOW_PAIRS), then every clinic slot shadowed by a copy of itself
  * (the same behavior, so any mismatch is the harness's own), through the full stub regression and
  * the full replay of the recorded calls. Nothing may change: the stub run is the committed
@@ -49,7 +50,8 @@ describe('the shadow harness on the clinic', () => {
 
   /** The library slots and the methods every whole run must have compared for each. */
   const PAIRED = {
-    name: ['questions', 'fill', 'display'], dob: ['questions', 'fill', 'display', 'partialVars'], memberId: ['questions', 'fill', 'display'], date: ['questions', 'fill', 'display', 'partialVars', 'dtmf.parse'],
+    name: ['questions', 'fill', 'display'], dob: ['questions', 'fill', 'display', 'partialVars'], memberId: ['questions', 'fill', 'display'], provider: ['questions', 'fill', 'display'],
+    date: ['questions', 'fill', 'display', 'partialVars', 'dtmf.parse'],
   } as const;
 
   function expectPairsAgree(report: ShadowReport): void {
@@ -59,12 +61,14 @@ describe('the shadow harness on the clinic', () => {
     }
   }
 
-  it('pairs the name, the birth date, the member ID and the day, now library slots, with the hand-written slots they replaced', () => {
-    expect(CLINIC_SHADOW_PAIRS.map((s) => s.id)).toEqual(['name', 'dob', 'memberId', 'date']);
+  it('pairs the name, the birth date, the member ID, the provider and the day, now library slots, with the hand-written slots they replaced', () => {
+    expect(CLINIC_SHADOW_PAIRS.map((s) => s.id)).toEqual(['name', 'dob', 'memberId', 'provider', 'date']);
     expect(CLINIC_SHADOW_PAIRS[0]).toBe(nameSlot);
     expect(CLINIC_SHADOW_PAIRS[1]).toBe(dobSlot);
     expect(CLINIC_SHADOW_PAIRS[2]).toBe(memberIdSlot);
-    expect(CLINIC_SHADOW_PAIRS[3]).toBe(dateSlot);
+    expect(CLINIC_SHADOW_PAIRS[3]).toBe(providerSlot);
+    expect(CLINIC_SHADOW_PAIRS[4]).toBe(dateSlot);
+    expect((clinicApp.slots.provider as LibrarySlotSpec).type).toBe('choice');
     expect((clinicApp.slots.name as LibrarySlotSpec).type).toBe('name');
     expect((clinicApp.slots.dob as LibrarySlotSpec).type).toBe('birthdate');
     expect((clinicApp.slots.memberId as LibrarySlotSpec).type).toBe('digits');
@@ -297,6 +301,94 @@ describe('the shadow harness on the clinic', () => {
   it('the day\'s grid would find a slot that differs by one option (a day that does not resolve: invalid only when asked)', () => {
     const off = defineSlot('date', { ...(clinicApp.slots.date as LibrarySlotSpec).config as object, type: 'date', whenUnresolved: 'invalid-if-prompted' });
     expect(() => dateGrid(shadowSlot(dateSlot, off))).toThrow(/fill/);
+  });
+
+  /**
+   * Every mix of answers the provider reads. Over texts that name no one, one provider, two in a
+   * hedge, three, a correction, a provider's name inside another word, and on the engine's
+   * thresholds with the clinic's PROVIDER_UNSURE, a stricter PROVIDER_UNSURE, a lower
+   * SLOT_CHOICE_CONFIRM (which makes the hedged-rival rule reachable) and a wider SLOT_CHOICE_MARGIN:
+   * the questions, asked and not; then the top label each of five providers and none, below, at,
+   * between and above the thresholds, against every second provider (and none) at gaps on both
+   * sides of SLOT_CHOICE_MARGIN, with the unsure question below, at and above PROVIDER_UNSURE and
+   * unanswered; then, nothing chosen (none on top, a provider below SLOT_CHOICE_CONFIRM, no answer),
+   * the name-status question's every label around SLOT_HELP, and unanswered; then every key and
+   * every display. A label the question never offers is left out: the one difference (below).
+   */
+  function providerGrid(shadow: SlotSpec): void {
+    const T = { ...buildThresholds([]), PROVIDER_UNSURE: clinicApp.thresholds!.PROVIDER_UNSURE! };
+    const thresholdSets = [T, { ...T, PROVIDER_UNSURE: 0.8 }, { ...T, SLOT_CHOICE_CONFIRM: 0.3 }, { ...T, SLOT_CHOICE_MARGIN: 0.3 }];
+    const texts = [
+      '', 'Dr. Chen', "either Dr. Chen or Dr. Cheng, I'm not sure which", 'Dr. Kim or maybe Dr. Rossi, or Patel', 'Cheng, not Chen', 'kimberly said', 'not Nguyen, Alvarez',
+    ];
+    for (const text of texts) for (const prompted of [false, true]) shadow.questions(testSlotContext(text, { prompted, thresholds: T }));
+    const keys = ['chen', 'cheng', 'kim', 'rossi', 'patel'];
+    const unsures: (number | null)[] = [null, 0, 0.44, 0.45, 0.46, 0.9];
+    const withUnsure = (answers: AnswerMap, u: number | null): AnswerMap => (u === null ? answers : { ...answers, providerUnsure: noul(u) });
+    for (const thresholds of thresholdSets) {
+      for (const text of texts) {
+        const c = testSlotContext(text, { thresholds });
+        for (const top of [...keys, 'none']) {
+          for (const p of [0.2, 0.3, 0.44, 0.45, 0.5, 0.55, 0.7, 0.9]) {
+            for (const u of unsures) {
+              shadow.fill(withUnsure({ provider: choice({ [top]: p, ...(top === 'none' ? {} : { none: 1 - p }) }) }, u), c);
+              for (const second of [...keys, 'none']) {
+                if (second === top) continue;
+                for (const gap of [0, 0.05, 0.14, 0.16, 0.29, 0.31, 0.5]) {
+                  const rival = Math.max(0, p - gap);
+                  const rest = Math.max(0, 1 - p - rival);
+                  const probabilities = { [top]: p, [second]: rival, ...(top !== 'none' && second !== 'none' ? { none: rest } : {}) };
+                  shadow.fill(withUnsure({ provider: { type: 'choice', choice: top, probabilities, confidence: p } }, u), c);
+                }
+              }
+            }
+          }
+        }
+        for (const provider of [choice({ none: 0.9, chen: 0.1 }), choice({ chen: 0.3, kim: 0.1, none: 0.6 }), undefined]) {
+          const base: AnswerMap = provider ? { provider } : {};
+          shadow.fill(base, c);
+          for (const label of ['neither', 'has_name', 'no_name']) {
+            for (const p of [0.34, 0.5, 0.59, 0.6, 0.61, 0.9]) {
+              const others = ['neither', 'has_name', 'no_name'].filter((l) => l !== label);
+              shadow.fill({ ...base, providerNameStatus: choice({ [label]: p, [others[0]!]: (1 - p) * 0.7, [others[1]!]: (1 - p) * 0.3 }) }, c);
+              shadow.fill({ ...base, providerNameStatus: choice({ [label]: p, [others[0]!]: (1 - p) * 0.7, [others[1]!]: (1 - p) * 0.3 }), providerUnsure: noul(0.9) }, c);
+            }
+          }
+        }
+      }
+    }
+    for (const keysPressed of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '#', '']) shadow.dtmf!.parse(keysPressed, testSlotContext(''));
+    for (const value of [...keys, 'okafor', 'nguyen', 'alvarez', 'lee', '']) shadow.display(value);
+  }
+
+  it('the providers agree on branches no run reaches: every mix of names, margins, hedges and name-status answers around the thresholds, and the keypad', () => {
+    const report = createShadowReport();
+    providerGrid(shadowSlot(providerSlot, clinicApp.slots.provider!, { report }));
+    expect(report.mismatches).toEqual([]);
+    expect(report.calls['provider.fill']).toBe(293_412);
+    expect(report.calls['provider.questions']).toBe(14);
+    expect(report.calls['provider.dtmf.parse']).toBe(13);
+  });
+
+  it('the provider\'s grid would find a slot that differs by one option', () => {
+    const config = (clinicApp.slots.provider as LibrarySlotSpec).config as Record<string, unknown> & { hedge: object; help: { labels: Record<string, object> } };
+    const off = (over: Record<string, unknown>) => defineSlot('provider', { ...config, type: 'choice', ...over });
+    expect(() => providerGrid(shadowSlot(providerSlot, off({ readBack: 'implicit' })))).toThrow(/fill/);
+    expect(() => providerGrid(shadowSlot(providerSlot, off({ disambiguate: undefined })))).toThrow(/fill/);
+    expect(() => providerGrid(shadowSlot(providerSlot, off({ hedge: { ...config.hedge, byName: false } })))).toThrow(/fill/);
+    expect(() => providerGrid(shadowSlot(providerSlot, off({ fillAt: 'SLOT_CHOICE_FILL' })))).toThrow(/fill/);
+    const { neither, ...rest } = config.help.labels;
+    expect(() => providerGrid(shadowSlot(providerSlot, off({ help: { ...config.help, labels: { ...rest, neither } } })))).toThrow();
+  });
+
+  it('the provider differs from the hand-written slot only on a label its question never offers, which no model answer has', () => {
+    // The hand-written slot took any top label but none, and any second label but none as a rival;
+    // the library takes only the roster (a choice slot's value is always one of its options).
+    const c = testSlotContext('', { thresholds: { ...buildThresholds([]), PROVIDER_UNSURE: 0.45 } });
+    expect(providerSlot.fill({ provider: choice({ lee: 0.9, none: 0.1 }) }, c)).toMatchObject({ kind: 'filled', value: 'lee' });
+    expect(clinicApp.slots.provider!.fill({ provider: choice({ lee: 0.9, none: 0.1 }) }, c)).toEqual({ kind: 'absent' });
+    expect(providerSlot.fill({ provider: choice({ chen: 0.5, lee: 0.45, none: 0.05 }) }, c)).toMatchObject({ kind: 'disambiguate', b: { value: 'lee' } });
+    expect(clinicApp.slots.provider!.fill({ provider: choice({ chen: 0.5, lee: 0.45, none: 0.05 }) }, c)).toMatchObject({ kind: 'filled', value: 'chen', confirm: 'implicit' });
   });
 
   it('compares them on every call of a full replay of the recorded calls: no mismatch and no cassette miss', async () => {

@@ -5,12 +5,13 @@ import { checkApp, formatProblem, loadAppFolder, testSlotContext, type LibrarySl
 import { afterAll, describe, expect, it } from 'vitest';
 import { CLINIC_DIR, clinicApp, code } from './app';
 import { CLINIC_FORM_HOOKS } from './domain/forms';
-import { EXCLUDED_NAME_TOKENS, PROVIDERS } from './domain/roster';
+import { EXCLUDED_NAME_TOKENS, PROVIDERS, providerDisplay, providerLibrarySlot } from './domain/roster';
 import { ALL_SLOTS, SLOTS } from './domain/slots';
 import { dateSlot } from './domain/slots/date';
 import { dobSlot } from './domain/slots/dob';
 import { memberIdSlot } from './domain/slots/memberId';
 import { nameSlot } from './domain/slots/name';
+import { providerSlot } from './domain/slots/provider';
 
 /**
  * The clinic as its folder builds it: a few pinned facts about what the YAML holds and how it meets
@@ -65,13 +66,13 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
 });
 
 describe('the clinic folder: slots.yaml', () => {
-  it('lists all five slots, one as code, the name as a library name slot, the birth date as a library birthdate slot, the member ID as a library digits slot and the day as a library date slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
+  it('lists all five slots, none as code: the name as a library name slot, the birth date as a library birthdate slot, the member ID as a library digits slot, the provider as a library choice slot and the day as a library date slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
     const slots = loadAppFolder(CLINIC_DIR).config?.slots;
     expect(Object.keys(slots ?? {})).toEqual([...ALL_SLOTS]);
-    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['name', 'birthdate', 'digits', 'code', 'date']);
+    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['name', 'birthdate', 'digits', 'choice', 'date']);
     expect(Object.keys(clinicApp.slots)).toEqual(Object.keys(slots ?? {}));
     expect(Object.keys(clinicApp.slots)).toEqual([...ALL_SLOTS]);
-    for (const id of Object.keys(SLOTS)) expect(clinicApp.slots[id], id).toBe(SLOTS[id as keyof typeof SLOTS]);
+    expect(Object.keys(SLOTS)).toEqual([]);
   });
 
   it('configures the name as the hand-written slot was: the words withheld are the roster\'s, its two questions word for word and its ids', () => {
@@ -142,6 +143,41 @@ describe('the clinic folder: slots.yaml', () => {
     expect(lib.dtmf?.length).toBe(4);
     expect(lib.questionIds).toEqual(['dateMode', 'dateMonth', 'dateDay', 'dateWeekday', 'dateWeekdayQualifier', 'dateRelativeDay', 'dateWindow']);
     expect(lib.prompts!.map((p) => [p.id, p.vars])).toEqual([['date_narrow_window', ['window']], ['ack_date', ['date']], ['ask_date_dtmf', undefined]]);
+  });
+
+  it('configures the provider as the hand-written slot was: the roster in keypad order, taken at SLOT_CHOICE_CONFIRM and read back below SLOT_CHOICE_FILL, close names asked about, a hedge and a help question, its three questions word for word and its ids', () => {
+    const lib = clinicApp.slots.provider as LibrarySlotSpec;
+    expect(lib.type).toBe('choice');
+    type Q = { instructions: string; criteria: Record<string, string> };
+    const q = providerSlot.questions(testSlotContext('')) as unknown as Record<string, Q>;
+    expect(lib.config).toEqual({
+      options: Object.fromEntries(PROVIDERS.map((p) => [p.key, { say: `Dr. ${p.name}`, means: `Dr. ${p.name}, also said as just ${p.name}` }])),
+      means: 'The caller names {say}',
+      text: { instructions: q.provider!.instructions, none: q.provider!.criteria.none },
+      keypad: true, fillAt: 'SLOT_CHOICE_CONFIRM', confirm: 'by-confidence', readBack: 'below-fill', disambiguate: 'margin',
+      hedge: {
+        threshold: 'PROVIDER_UNSURE', byName: true,
+        text: { instructions: q.providerUnsure!.instructions, true: q.providerUnsure!.criteria.true, false: q.providerUnsure!.criteria.false },
+      },
+      help: {
+        threshold: 'SLOT_HELP',
+        labels: {
+          neither: { means: q.providerNameStatus!.criteria.neither },
+          has_name: { means: q.providerNameStatus!.criteria.has_name, prompt: 'ask_provider_name' },
+          no_name: { means: q.providerNameStatus!.criteria.no_name, prompt: 'provider_list' },
+        },
+        text: { instructions: q.providerNameStatus!.instructions },
+      },
+      ids: { hedge: 'providerUnsure', help: 'providerNameStatus' },
+    });
+    // The help question has no none: the stub answers it with its first label, which must ask for nothing.
+    expect(Object.keys(q.providerNameStatus!.criteria)).toEqual(['neither', 'has_name', 'no_name']);
+    expect(lib).toMatchObject({ id: providerSlot.id, spokenConfirm: providerSlot.spokenConfirm });
+    expect(lib.dtmf?.length).toBe(providerSlot.dtmf?.length);
+    expect(lib.questionIds).toEqual(['provider', 'providerUnsure', 'providerNameStatus']);
+    expect(lib.prompts!.map((p) => [p.id, p.vars])).toEqual([
+      ['ack_provider', ['provider']], ['disambiguate_provider', ['a', 'b']], ['ask_provider_name', undefined], ['provider_list', undefined], ['ask_provider_dtmf', undefined],
+    ]);
   });
 
   it('configures the member ID as the hand-written slot was: its wording and ids, eight digits in two groups, keyed, recorded by its last four', () => {
@@ -241,5 +277,20 @@ describe('the clinic\'s roster', () => {
     const keys = PROVIDERS.map((p) => p.key);
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toEqual(expect.arrayContaining(['chen', 'cheng']));
+  });
+
+  it('is written once, as the provider slot\'s options in slots.yaml: PROVIDERS and providerDisplay are read from the slot built from it, the one the app runs', () => {
+    expect(PROVIDERS).toEqual([
+      { key: 'chen', name: 'Chen' }, { key: 'cheng', name: 'Cheng' }, { key: 'patel', name: 'Patel' }, { key: 'okafor', name: 'Okafor' },
+      { key: 'nguyen', name: 'Nguyen' }, { key: 'rossi', name: 'Rossi' }, { key: 'kim', name: 'Kim' }, { key: 'alvarez', name: 'Alvarez' },
+    ]);
+    expect(providerLibrarySlot.config).toEqual((clinicApp.slots.provider as LibrarySlotSpec).config);
+    for (const p of PROVIDERS) {
+      expect(providerDisplay(p.key)).toBe(`Dr. ${p.name}`);
+      expect(clinicApp.slots.provider!.display(p.key)).toBe(`Dr. ${p.name}`);
+      expect(providerLibrarySlot.config.options[p.key]!.means).toBe(`Dr. ${p.name}, also said as just ${p.name}`);
+    }
+    expect(providerDisplay('lee')).toBe('lee');
+    PROVIDERS.forEach((p, i) => expect(clinicApp.slots.provider!.dtmf!.parse(String(i + 1), testSlotContext(''))).toEqual({ value: p.key, display: `Dr. ${p.name}` }));
   });
 });
