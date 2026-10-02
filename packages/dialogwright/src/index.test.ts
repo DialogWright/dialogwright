@@ -7,6 +7,8 @@ describe('the package entry', () => {
     for (const name of [
       'registerApp', 'getApp', 'defaultAppId', 'appOf', 'resetAppsForTest',
       'validateApp', 'formOf', 'slotSpecOf', 'toolOf',
+      // the app definition: a folder's YAML joined with the app's code
+      'defineApp', 'AppDefinitionError', 'localePromptsOf', 'formatProblem',
       'serviceResultEvent', 'speechEvent', 'sayAction', 'endAction', 'transferAction', 'VOICE_RELAY', 'WEB_CHAT',
       'isAnonymous', 'isParty', 'ANONYMOUS',
       'startServer', 'serverMain', 'validateRoutes', 'routeOwns',
@@ -30,6 +32,7 @@ describe('the package entry', () => {
     expect(entry.serviceResultEvent('intake', { ok: true })).toEqual({ type: 'service.result', service: 'intake', result: { ok: true } });
     expect(entry.isAnonymous(entry.ANONYMOUS)).toBe(true);
     expect(entry.resolveTurn).toBe((await import('./core/turn')).resolve);
+    expect(entry.defineApp).toBe((await import('./define/defineApp')).defineApp);
   });
 
   it('importing it registers nothing', () => {

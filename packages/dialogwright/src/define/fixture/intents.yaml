@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../schemas/intents.schema.json
+intents:
+  renew_loan:
+    criteria: Wants to renew a book they have borrowed, so it is due back later
+    label: renew a book
+    kind: form
+  check_hold:
+    criteria: Wants to know whether a book they asked the library to hold is ready to collect
+    label: check a hold
+    kind: form
+  hours:
+    criteria: Asks when the library is open
+    label: hear the opening hours
+    kind: informational
+    promptId: hours
+  agent:
+    criteria: Asks to speak with a person, a librarian, or the front desk
+    label: speak with someone
+    kind: control
+  repeat_prompt:
+    criteria: Asks the system to repeat what it just said
+    label: hear that again
+    kind: control
+  done:
+    criteria: Says they are finished and need nothing else
+    label: finish
+    kind: control
+  other:
+    criteria: A request the library line does not handle
+    label: something else
+    kind: control
+  none:
+    criteria: No request is expressed; the caller is only answering a question or saying something incidental
+    label: nothing
+    kind: control
+
+menu:
+  - digit: "1"
+    intent: renew_loan
+  - digit: "2"
+    intent: check_hold
+  - digit: "0"
+    intent: agent

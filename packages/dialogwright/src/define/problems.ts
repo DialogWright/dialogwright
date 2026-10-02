@@ -30,6 +30,15 @@ export interface Problem {
   fix: string;
 }
 
+/**
+ * One problem on one line: `file:line:column  path  message  ->  fix`. A problem with no line (one
+ * in the app's code, which has no YAML to point at; line 0) is `file  path  message  ->  fix`.
+ */
+export function formatProblem(p: Problem): string {
+  const where = p.line > 0 ? `${p.file}:${p.line}:${p.column}` : p.file;
+  return `${where}  ${p.path}  ${p.message}  ->  ${p.fix}`;
+}
+
 /** A position in a data tree: object keys and list indexes, from the root of one file. */
 export type DataPath = readonly (string | number)[];
 

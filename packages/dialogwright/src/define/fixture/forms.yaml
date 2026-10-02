@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../../schemas/forms.schema.json
+forms:
+  renew_loan:
+    slots: [book]
+    summaryPromptId: confirm_renew
+    hooks: [confirmedParams, complete]
+  check_hold:
+    slots: [book, branch]
+    summaryPromptId: null
+    hooks: [complete]
