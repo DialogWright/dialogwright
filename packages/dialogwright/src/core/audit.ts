@@ -10,6 +10,7 @@ import { saidCode } from './spokenCode';
 import { appOf } from './app/registry';
 import { identityOf } from './app/lookup';
 import type { App } from './app/types';
+import { configAuditDetail } from './app/configHash';
 
 /**
  * What one turn tells the audit log. Built from what the turn already reports, after
@@ -64,7 +65,9 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
     // (e.g. `customer`); anyone else by kind and level only.
     const p = after.principal;
     const subject = !isAnonymous(p) && p.kind === subjectKind ? { [p.kind]: maskId(p.id) } : {};
-    drafts.push({ type: 'call_started', detail: { channel: after.channel, principal: p.kind, level: p.level, ...subject } });
+    // An app built from a folder (App.configHashes) also names the configuration in force: the combined
+    // hash and each file's `<file>:<hash>` line, once per call. Any other app's row is as it was.
+    drafts.push({ type: 'call_started', detail: { channel: after.channel, principal: p.kind, level: p.level, ...subject, ...configAuditDetail(app.configHashes) } });
   }
   // The portal's sign-in raised an anonymous web chat to one of the app's subjects. The factor is the
   // portal's own (multi-factor in production); nothing the subject typed took part in it.

@@ -8,6 +8,8 @@ import {
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
 import { DEFAULT_LOCALE } from '../core/locale';
+import { configHashesOf } from '../core/app/configHash';
+import type { ConfigHashes } from '../core/app/types';
 
 export type { Problem } from './problems';
 
@@ -40,6 +42,13 @@ export interface LoadedConfig {
   defaultLocale: string;
   /** Every prompt of each locale, by locale tag then prompt id. The default locale's come from prompts.yaml, the others' from locale/<tag>/prompts.yaml. */
   prompts: Record<string, Record<string, PromptYaml>>;
+  /**
+   * The content hash of every file read (app.yaml, ..., identity.yaml when there is one, and each
+   * locale/<tag>/prompts.yaml), by its path in the folder, and the combined hash (App.configHashes;
+   * core/app/configHash.ts). Each is taken over the file's parsed content, so comments, whitespace,
+   * key order and quoting do not change it.
+   */
+  hashes: ConfigHashes;
 }
 
 export interface LoadResult {
@@ -113,6 +122,8 @@ export function loadAppFolder(dir: string): LoadResult {
 }
 
 function load(dir: string, problems: Problem[], documents: Map<string, { doc: Document; lines: LineCounter }>): LoadedConfig | null {
+  // Each valid file's parsed content, by its path in the folder: what the hashes are taken over.
+  const contents: Record<string, unknown> = {};
   const root = resolveRoot(dir);
   if ('problem' in root) {
     problems.push(root.problem);
@@ -132,7 +143,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
       problems.push(read.problem);
       continue;
     }
-    const checked = checkFile(file, kind, read.text, problems, documents);
+    const checked = checkFile(file, kind, read.text, problems, documents, contents);
     if (checked !== undefined) (valid as Record<string, unknown>)[kind] = checked;
   }
   strayYamlFiles(top, problems);
@@ -169,7 +180,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
       problems.push(read.problem);
       continue;
     }
-    const checked = checkFile(file, 'prompts', read.text, problems, documents);
+    const checked = checkFile(file, 'prompts', read.text, problems, documents, contents);
     if (checked) prompts[tag] = (checked as { prompts: Record<string, PromptYaml> }).prompts;
   }
 
@@ -182,6 +193,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     identity: valid.identity ?? null,
     defaultLocale,
     prompts,
+    hashes: configHashesOf(contents),
   };
 }
 
@@ -341,10 +353,18 @@ function jsonSchemaOf(kind: FileKind): JsonSchema {
 }
 
 /**
- * Parses `text` as YAML and checks it against `kind`'s schema. Returns the valid data, or
- * undefined after adding to `problems` everything wrong with it.
+ * Parses `text` as YAML and checks it against `kind`'s schema. Returns the valid data (and keeps
+ * the parsed content in `contents`, under `file`, for its hash), or undefined after adding to
+ * `problems` everything wrong with it.
  */
-function checkFile(file: string, kind: FileKind, text: string, problems: Problem[], documents: Map<string, { doc: Document; lines: LineCounter }>): unknown {
+function checkFile(
+  file: string,
+  kind: FileKind,
+  text: string,
+  problems: Problem[],
+  documents: Map<string, { doc: Document; lines: LineCounter }>,
+  contents: Record<string, unknown>,
+): unknown {
   const lines = new LineCounter();
   const doc = parseDocument(text, {
     version: '1.2',
@@ -388,7 +408,11 @@ function checkFile(file: string, kind: FileKind, text: string, problems: Problem
   }
 
   const result = SCHEMAS[kind].safeParse(value);
-  if (result.success) return result.data;
+  if (result.success) {
+    // Hashed as parsed, before the schema reads it: the file's own content, whatever the schema makes of it.
+    contents[file] = value;
+    return result.data;
+  }
   const source = { file, doc, lines, value, schema: jsonSchemaOf(kind) };
   const seen = new Set<string>();
   for (const issue of result.error.issues) {

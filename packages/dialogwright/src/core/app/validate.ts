@@ -1,9 +1,10 @@
 import { isRuleId } from '../../gate/policy';
 import { DEFAULT_THRESHOLDS } from '../thresholds';
-import type { App } from './types';
+import { CONFIG_HASH, combinedConfigHash } from './configHash';
+import type { App, ConfigHashes } from './types';
 
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
-const RESERVED_KINDS: readonly string[] = ['anonymous', 'channel', 'principal', 'level', 'factor', 'pass'];
+const RESERVED_KINDS: readonly string[] = ['anonymous', 'channel', 'principal', 'level', 'factor', 'pass', 'config', 'configFiles'];
 
 /** A subject kind is a plain lowercase word: it is also an audit detail key (core/audit.ts). */
 const SUBJECT_KIND = /^[a-z][a-z0-9_]*$/;
@@ -49,6 +50,19 @@ export function validateApp(app: App): void {
     if (typeof app.locales.default !== 'string' || app.locales.default === '') fail('locales has no default locale');
     // The default locale's lines are the manifest; a second copy would be one that is never read.
     for (const locale of Object.keys(app.locales.prompts)) if (locale.toLowerCase() === app.locales.default.toLowerCase()) fail(`locale "${locale}" is the default locale, whose lines are prompts.manifest`);
+  }
+  if (app.configHashes !== undefined) {
+    const hashes: Partial<ConfigHashes> = typeof app.configHashes === 'object' && app.configHashes !== null ? app.configHashes : {};
+    const files = hashes.files;
+    if (typeof files !== 'object' || files === null || Object.keys(files).length === 0) return fail('configHashes has no files');
+    for (const [file, hash] of Object.entries(files)) {
+      // A file is one `<file>:<hash>` line of the combined hash: no colon, no line break.
+      if (file === '' || /[:\n]/.test(file)) fail(`configHashes file "${file}" is not a file path`);
+      if (typeof hash !== 'string' || !CONFIG_HASH.test(hash)) fail(`configHashes file "${file}" has no SHA-256 hash (64 lowercase hex characters)`);
+    }
+    if (typeof hashes.app !== 'string' || !CONFIG_HASH.test(hashes.app)) fail('configHashes has no combined SHA-256 hash (64 lowercase hex characters)');
+    // The combined hash is the files' own, so a call_started row's lines and its combined hash cannot disagree.
+    if (hashes.app !== combinedConfigHash(files)) fail("configHashes' combined hash is not the hash of its files' hashes");
   }
   for (const [name, value] of Object.entries(app.thresholds ?? {})) {
     if (Object.hasOwn(DEFAULT_THRESHOLDS, name)) fail(`threshold "${name}" is one of the engine's`);

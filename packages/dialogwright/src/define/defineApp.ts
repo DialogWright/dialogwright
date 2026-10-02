@@ -21,6 +21,10 @@ import { FILE_NAMES, FORM_HOOKS, type AppYaml, type FormHook, type PolicyYaml } 
  * a policy row), builds the App, and runs validateApp. Anything wrong anywhere is thrown as one
  * AppDefinitionError listing every problem, each with the file and line to change and the fix.
  *
+ * The App carries the folder's content hashes (App.configHashes: each file's, over its parsed
+ * content, and the combined one), which the engine records once per call so a call can be tied to
+ * the configuration it ran under.
+ *
  * Nothing in the YAML is ever run: prompt text, criteria and wording templates stay strings (a
  * policy wording template has its {role} and {tool} replaced, nothing else), and a spoken-digits
  * pattern becomes a RegExp, as the schema documents.
@@ -368,6 +372,8 @@ function buildApp(config: LoadedConfig, code: AppCode): App {
   put(app, 'portal', code.portal);
   put(app, 'testing', code.testing);
   put(app, 'fixtures', a.fixtures);
+  // The folder's content hashes: what the engine records on each call (call_started, the trace).
+  app.configHashes = config.hashes;
   return app as App;
 }
 

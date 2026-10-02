@@ -62,6 +62,13 @@ export interface TraceRecord {
    */
   locale?: string;
   /**
+   * The combined hash of the configuration the session's app was built from (App.configHashes.app):
+   * on every record of a call of an app that has hashes, so any one record names the configuration
+   * in force; the full per-file list is in the call's call_started audit row (and so in its first
+   * record's `audit`). Absent for an app without hashes, and in records written before them.
+   */
+  configHash?: string;
+  /**
    * Added later: the injection screen's reading of this turn (null when it was not asked), and
    * whether it quarantined the turn. A quarantined record keeps `answers` for debugging, but nothing
    * acted on them. Optional so older records still load. The screen's usage is included in `usage`.

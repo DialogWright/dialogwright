@@ -5,6 +5,8 @@ import { redactRecordSlots } from './redact';
 import type { SessionEvent } from '../channel/events';
 import type { JevResponse, JevUsage, QuestionMap } from '../jev/types';
 import type { TurnError, TurnResult } from '../core/turn';
+import type { Session } from '../core/session';
+import { appOf } from '../core/app/registry';
 
 export class TraceWriter {
   constructor(private readonly path: string) {
@@ -39,6 +41,12 @@ export interface TraceInput {
   pricePerMtok: number;
 }
 
+/** The record's `configHash`: the combined hash of the session's app (App.configHashes), when it has one. */
+function configHashOf(session: Session): { configHash: string } | Record<string, never> {
+  const hashes = appOf(session).configHashes;
+  return hashes ? { configHash: hashes.app } : {};
+}
+
 export function buildTraceRecord(input: TraceInput): TraceRecord {
   const { result, event, questions, response, error, timing, ts, pricePerMtok } = input;
   const screenUsage = input.screenUsage ?? null;
@@ -68,6 +76,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     completed: [...result.session.completed],
     // Only a session of an app that declares locales has one; every other record is as it was.
     ...(result.session.locale !== undefined ? { locale: result.session.locale } : {}),
+    // Only an app built from a folder has configuration hashes; every other record is as it was.
+    ...configHashOf(result.session),
     screen: result.screen ? { ...result.screen } : null,
     quarantined: result.quarantined,
     // Added for the dashboard's stages, gate and source-of-truth cards: every gate

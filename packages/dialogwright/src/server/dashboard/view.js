@@ -665,8 +665,10 @@ export function reduce(events, opts) {
         v.thresholds = e.thresholds ?? {};
         v.channel = e.channel ?? null;
         v.caller = e.caller ?? null;
-        // A view has a locale only once a turn of a call that speaks one says so (below).
+        // A view has a locale only once a turn of a call that speaks one says so (below), and a
+        // configuration hash only once a turn of an app built from a folder names one.
         delete v.locale;
+        delete v.configHash;
         break;
       case 'asked': {
         live();
@@ -683,6 +685,8 @@ export function reduce(events, opts) {
         const r = e.record;
         // The language the session speaks, which only an app that declares locales records.
         if (typeof r.locale === 'string') v.locale = r.locale;
+        // The configuration the call runs under, which only an app with hashes (App.configHashes) records.
+        if (typeof r.configHash === 'string') v.configHash = r.configHash;
         const consulted = r.questions !== null && r.questions !== undefined;
         // An interrupt or a relay error resolves to `ignore`: the record repeats the last turn's
         // index, says nothing, and asks for nothing. It must not be counted as a turn or blank

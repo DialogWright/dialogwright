@@ -695,6 +695,27 @@ export interface App {
    * them (src/run/fixtures.ts). Without it the harness has no fixtures to run against and says so.
    */
   fixtures?: AppFixtures;
+  /**
+   * The content hashes of the configuration the app was built from (an app folder's YAML; defineApp
+   * sets them). The engine records them once per call, in the call_started audit row, and puts the
+   * combined hash on every trace record, so a call can be tied to the policy and prompts in force.
+   * They are never sent to the model. Without it, the audit rows, the traces and the console are
+   * exactly as they were before configuration hashes.
+   */
+  configHashes?: ConfigHashes;
+}
+
+/**
+ * The content hashes of an app's configuration files (App.configHashes; core/app/configHash.ts).
+ * Each is a SHA-256, 64 lowercase hex characters, of the file's parsed content as canonical JSON
+ * (object keys sorted at every level, arrays in order, no whitespace): comments, whitespace, key
+ * order and quoting style do not change it; any value does.
+ */
+export interface ConfigHashes {
+  /** The combined hash: SHA-256 of the files' `<file>:<hash>` lines, sorted by file and joined by newlines (configHashLines). */
+  readonly app: string;
+  /** Each file's hash, by its path in the app folder (app.yaml, policy.yaml, locale/es/prompts.yaml, ...). */
+  readonly files: Readonly<Record<string, string>>;
 }
 
 /** One line as a manifest holds it (App.prompts.manifest, AppLocales.prompts). */
