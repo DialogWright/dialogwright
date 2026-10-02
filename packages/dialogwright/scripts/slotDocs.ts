@@ -214,8 +214,9 @@ function contextNote(context: SlotUtterance['context']): string {
 }
 
 function outcomeCell(e: SlotUtterance['expect']): string {
-  const { kind, ...rest } = e;
+  const { kind, displays, ...rest } = e;
   const bits = Object.entries(rest).map(([k, v]) => `${k} ${code(String(v))}`);
+  for (const [locale, shown] of Object.entries(displays ?? {})) bits.push(`display in ${locale} ${code(shown)}`);
   return bits.length > 0 ? `${kind}: ${bits.join(', ')}` : kind;
 }
 

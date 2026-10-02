@@ -67,14 +67,18 @@ The kit (`conformance/`, exported from `dialogwright/testing`, not the root entr
 |---|---|
 | `builds` | The configuration builds a slot that declares its question ids and its lines. |
 | `unknown-keys` | An option the type does not have is refused, with a problem that names it (and so is an unknown part under `text` or `ids`). |
-| `question-ids` | `questions()` asks only the ids the slot declares, in every context the kit tries; none is the engine's; the same configuration gives the same ids and questions; a second slot of the type gets other ids; an example's `wording` (a locale's) leaves the questions as they are. |
+| `question-ids` | `questions()` asks only the ids the slot declares, in every context the kit tries (no words and each utterance's; asked or not; with and without a value on file; with and without each pending partial, or one the kit makes up for a type whose examples make none; in each locale; and on a Sunday, February 28th and 29th of a leap year and December 31st as well as the kit's Friday); none is the engine's; the same configuration gives the same ids and questions; a second slot of the type gets other ids; an example's `wording` (a locale's) leaves the questions as they are. |
 | `empty` | No answers at all give `absent` when the slot was not asked for. When it was asked for, they give `absent` or `invalid` (a slot with nothing to offer, or one that reads a turn that named nothing as a miss, says so), never a value, a pair to choose between or a partial. |
 | `quiet` | Answers that hear nothing (every yes-or-no at 0, every choice on `none`, every score on its lowest level) give `absent` or `invalid`, never a value. |
 | `malformed` | Answers of the wrong type, missing or out of range, and keys that are no value, never make it throw, and what it returns is an outcome. |
 | `thresholds` | A fill reads at least one threshold by name; with every threshold it reads out of reach it does not fill; and with every probability and every threshold scaled by the same factor, every outcome stays the same. A number written into the type breaks that last one. |
-| `display` | `display(value, locale)` is the display every fill, keypad value and candidate carries, in every locale the kit is given, and en-US formats as no locale does. |
+| `threshold-names` | Every threshold a fill reads is one of the engine's (`DEFAULT_THRESHOLDS`) or one the slot declares in `thresholds`, and every threshold it declares is read by some utterance of the example. |
+| `boundary` | For every threshold a fill reads, set exactly to a number the model gave, the outcome is the one it gives with the threshold just below: a number that equals its threshold meets it (`atLeast`, `meetsThreshold`), so a `>` is caught. |
+| `display` | `display(value, locale)` is the display every fill, keypad value and candidate carries, in every locale the kit is given, and en-US formats as no locale does. The example pins at least one display in each of those locales (`expect.display` on an utterance said there, `expect.displays: { <tag>: ... }`, or a keypad value's `display`), and every pinned display is what the slot gives, so a display wrong the same way every time is caught. |
 | `keypad` | For a type with a keypad rung: the example's keys give the value expected, and keys of a wrong length give none. |
 | `prompts` | Every line an outcome can lead to (a `retryPromptId`, a help prompt, `disambiguate_<slot>` with `a` and `b`, the partial prompt with its variables) is in the slot's `prompts` with the variables it is given. |
+| `prompt-vars` | Every line the slot declares lists only variables the engine gives it: `ack_<slot>` and `confirm_<slot>` get `{<slot>}`, `disambiguate_<slot>` gets `{a}` and `{b}`, the partial prompt gets its `partialVars` (and so does `ask_<slot>` when there is no partial prompt), and `ask_<slot>_dtmf`, `ask_<slot>_retry`, a `retryPromptId` and a help line get none. A line declared with another would pass `dialogwright check` and fail when it is said. A `by-confidence` slot that fills with `confirm: implicit` declares `ack_<slot>`. |
+| `values` | A slot whose `valueKind` is `date` gives ISO dates (`YYYY-MM-DD`) from every fill, candidate and keypad value; every confidence is a number from 0 to 1. |
 | `utterances` | Each example utterance gives the outcome it expects, answers only questions the slot asks, and at least one fills the slot. |
 
 In a type's test file:
@@ -84,10 +88,10 @@ import { describe, it } from 'vitest';
 import { runSlotConformance } from 'dialogwright/testing';
 import { myType } from './index';
 
-runSlotConformance(myType, { describe, it, locales: ['en-US', 'es'] });
+runSlotConformance(myType, { describe, it });
 ```
 
-The runner's `describe` and `it` are passed in, so importing the kit loads no test runner. `slotConformanceChecks(type)` returns the checks for any other runner. The kit's own tests (`conformance/conformance.test.ts`) break a small correct type in one way at a time and show that the check meant for each fault catches it.
+The kit checks en-US and es unless it is given `locales`. The runner's `describe` and `it` are passed in, so importing the kit loads no test runner. `slotConformanceChecks(type)` returns the checks for any other runner. The kit's own tests (`conformance/conformance.test.ts`) break a small correct type in one way at a time and show that the check meant for each fault catches it.
 
 ### Examples and starter utterances
 
@@ -112,7 +116,7 @@ A slot reads the model's answers, not the caller's words, so an example gives bo
       expect: { kind: absent }
 ```
 
-An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso`, `records` or `sources`. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `raw`, `retryPromptId` and `promptId`. A type with a keypad rung adds `keypad: [{ digits, locale?, expect: { value, display? } | null }]` (`locale`: the keys are pressed in that locale, as a day-first date is in Spanish). An example of a type that takes a locale's wording may add `wording: { <tag>: ... }`, written as a locale's slots.yaml writes it; the kit builds the slot with it, checks every display in that locale, and checks the questions are the same as without it.
+An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso`, `records` or `sources`. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `raw`, `retryPromptId` and `promptId`, and `displays: { <tag>: ... }`, the display the same answers give in another locale (`displays: { es: "su nota" }`). A type with a keypad rung adds `keypad: [{ digits, locale?, expect: { value, display? } | null }]` (`locale`: the keys are pressed in that locale, as a day-first date is in Spanish). An example of a type that takes a locale's wording may add `wording: { <tag>: ... }`, written as a locale's slots.yaml writes it; the kit builds the slot with it, checks every display in that locale, and checks the questions are the same as without it.
 
 ## Locales
 

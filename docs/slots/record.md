@@ -181,7 +181,7 @@ order:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| the lamp order<br>_sources {"orders":[{"ref":"A12","what":"a desk lamp","placed":"2026-09-02"},{"ref":"B07","what":"a lampshade","placed":"2026-09-10"}],"parcels":[{"number":"7101","item":"a box of books","day":"2026-09-14"}]}_ | `orderChoice`: `order_A12` 0.62, `order_B07` 0.3, `none` 0.08 | filled: value `A12`, display `A12` |
+| the lamp order<br>_sources {"orders":[{"ref":"A12","what":"a desk lamp","placed":"2026-09-02"},{"ref":"B07","what":"a lampshade","placed":"2026-09-10"}],"parcels":[{"number":"7101","item":"a box of books","day":"2026-09-14"}]}_ | `orderChoice`: `order_A12` 0.62, `order_B07` 0.3, `none` 0.08 | filled: value `A12`, display `A12`, display in es `A12` |
 | the lamp, or the shade<br>_prompted; sources {"orders":[{"ref":"A12","what":"a desk lamp","placed":"2026-09-02"},{"ref":"B07","what":"a lampshade","placed":"2026-09-10"}]}_ | `orderChoice`: `order_A12` 0.42, `order_B07` 0.4, `none` 0.18 | invalid: reason `no_order` |
 
 </details>
@@ -199,7 +199,7 @@ booking:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| booking B twelve<br>_records [{"id":"B12","room":"the north room"},{"id":"C3","room":"the garden room"}]_ | `bookingChoice`: `record_B12` 0.88, `record_C3` 0.02, `none` 0.1 | filled: value `B12`, display `B12` |
+| booking B twelve<br>_records [{"id":"B12","room":"the north room"},{"id":"C3","room":"the garden room"}]_ | `bookingChoice`: `record_B12` 0.88, `record_C3` 0.02, `none` 0.1 | filled: value `B12`, display `B12`, display in es `B12` |
 | no booking yet<br>_records [{"id":"B12","room":"the north room"}]_ | `bookingChoice`: `none` 0.95, `record_B12` 0.05 | absent |
 
 </details>

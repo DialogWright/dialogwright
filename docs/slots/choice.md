@@ -177,7 +177,7 @@ speed:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| next day please | `speed`: `next_day` 0.93, `express` 0.04, `none` 0.03 | filled: value `next_day`, display `next-day delivery`, confirm `none` |
+| next day please | `speed`: `next_day` 0.93, `express` 0.04, `none` 0.03 | filled: value `next_day`, display `next-day delivery`, confirm `none`, display in es `next-day delivery` |
 | whichever is cheapest | `speed`: `standard` 0.5, `express` 0.3, `none` 0.2 | absent |
 | I have a question about my order | `speed`: `none` 0.95, `standard` 0.05 | absent |
 | overnight | `speed`: `overnight` 0.9, `none` 0.1 | absent |
@@ -261,7 +261,7 @@ colour:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| the white one, I think | `caseColour`: `white` 0.62, `black` 0.3, `none` 0.08 | filled: value `white`, display `white`, confirm `none` |
+| the white one, I think | `caseColour`: `white` 0.62, `black` 0.3, `none` 0.08 | filled: value `white`, display `white`, confirm `none`, display in es `white` |
 | I do not mind | `caseColour`: `white` 0.4, `black` 0.35, `none` 0.25 | absent |
 | forest green | `caseColour`: `green` 0.95, `none` 0.05 | filled: value `green`, display `forest green` |
 
@@ -315,7 +315,7 @@ pickup:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| the Riverside one | `pickup`: `riverside` 0.92, `none` 0.05, `north` 0.03<br>`pickupHedge`: yes 0.1<br>`pickupHelp`: `neither` 0.95, `knows` 0.03, `unknown` 0.02 | filled: value `riverside`, display `the Riverside branch`, confirm `none` |
+| the Riverside one | `pickup`: `riverside` 0.92, `none` 0.05, `north` 0.03<br>`pickupHedge`: yes 0.1<br>`pickupHelp`: `neither` 0.95, `knows` 0.03, `unknown` 0.02 | filled: value `riverside`, display `the Riverside branch`, confirm `none`, display in es `the Riverside branch` |
 | north, I think it was | `pickup`: `north` 0.5, `none` 0.4, `riverside` 0.1<br>`pickupHedge`: yes 0.2<br>`pickupHelp`: `neither` 0.9, `knows` 0.05, `unknown` 0.05 | filled: value `north`, display `the North branch`, confirm `implicit` |
 | the north gate one | `pickup`: `north` 0.48, `northgate` 0.42, `none` 0.1<br>`pickupHedge`: yes 0.1<br>`pickupHelp`: `neither` 0.9, `knows` 0.05, `unknown` 0.05 | disambiguate |
 | it might be Northgate, or maybe Riverside | `pickup`: `northgate` 0.9, `none` 0.06, `riverside` 0.04<br>`pickupHedge`: yes 0.9<br>`pickupHelp`: `neither` 0.9, `knows` 0.05, `unknown` 0.05 | disambiguate |

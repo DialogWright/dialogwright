@@ -36,6 +36,7 @@ const utterance = z.strictObject({
     kind: z.enum(['absent', 'filled', 'disambiguate', 'window', 'invalid', 'help']),
     value: z.string().optional(),
     display: z.string().optional(),
+    displays: z.record(z.string(), z.string()).optional(),
     confirm: z.enum(['none', 'implicit']).optional(),
     reason: z.string().optional(),
     raw: z.string().optional(),

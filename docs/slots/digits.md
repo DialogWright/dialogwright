@@ -151,11 +151,12 @@ card:
   lengthRetryPromptId: ask_card_length
 ```
 
-<details><summary>Starter utterances (4)</summary>
+<details><summary>Starter utterances (5)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
 | five five five two zero four one seven | `cardGiven`: yes 0.95<br>`cardSpan`: `five five five two zero four one seven` 0.9, `none` 0.1<br>`cardComplete`: yes 0.9 | filled: value `55520417`, display `55520417`, confirm `none` |
+| cinco cinco cinco dos cero cuatro uno siete<br>_locale es_ | `cardGiven`: yes 0.95<br>`cardSpan`: `cinco cinco cinco dos cero cuatro uno siete` 0.9, `none` 0.1<br>`cardComplete`: yes 0.9 | filled: value `55520417`, display `55520417`, confirm `none` |
 | five five five two zero four one seven | `cardGiven`: yes 0.95<br>`cardSpan`: `five five five two zero four one seven` 0.5, `none` 0.5<br>`cardComplete`: yes 0.9 | filled: value `55520417`, display `55520417`, confirm `implicit` |
 | five five five two zero four one seven | `cardGiven`: yes 0.95<br>`cardSpan`: `five five five two zero four one seven` 0.4, `zero four one seven` 0.35, `none` 0.25<br>`cardComplete`: yes 0.9 | invalid: reason `low_confidence` |
 | five five five two zero four one | `cardGiven`: yes 0.95<br>`cardSpan`: `five five five two zero four one` 0.9, `none` 0.1<br>`cardComplete`: yes 0.9 | invalid: reason `length`, retryPromptId `ask_card_length` |
@@ -190,11 +191,12 @@ tracking:
   handoff: display
 ```
 
-<details><summary>Starter utterances (2)</summary>
+<details><summary>Starter utterances (3)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
 | nine two one five five five zero one four two | `trackingGiven`: yes 0.9<br>`trackingSpan`: `nine two one five five five zero one four two` 0.85, `none` 0.15<br>`trackingComplete`: yes 0.9 | filled: value `9215550142`, display `921 555 0142`, confirm `implicit` |
+| nueve veintiuno cinco cinco cinco cero uno cuarenta y dos<br>_locale es_ | `trackingGiven`: yes 0.9<br>`trackingSpan`: `nueve veintiuno cinco cinco cinco cero uno cuarenta y dos` 0.85, `none` 0.15<br>`trackingComplete`: yes 0.9 | filled: value `9215550142`, display `921 555 0142`, confirm `implicit` |
 | nine two one five five five zero one four two | `trackingGiven`: yes 0.9<br>`trackingSpan`: `two one five five five zero one four two nine` 0.85, `none` 0.15<br>`trackingComplete`: yes 0.9 | invalid: reason `mask` |
 
 </details>
@@ -227,11 +229,12 @@ reference:
     complete: referenceWhole
 ```
 
-<details><summary>Starter utterances (2)</summary>
+<details><summary>Starter utterances (3)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
 | four four one two zero nine | `givesReference`: yes 0.9<br>`referenceSpan`: `four four one two zero nine` 0.9, `none` 0.1<br>`referenceWhole`: yes 0.9 | filled: value `441209`, display `441209`, confirm `implicit` |
+| cuarenta y cuatro doce cero nueve<br>_locale es_ | `givesReference`: yes 0.9<br>`referenceSpan`: `cuarenta y cuatro doce cero nueve` 0.9, `none` 0.1<br>`referenceWhole`: yes 0.9 | filled: value `441209`, display `441209`, confirm `implicit` |
 | I have a reference somewhere | `givesReference`: yes 0.2 | absent |
 
 </details>

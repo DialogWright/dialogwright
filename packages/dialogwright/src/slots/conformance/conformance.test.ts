@@ -52,7 +52,7 @@ const EXAMPLES: SlotExample[] = [
     slot: 'word',
     config: {},
     utterances: [
-      { text: 'hello', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'filled', value: 'hello' } },
+      { text: 'hello', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'filled', value: 'hello', display: 'hello', displays: { es: 'hello' } } },
       { text: 'ok', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'invalid', reason: 'short', retryPromptId: 'ask_word_short' } },
       { text: 'never mind', answers: { wordSaid: { noul: 0.1 } }, expect: { kind: 'absent' } },
     ],
@@ -266,13 +266,13 @@ describe('each broken toy fails the check meant to catch it', () => {
       prompts: [...spec.prompts, { id: `disambiguate_${id}`, why: 'two words are close' }],
       fill: (a, ctx) => (ctx.text === 'hello' && noulValue(a, `${id}Said`) > 0 ? { kind: 'disambiguate', a: { value: 'hello', display: 'hello' }, b: { value: 'hallo', display: 'hallo' } } : spec.fill(a, ctx)),
     }));
-    const f = failures(broken, { examples: [{ ...EXAMPLES[0]!, utterances: [{ ...EXAMPLES[0]!.utterances[0]!, expect: { kind: 'disambiguate' } }, ...EXAMPLES[0]!.utterances.slice(1), { text: 'hello there', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'filled' } }] }] });
+    const f = failures(broken, { examples: [{ ...EXAMPLES[0]!, utterances: [{ ...EXAMPLES[0]!.utterances[0]!, expect: { kind: 'disambiguate' } }, ...EXAMPLES[0]!.utterances.slice(1), { text: 'hello there', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'filled', display: 'hello there', displays: { es: 'hello there' } } }] }] });
     expect([...f.keys()]).toEqual(['prompts']);
     expect(f.get('prompts')).toContain('the line "disambiguate_word" is given a, b (the disambiguation of utterance "hello"), which its declared vars (none) leave out');
   });
 
   it('an utterance that gives another outcome than the example expects: utterances', () => {
-    const wrong: SlotExample = { ...EXAMPLES[0]!, utterances: [{ text: 'hello', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'filled', value: 'goodbye' } }] };
+    const wrong: SlotExample = { ...EXAMPLES[0]!, utterances: [{ text: 'hello', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'filled', value: 'goodbye', display: 'hello', displays: { es: 'hello' } } }] };
     const f = failures(toy('toy'), { examples: [wrong] });
     expect([...f.keys()]).toEqual(['utterances']);
     expect(f.get('utterances')).toContain('utterance "hello" gave filled "hello" ("hello"); expected value "goodbye"');
@@ -283,6 +283,160 @@ describe('each broken toy fails the check meant to catch it', () => {
     const f = failures(toy('toy'), { examples: [wrong] });
     expect(f.get('utterances')).toContain('no utterance fills the slot');
     expect(f.get('utterances')).toContain('utterance "hello" answers "wordSays", which is not one of the slot\'s questions (wordSaid)');
+  });
+
+  it('a threshold read that is neither the engine\'s nor declared: threshold-names', () => {
+    const broken = toy('toy-unnamed', (spec, id) => ({
+      fill: (a, ctx) => (meetsThreshold(ctx.thresholds, 'WORD_UNSURE', noulValue(a, `${id}Said`)) ? spec.fill(a, ctx) : spec.fill(a, ctx)),
+    }));
+    const f = failures(broken);
+    expect([...f.keys()]).toEqual(['threshold-names']);
+    expect(f.get('threshold-names')).toContain('a fill reads the threshold "WORD_UNSURE", which is not one of the engine\'s (DEFAULT_THRESHOLDS) and not one the slot declares (thresholds: none)');
+  });
+
+  it('a declared threshold no fill reads: threshold-names', () => {
+    const broken = toy('toy-unread', () => ({ thresholds: ['SLOT_CHOICE_FILL'] }));
+    const f = failures(broken);
+    expect([...f.keys()]).toEqual(['threshold-names']);
+    expect(f.get('threshold-names')).toContain('the slot declares the threshold "SLOT_CHOICE_FILL", but no utterance of the example makes a fill read it');
+  });
+
+  it('a strict > where a probability at its threshold meets it: boundary', () => {
+    const broken = toy('toy-strict', (spec, id) => ({
+      fill: (a, ctx) => (noulValue(a, `${id}Said`) > ctx.thresholds.SLOT_DETECT ? spec.fill(a, ctx) : { kind: 'absent' }),
+    }));
+    const f = failures(broken);
+    expect([...f.keys()]).toEqual(['boundary']);
+    expect(f.get('boundary')).toContain('utterance "hello" gives absent with SLOT_DETECT exactly 0.9 (a number the model gave), but filled "hello" ("hello") with SLOT_DETECT just below it');
+  });
+
+  it('a question asked only on a Sunday, on February 29th, or with a value on file and a partial pending: question-ids', () => {
+    const extra = { type: 'noul', instructions: 'Read asr.text. Anything else?' } as const;
+    const sunday = toy('toy-sunday', (spec, id) => ({
+      questions: (ctx) => ({ ...spec.questions(ctx), ...(new Date(ctx.todayIso).getUTCDay() === 0 ? { [`${id}Extra`]: extra } : {}) }),
+    }));
+    expect(failing(sunday)).toEqual(['question-ids']);
+    expect(failures(sunday).get('question-ids')).toContain('questions("", unprompted, nothing on file, today 2026-09-20) asks "wordExtra"');
+    const leap = toy('toy-leap', (spec, id) => ({
+      questions: (ctx) => ({ ...spec.questions(ctx), ...(ctx.todayIso.endsWith('-02-29') ? { [`${id}Extra`]: extra } : {}) }),
+    }));
+    expect(failures(leap).get('question-ids')).toContain('today 2028-02-29) asks "wordExtra"');
+    const pending = toy('toy-pending', (spec, id) => ({
+      questions: (ctx) => ({ ...spec.questions(ctx), ...(ctx.current !== null && ctx.window !== null ? { [`${id}Extra`]: extra } : {}) }),
+    }));
+    expect(failing(pending)).toEqual(['question-ids']);
+    expect(failures(pending).get('question-ids')).toContain('questions("", unprompted, a value on file, partial {"day":29,"kind":"kit","month":2}) asks "wordExtra"');
+  });
+
+  it('a line declared with a variable the engine never gives it: prompt-vars', () => {
+    const acked = (spec: BuiltSlotSpec, id: string): Partial<BuiltSlotSpec> => ({
+      spokenConfirm: 'by-confidence',
+      fill: (a, ctx) => {
+        const o = spec.fill(a, ctx);
+        return o.kind === 'filled' ? { ...o, confirm: 'implicit' } : o;
+      },
+    });
+    const value = toy('toy-ack-value', (spec, id) => ({ ...acked(spec, id), prompts: [...spec.prompts, { id: `ack_${id}`, why: 'acks', vars: ['value'] }] }));
+    expect(failing(value)).toEqual(['prompt-vars']);
+    expect(failures(value).get('prompt-vars')).toContain('the line "ack_word" declares {value}, which the engine never gives it (it is an ack, given the display as {word}; it gets {word})');
+    const keys = toy('toy-dtmf-var', (spec, id) => ({ prompts: [...spec.prompts, { id: `ask_${id}_dtmf`, why: 'keys', vars: [id] }] }));
+    expect(failing(keys)).toEqual(['prompt-vars']);
+    expect(failures(keys).get('prompt-vars')).toContain('the line "ask_word_dtmf" declares {word}, which the engine never gives it (it is the keypad ask; it gets no variables)');
+    const retry = toy('toy-retry-var', (spec, id) => ({ prompts: [{ id: `ask_${id}_short`, why: 'short', vars: ['raw'] }] }));
+    expect(failures(retry).get('prompt-vars')).toContain('the line "ask_word_short" declares {raw}, which the engine never gives it (it is a retryPromptId; it gets no variables)');
+    const correct = toy('toy-ack', (spec, id) => ({ ...acked(spec, id), prompts: [...spec.prompts, { id: `ack_${id}`, why: 'acks', vars: [id] }] }));
+    expect(failing(correct)).toEqual([]);
+  });
+
+  it('an acknowledged fill with no ack line declared: prompt-vars', () => {
+    const broken = toy('toy-no-ack', (spec) => ({
+      spokenConfirm: 'by-confidence',
+      fill: (a, ctx) => {
+        const o = spec.fill(a, ctx);
+        return o.kind === 'filled' ? { ...o, confirm: 'implicit' } : o;
+      },
+    }));
+    const f = failures(broken);
+    expect([...f.keys()]).toEqual(['prompt-vars']);
+    expect(f.get('prompt-vars')).toContain('fills with confirm "implicit", and the slot\'s spokenConfirm is "by-confidence", so the engine says "ack_word" with {word}: declare it in prompts with vars [word]');
+  });
+
+  it('a display wrong the same way every time in one locale: display, by the pinned display', () => {
+    const words = (v: string, locale?: string): string => (locale?.startsWith('es') ? `${v} (en palabras)` : v);
+    const broken = toy('toy-es', (spec) => ({
+      display: words,
+      fill: (a, ctx) => {
+        const o = spec.fill(a, ctx);
+        return o.kind === 'filled' ? { ...o, display: words(o.value, ctx.locale) } : o;
+      },
+      dtmf: { length: 4, parse: (d: string, ctx) => (/^\d{4}$/.test(d) ? { value: d, display: words(d, ctx.locale) } : null) },
+    }));
+    const f = failures(broken);
+    expect([...f.keys()]).toEqual(['display']);
+    expect(f.get('display')).toContain('utterance "hello" displays as "hello (en palabras)" in es, not "hello" as the example pins');
+    // With no Spanish display pinned, the kit still checks es unless it is told otherwise.
+    const enOnly: SlotExample = { ...EXAMPLES[0]!, utterances: [{ text: 'hello', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'filled', value: 'hello', display: 'hello' } }, ...EXAMPLES[0]!.utterances.slice(1)] };
+    expect(failures(broken, { examples: [enOnly] }).get('display')).toContain('the example pins no display in es');
+    expect(failing(broken, { examples: [enOnly], locales: ['en-US'] })).toEqual([]);
+  });
+
+  it('an example that pins no display in a locale: display', () => {
+    const unpinned: SlotExample = { ...EXAMPLES[0]!, utterances: [{ text: 'hello', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'filled', value: 'hello' } }, ...EXAMPLES[0]!.utterances.slice(1)] };
+    const f = failures(toy('toy'), { examples: [unpinned] });
+    expect([...f.keys()]).toEqual(['display']);
+    expect(f.get('display')).toContain('the example pins no display in en-US');
+    expect(f.get('display')).toContain('the example pins no display in es: give a filled utterance `displays: { es: ... }`');
+    expect(failures(toy('toy'), { examples: [unpinned], locales: ['es'] }).get('display')).not.toContain('in en-US');
+  });
+
+  it('a date-valued slot whose value is not an ISO date, and a confidence above 1: values', () => {
+    const notIso = toy('toy-not-iso', () => ({ valueKind: 'date' }));
+    expect(failing(notIso)).toEqual(['values']);
+    expect(failures(notIso).get('values')).toContain('utterance "hello" gave the value "hello", but the slot\'s valueKind is "date": its values must be ISO dates (YYYY-MM-DD)');
+    const sure = toy('toy-sure', (spec) => ({
+      fill: (a, ctx) => {
+        const o = spec.fill(a, ctx);
+        return o.kind === 'filled' ? { ...o, confidence: o.confidence * 2 } : o;
+      },
+    }));
+    expect(failing(sure)).toEqual(['values']);
+    expect(failures(sure).get('values')).toContain('utterance "hello" gave a confidence of 1.8: a confidence is a probability, from 0 to 1');
+  });
+
+  it('a plausible but wrong type (a review\'s probe) fails five checks, each saying what is wrong', () => {
+    const fillAt = z.strictObject({ minLength: z.number().int().min(1).default(3), fillAt: z.enum(['SLOT_CHOICE_FILL', 'SLOT_CHOICE_CONFIRM']).default('SLOT_CHOICE_FILL') });
+    const display = (v: string, locale?: string): string => (v.length > 8 ? v.slice(0, 8) : v) + (locale?.startsWith('es') ? ' (in words)' : '');
+    const wrong: SlotType<z.output<typeof fillAt>> = {
+      type: 'wrong',
+      options: fillAt,
+      build(id, o) {
+        const said = `${id}Said`;
+        return {
+          id, spokenConfirm: 'by-confidence', detect: true, questionIds: [said], thresholds: [o.fillAt],
+          prompts: [{ id: `ack_${id}`, why: 'acks', vars: ['value'] }, { id: `ask_${id}_short`, why: 'short' }],
+          questions: (ctx) => ({
+            [said]: { type: 'noul', instructions: 'Read asr.text. Does the caller say the word?' },
+            ...((ctx.current !== null && ctx.window !== null) || new Date(ctx.todayIso).getUTCDay() === 0 ? { [`${id}Extra`]: { type: 'noul', instructions: 'x' } } : {}),
+          }),
+          fill(answers, ctx): SlotOutcome {
+            const p = noulValue(answers, said);
+            if (!(p > ctx.thresholds.SLOT_DETECT)) return { kind: 'absent' };
+            const value = ctx.text.trim();
+            if (value.length < o.minLength) return { kind: 'invalid', reason: 'short', raw: value, retryPromptId: `ask_${id}_short` };
+            return { kind: 'filled', value, display: display(value, ctx.locale), confidence: p, confirm: 'implicit' };
+          },
+          display,
+        };
+      },
+      examples: [{ ...EXAMPLES[0]!, utterances: [{ text: 'hello', answers: { wordSaid: { noul: 0.9 } }, expect: { kind: 'filled', value: 'hello' } }, ...EXAMPLES[0]!.utterances.slice(1)], keypad: undefined }],
+    };
+    const f = failures(wrong);
+    expect([...f.keys()].sort()).toEqual(['boundary', 'display', 'prompt-vars', 'question-ids', 'threshold-names']);
+    expect(f.get('question-ids')).toContain('asks "wordExtra", which questionIds does not declare');
+    expect(f.get('threshold-names')).toContain('the slot declares the threshold "SLOT_CHOICE_FILL", but no utterance of the example makes a fill read it');
+    expect(f.get('boundary')).toContain('with SLOT_DETECT exactly 0.9');
+    expect(f.get('display')).toContain('the example pins no display in es');
+    expect(f.get('prompt-vars')).toContain('the line "ack_word" declares {value}, which the engine never gives it');
   });
 
   it('a type with no examples fails', () => {

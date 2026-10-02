@@ -726,10 +726,10 @@ import { describe, it } from 'vitest';
 import { runSlotConformance } from 'dialogwright/testing';
 import { plateType } from './plate';
 
-runSlotConformance(plateType, { describe, it, locales: ['en-US'] });
+runSlotConformance(plateType, { describe, it });
 ```
 
-It checks that the type builds, refuses unknown options, declares every question id and keeps them its own (never the engine's, and different for a second slot), says nothing when it hears nothing, never throws on malformed answers, reads its thresholds by name (scaling every probability and every threshold by one factor must change nothing), formats its display the same in the fill, the keypad and every locale, declares every line it can lead to, and gives the outcome each example utterance expects. A type that passes can run in an app. A check that fails says which example, which check and every problem it found.
+It checks en-US and es unless you pass `locales` (`locales: ['en-US']` for a type that speaks only English). It checks that the type builds, refuses unknown options, declares every question id and keeps them its own (never the engine's, and different for a second slot) in every state it tries (a value on file, a partial pending, a Sunday, a leap day, the last day of a year), says nothing when it hears nothing, never throws on malformed answers, reads its thresholds by name (scaling every probability and every threshold by one factor must change nothing) and only the ones it declares or the engine has, treats a number exactly at a threshold as meeting it, formats its display the same in the fill, the keypad and every locale and as each example pins it there, declares every line it can lead to with only the variables the engine gives that line, gives ISO dates when its values are dates, and gives the outcome each example utterance expects. A type that passes can run in an app. A check that fails says which example, which check and every problem it found.
 
 ### Porting a slot to a library type
 

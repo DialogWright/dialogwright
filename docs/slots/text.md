@@ -79,7 +79,7 @@ problem:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| The screen on my tablet went dark and it will not turn back on. | `problemGiven`: yes 0.93 | filled: value `The screen on my tablet went dark and it will not turn back on.`, display `your description`, confirm `none` |
+| The screen on my tablet went dark and it will not turn back on. | `problemGiven`: yes 0.93 | filled: value `The screen on my tablet went dark and it will not turn back on.`, display `your description`, confirm `none`, display in es `your description` |
 | I need some help please | `problemGiven`: yes 0.12 | absent |
 | oh and the charger is missing too<br>_prompted false; current The screen went dark._ | `problemGiven`: yes 0.9 | absent |
 | Actually the screen flickers first and then goes dark.<br>_prompted; current The screen went dark._ | `problemGiven`: yes 0.88 | filled: value `Actually the screen flickers first and then goes dark.`, display `your description` |
@@ -135,7 +135,7 @@ issue:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| the box arrived crushed and the lamp inside is broken | `describesIssue`: yes 0.81 | filled: value `the box arrived crushed and the lamp inside is broken`, display `your description` |
+| the box arrived crushed and the lamp inside is broken | `describesIssue`: yes 0.81 | filled: value `the box arrived crushed and the lamp inside is broken`, display `your description`, display in es `your description` |
 | I want to talk about my order | `describesIssue`: yes 0.3 | absent |
 
 </details>
@@ -157,7 +157,7 @@ reference:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| blue heron on the lake | `referenceGiven`: yes 0.95 | filled: value `blue heron on the lake`, display `blue heron on the lake` |
+| blue heron on the lake | `referenceGiven`: yes 0.95 | filled: value `blue heron on the lake`, display `blue heron on the lake`, display in es `blue heron on the lake` |
 
 </details>
 

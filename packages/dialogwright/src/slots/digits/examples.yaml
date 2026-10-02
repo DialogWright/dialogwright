@@ -88,6 +88,13 @@
         cardSpan: { choice: { five five five two zero four one seven: 0.9, none: 0.1 } }
         cardComplete: { noul: 0.9 }
       expect: { kind: filled, value: "55520417", display: "55520417", confirm: none }
+    - text: cinco cinco cinco dos cero cuatro uno siete
+      context: { locale: es }
+      answers:
+        cardGiven: { noul: 0.95 }
+        cardSpan: { choice: { cinco cinco cinco dos cero cuatro uno siete: 0.9, none: 0.1 } }
+        cardComplete: { noul: 0.9 }
+      expect: { kind: filled, value: "55520417", display: "55520417", confirm: none }
     - text: five five five two zero four one seven
       answers:
         cardGiven: { noul: 0.95 }
@@ -130,6 +137,13 @@
         trackingSpan: { choice: { nine two one five five five zero one four two: 0.85, none: 0.15 } }
         trackingComplete: { noul: 0.9 }
       expect: { kind: filled, value: "9215550142", display: 921 555 0142, confirm: implicit }
+    - text: nueve veintiuno cinco cinco cinco cero uno cuarenta y dos
+      context: { locale: es }
+      answers:
+        trackingGiven: { noul: 0.9 }
+        trackingSpan: { choice: { nueve veintiuno cinco cinco cinco cero uno cuarenta y dos: 0.85, none: 0.15 } }
+        trackingComplete: { noul: 0.9 }
+      expect: { kind: filled, value: "9215550142", display: 921 555 0142, confirm: implicit }
     - text: nine two one five five five zero one four two
       answers:
         trackingGiven: { noul: 0.9 }
@@ -161,6 +175,13 @@
       answers:
         givesReference: { noul: 0.9 }
         referenceSpan: { choice: { four four one two zero nine: 0.9, none: 0.1 } }
+        referenceWhole: { noul: 0.9 }
+      expect: { kind: filled, value: "441209", display: "441209", confirm: implicit }
+    - text: cuarenta y cuatro doce cero nueve
+      context: { locale: es }
+      answers:
+        givesReference: { noul: 0.9 }
+        referenceSpan: { choice: { cuarenta y cuatro doce cero nueve: 0.9, none: 0.1 } }
         referenceWhole: { noul: 0.9 }
       expect: { kind: filled, value: "441209", display: "441209", confirm: implicit }
     - text: I have a reference somewhere

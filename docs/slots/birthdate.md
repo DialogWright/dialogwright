@@ -174,11 +174,12 @@ patronBirth:
 
 </details>
 
-<details><summary>Keypad (3)</summary>
+<details><summary>Keypad (4)</summary>
 
 | Keys | Locale | The slot gives |
 |---|---|---|
 | `03091962` | any | `1962-03-09`, said `March 9th, 1962` |
+| `09031962` | es | `1962-03-09`, said `9 de marzo de 1962` |
 | `03091905` | any | no value |
 | `13091962` | any | no value |
 
@@ -203,12 +204,13 @@ customerBirth:
     yearNone: No span of asr.text is the year of the caller's birth
 ```
 
-<details><summary>Starter utterances (3)</summary>
+<details><summary>Starter utterances (4)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
 | November twenty second | `givesBirthDate`: yes 0.9<br>`birthMonth`: `november` 0.9, `none` 0.1<br>`birthDay`: `22` 0.9, `none` 0.1<br>`birthYear`: `none` 0.95 | window |
 | forty eight<br>_prompted; window {"kind":"dob","month":11,"day":22}_ | `givesBirthDate`: yes 0.9<br>`birthMonth`: `none` 0.95<br>`birthDay`: `none` 0.95<br>`birthYear`: `forty eight` 0.9, `none` 0.1 | filled: value `1948-11-22`, display `November 22nd, 1948` |
+| cuarenta y ocho<br>_prompted; locale es; window {"kind":"dob","month":11,"day":22}_ | `givesBirthDate`: yes 0.9<br>`birthMonth`: `none` 0.95<br>`birthDay`: `none` 0.95<br>`birthYear`: `cuarenta y ocho` 0.9, `none` 0.1 | filled: value `1948-11-22`, display `22 de noviembre de 1948` |
 | um, let me think<br>_prompted; window {"kind":"dob","month":11,"day":22}_ | `givesBirthDate`: yes 0.7<br>`birthMonth`: `none` 0.95<br>`birthDay`: `none` 0.95<br>`birthYear`: `none` 0.95 | absent |
 
 </details>

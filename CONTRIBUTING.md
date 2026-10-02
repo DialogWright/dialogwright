@@ -46,7 +46,7 @@ Add the type to `BUILT_IN_SLOT_TYPES` in `slots/registry.ts` and export it from 
 
 **Neutral words and invented data.** Defaults, examples, tests and docs in the engine package use neutral vocabulary (account, card, parcel, book, appointment, caller, record). Names, numbers and dates are invented: the 555 phone range, fictional people. No real data, and no one industry's words; they belong in the app that needs them, as `text.<part>` literals.
 
-**Locale.** A type must read and say en-US. Spanish is encouraged: read `ctx.locale`, format with the one `display(value, locale)`, and use the lexicon in `core/extract/lexicon.ts` for number words, fillers and names. en-US output must stay exactly the same whether a locale is given or not, and anything another locale changes must be gated on it. Put Spanish examples in `examples.yaml` (`context: { locale: es }`). Words an app chooses for a value, such as a choice option's `say`, can be given per locale through the type's `wording`; the questions stay in the default language.
+**Locale.** A type must read and say en-US. Spanish is encouraged: read `ctx.locale`, format with the one `display(value, locale)`, and use the lexicon in `core/extract/lexicon.ts` for number words, fillers and names. en-US output must stay exactly the same whether a locale is given or not, and anything another locale changes must be gated on it. Put Spanish examples in `examples.yaml` (`context: { locale: es }`), and pin what each example says in every locale the kit checks (`expect.display` on an utterance said there, or `expect.displays: { es: ... }`). Words an app chooses for a value, such as a choice option's `say`, can be given per locale through the type's `wording`; the questions stay in the default language.
 
 **Privacy.** A type that holds an identifier defaults to masking it: `redact` (`last4`, `mask` or `length`) for what leaves the turn, `handoff` (`last4` or `verified`) for what a transfer carries. Free text defaults to `redact: length`. An app can turn masking off for a value that is no one's secret; the type must not do it for them.
 
@@ -56,17 +56,21 @@ Add the type to `BUILT_IN_SLOT_TYPES` in `slots/registry.ts` and export it from 
 |---|---|
 | `builds` | The configuration builds a slot that declares its question ids and its lines |
 | `unknown-keys` | An option the type does not have is refused, with a problem that names it |
-| `question-ids` | `questions()` asks only declared ids, none the engine's, the same ones each time, other ids for a second slot, and the same questions whatever the wording by locale |
+| `question-ids` | `questions()` asks only declared ids (with and without a value on file and a pending partial, in each locale, and on a Sunday, February 28th and 29th of a leap year and December 31st), none the engine's, the same ones each time, other ids for a second slot, and the same questions whatever the wording by locale |
 | `empty` | No answers at all never give a value |
 | `quiet` | Answers that hear nothing never give a value |
 | `malformed` | Answers of the wrong type, missing or out of range never make it throw |
 | `thresholds` | Thresholds are read by name: with every probability and threshold scaled by one factor, nothing changes |
-| `display` | `display(value, locale)` is what every fill, keypad value and candidate carries, and en-US formats as no locale does |
+| `threshold-names` | Every threshold a fill reads is the engine's or declared in `thresholds`, and every declared one is read |
+| `boundary` | A number exactly at a threshold meets it, as `atLeast` has it: a `>` is caught |
+| `display` | `display(value, locale)` is what every fill, keypad value and candidate carries, and en-US formats as no locale does; the example pins a display in each locale checked, and the slot gives it |
 | `keypad` | The example's keys give its value, and keys of a wrong length give none |
 | `prompts` | Every line an outcome can lead to is declared with the variables it is given |
+| `prompt-vars` | Every declared line uses only variables the engine gives it (`ack_<slot>` gets `{<slot>}`; the keypad ask, a retry and a help line get none), and a `by-confidence` slot that acknowledges a value declares `ack_<slot>` |
+| `values` | A `date`-valued slot gives ISO dates; every confidence is from 0 to 1 |
 | `utterances` | Each example utterance gives the outcome it expects, and at least one fills the slot |
 
-The kit proves the contract, not that the parsing is right. Write tests for each outcome and each `invalid` reason, and for the edges of the type.
+The kit checks en-US and es unless it is given `locales`. The kit proves the contract, not that the parsing is right. Write tests for each outcome and each `invalid` reason, and for the edges of the type.
 
 **Evidence for borderline wording.** The questions are requests to a model, and one word can change its answers. When a question's wording is a judgment call (what counts as a hedge, where a name ends), show why it is right: the utterances you tried and what a model answered, and a recorded run if you have a key (the clinic's README, "Recording the cassette", says how; never commit one that holds real calls). If you cannot record, say so in the pull request and a maintainer will.
 

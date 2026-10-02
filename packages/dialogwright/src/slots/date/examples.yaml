@@ -17,7 +17,7 @@
       answers:
         dueDayMode: { choice: { relative_day: 0.93, none: 0.07 } }
         dueDayRelative: { choice: { yesterday: 0.92, none: 0.08 } }
-      expect: { kind: filled, value: "2026-09-17", display: "Thursday, September 17", confirm: none }
+      expect: { kind: filled, value: "2026-09-17", display: "Thursday, September 17", confirm: none, displays: { es: "jueves, 17 de septiembre" } }
     - text: last Saturday
       answers:
         dueDayMode: { choice: { weekday: 0.9, none: 0.1 } }

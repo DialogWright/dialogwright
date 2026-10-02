@@ -122,7 +122,7 @@ caller:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| this is Morgan Ellis calling about technician Rivera | `callerGiven`: yes 0.95<br>`callerSpan`: `morgan ellis` 0.9, `none` 0.1 | filled: value `morgan ellis`, display `Morgan Ellis` |
+| this is Morgan Ellis calling about technician Rivera | `callerGiven`: yes 0.95<br>`callerSpan`: `morgan ellis` 0.9, `none` 0.1 | filled: value `morgan ellis`, display `Morgan Ellis`, display in es `Morgan Ellis` |
 | not Rivera, Quinn | `callerGiven`: yes 0.4<br>`callerSpan`: `none` 1 | absent |
 | not Rivera, Quinn | `callerGiven`: yes 0.8<br>`callerSpan`: `rivera quinn` 0.8, `none` 0.2 | invalid: reason `no_span`, raw `rivera quinn` |
 | I'd like to talk to technician Quinn | `callerGiven`: yes 0.9<br>`callerSpan`: `technician quinn` 0.8, `none` 0.2 | invalid: reason `no_span`, raw `technician quinn` |
@@ -151,7 +151,7 @@ contact:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| ask for Priya Raghunathan | `saysContactName`: yes 0.93<br>`contactSpan`: `priya raghunathan` 0.88, `none` 0.12 | filled: value `priya raghunathan`, display `Priya Raghunathan` |
+| ask for Priya Raghunathan | `saysContactName`: yes 0.93<br>`contactSpan`: `priya raghunathan` 0.88, `none` 0.12 | filled: value `priya raghunathan`, display `Priya Raghunathan`, display in es `Priya Raghunathan` |
 | I'll tell you later | `saysContactName`: yes 0.1<br>`contactSpan`: `none` 1 | absent |
 
 </details>

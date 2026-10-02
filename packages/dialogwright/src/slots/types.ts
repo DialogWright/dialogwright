@@ -124,7 +124,14 @@ export interface ExampleContext {
 export interface ExpectedOutcome {
   kind: SlotOutcome['kind'];
   value?: string;
+  /** The display the fill carries in the utterance's own locale (its context's, else none, which formats as en-US). */
   display?: string;
+  /**
+   * The display the same words and answers give in other locales, by tag (`{ es: "cinco cinco" }`):
+   * what the caller hears there. The conformance kit requires at least one pinned display per locale
+   * it checks, so a display that is consistently wrong in a locale is caught.
+   */
+  displays?: Readonly<Record<string, string>>;
   confirm?: 'none' | 'implicit';
   reason?: string;
   /** An invalid outcome's `raw`: what was heard that cannot be the value. */

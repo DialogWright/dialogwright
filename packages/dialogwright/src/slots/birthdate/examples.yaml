@@ -150,6 +150,9 @@
   keypad:
     - digits: "03091962"
       expect: { value: "1962-03-09", display: "March 9th, 1962" }
+    - digits: "09031962"
+      locale: es
+      expect: { value: "1962-03-09", display: "9 de marzo de 1962" }
     - digits: "03091905"
       expect: null
     - digits: "13091962"
@@ -181,6 +184,14 @@
         birthYear: { choice: { forty eight: 0.9, none: 0.1 } }
       context: { prompted: true, window: { kind: dob, month: 11, day: 22 } }
       expect: { kind: filled, value: "1948-11-22", display: "November 22nd, 1948" }
+    - text: cuarenta y ocho
+      answers:
+        givesBirthDate: { noul: 0.9 }
+        birthMonth: { choice: { none: 0.95 } }
+        birthDay: { choice: { none: 0.95 } }
+        birthYear: { choice: { cuarenta y ocho: 0.9, none: 0.1 } }
+      context: { locale: es, prompted: true, window: { kind: dob, month: 11, day: 22 } }
+      expect: { kind: filled, value: "1948-11-22", display: "22 de noviembre de 1948" }
     - text: um, let me think
       answers:
         givesBirthDate: { noul: 0.7 }

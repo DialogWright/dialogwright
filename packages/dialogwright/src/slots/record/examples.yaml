@@ -100,7 +100,7 @@
             - { ref: B07, what: a lampshade, placed: "2026-09-10" }
           parcels:
             - { number: "7101", item: a box of books, day: "2026-09-14" }
-      expect: { kind: filled, value: A12, display: A12 }
+      expect: { kind: filled, value: A12, display: A12, displays: { es: "A12" } }
     - text: the lamp, or the shade
       answers:
         orderChoice: { choice: { order_A12: 0.42, order_B07: 0.4, none: 0.18 } }
@@ -124,7 +124,7 @@
         records:
           - { id: B12, room: the north room }
           - { id: C3, room: the garden room }
-      expect: { kind: filled, value: B12, display: B12 }
+      expect: { kind: filled, value: B12, display: B12, displays: { es: "B12" } }
     - text: no booking yet
       answers:
         bookingChoice: { choice: { none: 0.95, record_B12: 0.05 } }

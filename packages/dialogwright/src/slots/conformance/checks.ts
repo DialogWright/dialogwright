@@ -1,14 +1,15 @@
 import { ENGINE_QUESTION_IDS } from '../../core/questionIds';
 import type { SlotContext, SlotOutcome, SlotPartial } from '../../core/slots/types';
+import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { canonicalJson } from '../../jev/cassette';
-import type { AnswerMap, QuestionMap } from '../../jev/types';
+import { isChoice, isNoul, isScore, type AnswerMap, type QuestionMap } from '../../jev/types';
 import { buildSlot, defineSlot, SlotConfigError, slotTypeJsonSchema } from '../defineSlot';
 import { BUILT_IN_SLOT_TYPES } from '../registry';
 import { refusesUnknownKeys } from '../slotType';
 import type { ExampleContext, LibrarySlotSpec, SlotExample, SlotType, SlotTypes, SlotUtterance } from '../types';
 import {
   answersOf, describeOutcome, essence, kitContext, MALFORMED_ANSWERS, MALFORMED_KEYS, outcomeProblem, quietAnswers,
-  recordingThresholds, scaleAnswers, scaleThresholds,
+  KIT_TODAY, recordingThresholds, scaleAnswers, scaleThresholds,
 } from './turns';
 
 /**
@@ -20,7 +21,8 @@ import {
 
 /** The checks, by id. */
 export const CHECK_IDS = [
-  'builds', 'unknown-keys', 'question-ids', 'empty', 'quiet', 'malformed', 'thresholds', 'display', 'keypad', 'prompts', 'utterances',
+  'builds', 'unknown-keys', 'question-ids', 'empty', 'quiet', 'malformed', 'thresholds', 'threshold-names', 'boundary', 'display', 'keypad',
+  'prompts', 'prompt-vars', 'values', 'utterances',
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -33,9 +35,13 @@ export const CHECK_ABOUT: Readonly<Record<CheckId, string>> = {
   quiet: 'answers that hear nothing for the slot give absent or invalid, never a value',
   malformed: 'answers of the wrong type, missing or out of range, and keys that are no value, never make it throw',
   thresholds: 'thresholds are read by name from ctx.thresholds, never written into the type',
-  display: 'display(value, locale) is the display every fill, keypad value and candidate carries, in every locale',
+  'threshold-names': 'every threshold a fill reads is the engine\'s or one the slot declares, and every one it declares is read',
+  boundary: 'a probability exactly at a threshold meets it (atLeast), as one just above does',
+  display: 'display(value, locale) is the display every fill, keypad value and candidate carries, in every locale, and the example pins one in each',
   keypad: 'keys of the right length give the value the example expects, and keys of a wrong length give none',
   prompts: 'every line an outcome can lead to is in the slot\'s prompts, with the variables it is given',
+  'prompt-vars': 'every line the slot declares uses only variables the engine gives it, and an acknowledged value has its ack line declared',
+  values: 'a date-valued slot gives ISO dates, and every confidence is a number from 0 to 1',
   utterances: 'each example utterance gives the outcome it expects',
 };
 
@@ -50,7 +56,7 @@ export interface ConformanceCheck {
 }
 
 export interface SlotConformanceOptions {
-  /** Locales to format values in, beyond each utterance's own (default: en-US). */
+  /** Locales to format values in, beyond each utterance's own (default: en-US and es). */
   locales?: readonly string[];
   /** The types the examples are built with; the type under test is added. Default: the built-in ones. */
   types?: SlotTypes;
@@ -73,6 +79,21 @@ export class ConformanceError extends Error {
 
 /** A value already on file, for the contexts that have one. */
 const ON_FILE = 'a value on file';
+/** The locales the kit checks when it is given none. */
+export const KIT_LOCALES: readonly string[] = ['en-US', 'es'];
+/**
+ * Days the kit also tries each slot on, beyond KIT_TODAY (a Friday): a Sunday, the last two days of
+ * February in a leap year, and the last day of a year, so a question asked only on some days is seen.
+ */
+export const KIT_TODAYS: readonly string[] = ['2026-09-20', '2028-02-28', '2028-02-29', '2026-12-31'];
+/**
+ * A pending partial no type makes, for the question-ids check of a type whose examples make none,
+ * so a question asked only while a partial is pending is seen. A questions() that throws on it is
+ * skipped: the engine only ever gives a slot its own partials.
+ */
+const KIT_WINDOW: SlotPartial = { kind: 'kit', month: 2, day: 29 };
+/** How far below a probability the boundary check sets a threshold. */
+const NUDGE = 1e-6;
 /** The probabilities and thresholds are multiplied by each of these for the thresholds check. */
 const SCALES = [0.5, 0.2];
 /** Above any probability or margin: a threshold raised to this can never be met. */
@@ -81,7 +102,7 @@ const UNREACHABLE = 2;
 /** Every check of `type`, over each of its examples. */
 export function slotConformanceChecks(type: SlotType<any, any>, options: SlotConformanceOptions = {}): ConformanceCheck[] {
   const types: SlotTypes = { ...(options.types ?? BUILT_IN_SLOT_TYPES), [type.type]: type };
-  const locales = options.locales ?? ['en-US'];
+  const locales = options.locales ?? KIT_LOCALES;
   const examples = options.examples ?? type.examples;
   if (examples.length === 0) {
     return [{ id: 'utterances', example: '(none)', name: CHECK_ABOUT.utterances, run: () => { throw new ConformanceError(type.type, 'utterances', '(none)', ['the type has no examples: give at least one in its examples.yaml']); } }];
@@ -142,9 +163,13 @@ function fillOf(r: Run, spec: LibrarySlotSpec, answers: AnswerMap, ctx: SlotCont
 }
 
 const where = (ctx: SlotContext): string =>
-  `${JSON.stringify(ctx.text)}, ${ctx.prompted ? 'prompted' : 'unprompted'}, ${ctx.current === null ? 'nothing on file' : 'a value on file'}${ctx.window ? `, partial ${canonicalJson(ctx.window)}` : ''}${ctx.locale ? `, ${ctx.locale}` : ''}`;
+  `${JSON.stringify(ctx.text)}, ${ctx.prompted ? 'prompted' : 'unprompted'}, ${ctx.current === null ? 'nothing on file' : 'a value on file'}${ctx.window ? `, partial ${canonicalJson(ctx.window)}` : ''}${ctx.locale ? `, ${ctx.locale}` : ''}${ctx.todayIso !== KIT_TODAY ? `, today ${ctx.todayIso}` : ''}`;
 
-/** The contexts the kit tries a slot in: no words and each utterance's, asked or not, with and without a value on file, in each locale, and each utterance's own. */
+/**
+ * The contexts the kit tries a slot in: no words and each utterance's, asked or not, with and
+ * without a value on file, with and without each pending partial, in each locale and on each of
+ * KIT_TODAYS, and each utterance's own.
+ */
 function contextsOf(r: Run, windows: readonly SlotPartial[] = []): SlotContext[] {
   // Each utterance's words with the records it was said over (an app's lists stay the same whether
   // or not the slot was asked for), and the empty words with none.
@@ -155,12 +180,14 @@ function contextsOf(r: Run, windows: readonly SlotPartial[] = []): SlotContext[]
       lists: { ...(u.context?.records !== undefined ? { records: u.context.records } : {}), ...(u.context?.sources !== undefined ? { sources: u.context.sources } : {}) },
     })),
   ];
+  const states: ExampleContext[] = [];
+  for (const window of [null, ...windows]) for (const current of [null, ON_FILE]) for (const prompted of [false, true]) states.push({ prompted, current, window });
   const out: SlotContext[] = [];
   for (const locale of [undefined, ...r.locales]) {
-    for (const { text, lists } of turns) {
-      for (const over of [{}, { prompted: true }, { prompted: true, current: ON_FILE }, { current: ON_FILE }] as ExampleContext[]) out.push(kitContext(text, { ...lists, ...over }, locale));
-      for (const window of windows) out.push(kitContext(text, { ...lists, prompted: true, window }, locale));
-    }
+    for (const { text, lists } of turns) for (const state of states) out.push(kitContext(text, { ...lists, ...state }, locale));
+  }
+  for (const todayIso of KIT_TODAYS) {
+    for (const { text, lists } of turns) for (const state of states) out.push(kitContext(text, { ...lists, ...state, todayIso }));
   }
   for (const u of r.example.utterances) out.push(kitContext(u.text, u.context));
   return out;
@@ -179,6 +206,53 @@ function windowsOf(r: Run, spec: LibrarySlotSpec): SlotPartial[] {
     }
   }
   return out;
+}
+
+/**
+ * What the slot gives in each context the kit tries: each utterance's answers where its words are
+ * said, and quiet answers everywhere. Throws and outcomes that are not outcomes are reported.
+ */
+function observedOutcomes(r: Run, spec: LibrarySlotSpec): { o: SlotOutcome; ctx: SlotContext; what: string }[] {
+  const out: { o: SlotOutcome; ctx: SlotContext; what: string }[] = [];
+  for (const ctx of contextsOf(r, windowsOf(r, spec))) {
+    const u = r.example.utterances.find((x) => x.text === ctx.text);
+    if (u) {
+      const o = fillOf(r, spec, answersOf(u.answers), ctx, `utterance ${said(u)} (${where(ctx)})`);
+      if (o) out.push({ o, ctx, what: `utterance ${said(u)}` });
+    }
+    const qs = attempt(r, `questions(${where(ctx)})`, () => spec.questions(ctx));
+    if (qs) {
+      const o = fillOf(r, spec, quietAnswers(qs), ctx, `quiet answers (${where(ctx)})`);
+      if (o) out.push({ o, ctx, what: `quiet answers (${where(ctx)})` });
+    }
+  }
+  return out;
+}
+
+/** Whether `value` is a calendar day written YYYY-MM-DD. */
+function isIsoDate(value: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+
+/**
+ * The numbers the model gave in `answers` that a fill may compare to a threshold: each yes-or-no,
+ * each label's (or level's) probability and confidence, and the gaps between a choice's labels.
+ */
+function numbersOf(answers: AnswerMap): number[] {
+  const out = new Set<number>();
+  for (const a of Object.values(answers)) {
+    if (isNoul(a)) out.add(a.noul);
+    else if (isChoice(a) || isScore(a)) {
+      const ps = Object.values(a.probabilities).sort((x, y) => y - x);
+      for (const p of ps) out.add(p);
+      out.add(a.confidence);
+      for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) out.add(ps[i]! - ps[j]!);
+    }
+  }
+  return [...out].filter((p) => Number.isFinite(p) && p > NUDGE && p <= 1);
 }
 
 const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
@@ -238,8 +312,19 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
     }
     // A locale's wording changes what the slot says, never what the model is asked.
     const plain = r.example.wording === undefined ? undefined : attempt(r, 'defineSlot without the wording', () => defineSlot(r.example.slot, configOf(r), r.types));
-    for (const ctx of contextsOf(r, windowsOf(r, spec))) {
-      const qs = attempt(r, `questions(${where(ctx)})`, () => spec.questions(ctx));
+    // A type whose examples make no partial is tried with one it never made, so a question asked
+    // only while a partial is pending is seen; a questions() that throws on that one is skipped.
+    const windows = windowsOf(r, spec);
+    const synthetic = windows.length === 0;
+    for (const ctx of contextsOf(r, synthetic ? [KIT_WINDOW] : windows)) {
+      let qs: QuestionMap | undefined;
+      if (synthetic && ctx.window !== null) {
+        try {
+          qs = spec.questions(ctx);
+        } catch {
+          continue;
+        }
+      } else qs = attempt(r, `questions(${where(ctx)})`, () => spec.questions(ctx));
       if (!qs) continue;
       const unworded = plain ? attempt(r, `questions(${where(ctx)}), without the wording`, () => plain.questions(ctx)) : undefined;
       if (unworded && canonicalJson(unworded) !== canonicalJson(qs)) r.fail(`questions(${where(ctx)}) differ with the slot's wording: a locale's wording may change what the slot says, never what the model is asked`);
@@ -326,6 +411,50 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
     }
   },
 
+  'threshold-names'(r) {
+    const spec = attempt(r, 'defineSlot', () => build(r));
+    if (!spec) return;
+    const declared = spec.thresholds ?? [];
+    const reads = new Set<string>();
+    for (const u of r.example.utterances) {
+      for (const locale of [u.context?.locale, ...r.locales.filter((l) => l !== u.context?.locale)]) {
+        const ctx = kitContext(u.text, u.context, locale);
+        fillOf(r, spec, answersOf(u.answers), { ...ctx, thresholds: recordingThresholds(ctx.thresholds, reads) }, `utterance ${said(u)}`);
+      }
+    }
+    for (const name of reads) {
+      if (!Object.hasOwn(DEFAULT_THRESHOLDS, name) && !declared.includes(name)) {
+        r.fail(`a fill reads the threshold "${name}", which is not one of the engine's (DEFAULT_THRESHOLDS) and not one the slot declares (thresholds: ${declared.join(', ') || 'none'}): declare it, so an app that lacks it is told when it is defined`);
+      }
+    }
+    for (const name of declared) {
+      if (!reads.has(name)) r.fail(`the slot declares the threshold "${name}", but no utterance of the example makes a fill read it: compare against the threshold the slot declares, and give an utterance that reaches that comparison`);
+    }
+  },
+
+  boundary(r) {
+    const spec = attempt(r, 'defineSlot', () => build(r));
+    if (!spec) return;
+    for (const u of r.example.utterances) {
+      const answers = answersOf(u.answers);
+      const ctx = kitContext(u.text, u.context);
+      const reads = new Set<string>();
+      if (!fillOf(r, spec, answers, { ...ctx, thresholds: recordingThresholds(ctx.thresholds, reads) }, `utterance ${said(u)}`)) continue;
+      const numbers = numbersOf(answers);
+      for (const name of reads) {
+        if (typeof (ctx.thresholds as Readonly<Record<string, unknown>>)[name] !== 'number') continue;
+        for (const p of numbers) {
+          const at = fillOf(r, spec, answers, { ...ctx, thresholds: { ...ctx.thresholds, [name]: p } }, `utterance ${said(u)} with ${name} at ${p}`);
+          const below = fillOf(r, spec, answers, { ...ctx, thresholds: { ...ctx.thresholds, [name]: p - NUDGE } }, `utterance ${said(u)} with ${name} just below ${p}`);
+          if (at && below && essence(at) !== essence(below)) {
+            r.fail(`utterance ${said(u)} gives ${describeOutcome(at)} with ${name} exactly ${p} (a number the model gave), but ${describeOutcome(below)} with ${name} just below it: a number that equals its threshold meets it, so compare with meetsThreshold or atLeast, never with >`);
+            break;
+          }
+        }
+      }
+    }
+  },
+
   display(r) {
     const spec = attempt(r, 'defineSlot', () => build(r));
     if (!spec) return;
@@ -349,6 +478,23 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
           if (plain !== en) r.fail(`display(${JSON.stringify(o.value)}) is ${JSON.stringify(plain)} without a locale but ${JSON.stringify(en)} in en-US: en-US must format as no locale does`);
         }
       }
+    }
+    // A display wrong the same way every time agrees with itself, so the example pins what the
+    // caller hears in each locale the kit checks: expect.display in the utterance's own locale (none
+    // formats as en-US), expect.displays by locale, or a keypad value's display.
+    const pinned = new Set<string>();
+    for (const u of r.example.utterances) {
+      if (u.expect.display !== undefined) pinned.add(u.context?.locale ?? 'en-US');
+      for (const [locale, shown] of Object.entries(u.expect.displays ?? {})) {
+        pinned.add(locale);
+        const o = fillOf(r, spec, answersOf(u.answers), kitContext(u.text, u.context, locale), `utterance ${said(u)} (${locale})`);
+        if (o && o.kind !== 'filled') r.fail(`utterance ${said(u)} pins a display in ${locale}, but there it gives ${describeOutcome(o)}`);
+        else if (o && o.display !== shown) r.fail(`utterance ${said(u)} displays as ${JSON.stringify(o.display)} in ${locale}, not ${JSON.stringify(shown)} as the example pins`);
+      }
+    }
+    for (const k of r.example.keypad ?? []) if (k.expect?.display !== undefined) pinned.add(k.locale ?? 'en-US');
+    for (const locale of r.locales) {
+      if (!pinned.has(locale)) r.fail(`the example pins no display in ${locale}: give a filled utterance \`displays: { ${locale}: ... }\` (or a display on an utterance said in ${locale}), what the caller hears there, so a display that is wrong the same way every time is caught`);
     }
     if (spec.dtmf) {
       for (const k of r.example.keypad ?? []) {
@@ -408,8 +554,7 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
       for (const v of vars) n.vars.add(v);
       needs.set(id, n);
     };
-    const observe = (o: SlotOutcome | undefined, ctx: SlotContext, what: string): void => {
-      if (!o) return;
+    for (const { o, ctx, what } of observedOutcomes(r, spec)) {
       if (o.kind === 'invalid' && o.retryPromptId) need(o.retryPromptId, [], `the retryPromptId of ${what}`);
       if (o.kind === 'help') need(o.promptId, [], `the help prompt of ${what}`);
       if (o.kind === 'disambiguate') need(`disambiguate_${spec.id}`, ['a', 'b'], `the disambiguation of ${what}`);
@@ -420,12 +565,6 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
           need(spec.partialPromptId, Object.keys(vars), `the partial value of ${what}`);
         }
       }
-    };
-    for (const ctx of contextsOf(r, windowsOf(r, spec))) {
-      const u = r.example.utterances.find((x) => x.text === ctx.text);
-      if (u) observe(fillOf(r, spec, answersOf(u.answers), ctx, `utterance ${said(u)} (${where(ctx)})`), ctx, `utterance ${said(u)}`);
-      const qs = attempt(r, `questions(${where(ctx)})`, () => spec.questions(ctx));
-      if (qs) observe(fillOf(r, spec, quietAnswers(qs), ctx, `quiet answers (${where(ctx)})`), ctx, `quiet answers (${where(ctx)})`);
     }
     for (const [id, { vars, why }] of needs) {
       const has = declared.get(id);
@@ -435,6 +574,80 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
       }
       const missing = [...vars].filter((v) => !has.includes(v));
       if (missing.length > 0) r.fail(`the line "${id}" is given ${missing.join(', ')} (${why}), which its declared vars (${has.join(', ') || 'none'}) leave out`);
+    }
+  },
+
+  'prompt-vars'(r) {
+    const spec = attempt(r, 'defineSlot', () => build(r));
+    if (!spec) return;
+    const id = spec.id;
+    const observed = observedOutcomes(r, spec);
+    // The variables the engine gives each line a slot can lead to (core/fia.ts, core/turn.ts,
+    // core/decision.ts): an ack and a read-back get the slot's display under its id, a
+    // disambiguation its two candidates, the partial prompt its partialVars (and so does ask_<slot>
+    // when there is no partialPromptId); the keypad ask, the retry, a retryPromptId and a help line
+    // get none.
+    const partialKeys = new Set<string>();
+    for (const { o, ctx } of observed) {
+      if (o.kind !== 'window') continue;
+      const vars = attempt(r, `partialVars(${canonicalJson(o.window)})`, () => spec.partialVars?.(o.window, ctx.locale) ?? {});
+      for (const k of Object.keys(vars ?? {})) partialKeys.add(k);
+    }
+    const retries = new Set(observed.flatMap(({ o }) => (o.kind === 'invalid' && o.retryPromptId ? [o.retryPromptId] : [])));
+    const helps = new Set(observed.flatMap(({ o }) => (o.kind === 'help' ? [o.promptId] : [])));
+    const given = (line: string): { vars: string[]; as: string } => {
+      const roles: { vars: readonly string[]; as: string }[] = [];
+      if (line === `ack_${id}`) roles.push({ vars: [id], as: 'an ack, given the display as {' + id + '}' });
+      if (line === `confirm_${id}`) roles.push({ vars: [id], as: 'a read-back, given the display as {' + id + '}' });
+      if (line === `disambiguate_${id}`) roles.push({ vars: ['a', 'b'], as: 'a disambiguation, given {a} and {b}' });
+      if (line === spec.partialPromptId) roles.push({ vars: [...partialKeys], as: 'the partial prompt, given partialVars' });
+      if (line === `ask_${id}`) roles.push(spec.partialPromptId === undefined ? { vars: [...partialKeys], as: 'the ask, given partialVars while a partial is pending' } : { vars: [], as: 'the ask' });
+      if (line === `ask_${id}_dtmf`) roles.push({ vars: [], as: 'the keypad ask' });
+      if (line === `ask_${id}_retry`) roles.push({ vars: [], as: 'the retry' });
+      if (retries.has(line)) roles.push({ vars: [], as: 'a retryPromptId' });
+      if (helps.has(line)) roles.push({ vars: [], as: 'a help line' });
+      if (roles.length === 0) return { vars: [], as: 'a line the engine says with no variables' };
+      return { vars: roles.slice(1).reduce((acc, role) => acc.filter((v) => role.vars.includes(v)), [...roles[0]!.vars]), as: roles.map((role) => role.as).join(' and ') };
+    };
+    for (const p of spec.prompts ?? []) {
+      const { vars, as } = given(p.id);
+      const extra = (p.vars ?? []).filter((v) => !vars.includes(v));
+      if (extra.length > 0) {
+        r.fail(`the line "${p.id}" declares ${extra.map((v) => `{${v}}`).join(', ')}, which the engine never gives it (it is ${as}; it gets ${vars.map((v) => `{${v}}`).join(', ') || 'no variables'}): a line written with ${extra.length === 1 ? 'it' : 'them'} would pass check and fail when it is said`);
+      }
+    }
+    if (spec.spokenConfirm === 'by-confidence' && !(spec.prompts ?? []).some((p) => p.id === `ack_${id}`)) {
+      const acked = observed.find(({ o }) => o.kind === 'filled' && o.confirm === 'implicit');
+      if (acked) r.fail(`${acked.what} fills with confirm "implicit", and the slot's spokenConfirm is "by-confidence", so the engine says "ack_${id}" with {${id}}: declare it in prompts with vars [${id}]`);
+    }
+  },
+
+  values(r) {
+    const spec = attempt(r, 'defineSlot', () => build(r));
+    if (!spec) return;
+    const date = spec.valueKind === 'date';
+    const dateProblem = (value: string, what: string): void => {
+      if (date && !isIsoDate(value)) r.fail(`${what} gave the value ${JSON.stringify(value)}, but the slot's valueKind is "date": its values must be ISO dates (YYYY-MM-DD), which the engine compares day by day`);
+    };
+    const confidenceProblem = (c: number, what: string): void => {
+      if (!(c >= 0 && c <= 1)) r.fail(`${what} gave a confidence of ${c}: a confidence is a probability, from 0 to 1`);
+    };
+    for (const { o, what } of observedOutcomes(r, spec)) {
+      if (o.kind === 'filled') {
+        dateProblem(o.value, what);
+        confidenceProblem(o.confidence, what);
+      }
+      if (o.kind === 'window') confidenceProblem(o.confidence, what);
+      if (o.kind === 'disambiguate') {
+        dateProblem(o.a.value, `the first candidate of ${what}`);
+        dateProblem(o.b.value, `the second candidate of ${what}`);
+      }
+    }
+    if (spec.dtmf) {
+      for (const k of r.example.keypad ?? []) {
+        const c = attempt(r, `dtmf.parse(${JSON.stringify(k.digits)})`, () => spec.dtmf!.parse(k.digits, kitContext('', {}, k.locale)));
+        if (c) dateProblem(c.value, `the keys ${JSON.stringify(k.digits)}`);
+      }
     }
   },
 
@@ -448,7 +661,7 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
       const o = fillOf(r, spec, answersOf(u.answers), kitContext(u.text, u.context), `utterance ${said(u)}`);
       if (!o) continue;
       const got = o as unknown as Record<string, unknown>;
-      const wrong = Object.entries(u.expect).filter(([k, v]) => got[k] !== v);
+      const wrong = Object.entries(u.expect).filter(([k, v]) => k !== 'displays' && got[k] !== v);
       if (wrong.length > 0) r.fail(`utterance ${said(u)} gave ${describeOutcome(o)}; expected ${wrong.map(([k, v]) => `${k} ${JSON.stringify(v)}`).join(', ')}`);
     }
   },

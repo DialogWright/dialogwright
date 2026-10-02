@@ -138,7 +138,7 @@ dueDay:
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
-| it was due yesterday | `dueDayMode`: `relative_day` 0.93, `none` 0.07<br>`dueDayRelative`: `yesterday` 0.92, `none` 0.08 | filled: value `2026-09-17`, display `Thursday, September 17`, confirm `none` |
+| it was due yesterday | `dueDayMode`: `relative_day` 0.93, `none` 0.07<br>`dueDayRelative`: `yesterday` 0.92, `none` 0.08 | filled: value `2026-09-17`, display `Thursday, September 17`, confirm `none`, display in es `jueves, 17 de septiembre` |
 | last Saturday | `dueDayMode`: `weekday` 0.9, `none` 0.1<br>`dueDayWeekday`: `saturday` 0.91, `none` 0.09 | filled: value `2026-09-12`, display `Saturday, September 12` |
 | on the twentieth | `dueDayMode`: `absolute` 0.9, `none` 0.1<br>`dueDayMonth`: `none` 0.95<br>`dueDayDay`: `20` 0.9, `none` 0.1 | filled: value `2026-08-20`, display `Thursday, August 20` |
 | Thursday the tenth of September | `dueDayMode`: `weekday` 0.6, `absolute` 0.38, `none` 0.02<br>`dueDayWeekday`: `thursday` 0.95, `none` 0.05<br>`dueDayMonth`: `september` 0.96, `none` 0.04<br>`dueDayDay`: `10` 0.94, `none` 0.06 | filled: value `2026-09-10`, display `Thursday, September 10` |

@@ -17,7 +17,7 @@
     - text: next day please
       answers:
         speed: { choice: { next_day: 0.93, express: 0.04, none: 0.03 } }
-      expect: { kind: filled, value: next_day, display: next-day delivery, confirm: none }
+      expect: { kind: filled, value: next_day, display: next-day delivery, confirm: none, displays: { es: "next-day delivery" } }
     - text: whichever is cheapest
       answers:
         speed: { choice: { standard: 0.5, express: 0.3, none: 0.2 } }
@@ -104,7 +104,7 @@
     - text: the white one, I think
       answers:
         caseColour: { choice: { white: 0.62, black: 0.3, none: 0.08 } }
-      expect: { kind: filled, value: white, display: white, confirm: none }
+      expect: { kind: filled, value: white, display: white, confirm: none, displays: { es: "white" } }
     - text: I do not mind
       answers:
         caseColour: { choice: { white: 0.4, black: 0.35, none: 0.25 } }
@@ -150,7 +150,7 @@
         pickup: { choice: { riverside: 0.92, none: 0.05, north: 0.03 } }
         pickupHedge: { noul: 0.1 }
         pickupHelp: { choice: { neither: 0.95, knows: 0.03, unknown: 0.02 } }
-      expect: { kind: filled, value: riverside, display: the Riverside branch, confirm: none }
+      expect: { kind: filled, value: riverside, display: the Riverside branch, confirm: none, displays: { es: "the Riverside branch" } }
     - text: north, I think it was
       answers:
         pickup: { choice: { north: 0.5, none: 0.4, riverside: 0.1 } }

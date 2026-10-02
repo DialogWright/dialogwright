@@ -69,7 +69,7 @@
       answers:
         callerGiven: { noul: 0.95 }
         callerSpan: { choice: { morgan ellis: 0.9, none: 0.1 } }
-      expect: { kind: filled, value: morgan ellis, display: Morgan Ellis }
+      expect: { kind: filled, value: morgan ellis, display: Morgan Ellis, displays: { es: "Morgan Ellis" } }
     - text: not Rivera, Quinn
       answers:
         callerGiven: { noul: 0.4 }
@@ -104,7 +104,7 @@
       answers:
         saysContactName: { noul: 0.93 }
         contactSpan: { choice: { priya raghunathan: 0.88, none: 0.12 } }
-      expect: { kind: filled, value: priya raghunathan, display: Priya Raghunathan }
+      expect: { kind: filled, value: priya raghunathan, display: Priya Raghunathan, displays: { es: "Priya Raghunathan" } }
     - text: I'll tell you later
       answers:
         saysContactName: { noul: 0.1 }

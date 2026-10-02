@@ -12,7 +12,7 @@
     - text: The screen on my tablet went dark and it will not turn back on.
       answers:
         problemGiven: { noul: 0.93 }
-      expect: { kind: filled, value: The screen on my tablet went dark and it will not turn back on., display: your description, confirm: none }
+      expect: { kind: filled, value: The screen on my tablet went dark and it will not turn back on., display: your description, confirm: none, displays: { es: "your description" } }
     - text: I need some help please
       answers:
         problemGiven: { noul: 0.12 }
@@ -71,7 +71,7 @@
     - text: the box arrived crushed and the lamp inside is broken
       answers:
         describesIssue: { noul: 0.81 }
-      expect: { kind: filled, value: the box arrived crushed and the lamp inside is broken, display: your description }
+      expect: { kind: filled, value: the box arrived crushed and the lamp inside is broken, display: your description, displays: { es: "your description" } }
     - text: I want to talk about my order
       answers:
         describesIssue: { noul: 0.3 }
@@ -89,4 +89,4 @@
     - text: blue heron on the lake
       answers:
         referenceGiven: { noul: 0.95 }
-      expect: { kind: filled, value: blue heron on the lake, display: blue heron on the lake }
+      expect: { kind: filled, value: blue heron on the lake, display: blue heron on the lake, displays: { es: "blue heron on the lake" } }
