@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "intents": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "criteria": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The criteria text sent to the decision model: when a caller's words mean this intent (\"Wants to cancel an existing appointment\"). Sent as it is, so a change re-keys a recorded cassette."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The spoken label (\"track a parcel\"), used in acknowledgements and confirmations (\"I'd be happy to help you track a parcel\")."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "form",
+              "informational",
+              "control"
+            ],
+            "description": "form: starts the form of the same id in forms.yaml. informational: plays its promptId and resumes. control: the engine's own (agent, repeat_prompt, done, other, none)."
+          },
+          "promptId": {
+            "description": "For an informational intent, the prompt played (an id in prompts.yaml).",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          }
+        },
+        "required": [
+          "criteria",
+          "label",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Every intent the app hears, by id, in the order the decision model is offered them. Each form intent has a form of the same id in forms.yaml; `agent` and `repeat_prompt` are required control intents."
+    },
+    "menu": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "digit": {
+            "type": "string",
+            "pattern": "^[0-9*#]$",
+            "description": "The key the caller presses, as a quoted string (\"1\"; an unquoted 1 is a number in YAML)."
+          },
+          "intent": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+            "description": "The intent that key chooses (an id under `intents`)."
+          }
+        },
+        "required": [
+          "digit",
+          "intent"
+        ],
+        "additionalProperties": false,
+        "description": "One key of the keypad menu."
+      },
+      "description": "The keypad menu: digit to intent, in the order it is read out. May be empty for an app with no keypad menu."
+    }
+  },
+  "required": [
+    "intents",
+    "menu"
+  ],
+  "additionalProperties": false,
+  "description": "intents.yaml: what a caller can ask for, and the keypad menu.",
+  "title": "DialogWright intents.yaml"
+}

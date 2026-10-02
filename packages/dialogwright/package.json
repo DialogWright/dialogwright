@@ -18,20 +18,25 @@
     ".": "./src/index.ts",
     "./*.js": "./src/*.js",
     "./*.json": "./src/*.json",
-    "./*": "./src/*.ts"
+    "./*": "./src/*.ts",
+    "./schemas/*.json": "./schemas/*.json"
   },
   "files": [
-    "src"
+    "src",
+    "schemas"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "regress:testkit": "tsx src/testing/testkit/regress.ts"
+    "regress:testkit": "tsx src/testing/testkit/regress.ts",
+    "schemas": "tsx src/define/schema/generate.ts"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",
     "undici": "^8",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "yaml": "^2.9",
+    "zod": "^4.6"
   },
   "devDependencies": {
     "@types/node": "^22",

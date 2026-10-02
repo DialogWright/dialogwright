@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../../../schemas/prompts.schema.json
+prompts:
+  greeting:
+    text: Thanks for calling Example Family Practice. How can I help you today?
+    interruptible: true
+  greeting_chat:
+    text: Welcome to Example Family Practice. How can I help?
+    interruptible: true
+    mode: fixed
+  capabilities:
+    text: I can schedule, cancel or confirm an appointment, or put you through to billing.
+    interruptible: true
+  confirm_schedule:
+    text: "{when}. Does that work for you?"
+    interruptible: false
+  confirm_cancel:
+    text: "I have you down for {when}. Shall I cancel it?"
+    interruptible: false
+  ask_name:
+    text: What's your first and last name?
+    interruptible: true

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../schemas/forms.schema.json
+forms:
+  schedule_new:
+    slots: [name, dob, provider, date]
+    summaryPromptId: confirm_schedule
+    hooks: [confirmedParams, complete, onSummaryRead]
+  cancel:
+    slots: [name, dob, provider]
+    summaryPromptId: confirm_cancel
+    hooks: [confirmedParams, complete]
+  billing:
+    slots: [memberId]
+    summaryPromptId: null
+    hooks: [complete]

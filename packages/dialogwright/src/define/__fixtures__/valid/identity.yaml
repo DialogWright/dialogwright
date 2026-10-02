@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=../../../../schemas/identity.schema.json
+subjectKind: member
+delegateKind: staff
+factorSlots: [memberId, dob]
+verifyTool: verifyMember
+codeTool: verifyCode
+sendCodeTool: sendCode
+failedPromptId: identity_failed

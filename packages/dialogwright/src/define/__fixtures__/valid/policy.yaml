@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../schemas/policy.schema.json
+toolLevel:
+  findAppointment: 0
+  bookAppointment: 0
+  cancelAppointment: 0
+  verifyMember: 0
+  sendCode: 1
+  verifyCode: 1
+
+purposeLevel:
+  appointment: 0
+
+rulesFor:
+  findAppointment: [R1, R2]
+  bookAppointment: [R1, R3, no-double-booking]
+  cancelAppointment: [R1, R3]
+  verifyMember: [R1, R6]
+  sendCode: [R1]
+  verifyCode: [R1, R6]
+
+subjects:
+  findAppointment: { param: bookingId, via: record }
+  cancelAppointment: { param: memberId }
+
+confirmedFields: [name, dob, provider, date, time]
+
+serviceFields:
+  cancelAppointment: [provider, date]
+
+maxAttempts: 3
+
+roles:
+  findAppointment: { viewer: allow, clerk: allow }
+  cancelAppointment: { viewer: refuse, clerk: person }
+
+rolePersonReason: staff-cancel
+
+wording:
+  scope:
+    subject:
+      record: The booking belongs to this member
+      param: The member is the caller
+    delegate:
+      record: The booking belongs to a member of this clinic
+  recordOwner: booking owner
+  subject: member
+  role:
+    allow: "{role} may use {tool}"
+    refuse: "{role} may not use {tool}"
+    person: "{tool} by {role} goes to a person"
