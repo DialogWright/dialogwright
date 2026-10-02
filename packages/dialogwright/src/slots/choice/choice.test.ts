@@ -223,6 +223,161 @@ describe('display', () => {
   });
 });
 
+describe('the advanced options', () => {
+  const T2 = { ...T, UNSURE: 0.45 };
+  const at = (text = '') => testSlotContext(text, { thresholds: T2 });
+  const room = defineSlot('room', {
+    type: 'choice',
+    keypad: true,
+    fillAt: 'SLOT_CHOICE_CONFIRM',
+    confirm: 'by-confidence',
+    readBack: 'below-fill',
+    disambiguate: 'margin',
+    options: { north: 'the north room', northgate: 'the northgate room', garden_room: 'the garden room' },
+    hedge: { threshold: 'UNSURE', byName: true },
+    help: {
+      labels: {
+        neither: { means: 'Names a room, or says nothing about it' },
+        knows: { means: 'Knows the name', prompt: 'ask_room_name' },
+        unknown: { means: 'Does not know the name', prompt: 'room_list' },
+      },
+    },
+  });
+  const sure = (p: Record<string, number>, unsure = 0.1) => ({ room: choice(p), roomHedge: { type: 'noul' as const, noul: unsure } });
+
+  it('are off unless written: a basic slot\'s config, questions and prompts gain nothing', () => {
+    const basic = defineSlot('s', { type: 'choice', options: { a: 'A' } });
+    expect(Object.keys(basic.config as object).sort()).toEqual(['confirm', 'fillAt', 'keypad', 'means', 'options']);
+    expect(basic.questionIds).toEqual(['s']);
+    expect(basic.spokenConfirm).toBe('summary');
+  });
+
+  it('ask the choice, a hedge yes-or-no and the help question, each with its default words and id', () => {
+    expect(room.questionIds).toEqual(['room', 'roomHedge', 'roomHelp']);
+    expect(room.spokenConfirm).toBe('by-confidence');
+    const q = room.questions(at());
+    expect(Object.keys(q)).toEqual(['room', 'roomHedge', 'roomHelp']);
+    expect(q.roomHedge).toEqual({
+      type: 'noul',
+      instructions: 'Read asr.text. Is the caller unsure which one they mean?',
+      criteria: {
+        true: 'The caller hedges about which one they mean, as in it might be this one, or offers two for one, as in this one or that one, I am not sure',
+        false: 'The caller names one plainly, or names none. A caller correcting themselves, as in this one, not that one, is sure',
+      },
+    });
+    expect(q.roomHelp).toEqual({
+      type: 'choice',
+      instructions: 'Read asr.text and node.promptJustPlayed. Do they answer the question without naming one of the options?',
+      criteria: { neither: 'Names a room, or says nothing about it', knows: 'Knows the name', unknown: 'Does not know the name' },
+    });
+    expect(Object.keys((q.roomHelp as { criteria: object }).criteria)).toEqual(['neither', 'knows', 'unknown']);
+  });
+
+  it('take the hedge and help words under hedge.text and help.text, and their ids under ids', () => {
+    const own = defineSlot('room', {
+      ...(room.config as object), type: 'choice',
+      hedge: { threshold: 'UNSURE', text: { instructions: 'Unsure?', true: 'Yes', false: 'No' } },
+      help: { labels: { neither: { means: 'n' }, list: { means: 'l', prompt: 'room_list' } }, text: { instructions: 'Help?' } },
+      ids: { hedge: 'roomUnsure', help: 'roomStatus' },
+    });
+    expect(own.questionIds).toEqual(['room', 'roomUnsure', 'roomStatus']);
+    const q = own.questions(at());
+    expect(q.roomUnsure).toEqual({ type: 'noul', instructions: 'Unsure?', criteria: { true: 'Yes', false: 'No' } });
+    expect(q.roomStatus).toEqual({ type: 'choice', instructions: 'Help?', criteria: { neither: 'n', list: 'l' } });
+  });
+
+  it('declare every line they lead to', () => {
+    expect(room.prompts).toEqual([
+      { id: 'ack_room', why: 'it acknowledges an option the model is less sure of, or one the caller hedged about', vars: ['room'] },
+      { id: 'disambiguate_room', why: 'it asks which of two when two options are close, or a hedging caller names two', vars: ['a', 'b'] },
+      { id: 'ask_room_name', why: 'the caller answers "knows" without naming an option (help)' },
+      { id: 'room_list', why: 'the caller answers "unknown" without naming an option (help)' },
+      { id: 'ask_room_dtmf', why: 'it asks for the option on the keypad after spoken answers missed' },
+    ]);
+  });
+
+  it('fill at SLOT_CHOICE_CONFIRM, read back below SLOT_CHOICE_FILL only', () => {
+    expect(room.fill(sure({ north: 0.9, none: 0.1 }), at())).toEqual({ kind: 'filled', value: 'north', display: 'the north room', confidence: 0.9, confirm: 'none' });
+    expect(room.fill(sure({ north: 0.5, none: 0.4, garden_room: 0.1 }), at())).toMatchObject({ kind: 'filled', value: 'north', confirm: 'implicit' });
+    expect(room.fill(sure({ north: 0.4, none: 0.6 }), at())).toEqual({ kind: 'absent' });
+    const always = defineSlot('room', { ...(room.config as object), type: 'choice', readBack: 'implicit' });
+    expect(always.fill(sure({ north: 0.9, none: 0.1 }), at())).toMatchObject({ confirm: 'implicit' });
+    const never = defineSlot('room', { ...(room.config as object), type: 'choice', readBack: 'none' });
+    expect(never.fill(sure({ north: 0.5, none: 0.4, garden_room: 0.1 }), at())).toMatchObject({ confirm: 'none' });
+    expect(never.fill(sure({ north: 0.9, none: 0.1 }, 0.9), at())).toMatchObject({ confirm: 'implicit' });
+  });
+
+  it('read the top of every label\'s probabilities, not the pick, and ask which of two close ones', () => {
+    expect(room.fill({ room: { type: 'choice', choice: 'none', probabilities: { north: 0.8, none: 0.2 }, confidence: 0.2 } }, at())).toMatchObject({ kind: 'filled', value: 'north' });
+    expect(room.fill(sure({ north: 0.48, northgate: 0.42, none: 0.1 }), at())).toEqual({
+      kind: 'disambiguate', a: { value: 'north', display: 'the north room' }, b: { value: 'northgate', display: 'the northgate room' },
+    });
+    expect(room.fill(sure({ north: 0.6, none: 0.3, northgate: 0.1 }), at())).toMatchObject({ kind: 'filled', value: 'north' });
+  });
+
+  it('read back a hedged option however sure, and ask between two the hedging words name', () => {
+    expect(room.fill(sure({ north: 0.95, none: 0.05 }, 0.9), at('maybe the north room'))).toMatchObject({ kind: 'filled', value: 'north', confirm: 'implicit' });
+    expect(room.fill(sure({ north: 0.95, none: 0.05 }, 0.9), at('north or maybe the garden room, or northgate'))).toEqual({
+      kind: 'disambiguate', a: { value: 'north', display: 'the north room' }, b: { value: 'garden_room', display: 'the garden room' },
+    });
+    // a whole word only, and only while unsure
+    expect(room.fill(sure({ northgate: 0.95, none: 0.05 }, 0.9), at('northgate, I think'))).toMatchObject({ kind: 'filled', value: 'northgate' });
+    expect(room.fill(sure({ north: 0.95, none: 0.05 }, 0.2), at('north, not the garden room'))).toMatchObject({ kind: 'filled', value: 'north', confirm: 'none' });
+    // the hedge threshold is read by name from the turn: at it counts, and a run may move it
+    expect(room.fill(sure({ north: 0.95, none: 0.05 }, 0.45), at())).toMatchObject({ confirm: 'implicit' });
+    expect(room.fill(sure({ north: 0.95, none: 0.05 }, 0.5), testSlotContext('', { thresholds: { ...T, UNSURE: 0.8 } }))).toMatchObject({ confirm: 'none' });
+    expect(room.fill(sure({ north: 0.95, none: 0.05 }, 0.99), ctx())).toMatchObject({ confirm: 'none' });
+  });
+
+  it('a hedged rival the model would confirm is asked about, however wide the margin', () => {
+    const t = { ...T2, SLOT_CHOICE_CONFIRM: 0.3 };
+    expect(room.fill(sure({ north: 0.62, northgate: 0.35, none: 0.03 }, 0.9), testSlotContext('', { thresholds: t }))).toMatchObject({ kind: 'disambiguate', b: { value: 'northgate' } });
+    expect(room.fill(sure({ north: 0.62, northgate: 0.35, none: 0.03 }, 0.1), testSlotContext('', { thresholds: t }))).toMatchObject({ kind: 'filled' });
+  });
+
+  it('ask for help with the top help label\'s line when nothing is chosen, else stay absent', () => {
+    const none = { room: choice({ none: 0.9, north: 0.1 }) };
+    expect(room.fill({ ...none, roomHelp: choice({ unknown: 0.8, neither: 0.15, knows: 0.05 }) }, at())).toEqual({ kind: 'help', promptId: 'room_list' });
+    expect(room.fill({ ...none, roomHelp: choice({ knows: 0.7, neither: 0.3 }) }, at())).toEqual({ kind: 'help', promptId: 'ask_room_name' });
+    expect(room.fill({ ...none, roomHelp: choice({ unknown: 0.5, neither: 0.5 }) }, at())).toEqual({ kind: 'absent' });
+    expect(room.fill({ ...none, roomHelp: choice({ neither: 0.9, unknown: 0.1 }) }, at())).toEqual({ kind: 'absent' });
+    expect(room.fill({ roomHelp: choice({ unknown: 0.9, neither: 0.1 }) }, at())).toEqual({ kind: 'help', promptId: 'room_list' });
+    expect(room.fill({ room: choice({ north: 0.9, none: 0.1 }), roomHelp: choice({ unknown: 0.9, neither: 0.1 }) }, at())).toMatchObject({ kind: 'filled', value: 'north' });
+    expect(room.fill({ ...none, roomHelp: choice({ constructor: 0.9, neither: 0.1 }) }, at())).toEqual({ kind: 'absent' });
+  });
+
+  it('a label the question never offers is never chosen, and never a rival', () => {
+    expect(room.fill(sure({ attic: 0.9, none: 0.1 }), at())).toEqual({ kind: 'absent' });
+    expect(room.fill(sure({ north: 0.5, attic: 0.45, none: 0.05 }), at())).toMatchObject({ kind: 'filled', value: 'north' });
+  });
+
+  it('key the option by its position, as a basic slot does', () => {
+    expect(room.dtmf!.parse('3', at())).toEqual({ value: 'garden_room', display: 'the garden room' });
+    expect(room.dtmf!.parse('4', at())).toBeNull();
+  });
+
+  it('refuse readBack without by-confidence, a help list whose first label has a line or none has one, and a threshold that is not a name', () => {
+    const problems = (config: Record<string, unknown>) => {
+      const r = buildSlot('s', { type: 'choice', options: { a: 'A' }, ...config });
+      return r.ok ? [] : r.problems.map(formatProblem);
+    };
+    expect(problems({ readBack: 'below-fill' })).toEqual([
+      '(code)  s.readBack  readBack "below-fill" has no effect with confirm "summary", which neither acknowledges nor reads back a chosen option  ->  set confirm: by-confidence, or delete readBack',
+    ]);
+    expect(problems({ help: { labels: { list: { means: 'l', prompt: 's_list' }, neither: { means: 'n' } } } })).toEqual([
+      '(code)  s.help.labels  the first help label must have no prompt: it is the answer that asks for no help, which a stub model chooses when nothing is said  ->  put first a label such as "neither: { means: Names one, or says nothing about it }"',
+    ]);
+    expect(problems({ help: { labels: { neither: { means: 'n' } } } })).toEqual([
+      '(code)  s.help.labels  no help label has a prompt, so the help question could never lead to a line  ->  give a label a prompt, such as "no_name: { means: ..., prompt: <slot>_list }"',
+    ]);
+    expect(problems({ hedge: { threshold: 'unsure' } })).toHaveLength(1);
+    expect(problems({ hedge: {} })).toHaveLength(1);
+    expect(problems({ hedge: { threshold: 'UNSURE', text: { maybe: 'x' } } })).toHaveLength(1);
+    expect(problems({ disambiguate: 'always' })).toHaveLength(1);
+    expect(problems({ help: { labels: { neither: { means: 'n' }, 'no name': { means: 'x', prompt: 'p' } } } })).toHaveLength(1);
+  });
+});
+
 describe('the testkit\'s delivery part, written as configuration', () => {
   // Proof that the options reach a hand-written slot exactly, through the same shadow harness the
   // migration uses: its own words, the ids it was recorded with, its keypad.
@@ -297,7 +452,9 @@ describe('the docs', () => {
   it('the README names every option', () => {
     const readme = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(choiceType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['confirm', 'fillAt', 'ids', 'keypad', 'means', 'options', 'text']);
-    for (const option of [...options, 'instructions', 'none', 'choice']) expect(readme, option).toContain(`\`${option}\``);
+    expect(options.sort()).toEqual(['confirm', 'disambiguate', 'fillAt', 'hedge', 'help', 'ids', 'keypad', 'means', 'options', 'readBack', 'text']);
+    for (const option of [...options, 'instructions', 'none', 'choice', 'hedge.byName', 'help.labels', 'prompt', 'hedge.text', 'help.text', 'hedge.threshold', 'help.threshold', 'ids.hedge', 'ids.help']) {
+      expect(readme, option).toContain(`\`${option}\``);
+    }
   });
 });

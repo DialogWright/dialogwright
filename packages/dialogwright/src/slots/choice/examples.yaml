@@ -98,3 +98,85 @@
       expect: { value: white, display: white }
     - digits: "9"
       expect: null
+
+- name: pickup branch
+  about: "The advanced options: a branch to collect a book from, two of whose names sound alike. A branch is taken at SLOT_CHOICE_CONFIRM and acknowledged below SLOT_CHOICE_FILL; two close in the model's probabilities are asked about; a caller who hedges is read back however sure the model is, and one who hedges between two names the words both say is asked which; a caller who answers without naming one is asked for the name or read the list."
+  slot: pickup
+  config:
+    keypad: true
+    fillAt: SLOT_CHOICE_CONFIRM
+    confirm: by-confidence
+    readBack: below-fill
+    disambiguate: margin
+    text:
+      instructions: Read asr.text. Which library branch does the caller want to collect the book from?
+      none: Names no branch
+    options:
+      north: the North branch
+      northgate: the Northgate branch
+      riverside: the Riverside branch
+      old_mill: the Old Mill branch
+    hedge:
+      threshold: SLOT_DETECT
+      byName: true
+    help:
+      labels:
+        neither: { means: "Names a branch, or says nothing about whether they know its name" }
+        knows: { means: "Says they know the branch's name, without saying it", prompt: ask_pickup_name }
+        unknown: { means: "Says they do not know the branch's name, or asks which branches there are", prompt: pickup_list }
+  utterances:
+    - text: the Riverside one
+      answers:
+        pickup: { choice: { riverside: 0.92, none: 0.05, north: 0.03 } }
+        pickupHedge: { noul: 0.1 }
+        pickupHelp: { choice: { neither: 0.95, knows: 0.03, unknown: 0.02 } }
+      expect: { kind: filled, value: riverside, display: the Riverside branch, confirm: none }
+    - text: north, I think it was
+      answers:
+        pickup: { choice: { north: 0.5, none: 0.4, riverside: 0.1 } }
+        pickupHedge: { noul: 0.2 }
+        pickupHelp: { choice: { neither: 0.9, knows: 0.05, unknown: 0.05 } }
+      expect: { kind: filled, value: north, display: the North branch, confirm: implicit }
+    - text: the north gate one
+      answers:
+        pickup: { choice: { north: 0.48, northgate: 0.42, none: 0.1 } }
+        pickupHedge: { noul: 0.1 }
+        pickupHelp: { choice: { neither: 0.9, knows: 0.05, unknown: 0.05 } }
+      expect: { kind: disambiguate }
+    - text: it might be Northgate, or maybe Riverside
+      answers:
+        pickup: { choice: { northgate: 0.9, none: 0.06, riverside: 0.04 } }
+        pickupHedge: { noul: 0.9 }
+        pickupHelp: { choice: { neither: 0.9, knows: 0.05, unknown: 0.05 } }
+      expect: { kind: disambiguate }
+    - text: maybe the old mill one
+      answers:
+        pickup: { choice: { old_mill: 0.95, none: 0.05 } }
+        pickupHedge: { noul: 0.9 }
+        pickupHelp: { choice: { neither: 0.9, knows: 0.05, unknown: 0.05 } }
+      expect: { kind: filled, value: old_mill, display: the Old Mill branch, confirm: implicit }
+    - text: I don't know what it's called
+      answers:
+        pickup: { choice: { none: 0.9, north: 0.1 } }
+        pickupHedge: { noul: 0.3 }
+        pickupHelp: { choice: { unknown: 0.85, neither: 0.1, knows: 0.05 } }
+      expect: { kind: help, promptId: pickup_list }
+    - text: yes, I have the name
+      answers:
+        pickup: { choice: { none: 0.95, north: 0.05 } }
+        pickupHedge: { noul: 0.1 }
+        pickupHelp: { choice: { knows: 0.8, neither: 0.15, unknown: 0.05 } }
+      expect: { kind: help, promptId: ask_pickup_name }
+    - text: hang on a moment
+      answers:
+        pickup: { choice: { none: 0.95, north: 0.05 } }
+        pickupHedge: { noul: 0.1 }
+        pickupHelp: { choice: { neither: 0.9, knows: 0.05, unknown: 0.05 } }
+      expect: { kind: absent }
+  keypad:
+    - digits: "2"
+      expect: { value: northgate, display: the Northgate branch }
+    - digits: "4"
+      expect: { value: old_mill, display: the Old Mill branch }
+    - digits: "5"
+      expect: null

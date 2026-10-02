@@ -258,18 +258,146 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it.",
+            "description": "\"summary\": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the option's display as {<slot>}) when `readBack` says so, and always when the caller hedged (`hedge`).",
             "type": "string",
             "enum": [
-              "summary"
+              "summary",
+              "by-confidence"
             ]
           },
+          "readBack": {
+            "description": "With `confirm: by-confidence`, what a chosen option asks for: \"implicit\" (always acknowledged; the default), \"below-fill\" (only when the model is less sure of it than SLOT_CHOICE_FILL), \"none\" (never, unless the caller hedged).",
+            "type": "string",
+            "enum": [
+              "implicit",
+              "below-fill",
+              "none"
+            ]
+          },
+          "disambiguate": {
+            "description": "\"margin\": the slot reads the model's probability for every label, not only its pick, and when a second option is within SLOT_CHOICE_MARGIN of the top one (or, while the caller hedges, reaches SLOT_CHOICE_CONFIRM) it asks which of the two (disambiguate_<slot>, given {a} and {b}). The top option must then reach SLOT_CHOICE_CONFIRM before anything else is read. Default: off.",
+            "type": "string",
+            "enum": [
+              "margin"
+            ]
+          },
+          "hedge": {
+            "description": "A second question, a yes-or-no: is the caller unsure which option they mean? A hedged option is read back however sure the model is (with `confirm: by-confidence`); with `disambiguate`, a hedged rival that reaches SLOT_CHOICE_CONFIRM is asked about. Its id is `ids.hedge` (default: <slot>Hedge).",
+            "type": "object",
+            "properties": {
+              "threshold": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$",
+                "description": "The threshold the model's yes must reach for the caller to count as unsure: an engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name."
+              },
+              "byName": {
+                "default": false,
+                "description": "While the caller hedges, ask which of two when their words name another option as a whole word (its key, underscores as spaces, case aside), though the model put its weight on one.",
+                "type": "boolean"
+              },
+              "text": {
+                "description": "Text to say to the model in place of a default, word for word, by part: instructions, true, false.",
+                "type": "object",
+                "properties": {
+                  "instructions": {
+                    "description": "The question that asks whether the caller is unsure which option they mean.",
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  },
+                  "true": {
+                    "description": "What a yes means: the caller hedges.",
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  },
+                  "false": {
+                    "description": "What a no means: the caller is sure, or names nothing.",
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "threshold"
+            ],
+            "additionalProperties": false
+          },
+          "help": {
+            "description": "A third question, asked on every turn: what does the caller say without naming an option (\"I do not know the name\")? When no option is chosen and the model's top label reaches `threshold` and has a prompt, the slot asks for help with that line (a help outcome) instead of being absent. Its id is `ids.help` (default: <slot>Help).",
+            "type": "object",
+            "properties": {
+              "threshold": {
+                "default": "SLOT_HELP",
+                "description": "The threshold the model's top label must reach to lead to its line.",
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              },
+              "labels": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "means": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                      "description": "What the model is told this label is: the text of its criterion, sent exactly as written."
+                    },
+                    "prompt": {
+                      "description": "The line said when the model chooses this label (a help outcome). None: the label asks for no help (the slot is absent).",
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                    }
+                  },
+                  "required": [
+                    "means"
+                  ],
+                  "additionalProperties": false
+                },
+                "description": "The labels of the help question, in order, as `label: { means, prompt? }`. The first must have no prompt: it is the answer that asks for no help, which a stub model chooses when nothing is said."
+              },
+              "text": {
+                "description": "Text to say to the model in place of a default, word for word, by part: instructions.",
+                "type": "object",
+                "properties": {
+                  "instructions": {
+                    "description": "The question that asks what the caller says about the question without naming an option; its labels are `help.labels`.",
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "labels"
+            ],
+            "additionalProperties": false
+          },
           "ids": {
-            "description": "Question ids in place of the default: `ids.choice` is the question's id (default: the slot's own id), to keep the id an existing slot used.",
+            "description": "Question ids in place of the defaults: `ids.choice` is the question's id (default: the slot's own id), `ids.hedge` and `ids.help` those of the hedge and help questions (default: <slot>Hedge, <slot>Help), to keep the ids an existing slot used.",
             "type": "object",
             "properties": {
               "choice": {
                 "description": "The id of the question that asks which of the options the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "hedge": {
+                "description": "The id of the question that asks whether the caller is unsure which option they mean.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "help": {
+                "description": "The id of the question that asks what the caller says about the question without naming an option.",
                 "type": "string",
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               }
