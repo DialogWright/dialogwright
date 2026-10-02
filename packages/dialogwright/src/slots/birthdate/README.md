@@ -12,7 +12,7 @@ Reach for it for a date of birth asked to know or to verify who is calling. For 
 
 | Option | Default | What it does |
 |---|---|---|
-| `keypad` | `false` | The caller can key the date as eight digits, month, day and year (`MMDDYYYY`: 06141975). Needs an `ask_<slot>_dtmf` line. |
+| `keypad` | `false` | The caller can key the date as eight digits, month, day and year (`MMDDYYYY`: 06141975); in a Spanish session day, month and year (`DDMMYYYY`: 14061975). Needs an `ask_<slot>_dtmf` line in each locale, saying the order. |
 | `yearPrompt` | `ask_<slot>_year` | The prompt that asks for the year alone once a month and day are heard without it (the slot's `partialPromptId`). It is given no variables. |
 | `wholePrompt` | none | The prompt that asks for the whole date again when a month or a day was not heard. With it, that outcome is `invalid` with the reason `no_month_day`, `no_month` or `no_day` and this prompt as its re-ask. Without it, the reason is `no_year` and the slot's generic `ask_<slot>_retry` asks again. |
 | `minYear` | `1900` | The earliest year a date of birth may be in. An earlier one is `invalid` with the reason `impossible`, and the keypad refuses it. |
@@ -87,5 +87,5 @@ dob:
 - Every slot listens on every turn, so the four questions are asked even while the form is on another slot, and "this is about my account, my birthday is June fourteenth seventy five" can fill the birth date on the opening turn.
 - The partial's `kind` is `dob`, with numeric `month` and `day`: the engine reads them to tell one day heard twice, and zeroes them where the slot is redacted.
 - A keyed date counts as confirmed: it is not acknowledged or read back.
-- The display is the same in every locale for now.
+- In a Spanish session (`es`, `es-*`) the display is "14 de junio de 1975", a year said in Spanish is read ("mil novecientos setenta y cinco"), the keypad takes the day first, and the default month and day questions end with a sentence telling the model that a date said as numbers gives the day first. Every other locale, and none, is as en-US. The questions are otherwise the same in every locale.
 - Run its checks with `pnpm --filter dialogwright test slots/birthdate`.

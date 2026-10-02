@@ -339,3 +339,38 @@ describe('the docs', () => {
     for (const part of ['given', 'givenTrue', 'givenFalse', 'month', 'monthHint', 'day', 'dayHint', 'year', 'yearAsked', 'yearNone']) expect(readme, part).toContain(`\`${part}\``);
   });
 });
+
+describe('a birthdate slot in Spanish (es, es-*)', () => {
+  const dob = defineSlot('dob', { type: 'birthdate', keypad: true });
+  const heard = (year: string) => ({
+    dobGiven: noul(0.95), dobMonth: choice({ november: 0.93, none: 0.07 }), dobDay: choice({ '22': 0.92, none: 0.08 }), dobYear: choice({ [year]: 0.9, none: 0.1 }),
+  });
+
+  it('reads a year said in Spanish and says the date as "22 de noviembre de 1991"', () => {
+    const said = 'el veintidós de noviembre de mil novecientos noventa y uno';
+    const es = testSlotContext(said, { locale: 'es' });
+    const year = dob.questions(es).dobYear!;
+    expect(year.type === 'choice' && Object.keys(year.criteria)).toContain('mil novecientos noventa y uno');
+    expect(dob.fill(heard('mil novecientos noventa y uno'), es)).toEqual({ kind: 'filled', value: '1991-11-22', display: '22 de noviembre de 1991', confidence: 0.9, confirm: 'none' });
+    expect(dob.fill(heard('noventa y uno'), testSlotContext('noventa y uno', { locale: 'es-US' }))).toMatchObject({ value: '1991-11-22', display: '22 de noviembre de 1991' });
+    expect(dob.display('1991-11-22', 'en-US')).toBe('November 22nd, 1991');
+  });
+
+  it('takes the keypad day first in Spanish (DDMMYYYY), month first otherwise', () => {
+    expect(dob.dtmf!.parse('22111991', testSlotContext('', { locale: 'es' }))).toEqual({ value: '1991-11-22', display: '22 de noviembre de 1991' });
+    expect(dob.dtmf!.parse('11221991', testSlotContext('', { locale: 'es' }))).toBeNull();
+    expect(dob.dtmf!.parse('11221991', testSlotContext(''))).toEqual({ value: '1991-11-22', display: 'November 22nd, 1991' });
+    expect(dob.dtmf!.length).toBe(8);
+  });
+
+  it('ends the default month and day questions with the day-first sentence in Spanish only; a literal is as written', () => {
+    const es = dob.questions(testSlotContext('22/11/1991', { locale: 'es' }));
+    const en = dob.questions(testSlotContext('22/11/1991', { locale: 'en-US' }));
+    expect(es.dobMonth!.instructions).toBe(`${en.dobMonth!.instructions} A date said as numbers gives the day before the month, as Spanish does: "22/11" and "el 22 del 11" are November 22.`);
+    expect(es.dobDay!.instructions).toMatch(/ A date said as numbers gives the day before the month/);
+    expect(es.dobGiven).toEqual(en.dobGiven);
+    expect(en).toEqual(dob.questions(testSlotContext('22/11/1991')));
+    const literal = defineSlot('dob', { type: 'birthdate', text: { month: 'Read asr.text. Which month?' } });
+    expect(literal.questions(testSlotContext('x', { locale: 'es' })).dobMonth!.instructions).toBe('Read asr.text. Which month?');
+  });
+});

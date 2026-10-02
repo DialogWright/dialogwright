@@ -21,10 +21,10 @@ const examples = examplesFrom(new URL('./examples.yaml', import.meta.url));
 /** The prompt that asks which day in a span of days: `narrowPrompt`, or ask_<slot>_narrow. */
 export const narrowPromptOf = (id: string, o: Pick<DateOptions, 'narrowPrompt'>): string => o.narrowPrompt ?? `ask_${id}_narrow`;
 
-/** The span a pending partial holds, as the narrowPrompt says it ("next week", "in December"); empty for none. */
-function partialVars(window: SlotPartial, _locale?: string): Record<string, string> {
+/** The span a pending partial holds, as the narrowPrompt says it ("next week", "in December"; "la próxima semana", "en diciembre"); empty for none. */
+function partialVars(window: SlotPartial, locale?: string): Record<string, string> {
   const span = dateWindowOf(window);
-  return { window: span ? describeWindow(span) : '' };
+  return { window: span ? describeWindow(span, locale) : '' };
 }
 
 /** The lines a date slot may lead to, beyond ask_<slot> and ask_<slot>_retry. */
@@ -32,7 +32,7 @@ function promptsOf(id: string, o: DateOptions): SlotPrompt[] {
   const prompts: SlotPrompt[] = [];
   if (o.windows) prompts.push({ id: narrowPromptOf(id, o), why: 'the caller named a span of days without the day (the partialPromptId), said as {window}', vars: ['window'] });
   if (o.confirm === 'by-confidence') prompts.push({ id: `ack_${id}`, why: 'it acknowledges a day it is less sure of', vars: [id] });
-  if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: 'it asks for the day on the keypad, as four digits, month then day, after spoken answers missed' });
+  if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: 'it asks for the day on the keypad, as four digits (month then day; in Spanish day then month), after spoken answers missed' });
   return prompts;
 }
 

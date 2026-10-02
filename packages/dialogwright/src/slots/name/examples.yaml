@@ -18,6 +18,24 @@
         nameGiven: { noul: 0.9 }
         nameSpan: { choice: { cher: 0.92, none: 0.08 } }
       expect: { kind: filled, value: cher, display: Cher }
+    - text: me llamo María José Muñoz de la Cruz
+      context: { locale: es }
+      answers:
+        nameGiven: { noul: 0.95 }
+        nameSpan: { choice: { maría josé muñoz de la cruz: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: maría josé muñoz de la cruz, display: María José Muñoz de la Cruz, confirm: none }
+    - text: hola, soy Íñigo Peña
+      context: { locale: es-MX }
+      answers:
+        nameGiven: { noul: 0.92 }
+        nameSpan: { choice: { íñigo peña: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: íñigo peña, display: Íñigo Peña }
+    - text: me llamo Ana
+      context: { locale: es }
+      answers:
+        nameGiven: { noul: 0.9 }
+        nameSpan: { choice: { me llamo ana: 0.9, none: 0.1 } }
+      expect: { kind: invalid, reason: no_span, raw: me llamo ana }
     - text: no, it's Sam Lee
       answers:
         nameGiven: { noul: 0.9 }

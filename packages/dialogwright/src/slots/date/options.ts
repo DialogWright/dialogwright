@@ -103,7 +103,7 @@ export const dateOptions = z
     keypad: z
       .boolean()
       .default(false)
-      .describe('Whether the caller can key the day on the keypad as four digits, month then day (MMDD: 0922), resolved as a spoken month and day are for the `range`. Needs an ask_<slot>_dtmf line.'),
+      .describe('Whether the caller can key the day on the keypad as four digits, month then day (MMDD: 0922), or in a day-first locale (Spanish) day then month (DDMM: 2209), resolved as a spoken month and day are for the `range`. Needs an ask_<slot>_dtmf line.'),
     confirm: z
       .enum(['summary', 'by-confidence'])
       .default('summary')

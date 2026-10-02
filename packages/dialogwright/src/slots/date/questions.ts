@@ -1,6 +1,8 @@
 import { DATE_MODES, MONTHS, QUALIFIERS, RELATIVE_DAYS, WEEKDAYS, WINDOWS } from '../../core/extract/date';
 import { PAST_MODES, PAST_RELATIVE } from '../../core/extract/pastDate';
+import type { SlotContext } from '../../core/slots/types';
 import type { QuestionMap } from '../../jev/types';
+import { withDayFirst } from '../parts/locale';
 import { DATE_PARTS, DATE_QUESTIONS, DEFAULT_CONTEXT, type DateOptions } from './options';
 
 /** The day-of-month labels the day question offers: "1" to "31". */
@@ -67,9 +69,10 @@ const after = (sentence: string | undefined): string => (sentence === undefined 
 /**
  * A date slot's questions, the same on every turn: how the caller refers to the day (the mode), then
  * a choice for each part a day can be named by. Each choice offers its labels and none; only the
- * mode's none may carry a criterion (`text.modeNone`).
+ * mode's none may carry a criterion (`text.modeNone`). In a day-first locale (Spanish) the default
+ * month and day questions end with the day-first sentence (parts/locale.ts); a literal is as written.
  */
-export function dateQuestions(slot: string, o: DateOptions): () => QuestionMap {
+export function dateQuestions(slot: string, o: DateOptions): (ctx: Pick<SlotContext, 'locale'>) => QuestionMap {
   const ids = idsOf(slot, o);
   const context = o.context ?? DEFAULT_CONTEXT[o.range];
   const exclude = after(o.exclude);
@@ -87,5 +90,8 @@ export function dateQuestions(slot: string, o: DateOptions): () => QuestionMap {
     window: { instructions: DATE_PARTS.render('window', o.text, { context }), criteria: labelsOf(WINDOWS) },
   };
   const parts = partsOf(o);
-  return () => Object.fromEntries(parts.map((p) => [ids[p], { type: 'choice' as const, instructions: asked[p].instructions, criteria: { ...asked[p].criteria } }]));
+  const instructionsOf = (p: Part, locale: string | undefined): string =>
+    p === 'month' || p === 'day' ? withDayFirst(asked[p].instructions, locale, o.text?.[p] !== undefined) : asked[p].instructions;
+  return (ctx) =>
+    Object.fromEntries(parts.map((p) => [ids[p], { type: 'choice' as const, instructions: instructionsOf(p, ctx?.locale), criteria: { ...asked[p].criteria } }]));
 }

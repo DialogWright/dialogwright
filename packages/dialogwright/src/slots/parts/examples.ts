@@ -51,7 +51,9 @@ export const slotExamplesSchema = z.array(
     slot: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
     config: z.record(z.string(), z.unknown()),
     utterances: z.array(utterance).min(1),
-    keypad: z.array(z.strictObject({ digits: z.string(), expect: z.strictObject({ value: z.string(), display: z.string().optional() }).nullable() })).optional(),
+    keypad: z
+      .array(z.strictObject({ digits: z.string(), locale: z.string().optional(), expect: z.strictObject({ value: z.string(), display: z.string().optional() }).nullable() }))
+      .optional(),
   }),
 );
 

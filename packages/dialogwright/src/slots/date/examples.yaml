@@ -85,6 +85,25 @@
         deliveryDayMonth: { choice: { october: 0.95, none: 0.05 } }
         deliveryDayDay: { choice: { "5": 0.93, none: 0.07 } }
       expect: { kind: filled, value: "2026-10-05", display: "Monday, October 5" }
+    - text: el martes, por favor
+      context: { locale: es }
+      answers:
+        deliveryDayMode: { choice: { weekday: 0.9, none: 0.1 } }
+        deliveryDayWeekday: { choice: { tuesday: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: "2026-09-22", display: "martes, 22 de septiembre" }
+    - text: pasado mañana
+      context: { locale: es-US }
+      answers:
+        deliveryDayMode: { choice: { relative_day: 0.93, none: 0.07 } }
+        deliveryDayRelative: { choice: { day_after_tomorrow: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: "2026-09-20", display: "domingo, 20 de septiembre" }
+    - text: el cinco del diez
+      context: { locale: es }
+      answers:
+        deliveryDayMode: { choice: { absolute: 0.9, none: 0.1 } }
+        deliveryDayMonth: { choice: { october: 0.9, none: 0.1 } }
+        deliveryDayDay: { choice: { "5": 0.9, none: 0.1 } }
+      expect: { kind: filled, value: "2026-10-05", display: "lunes, 5 de octubre" }
     - text: sometime in October
       answers:
         deliveryDayMode: { choice: { absolute: 0.85, none: 0.15 } }
@@ -103,7 +122,7 @@
       expect: { kind: absent }
 
 - name: table booking
-  about: A day to book a table on, said as a day or a span of days ("next week", "in December"), with "this" or "next" before a weekday. A span is held and the narrow prompt asks which day; a weekday said next is looked for inside it. A day is taken at SLOT_CHOICE_CONFIRM and acknowledged below SLOT_CHOICE_FILL; below SLOT_CHOICE_CONFIRM it is invalid, low_confidence. A day that cannot be resolved is always invalid, with the mode as raw; a turn that names no day is absent. Keyable as MMDD.
+  about: A day to book a table on, said as a day or a span of days ("next week", "in December"), with "this" or "next" before a weekday. A span is held and the narrow prompt asks which day; a weekday said next is looked for inside it. A day is taken at SLOT_CHOICE_CONFIRM and acknowledged below SLOT_CHOICE_FILL; below SLOT_CHOICE_CONFIRM it is invalid, low_confidence. A day that cannot be resolved is always invalid, with the mode as raw; a turn that names no day is absent. Keyable as MMDD, and as DDMM in Spanish.
   slot: booking
   config:
     range: future
@@ -131,6 +150,18 @@
         bookingWeekday: { choice: { wednesday: 0.9, none: 0.1 } }
       context: { prompted: true, window: { kind: window, start: "2026-09-21", end: "2026-09-27", label: next_week } }
       expect: { kind: filled, value: "2026-09-23", display: "Wednesday, September 23", confirm: none }
+    - text: la próxima semana
+      context: { locale: es }
+      answers:
+        bookingMode: { choice: { window: 0.9, none: 0.1 } }
+        bookingWindow: { choice: { next_week: 0.88, none: 0.12 } }
+      expect: { kind: window }
+    - text: el miércoles
+      answers:
+        bookingMode: { choice: { weekday: 0.9, none: 0.1 } }
+        bookingWeekday: { choice: { wednesday: 0.9, none: 0.1 } }
+      context: { locale: es, prompted: true, window: { kind: window, start: "2026-09-21", end: "2026-09-27", label: next_week } }
+      expect: { kind: filled, value: "2026-09-23", display: "miércoles, 23 de septiembre", confirm: none }
     - text: in December, on a Wednesday
       answers:
         bookingMode: { choice: { weekday: 0.9, none: 0.1 } }
@@ -178,6 +209,12 @@
     - digits: "0101"
       expect: { value: "2027-01-01", display: "Friday, January 1" }
     - digits: "1305"
+      expect: null
+    - digits: "0510"
+      locale: es
+      expect: { value: "2026-10-05", display: "lunes, 5 de octubre" }
+    - digits: "3102"
+      locale: es
       expect: null
     - digits: "0230"
       expect: null

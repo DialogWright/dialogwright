@@ -96,7 +96,7 @@ export { handoffPromptId } from './prompts/render';
 export {
   MONTHS, WEEKDAYS, DATE_MODES, RELATIVE_DAYS, WINDOWS, QUALIFIERS,
   parseIso, toIso, addDays, weekdayIndex, snapWeekdayOnOrAfter, resolveDate,
-  describeDay, describeWindow, describeDob, normalizeYear, ordinal,
+  describeDay, describeWindow, describeDob, normalizeYear, ordinal, MONTHS_ES, WEEKDAYS_ES,
 } from './core/extract/date';
 export type { ComponentPick, DateComponents, DateWindow, DateResolution } from './core/extract/date';
 export { spokenToDigits, tokenize } from './core/extract/spokenNumber';
@@ -144,7 +144,7 @@ export type { TurnState, TurnInput } from './core/state';
 // helpers, the corpus and scenarios, and the regression run's pieces.
 export { FixtureStubClient } from './jev/fixtureStub';
 export { HeuristicStubClient } from './jev/heuristicStub';
-export { digitSpanLabel, dobParts, saysDob, saysExplicitYear } from './jev/heuristicKit';
+export { digitSpanLabel, dobParts, saysDob, saysExplicitYear, relativeDaySaid } from './jev/heuristicKit';
 export type { DobParts } from './jev/heuristicKit';
 export { loadCorpus, parseCorpus, normalizeText } from './jev/corpus';
 export type { CorpusEntry, CorpusContext, KnownGap, PinnedOutcome, AnswerOverride } from './jev/corpus';

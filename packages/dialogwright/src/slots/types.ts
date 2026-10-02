@@ -109,6 +109,8 @@ export interface ExpectedOutcome {
 
 export interface SlotKeypadExample {
   digits: string;
+  /** The locale the keys are pressed in (a day-first locale keys a date day first). Absent: none. */
+  locale?: string;
   expect: { value: string; display?: string } | null;
 }
 

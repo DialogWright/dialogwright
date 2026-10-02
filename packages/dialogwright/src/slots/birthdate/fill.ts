@@ -2,6 +2,7 @@ import { MONTHS, normalizeYear } from '../../core/extract/date';
 import type { SlotCandidate, SlotContext, SlotOutcome } from '../../core/slots/types';
 import type { AnswerMap } from '../../jev/types';
 import { isChoice, noulValue } from '../../jev/types';
+import { dayFirst } from '../parts/locale';
 import { meetsThreshold } from '../parts/thresholds';
 import type { BirthdateOptions } from './options';
 import { birthdatePartialOf, type BirthdatePartial } from './partial';
@@ -48,7 +49,7 @@ export function birthdateFill(
     const pending = birthdatePartialOf(ctx.window);
     const m = read(month) ? MONTHS.indexOf(month.label as (typeof MONTHS)[number]) + 1 : pending?.month ?? null;
     const d = read(day) ? Number(day.label) : pending?.day ?? null;
-    const y = read(year) ? normalizeYear(year.label, ctx.todayIso) : null;
+    const y = read(year) ? normalizeYear(year.label, ctx.todayIso, ctx.locale) : null;
     const used = [month, day, year].filter(read);
     if (used.length === 0) return { kind: 'absent' };
     const confidence = Math.min(...used.map((c) => c.p));
@@ -68,7 +69,8 @@ export function birthdateFill(
 
 /**
  * The keypad: eight digits, month, day and year (MMDDYYYY), that make a real day in or after
- * `minYear` and before today. Anything else is no value. (The engine collects exactly eight keys.)
+ * `minYear` and before today; in a day-first locale (Spanish), day, month and year (DDMMYYYY).
+ * Anything else is no value. (The engine collects exactly eight keys.)
  */
 export function birthdateKeys(
   o: Pick<BirthdateOptions, 'minYear'>,
@@ -78,7 +80,8 @@ export function birthdateKeys(
     if (!/^\d{8}$/.test(digits)) return null;
     const y = Number(digits.slice(4, 8));
     if (y < o.minYear) return null;
-    const iso = isoOf(y, Number(digits.slice(0, 2)), Number(digits.slice(2, 4)));
+    const [m, d] = dayFirst(ctx.locale) ? [digits.slice(2, 4), digits.slice(0, 2)] : [digits.slice(0, 2), digits.slice(2, 4)];
+    const iso = isoOf(y, Number(m), Number(d));
     if (!iso || iso >= ctx.todayIso) return null;
     return { value: iso, display: display(iso, ctx.locale) };
   };

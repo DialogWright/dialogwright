@@ -1,3 +1,4 @@
+import { lexiconOf } from '../../core/extract/lexicon';
 import type { SlotContext } from '../../core/slots/types';
 import type { QuestionMap } from '../../jev/types';
 import { NAME_PARTS, NAME_QUESTIONS, type NameOptions } from './options';
@@ -27,9 +28,13 @@ export const excludedWordsOf = (o: Pick<NameOptions, 'exclude'>): ReadonlySet<st
  * correcting the name of someone else ("not Chen, Cheng") can read to a model as the caller naming
  * themselves, and a name the caller never said is worse than no name. What is not on the ballot
  * cannot be chosen.
+ *
+ * In Spanish (`ctx.locale` es or es-*) the words are compared without accents, so excluding "munoz"
+ * withholds "muñoz" too (an excluded word is written in plain letters).
  */
-export function nameCandidates(ctx: Pick<SlotContext, 'candidateWordSpans'>, excluded: ReadonlySet<string>): string[] {
-  return ctx.candidateWordSpans.filter((span) => span !== 'none' && !span.split(' ').some((word) => excluded.has(word)));
+export function nameCandidates(ctx: Pick<SlotContext, 'candidateWordSpans' | 'locale'>, excluded: ReadonlySet<string>): string[] {
+  const { fold } = lexiconOf(ctx.locale);
+  return ctx.candidateWordSpans.filter((span) => span !== 'none' && !span.split(' ').some((word) => excluded.has(fold(word))));
 }
 
 /**
@@ -37,7 +42,7 @@ export function nameCandidates(ctx: Pick<SlotContext, 'candidateWordSpans'>, exc
  * (a yes-or-no with a criterion for each answer), and which of the offered spans of their words it
  * is (the candidates, and none).
  */
-export function nameQuestions(slot: string, o: NameOptions): (ctx: Pick<SlotContext, 'candidateWordSpans'>) => QuestionMap {
+export function nameQuestions(slot: string, o: NameOptions): (ctx: Pick<SlotContext, 'candidateWordSpans' | 'locale'>) => QuestionMap {
   const ids = idsOf(slot, o);
   const excluded = excludedWordsOf(o);
   const given = NAME_PARTS.render('given', o.text, {});

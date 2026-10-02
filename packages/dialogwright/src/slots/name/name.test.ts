@@ -217,3 +217,33 @@ describe('the docs', () => {
     for (const part of ['given', 'givenTrue', 'givenFalse', 'span', 'spanNone']) expect(readme, part).toContain(`\`${part}\``);
   });
 });
+
+describe('a name slot in Spanish (es, es-*)', () => {
+  const name = defineSlot('name', { type: 'name', exclude: ['munoz'] });
+  const plain = defineSlot('name', { type: 'name' });
+
+  it('title-cases Unicode letters and keeps the particles inside a name in lower case', () => {
+    expect(titleCase('maría josé muñoz de la cruz', 'es')).toBe('María José Muñoz de la Cruz');
+    expect(titleCase('íñigo del valle y ortega', 'es-MX')).toBe('Íñigo del Valle y Ortega');
+    expect(titleCase('de la fuente', 'es')).toBe('De la Fuente');
+    // English, and no locale, as always
+    expect(titleCase('maría josé muñoz de la cruz')).toBe('MaríA José MuñOz De La Cruz');
+    expect(titleCase('mary kate o neil', 'en-US')).toBe('Mary Kate O Neil');
+  });
+
+  it('offers a compound surname as one span and fills it as said', () => {
+    const said = 'me llamo María José Muñoz de la Cruz';
+    const ctx = testSlotContext(said, { locale: 'es' });
+    const span = plain.questions(ctx).nameSpan!;
+    expect(span.type === 'choice' && Object.keys(span.criteria)).toContain('maría josé muñoz de la cruz');
+    expect(plain.fill({ nameGiven: noul(0.95), nameSpan: choice({ 'maría josé muñoz de la cruz': 0.9, none: 0.1 }) }, ctx)).toEqual({
+      kind: 'filled', value: 'maría josé muñoz de la cruz', display: 'María José Muñoz de la Cruz', confidence: 0.9, confirm: 'none',
+    });
+  });
+
+  it('compares excluded words without accents in Spanish', () => {
+    const ctx = testSlotContext('soy Ana Muñoz', { locale: 'es' });
+    const span = name.questions(ctx).nameSpan!;
+    expect(span.type === 'choice' && Object.keys(span.criteria)).toEqual(['ana', 'none']);
+  });
+});

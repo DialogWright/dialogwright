@@ -3,6 +3,7 @@ import { resolvePastDate } from '../../core/extract/pastDate';
 import type { SlotCandidate, SlotContext, SlotOutcome } from '../../core/slots/types';
 import type { AnswerMap } from '../../jev/types';
 import { isChoice } from '../../jev/types';
+import { dayFirst } from '../parts/locale';
 import { meetsThreshold } from '../parts/thresholds';
 import type { DateOptions } from './options';
 import { constrainToWindow, dateWindowOf, type DateWindowPartial } from './partial';
@@ -110,7 +111,8 @@ export function dateFill(
 /**
  * The keypad: four digits, the month then the day (MMDD), resolved as a spoken month and day are for
  * the range (ahead: this year's, or next year's once it is more than a month gone; back: the last
- * one, up to two years). Anything else is no value. (The engine collects exactly four keys.)
+ * one, up to two years). In a day-first locale (Spanish), the day then the month (DDMM: 2209). Anything
+ * else is no value. (The engine collects exactly four keys.)
  */
 export function dateKeys(
   o: Pick<DateOptions, 'range'>,
@@ -118,8 +120,7 @@ export function dateKeys(
 ): (digits: string, ctx: Pick<SlotContext, 'todayIso' | 'locale'>) => SlotCandidate | null {
   return (digits, ctx) => {
     if (!/^\d{4}$/.test(digits)) return null;
-    const month = Number(digits.slice(0, 2));
-    const day = Number(digits.slice(2, 4));
+    const [month, day] = dayFirst(ctx.locale) ? [Number(digits.slice(2, 4)), Number(digits.slice(0, 2))] : [Number(digits.slice(0, 2)), Number(digits.slice(2, 4))];
     if (month < 1 || month > 12 || day < 1 || day > 31) return null;
     const one = (choice: string): ComponentPick => ({ choice, p: 1 });
     const resolved = resolve(o, { ...NONE_PICKS, mode: one('absolute'), month: one(MONTHS[month - 1]!), day: one(String(day)) }, ctx.todayIso);

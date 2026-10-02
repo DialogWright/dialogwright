@@ -5,7 +5,7 @@
 # here (on 2026-09-18, the kit's today), and the type's docs page shows them.
 
 - name: account holder
-  about: The defaults, with the keypad on. A month and day without the year are held, and the year is asked for alone (ask_dob_year); a month or a day missing is "no_year", and the generic retry asks again.
+  about: The defaults, with the keypad on (MMDDYYYY; DDMMYYYY in Spanish). A month and day without the year are held, and the year is asked for alone (ask_dob_year); a month or a day missing is "no_year", and the generic retry asks again.
   slot: dob
   config:
     keypad: true
@@ -17,6 +17,22 @@
         dobDay: { choice: { "14": 0.93, none: 0.07 } }
         dobYear: { choice: { nineteen seventy five: 0.92, none: 0.08 } }
       expect: { kind: filled, value: "1975-06-14", display: "June 14th, 1975", confirm: none }
+    - text: nací el catorce de junio de mil novecientos setenta y cinco
+      context: { locale: es }
+      answers:
+        dobGiven: { noul: 0.96 }
+        dobMonth: { choice: { june: 0.95, none: 0.05 } }
+        dobDay: { choice: { "14": 0.93, none: 0.07 } }
+        dobYear: { choice: { mil novecientos setenta y cinco: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: "1975-06-14", display: "14 de junio de 1975", confirm: none }
+    - text: setenta y cinco
+      answers:
+        dobGiven: { noul: 0.88 }
+        dobMonth: { choice: { none: 0.9 } }
+        dobDay: { choice: { none: 0.9 } }
+        dobYear: { choice: { setenta y cinco: 0.9, none: 0.1 } }
+      context: { locale: es-US, prompted: true, window: { kind: dob, month: 6, day: 14 } }
+      expect: { kind: filled, value: "1975-06-14", display: "14 de junio de 1975" }
     - text: it's June fourteenth
       answers:
         dobGiven: { noul: 0.9 }
@@ -63,6 +79,12 @@
   keypad:
     - digits: "06141975"
       expect: { value: "1975-06-14", display: "June 14th, 1975" }
+    - digits: "14061975"
+      locale: es
+      expect: { value: "1975-06-14", display: "14 de junio de 1975" }
+    - digits: "06141975"
+      locale: es
+      expect: null
     - digits: "02301990"
       expect: null
     - digits: "10022030"

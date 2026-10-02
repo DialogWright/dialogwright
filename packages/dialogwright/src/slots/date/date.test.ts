@@ -98,7 +98,7 @@ describe('a date slot built from the defaults', () => {
     expect(booking.prompts).toEqual([
       { id: 'ask_booking_narrow', why: 'the caller named a span of days without the day (the partialPromptId), said as {window}', vars: ['window'] },
       { id: 'ack_booking', why: 'it acknowledges a day it is less sure of', vars: ['booking'] },
-      { id: 'ask_booking_dtmf', why: 'it asks for the day on the keypad, as four digits, month then day, after spoken answers missed' },
+      { id: 'ask_booking_dtmf', why: 'it asks for the day on the keypad, as four digits (month then day; in Spanish day then month), after spoken answers missed' },
     ]);
     expect(booking.dtmf?.length).toBe(4);
     expect(defineSlot('booking', { ...booking.config, type: 'date', narrowPrompt: 'which_day' }).partialPromptId).toBe('which_day');
@@ -451,5 +451,36 @@ describe('the docs', () => {
     ]);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
     for (const part of ['mode', 'modeNone', 'relative', 'weekday', 'qualifier', 'month', 'day', 'window']) expect(readme, part).toContain(`\`${part}\``);
+  });
+});
+
+describe('a date slot in Spanish (es, es-*)', () => {
+  const booking = defineSlot('booking', { type: 'date', range: 'future', windows: true, keypad: true });
+
+  it('says the day as "martes, 22 de septiembre" and a span as "la próxima semana"', () => {
+    const es = testSlotContext('el martes', { locale: 'es' });
+    expect(booking.fill({ bookingMode: choice({ weekday: 0.92, none: 0.08 }), bookingWeekday: choice({ tuesday: 0.93, none: 0.07 }) }, es)).toMatchObject({ value: '2026-09-22', display: 'martes, 22 de septiembre' });
+    const span = booking.fill({ bookingMode: choice({ window: 0.92, none: 0.08 }), bookingWindow: choice({ next_week: 0.9, none: 0.1 }) }, testSlotContext('la próxima semana', { locale: 'es' }));
+    expect(span.kind).toBe('window');
+    if (span.kind !== 'window') return;
+    expect(booking.partialVars!(span.window, 'es')).toEqual({ window: 'la próxima semana' });
+    expect(booking.partialVars!(span.window, 'en-US')).toEqual({ window: 'next week' });
+    expect(booking.partialVars!({ kind: 'window', start: '2026-12-01', end: '2026-12-31', label: 'december' }, 'es-MX')).toEqual({ window: 'en diciembre' });
+  });
+
+  it('takes the keypad day first in Spanish (DDMM), month first otherwise', () => {
+    expect(booking.dtmf!.parse('0510', testSlotContext('', { locale: 'es' }))).toEqual({ value: '2026-10-05', display: 'lunes, 5 de octubre' });
+    expect(booking.dtmf!.parse('1005', testSlotContext(''))).toEqual({ value: '2026-10-05', display: 'Monday, October 5' });
+    expect(booking.dtmf!.parse('1305', testSlotContext('', { locale: 'es' }))).toEqual({ value: '2027-05-13', display: 'jueves, 13 de mayo' });
+    expect(booking.dtmf!.parse('0513', testSlotContext('', { locale: 'es' }))).toBeNull();
+  });
+
+  it('ends the default month and day questions with the day-first sentence in Spanish only', () => {
+    const es = booking.questions(testSlotContext('el 5 del 10', { locale: 'es' }));
+    const en = booking.questions(testSlotContext('el 5 del 10'));
+    expect(es.bookingMonth!.instructions).toBe(`${en.bookingMonth!.instructions} A date said as numbers gives the day before the month, as Spanish does: "22/11" and "el 22 del 11" are November 22.`);
+    expect(es.bookingDay!.instructions.endsWith('are November 22.')).toBe(true);
+    expect(es.bookingMode).toEqual(en.bookingMode);
+    expect(booking.questions(testSlotContext('x', { locale: 'en-US' }))).toEqual(en);
   });
 });

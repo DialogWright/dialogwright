@@ -80,7 +80,7 @@ export const birthdateOptions = z
     keypad: z
       .boolean()
       .default(false)
-      .describe('Whether the caller can key the date on the keypad as eight digits, month, day and year (MMDDYYYY). Needs an ask_<slot>_dtmf line.'),
+      .describe('Whether the caller can key the date on the keypad as eight digits, month, day and year (MMDDYYYY), or in a day-first locale (Spanish) day, month and year (DDMMYYYY). Needs an ask_<slot>_dtmf line.'),
     yearPrompt: identifier()
       .optional()
       .describe('The prompt that asks for the year alone once a month and day are heard without it (the slot\'s partialPromptId). Default: ask_<slot>_year.'),

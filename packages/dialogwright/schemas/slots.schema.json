@@ -18,7 +18,7 @@
           },
           "keypad": {
             "default": false,
-            "description": "Whether the caller can key the date on the keypad as eight digits, month, day and year (MMDDYYYY). Needs an ask_<slot>_dtmf line.",
+            "description": "Whether the caller can key the date on the keypad as eight digits, month, day and year (MMDDYYYY), or in a day-first locale (Spanish) day, month and year (DDMMYYYY). Needs an ask_<slot>_dtmf line.",
             "type": "boolean"
           },
           "yearPrompt": {
@@ -477,7 +477,7 @@
           },
           "keypad": {
             "default": false,
-            "description": "Whether the caller can key the day on the keypad as four digits, month then day (MMDD: 0922), resolved as a spoken month and day are for the `range`. Needs an ask_<slot>_dtmf line.",
+            "description": "Whether the caller can key the day on the keypad as four digits, month then day (MMDD: 0922), or in a day-first locale (Spanish) day then month (DDMM: 2209), resolved as a spoken month and day are for the `range`. Needs an ask_<slot>_dtmf line.",
             "type": "boolean"
           },
           "confirm": {

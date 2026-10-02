@@ -22,7 +22,7 @@ Reach for it for any day a caller names that is not their date of birth (use `bi
 | `fillAt` | `fill` | How sure the model must be of the day (the least of the parts it read). `fill`: `SLOT_CHOICE_FILL`, and a day below it is treated as not resolved (`whenUnresolved`). `confirm`: `SLOT_CHOICE_CONFIRM`, and a day below it is `invalid` with the reason `low_confidence` and the ISO day as raw. |
 | `whenUnsaid` | `invalid-if-prompted` | A turn that names no day (the mode is none, below `SLOT_CHOICE_CONFIRM`, or not answered at all). `invalid-if-prompted`: `invalid`, reason `unresolvable`, raw empty, when the caller was asked for the day (so the retry ladder moves on), else `absent`. `absent`: always `absent`. |
 | `whenUnresolved` | `invalid-if-prompted` | A day named that does not resolve: no such day, out of range, a span without `windows`, or below `SLOT_CHOICE_FILL` under `fillAt: fill`. `invalid-if-prompted`: `invalid`, reason `unresolvable`, raw empty, when the caller was asked for the day, else `absent`. `invalid`: always `invalid`, reason `unresolvable`, with the mode as raw (`absolute`, `weekday`, ...). |
-| `keypad` | `false` | The caller can key the day as four digits, the month then the day (`MMDD`: 0922), resolved as a spoken month and day are for the range. Needs an `ask_<slot>_dtmf` line. |
+| `keypad` | `false` | The caller can key the day as four digits, the month then the day (`MMDD`: 0922), or in a Spanish session the day then the month (`DDMM`: 2209), resolved as a spoken month and day are for the range. Needs an `ask_<slot>_dtmf` line in each locale, saying the order. |
 | `confirm` | `summary` | `summary`: a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. `by-confidence`: it is acknowledged (`ack_<slot>`, given the day as `{<slot>}`) when `readBack` says so. |
 | `readBack` | `implicit` | With `confirm: by-confidence`: `implicit` acknowledges every day, `below-fill` only a day the model is less sure of than `SLOT_CHOICE_FILL`, `none` never. |
 | `context` | by range | The sentence every default question starts with after "Read asr.text.", saying what day the caller is giving. Default: "The caller is saying the day something happened." (past), "The caller is saying the day they want." (future). |
@@ -101,5 +101,5 @@ booking:
 - A month without a day ahead is a span (the month, from today if it is this month); without `windows` it does not resolve.
 - The partial's `kind` is `window`, and its parts are strings, so the engine never reads it as a day heard.
 - A keyed day counts as confirmed: it is not acknowledged or read back.
-- The display is the same in every locale for now.
+- In a Spanish session (`es`, `es-*`) the display is "martes, 22 de septiembre", the narrow prompt's `{window}` is "la próxima semana" or "en diciembre", the keypad takes the day first, and the default month and day questions end with a sentence telling the model that a date said as numbers gives the day first. Every other locale, and none, is as en-US.
 - Run its checks with `pnpm --filter dialogwright test slots/date`.

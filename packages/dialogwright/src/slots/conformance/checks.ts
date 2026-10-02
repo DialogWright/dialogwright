@@ -364,7 +364,7 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
     if (valid.length === 0) r.fail('the slot has a keypad rung, but the example gives no keys that make a value: add one under keypad');
     const ctx = kitContext('');
     for (const k of keys) {
-      const c = attempt(r, `dtmf.parse(${JSON.stringify(k.digits)})`, () => spec.dtmf!.parse(k.digits, ctx));
+      const c = attempt(r, `dtmf.parse(${JSON.stringify(k.digits)}${k.locale ? `, ${k.locale}` : ''})`, () => spec.dtmf!.parse(k.digits, k.locale === undefined ? ctx : kitContext('', {}, k.locale)));
       if (c === undefined) continue;
       if (k.expect === null) {
         if (c !== null) r.fail(`the keys ${JSON.stringify(k.digits)} gave ${JSON.stringify(c.value)}, but the example expects none`);
@@ -377,10 +377,10 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
       if (k.digits.length !== length) r.fail(`the example's keys ${JSON.stringify(k.digits)} make a value but are not ${length} long, so the engine never collects them`);
       if (c.value !== k.expect.value) r.fail(`the keys ${JSON.stringify(k.digits)} gave ${JSON.stringify(c.value)}, not ${JSON.stringify(k.expect.value)}`);
       if (k.expect.display !== undefined && c.display !== k.expect.display) r.fail(`the keys ${JSON.stringify(k.digits)} display as ${JSON.stringify(c.display)}, not ${JSON.stringify(k.expect.display)}`);
-      const shown = attempt(r, `display(${JSON.stringify(c.value)})`, () => spec.display(c.value));
+      const shown = attempt(r, `display(${JSON.stringify(c.value)}${k.locale ? `, ${k.locale}` : ''})`, () => spec.display(c.value, k.locale));
       if (shown !== undefined && shown !== c.display) r.fail(`the keys ${JSON.stringify(k.digits)} carry the display ${JSON.stringify(c.display)}, but display(${JSON.stringify(c.value)}) is ${JSON.stringify(shown)}`);
     }
-    const sample = valid[0]?.digits ?? '5'.repeat(Math.max(1, length));
+    const sample = valid.find((k) => k.locale === undefined)?.digits ?? valid[0]?.digits ?? '5'.repeat(Math.max(1, length));
     for (const wrong of [`${sample}5`, sample.slice(0, -1), '5'.repeat(length + 1), length > 1 ? '5'.repeat(length - 1) : '']) {
       if (wrong.length === length) continue;
       const c = attempt(r, `dtmf.parse(${JSON.stringify(wrong)})`, () => spec.dtmf!.parse(wrong, ctx));

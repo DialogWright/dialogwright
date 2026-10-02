@@ -1,6 +1,7 @@
 import { MONTHS } from '../../core/extract/date';
 import type { SlotContext } from '../../core/slots/types';
 import type { QuestionMap } from '../../jev/types';
+import { withDayFirst } from '../parts/locale';
 import { BIRTHDATE_PARTS, BIRTHDATE_QUESTIONS, type BirthdateOptions } from './options';
 import { birthdatePartialOf } from './partial';
 
@@ -33,9 +34,10 @@ const after = (sentence: string): string => (sentence === '' ? '' : ` ${sentence
  * which day (1 to 31 and none), and which span of the caller's words is the year (the spans the
  * engine found, and none). While a month and day are on hand (the slot's pending partial), the year
  * question says the caller was asked for the year; the other three stay as they are, since the
- * caller may restate the whole date.
+ * caller may restate the whole date. In a day-first locale (Spanish) the default month and day
+ * questions end with the day-first sentence (parts/locale.ts); a literal is as written.
  */
-export function birthdateQuestions(slot: string, o: BirthdateOptions): (ctx: Pick<SlotContext, 'candidateSpans' | 'window'>) => QuestionMap {
+export function birthdateQuestions(slot: string, o: BirthdateOptions): (ctx: Pick<SlotContext, 'candidateSpans' | 'window' | 'locale'>) => QuestionMap {
   const ids = idsOf(slot, o);
   const notThis = o.notThisDate === undefined ? '' : ` This is the birth date, not ${o.notThisDate}.`;
   const others = o.notThisDate === undefined ? "Someone else's birth date" : `${capitalized(o.notThisDate)}, or someone else's birth date,`;
@@ -53,8 +55,8 @@ export function birthdateQuestions(slot: string, o: BirthdateOptions): (ctx: Pic
     years.none = yearNone;
     return {
       [ids.given]: { type: 'noul', instructions: given, criteria: { true: givenTrue, false: givenFalse } },
-      [ids.month]: { type: 'choice', instructions: month, criteria: labelsOf(MONTHS) },
-      [ids.day]: { type: 'choice', instructions: day, criteria: labelsOf(BIRTHDATE_DAYS) },
+      [ids.month]: { type: 'choice', instructions: withDayFirst(month, ctx.locale, o.text?.month !== undefined), criteria: labelsOf(MONTHS) },
+      [ids.day]: { type: 'choice', instructions: withDayFirst(day, ctx.locale, o.text?.day !== undefined), criteria: labelsOf(BIRTHDATE_DAYS) },
       [ids.year]: { type: 'choice', instructions: birthdatePartialOf(ctx.window) ? yearAsked : year, criteria: years },
     };
   };

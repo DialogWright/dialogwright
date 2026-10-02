@@ -173,3 +173,38 @@ describe('normalizeYear', () => {
     expect(normalizeYear('march', '2026-09-18')).toBeNull();
   });
 });
+
+describe('dates said in Spanish (es, es-*)', () => {
+  it('says a day as "martes, 22 de septiembre", with no ordinal suffix', async () => {
+    const { describeDay } = await import('./date');
+    expect(describeDay('2026-09-22', 'es')).toBe('martes, 22 de septiembre');
+    expect(describeDay('2026-09-20', 'es-MX')).toBe('domingo, 20 de septiembre');
+    expect(describeDay('2026-10-03', 'es')).toBe('sábado, 3 de octubre');
+    expect(describeDay('2026-09-22')).toBe('Tuesday, September 22');
+    expect(describeDay('2026-09-22', 'en-US')).toBe('Tuesday, September 22');
+  });
+
+  it('says a birth date as "22 de noviembre de 1991"', () => {
+    expect(describeDob('1991-11-22', 'es')).toBe('22 de noviembre de 1991');
+    expect(describeDob('1975-06-01', 'es-US')).toBe('1 de junio de 1975');
+    expect(describeDob('1991-11-22', 'en-US')).toBe('November 22nd, 1991');
+  });
+
+  it('says a span of days in Spanish', () => {
+    const span = (label: string) => ({ start: '2026-09-21', end: '2026-09-27', label });
+    expect(describeWindow(span('this_week'), 'es')).toBe('esta semana');
+    expect(describeWindow(span('next_week'), 'es')).toBe('la próxima semana');
+    expect(describeWindow(span('this_month'), 'es')).toBe('este mes');
+    expect(describeWindow(span('next_month'), 'es')).toBe('el próximo mes');
+    expect(describeWindow(span('december'), 'es')).toBe('en diciembre');
+    expect(describeWindow(span('december'), 'en-US')).toBe('in December');
+    expect(describeWindow(span('next_week'))).toBe('next week');
+  });
+
+  it('reads a year said in Spanish', () => {
+    expect(normalizeYear('mil novecientos noventa y uno', TODAY, 'es')).toBe(1991);
+    expect(normalizeYear('dos mil uno', TODAY, 'es')).toBe(2001);
+    expect(normalizeYear('noventa y uno', TODAY, 'es')).toBe(1991);
+    expect(normalizeYear('mil novecientos noventa y uno', TODAY)).toBeNull();
+  });
+});

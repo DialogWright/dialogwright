@@ -13,6 +13,7 @@ export { isChoice, isNoul, isScore, noulValue, rankProbabilities, topMargin } fr
 export { candidateSpans, candidateWordSpans, FILLER_WORDS } from '../../core/spans';
 export { spokenToDigits, tokenize } from '../../core/extract/spokenNumber';
 export { lexiconOf, isSpanish } from '../../core/extract/lexicon';
+export { dayFirst, DAY_FIRST_HINT, withDayFirst, wordingFor } from './locale';
 export { numbersSaid } from '../../core/extract/numbersSaid';
 export type { NumbersSaidOptions } from '../../core/extract/numbersSaid';
 export { matchesMask } from '../../core/extract/mask';
