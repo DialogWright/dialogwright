@@ -8,6 +8,10 @@ intents:
     criteria: Wants to know whether a book they asked the library to hold is ready to collect
     label: check a hold
     kind: form
+  check_loans:
+    criteria: Wants to know what is checked out on their library card, or when their books are due back
+    label: check your loans
+    kind: form
   hours:
     criteria: Asks when the library is open
     label: hear the opening hours

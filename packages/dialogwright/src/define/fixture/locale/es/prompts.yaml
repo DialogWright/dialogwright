@@ -125,3 +125,29 @@ prompts:
   hold_waiting:
     text: '{book} está reservado para usted en la sucursal {branch}, pero todavía no ha llegado.'
     interruptible: false
+
+  # Checking loans: the library card slot and the form's lines
+  ask_card:
+    text: ¿Cuál es el número de su tarjeta de la biblioteca?
+    interruptible: true
+  ask_card_retry:
+    text: Perdone, ¿cuál es el número de su tarjeta de la biblioteca? Dígalo dígito por dígito, por favor.
+    interruptible: true
+  ask_card_length:
+    text: El número de la tarjeta tiene ocho dígitos. Diga los ocho, uno por uno, por favor.
+    interruptible: true
+  ask_card_dtmf:
+    text: Marque en el teclado los ocho dígitos de su tarjeta de la biblioteca, por favor.
+    interruptible: true
+  ack_card:
+    text: Es la tarjeta {card}.
+    interruptible: false
+  next_due:
+    text: Con la tarjeta {card}, el próximo libro que vence es {book}, el {due}.
+    interruptible: false
+  no_loans:
+    text: No hay nada prestado con la tarjeta {card}.
+    interruptible: false
+  no_card:
+    text: No encuentro la tarjeta de la biblioteca {card}.
+    interruptible: false

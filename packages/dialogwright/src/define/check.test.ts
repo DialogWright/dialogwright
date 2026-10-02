@@ -97,7 +97,7 @@ describe('checkApp: the prompts every locale needs', () => {
     const dir = folder({ 'locale/fr/prompts.yaml': 'prompts:\n  greeting:\n    text: Bonjour\n    interruptible: true\n' });
     const problems = await lines(dir);
     expect(problems.slice(0, 3)).toEqual([
-      'locale/fr/prompts.yaml:1:1  prompts  prompt "hours" is missing from the fr prompts; intents.yaml:15 (intents.hours.promptId) says it  ->  add "hours:" with its text and interruptible to locale/fr/prompts.yaml',
+      'locale/fr/prompts.yaml:1:1  prompts  prompt "hours" is missing from the fr prompts; intents.yaml:19 (intents.hours.promptId) says it  ->  add "hours:" with its text and interruptible to locale/fr/prompts.yaml',
       'locale/fr/prompts.yaml:1:1  prompts  prompt "confirm_renew" is missing from the fr prompts; forms.yaml:5 (forms.renew_loan.summaryPromptId) says it  ->  add "confirm_renew:" with its text and interruptible to locale/fr/prompts.yaml',
       'locale/fr/prompts.yaml:1:1  prompts  prompt "greeting_chat" is missing from the fr prompts; the engine says it when a chat opens  ->  add "greeting_chat:" with its text and interruptible to locale/fr/prompts.yaml',
     ]);
@@ -123,10 +123,10 @@ describe('checkApp: the prompts every locale needs', () => {
   it('without the code to check against, it also checks the references in the default locale; with it, crossLink does and the line is reported once', async () => {
     const dir = folder({ 'prompts.yaml': without('hours') });
     expect(await lines(dir, {})).toEqual([
-      'prompts.yaml:2:1  prompts  prompt "hours" is missing from prompts.yaml; intents.yaml:15 (intents.hours.promptId) says it  ->  add "hours:" with its text and interruptible to prompts.yaml',
+      'prompts.yaml:2:1  prompts  prompt "hours" is missing from prompts.yaml; intents.yaml:19 (intents.hours.promptId) says it  ->  add "hours:" with its text and interruptible to prompts.yaml',
     ]);
     expect(await lines(dir)).toEqual([
-      'intents.yaml:15:15  intents.hours.promptId  prompt "hours" is not in prompts.yaml  ->  add "hours:" to prompts.yaml with its text and interruptible',
+      'intents.yaml:19:15  intents.hours.promptId  prompt "hours" is not in prompts.yaml  ->  add "hours:" to prompts.yaml with its text and interruptible',
     ]);
   });
 
@@ -172,8 +172,8 @@ describe('checkApp: each locale\'s lines against prompts.yaml', () => {
   it('a line only a locale has is never said: a problem, with the rename when one is close', async () => {
     const dir = folder({ 'locale/es/prompts.yaml': (t) => `${t}  no_hlod:\n    text: No veo una reserva de {book}.\n    interruptible: false\n  farewell_extra:\n    text: Adiós.\n    interruptible: true\n` });
     expect(await lines(dir)).toEqual([
-      'locale/es/prompts.yaml:128:3  prompts.no_hlod  prompt "no_hlod" is in the es prompts but not in prompts.yaml, so it is never said  ->  rename it to "no_hold" if it is that line, or delete it',
-      'locale/es/prompts.yaml:131:3  prompts.farewell_extra  prompt "farewell_extra" is in the es prompts but not in prompts.yaml, so it is never said  ->  add "farewell_extra:" to prompts.yaml if the app says it, or delete it here',
+      'locale/es/prompts.yaml:154:3  prompts.no_hlod  prompt "no_hlod" is in the es prompts but not in prompts.yaml, so it is never said  ->  rename it to "no_hold" if it is that line, or delete it',
+      'locale/es/prompts.yaml:157:3  prompts.farewell_extra  prompt "farewell_extra" is in the es prompts but not in prompts.yaml, so it is never said  ->  add "farewell_extra:" to prompts.yaml if the app says it, or delete it here',
     ]);
   });
 
@@ -239,7 +239,7 @@ describe('checkApp: every intent has corpus examples', () => {
     return { dir, root };
   };
   const entry = (intent: string): string => JSON.stringify({ id: `${intent}-01`, text: `say ${intent}`, intent, context: 'no_form' });
-  const ALL = ['renew_loan', 'check_hold', 'hours', 'agent', 'repeat_prompt', 'done', 'other', 'none'];
+  const ALL = ['renew_loan', 'check_hold', 'check_loans', 'hours', 'agent', 'repeat_prompt', 'done', 'other', 'none'];
 
   it('an app with no fixtures has no corpus to check', async () => {
     expect(await lines(folder())).toEqual([]);
@@ -253,8 +253,8 @@ describe('checkApp: every intent has corpus examples', () => {
   it('an intent with no example in the corpus', async () => {
     const { dir, root } = withFixtures(folder(), `${ALL.filter((i) => i !== 'hours' && i !== 'done').map(entry).join('\n')}\n`);
     expect(await lines(dir, { code: libraryCode, fixturesRoot: root })).toEqual([
-      'intents.yaml:11:3  intents.hours  intent "hours" has no examples in the corpus (fixtures/corpus.jsonl)  ->  add a line to fixtures/corpus.jsonl such as {"id":"hours-01","text":"<what a caller says to mean this>","intent":"hours","context":"no_form"}',
-      'intents.yaml:24:3  intents.done  intent "done" has no examples in the corpus (fixtures/corpus.jsonl)  ->  add a line to fixtures/corpus.jsonl such as {"id":"done-01","text":"<what a caller says to mean this>","intent":"done","context":"no_form"}',
+      'intents.yaml:15:3  intents.hours  intent "hours" has no examples in the corpus (fixtures/corpus.jsonl)  ->  add a line to fixtures/corpus.jsonl such as {"id":"hours-01","text":"<what a caller says to mean this>","intent":"hours","context":"no_form"}',
+      'intents.yaml:28:3  intents.done  intent "done" has no examples in the corpus (fixtures/corpus.jsonl)  ->  add a line to fixtures/corpus.jsonl such as {"id":"done-01","text":"<what a caller says to mean this>","intent":"done","context":"no_form"}',
     ]);
   });
 
@@ -269,8 +269,8 @@ describe('checkApp: every intent has corpus examples', () => {
     const { dir, root } = withFixtures(folder(), `${ALL.map(entry).join('\n')}\nnot json\n{"id":"x"}\n`);
     const problems = (await lines(dir, { code: libraryCode, fixturesRoot: root })).map((l) => l.replace(root, '<root>'));
     expect(problems).toEqual([
-      expect.stringMatching(/^.*corpus\.jsonl:9:1  \(file\)  line 9 is not JSON  ->  write one JSON object per line/),
-      expect.stringMatching(/^.*corpus\.jsonl:10:1  \(file\)  line 10 has no "intent"  ->  add "intent": "<an intent id from intents.yaml>" to the line$/),
+      expect.stringMatching(/^.*corpus\.jsonl:10:1  \(file\)  line 10 is not JSON  ->  write one JSON object per line/),
+      expect.stringMatching(/^.*corpus\.jsonl:11:1  \(file\)  line 11 has no "intent"  ->  add "intent": "<an intent id from intents.yaml>" to the line$/),
     ]);
   });
 
@@ -364,7 +364,7 @@ describe('checkApp: the app module', () => {
       'prompts.yaml': without('goodbye'),
     });
     const problems = await lines(dir, {});
-    expect(problems).toContain('policy.yaml:6:3  rulesFor.renewLoan  tool "renewLoan" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.renewLoan), or delete this row');
+    expect(problems).toContain('policy.yaml:7:3  rulesFor.renewLoan  tool "renewLoan" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.renewLoan), or delete this row');
     expect(problems).toContain('prompts.yaml:2:1  prompts  prompt "goodbye" is missing from prompts.yaml; the engine says it when a call ends  ->  add "goodbye:" with its text and interruptible to prompts.yaml');
   });
 

@@ -2,8 +2,10 @@
 toolLevel:
   renewLoan: 0
   findHold: 0
+  listLoans: 0
 rulesFor:
   renewLoan: [R1, R3]
   findHold: [R1, known-branch]
+  listLoans: [R1]
 confirmedFields: [book]
 maxAttempts: 3

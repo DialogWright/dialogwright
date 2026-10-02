@@ -1,17 +1,17 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  addDays, defineApp, describeDay, isChoice,
+  addDays, defineApp, describeDay, isChoice, matchesMask, noulValue, spokenToDigits,
   type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotOutcome, type SlotSpec, type ToolDef,
 } from '../../index';
 
 /**
  * Example Town Library: a small, fictional library's phone line, written as an app folder. The YAML
  * beside this file holds its intents, forms, prompts, policy and presentation; this file holds what
- * runs: two slots (a book from the catalog, a branch), two tools, one rule of the app's own, and the
- * two forms' hooks. A caller renews a book (a confirmed write, so the gate's R3 holds it to the
- * title read back) or asks whether a hold is ready at a branch. The engine's tests build it with
- * defineApp and run calls through it.
+ * runs: three slots (a book from the catalog, a branch, a library card number), three tools, one rule
+ * of the app's own, and the three forms' hooks. A caller renews a book (a confirmed write, so the
+ * gate's R3 holds it to the title read back), asks whether a hold is ready at a branch, or asks what
+ * is checked out on their card. The engine's tests build it with defineApp and run calls through it.
  */
 
 /** The folder this app's YAML is in. */
@@ -51,17 +51,87 @@ function choiceSlot(id: string, options: Readonly<Record<string, string>>, instr
   };
 }
 
+/** A library card number: eight digits. */
+export const CARD_MASK = /^\d{8}$/;
+
+/**
+ * The library card number: a value no list holds, so the model cannot choose it from one. It is
+ * asked whether a number is said, which span of the words it is, and whether it was said whole;
+ * the code turns the span into digits and checks them. Acknowledged when the model is less sure of the
+ * span, keyed as eight digits after two misses, recorded and handed over by its last four.
+ */
+export const cardSlot: SlotSpec = {
+  id: 'card',
+  spokenConfirm: 'by-confidence',
+  redact: 'last4',
+  handoff: 'last4',
+  detect: true,
+
+  questions(ctx) {
+    const criteria: Record<string, string | null> = {};
+    for (const span of ctx.candidateSpans) criteria[span] = null;
+    criteria.none = 'No span of asr.text is a library card number';
+    return {
+      cardGiven: {
+        type: 'noul',
+        instructions: 'Read asr.text. Does the caller state a library card number, as digits or as spoken number words?',
+      },
+      cardSpan: {
+        type: 'choice',
+        instructions: 'Read asr.text. Which of these spans is the library card number the caller states? Choose the span that covers the whole number as spoken, and no words that are not part of it. Choose none if no span is a card number.',
+        criteria,
+      },
+      cardComplete: {
+        type: 'noul',
+        instructions: 'Read asr.text. If the caller states a library card number, do they finish saying the whole number rather than trailing off?',
+      },
+    };
+  },
+
+  fill(answers, ctx): SlotOutcome {
+    const t = ctx.thresholds;
+    if (noulValue(answers, 'cardGiven') < t.SLOT_DETECT) return { kind: 'absent' };
+    if (noulValue(answers, 'cardComplete') < t.SLOT_DETECT) return { kind: 'invalid', reason: 'incomplete', raw: '' };
+    const span = answers.cardSpan;
+    if (!isChoice(span) || span.choice === 'none') return { kind: 'invalid', reason: 'no_span', raw: '' };
+    const p = span.probabilities[span.choice] ?? span.confidence;
+    if (p < t.SLOT_CHOICE_CONFIRM) return { kind: 'invalid', reason: 'low_confidence', raw: '' };
+    const digits = spokenToDigits(span.choice);
+    if (!matchesMask(digits, CARD_MASK)) return { kind: 'invalid', reason: 'length', raw: digits, retryPromptId: 'ask_card_length' };
+    return { kind: 'filled', value: digits, display: digits, confidence: p, confirm: p >= t.SLOT_CHOICE_FILL ? 'none' : 'implicit' };
+  },
+
+  dtmf: {
+    length: 8,
+    parse: (digits) => (matchesMask(digits, CARD_MASK) ? { value: digits, display: digits } : null),
+  },
+
+  display: (value) => value,
+};
+
 export const LIBRARY_SLOTS: Record<string, SlotSpec> = {
   book: choiceSlot('book', BOOKS, 'Read asr.text. Which book in the catalog does the caller name?'),
   branch: choiceSlot('branch', BRANCHES, 'Read asr.text. Which library branch does the caller name?'),
+  card: cardSlot,
 };
 
 /** What a hold looks like in the library's systems. */
 export type HoldStatus = 'ready' | 'waiting';
 
-/** The library's systems for one call: the holds on file and the renewals made on the call. */
+/** A book out on a card, and the day it is due back (an ISO date). */
+export interface Loan {
+  book: string;
+  due: string;
+}
+
+/** The library's systems for one call: the holds and the loans on file, and the renewals made on the call. */
 export class LibrarySystems {
   readonly holds: Readonly<Record<string, HoldStatus>> = { 'river_atlas@north': 'ready', 'quiet_orchard@riverside': 'waiting' };
+  /** By card number. */
+  readonly loans: Readonly<Record<string, readonly Loan[]>> = {
+    '55520417': [{ book: 'clockwork_garden', due: '2026-10-02' }, { book: 'quiet_orchard', due: '2026-09-25' }],
+    '55531290': [],
+  };
   readonly renewals: { ref: string; book: string; due: string }[] = [];
 }
 
@@ -79,6 +149,16 @@ export const LIBRARY_TOOLS: Record<string, ToolDef> = {
     run(call, sys) {
       const status = (sys as LibrarySystems).holds[`${call.params.book}@${call.params.branch}`] ?? null;
       return { value: status, summary: status ? `hold ${status}` : 'no hold' };
+    },
+  },
+  // The param is named after the slot it carries, so the gate event, the trace and the audit
+  // record it as the slot's redact says: by its last four.
+  listLoans: {
+    run(call, sys) {
+      const { loans: onFile } = sys as LibrarySystems;
+      const card = call.params.card ?? '';
+      const loans = Object.hasOwn(onFile, card) ? onFile[card]! : null;
+      return { value: loans, summary: loans ? `${loans.length} loans` : 'no card' };
     },
   },
 };
@@ -118,6 +198,19 @@ function checkHold(c: CompletionContext): Completion {
   return { kind: 'said', acks: [...acks, { promptId, vars }] };
 }
 
+/** The book due back soonest on the card, or that nothing is out, or that there is no such card. */
+function checkLoans(c: CompletionContext): Completion {
+  const { s, acks } = c;
+  const card = displayOf(s, 'card');
+  const { decision, value } = c.callTool({ tool: 'listLoans', params: { card: valueOf(s, 'card') } });
+  if (decision.verdict !== 'ALLOW') return c.refusal(decision);
+  const loans = value as readonly Loan[] | null;
+  if (loans === null) return { kind: 'said', acks: [...acks, { promptId: 'no_card', vars: { card } }] };
+  const [next] = [...loans].sort((a, b) => a.due.localeCompare(b.due));
+  if (!next) return { kind: 'said', acks: [...acks, { promptId: 'no_loans', vars: { card } }] };
+  return { kind: 'said', acks: [...acks, { promptId: 'next_due', vars: { card, book: BOOKS[next.book] ?? next.book, due: describeDay(next.due) } }] };
+}
+
 /** The library's code: everything the YAML names that runs. */
 export const libraryCode: AppCode = {
   slots: LIBRARY_SLOTS,
@@ -126,6 +219,7 @@ export const libraryCode: AppCode = {
   forms: {
     renew_loan: { confirmedParams: renewParams, complete: renew },
     check_hold: { complete: checkHold },
+    check_loans: { complete: checkLoans },
   },
   customRules: { 'known-branch': knownBranch },
 };

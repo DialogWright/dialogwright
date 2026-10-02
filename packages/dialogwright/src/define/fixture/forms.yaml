@@ -8,3 +8,7 @@ forms:
     slots: [book, branch]
     summaryPromptId: null
     hooks: [complete]
+  check_loans:
+    slots: [card]
+    summaryPromptId: null
+    hooks: [complete]

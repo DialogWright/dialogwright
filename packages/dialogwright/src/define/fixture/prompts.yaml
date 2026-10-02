@@ -127,3 +127,29 @@ prompts:
   no_hold:
     text: I don't see a hold for {book} at the {branch} branch.
     interruptible: false
+
+  # Checking loans: the library card slot and the form's lines
+  ask_card:
+    text: What's your library card number?
+    interruptible: true
+  ask_card_retry:
+    text: Sorry, what's your library card number? Please say it one digit at a time.
+    interruptible: true
+  ask_card_length:
+    text: A library card number has eight digits. Please say all eight, one at a time.
+    interruptible: true
+  ask_card_dtmf:
+    text: Please enter your eight digit library card number on the keypad.
+    interruptible: true
+  ack_card:
+    text: That's card {card}.
+    interruptible: false
+  next_due:
+    text: On card {card}, {book} is due back next, on {due}.
+    interruptible: false
+  no_loans:
+    text: There is nothing checked out on card {card}.
+    interruptible: false
+  no_card:
+    text: I can't find library card {card}.
+    interruptible: false

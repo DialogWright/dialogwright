@@ -64,7 +64,7 @@ describe('defineApp: the library fixture', () => {
 
   it('keeps the contract\'s field order, the files\' map order, and no key standing for nothing', () => {
     expect(Object.keys(libraryApp)).toEqual(['id', 'intents', 'menu', 'forms', 'slots', 'tools', 'policy', 'systems', 'wording', 'carrySlots', 'brand', 'console', 'voice', 'prompts', 'locales', 'configHashes']);
-    expect(Object.keys(libraryApp.intents)).toEqual(['renew_loan', 'check_hold', 'hours', 'agent', 'repeat_prompt', 'done', 'other', 'none']);
+    expect(Object.keys(libraryApp.intents)).toEqual(['renew_loan', 'check_hold', 'check_loans', 'hours', 'agent', 'repeat_prompt', 'done', 'other', 'none']);
     expect(libraryApp.intents.hours).toEqual({ criteria: 'Asks when the library is open', label: 'hear the opening hours', kind: 'informational', promptId: 'hours' });
     expect(Object.keys(libraryApp.intents.renew_loan!)).toEqual(['criteria', 'label', 'kind']);
     expect(libraryApp.menu).toEqual([{ digit: '1', intent: 'renew_loan' }, { digit: '2', intent: 'check_hold' }, { digit: '0', intent: 'agent' }]);
@@ -199,7 +199,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
     const { findHold: _, ...tools } = libraryCode.tools;
     expect(problems({ ...libraryCode, tools })).toEqual([
       'policy.yaml:4:13  toolLevel.findHold  tool "findHold" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.findHold), or delete this row',
-      'policy.yaml:7:3  rulesFor.findHold  tool "findHold" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.findHold), or delete this row',
+      'policy.yaml:8:3  rulesFor.findHold  tool "findHold" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.findHold), or delete this row',
     ]);
   });
 
@@ -214,7 +214,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
 
   it('a custom rule rulesFor names that the code does not define', () => {
     expect(problems({ ...libraryCode, customRules: undefined })).toEqual([
-      'policy.yaml:7:18  rulesFor.findHold[1]  rule "known-branch" is not a built-in rule (R1, R2, R3, R5, R6, R7) and the code defines no custom rule by that name  ->  add it to app.ts (code.customRules["known-branch"]), or name a built-in rule instead',
+      'policy.yaml:8:18  rulesFor.findHold[1]  rule "known-branch" is not a built-in rule (R1, R2, R3, R5, R6, R7) and the code defines no custom rule by that name  ->  add it to app.ts (code.customRules["known-branch"]), or name a built-in rule instead',
     ]);
   });
 
@@ -228,8 +228,8 @@ describe('defineApp: the folder and the code must name the same things', () => {
     };
     expect(problems(code)).toEqual([
       'forms.yaml:2:1  forms  the code has hooks for the form "renew_lone" (code.forms.renew_lone), but forms.yaml has no form "renew_lone"  ->  rename it to "renew_loan" in app.ts (code.forms.renew_lone), or add "renew_lone:" under forms in forms.yaml, or delete the hooks from app.ts (code.forms.renew_lone)',
-      'policy.yaml:5:1  rulesFor  tool "payFine" (code.tools.payFine) has no row under rulesFor, so it can never be called  ->  add "payFine: [R1]" under rulesFor and its level under toolLevel, or delete the tool from app.ts (code.tools.payFine)',
-      'policy.yaml:5:1  rulesFor  custom rule "late-fee" (code.customRules["late-fee"]) is not named under rulesFor, so it never runs  ->  add "late-fee" to the rules of the tool it guards, or delete the rule from app.ts (code.customRules["late-fee"])',
+      'policy.yaml:6:1  rulesFor  tool "payFine" (code.tools.payFine) has no row under rulesFor, so it can never be called  ->  add "payFine: [R1]" under rulesFor and its level under toolLevel, or delete the tool from app.ts (code.tools.payFine)',
+      'policy.yaml:6:1  rulesFor  custom rule "late-fee" (code.customRules["late-fee"]) is not named under rulesFor, so it never runs  ->  add "late-fee" to the rules of the tool it guards, or delete the rule from app.ts (code.customRules["late-fee"])',
       'app.ts  code.forms.check_hold.onSumaryRead  "onSumaryRead" is not a form hook; the hooks are entry, onEntry, principalEntry, confirmedParams, complete, onAnswers, onSummaryAnswer, keepsSlot, onSummaryRead  ->  rename it to "onSummaryRead", or delete it from app.ts (code.forms.check_hold.onSumaryRead)',
       'app.ts  code.customRules.R2  custom rule "R2" has a built-in rule\'s id  ->  rename it in app.ts (code.customRules.R2) and in policy.yaml\'s rulesFor; the built-in ids are R0, R1, R2, R3, R5, R6, R7',
       'app.ts  code.identity  the code has identity hooks, but the folder has no identity.yaml  ->  add identity.yaml (subjectKind, factorSlots and the identity tools), or delete it from app.ts (code.identity)',
@@ -241,7 +241,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
     const forms = readFileSync(join(LIBRARY_DIR, 'forms.yaml'), 'utf8').replace('confirm_renew', 'confirm_renewal');
     const policy = readFileSync(join(LIBRARY_DIR, 'policy.yaml'), 'utf8').replace('findHold: 0', 'findHold: 1');
     expect(problems(libraryCode, folder({ 'intents.yaml': intents, 'forms.yaml': forms, 'policy.yaml': policy }))).toEqual([
-      'intents.yaml:41:13  menu[1].intent  menu digit "2" names the intent "check_holds", which is not under intents  ->  rename it to "check_hold", or add "check_holds:" under intents',
+      'intents.yaml:45:13  menu[1].intent  menu digit "2" names the intent "check_holds", which is not under intents  ->  rename it to "check_hold", or add "check_holds:" under intents',
       'forms.yaml:5:22  forms.renew_loan.summaryPromptId  prompt "confirm_renewal" is not in prompts.yaml  ->  rename it to "confirm_renew", or add "confirm_renewal:" to prompts.yaml with its text and interruptible',
       'policy.yaml:4:13  toolLevel.findHold  tool "findHold" needs identity level 1, but the app has no identity.yaml, so no caller can reach it  ->  set it to 0, or add identity.yaml so callers can verify',
     ]);
@@ -259,7 +259,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
     const lines = (error as Error).message.split('\n');
     expect(lines[0]).toBe(`the app in ${LIBRARY_DIR} is not valid (4 problems):`);
     expect(lines.slice(1)).toEqual((error as AppDefinitionError).problems.map((p) => `  ${formatProblem(p)}`));
-    expect(lines.slice(1).map((l) => l.trim().split('  ')[0])).toEqual(['app.yaml:16:5', 'app.yaml:27:14', 'forms.yaml:8:19', 'policy.yaml:7:18']);
+    expect(lines.slice(1).map((l) => l.trim().split('  ')[0])).toEqual(['app.yaml:16:5', 'app.yaml:27:14', 'forms.yaml:8:19', 'policy.yaml:8:18']);
   });
 });
 
@@ -300,8 +300,8 @@ describe('defineApp: what app.yaml shows and the clips name, and what R3 needs',
     const forms = readFileSync(join(LIBRARY_DIR, 'forms.yaml'), 'utf8').replace('hooks: [confirmedParams, complete]', 'hooks: [complete]');
     const { confirmedParams: _, ...renew } = libraryCode.forms.renew_loan!;
     expect(problems({ ...libraryCode, forms: { ...libraryCode.forms, renew_loan: renew } }, folder({ 'policy.yaml': policy, 'forms.yaml': forms }))).toEqual([
-      'policy.yaml:6:3  rulesFor.renewLoan  "renewLoan" runs R3, but no form has a confirmedParams hook, so nothing is ever confirmed and R3 blocks every call  ->  add "confirmedParams" to the hooks of the form that makes the write, and write it in the code',
-      'policy.yaml:8:1  confirmedFields  "renewLoan" runs R3, but confirmedFields is empty, so R3 blocks every call  ->  list the fields a confirmed write carries, in the order its confirmedParams hook returns them',
+      'policy.yaml:7:3  rulesFor.renewLoan  "renewLoan" runs R3, but no form has a confirmedParams hook, so nothing is ever confirmed and R3 blocks every call  ->  add "confirmedParams" to the hooks of the form that makes the write, and write it in the code',
+      'policy.yaml:10:1  confirmedFields  "renewLoan" runs R3, but confirmedFields is empty, so R3 blocks every call  ->  list the fields a confirmed write carries, in the order its confirmedParams hook returns them',
     ]);
   });
 });
@@ -348,14 +348,13 @@ describe('defineApp: a folder that does not load', () => {
 describe('defineApp: identity and policy wording', () => {
   const IDENTITY = 'subjectKind: patron\nfactorSlots: [card]\nverifyTool: verifyCard\ncodeTool: checkCode\nsendCodeTool: sendCode\nfailedPromptId: card_failed\n';
   const policy = (extra = '') =>
-    'toolLevel:\n  renewLoan: 1\n  findHold: 0\n  verifyCard: 0\n  checkCode: 0\n  sendCode: 0\n' +
-    'rulesFor:\n  renewLoan: [R1, R3]\n  findHold: [R1, known-branch]\n  verifyCard: [R6]\n  checkCode: [R6]\n  sendCode: [R1]\n' +
+    'toolLevel:\n  renewLoan: 1\n  findHold: 0\n  listLoans: 0\n  verifyCard: 0\n  checkCode: 0\n  sendCode: 0\n' +
+    'rulesFor:\n  renewLoan: [R1, R3]\n  findHold: [R1, known-branch]\n  listLoans: [R1]\n  verifyCard: [R6]\n  checkCode: [R6]\n  sendCode: [R1]\n' +
     `confirmedFields: [book]\nmaxAttempts: 3\n${extra}`;
   const prompts = () => `${readFileSync(join(LIBRARY_DIR, 'prompts.yaml'), 'utf8')}  card_failed:\n    text: That card number did not match.\n    interruptible: true\n`;
   const run = () => ({ value: null, summary: 'ok' });
   const code: AppCode = {
     ...libraryCode,
-    slots: { ...libraryCode.slots, card: { ...libraryCode.slots.book!, id: 'card' } },
     tools: { ...libraryCode.tools, verifyCard: { run }, checkCode: { run }, sendCode: { run } },
     identity: { sendCodeParams: (s) => ({ card: s.slots.card?.value ?? '' }) },
   };
@@ -373,8 +372,10 @@ describe('defineApp: identity and policy wording', () => {
     const { sendCode: __, ...tools } = code.tools;
     const dir = folder({ 'identity.yaml': IDENTITY, 'policy.yaml': policy(), 'prompts.yaml': prompts() });
     expect(problems({ ...code, slots, tools }, dir)).toEqual([
-      'policy.yaml:6:13  toolLevel.sendCode  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode), or delete this row',
-      'policy.yaml:12:3  rulesFor.sendCode  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode), or delete this row',
+      // the library's check_loans form asks for the card too
+      'forms.yaml:12:13  forms.check_loans.slots[0]  slot "card" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.card)',
+      'policy.yaml:7:13  toolLevel.sendCode  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode), or delete this row',
+      'policy.yaml:14:3  rulesFor.sendCode  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode), or delete this row',
       'identity.yaml:2:15  factorSlots[0]  slot "card" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.card)',
       'identity.yaml:5:15  sendCodeTool  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode)',
     ]);
@@ -388,7 +389,7 @@ describe('defineApp: identity and policy wording', () => {
   it('fills policy.yaml\'s role templates with {role} and {tool} only, and never runs them', () => {
     const wording = 'roles:\n  findHold:\n    clerk: allow\n    volunteer: person\nwording:\n  recordOwner: card holder\n  role:\n    allow: "{role} staff may use {tool}"\n    person: "{role} needs a person for {tool}: $(whoami) {other}"\n';
     expect(problems(code, folder({ 'identity.yaml': IDENTITY, 'policy.yaml': policy(wording), 'prompts.yaml': prompts() }))).toEqual([
-      'policy.yaml:23:13  wording.role.person  the template names {other}; only {role} and {tool} are filled in  ->  write {role} or {tool} in its place, or plain words',
+      'policy.yaml:25:13  wording.role.person  the template names {other}; only {role} and {tool} are filled in  ->  write {role} or {tool} in its place, or plain words',
     ]);
     const app: App = defineApp(folder({ 'identity.yaml': IDENTITY, 'policy.yaml': policy(wording.replace(' {other}', '')), 'prompts.yaml': prompts() }), code);
     expect(app.policy.roles).toEqual({ findHold: { clerk: 'allow', volunteer: 'person' } });
