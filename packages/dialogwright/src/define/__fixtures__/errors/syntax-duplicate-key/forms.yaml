@@ -1,0 +1,6 @@
+forms:
+  billing:
+    slots: [memberId]
+    summaryPromptId: null
+    hooks: [complete]
+    slots: [name]

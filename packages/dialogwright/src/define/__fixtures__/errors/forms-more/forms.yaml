@@ -1,0 +1,10 @@
+forms:
+  schedule_new:
+    slots: [name, dob, name]
+    summaryPromptId: confirm_schedule
+    hooks: [onSummaryRead]
+  "cancel it":
+    slots: name
+    summaryPromptId: confirm_cancel
+    hooks: [complete, complete]
+  billing: []

@@ -1,0 +1,4 @@
+subjectKind: Member
+factorSlots: [memberId, memberId]
+verifyTool: verifyMember
+codeTool: 7

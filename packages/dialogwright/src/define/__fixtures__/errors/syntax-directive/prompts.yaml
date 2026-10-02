@@ -1,0 +1,6 @@
+%YAML 1.1
+---
+prompts:
+  greeting:
+    text: Hello
+    interruptible: yes

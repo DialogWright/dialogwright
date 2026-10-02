@@ -1,0 +1,12 @@
+toolLevel:
+  bookAppointment: 3
+  cancelAppointment: 0
+rulesFor:
+  bookAppointment: [R1, R3, R3]
+  cancelAppointment: [R1]
+subjects:
+  cancelAppointment: { param: memberId, vai: record }
+confirmedFields: [name, dob]
+maxAttempts: 0
+roles:
+  cancelAppointment: { clerk: allowed }

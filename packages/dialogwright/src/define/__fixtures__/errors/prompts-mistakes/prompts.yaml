@@ -1,0 +1,13 @@
+prompts:
+  greeting:
+    text: Thanks for calling.
+    interruptible: true
+    mode: generated
+  ask_name:
+    interruptible: "yes"
+  ask_dob:
+    text: ""
+    interruptible: false
+  "ask name":
+    text: Hello
+    interruptible: true
