@@ -22,7 +22,7 @@ import { auditDrafts } from './audit';
 import type { AuditDraft } from '../audit/types';
 import { decisionToActions, spokenText, type RenderContext } from '../prompts/render';
 import { saidCode } from './spokenCode';
-import { matchLocale } from './locale';
+import { matchLocale, slotLocaleOf } from './locale';
 
 export interface TurnContext {
   nowMs: number;
@@ -169,15 +169,20 @@ export interface TurnResult {
 
 /** What the slot specs see of a turn's words and the session (exported for tests). */
 export function slotContext(session: Session, text: string, tc: TurnContext): SlotContext {
+  // What the app's slot specs read of its facts (e.g. the customer's parcels, once listParcels has
+  // passed the gate; none before identity): one list, and lists by name for slots that name theirs.
+  const given = appOf(session).facts?.forSlots?.(session.facts);
+  // The spans are read in the session's language (none for an app without locales: English, as always).
+  const locale = slotLocaleOf(session);
   return {
     text,
-    candidateSpans: candidateSpans(text),
-    candidateWordSpans: candidateWordSpans(text),
+    candidateSpans: candidateSpans(text, locale),
+    candidateWordSpans: candidateWordSpans(text, locale),
     todayIso: tc.todayIso,
     thresholds: tc.thresholds,
-    // What the app's slot specs read of its facts (e.g. the customer's parcels, once listParcels has
-    // passed the gate; none before identity).
-    records: appOf(session).facts?.forSlots?.(session.facts).records ?? [],
+    records: given?.records ?? [],
+    // Only for an app that names its lists: any other app's slots see the context they always have.
+    ...(given?.sources !== undefined ? { sources: given.sources } : {}),
     // Never a real slot's window or prompt: fillSlots and buildQuestions each substitute a spec's
     // own slot's pending partial and `prompted` in via slotCtx (fia.ts) before calling
     // fill/questions, so no slot's fill or questions ever sees another slot's. applyDtmf shares
@@ -185,8 +190,13 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
     window: null,
     current: null,
     prompted: false,
+    // The session's language, only for an app that declares locales: any other app's slots see the
+    // context they always have.
+    ...withLocale(locale),
   };
 }
+
+const withLocale = (locale: string | undefined): { locale?: string } => (locale === undefined ? {} : { locale });
 
 /** Gate 8's threshold per slot kind: a detected slot (SlotSpec.detect) against SLOT_DETECT, a picked one against SLOT_CHOICE_CONFIRM. */
 function slotThreshold(app: App, slot: SlotId, t: Thresholds): number {

@@ -360,8 +360,18 @@ export interface FactsConfig {
   clone(f: Readonly<SessionFacts>): SessionFacts;
   /** Clears what a closed form leaves stale (e.g. the parcel list, since the call may just have reported one). */
   onFormClosed?(f: SessionFacts): void;
-  /** What the app's slot specs read of the facts (SlotContext.records: e.g. the customer's parcels, to choose one). Without it, none. */
-  forSlots?(f: Readonly<SessionFacts>): Pick<SlotContext, 'records'>;
+  /**
+   * What the app's slot specs read of the facts: `records` (SlotContext.records: e.g. the customer's
+   * parcels, to choose one), and `sources`, lists by name for slots that name theirs
+   * (SlotContext.sources: a `record` slot's `from`). Without it, none.
+   */
+  forSlots?(f: Readonly<SessionFacts>): SlotRecords;
+}
+
+/** What FactsConfig.forSlots gives the slot specs: one list (`records`), lists by name (`sources`), or both. Absent parts are empty. */
+export interface SlotRecords {
+  records?: readonly unknown[];
+  sources?: Readonly<Record<string, readonly unknown[]>>;
 }
 
 /**
@@ -616,7 +626,9 @@ export interface App {
    * `nameSpan`). An app question's id names what it asks (`timeOfDay`, `timePreference`) and never
    * reuses a slot question's id, even one whose slot is not on the same form: the collision throws
    * only on a turn that asks both, so it would surface mid-call rather than at registration.
-   * validateApp cannot catch it, since both sets are built per turn.
+   * validateApp cannot catch it, since the app's questions are built per turn; an id a slot declares
+   * (SlotSpec.questionIds) throws on any turn that asks the app's question, whether or not the slot
+   * is asked on it.
    */
   questions?(s: Session, ctx: SlotContext): QuestionMap;
   /** The app's name and mark on the console. Without it, the app id. */
@@ -707,9 +719,10 @@ export interface App {
 
 /**
  * The content hashes of an app's configuration files (App.configHashes; core/app/configHash.ts).
- * Each is a SHA-256, 64 lowercase hex characters, of the file's parsed content as canonical JSON
- * (object keys sorted at every level, arrays in order, no whitespace): comments, whitespace, key
- * order and quoting style do not change it; any value does.
+ * Each is a SHA-256, 64 lowercase hex characters, of the file's parsed content as JSON with object
+ * keys in document order at every level, arrays in order and no whitespace: comments, whitespace,
+ * flow or block style and quoting do not change it; any value does, and so does the order of keys
+ * (slots.yaml's key order is the app's slot order).
  */
 export interface ConfigHashes {
   /** The combined hash: SHA-256 of the files' `<file>:<hash>` lines, sorted by file and joined by newlines (configHashLines). */

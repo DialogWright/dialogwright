@@ -16,6 +16,7 @@ An app is a folder: YAML for what is data (intents, forms, prompts, policy, iden
 
 - `packages/dialogwright`: the engine. Its `testkit` is the engine's own test fixture, not a template for apps.
 - `packages/dialogwright/schemas/*.schema.json`: the JSON Schemas of the app folder's YAML files. They are generated from the zod schemas in `packages/dialogwright/src/define/schema/`; never edit them by hand. Run `pnpm --filter dialogwright schemas` after changing a zod schema (a test fails when they are stale).
+- `packages/dialogwright/src/slots/`: the slot library, one folder per slot type (options schema, questions, fill, display, tests, examples, README). `docs/slots/*.md` are generated from it; never edit them by hand.
 - `apps/*`: example apps. `apps/clinic` is the one to learn from. Each is a folder (app.yaml, intents.yaml, forms.yaml, prompts.yaml, policy.yaml, optional identity.yaml and locale/) with its code in `src/app.ts`.
 - `packages/dialogwright/src/define/fixture/`: a tiny app folder (a library, with a Spanish locale) that the engine's own tests build.
 - `assets/brand`: logo and icons.
@@ -31,6 +32,8 @@ pnpm check         # every app folder under apps/: YAML, schemas, cross-links to
 pnpm --filter dialogwright regress:testkit
 pnpm --filter @dialogwright/example-clinic regress
 pnpm --filter dialogwright schemas   # regenerate the JSON Schemas after a schema change
+pnpm --filter dialogwright slot-docs   # regenerate docs/slots/*.md after a slot type's options, README or examples change
+pnpm --filter dialogwright test slots/<type>   # a slot type's tests, including the conformance kit
 ```
 
 `pnpm check` prints one line per problem, `file:line:column  path  message  ->  fix`, and exits 1 when there is any. Act on the fix text.
@@ -40,10 +43,11 @@ pnpm --filter dialogwright schemas   # regenerate the JSON Schemas after a schem
 - Never put policy in tool code. Tools do work; the gate decides whether they may run.
 - Never let a model write a regulated line. A model chooses among approved lines; it does not compose them.
 - The engine never imports an app.
-- An app imports only from `'dialogwright'` (src/index.ts), the supported API. The `dialogwright/<dir>/<file>` subpaths are internals; when an app needs one, export it from the root instead.
+- An app imports only from `'dialogwright'` (src/index.ts), the supported API, and from its two other entries: `'dialogwright/testing'` (its tests: the shadow harness, the slot conformance kit) and `'dialogwright/slot-kit'` (the helpers a slot type is written with). The `dialogwright/<dir>/<file>` subpaths are internals; when an app needs one, export it from the root instead.
 - No real personal data anywhere: use the 555 phone range and invented names.
 - Run `pnpm check`, `pnpm verify` (the type check and the tests) and both regressions (the testkit's and the clinic's) before committing. `pnpm check` is the one that catches an app folder and its code disagreeing.
 - Every YAML file of an app starts with `# yaml-language-server: $schema=<relative path>/packages/dialogwright/schemas/<kind>.schema.json`, so an editor completes and checks it. Keep the line when you add a file.
 - A form's `hooks:` list in forms.yaml must name exactly the hooks the code writes for it, and every tool has a row in policy.yaml. Policy lives in policy.yaml and the gate, never in a tool.
+- Most slots are configuration: an app names a library type in `slots.yaml` (see `docs/slots/README.md`). Write a slot in code only when no type fits. When you add or change a slot type, follow "Adding a slot type" in CONTRIBUTING.md: run its conformance kit (`pnpm --filter dialogwright test slots/<type>`), regenerate the schemas (`pnpm --filter dialogwright schemas`) and the pages (`pnpm --filter dialogwright slot-docs`), and commit the results; tests fail when they are stale. Edit a type's `README.md`, never the generated page.
 - Keep `packages/dialogwright` free of any one industry's vocabulary: its code, comments, tests and fixtures use neutral words (caller, subject, record, request, appointment, loan). Words that belong to one app's domain stay in that app. The same goes for names, dates of birth and numbers: invented, 555 range.
 - Never regenerate a regression baseline or snapshot to make a test pass. A changed output is a finding to explain, not noise to overwrite.

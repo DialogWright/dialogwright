@@ -1,4 +1,7 @@
 import { isRuleId } from '../../gate/policy';
+import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../questionIds';
+import { askedQuestionIds, probeContexts } from './probeQuestions';
+import { unknownSlotThresholds, unknownThresholdMessage } from '../slotThresholds';
 import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import type { App, ConfigHashes } from './types';
@@ -46,6 +49,15 @@ export function validateApp(app: App): void {
   }
   for (const slot of app.identity?.factorSlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`identity factor slot "${slot}" is not a slot`);
   for (const slot of app.carrySlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`carried slot "${slot}" is not a slot`);
+  // A slot that declares its question ids (SlotSpec.questionIds) is checked here.
+  for (const clash of declaredQuestionIdClashes(app.slots)) fail(clashMessage(clash));
+  // What each slot asks, tried on a few made-up turns: a hand-written slot that asks the engine's or
+  // another slot's id, or one its questionIds leave out, is refused here rather than on that turn.
+  const locales = app.locales ? [app.locales.default, ...Object.keys(app.locales.prompts ?? {})] : [];
+  const asked = askedQuestionIds(app.slots, probeContexts(locales, app.thresholds ?? {}));
+  for (const clash of askedQuestionIdClashes(app.slots, asked)) fail(clashMessage(clash));
+  // A threshold a slot's options name must exist, as the engine's or as one of the app's own (App.thresholds).
+  for (const u of unknownSlotThresholds(app.slots, app.thresholds)) fail(`${unknownThresholdMessage(u)} (App.thresholds)`);
   if (app.locales) {
     if (typeof app.locales.default !== 'string' || app.locales.default === '') fail('locales has no default locale');
     // The default locale's lines are the manifest; a second copy would be one that is never read.

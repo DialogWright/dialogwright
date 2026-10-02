@@ -5,24 +5,10 @@ import { formOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, SlotId } from './app/types';
 import { activeSlots, slotCtx } from './fia';
+import { ENGINE_QUESTION_IDS } from './questionIds';
 import type { Session } from './session';
 
-export const ALWAYS_ON_IDS = [
-  'intent', 'intentTentative',
-  'addressedToSystem', 'utteranceComplete', 'wantsHuman', 'rephrasingLastTurn', 'confusedByPrompt', 'spokeAMenuNumber',
-  'frustration', 'urgency', 'triedSelfService', 'languageSwitch',
-  'intelligible',
-] as const;
-
-/**
- * Every question id the engine itself asks, in any state: the always-on ones, the confirmation's,
- * the in-form, opener, summary and menu ones, and the injection screen's. An app's own question
- * (App.questions) may not take one, even in a state where the engine would not ask it, since the
- * engine reads its answers by these names.
- */
-export const ENGINE_QUESTION_IDS: readonly string[] = [
-  ...ALWAYS_ON_IDS, 'confirmsYes', 'confirmsNo', 'intentChange', 'secondIntent', 'changeSlot', 'menuNumberSaid', 'manipulation',
-];
+export { ALWAYS_ON_IDS, ENGINE_QUESTION_IDS } from './questionIds';
 
 /**
  * The engine's own words for what an app's ModelWording leaves out: neutral, naming no domain.
@@ -239,7 +225,22 @@ function menu(app: App): QuestionMap {
 export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap {
   const app = appOf(session);
   const q: QuestionMap = { ...alwaysOn(app) };
-  for (const spec of activeSlots(session)) Object.assign(q, spec.questions(slotCtx(session, ctx, spec.id)));
+  // Which slot asks each slot question this turn: a slot's question that took another's id, or one
+  // of the engine's, would replace it unseen, so it throws instead. A slot that declares its ids
+  // (SlotSpec.questionIds; validateApp checked them against each other and the engine's) may ask
+  // only those.
+  const askedBy = new Map<string, SlotId>();
+  for (const spec of activeSlots(session)) {
+    const own = spec.questions(slotCtx(session, ctx, spec.id));
+    for (const id of Object.keys(own)) {
+      if (ENGINE_QUESTION_IDS.includes(id)) throw new Error(`app "${app.id}": slot "${spec.id}" asks the question "${id}", which is one the engine asks`);
+      const other = askedBy.get(id);
+      if (other !== undefined) throw new Error(`app "${app.id}": slots "${other}" and "${spec.id}" both ask the question "${id}"`);
+      if (spec.questionIds !== undefined && !spec.questionIds.includes(id)) throw new Error(`app "${app.id}": slot "${spec.id}" asks the question "${id}", which is not in its questionIds`);
+      askedBy.set(id, spec.id);
+    }
+    Object.assign(q, own);
+  }
   if (session.form) Object.assign(q, inForm());
   if (!session.form) Object.assign(q, noForm(app));
   if (session.pendingConfirmation) Object.assign(q, confirmation(app));
@@ -248,10 +249,20 @@ export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap 
   // The app's own, last, and only where it has any: an app without them asks exactly the above.
   const own = app.questions?.(session, ctx);
   if (own) {
+    const declared = declaredIdsOf(app);
     for (const id of Object.keys(own)) {
       if (ENGINE_QUESTION_IDS.includes(id) || Object.hasOwn(q, id)) throw new Error(`app "${app.id}": its question "${id}" is one the engine or a slot asks`);
+      // A slot that declares its ids owns them on every turn, even one it is not asked on.
+      if (declared.has(id)) throw new Error(`app "${app.id}": its question "${id}" is one the slot "${declared.get(id)}" declares (questionIds)`);
     }
     Object.assign(q, own);
   }
   return q;
+}
+
+/** The question ids the app's slots declare (SlotSpec.questionIds), each with the slot that declares it. */
+function declaredIdsOf(app: App): Map<string, SlotId> {
+  const ids = new Map<string, SlotId>();
+  for (const spec of Object.values(app.slots)) for (const id of spec.questionIds ?? []) if (!ids.has(id)) ids.set(id, spec.id);
+  return ids;
 }

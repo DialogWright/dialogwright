@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DAY_PARTS } from '../testing/testkit/domain/systems';
-import { DAY_PART_DISPLAY } from '../testing/testkit/domain/slots/deliveryPart';
+import { DAY_PART_DISPLAY } from '../testing/testkit/domain/slots/shared';
 import { FORM_INTENTS, INTENTS } from '../testing/testkit/domain/intents';
 import { clipVersions, discoverClips, recordableClips, vocabularyClipId } from './clips';
 import { testkitApp } from '../testing/testkit';

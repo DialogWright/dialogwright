@@ -1,0 +1,304 @@
+import { describe, expect, it } from 'vitest';
+import { VOICE_RELAY } from '../../channel/caps';
+import { speechEvent, startEvent } from '../../channel/events';
+import { AppDefinitionError, defineApp } from '../../define/defineApp';
+import { libraryApp, libraryCode, LIBRARY_DIR } from '../../define/fixture/app';
+import { formatProblem } from '../../define/problems';
+import { ANONYMOUS } from '../../gate/principal';
+import type { Question } from '../../jev/types';
+import { choice, noul, score } from '../../testing/answers';
+import { useTestkit } from '../../testing/apps';
+import { testkitApp } from '../../testing/testkit';
+import { registerApp } from '../app/registry';
+import type { App } from '../app/types';
+import { validateApp } from '../app/validate';
+import { askSlot } from '../decision';
+import { buildQuestions, ENGINE_QUESTION_IDS } from '../questions';
+import { newSession, type Session } from '../session';
+import { DEFAULT_THRESHOLDS } from '../thresholds';
+import { mockCodeVerifier } from '../tools';
+import { resolve, slotContext, type TurnContext } from '../turn';
+import type { SlotContext, SlotPartial, SlotSpec } from './types';
+
+/**
+ * The slot contract's metadata: the question ids a slot declares (SlotSpec.questionIds), checked
+ * against each other, the engine's and the app's own questions; the turn-time guard for a slot that
+ * declares none; and the session's locale reaching a slot (SlotContext.locale, partialVars).
+ */
+useTestkit();
+registerApp(libraryApp);
+
+const tc: TurnContext = { nowMs: 0, todayIso: '2026-09-18', thresholds: { ...DEFAULT_THRESHOLDS }, tools: { ...libraryApp.systems(), codes: mockCodeVerifier } };
+const { book, branch, card } = libraryCode.slots as Record<'book' | 'branch' | 'card', SlotSpec>;
+const NOTE: Question = { type: 'noul', instructions: 'Read asr.text. Does the caller say anything else?' };
+
+/** The library with some of its slots replaced, under its own id, registered. */
+function library(id: string, slots: Partial<Record<'book' | 'branch' | 'card', SlotSpec>>, over: Partial<App> = {}): App {
+  const app: App = { ...libraryApp, id, slots: { ...libraryApp.slots, ...slots }, ...over };
+  registerApp(app);
+  return app;
+}
+
+const fresh = (app: App, id = 's'): Session => newSession(id, 0, VOICE_RELAY, ANONYMOUS, app.id);
+const questionsAt = (s: Session) => buildQuestions(s, slotContext(s, 'hello', tc));
+
+describe('the library declares its slots\' question ids and lines', () => {
+  it('each slot asks exactly the ids it declares, and the app is valid', () => {
+    expect(book.questionIds).toEqual(['book']);
+    expect(branch.questionIds).toEqual(['branch']);
+    expect(card.questionIds).toEqual(['cardGiven', 'cardSpan', 'cardComplete']);
+    const ctx = slotContext(fresh(libraryApp), 'card 5552 0417', tc);
+    for (const spec of [book, branch, card]) expect(Object.keys(spec.questions(ctx)).sort()).toEqual([...spec.questionIds!].sort());
+    expect(card.prompts?.map((p) => p.id)).toEqual(['ask_card_length', 'ack_card', 'ask_card_dtmf']);
+    expect(() => validateApp(libraryApp)).not.toThrow();
+  });
+});
+
+describe('declared question ids, when the app is validated', () => {
+  it('urgency is one of the engine\'s own question ids', () => {
+    expect(ENGINE_QUESTION_IDS).toContain('urgency');
+  });
+
+  it('refuses an id two slots declare, one the engine asks, and one a slot lists twice', () => {
+    expect(() => validateApp({ ...libraryApp, slots: { ...libraryApp.slots, branch: { ...branch, questionIds: ['book'] } } })).toThrow(
+      'app "library": slot "branch" declares the question id "book", which the slot "book" declares too, so one slot\'s question would replace the other\'s',
+    );
+    expect(() => validateApp({ ...libraryApp, slots: { ...libraryApp.slots, card: { ...card, questionIds: ['cardGiven', 'urgency'] } } })).toThrow(
+      'app "library": slot "card" declares the question id "urgency", which is one the engine asks, so its answers would be read as the engine\'s',
+    );
+    expect(() => validateApp({ ...libraryApp, slots: { ...libraryApp.slots, card: { ...card, questionIds: ['cardGiven', 'cardGiven'] } } })).toThrow(
+      'app "library": slot "card" declares the question id "cardGiven" twice',
+    );
+  });
+
+  it('defineApp (and so check) reports every one, in the loader\'s format, with a fix', () => {
+    const slots = { ...libraryCode.slots, branch: { ...branch, questionIds: ['book'] }, card: { ...card, questionIds: ['cardGiven', 'urgency', 'cardGiven'] } };
+    let problems: string[] = [];
+    try {
+      defineApp(LIBRARY_DIR, { ...libraryCode, slots });
+    } catch (e) {
+      if (!(e instanceof AppDefinitionError)) throw e;
+      problems = e.problems.map(formatProblem);
+    }
+    expect(problems).toEqual([
+      'app.ts  code.slots.branch.questionIds  slot "branch" declares the question id "book", which the slot "book" declares too, so one slot\'s question would replace the other\'s  ->  give the question an id of the slot\'s own, such as "branchBook", in the slot\'s questions and in app.ts (code.slots.branch.questionIds)',
+      'app.ts  code.slots.card.questionIds  slot "card" declares the question id "urgency", which is one the engine asks, so its answers would be read as the engine\'s  ->  give the question an id of the slot\'s own, such as "cardUrgency", in the slot\'s questions and in app.ts (code.slots.card.questionIds)',
+      'app.ts  code.slots.card.questionIds  slot "card" declares the question id "cardGiven" twice  ->  list it once in app.ts (code.slots.card.questionIds)',
+      // and the ids each still asks, which the changed questionIds leave out
+      'app.ts  code.slots.branch.questionIds  slot "branch" asks the question "branch" (seen when its questions() were tried on sample turns), which its questionIds leave out  ->  add "branch" to app.ts (code.slots.branch.questionIds), or stop asking it',
+      'app.ts  code.slots.card.questionIds  slot "card" asks the question "cardSpan" (seen when its questions() were tried on sample turns), which its questionIds leave out  ->  add "cardSpan" to app.ts (code.slots.card.questionIds), or stop asking it',
+      'app.ts  code.slots.card.questionIds  slot "card" asks the question "cardComplete" (seen when its questions() were tried on sample turns), which its questionIds leave out  ->  add "cardComplete" to app.ts (code.slots.card.questionIds), or stop asking it',
+      // and the branch, changed in code after the library built it, can no longer take its es wording
+      'locale/es/slots.yaml:10:1  branch  the slot "branch" was built by the "choice" type and then changed in code (a copy with a field replaced), so locale/es/slots.yaml cannot give its wording: built again with it from its options, the slot would lose the change  ->  build the slot with defineSlot (or in slots.yaml) and use it as built, or delete "branch" from locale/es/slots.yaml and have the code\'s slot say its value by its locale',
+    ]);
+  });
+});
+
+describe('named thresholds, when the app is validated', () => {
+  const unsure: SlotSpec = { ...branch, thresholds: ['SLOT_CHOICE_FILL', 'PROVIDER_UNSUR'] };
+
+  it('a library slot declares the thresholds its options name', () => {
+    expect(book.thresholds).toEqual(['SLOT_CHOICE_FILL']);
+    expect(branch.thresholds).toEqual(['SLOT_CHOICE_FILL']);
+    // the card's floor on how sure the model is of the span
+    expect(card.thresholds).toEqual(['SLOT_CHOICE_CONFIRM']);
+  });
+
+  it('refuses a name that is neither the engine\'s nor the app\'s', () => {
+    expect(() => validateApp({ ...libraryApp, slots: { ...libraryApp.slots, branch: unsure } })).toThrow(
+      'app "library": slot "branch" names the threshold "PROVIDER_UNSUR", which is neither one of the engine\'s thresholds nor one the app names (App.thresholds)',
+    );
+  });
+
+  it('accepts one the app names under thresholds', () => {
+    expect(() => validateApp({ ...libraryApp, thresholds: { PROVIDER_UNSUR: 0.45 }, slots: { ...libraryApp.slots, branch: unsure } })).not.toThrow();
+  });
+
+  it('defineApp (and so check) reports it, in the loader\'s format, with the closest name as the fix', () => {
+    const near: SlotSpec = { ...branch, thresholds: ['SLOT_CHOICE_FIL'] };
+    let problems: string[] = [];
+    try {
+      defineApp(LIBRARY_DIR, { ...libraryCode, slots: { ...libraryCode.slots, branch: near } });
+    } catch (e) {
+      if (!(e instanceof AppDefinitionError)) throw e;
+      problems = e.problems.map(formatProblem);
+    }
+    expect(problems[0]).toBe(
+      'app.ts  code.slots.branch.thresholds  slot "branch" names the threshold "SLOT_CHOICE_FIL", which is neither one of the engine\'s thresholds nor one the app names  ->  rename it to "SLOT_CHOICE_FILL", or add "SLOT_CHOICE_FIL" under thresholds in app.yaml',
+    );
+  });
+});
+
+describe('the question ids a slot asks, when the app is defined', () => {
+  /** The library's book as a hand-written slot that declares nothing, asking `own` besides its question. */
+  const legacyBook = (own: Record<string, Question>): SlotSpec => {
+    const { questionIds: _q, prompts: _p, ...rest } = book;
+    return { ...rest, questions: (ctx) => ({ ...book.questions(ctx), ...own }) };
+  };
+  const withBook = (id: string, spec: SlotSpec): App => ({ ...libraryApp, id, slots: { ...libraryApp.slots, book: spec } });
+
+  // Before, each of these was found only on the turn that asked it, and a slot's question taking
+  // another's id had once been merged over it unseen; now the app is refused when it is defined.
+  it('refuses a hand-written slot that asks a question the engine asks', () => {
+    expect(() => validateApp(withBook('clash-engine', legacyBook({ urgency: NOTE })))).toThrow(
+      'app "clash-engine": slot "book" asks the question "urgency" (seen when its questions() were tried on sample turns), which is one the engine asks',
+    );
+  });
+
+  it('nor one another slot declares or asks', () => {
+    expect(() => validateApp(withBook('clash-slots', legacyBook({ cardSpan: NOTE })))).toThrow(
+      'app "clash-slots": slots "book" and "card" both ask the question "cardSpan" (seen when their questions() were tried on sample turns), so one slot\'s question would replace the other\'s',
+    );
+  });
+
+  it('nor, for a slot that declares its ids, one it leaves out', () => {
+    expect(() => validateApp(withBook('clash-undeclared', { ...book, questions: (ctx) => ({ ...book.questions(ctx), bookNote: NOTE }) }))).toThrow(
+      'app "clash-undeclared": slot "book" asks the question "bookNote" (seen when its questions() were tried on sample turns), which its questionIds leave out',
+    );
+  });
+
+  it('finds one asked only with a value on file, a partial pending or in a locale, and skips a try that throws', () => {
+    const onFile = legacyBook({});
+    const late: SlotSpec = { ...onFile, questions: (ctx) => ({ ...onFile.questions(ctx), ...(ctx.current !== null && ctx.window !== null ? { urgency: NOTE } : {}) }) };
+    expect(() => validateApp(withBook('clash-late', late))).toThrow('slot "book" asks the question "urgency"');
+    const spanish: SlotSpec = { ...onFile, questions: (ctx) => ({ ...onFile.questions(ctx), ...(ctx.locale === 'es' ? { urgency: NOTE } : {}) }) };
+    expect(() => validateApp(withBook('clash-es', spanish))).toThrow('slot "book" asks the question "urgency"');
+    const picky: SlotSpec = { ...book, questions: (ctx) => { if (ctx.window !== null) throw new Error('not a partial of mine'); return book.questions(ctx); } };
+    expect(() => validateApp(withBook('picky', picky))).not.toThrow();
+  });
+
+  it('defineApp (and so check) reports it at the slot, in the loader\'s format, with a fix', () => {
+    let problems: string[] = [];
+    try {
+      defineApp(LIBRARY_DIR, { ...libraryCode, slots: { ...libraryCode.slots, book: legacyBook({ urgency: NOTE }) } });
+    } catch (e) {
+      if (!(e instanceof AppDefinitionError)) throw e;
+      problems = e.problems.map(formatProblem);
+    }
+    expect(problems).toContain(
+      'app.ts  code.slots.book  slot "book" asks the question "urgency" (seen when its questions() were tried on sample turns), which is one the engine asks, so its answers would be read as the engine\'s and the engine\'s question replaced  ->  give the question an id of the slot\'s own, such as "bookUrgency", in the slot\'s questions',
+    );
+  });
+});
+
+describe('slot question ids, turn by turn', () => {
+  /** The library's book as a hand-written slot that declares nothing, asking `own` besides its question on a turn that says "and also". */
+  const SAID = 'and also this';
+  const lateBook = (own: Record<string, Question>, declare = false): SlotSpec => {
+    const { questionIds: _q, prompts: _p, ...rest } = book;
+    return { ...(declare ? book : rest), questions: (ctx) => ({ ...book.questions(ctx), ...(ctx.text === SAID ? own : {}) }) };
+  };
+  const at = (s: Session) => buildQuestions(s, slotContext(s, SAID, tc));
+
+  // The tries at definition do not say "and also this", so these pass validateApp; the turn that
+  // asks them throws, as it always has.
+  it('a slot that declares none may not ask a question the engine asks', () => {
+    const app = library('late-engine', { book: lateBook({ urgency: NOTE }) });
+    expect(() => at(fresh(app))).toThrow('app "late-engine": slot "book" asks the question "urgency", which is one the engine asks');
+  });
+
+  it('nor one another slot asks', () => {
+    const app = library('late-slots', { book: lateBook({ cardSpan: NOTE }) });
+    expect(() => at(fresh(app))).toThrow('app "late-slots": slots "book" and "card" both ask the question "cardSpan"');
+  });
+
+  it('a slot that declares its ids may ask no other', () => {
+    const app = library('late-undeclared', { book: lateBook({ bookNote: NOTE }, true) });
+    expect(() => validateApp(app)).not.toThrow();
+    expect(() => at(fresh(app))).toThrow('app "late-undeclared": slot "book" asks the question "bookNote", which is not in its questionIds');
+  });
+
+  it('an app question may not take an id a slot declares, even on a turn that does not ask that slot', () => {
+    const app = library('clash-app', {}, { questions: () => ({ cardSpan: NOTE }) });
+    const started = resolve(fresh(app), startEvent(), null, tc).session;
+    const answers = {
+      addressedToSystem: noul(0.95), intelligible: noul(0.95), utteranceComplete: noul(0.9), wantsHuman: noul(0.05),
+      rephrasingLastTurn: noul(0.1), confusedByPrompt: noul(0.1), spokeAMenuNumber: noul(0.05),
+      frustration: score({ none: 0.8, mild: 0.15, high: 0.05 }), intent: choice({ renew_loan: 0.95, none: 0.05 }),
+    };
+    // Renewing asks for the book alone: the card is not asked, but its ids are still its own.
+    const renewing = resolve(started, speechEvent('i want to renew a book'), answers, tc).session;
+    expect(renewing.form).toBe('renew_loan');
+    expect(() => questionsAt(renewing)).toThrow('app "clash-app": its question "cardSpan" is one the slot "card" declares (questionIds)');
+  });
+
+  it('every app the engine ships asks without a collision: the testkit, the library', () => {
+    expect(() => questionsAt(newSession('t', 0, VOICE_RELAY))).not.toThrow();
+    expect(() => questionsAt(fresh(libraryApp))).not.toThrow();
+  });
+});
+
+describe('the session\'s locale reaches the slots', () => {
+  it('an app with locales: the session\'s, in the slot context and so in each slot\'s own', () => {
+    const en = fresh(libraryApp, 'en');
+    expect(slotContext(en, 'hello', tc).locale).toBe('en-US');
+    const es = resolve(fresh(libraryApp, 'es'), startEvent({}, 'es-US'), null, tc).session;
+    expect(es.locale).toBe('es');
+    expect(slotContext(es, 'hola', tc).locale).toBe('es');
+    // Each spec's questions see it (slotCtx keeps the base context's locale).
+    const seen: (string | undefined)[] = [];
+    const spy: SlotSpec = { ...book, questions: (ctx: SlotContext) => (seen.push(ctx.locale), book.questions(ctx)) };
+    const app = library('locale-spy', { book: spy });
+    seen.length = 0; // validateApp tried its questions() when the app was registered
+    const s = fresh(app);
+    s.locale = 'es';
+    questionsAt(s);
+    expect(seen).toEqual(['es']);
+  });
+
+  it('an app without locales: no locale at all, so its slots see the context they always have', () => {
+    const ctx = slotContext(newSession('t', 0, VOICE_RELAY), 'hello', tc);
+    expect(Object.hasOwn(ctx, 'locale')).toBe(false);
+    expect(Object.keys(ctx).sort()).toEqual(['candidateSpans', 'candidateWordSpans', 'current', 'prompted', 'records', 'text', 'thresholds', 'todayIso', 'window']);
+  });
+
+  it('partialVars is given the locale where the engine asks for the rest of a value, and none for an app without locales', () => {
+    const calls: unknown[][] = [];
+    const partialVars = (window: SlotPartial, ...rest: unknown[]): Record<string, string> => (calls.push([window.kind, ...rest]), { title: 'x' });
+    const app = library('partial-spy', { book: { ...book, partialPromptId: 'ask_book_title', partialVars } });
+    const s = fresh(app);
+    s.locale = 'es';
+    expect(askSlot(s, 'book', { kind: 'title' }, [])).toMatchObject({ promptId: 'ask_book_title', vars: { title: 'x' } });
+    const dob = testkitApp.slots.dob!;
+    const kit: App = { ...testkitApp, id: 'testkit-partial-spy', slots: { ...testkitApp.slots, dob: { ...dob, partialVars } } };
+    registerApp(kit);
+    askSlot(newSession('k', 0, VOICE_RELAY, ANONYMOUS, kit.id), 'dob', { kind: 'dob', month: 3, day: 5 }, []);
+    expect(calls).toEqual([['title', 'es'], ['dob', undefined]]);
+  });
+});
+
+describe('the app\'s records reach the slots', () => {
+  const facts = (given: App['facts']) => given;
+  const PARCELS = [{ number: '7101' }];
+  const ORDERS = [{ ref: 'A12' }];
+
+  it('lists by name (facts.forSlots sources), in the slot context and so in each slot\'s own, beside the one list', () => {
+    const seen: unknown[] = [];
+    const spy: SlotSpec = { ...book, questions: (ctx: SlotContext) => (seen.push(ctx.sources), book.questions(ctx)) };
+    const app = library('sources-app', { book: spy }, {
+      facts: facts({ initial: () => ({}), clone: (f) => ({ ...f }), forSlots: () => ({ records: PARCELS, sources: { parcels: PARCELS, orders: ORDERS } }) }),
+    });
+    seen.length = 0; // validateApp tried its questions() when the app was registered
+    const s = fresh(app);
+    const ctx = slotContext(s, 'hello', tc);
+    expect(ctx.records).toBe(PARCELS);
+    expect(ctx.sources).toEqual({ parcels: PARCELS, orders: ORDERS });
+    questionsAt(s);
+    expect(seen).toEqual([{ parcels: PARCELS, orders: ORDERS }]);
+  });
+
+  it('lists by name alone: no one list, so records is empty', () => {
+    const app = library('sources-only-app', {}, { facts: facts({ initial: () => ({}), clone: (f) => ({ ...f }), forSlots: () => ({ sources: { orders: ORDERS } }) }) });
+    const ctx = slotContext(fresh(app), 'hello', tc);
+    expect(ctx.records).toEqual([]);
+    expect(ctx.sources).toEqual({ orders: ORDERS });
+  });
+
+  it('an app that gives only records, or nothing: no sources at all, the context it always had', () => {
+    const one = library('records-app', {}, { facts: facts({ initial: () => ({}), clone: (f) => ({ ...f }), forSlots: () => ({ records: PARCELS }) }) });
+    const ctx = slotContext(fresh(one), 'hello', tc);
+    expect(ctx.records).toBe(PARCELS);
+    expect(Object.hasOwn(ctx, 'sources')).toBe(false);
+    expect(Object.hasOwn(slotContext(newSession('t', 0, VOICE_RELAY), 'hello', tc), 'sources')).toBe(false);
+  });
+});

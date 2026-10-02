@@ -4,7 +4,9 @@ import {
   tokenize, WEEKDAYS, WINDOWS, type CorpusSlotLabels, type HeuristicContext, type TestingHooks,
 } from 'dialogwright';
 import { PROVIDERS } from './roster';
-import { DOB_DAYS } from './slots/dob';
+
+/** The day-of-month labels, "1" .. "31", exactly as the birth date's and the day's questions offer them. */
+const DAY_LABELS = Array.from({ length: 31 }, (_, i) => String(i + 1));
 
 /**
  * The clinic for the regression harness and the decision-model stubs (App.testing): the labels its
@@ -61,7 +63,7 @@ function checkCorpusSlots(id: string, text: string, labels: CorpusSlotLabels): v
     // The month and the day are choice labels, not spans: anything else ("Mar", "31st") could only
     // be picked as `none`, and the labelled birthday would go quietly unread.
     if (dob.month !== undefined && !(MONTHS as readonly string[]).includes(dob.month)) throw new Error(`corpus ${id}: dob month "${dob.month}" is not one of the month labels`);
-    if (dob.day !== undefined && !DOB_DAYS.includes(dob.day)) throw new Error(`corpus ${id}: dob day "${dob.day}" is not a day-of-month label "1".."31"`);
+    if (dob.day !== undefined && !DAY_LABELS.includes(dob.day)) throw new Error(`corpus ${id}: dob day "${dob.day}" is not a day-of-month label "1".."31"`);
   }
   const member = s.memberId;
   if (member !== undefined) {
@@ -78,7 +80,7 @@ function checkCorpusSlots(id: string, text: string, labels: CorpusSlotLabels): v
     for (const [key, allowed] of checks) {
       if (date[key] !== undefined && !allowed.includes(date[key]!)) throw new Error(`corpus ${id}: date ${key} "${date[key]}" is not one of its labels`);
     }
-    if (date.day !== undefined && !DOB_DAYS.includes(date.day)) throw new Error(`corpus ${id}: date day "${date.day}" is not a day-of-month label "1".."31"`);
+    if (date.day !== undefined && !DAY_LABELS.includes(date.day)) throw new Error(`corpus ${id}: date day "${date.day}" is not a day-of-month label "1".."31"`);
   }
 }
 

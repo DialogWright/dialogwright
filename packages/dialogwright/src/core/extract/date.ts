@@ -1,3 +1,4 @@
+import { isSpanish } from './lexicon';
 import { spokenToDigits } from './spokenNumber';
 
 export interface ComponentPick {
@@ -198,16 +199,44 @@ function cap(s: string): string {
   return s[0]!.toUpperCase() + s.slice(1);
 }
 
-/** Human-readable form for prompts, e.g. "Tuesday, September 22". */
-export function describeDay(iso: string): string {
+/** The months and weekdays as Spanish says them, in lower case (as a Spanish date is written), January and Monday first. */
+export const MONTHS_ES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+] as const;
+export const WEEKDAYS_ES = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'] as const;
+
+/** A span of days as Spanish says it after the line's own words ("la próxima semana"). */
+const WINDOWS_ES: Readonly<Record<string, string>> = {
+  this_week: 'esta semana',
+  next_week: 'la próxima semana',
+  this_month: 'este mes',
+  next_month: 'el próximo mes',
+};
+
+/**
+ * Human-readable form for prompts, e.g. "Tuesday, September 22". In Spanish (`locale` es or es-*):
+ * "martes, 22 de septiembre". Any other locale, or none, is English.
+ */
+export function describeDay(iso: string, locale?: string): string {
   const d = new Date(parseIso(iso));
+  if (isSpanish(locale)) return `${WEEKDAYS_ES[weekdayIndex(iso)]!}, ${d.getUTCDate()} de ${MONTHS_ES[d.getUTCMonth()]!}`;
   const wd = WEEKDAYS[weekdayIndex(iso)]!;
   const mo = MONTHS[d.getUTCMonth()]!;
   return `${cap(wd)}, ${cap(mo)} ${d.getUTCDate()}`;
 }
 
-export function describeWindow(w: DateWindow): string {
-  if ((MONTHS as readonly string[]).includes(w.label)) return `in ${cap(w.label)}`;
+/**
+ * A span of days, as a line says it: "next week", "in December". In Spanish: "la próxima semana",
+ * "en diciembre", "esta semana", "este mes", "el próximo mes".
+ */
+export function describeWindow(w: DateWindow, locale?: string): string {
+  const month = (MONTHS as readonly string[]).indexOf(w.label);
+  if (isSpanish(locale)) {
+    if (month >= 0) return `en ${MONTHS_ES[month]!}`;
+    return WINDOWS_ES[w.label] ?? w.label.replace(/_/g, ' ');
+  }
+  if (month >= 0) return `in ${cap(w.label)}`;
   return w.label.replace(/_/g, ' ');
 }
 
@@ -218,18 +247,23 @@ export function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
-/** Human-readable form of an ISO date of birth, e.g. "November 22nd, 1991". */
-export function describeDob(iso: string): string {
+/**
+ * Human-readable form of an ISO date of birth, e.g. "November 22nd, 1991". In Spanish: "22 de
+ * noviembre de 1991" (Spanish says a day of the month without an ordinal suffix).
+ */
+export function describeDob(iso: string, locale?: string): string {
   const [y, m, d] = iso.split('-').map(Number) as [number, number, number];
+  if (isSpanish(locale)) return `${d} de ${MONTHS_ES[m - 1]!} de ${y}`;
   return `${cap(MONTHS[m - 1]!)} ${ordinal(d)}, ${y}`;
 }
 
 /**
  * A spoken year to a calendar year in the past: "nineteen ninety" -> 1990, "ninety" -> 1990,
- * "ten" -> 2010; null when the span carries no usable digits ("none", a name, etc).
+ * "ten" -> 2010; null when the span carries no usable digits ("none", a name, etc). `locale` picks
+ * the number words: "mil novecientos noventa" is 1990 in Spanish (es, es-*).
  */
-export function normalizeYear(span: string, todayIso: string): number | null {
-  const digits = spokenToDigits(span);
+export function normalizeYear(span: string, todayIso: string, locale?: string): number | null {
+  const digits = spokenToDigits(span, locale);
   if (!/^\d{1,4}$/.test(digits)) return null;
   const thisYear = Number(todayIso.slice(0, 4));
   let y = Number(digits);

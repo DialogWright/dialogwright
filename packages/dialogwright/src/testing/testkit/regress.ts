@@ -1,6 +1,7 @@
 // Launcher for `pnpm regress:testkit`: registers the testkit app, then runs the engine's regression run.
-import { registerTestkit } from './index';
+import { registerApp } from '../../core/app/registry';
+import { testkitApp } from './index';
 import { main } from '../../harness-text/regress';
 
-registerTestkit();
+registerApp(testkitApp);
 await main();

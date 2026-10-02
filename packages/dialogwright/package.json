@@ -19,6 +19,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts",
+    "./slot-kit": "./src/slots/kit.ts",
     "./*.js": "./src/*.js",
     "./*.json": "./src/*.json",
     "./*": "./src/*.ts",
@@ -33,6 +35,7 @@
     "test": "vitest run",
     "regress:testkit": "tsx src/testing/testkit/regress.ts",
     "schemas": "tsx src/define/schema/generate.ts",
+    "slot-docs": "tsx scripts/slotDocs.ts",
     "check": "tsx src/define/cli.ts check"
   },
   "dependencies": {

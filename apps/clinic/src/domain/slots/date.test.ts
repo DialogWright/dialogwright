@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { choice, testSlotContext, type AnswerMap } from 'dialogwright';
-import { dateSlot } from './date';
+import { choice, testSlotContext, type AnswerMap, type SlotSpec } from 'dialogwright';
+import { clinicApp } from '../../app';
+import { dateSlot as handWritten } from '../../testing/oracles/date';
 import { SLOTS } from './index';
 
 const ctx = testSlotContext('');
@@ -16,7 +17,11 @@ function dateAnswers(picks: Record<string, [string, number]>): AnswerMap {
   return out;
 }
 
-describe('dateSlot', () => {
+/** The same expectations of the hand-written slot and of the library `date` slot slots.yaml builds in its place. */
+describe.each<[string, SlotSpec]>([
+  ['the hand-written dateSlot', handWritten],
+  ['the library date slot (slots.yaml)', clinicApp.slots.date!],
+])('%s', (_name, dateSlot) => {
   it('asks the seven part questions', () => {
     expect(Object.keys(dateSlot.questions(ctx))).toEqual(['dateMode', 'dateMonth', 'dateDay', 'dateWeekday', 'dateWeekdayQualifier', 'dateRelativeDay', 'dateWindow']);
   });
@@ -80,7 +85,10 @@ describe('dateSlot', () => {
   });
 });
 
-describe('a full date beats a weekday', () => {
+describe.each<[string, SlotSpec]>([
+  ['the hand-written dateSlot', handWritten],
+  ['the library date slot (slots.yaml)', clinicApp.slots.date!],
+])('a full date beats a weekday: %s', (_name, dateSlot) => {
   it('takes the month and day when the model splits the mode between weekday and absolute', () => {
     const answers = {
       dateMode: choice({ weekday: 0.5, absolute: 0.48, none: 0.02 }),
@@ -100,7 +108,7 @@ describe('a full date beats a weekday', () => {
 });
 
 describe('the slot registry', () => {
-  it('has all five slots', () => {
-    expect(Object.keys(SLOTS)).toEqual(['name', 'dob', 'memberId', 'provider', 'date']);
+  it('has no slot written in code (the name, the birth date, the member ID, the provider and the day are library slots, configured in slots.yaml)', () => {
+    expect(Object.keys(SLOTS)).toEqual([]);
   });
 });

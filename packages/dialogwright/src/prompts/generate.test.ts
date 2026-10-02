@@ -115,10 +115,15 @@ describe('resolveVoice', () => {
 
 describe('generateClips', () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'audio-')); });
+  // What the stub was asked for, in this test alone: reset before each, so the order the tests run
+  // in (vitest --sequence.shuffle) cannot change what one of them sees.
+  const calls: string[] = [];
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'audio-'));
+    calls.length = 0;
+  });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
   const opts = (over: Partial<GenerateOptions> = {}): GenerateOptions => ({ audioDir: dir, apiKey: 'k', voiceId: 'v1', model: 's2.1-pro', format: 'wav', tag: '[calm]', tags: {}, openComma: true, candidates: 1, force: false, only: null, dryRun: false, ...over });
-  const calls: string[] = [];
   const fetchStub = async (_url: string, init: { body: string }) => { calls.push(JSON.parse(init.body).text); return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('RIFF' + calls.length).buffer }; };
 
   it('writes missing clips only, skips present ones, records what was generated, and reports counts', async () => {

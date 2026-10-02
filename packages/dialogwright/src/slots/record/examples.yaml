@@ -1,0 +1,134 @@
+# Examples of the `record` slot type: configurations, and what a caller might say to each.
+# `answers` are the model's answers to the slot's questions, by question id (a slot reads the
+# answers, not the words); `context.records` (or `context.sources`, by name) are the app's records
+# the question offers; `expect` is the outcome the slot must give; `keypad` lists keys and the value
+# they give (null: keys that are no value). The conformance kit runs every utterance and key here,
+# and the type's docs page shows them.
+
+- name: parcel
+  about: The customer's parcels from the app's one list, each labelled with what is in it and its day, any four-digit number the caller says offered too, and a keypad.
+  slot: parcel
+  config:
+    key: number
+    keyPattern: '\d{4}'
+    labelPrefix: parcel_
+    label: "Parcel {number}, {item}, due {day|day}"
+    spoken:
+      digits: 4
+    keypad: 4
+    missReason: no_parcel
+    ids:
+      choice: parcelChoice
+  utterances:
+    - text: the one with the books
+      answers:
+        parcelChoice: { choice: { parcel_7101: 0.91, parcel_7102: 0.05, none: 0.04 } }
+      context:
+        records:
+          - { number: "7101", item: a box of books, day: "2026-09-14" }
+          - { number: "7102", item: a pair of boots, day: "2026-09-16" }
+      expect: { kind: filled, value: "7101", display: "7101", confirm: none }
+    - text: the books, or was it the boots
+      answers:
+        parcelChoice: { choice: { parcel_7101: 0.48, parcel_7102: 0.44, none: 0.08 } }
+      context:
+        records:
+          - { number: "7101", item: a box of books, day: "2026-09-14" }
+          - { number: "7102", item: a pair of boots, day: "2026-09-16" }
+      expect: { kind: disambiguate }
+    - text: parcel four four one two
+      answers:
+        parcelChoice: { choice: { parcel_4412: 0.9, parcel_7101: 0.04, none: 0.06 } }
+      context:
+        records:
+          - { number: "7101", item: a box of books, day: "2026-09-14" }
+      expect: { kind: filled, value: "4412", display: "4412" }
+    - text: el paquete cuarenta y cuatro doce
+      answers:
+        parcelChoice: { choice: { parcel_4412: 0.9, parcel_7101: 0.04, none: 0.06 } }
+      context:
+        locale: es
+        records:
+          - { number: "7101", item: a box of books, day: "2026-09-14" }
+      expect: { kind: filled, value: "4412", display: "4412" }
+    - text: I am not sure which
+      answers:
+        parcelChoice: { choice: { none: 0.9, parcel_7101: 0.1 } }
+      context:
+        prompted: true
+        records:
+          - { number: "7101", item: a box of books, day: "2026-09-14" }
+      expect: { kind: invalid, reason: no_parcel, raw: "" }
+    - text: I am not sure which
+      answers:
+        parcelChoice: { choice: { none: 0.9, parcel_7101: 0.1 } }
+      context:
+        records:
+          - { number: "7101", item: a box of books, day: "2026-09-14" }
+      expect: { kind: absent }
+  keypad:
+    - digits: "4412"
+      expect: { value: "4412", display: "4412" }
+    - digits: "0007"
+      expect: { value: "0007" }
+    - digits: "441"
+      expect: null
+
+- name: order
+  about: Two lists by name (the app's sources), this slot reading its orders; its own key, labels, words and reason; no spoken numbers, no disambiguation, no keypad.
+  slot: order
+  config:
+    from: orders
+    key: ref
+    keyPattern: '[A-Z]\d{2}'
+    labelPrefix: order_
+    label: "Order {ref}, {what}, placed {placed|day}"
+    disambiguate: false
+    fillAt: SLOT_CHOICE_CONFIRM
+    missReason: no_order
+    text:
+      instructions: Read asr.text. Which of the caller's orders do they mean, by its reference or by what was ordered?
+      none: Names no order
+  utterances:
+    - text: the lamp order
+      answers:
+        orderChoice: { choice: { order_A12: 0.62, order_B07: 0.3, none: 0.08 } }
+      context:
+        sources:
+          orders:
+            - { ref: A12, what: a desk lamp, placed: "2026-09-02" }
+            - { ref: B07, what: a lampshade, placed: "2026-09-10" }
+          parcels:
+            - { number: "7101", item: a box of books, day: "2026-09-14" }
+      expect: { kind: filled, value: A12, display: A12, displays: { es: "A12" } }
+    - text: the lamp, or the shade
+      answers:
+        orderChoice: { choice: { order_A12: 0.42, order_B07: 0.4, none: 0.18 } }
+      context:
+        prompted: true
+        sources:
+          orders:
+            - { ref: A12, what: a desk lamp, placed: "2026-09-02" }
+            - { ref: B07, what: a lampshade, placed: "2026-09-10" }
+      expect: { kind: invalid, reason: no_order }
+
+- name: booking
+  about: The defaults, over records keyed by their id.
+  slot: booking
+  config: {}
+  utterances:
+    - text: booking B twelve
+      answers:
+        bookingChoice: { choice: { record_B12: 0.88, record_C3: 0.02, none: 0.1 } }
+      context:
+        records:
+          - { id: B12, room: the north room }
+          - { id: C3, room: the garden room }
+      expect: { kind: filled, value: B12, display: B12, displays: { es: "B12" } }
+    - text: no booking yet
+      answers:
+        bookingChoice: { choice: { none: 0.95, record_B12: 0.05 } }
+      context:
+        records:
+          - { id: B12, room: the north room }
+      expect: { kind: absent }

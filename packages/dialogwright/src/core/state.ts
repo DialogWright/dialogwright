@@ -1,6 +1,7 @@
 import type { App, SlotId } from './app/types';
 import { intentLabel } from './app/intents';
 import { appOf } from './app/registry';
+import { slotLocaleOf } from './locale';
 import { candidateSpans } from './spans';
 import {
   bucketAttempt, bucketElapsed, currentAttempts,
@@ -78,7 +79,8 @@ export function buildTurnState(session: Session, input: TurnInput, nowMs: number
     caller: callerOf(app, session),
     // At the code prompt the keypad buffer holds part of a one-time code, which never reaches the model.
     asr: { text: input.text, isFinal: input.isFinal, bargeIn: session.lastInterrupt !== null, dtmf: session.promptedFor === 'otp' ? null : input.dtmf },
-    candidateSpans: candidateSpans(input.text),
+    // The number spans in the session's language, as the slots read them (core/turn.ts slotContext).
+    candidateSpans: candidateSpans(input.text, slotLocaleOf(session)),
     pendingConfirmation: pendingState(app, session.pendingConfirmation),
   };
 }

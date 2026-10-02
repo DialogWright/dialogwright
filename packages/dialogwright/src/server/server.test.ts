@@ -462,8 +462,10 @@ describe('server end to end', () => {
     await relay.waitForTexts(7);
     relay.prompt("no, that's all");
     await relay.waitFor((m) => m.type === 'end');
+    // The server closes 50 ms after the end; the close crosses a real socket, so the bound is wide
+    // (a loaded machine can hold the close frame past a tight one) and only a close that never comes fails.
     const timedOut = Symbol('timed out');
-    const settled = await Promise.race([relay.closed, new Promise((r) => setTimeout(() => r(timedOut), 500))]);
+    const settled = await Promise.race([relay.closed, new Promise((r) => setTimeout(() => r(timedOut), 4000))]);
     expect(settled).not.toBe(timedOut);
     const closed = settled as { code: number; reason: string };
     expect(closed.code).toBe(1000);

@@ -7,7 +7,7 @@ import type { Session } from '../../../core/session';
 import type { GateDecision, Principal, ToolCall } from '../../../gate/types';
 import { reportFact, setAccountFact, setParcelsFact, setReportFact } from './facts';
 import type { TestkitForm } from './intents';
-import { dayPartDisplay } from './slots/deliveryPart';
+import { dayPartDisplay } from './slots/shared';
 import type { AccountView, ParcelView } from './systems';
 import type { TestkitTool, TestkitToolValues } from './tools';
 

@@ -1,0 +1,220 @@
+# Examples of the `date` slot type: configurations, and what a caller might say to each.
+# `answers` are the model's answers to the slot's questions, by question id (a slot reads the
+# answers, not the words); `expect` is the outcome the slot must give; `keypad` lists keys and the
+# value they give (null: keys that are no value). The conformance kit runs every utterance and key
+# here on 2026-09-18, a Friday (the kit's today), and the type's docs page shows them.
+
+- name: parcel due day
+  about: A day already gone, the day a parcel was due to arrive, keyable as MMDD. A weekday is the last one, a day of the month without its month the last one too. A turn that names no day, or one that cannot be resolved, is invalid when the caller was asked for the day and absent otherwise (the defaults).
+  slot: dueDay
+  config:
+    range: past
+    keypad: true
+    context: The caller is saying which day a parcel was due to arrive.
+    exclude: A date of birth is not the day the parcel was due.
+  utterances:
+    - text: it was due yesterday
+      answers:
+        dueDayMode: { choice: { relative_day: 0.93, none: 0.07 } }
+        dueDayRelative: { choice: { yesterday: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: "2026-09-17", display: "Thursday, September 17", confirm: none, displays: { es: "jueves, 17 de septiembre" } }
+    - text: last Saturday
+      answers:
+        dueDayMode: { choice: { weekday: 0.9, none: 0.1 } }
+        dueDayWeekday: { choice: { saturday: 0.91, none: 0.09 } }
+      expect: { kind: filled, value: "2026-09-12", display: "Saturday, September 12" }
+    - text: on the twentieth
+      answers:
+        dueDayMode: { choice: { absolute: 0.9, none: 0.1 } }
+        dueDayMonth: { choice: { none: 0.95 } }
+        dueDayDay: { choice: { "20": 0.9, none: 0.1 } }
+      expect: { kind: filled, value: "2026-08-20", display: "Thursday, August 20" }
+    - text: Thursday the tenth of September
+      answers:
+        dueDayMode: { choice: { weekday: 0.6, absolute: 0.38, none: 0.02 } }
+        dueDayWeekday: { choice: { thursday: 0.95, none: 0.05 } }
+        dueDayMonth: { choice: { september: 0.96, none: 0.04 } }
+        dueDayDay: { choice: { "10": 0.94, none: 0.06 } }
+      expect: { kind: filled, value: "2026-09-10", display: "Thursday, September 10" }
+    - text: I'm not sure
+      answers:
+        dueDayMode: { choice: { none: 0.9, weekday: 0.1 } }
+      context: { prompted: true }
+      expect: { kind: invalid, reason: unresolvable, raw: "" }
+    - text: February thirtieth
+      answers:
+        dueDayMode: { choice: { absolute: 0.9, none: 0.1 } }
+        dueDayMonth: { choice: { february: 0.9, none: 0.1 } }
+        dueDayDay: { choice: { "30": 0.9, none: 0.1 } }
+      context: { prompted: true }
+      expect: { kind: invalid, reason: unresolvable, raw: "" }
+    - text: can I change my address
+      answers:
+        dueDayMode: { choice: { none: 0.98 } }
+      expect: { kind: absent }
+  keypad:
+    - digits: "0912"
+      expect: { value: "2026-09-12", display: "Saturday, September 12" }
+    - digits: "0920"
+      expect: { value: "2025-09-20", display: "Saturday, September 20" }
+    - digits: "1332"
+      expect: null
+    - digits: "0230"
+      expect: null
+
+- name: delivery day
+  about: A day to come, the day a parcel should be delivered, with the defaults otherwise. "Tuesday" is the next one; a month without a day is a span, which this slot does not hold, so it is not resolved.
+  slot: deliveryDay
+  config:
+    range: future
+    context: The caller is saying which day they want a parcel delivered.
+  utterances:
+    - text: tomorrow please
+      answers:
+        deliveryDayMode: { choice: { relative_day: 0.94, none: 0.06 } }
+        deliveryDayRelative: { choice: { tomorrow: 0.93, none: 0.07 } }
+      expect: { kind: filled, value: "2026-09-19", display: "Saturday, September 19", confirm: none }
+    - text: on Tuesday
+      answers:
+        deliveryDayMode: { choice: { weekday: 0.9, none: 0.1 } }
+        deliveryDayWeekday: { choice: { tuesday: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: "2026-09-22", display: "Tuesday, September 22" }
+    - text: October fifth
+      answers:
+        deliveryDayMode: { choice: { absolute: 0.92, none: 0.08 } }
+        deliveryDayMonth: { choice: { october: 0.95, none: 0.05 } }
+        deliveryDayDay: { choice: { "5": 0.93, none: 0.07 } }
+      expect: { kind: filled, value: "2026-10-05", display: "Monday, October 5" }
+    - text: el martes, por favor
+      context: { locale: es }
+      answers:
+        deliveryDayMode: { choice: { weekday: 0.9, none: 0.1 } }
+        deliveryDayWeekday: { choice: { tuesday: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: "2026-09-22", display: "martes, 22 de septiembre" }
+    - text: pasado mañana
+      context: { locale: es-US }
+      answers:
+        deliveryDayMode: { choice: { relative_day: 0.93, none: 0.07 } }
+        deliveryDayRelative: { choice: { day_after_tomorrow: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: "2026-09-20", display: "domingo, 20 de septiembre" }
+    - text: el cinco del diez
+      context: { locale: es }
+      answers:
+        deliveryDayMode: { choice: { absolute: 0.9, none: 0.1 } }
+        deliveryDayMonth: { choice: { october: 0.9, none: 0.1 } }
+        deliveryDayDay: { choice: { "5": 0.9, none: 0.1 } }
+      expect: { kind: filled, value: "2026-10-05", display: "lunes, 5 de octubre" }
+    - text: sometime in October
+      answers:
+        deliveryDayMode: { choice: { absolute: 0.85, none: 0.15 } }
+        deliveryDayMonth: { choice: { october: 0.9, none: 0.1 } }
+        deliveryDayDay: { choice: { none: 0.9 } }
+      context: { prompted: true }
+      expect: { kind: invalid, reason: unresolvable, raw: "" }
+    - text: tomorrow, I think
+      answers:
+        deliveryDayMode: { choice: { relative_day: 0.9, none: 0.1 } }
+        deliveryDayRelative: { choice: { tomorrow: 0.5, today: 0.3, none: 0.2 } }
+      expect: { kind: absent }
+    - text: where is my parcel
+      answers:
+        deliveryDayMode: { choice: { none: 0.97 } }
+      expect: { kind: absent }
+
+- name: table booking
+  about: A day to book a table on, said as a day or a span of days ("next week", "in December"), with "this" or "next" before a weekday. A span is held and the narrow prompt asks which day; a weekday said next is looked for inside it. A day is taken at SLOT_CHOICE_CONFIRM and acknowledged below SLOT_CHOICE_FILL; below SLOT_CHOICE_CONFIRM it is invalid, low_confidence. A day that cannot be resolved is always invalid, with the mode as raw; a turn that names no day is absent. Keyable as MMDD, and as DDMM in Spanish.
+  slot: booking
+  config:
+    range: future
+    windows: true
+    qualifier: true
+    narrowPrompt: ask_booking_which_day
+    fillAt: confirm
+    whenUnsaid: absent
+    whenUnresolved: invalid
+    confirm: by-confidence
+    readBack: below-fill
+    keypad: true
+    context: The caller is saying which day they want to book a table for.
+    text:
+      modeNone: "No day for the booking. The day a booking was made on is not one"
+  utterances:
+    - text: next week sometime
+      answers:
+        bookingMode: { choice: { window: 0.9, none: 0.1 } }
+        bookingWindow: { choice: { next_week: 0.88, none: 0.12 } }
+      expect: { kind: window }
+    - text: Wednesday
+      answers:
+        bookingMode: { choice: { weekday: 0.9, none: 0.1 } }
+        bookingWeekday: { choice: { wednesday: 0.9, none: 0.1 } }
+      context: { prompted: true, window: { kind: window, start: "2026-09-21", end: "2026-09-27", label: next_week } }
+      expect: { kind: filled, value: "2026-09-23", display: "Wednesday, September 23", confirm: none }
+    - text: la próxima semana
+      context: { locale: es }
+      answers:
+        bookingMode: { choice: { window: 0.9, none: 0.1 } }
+        bookingWindow: { choice: { next_week: 0.88, none: 0.12 } }
+      expect: { kind: window }
+    - text: el miércoles
+      answers:
+        bookingMode: { choice: { weekday: 0.9, none: 0.1 } }
+        bookingWeekday: { choice: { wednesday: 0.9, none: 0.1 } }
+      context: { locale: es, prompted: true, window: { kind: window, start: "2026-09-21", end: "2026-09-27", label: next_week } }
+      expect: { kind: filled, value: "2026-09-23", display: "miércoles, 23 de septiembre", confirm: none }
+    - text: in December, on a Wednesday
+      answers:
+        bookingMode: { choice: { weekday: 0.9, none: 0.1 } }
+        bookingWeekday: { choice: { wednesday: 0.9, none: 0.1 } }
+      context: { prompted: true, window: { kind: window, start: "2026-12-01", end: "2026-12-31", label: december } }
+      expect: { kind: filled, value: "2026-12-02", display: "Wednesday, December 2" }
+    - text: next Tuesday
+      answers:
+        bookingMode: { choice: { weekday: 0.9, none: 0.1 } }
+        bookingWeekday: { choice: { tuesday: 0.93, none: 0.07 } }
+        bookingQualifier: { choice: { next: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: "2026-09-22", display: "Tuesday, September 22" }
+    - text: October fifth, I think
+      answers:
+        bookingMode: { choice: { absolute: 0.9, none: 0.1 } }
+        bookingMonth: { choice: { october: 0.9, none: 0.1 } }
+        bookingDay: { choice: { "5": 0.5, "15": 0.3, none: 0.2 } }
+      expect: { kind: filled, value: "2026-10-05", display: "Monday, October 5", confirm: implicit }
+    - text: the fifth or the fifteenth or the twenty fifth
+      answers:
+        bookingMode: { choice: { absolute: 0.9, none: 0.1 } }
+        bookingMonth: { choice: { october: 0.9, none: 0.1 } }
+        bookingDay: { choice: { "5": 0.3, "15": 0.25, "25": 0.25, none: 0.2 } }
+      expect: { kind: invalid, reason: low_confidence, raw: "2026-10-05" }
+    - text: February thirtieth
+      answers:
+        bookingMode: { choice: { absolute: 0.9, none: 0.1 } }
+        bookingMonth: { choice: { february: 0.9, none: 0.1 } }
+        bookingDay: { choice: { "30": 0.9, none: 0.1 } }
+      expect: { kind: invalid, reason: unresolvable, raw: absolute }
+    - text: a Friday
+      answers:
+        bookingMode: { choice: { weekday: 0.9, none: 0.1 } }
+        bookingWeekday: { choice: { friday: 0.9, none: 0.1 } }
+      context: { prompted: true, window: { kind: window, start: "2026-12-01", end: "2026-12-02", label: december } }
+      expect: { kind: invalid, reason: outside_window, raw: "2026-09-25" }
+    - text: I'm not sure yet
+      answers:
+        bookingMode: { choice: { none: 0.9, window: 0.1 } }
+      context: { prompted: true }
+      expect: { kind: absent }
+  keypad:
+    - digits: "1005"
+      expect: { value: "2026-10-05", display: "Monday, October 5" }
+    - digits: "0101"
+      expect: { value: "2027-01-01", display: "Friday, January 1" }
+    - digits: "1305"
+      expect: null
+    - digits: "0510"
+      locale: es
+      expect: { value: "2026-10-05", display: "lunes, 5 de octubre" }
+    - digits: "3102"
+      locale: es
+      expect: null
+    - digits: "0230"
+      expect: null

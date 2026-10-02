@@ -30,8 +30,23 @@ export interface SlotContext {
    * the app gives none, or before it has any.
    */
   records: readonly unknown[];
+  /**
+   * The app's records by name (App.facts.forSlots), for a slot that names the list it chooses from
+   * (a `record` slot's `from`), so two such slots can each read their own (a customer's parcels and
+   * their orders). Opaque to the engine; absent when the app names none, so an app that gives only
+   * `records` sees the context it always has.
+   */
+  sources?: Readonly<Record<string, readonly unknown[]>>;
   /** The last prompt asked for this slot (slotCtx sets it per spec); a miss then is invalid rather than absent. */
   prompted: boolean;
+  /**
+   * The language the session speaks (core/locale.ts localeOf), for a slot to hear and say its value
+   * in: number words, the order of a day and a month, a display. Only an app that declares locales
+   * (App.locales) has one, so a slot formats as it always has (en-US) when it is absent, and an app
+   * without locales sees no change at all. A slot formats en-US the same whether this is `en-US`
+   * or absent.
+   */
+  locale?: string;
 }
 
 export interface SlotCandidate {
@@ -53,8 +68,46 @@ export type SlotOutcome =
   /** The caller said whether they know the value rather than saying it; play this prompt in place of the question. */
   | { kind: 'help'; promptId: string };
 
+/**
+ * A line a slot can lead the engine to say, beyond the `ask_<slot>` and `ask_<slot>_retry` every
+ * asked slot has (e.g. `disambiguate_<slot>` with {a} and {b}, a help prompt, a retryPromptId, the
+ * partialPromptId with its partialVars). `dialogwright check` requires the line in every locale and
+ * refuses one that uses a variable not listed here.
+ */
+export interface SlotPrompt {
+  /** The prompt id, as the slot's outcome or the engine names it. */
+  id: string;
+  /** When it is said, in words, for check's message ("the caller said a number that is not eight digits"). */
+  why: string;
+  /** The variables the line is given (`a`, `b`; a slot's own id for an ack or a read-back). Absent: none. */
+  vars?: readonly string[];
+}
+
 export interface SlotSpec {
   id: SlotId;
+  /**
+   * Every question id `questions()` may return, in any state, declared up front so a collision with
+   * another slot's, the engine's (core/questions.ts ENGINE_QUESTION_IDS) or the app's own questions is
+   * found when the app is validated rather than on the turn that asks both. A spec that declares
+   * them may ask no other (a turn that does throws). Absent: the ids are known only per turn, and
+   * buildQuestions checks them there.
+   */
+  questionIds?: readonly string[];
+  /**
+   * Every line the slot can lead the engine to say beyond `ask_<slot>` and `ask_<slot>_retry`
+   * (SlotPrompt). It may also list the ones check derives from the spec (`ack_<slot>`,
+   * `confirm_<slot>`, `ask_<slot>_dtmf`, the partialPromptId) to declare their variables. Absent:
+   * check knows only the derived ones.
+   */
+  prompts?: readonly SlotPrompt[];
+  /**
+   * The thresholds the slot's own options name, each one the engine has (core/thresholds.ts) or one
+   * the app names (App.thresholds): `choice` declares its `hedge.threshold` and `help.threshold`, and
+   * the others the one their `fillAt` or `minConfidence` selects. Declared up front so a name that is
+   * neither (a misspelt PROVIDER_UNSURE, which would never be met) is found when the app is validated,
+   * rather than as a slot that quietly never fills. Absent: nothing to check.
+   */
+  thresholds?: readonly string[];
   /** always: a spoken fill is read back and must be confirmed before it counts, which needs a `confirm_<slot>`
    * entry in the prompt manifest (no slot uses this today, so none is there); by-confidence: the fill outcome
    * decides; summary: a spoken fill is neither acked nor read back; the final confirm covers it */
@@ -69,7 +122,11 @@ export interface SlotSpec {
     length: number;
     parse(digits: string, ctx: SlotContext): SlotCandidate | null;
   };
-  display(value: string): string;
+  /**
+   * The value as it is said, in `locale` (SlotContext.locale) when given. The engine does not call
+   * it: a fill and a keypad parse carry their own display, which a slot formats with ctx.locale.
+   */
+  display(value: string, locale?: string): string;
   /**
    * How the slot's value is masked wherever it leaves the turn: a tool call's param of the same
    * name as it is recorded (the gate event, the trace, the audit), and the trace's and console's
@@ -108,7 +165,8 @@ export interface SlotSpec {
   /**
    * The variables of the prompt asking for the rest of a partial value (e.g. a date window's
    * "{window}. Which day works for you?" gets "next week"), read wherever that question is asked.
-   * Absent: none.
+   * Absent: none. `locale` is the session's, as SlotContext.locale has it (absent for an app
+   * without locales).
    */
-  partialVars?(window: SlotPartial): Record<string, string>;
+  partialVars?(window: SlotPartial, locale?: string): Record<string, string>;
 }

@@ -8,7 +8,7 @@ import { actionsToFrames } from '../channel/relay/map';
 import { endAction, sayAction, transferAction } from '../channel/actions';
 import manifest from '../testing/testkit/prompts/manifest.json';
 import { DAY_PARTS } from '../testing/testkit/domain/systems';
-import { DAY_PART_DISPLAY, deliveryPartSlot } from '../testing/testkit/domain/slots/deliveryPart';
+import { DAY_PART_DISPLAY } from '../testing/testkit/domain/slots/shared';
 import { FORMS } from '../testing/testkit/domain/forms';
 import { INTENTS, MENU } from '../testing/testkit/domain/intents';
 import { SLOTS } from '../testing/testkit/domain/slots';
@@ -67,7 +67,7 @@ describe('keypad prompts match the tables they read from', () => {
       expect(at, `${p} is listed after the previous part`).toBeGreaterThan(cursor);
       const stop = text.indexOf('.', at);
       expect(text.slice(at, stop === -1 ? undefined : stop), p).toContain(`press ${i + 1}`);
-      expect(deliveryPartSlot.dtmf?.parse(String(i + 1), testSlotContext(''))?.value, p).toBe(p);
+      expect(SLOTS.deliveryPart.dtmf?.parse(String(i + 1), testSlotContext(''))?.value, p).toBe(p);
       cursor = at;
     });
   });

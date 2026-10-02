@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DialogWright locale/<tag>/slots.yaml",
+  "description": "How the app's library slots say their values in this locale, by slot id: what each slot's type lets a locale say its own way (a choice option's say, a text slot's stand-in). Never the questions, which the model reads as written.",
+  "type": "object",
+  "propertyNames": {
+    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+  },
+  "additionalProperties": {
+    "anyOf": [
+      {
+        "type": "object",
+        "properties": {
+          "options": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                  "description": "How the option is said in this locale: the display a line, the summary and the model's turn state show."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "say": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                      "description": "How the option is said in this locale: the display a line, the summary and the model's turn state show."
+                    }
+                  },
+                  "required": [
+                    "say"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "How each option is said in this locale, by its key: `key: Said` or `key: { say: Said }`. An option left out is said as the slot's options say it."
+          }
+        },
+        "required": [
+          "options"
+        ],
+        "additionalProperties": false,
+        "description": "choice: A choice slot's wording in this locale."
+      },
+      {
+        "type": "object",
+        "properties": {
+          "say": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+            "description": "The stand-in in this locale: what a line, the console and the model's turn state show in place of the words (\"su nota\")."
+          }
+        },
+        "additionalProperties": false,
+        "description": "text: A text slot's wording in this locale."
+      }
+    ],
+    "description": "One slot's wording in this locale."
+  }
+}

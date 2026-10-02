@@ -10,6 +10,9 @@
  * builders, a turn driver, the stubs, the fixtures and the regression pieces). Importing it starts
  * nothing: no server, no registration, no I/O.
  *
+ * Two more entries are supported: `dialogwright/testing` (an app's tests: the shadow harness, the
+ * slot conformance kit) and `dialogwright/slot-kit` (the helpers a slot type is written with).
+ *
  * The package also maps every source file to a subpath, `dialogwright/<dir>/<file>` (package.json
  * "exports" "./*": `src/<dir>/<file>.ts`). Those are the engine's internals: reachable, but not part
  * of the supported API, and free to move or change between versions. An app that wants to keep
@@ -34,11 +37,21 @@ export { DEFAULT_LOCALE, defaultLocaleOf, localesOf, matchLocale, localeOf } fro
 export { defineApp, AppDefinitionError, isAppDefinitionError } from './define/defineApp';
 export type { AppCode, FormHooks, DefineAppOptions } from './define/defineApp';
 export { checkApp } from './define/check';
+export { slotsJsonSchema } from './define/schema/json';
 export type { CheckOptions } from './define/check';
 export { loadAppFolder } from './define/load';
 export type { LoadedConfig, LoadResult } from './define/load';
 export { formatProblem } from './define/problems';
 export type { Problem } from './define/problems';
+
+// The slot library: slots from configuration (a built-in type and its options) rather than code.
+// What the author of a slot type uses is in 'dialogwright/slot-kit'; the conformance kit is in
+// 'dialogwright/testing'.
+export { defineSlot, defineSlots, buildSlot, SlotConfigError, isSlotConfigError, BUILT_IN_SLOT_TYPES, registerSlotType } from './slots/index';
+export type {
+  BuildSlotOptions, BuildSlotResult, SlotSource, SlotType, SlotTypes, LibrarySlotSpec,
+  BirthdateOptions, ChoiceOptions, ChoiceOption, DateOptions, DigitsOptions, NameOptions, RecordOptions, TextOptions,
+} from './slots/index';
 
 // The channel model: what the engine hears (events), what it does (actions), what a channel can do (caps).
 export {
@@ -66,7 +79,7 @@ export { ANONYMOUS, raise, maskId } from './gate/principal';
 export type { Session, SessionFacts } from './core/session';
 export type { Tools, CodeVerifier } from './core/tools';
 export type { Thresholds, ThresholdName } from './core/thresholds';
-export { DEFAULT_THRESHOLDS } from './core/thresholds';
+export { DEFAULT_THRESHOLDS, atLeast, THRESHOLD_EPSILON } from './core/thresholds';
 export type { JevClient } from './jev/types';
 
 // The model's answers: what an app's own questions (App.questions) ask, and how its hooks and slot
@@ -89,6 +102,10 @@ export {
 } from './core/extract/date';
 export type { ComponentPick, DateComponents, DateWindow, DateResolution } from './core/extract/date';
 export { spokenToDigits, tokenize } from './core/extract/spokenNumber';
+// Whether a locale reads values out of Spanish words (es and es-*).
+export { isSpanish } from './core/extract/lexicon';
+export { numbersSaid } from './core/extract/numbersSaid';
+export type { NumbersSaidOptions } from './core/extract/numbersSaid';
 export { matchesMask } from './core/extract/mask';
 export { candidateSpans, candidateWordSpans, FILLER_WORDS, MAX_WORD_NGRAM } from './core/spans';
 
@@ -120,7 +137,7 @@ export type { TurnContext, TurnResult } from './core/turn';
 export { mockCodeVerifier } from './core/tools';
 export { spokenText } from './prompts/render';
 // What the model would be asked on a turn: the questions and the state it reads.
-export { buildQuestions } from './core/questions';
+export { buildQuestions, ENGINE_QUESTION_IDS } from './core/questions';
 export { buildTurnState } from './core/state';
 export type { TurnState, TurnInput } from './core/state';
 
@@ -128,7 +145,7 @@ export type { TurnState, TurnInput } from './core/state';
 // helpers, the corpus and scenarios, and the regression run's pieces.
 export { FixtureStubClient } from './jev/fixtureStub';
 export { HeuristicStubClient } from './jev/heuristicStub';
-export { digitSpanLabel, dobParts, saysDob, saysExplicitYear } from './jev/heuristicKit';
+export { digitSpanLabel, dobParts, saysDob, saysExplicitYear, relativeDaySaid } from './jev/heuristicKit';
 export type { DobParts } from './jev/heuristicKit';
 export { loadCorpus, parseCorpus, normalizeText } from './jev/corpus';
 export type { CorpusEntry, CorpusContext, KnownGap, PinnedOutcome, AnswerOverride } from './jev/corpus';

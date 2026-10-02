@@ -1,0 +1,1114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DialogWright slots.yaml",
+  "description": "The app's slots by id, in the order they are filled and acknowledged. Lists every slot the app has: a library type with its options, or { type: code } for a slot the code writes.",
+  "type": "object",
+  "propertyNames": {
+    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+  },
+  "additionalProperties": {
+    "oneOf": [
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "birthdate",
+            "description": "The slot type."
+          },
+          "keypad": {
+            "default": false,
+            "description": "Whether the caller can key the date on the keypad as eight digits, month, day and year (MMDDYYYY), or in a day-first locale (Spanish) day, month and year (DDMMYYYY). Needs an ask_<slot>_dtmf line.",
+            "type": "boolean"
+          },
+          "yearPrompt": {
+            "description": "The prompt that asks for the year alone once a month and day are heard without it (the slot's partialPromptId). Default: ask_<slot>_year.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "wholePrompt": {
+            "description": "The prompt that asks for the whole date again when a month or a day was not heard; the outcome is invalid, with the reason no_month_day, no_month or no_day. Absent: the outcome is invalid with the reason no_year and the slot's generic retry asks again.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "minYear": {
+            "default": 1900,
+            "description": "The earliest year a date of birth may be in. An earlier one is invalid (reason impossible), and the keypad refuses it.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "notThisDate": {
+            "description": "Another date the caller is likely to mention, which the birth date is not, as a noun phrase (\"an appointment date\", \"the date of the order\"). The default month and day questions then say \"This is the birth date, not <it>.\", and the default \"false\" criterion names it.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "redact": {
+            "default": "mask",
+            "description": "How the value is masked wherever it leaves the turn (the trace, the console, a tool call's param of the same name): \"mask\" keeps the year only (\"••/••/1985\"); \"none\" keeps it as it is.",
+            "type": "string",
+            "enum": [
+              "mask",
+              "none"
+            ]
+          },
+          "handoff": {
+            "default": "display",
+            "description": "What a transfer to a person hands over: the date as it is said (\"display\"), or, for a birth date asked to verify identity, only whether the caller was \"verified\".",
+            "type": "string",
+            "enum": [
+              "display",
+              "verified"
+            ]
+          },
+          "confirm": {
+            "default": "summary",
+            "description": "\"summary\": a birth date is neither acknowledged nor read back on its own; the form's final confirm covers it.",
+            "type": "string",
+            "enum": [
+              "summary"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: given, givenTrue, givenFalse, month, monthHint, day, dayHint, year, yearAsked, yearNone.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The yes-or-no question that asks whether the caller states their date of birth at all.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "givenTrue": {
+                "description": "What a yes to the first question means (its \"true\" criterion).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "givenFalse": {
+                "description": "What a no to the first question means (its \"false\" criterion). By default it names `notThisDate`, when given, and someone else's birth date.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "month": {
+                "description": "The question that asks which month the birth date is in. Its choices are the twelve months and none. By default it ends with the `notThisDate` sentence and `monthHint`.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "monthHint": {
+                "description": "A sentence the default month question ends with, such as how a month said as a number is read. Default: none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "day": {
+                "description": "The question that asks which day of the month the birth date is. Its choices are 1 to 31 and none. By default it ends with the `notThisDate` sentence and `dayHint`.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "dayHint": {
+                "description": "A sentence the default day question ends with, such as which number of a date said as numbers is the day. Default: none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "year": {
+                "description": "The question that asks which span of the caller's words is the year, when no month and day are on hand. Its choices are the spans the engine finds, and none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "yearAsked": {
+                "description": "The year question in place of `year` while a month and day are on hand, so the caller was just asked for the year alone (they may still restate the whole date).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "yearNone": {
+                "description": "What the year question's \"none\" choice means.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given, month, day, year), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The id of the question that asks whether the caller states their date of birth.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "month": {
+                "description": "The id of the question that asks which month the date of birth is in.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "day": {
+                "description": "The id of the question that asks which day of the month the date of birth is.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "year": {
+                "description": "The id of the question that asks which span of the caller's words is the year of birth.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "A caller's date of birth: a month, a day and a year, heard whole or in part.",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "choice",
+            "description": "The slot type."
+          },
+          "options": {
+            "description": "The options the caller can choose, in order, as `key: Say` or `key: { say, means }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "say": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                      "description": "The display: how a line, the summary and the model's turn state say the option (\"an express delivery\")."
+                    },
+                    "means": {
+                      "description": "What the model is told this option is: the text of its criterion, sent exactly as written. Default: the slot's `means` template.",
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                    }
+                  },
+                  "required": [
+                    "say"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "means": {
+            "default": "The caller names {say}",
+            "description": "The criterion the model is given for each option that has no `means` of its own, as a template over `{say}` and `{key}`.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none.",
+            "type": "object",
+            "properties": {
+              "instructions": {
+                "description": "The question that asks which option the caller names, sent to the model in place of the default.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "none": {
+                "description": "What the question's \"none\" label means: the caller names no option.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "keypad": {
+            "default": false,
+            "description": "Whether the caller can key the option, by its position (1 for the first), after spoken answers missed. At most 9 options. Needs an ask_<slot>_dtmf line.",
+            "type": "boolean"
+          },
+          "fillAt": {
+            "default": "SLOT_CHOICE_FILL",
+            "description": "The threshold the model's probability for the option must reach for the slot to fill; below it the slot stays empty.",
+            "type": "string",
+            "enum": [
+              "SLOT_CHOICE_FILL",
+              "SLOT_CHOICE_CONFIRM"
+            ]
+          },
+          "confirm": {
+            "default": "summary",
+            "description": "\"summary\": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the option's display as {<slot>}) when `readBack` says so, and always when the caller hedged (`hedge`).",
+            "type": "string",
+            "enum": [
+              "summary",
+              "by-confidence"
+            ]
+          },
+          "readBack": {
+            "description": "With `confirm: by-confidence`, what a chosen option asks for: \"implicit\" (always acknowledged; the default), \"below-fill\" (only when the model is less sure of it than SLOT_CHOICE_FILL), \"none\" (never, unless the caller hedged).",
+            "type": "string",
+            "enum": [
+              "implicit",
+              "below-fill",
+              "none"
+            ]
+          },
+          "disambiguate": {
+            "description": "\"margin\": the slot reads the model's probability for every label, not only its pick, and when a second option is within SLOT_CHOICE_MARGIN of the top one (or, while the caller hedges, reaches SLOT_CHOICE_CONFIRM) it asks which of the two (disambiguate_<slot>, given {a} and {b}). The top option must then reach SLOT_CHOICE_CONFIRM before anything else is read. Default: off.",
+            "type": "string",
+            "enum": [
+              "margin"
+            ]
+          },
+          "hedge": {
+            "description": "A second question, a yes-or-no: is the caller unsure which option they mean? A hedged option is read back however sure the model is (with `confirm: by-confidence`); with `disambiguate`, a hedged rival that reaches SLOT_CHOICE_CONFIRM is asked about. Its id is `ids.hedge` (default: <slot>Hedge).",
+            "type": "object",
+            "properties": {
+              "threshold": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$",
+                "description": "The threshold the model's yes must reach for the caller to count as unsure: an engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name."
+              },
+              "byName": {
+                "default": false,
+                "description": "While the caller hedges, ask which of two when their words name another option as a whole word (its key, underscores as spaces, case aside), though the model put its weight on one.",
+                "type": "boolean"
+              },
+              "text": {
+                "description": "Text to say to the model in place of a default, word for word, by part: instructions, true, false.",
+                "type": "object",
+                "properties": {
+                  "instructions": {
+                    "description": "The question that asks whether the caller is unsure which option they mean.",
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  },
+                  "true": {
+                    "description": "What a yes means: the caller hedges.",
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  },
+                  "false": {
+                    "description": "What a no means: the caller is sure, or names nothing.",
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "threshold"
+            ],
+            "additionalProperties": false
+          },
+          "help": {
+            "description": "A third question, asked on every turn: what does the caller say without naming an option (\"I do not know the name\")? When no option is chosen and the model's top label reaches `threshold` and has a prompt, the slot asks for help with that line (a help outcome) instead of being absent. Its id is `ids.help` (default: <slot>Help).",
+            "type": "object",
+            "properties": {
+              "threshold": {
+                "default": "SLOT_HELP",
+                "description": "The threshold the model's top label must reach to lead to its line.",
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              },
+              "labels": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "means": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                      "description": "What the model is told this label is: the text of its criterion, sent exactly as written."
+                    },
+                    "prompt": {
+                      "description": "The line said when the model chooses this label (a help outcome). None: the label asks for no help (the slot is absent).",
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                    }
+                  },
+                  "required": [
+                    "means"
+                  ],
+                  "additionalProperties": false
+                },
+                "description": "The labels of the help question, in order, as `label: { means, prompt? }`. The first must have no prompt: it is the answer that asks for no help, which a stub model chooses when nothing is said."
+              },
+              "text": {
+                "description": "Text to say to the model in place of a default, word for word, by part: instructions.",
+                "type": "object",
+                "properties": {
+                  "instructions": {
+                    "description": "The question that asks what the caller says about the question without naming an option; its labels are `help.labels`.",
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "labels"
+            ],
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults: `ids.choice` is the question's id (default: the slot's own id), `ids.hedge` and `ids.help` those of the hedge and help questions (default: <slot>Hedge, <slot>Help), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "choice": {
+                "description": "The id of the question that asks which of the options the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "hedge": {
+                "description": "The id of the question that asks whether the caller is unsure which option they mean.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "help": {
+                "description": "The id of the question that asks what the caller says about the question without naming an option.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "options"
+        ],
+        "additionalProperties": false,
+        "description": "One of a fixed list of options: a delivery speed, a branch, a colour."
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "date",
+            "description": "The slot type."
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "future",
+              "past"
+            ],
+            "description": "Which days the slot takes. \"future\": today or a day to come (an appointment, a delivery); \"tomorrow\" and \"Monday\" are the next ones. \"past\": today or a day gone, up to two years back (when something happened); \"yesterday\" and \"Monday\" are the last ones."
+          },
+          "windows": {
+            "default": false,
+            "description": "`range: future` only. Whether the caller may name a span of days (\"next week\", \"in December\") rather than a day: the span is held as the partial { kind: window, start, end, label }, the `narrowPrompt` asks which day in it, and a bare weekday said next is looked for inside it. Adds the window question.",
+            "type": "boolean"
+          },
+          "qualifier": {
+            "default": false,
+            "description": "`range: future` only. Whether to ask if a weekday is \"this\" one or \"next\" one (\"next Tuesday\" is in the next week). Adds the qualifier question.",
+            "type": "boolean"
+          },
+          "narrowPrompt": {
+            "description": "With `windows`: the prompt that asks which day in a span of days (the slot's partialPromptId), given {window} (\"next week\", \"in December\"). Default: ask_<slot>_narrow.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "preferMonthDay": {
+            "default": true,
+            "description": "Whether a month and a day the model is sure of (SLOT_CHOICE_CONFIRM) win over a weekday reading of the mode: \"Monday, September 28\" names one day twice, and a weekday reading would land on the next or last Monday instead of the date said.",
+            "type": "boolean"
+          },
+          "fillAt": {
+            "default": "fill",
+            "description": "How sure the model must be of the day (the least of the parts it read) for it to count. \"fill\": SLOT_CHOICE_FILL; a day below it is treated as not resolved (`whenUnresolved`). \"confirm\": SLOT_CHOICE_CONFIRM; a day below it is invalid (reason low_confidence, raw the ISO day), and `readBack` says whether one below SLOT_CHOICE_FILL is acknowledged.",
+            "type": "string",
+            "enum": [
+              "fill",
+              "confirm"
+            ]
+          },
+          "whenUnsaid": {
+            "default": "invalid-if-prompted",
+            "description": "What a turn that names no day (the mode question answers none, is below SLOT_CHOICE_CONFIRM, or is not answered at all) gives. \"invalid-if-prompted\": invalid (reason unresolvable, raw empty) when the caller was asked for the day, so the retry ladder moves on, else absent. \"absent\": always absent.",
+            "type": "string",
+            "enum": [
+              "invalid-if-prompted",
+              "absent"
+            ]
+          },
+          "whenUnresolved": {
+            "default": "invalid-if-prompted",
+            "description": "What a day named but not resolved (no such day, out of range, a span without `windows`, or below the `fillAt` threshold under \"fill\") gives. \"invalid-if-prompted\": invalid (reason unresolvable, raw empty) when the caller was asked for the day, else absent. \"invalid\": always invalid (reason unresolvable), its raw the mode the caller used (absolute, weekday, ...).",
+            "type": "string",
+            "enum": [
+              "invalid-if-prompted",
+              "invalid"
+            ]
+          },
+          "keypad": {
+            "default": false,
+            "description": "Whether the caller can key the day on the keypad as four digits, month then day (MMDD: 0922), or in a day-first locale (Spanish) day then month (DDMM: 2209), resolved as a spoken month and day are for the `range`. Needs an ask_<slot>_dtmf line.",
+            "type": "boolean"
+          },
+          "confirm": {
+            "default": "summary",
+            "description": "\"summary\": a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the day as {<slot>}) when `readBack` says so.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "by-confidence"
+            ]
+          },
+          "readBack": {
+            "default": "implicit",
+            "description": "With `confirm: by-confidence`, what a filled day asks for: \"implicit\" (always acknowledged), \"below-fill\" (only when the model is less sure of it than SLOT_CHOICE_FILL), \"none\" (never).",
+            "type": "string",
+            "enum": [
+              "implicit",
+              "below-fill",
+              "none"
+            ]
+          },
+          "context": {
+            "description": "The sentence each default question starts with after \"Read asr.text.\", saying what day the caller is giving (\"The caller is saying which day a parcel was due.\"). Default, by `range`: \"The caller is saying the day something happened.\" (past), \"The caller is saying the day they want.\" (future).",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "exclude": {
+            "description": "A sentence naming a date the caller may also say that is not this day (\"A date of birth is not the day the parcel was due.\"), which the default mode, month and day questions end with. Default: none.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: mode, modeNone, relative, weekday, qualifier, month, day, window.",
+            "type": "object",
+            "properties": {
+              "mode": {
+                "description": "The question that asks how the caller refers to the day: a relative day, a weekday, a month and day, a span of days (with `windows`), or none. By default {modes} describes each choice for the slot's `range`, and the question ends with the `exclude` sentence.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "modeNone": {
+                "description": "What the mode question's \"none\" choice means (its criterion), such as which dates are not this day. Default: nothing (the label alone).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "relative": {
+                "description": "The question that asks which relative day the caller says: today, yesterday or the day before (`range: past`), or today, tomorrow or the day after (`range: future`).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "weekday": {
+                "description": "The question that asks which day of the week the caller names.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "qualifier": {
+                "description": "With `qualifier`: the question that asks whether a weekday is \"this\" one or \"next\" one.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "month": {
+                "description": "The question that asks which month the caller names. By default it ends with the `exclude` sentence.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "day": {
+                "description": "The question that asks which day of the month the caller names. By default it ends with the `exclude` sentence.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "window": {
+                "description": "With `windows`: the question that asks which span of days the caller names.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: mode, relative, weekday, qualifier, month, day, window), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "mode": {
+                "description": "The id of the question that asks how the caller refers to the day.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "relative": {
+                "description": "The id of the question that asks which relative day the caller says.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "weekday": {
+                "description": "The id of the question that asks which day of the week the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "qualifier": {
+                "description": "The id of the question that asks whether a weekday is this one or next one.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "month": {
+                "description": "The id of the question that asks which month the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "day": {
+                "description": "The id of the question that asks which day of the month the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "window": {
+                "description": "The id of the question that asks which span of days the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "range"
+        ],
+        "additionalProperties": false,
+        "description": "A calendar day, ahead or back: an appointment, a delivery, the day something happened."
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "digits",
+            "description": "The slot type."
+          },
+          "noun": {
+            "description": "What the number identifies, as a noun without \"number\" (\"account\", \"library card\", \"parcel tracking\"). The default questions say \"a <noun> number\". Needed unless text gives every question in its own words.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "article": {
+            "description": "The word before the noun in the default questions. Default: \"an\" when the noun starts with a vowel, otherwise \"a\".",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "length": {
+            "description": "How many digits the number has. Gives the default mask (exactly this many digits) and the length of the keypad rung. Needed unless mask is given.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 40
+          },
+          "mask": {
+            "description": "A regular expression (its source, no slashes) the whole of the digits must match: it is anchored at both ends, so \"5\\d{7}\" and \"^5\\d{7}$\" both mean eight digits starting with 5. With `length` too, the digits must also be that many. Default: exactly `length` digits. A number that fails it is \"invalid\" with the reason \"mask\" (with only `length`, the reason is \"length\"). A group that repeats a repeat, such as (\\d+)+, is refused.",
+            "type": "string",
+            "minLength": 1
+          },
+          "keypad": {
+            "default": false,
+            "description": "Whether the caller can key the number on the keypad, `length` digits at a time. Needs `length`, and an ask_<slot>_dtmf line.",
+            "type": "boolean"
+          },
+          "group": {
+            "description": "How the number is said back, in groups of these sizes ([4, 4]: \"5550 7788\"). The last group takes any digits left over. Default: all digits together.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "confirm": {
+            "default": "summary",
+            "description": "\"summary\": a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>) when `readBack` says so.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "by-confidence"
+            ]
+          },
+          "readBack": {
+            "default": "implicit",
+            "description": "What a filled number asks for: \"implicit\" (always), \"below-fill\" (only when the model is less sure of the span than SLOT_CHOICE_FILL), \"none\" (never). With `confirm: by-confidence`, \"implicit\" is what makes ack_<slot> be said.",
+            "type": "string",
+            "enum": [
+              "implicit",
+              "below-fill",
+              "none"
+            ]
+          },
+          "minConfidence": {
+            "default": "none",
+            "description": "A floor on how sure the model must be of the span: below this threshold the number is \"invalid\" (reason \"low_confidence\"). \"none\": no floor.",
+            "type": "string",
+            "enum": [
+              "none",
+              "SLOT_DETECT",
+              "SLOT_CHOICE_CONFIRM",
+              "SLOT_CHOICE_FILL"
+            ]
+          },
+          "lengthRetryPromptId": {
+            "description": "The prompt that re-asks, in place of the generic ask_<slot>_retry, when what the caller said is not a number of the right shape (\"A card number has eight digits.\").",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "redact": {
+            "default": "last4",
+            "description": "How the value is masked wherever it leaves the turn (the trace, a tool call's param of the same name): \"last4\" (\"...0417\") or \"none\".",
+            "type": "string",
+            "enum": [
+              "last4",
+              "none"
+            ]
+          },
+          "handoff": {
+            "default": "last4",
+            "description": "What a transfer to a person hands over: its \"last4\", only whether the caller was \"verified\", or its \"display\" in full.",
+            "type": "string",
+            "enum": [
+              "last4",
+              "verified",
+              "display"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: given, span, none, complete.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The yes-or-no question that asks whether the caller states the number at all.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "span": {
+                "description": "The question that asks which span of the caller's words is the number. Its choices are the spans the engine finds, and none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "none": {
+                "description": "What the span question's \"none\" choice means.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "complete": {
+                "description": "The yes-or-no question that asks whether the caller said the whole number.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given, span, complete), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The id of the question that asks whether the caller states the number.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "span": {
+                "description": "The id of the question that asks which span of the caller's words is the number.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "complete": {
+                "description": "The id of the question that asks whether the caller said the whole number.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "A number of a fixed shape that no list holds: an account, a library card, a tracking number.",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "name",
+            "description": "The slot type."
+          },
+          "exclude": {
+            "default": [],
+            "description": "Words that never belong to the caller's name: a span holding any of them is not offered to the model, and one answered anyway is refused. For the titles and names of people who are discussed on the call but are not the caller (a doctor, a technician). Compared in lower case, word by word. A caller who shares one of the words cannot give their name by voice, so list only what is needed. Default: none.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]+$"
+            }
+          },
+          "redact": {
+            "default": "none",
+            "description": "How the value is masked wherever it leaves the turn (the trace, a tool call's param of the same name): \"mask\" (\"•\") or \"none\", kept as it is.",
+            "type": "string",
+            "enum": [
+              "none",
+              "mask"
+            ]
+          },
+          "handoff": {
+            "default": "display",
+            "description": "What a transfer to a person hands over: the name as its \"display\", or only whether the caller was \"verified\", never the name.",
+            "type": "string",
+            "enum": [
+              "display",
+              "verified"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: given, givenTrue, givenFalse, span, spanNone.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The yes-or-no question that asks whether the caller gives their own name at all.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "givenTrue": {
+                "description": "What a yes to the first question means (its \"true\" criterion).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "givenFalse": {
+                "description": "What a no to the first question means (its \"false\" criterion).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "span": {
+                "description": "The question that asks which span of the caller's words is their name. Its choices are the word spans the engine finds, less the ones `exclude` withholds, and none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "spanNone": {
+                "description": "What the span question's \"none\" choice means.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given, span), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The id of the question that asks whether the caller states their own name.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "span": {
+                "description": "The id of the question that asks which span of the caller's words is their name.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "The caller's own name, first and last as they say it: \"Anna Petrov\", \"Sam\".",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "record",
+            "description": "The slot type."
+          },
+          "from": {
+            "description": "The list of records to choose among, by name: the app gives its lists by name from facts.forSlots ({ sources: { <name>: [...] } }), so two record slots can each read their own. Default: the app's one list (facts.forSlots records).",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "key": {
+            "default": "id",
+            "description": "The record field whose value the slot takes (a string or a number), and which the keypad and a spoken number give.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "keyPattern": {
+            "default": "[A-Za-z0-9_-]+",
+            "description": "A regular expression (its source, no slashes) the whole key must match, such as \"\\d{4}\" for four digits. A record whose key does not match is not offered, and a label or keys that do not match are no value. A key longer than 64 characters is never tried, and a group that repeats a repeat, such as (\\d+)+, is refused.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "labelPrefix": {
+            "default": "record_",
+            "description": "What each label the model chooses starts with, before the key (\"parcel_\" gives parcel_4711). It keeps a key from being taken for the question's own \"none\".",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "label": {
+            "default": "Number {key}",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+            "description": "The criterion the model is given for each record. A template: {field} is the record's field of that name, {key} the record's key, and {field|day} formats an ISO date as a day (\"Friday, September 18\"). Nothing else is evaluated."
+          },
+          "spoken": {
+            "description": "Numbers of `digits` digits the caller says (spoken or written) are offered too, after the records, even when no record has them, so a caller can name one that is not on their list. Default: off, only the records are offered.",
+            "type": "object",
+            "properties": {
+              "digits": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "description": "How many digits a number the caller says has."
+              },
+              "label": {
+                "default": "Number {key}, as the caller said it",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                "description": "The criterion the model is given for a number the caller says; {key} is the number. A template: {field} is the record's field of that name, {key} the record's key, and {field|day} formats an ISO date as a day (\"Friday, September 18\"). Nothing else is evaluated."
+              },
+              "skipYearAfterMonth": {
+                "default": false,
+                "description": "Whether a spoken year right after a month name (\"March twenty twenty five\") is a date rather than a number.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "digits"
+            ],
+            "additionalProperties": false
+          },
+          "missReason": {
+            "default": "no_match",
+            "description": "The reason of the invalid outcome when the slot was asked for and the caller chose nothing (or the model was not sure enough). Not asked for, that is absent.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "keypad": {
+            "description": "How many keys the caller keys the key with, after spoken answers missed; the keys are the value when they match keyPattern. Needs an ask_<slot>_dtmf line. Default: no keypad.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "disambiguate": {
+            "default": true,
+            "description": "Whether two records the model cannot tell apart (the top two within SLOT_CHOICE_MARGIN) make the slot ask which one (disambiguate_<slot>, with {a} and {b}).",
+            "type": "boolean"
+          },
+          "fillAt": {
+            "default": "SLOT_CHOICE_FILL",
+            "description": "The threshold the model's probability for the record must reach for the slot to fill. Below SLOT_CHOICE_CONFIRM nothing was chosen.",
+            "type": "string",
+            "enum": [
+              "SLOT_CHOICE_FILL",
+              "SLOT_CHOICE_CONFIRM"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none.",
+            "type": "object",
+            "properties": {
+              "instructions": {
+                "description": "The question that asks which record the caller means, sent to the model in place of the default.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "none": {
+                "description": "What the question's \"none\" label means: the caller names no record.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the default: `ids.choice` is the question's id (default: the slot's id followed by \"Choice\"), to keep the id an existing slot used.",
+            "type": "object",
+            "properties": {
+              "choice": {
+                "description": "The id of the question that asks which record the caller means.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "One of the app's records, chosen by what the caller says of it: a parcel, an order, a booking.",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "text",
+            "description": "The slot type."
+          },
+          "what": {
+            "description": "What the caller gives, as a noun phrase the default question names (\"a description of the problem\"). Needed unless text.given gives the question in its own words.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "instructions": {
+            "description": "More guidance for the model, added after the default question (\"Count it even when it comes with a request.\").",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "maxLength": {
+            "default": 500,
+            "description": "The most characters of the caller's words the value keeps; the rest is cut off.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "say": {
+            "default": "your description",
+            "description": "The display: what a line, the console and the model's turn state show in place of the words (\"your note\"). null: the words themselves.",
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "keep": {
+            "default": "first-unless-prompted",
+            "description": "When a value is on file: \"first-unless-prompted\" replaces it only when the slot was just asked for; \"first\" never does. A correction at the summary replaces it either way.",
+            "type": "string",
+            "enum": [
+              "first",
+              "first-unless-prompted"
+            ]
+          },
+          "redact": {
+            "default": "length",
+            "description": "\"length\": the words leave the turn (the trace, a tool call's param) as their length only, and the display is kept. \"none\": as they are.",
+            "type": "string",
+            "enum": [
+              "length",
+              "none"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: given.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The yes-or-no question that asks whether the caller gives the text, word for word.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The id of the question that asks whether the caller gives the text.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "The caller's own words, kept as said: a description, a note, a reason.",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "code",
+            "description": "The slot is written in code: code.slots.<id>."
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "additionalProperties": false,
+        "description": "A slot the app's code writes (code.slots.<id>), listed here so slots.yaml names every slot and sets their order."
+      }
+    ]
+  }
+}

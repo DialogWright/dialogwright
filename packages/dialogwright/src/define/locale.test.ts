@@ -103,10 +103,11 @@ describe('a session\'s locale', () => {
       intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ clockwork_garden: 0.9, none: 0.1 }),
     }, 'es-US');
     expect(opener.session.locale).toBe('es');
-    expect(heard(opener)).toBe('Claro, puedo ayudarle a check a hold. ¿En qué sucursal está la reserva, North o Riverside?');
-    const branch = say(opener, 'North', { ...ANSWERING, branch: choice({ north: 0.9, none: 0.1 }) }, 'es-US');
-    // no_hold is not in locale/es/prompts.yaml: the manifest's line, then es's own anything_else
-    expect(heard(branch)).toBe("I don't see a hold for The Clockwork Garden at the North branch. ¿Hay algo más en que pueda ayudarle?");
+    expect(heard(opener)).toBe('Claro, puedo ayudarle a check a hold. ¿En qué sucursal está la reserva, Norte o Ribera?');
+    const branch = say(opener, 'Norte', { ...ANSWERING, branch: choice({ north: 0.9, none: 0.1 }) }, 'es-US');
+    // no_hold is not in locale/es/prompts.yaml: the manifest's line, then es's own anything_else; the
+    // book and the branch are said in Spanish (locale/es/slots.yaml) even in the default's line
+    expect(heard(branch)).toBe("I don't see a hold for El jardín de relojería at the Norte branch. ¿Hay algo más en que pueda ayudarle?");
     expect(said(branch)).toBe(heard(branch));
   });
 

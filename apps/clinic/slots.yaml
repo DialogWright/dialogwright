@@ -1,0 +1,136 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
+# Every slot the clinic has, in the order the engine works through them. This file is the one place
+# that says which slots there are and in what order. `type: code` names a slot the code supplies
+# (src/domain/slots/); there is none now: the caller's name is a library `name` slot, the birth date
+# a library `birthdate` slot, the member ID a library `digits` slot, the provider a library `choice`
+# slot and the appointment day a library `date` slot, each configured here with the clinic's own
+# wording. The order matters: outside a form the engine fills slots in it, says their
+# acknowledgements in it, and when two slots each want to ask the caller to choose between two
+# values, the first one asks. The model's turn state and a transfer's handoff list the slots in it too.
+name:
+  type: name
+  # The caller's own name, picked as a span of their words; never a doctor's. No span holding a
+  # provider's name (a surname, in the roster) or a doctor's title is offered: a caller correcting
+  # the doctor ("not Chen, Cheng") can read to a model as the caller naming themselves, and a name the
+  # caller never said is worse than no name. The list is the roster's own words (EXCLUDED_NAME_TOKENS
+  # in src/domain/roster.ts, which is where a provider is added); the clinic's tests fail when the
+  # two differ. The questions keep the wording they were recorded with: the library's defaults, with
+  # the doctor named in the "false" criterion and in the span question.
+  exclude: [dr, doctor, chen, cheng, patel, okafor, nguyen, rossi, kim, alvarez]
+  text:
+    givenFalse: "No personal name, or a name that is not the caller's, such as a doctor's name, or a correction to the doctor's name"
+    span: "Read asr.text. Which of these spans is the caller's own full name as they say it, first and last when both are given? Do not include words such as my name is or this is, and do not choose a provider's name or anyone else's. When `slots.name` is already set and the caller gives a different name for themselves, as in no, it's Sam Lee, choose that span; correcting the doctor's name, as in not Dr. Alder, Dr. Ames, is not the caller's name. A single word can be the whole name, as in Prince. Choose none if no span is the caller's name."
+dob:
+  type: birthdate
+  # The caller's date of birth: month, day and year read separately, so a month and day alone ask for
+  # the year (ask_dob_year, the default). Masked to its year wherever it leaves the turn; the keypad
+  # takes MMDDYYYY; a month or a day missing is "no_year" and the generic retry asks again. The
+  # questions keep the words they were recorded with: the library's defaults, the appointment named
+  # as the date this is not, the clinic's own "false" criterion and its hint for a month said as a
+  # number. A birthday is a date, so one said at the birthday question is never also taken as the
+  # appointment day.
+  keypad: true
+  notThisDate: an appointment date
+  text:
+    givenFalse: "No birth date. An appointment date, a date they want to be seen on, or someone else's birth date is not the caller's date of birth"
+    monthHint: "A month may be said as a number rather than a name; answer with the month that number means, as in seven two sixty five, which is July 2nd, 1965."
+memberId:
+  type: digits
+  # The billing member ID: eight digits, said back in two groups of four, keyable on the keypad,
+  # recorded and handed to billing by its last four only. The questions keep the wording and ids
+  # they were recorded with (the default wording with "member ID" as the noun, and containsMemberId
+  # for the first question), and a number that does not match the mask is reported as "mask".
+  noun: member ID
+  length: 8
+  mask: ^\d{8}$
+  keypad: true
+  group: [4, 4]
+  ids:
+    given: containsMemberId
+  redact: last4
+  handoff: last4
+provider:
+  type: choice
+  # The provider: one of the practice's roster, by name or by keypad digit (1 to 8, in the order
+  # below). This list is the roster: src/domain/roster.ts reads PROVIDERS (each key, and the name
+  # after "Dr. " in its display) from the slot built from it, for the name slot's excluded words,
+  # the directory and the tests; the clinic's tests fail when the recognizer's hints, the keypad line
+  # or the roster line in prompts.yaml, or the name slot's exclude list, differ from it. Chen and
+  # Cheng are side by side on purpose: telling them apart by ear is what disambiguation is for.
+  # A name is taken at SLOT_CHOICE_CONFIRM and read back ("With {provider}.", ack_provider) below
+  # SLOT_CHOICE_FILL; two names close in the model's probabilities are asked about
+  # (disambiguate_provider). A caller who hedges (providerUnsure at PROVIDER_UNSURE, the clinic's own
+  # threshold in app.yaml) is read back however sure the model is, asked about a second name the
+  # model would confirm, and asked about two names their words both say ("Dr. Chen or Dr. Cheng, I'm
+  # not sure"). A caller who answers "Do you have the name of the provider?" without a name is asked
+  # for it (has_name: ask_provider_name) or read the roster (no_name: provider_list); "neither" comes
+  # first, since a stub model answers with the first label. The questions keep the words and ids
+  # they were recorded with, as literals.
+  keypad: true
+  fillAt: SLOT_CHOICE_CONFIRM
+  confirm: by-confidence
+  readBack: below-fill
+  disambiguate: margin
+  options:
+    chen: { say: Dr. Chen, means: "Dr. Chen, also said as just Chen" }
+    cheng: { say: Dr. Cheng, means: "Dr. Cheng, also said as just Cheng" }
+    patel: { say: Dr. Patel, means: "Dr. Patel, also said as just Patel" }
+    okafor: { say: Dr. Okafor, means: "Dr. Okafor, also said as just Okafor" }
+    nguyen: { say: Dr. Nguyen, means: "Dr. Nguyen, also said as just Nguyen" }
+    rossi: { say: Dr. Rossi, means: "Dr. Rossi, also said as just Rossi" }
+    kim: { say: Dr. Kim, means: "Dr. Kim, also said as just Kim" }
+    alvarez: { say: Dr. Alvarez, means: "Dr. Alvarez, also said as just Alvarez" }
+  text:
+    instructions: 'Read asr.text. Which provider, if any, does the caller name? When they correct a name, the word not marks the name they are rejecting; choose the other one, as in "not Chen, Cheng" or "Okafor, not Nguyen". A hedge such as "I''m not sure" or "either" is not a correction; name the provider they mention.'
+    none: No provider is named
+  hedge:
+    threshold: PROVIDER_UNSURE
+    byName: true
+    text:
+      instructions: "Read asr.text. Is the caller unsure which provider they mean, or unsure of that provider's name?"
+      "true": The caller hedges about the provider, as in it might be Dr. Kim or Dr. Rossi I think, or offers two names for one provider, as in Dr. Chen or Cheng, I am not sure
+      "false": The caller names a provider plainly, or names none. A caller correcting themselves, as in Dr. Chen, not Dr. Cheng, is sure, and so is a caller who hedges only about what they want done, as in maybe cancel it with Dr. Chen
+  help:
+    labels:
+      neither: { means: "Names a provider, or says nothing about whether they know the name" }
+      has_name: { means: "Says yes, that they have or know the provider's name, without saying the name", prompt: ask_provider_name }
+      no_name: { means: "Says no, or that they don't know, don't have, can't remember, or were never told the provider's name, or asks who the doctors are", prompt: provider_list }
+    text:
+      instructions: "Read asr.text and node.promptJustPlayed. The caller was asked whether they have the provider's name. Do they say whether they know it, without naming a provider?"
+  ids:
+    hedge: providerUnsure
+    help: providerNameStatus
+date:
+  type: date
+  # The appointment day, ahead (range: future): today, tomorrow or the day after; a weekday, "this" or
+  # "next" one; a month and day; or a span of days (this week, next week, this month, next month, or a
+  # month without a day), which is held and narrowed with date_narrow_window ("{window}. Which day
+  # works for you?"), a weekday said next being looked for inside the span. A confident month and day
+  # win over a weekday reading (the default). A day is taken at SLOT_CHOICE_CONFIRM and acknowledged
+  # (ack_date, "On {date}.") below SLOT_CHOICE_FILL; below SLOT_CHOICE_CONFIRM it is "low_confidence".
+  # A day that does not resolve is always "unresolvable", with the mode as raw; a turn that names no
+  # day is absent. Keyable as MMDD. The questions keep the words and ids they were recorded with: all
+  # seven questions and the mode's "none" criterion as literals, and dateRelativeDay and
+  # dateWeekdayQualifier for the relative-day and qualifier questions.
+  range: future
+  windows: true
+  qualifier: true
+  narrowPrompt: date_narrow_window
+  fillAt: confirm
+  whenUnsaid: absent
+  whenUnresolved: invalid
+  confirm: by-confidence
+  readBack: below-fill
+  keypad: true
+  ids:
+    relative: dateRelativeDay
+    qualifier: dateWeekdayQualifier
+  text:
+    mode: 'Read asr.text. How does the caller refer to a day for the appointment? "absolute" names a month or a month and day. "relative_day" is today, tomorrow, or the day after tomorrow. "weekday" names a day of the week. "window" is a span like this week or next month. "none" if no day is mentioned. The caller''s date of birth or birthday, or a date answering a question about it, is not an appointment date. One utterance can carry both: a birthday and, separately, the day they want to come in. The appointment day is the one not introduced by born or birthday, so a weekday or a relative day said alongside a birthday is still the appointment day and still names the mode.'
+    modeNone: 'No day for the appointment. The caller''s date of birth or birthday, or a date answering a question about it, is not one'
+    month: 'Read asr.text. Which month does the caller name, if any? The caller''s date of birth or birthday, or a date answering a question about it, is not an appointment date. If the only month and day in asr.text belong to the caller''s birthday, answer none. When they correct a month, the word not marks the month they are rejecting; choose the other one, as in "not March, April" or "October, not September". A hedge such as "I''m not sure" or "either" is not a correction; name the month they mention.'
+    day: 'Read asr.text. Which day of the month does the caller name, if any? The caller''s date of birth or birthday, or a date answering a question about it, is not an appointment date. If the only month and day in asr.text belong to the caller''s birthday, answer none. When they correct a day of the month, the word not marks the one they are rejecting; choose the other one, as in "not the 5th, the 6th" or "the 20th, not the 12th". A hedge such as "I''m not sure" or "either" is not a correction; name the day of the month they mention.'
+    weekday: 'Read asr.text. Which day of the week does the caller name, if any? When they correct a day, the word not marks the day they are rejecting; choose the other one, as in "not Monday, Friday" or "Saturday, not Sunday". A hedge such as "I''m not sure" or "either" is not a correction; name the day they mention.'
+    qualifier: 'Read asr.text. If the caller names a day of the week, do they say "this" or "next" before it? When they correct this qualifier, the word not marks the one they are rejecting; choose the other one, as in "not this Thursday, next Thursday". A hedge such as "I''m not sure" or "either" is not a correction; name the qualifier they mention.'
+    relative: 'Read asr.text. Does the caller say today, tomorrow, or the day after tomorrow? When they correct a relative day, the word not marks the one they are rejecting; choose the other one, as in "not today, the day after tomorrow". A hedge such as "I''m not sure" or "either" is not a correction; name the relative day they mention.'
+    window: 'Read asr.text. Does the caller name a span of days such as this week, next week, this month, or next month? When they correct the span, the word not marks the one they are rejecting; choose the other one, as in "not next week, this week". A hedge such as "I''m not sure" or "either" is not a correction; name the span they mention.'

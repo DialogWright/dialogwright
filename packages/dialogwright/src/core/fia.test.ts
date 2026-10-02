@@ -7,7 +7,7 @@ import { useTestkit } from '../testing/apps';
 import { testkitApp } from '../testing/testkit';
 import { CUSTOMERS } from '../testing/testkit/domain/data';
 import { ALL_SLOTS, SLOTS, type TestkitSlot } from '../testing/testkit/domain/slots';
-import type { ParcelRef } from '../testing/testkit/domain/slots/parcelSelect';
+import type { ParcelRef } from '../testing/testkit/oracles/parcelSelect';
 import { choice, noul } from '../testing/answers';
 import { candidateSpans, candidateWordSpans } from './spans';
 import { customerPrincipal } from '../testing/testkit/domain/principals';

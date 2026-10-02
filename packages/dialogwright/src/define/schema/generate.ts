@@ -5,14 +5,14 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { jsonSchemas, serializeSchema } from './json';
+import { jsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
 
 /** Where the JSON Schemas are committed. */
 export const SCHEMAS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'schemas');
 
 function main(): void {
   mkdirSync(SCHEMAS_DIR, { recursive: true });
-  for (const [kind, schema] of Object.entries(jsonSchemas())) {
+  for (const [kind, schema] of Object.entries({ ...jsonSchemas(), slots: slotsJsonSchema(), 'locale-slots': localeSlotsJsonSchema() })) {
     const file = join(SCHEMAS_DIR, `${kind}.schema.json`);
     writeFileSync(file, serializeSchema(schema));
     console.log(`wrote ${file}`);

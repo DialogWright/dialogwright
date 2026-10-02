@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../../../../schemas/locale-slots.schema.json
+# The library line's slots in Spanish: how the books and the branches are said in a Spanish call
+# (its acknowledgements, its summary, its lines). Only how a value is said: the questions stay as the
+# slots ask them, since the model reads them as written and their labels are keys.
+book:
+  options:
+    river_atlas: El atlas del río
+    quiet_orchard: Un huerto tranquilo
+    clockwork_garden: El jardín de relojería
+branch:
+  options:
+    north: Norte
+    riverside: { say: Ribera }

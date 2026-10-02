@@ -1,15 +1,18 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  addDays, defineApp, describeDay, isChoice, matchesMask, noulValue, spokenToDigits,
-  type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotOutcome, type SlotSpec, type ToolDef,
+  addDays, defineApp, defineSlot, describeDay, localeOf,
+  type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotSpec, type ToolDef,
 } from '../../index';
 
 /**
  * Example Town Library: a small, fictional library's phone line, written as an app folder. The YAML
  * beside this file holds its intents, forms, prompts, policy and presentation; this file holds what
- * runs: three slots (a book from the catalog, a branch, a library card number), three tools, one rule
- * of the app's own, and the three forms' hooks. A caller renews a book (a confirmed write, so the
+ * runs: three slots (a book from the catalog and a branch, library `choice` slots, and a library
+ * card number, a library `digits` slot), three tools, one rule of the app's own, and the three
+ * forms' hooks. It speaks English and Spanish: locale/es/ has the Spanish lines and how the books and
+ * branches are said in Spanish (slots.yaml), and the lines its code says give each book and due day
+ * in the call's language. A caller renews a book (a confirmed write, so the
  * gate's R3 holds it to the title read back), asks whether a hold is ready at a branch, or asks what
  * is checked out on their card. The engine's tests build it with defineApp and run calls through it.
  */
@@ -27,93 +30,44 @@ export const BOOKS: Readonly<Record<string, string>> = {
 /** The branches a hold can be at. */
 export const BRANCHES: Readonly<Record<string, string>> = { north: 'North', riverside: 'Riverside' };
 
-/** A choice slot over a fixed list: the model picks an id, the line says its name. */
-function choiceSlot(id: string, options: Readonly<Record<string, string>>, instructions: string): SlotSpec {
-  const display = (value: string): string => options[value] ?? value;
-  return {
-    id,
-    spokenConfirm: 'summary',
-    questions: () => ({
-      [id]: {
-        type: 'choice',
-        instructions,
-        criteria: { ...Object.fromEntries(Object.entries(options).map(([key, name]) => [key, `The caller names ${name}`])), none: 'Names none of these' },
-      },
-    }),
-    fill(answers, ctx): SlotOutcome {
-      const a = answers[id];
-      if (!isChoice(a) || !Object.hasOwn(options, a.choice)) return { kind: 'absent' };
-      const p = a.probabilities[a.choice] ?? a.confidence;
-      if (p < ctx.thresholds.SLOT_CHOICE_FILL) return { kind: 'absent' };
-      return { kind: 'filled', value: a.choice, display: display(a.choice), confidence: p, confirm: 'none' };
-    },
-    display,
-  };
-}
-
-/** A library card number: eight digits. */
-export const CARD_MASK = /^\d{8}$/;
-
 /**
  * The library card number: a value no list holds, so the model cannot choose it from one. It is
  * asked whether a number is said, which span of the words it is, and whether it was said whole;
- * the code turns the span into digits and checks them. Acknowledged when the model is less sure of the
- * span, keyed as eight digits after two misses, recorded and handed over by its last four.
+ * the code turns the span into digits and checks them. A library `digits` slot: eight digits, keyed
+ * on the keypad after two misses, acknowledged (ack_card) when the model is less sure of the span,
+ * refused when it is unsure of it, re-asked with its own line (ask_card_length) when the digits are
+ * not eight, recorded and handed over by its last four.
  */
-export const cardSlot: SlotSpec = {
-  id: 'card',
-  spokenConfirm: 'by-confidence',
-  redact: 'last4',
-  handoff: 'last4',
-  detect: true,
+export const cardSlot = defineSlot('card', {
+  type: 'digits',
+  noun: 'library card',
+  length: 8,
+  keypad: true,
+  confirm: 'by-confidence',
+  readBack: 'below-fill',
+  minConfidence: 'SLOT_CHOICE_CONFIRM',
+  lengthRetryPromptId: 'ask_card_length',
+});
 
-  questions(ctx) {
-    const criteria: Record<string, string | null> = {};
-    for (const span of ctx.candidateSpans) criteria[span] = null;
-    criteria.none = 'No span of asr.text is a library card number';
-    return {
-      cardGiven: {
-        type: 'noul',
-        instructions: 'Read asr.text. Does the caller state a library card number, as digits or as spoken number words?',
-      },
-      cardSpan: {
-        type: 'choice',
-        instructions: 'Read asr.text. Which of these spans is the library card number the caller states? Choose the span that covers the whole number as spoken, and no words that are not part of it. Choose none if no span is a card number.',
-        criteria,
-      },
-      cardComplete: {
-        type: 'noul',
-        instructions: 'Read asr.text. If the caller states a library card number, do they finish saying the whole number rather than trailing off?',
-      },
-    };
-  },
+/**
+ * The book the caller names: a library `choice` slot over the catalog (BOOKS, each key with its
+ * title). The model picks a key; the line says the title. One question, `book`, whose criteria are
+ * "The caller names <title>" for each book and "Names none of these".
+ */
+export const bookSlot = defineSlot('book', {
+  type: 'choice',
+  text: { instructions: 'Read asr.text. Which book in the catalog does the caller name?' },
+  options: BOOKS,
+});
 
-  fill(answers, ctx): SlotOutcome {
-    const t = ctx.thresholds;
-    if (noulValue(answers, 'cardGiven') < t.SLOT_DETECT) return { kind: 'absent' };
-    if (noulValue(answers, 'cardComplete') < t.SLOT_DETECT) return { kind: 'invalid', reason: 'incomplete', raw: '' };
-    const span = answers.cardSpan;
-    if (!isChoice(span) || span.choice === 'none') return { kind: 'invalid', reason: 'no_span', raw: '' };
-    const p = span.probabilities[span.choice] ?? span.confidence;
-    if (p < t.SLOT_CHOICE_CONFIRM) return { kind: 'invalid', reason: 'low_confidence', raw: '' };
-    const digits = spokenToDigits(span.choice);
-    if (!matchesMask(digits, CARD_MASK)) return { kind: 'invalid', reason: 'length', raw: digits, retryPromptId: 'ask_card_length' };
-    return { kind: 'filled', value: digits, display: digits, confidence: p, confirm: p >= t.SLOT_CHOICE_FILL ? 'none' : 'implicit' };
-  },
+/** The branch the caller names: a library `choice` slot over BRANCHES. */
+export const branchSlot = defineSlot('branch', {
+  type: 'choice',
+  text: { instructions: 'Read asr.text. Which library branch does the caller name?' },
+  options: BRANCHES,
+});
 
-  dtmf: {
-    length: 8,
-    parse: (digits) => (matchesMask(digits, CARD_MASK) ? { value: digits, display: digits } : null),
-  },
-
-  display: (value) => value,
-};
-
-export const LIBRARY_SLOTS: Record<string, SlotSpec> = {
-  book: choiceSlot('book', BOOKS, 'Read asr.text. Which book in the catalog does the caller name?'),
-  branch: choiceSlot('branch', BRANCHES, 'Read asr.text. Which library branch does the caller name?'),
-  card: cardSlot,
-};
+export const LIBRARY_SLOTS: Record<string, SlotSpec> = { book: bookSlot, branch: branchSlot, card: cardSlot };
 
 /** What a hold looks like in the library's systems. */
 export type HoldStatus = 'ready' | 'waiting';
@@ -186,7 +140,7 @@ function renew(c: CompletionContext): Completion {
   if (decision.verdict !== 'ALLOW') return c.refusal(decision);
   s.pendingHash = null;
   const { due } = value as { due: string };
-  return { kind: 'said', acks: [...acks, { promptId: 'renewed', vars: { book: displayOf(s, 'book'), due: describeDay(due) } }] };
+  return { kind: 'said', acks: [...acks, { promptId: 'renewed', vars: { book: displayOf(s, 'book'), due: describeDay(due, localeOf(s)) } }] };
 }
 
 function checkHold(c: CompletionContext): Completion {
@@ -208,7 +162,10 @@ function checkLoans(c: CompletionContext): Completion {
   if (loans === null) return { kind: 'said', acks: [...acks, { promptId: 'no_card', vars: { card } }] };
   const [next] = [...loans].sort((a, b) => a.due.localeCompare(b.due));
   if (!next) return { kind: 'said', acks: [...acks, { promptId: 'no_loans', vars: { card } }] };
-  return { kind: 'said', acks: [...acks, { promptId: 'next_due', vars: { card, book: BOOKS[next.book] ?? next.book, due: describeDay(next.due) } }] };
+  // The book and the day as the call's language says them: the book slot's display (its Spanish
+  // wording in a Spanish call), the day in that language's words.
+  const locale = localeOf(s);
+  return { kind: 'said', acks: [...acks, { promptId: 'next_due', vars: { card, book: libraryApp.slots.book!.display(next.book, locale), due: describeDay(next.due, locale) } }] };
 }
 
 /** The library's code: everything the YAML names that runs. */

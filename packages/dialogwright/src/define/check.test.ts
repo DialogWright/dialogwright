@@ -159,7 +159,7 @@ describe('checkApp: the prompts every locale needs', () => {
 describe('checkApp: each locale\'s lines against prompts.yaml', () => {
   it('a translated line that uses a variable the prompts.yaml line lacks is a problem at its text: saying it would fail', async () => {
     const dir = folder({
-      'locale/es/prompts.yaml': (t) => t.replace('Listo. Ahora {book} se devuelve {due}.', 'Listo. Ahora {libro} se devuelve {due}.').replace("'{book} está reservado", "'{book} {extra} está reservado"),
+      'locale/es/prompts.yaml': (t) => t.replace('Listo. Ahora {book} se devuelve el {due}.', 'Listo. Ahora {libro} se devuelve el {due}.').replace("'{book} está reservado", "'{book} {extra} está reservado"),
     });
     expect(await lines(dir)).toEqual([
       'locale/es/prompts.yaml:120:11  prompts.renewed.text  the es line "renewed" uses {libro}, which the prompts.yaml line does not, so saying it would fail: the line is given only the variables the prompts.yaml line has  ->  use only {book}, {due} in this line (check the spelling), or add {libro} to the prompts.yaml line and to the code that says it',
@@ -188,13 +188,16 @@ describe('checkApp: each locale\'s lines against prompts.yaml', () => {
 describe('checkApp: the lines the engine builds from the code', () => {
   const book = libraryCode.slots.book!;
   const withBook = (spec: Partial<typeof book>): AppCode => ({ ...libraryCode, slots: { ...libraryCode.slots, book: { ...book, ...spec } } });
+  // A book slot changed in code takes no locale wording (it would be built again without the change),
+  // so these folders say nothing of it in locale/es/slots.yaml.
+  const unworded = (t: string): string => t.replace(/^book:\n(?: {2}.*\n)+/m, '');
   const ids = (code: AppCode, dir = LIBRARY_DIR): string[] => enginePrompts(loadAppFolder(dir).config!, code).map((p) => p.id);
 
   it('a slot with a keypad rung needs ask_<slot>_dtmf, in every locale', async () => {
     const code = withBook({ dtmf: { length: 4, parse: () => null } });
     expect(ids(libraryCode)).not.toContain('ask_book_dtmf');
     expect(ids(code)).toContain('ask_book_dtmf');
-    expect(await lines(folder(), { code })).toEqual([
+    expect(await lines(folder({ 'locale/es/slots.yaml': unworded }), { code })).toEqual([
       'prompts.yaml:2:1  prompts  prompt "ask_book_dtmf" is missing from prompts.yaml; the engine says it when it asks for the slot "book" on the keypad after spoken answers missed (its slot spec has dtmf)  ->  add "ask_book_dtmf:" with its text and interruptible to prompts.yaml',
       'locale/es/prompts.yaml:3:1  prompts  prompt "ask_book_dtmf" is missing from the es prompts; the engine says it when it asks for the slot "book" on the keypad after spoken answers missed (its slot spec has dtmf)  ->  add "ask_book_dtmf:" with its text and interruptible to locale/es/prompts.yaml',
     ]);
@@ -207,6 +210,30 @@ describe('checkApp: the lines the engine builds from the code', () => {
     expect(ids(withBook({ partialPromptId: 'ask_book_title' }))).toContain('ask_book_title');
     // summary: neither acknowledged nor read back on its own
     expect(ids(libraryCode).filter((id) => /^(ack|confirm)_book$/.test(id))).toEqual([]);
+  });
+
+  it('a line a slot declares (SlotSpec.prompts) is needed in every locale, besides the derived ones', async () => {
+    // The library's card declares its length retry, its ack and its keypad line.
+    expect(ids(libraryCode)).toEqual(expect.arrayContaining(['ask_card_length', 'ack_card', 'ask_card_dtmf']));
+    const code = withBook({ prompts: [{ id: 'disambiguate_book', why: 'the caller names two books', vars: ['a', 'b'] }] });
+    expect(ids(code)).toContain('disambiguate_book');
+    const dir = folder({ 'prompts.yaml': (t) => `${t}  disambiguate_book:\n    text: Is it {a}, or {b}?\n    interruptible: true\n`, 'locale/es/slots.yaml': unworded });
+    expect(await lines(dir, { code })).toEqual([
+      'locale/es/prompts.yaml:3:1  prompts  prompt "disambiguate_book" is missing from the es prompts; the engine says it when the caller names two books (the slot "book" declares it in its prompts)  ->  add "disambiguate_book:" with its text and interruptible to locale/es/prompts.yaml',
+    ]);
+  });
+
+  it('a line a slot declares may use only the variables it declares, in any locale', async () => {
+    const plain = folder({ 'prompts.yaml': (t) => t.replace('A library card number has eight digits.', 'Card {card} does not have eight digits.') });
+    expect(await lines(plain)).toEqual([
+      'prompts.yaml:139:11  prompts.ask_card_length.text  the line "ask_card_length" uses {card}, which the slot "card" does not give it (its prompts declare no variables for this line), so saying it would fail  ->  write this line without variables, or add "card" to the vars of "ask_card_length" in app.ts (code.slots.card.prompts) if the slot gives it',
+    ]);
+    const es = folder({ 'locale/es/prompts.yaml': (t) => t.replace('Es la tarjeta {card}.', 'Es la tarjeta {number}.') });
+    expect(await lines(es)).toEqual([
+      'locale/es/prompts.yaml:143:11  prompts.ack_card.text  the es line "ack_card" uses {number}, which the slot "card" does not give it (its prompts declare {card} for this line), so saying it would fail  ->  use only {card} in this line (check the spelling), or add "number" to the vars of "ack_card" in app.ts (code.slots.card.prompts) if the slot gives it',
+      // and, as before, against the prompts.yaml line
+      'locale/es/prompts.yaml:143:11  prompts.ack_card.text  the es line "ack_card" uses {number}, which the prompts.yaml line does not, so saying it would fail: the line is given only the variables the prompts.yaml line has  ->  use only {card} in this line (check the spelling), or add {number} to the prompts.yaml line and to the code that says it',
+    ]);
   });
 
   it('a role whose access is "person" needs the handoff line for R5\'s reason: role-person, or the policy\'s own', () => {

@@ -10,12 +10,13 @@ import { speechEvent, startEvent, type SessionEvent } from '../channel/events';
 import { AuditLog } from '../audit/log';
 import type { AuditEntry } from '../audit/types';
 import { verifyChain } from '../audit/verify';
-import { combinedConfigHash, configHashLines, configHashesOf, contentHash } from '../core/app/configHash';
+import { combinedConfigHash, configHashLines, configHashesOf, contentHash, orderedJson } from '../core/app/configHash';
 import { registerApp } from '../core/app/registry';
 import type { App } from '../core/app/types';
 import { validateApp } from '../core/app/validate';
 import { newSession, type Session } from '../core/session';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
+import { canonicalJson } from '../jev/cassette';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import type { AnswerMap, JevClient, JevRequest, JevResponse } from '../jev/types';
 import { runTurn, type RunOptions } from '../run/turn';
@@ -56,13 +57,22 @@ function hashesOf(dir: string): App['configHashes'] & object {
 
 const sha256 = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
 
-const LIBRARY_FILES = ['app.yaml', 'forms.yaml', 'intents.yaml', 'locale/es/prompts.yaml', 'policy.yaml', 'prompts.yaml'];
+const LIBRARY_FILES = ['app.yaml', 'forms.yaml', 'intents.yaml', 'locale/es/prompts.yaml', 'locale/es/slots.yaml', 'policy.yaml', 'prompts.yaml'];
 
 describe('configuration hashes: the arithmetic', () => {
-  it('hashes a value as canonical JSON: keys sorted at every level, arrays in order, no whitespace', () => {
-    expect(contentHash({ b: 1, a: [2, 1], c: { z: 'x', y: null } })).toBe(sha256('{"a":[2,1],"b":1,"c":{"y":null,"z":"x"}}'));
+  it('hashes a value as JSON: keys in document order at every level, arrays in order, no whitespace', () => {
+    expect(contentHash({ b: 1, a: [2, 1], c: { z: 'x', y: null } })).toBe(sha256('{"b":1,"a":[2,1],"c":{"z":"x","y":null}}'));
+    expect(orderedJson({ a: undefined, b: [{ y: 1, x: 2 }] })).toBe('{"b":[{"y":1,"x":2}]}');
     expect(contentHash({ a: [1, 2] })).not.toBe(contentHash({ a: [2, 1] }));
     expect(contentHash({ n: 1 })).not.toBe(contentHash({ n: '1' }));
+  });
+
+  it('is order-preserving: the same keys in another order are another hash, at every level (a key\'s place is meaning, as in slots.yaml)', () => {
+    expect(contentHash({ a: 1, b: 2 })).not.toBe(contentHash({ b: 2, a: 1 }));
+    expect(contentHash({ k: { a: 1, b: 2 } })).not.toBe(contentHash({ k: { b: 2, a: 1 } }));
+    expect(contentHash([{ a: 1, b: 2 }])).not.toBe(contentHash([{ b: 2, a: 1 }]));
+    // while the cassette's key still sorts: that is a different job (jev/cassette.ts)
+    expect(canonicalJson({ a: 1, b: 2 })).toBe(canonicalJson({ b: 2, a: 1 }));
   });
 
   it('combines the files\' `<file>:<hash>` lines, sorted by file and joined by newlines', () => {
@@ -90,7 +100,7 @@ describe('configuration hashes: the loader', () => {
     ]);
   });
 
-  it('does not change for comments, whitespace, key order or quoting style', () => {
+  it('does not change for comments, whitespace, flow or block style or quoting style', () => {
     const hand = hashesOf(folder({
       'policy.yaml': (t) => `# the library's policy\n\n${t
         .replace('maxAttempts: 3', 'maxAttempts:    3   # three tries')
@@ -99,11 +109,19 @@ describe('configuration hashes: the loader', () => {
     }));
     expect(hand).toEqual(base);
     // The same content written out again in another style altogether: flow collections, every
-    // string double-quoted, every map's keys in reverse order, and no comments.
-    const restyled = (t: string): string => stringify(parse(t), { collectionStyle: 'flow', defaultStringType: 'QUOTE_DOUBLE', defaultKeyType: 'PLAIN', sortMapEntries: (a, b) => String(b.key).localeCompare(String(a.key)) });
+    // string double-quoted, and no comments; the keys keep their order.
+    const restyled = (t: string): string => stringify(parse(t), { collectionStyle: 'flow', defaultStringType: 'QUOTE_DOUBLE', defaultKeyType: 'PLAIN' });
     const other = folder({ 'policy.yaml': restyled, 'intents.yaml': restyled, 'prompts.yaml': restyled, 'locale/es/prompts.yaml': restyled });
     expect(readFileSync(join(other, 'policy.yaml'), 'utf8')).not.toBe(readFileSync(join(LIBRARY_DIR, 'policy.yaml'), 'utf8'));
     expect(hashesOf(other)).toEqual(base);
+  });
+
+  it('changes the file\'s hash and the whole\'s, and no other file\'s, when its keys are reordered: key order is meaning', () => {
+    const reversed = (t: string): string => stringify(parse(t), { sortMapEntries: (a, b) => String(b.key).localeCompare(String(a.key)) });
+    const reordered = hashesOf(folder({ 'policy.yaml': reversed }));
+    expect(reordered.files['policy.yaml']).not.toBe(base.files['policy.yaml']);
+    expect(reordered.app).not.toBe(base.app);
+    for (const file of LIBRARY_FILES.filter((f) => f !== 'policy.yaml')) expect(reordered.files[file], file).toBe(base.files[file]);
   });
 
   it('changes the file\'s hash and the whole\'s, and no other file\'s, when a value changes', () => {
