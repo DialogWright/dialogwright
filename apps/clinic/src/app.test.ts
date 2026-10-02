@@ -7,6 +7,7 @@ import { CLINIC_DIR, clinicApp, code } from './app';
 import { CLINIC_FORM_HOOKS } from './domain/forms';
 import { PROVIDERS } from './domain/roster';
 import { ALL_SLOTS, SLOTS } from './domain/slots';
+import { dobSlot } from './domain/slots/dob';
 import { memberIdSlot } from './domain/slots/memberId';
 
 /**
@@ -62,13 +63,34 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
 });
 
 describe('the clinic folder: slots.yaml', () => {
-  it('lists all five slots, four as code and the member ID as a library digits slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
+  it('lists all five slots, three as code, the birth date as a library birthdate slot and the member ID as a library digits slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
     const slots = loadAppFolder(CLINIC_DIR).config?.slots;
     expect(Object.keys(slots ?? {})).toEqual([...ALL_SLOTS]);
-    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['code', 'code', 'digits', 'code', 'code']);
+    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['code', 'birthdate', 'digits', 'code', 'code']);
     expect(Object.keys(clinicApp.slots)).toEqual(Object.keys(slots ?? {}));
     expect(Object.keys(clinicApp.slots)).toEqual([...ALL_SLOTS]);
     for (const id of Object.keys(SLOTS)) expect(clinicApp.slots[id], id).toBe(SLOTS[id as keyof typeof SLOTS]);
+  });
+
+  it('configures the birth date as the hand-written slot was: its wording, its ids, the keypad, the year line, masked to its year', () => {
+    const lib = clinicApp.slots.dob as LibrarySlotSpec;
+    expect(lib.type).toBe('birthdate');
+    expect(lib.config).toEqual({
+      keypad: true,
+      notThisDate: 'an appointment date',
+      text: {
+        givenFalse: "No birth date. An appointment date, a date they want to be seen on, or someone else's birth date is not the caller's date of birth",
+        monthHint: 'A month may be said as a number rather than a name; answer with the month that number means, as in seven two sixty five, which is July 2nd, 1965.',
+      },
+      minYear: 1900, redact: 'mask', handoff: 'display', confirm: 'summary',
+    });
+    expect(lib).toMatchObject({
+      id: dobSlot.id, spokenConfirm: dobSlot.spokenConfirm, redact: 'mask', valueKind: 'date', detect: true, partialPromptId: 'ask_dob_year',
+    });
+    expect(lib.handoff).toBeUndefined();
+    expect(lib.dtmf?.length).toBe(8);
+    expect(lib.questionIds).toEqual(['dobGiven', 'dobMonth', 'dobDay', 'dobYear']);
+    expect(lib.prompts!.map((p) => p.id)).toEqual(['ask_dob_year', 'ask_dob_dtmf']);
   });
 
   it('configures the member ID as the hand-written slot was: its wording and ids, eight digits in two groups, keyed, recorded by its last four', () => {

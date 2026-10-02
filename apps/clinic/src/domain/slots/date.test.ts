@@ -100,7 +100,7 @@ describe('a full date beats a weekday', () => {
 });
 
 describe('the slot registry', () => {
-  it('has the four slots written in code (the member ID is a library slot, configured in slots.yaml)', () => {
-    expect(Object.keys(SLOTS)).toEqual(['name', 'dob', 'provider', 'date']);
+  it('has the three slots written in code (the birth date and the member ID are library slots, configured in slots.yaml)', () => {
+    expect(Object.keys(SLOTS)).toEqual(['name', 'provider', 'date']);
   });
 });

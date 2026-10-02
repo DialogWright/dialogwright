@@ -1,16 +1,17 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   buildClient, buildThresholds, choice, defaultCorpusFile, loadCorpus, loadScenarios, noul, readBaseline, registerApp, REGRESS_TODAY,
-  resetAppsForTest, runAll, scenariosDir, testSlotContext, type App, type LibrarySlotSpec, type SlotSpec,
+  resetAppsForTest, runAll, scenariosDir, testSlotContext, type App, type LibrarySlotSpec, type SlotPartial, type SlotSpec,
 } from 'dialogwright';
 import { createShadowReport, formatShadowReport, isCassetteMiss, shadowSlot, withShadowSlots, type ShadowReport } from 'dialogwright/testing';
 import { clinicApp, registerClinic } from './index';
+import { dobSlot } from './domain/slots/dob';
 import { memberIdSlot } from './domain/slots/memberId';
 import { CLINIC_SHADOW_PAIRS } from './testing/shadowPairs';
 
 /**
- * The shadow harness over whole runs of the clinic. First the member ID against the hand-written slot
- * it replaced (CLINIC_SHADOW_PAIRS), then every clinic slot shadowed by a copy of itself
+ * The shadow harness over whole runs of the clinic. First the birth date and the member ID against the
+ * hand-written slots they replaced (CLINIC_SHADOW_PAIRS), then every clinic slot shadowed by a copy of itself
  * (the same behavior, so any mismatch is the harness's own), through the full stub regression and
  * the full replay of the recorded calls. Nothing may change: the stub run is the committed
  * baseline, the replay is the unshadowed replay with no cassette miss, and the report is empty
@@ -44,23 +45,34 @@ describe('the shadow harness on the clinic', () => {
     }
   }
 
-  it('pairs the member ID, now a library digits slot, with the hand-written slot it replaced', () => {
-    expect(CLINIC_SHADOW_PAIRS.map((s) => s.id)).toEqual(['memberId']);
-    expect(CLINIC_SHADOW_PAIRS[0]).toBe(memberIdSlot);
+  /** The library slots and the methods every whole run must have compared for each. */
+  const PAIRED = { dob: ['questions', 'fill', 'display', 'partialVars'], memberId: ['questions', 'fill', 'display'] } as const;
+
+  function expectPairsAgree(report: ShadowReport): void {
+    expect(report.mismatches, formatShadowReport(report, Object.keys(PAIRED))).toEqual([]);
+    for (const [slot, methods] of Object.entries(PAIRED)) {
+      for (const method of methods) expect(report.calls[`${slot}.${method}`] ?? 0, `${slot}.${method}`).toBeGreaterThan(0);
+    }
+  }
+
+  it('pairs the birth date and the member ID, now library slots, with the hand-written slots they replaced', () => {
+    expect(CLINIC_SHADOW_PAIRS.map((s) => s.id)).toEqual(['dob', 'memberId']);
+    expect(CLINIC_SHADOW_PAIRS[0]).toBe(dobSlot);
+    expect(CLINIC_SHADOW_PAIRS[1]).toBe(memberIdSlot);
+    expect((clinicApp.slots.dob as LibrarySlotSpec).type).toBe('birthdate');
     expect((clinicApp.slots.memberId as LibrarySlotSpec).type).toBe('digits');
   });
 
-  it('compares the library member ID with the hand-written one on every call of a full stub run, and nothing changes', async () => {
+  it('compares the library slots with the hand-written ones on every call of a full stub run, and nothing changes', async () => {
     const report = createShadowReport();
     const actual = await run('stub', withShadowSlots(clinicApp, CLINIC_SHADOW_PAIRS, { mode: 'report', report }));
     const expected = readBaseline();
     expect(actual.scenarios).toEqual(expected.scenarios);
     expect(actual.corpus).toEqual(expected.corpus);
-    expect(report.mismatches, formatShadowReport(report, ['memberId'])).toEqual([]);
-    for (const method of ['questions', 'fill', 'display'] as const) expect(report.calls[`memberId.${method}`] ?? 0, method).toBeGreaterThan(0);
+    expectPairsAgree(report);
   });
 
-  it('agree on branches no run reaches: every mix of answers around the thresholds, spans, and keypad entries', () => {
+  it('the member IDs agree on branches no run reaches: every mix of answers around the thresholds, spans, and keypad entries', () => {
     const shadow = shadowSlot(memberIdSlot, clinicApp.slots.memberId!);
     const spans = ['five five five zero seven seven eight eight', '5550 7788', 'double five zero seven seven eight eight', 'five five five', 'five five five zero seven seven eight eight nine', 'none'];
     for (const text of ['', 'my id is five five five zero seven seven eight eight', 'it is 5550 7788', 'five five five']) {
@@ -81,6 +93,54 @@ describe('the shadow harness on the clinic', () => {
     expect(shadow.display('55507788')).toBe('5550 7788');
   });
 
+  it('the birth dates agree on branches no run reaches: every mix of parts around the thresholds, with and without a month and day pending, and the keypad', () => {
+    // The clinic's own: "no_year" for a month or a day missing, no whole-date re-ask, no verified handoff.
+    const report = createShadowReport();
+    const shadow = shadowSlot(dobSlot, clinicApp.slots.dob!, { report });
+    const T = buildThresholds([]);
+    const chose = (label: string, p: number) =>
+      label === 'none' ? choice({ none: 1 }) : { type: 'choice' as const, choice: label, probabilities: { [label]: p, none: 1 - p }, confidence: p };
+    const pending: SlotPartial = { kind: 'dob', month: 6, day: 14 };
+    const windows: (SlotPartial | null)[] = [null, pending, { kind: 'dob', month: 2, day: 29 }, { kind: 'week', from: '2026-09-21' }];
+    for (const window of windows) {
+      for (const text of ['', 'june fourteenth nineteen seventy five', 'seventy five', 'oh six one four seventy five']) {
+        for (const prompted of [false, true]) shadow.questions(testSlotContext(text, { window, prompted }));
+      }
+    }
+    for (const todayIso of ['2026-09-18', '2001-03-01']) {
+      for (const window of windows) {
+        const ctx = testSlotContext('', { window, todayIso });
+        shadow.fill({}, ctx);
+        for (const given of [0.2, T.SLOT_DETECT, 0.9]) {
+          for (const month of ['june', 'february', 'september', 'none']) {
+            for (const day of ['14', '17', '18', '29', '30', '31', 'none']) {
+              for (const year of ['nineteen seventy five', 'seventy five', 'eighteen ninety nine', 'nineteen hundred', 'nineteen seventy six', 'twenty twenty six', 'twenty thirty', 'oh', 'none']) {
+                for (const p of [0.3, T.SLOT_CHOICE_CONFIRM, 0.9]) {
+                  shadow.fill({ dobGiven: noul(given), dobMonth: chose(month, p), dobDay: chose(day, p), dobYear: chose(year, p) }, ctx);
+                  shadow.fill({ dobGiven: noul(given), dobMonth: chose(month, 0.9), dobDay: chose(day, p), dobYear: chose(year, 0.3) }, ctx);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    const pad = (n: number, w: number) => String(n).padStart(w, '0');
+    for (const todayIso of ['2026-09-18', '2001-03-01']) {
+      const ctx = testSlotContext('', { todayIso });
+      for (const m of [0, 1, 2, 6, 9, 12, 13]) {
+        for (const d of [0, 1, 14, 17, 18, 28, 29, 30, 31, 32]) {
+          for (const y of [1899, 1900, 1975, 1976, 2001, 2026, 2030]) shadow.dtmf!.parse(`${pad(m, 2)}${pad(d, 2)}${pad(y, 4)}`, ctx);
+        }
+      }
+      for (const keys of ['0614197*', '#6141975', '06*41975', 'A6141975', '00000000', '99999999']) shadow.dtmf!.parse(keys, ctx);
+    }
+    expect(shadow.display('1975-06-14')).toBe('June 14th, 1975');
+    expect(report.mismatches).toEqual([]);
+    expect(report.calls['dob.fill']).toBeGreaterThan(30_000);
+    expect(report.calls['dob.dtmf.parse']).toBeGreaterThan(900);
+  });
+
   it('compares them on every call of a full replay of the recorded calls: no mismatch and no cassette miss', async () => {
     const plain = await run('recorded', clinicApp);
     const report = createShadowReport();
@@ -89,8 +149,7 @@ describe('the shadow harness on the clinic', () => {
     expect(shadowed.records.length).toBe(plain.records.length);
     expect(shadowed.scenarios).toEqual(plain.scenarios);
     expect(shadowed.corpus).toEqual(plain.corpus);
-    expect(report.mismatches, formatShadowReport(report, ['memberId'])).toEqual([]);
-    for (const method of ['questions', 'fill', 'display'] as const) expect(report.calls[`memberId.${method}`] ?? 0, method).toBeGreaterThan(0);
+    expectPairsAgree(report);
   });
 
   it('changes nothing in a full stub regression run, every slot shadowed by itself', async () => {

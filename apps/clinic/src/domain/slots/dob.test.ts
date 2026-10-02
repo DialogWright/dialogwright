@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { candidateSpans, choice, noul, testSlotContext as ctx } from 'dialogwright';
-import { dobSlot } from './dob';
+import { candidateSpans, choice, noul, testSlotContext as ctx, type SlotSpec } from 'dialogwright';
+import { clinicApp } from '../../app';
+import { dobSlot as handWritten } from './dob';
 
 const pending = (text: string) => ({ ...ctx(text), window: { kind: 'dob', month: 6, day: 14 } });
 
-describe('dobSlot', () => {
+/** The same expectations of the hand-written slot and of the library `birthdate` slot slots.yaml builds in its place. */
+describe.each<[string, SlotSpec]>([
+  ['the hand-written dobSlot', handWritten],
+  ['the library dob slot (slots.yaml)', clinicApp.slots.dob!],
+])('%s', (_name, dobSlot) => {
   it('asks given, month, day, and a year span over the number candidates', () => {
     const q = dobSlot.questions(ctx('june fourteenth nineteen seventy five'));
     expect(Object.keys(q)).toEqual(['dobGiven', 'dobMonth', 'dobDay', 'dobYear']);

@@ -1,4 +1,5 @@
 import type { SlotSpec } from 'dialogwright';
+import { dobSlot } from '../domain/slots/dob';
 import { memberIdSlot } from '../domain/slots/memberId';
 
 /**
@@ -7,4 +8,4 @@ import { memberIdSlot } from '../domain/slots/memberId';
  * (dialogwright/testing). The app's own (library) slot is what the engine sees; the pair is compared
  * on every call, so the two cannot drift apart before the hand-written one is deleted.
  */
-export const CLINIC_SHADOW_PAIRS: readonly SlotSpec[] = [memberIdSlot];
+export const CLINIC_SHADOW_PAIRS: readonly SlotSpec[] = [dobSlot, memberIdSlot];

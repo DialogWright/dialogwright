@@ -25,7 +25,7 @@ intents.yaml    what a caller can ask for, and the keypad menu
 forms.yaml      the five forms: their slots, their summaries, the hooks each one has
 prompts.yaml    every line a caller can hear
 policy.yaml     the gate's tables
-slots.yaml      every slot, in the order the engine works through them (the member ID is a library `digits` slot; the other four are `type: code`)
+slots.yaml      every slot, in the order the engine works through them (the birth date is a library `birthdate` slot and the member ID a library `digits` slot; the other three are `type: code`)
 src/app.ts      the code: defineApp(this folder, code)
 fixtures/       the corpus, the scripted calls, the baseline and the recorded cassette
 ```

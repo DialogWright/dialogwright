@@ -1,13 +1,26 @@
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
 # Every slot the clinic has, in the order the engine works through them. This file is the one place
 # that says which slots there are and in what order. `type: code` names a slot the code supplies
-# (src/domain/slots/); the member ID is a library `digits` slot, configured here with the clinic's own
-# wording. The order matters:
+# (src/domain/slots/); the birth date is a library `birthdate` slot and the member ID a library `digits`
+# slot, each configured here with the clinic's own wording. The order matters:
 # outside a form the engine fills slots in it, says their acknowledgements in it, and when two slots
 # each want to ask the caller to choose between two values, the first one asks. The model's turn
 # state and a transfer's handoff list the slots in it too.
 name: { type: code }
-dob: { type: code }
+dob:
+  type: birthdate
+  # The caller's date of birth: month, day and year read separately, so a month and day alone ask for
+  # the year (ask_dob_year, the default). Masked to its year wherever it leaves the turn; the keypad
+  # takes MMDDYYYY; a month or a day missing is "no_year" and the generic retry asks again. The
+  # questions keep the words they were recorded with: the library's defaults, the appointment named
+  # as the date this is not, the clinic's own "false" criterion and its hint for a month said as a
+  # number. A birthday is a date, so one said at the birthday question is never also taken as the
+  # appointment day.
+  keypad: true
+  notThisDate: an appointment date
+  text:
+    givenFalse: "No birth date. An appointment date, a date they want to be seen on, or someone else's birth date is not the caller's date of birth"
+    monthHint: "A month may be said as a number rather than a name; answer with the month that number means, as in seven two sixty five, which is July 2nd, 1965."
 memberId:
   type: digits
   # The billing member ID: eight digits, said back in two groups of four, keyable on the keypad,

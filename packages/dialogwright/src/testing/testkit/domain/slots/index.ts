@@ -1,6 +1,6 @@
 import type { SlotSpec } from '../../../../core/slots/types';
 import { accountIdDigitsSlot } from './accountIdDigits';
-import { dobSlot } from './dob';
+import { dobBirthdateSlot } from './dobBirthdate';
 import { parcelSelectSlot } from './parcelSelect';
 import { deliveryDaySlot } from './deliveryDay';
 import { deliveryPartChoiceSlot } from './deliveryPartChoice';
@@ -14,7 +14,8 @@ export type TestkitSlot = (typeof ALL_SLOTS)[number];
 export const SLOTS: Record<TestkitSlot, SlotSpec> = {
   // A library `digits` slot; accountId.ts (hand-written) is what the shadow pair compares it with.
   accountId: accountIdDigitsSlot,
-  dob: dobSlot,
+  // A library `birthdate` slot; dob.ts (hand-written) is what the shadow pair compares it with.
+  dob: dobBirthdateSlot,
   parcelSelect: parcelSelectSlot,
   deliveryDay: deliveryDaySlot,
   // A library `choice` slot; deliveryPart.ts (hand-written) is what the shadow pair compares it with.
