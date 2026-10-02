@@ -1,0 +1,15 @@
+node_modules/
+# Runtime output (traces and audit logs) where a server or the harness runs, never source dirs
+/traces/
+/audit/
+apps/*/traces/
+apps/*/audit/
+packages/*/traces/
+packages/*/audit/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+coverage/
+*.tmp
