@@ -1,0 +1,486 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`recordableClips > matches the recorded snapshot of clip ids and notes 1`] = `
+[
+  {
+    "id": "greeting.0",
+    "note": "closed",
+    "text": "Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?",
+  },
+  {
+    "id": "greeting_chat_delegate.0",
+    "note": "open",
+    "text": "Hi",
+  },
+  {
+    "id": "greeting_chat_delegate.1",
+    "note": "closed",
+    "text": "I'm the Example Parcels assistant for depot staff. I can look up a customer's parcel. What do you need?",
+  },
+  {
+    "id": "greeting_chat.0",
+    "note": "closed",
+    "text": "Hi, I'm the Example Parcels assistant. I can track a parcel, check a delivery window, or report a missing parcel. What can I help with?",
+  },
+  {
+    "id": "greeting_chat_signed_in.0",
+    "note": "open",
+    "text": "Hi",
+  },
+  {
+    "id": "greeting_chat_signed_in.1",
+    "note": "closed",
+    "text": "I'm the Example Parcels assistant. I can track a parcel, check a delivery window, or report a missing parcel. What can I help with?",
+  },
+  {
+    "id": "signin_required.0",
+    "note": "closed",
+    "text": "To do that, I need you to sign in first. Use the Sign in button below, and I'll pick up where we left off.",
+  },
+  {
+    "id": "signin_reminder.0",
+    "note": "closed",
+    "text": "You can sign in with the button below, or ask me something else.",
+  },
+  {
+    "id": "signin_thanks.0",
+    "note": "open",
+    "text": "Thanks,",
+  },
+  {
+    "id": "signin_thanks.1",
+    "note": "closed",
+    "text": "You're signed in.",
+  },
+  {
+    "id": "signin_ready.0",
+    "note": "closed",
+    "text": "What can I help you with?",
+  },
+  {
+    "id": "ask_intent.0",
+    "note": "closed",
+    "text": "How can I help you today?",
+  },
+  {
+    "id": "nomatch_open.0",
+    "note": "closed",
+    "text": "Sorry, I didn't catch that. You can ask to track a parcel, check a delivery window, or report a missing parcel.",
+  },
+  {
+    "id": "nomatch_dtmf_menu.0",
+    "note": "closed",
+    "text": "Let's try the keypad. To track a parcel, press 1. For a delivery window, press 2. To report a missing parcel, press 3. To speak with someone, press 0.",
+  },
+  {
+    "id": "capabilities.0",
+    "note": "closed",
+    "text": "I'm the Example Parcels assistant. I can tell you where a parcel is, check a delivery window, and take a report of a missing parcel.",
+  },
+  {
+    "id": "no_input.0",
+    "note": "closed",
+    "text": "I didn't hear anything.",
+  },
+  {
+    "id": "ack_intent.0",
+    "note": "open",
+    "text": "Sure, I can help you",
+  },
+  {
+    "id": "confirm_intent_explicit.0",
+    "note": "open",
+    "text": "Just to check, you'd like to",
+  },
+  {
+    "id": "confirm_intent_explicit.1",
+    "note": "closed",
+    "text": "Is that right?",
+  },
+  {
+    "id": "disambiguate_intent.0",
+    "note": "open",
+    "text": "Would you like to",
+  },
+  {
+    "id": "disambiguate_intent.1",
+    "note": "open",
+    "text": "or",
+  },
+  {
+    "id": "ack_frustration.0",
+    "note": "closed",
+    "text": "I'm sorry this is taking a while.",
+  },
+  {
+    "id": "offer_transfer.0",
+    "note": "closed",
+    "text": "Would you like me to connect you with a support specialist?",
+  },
+  {
+    "id": "ack_declined.0",
+    "note": "closed",
+    "text": "Okay, let's keep going.",
+  },
+  {
+    "id": "ack_queued.0",
+    "note": "closed",
+    "text": "Sure, I'll help with that next.",
+  },
+  {
+    "id": "ack_intent_then.0",
+    "note": "open",
+    "text": "Sure, I can help you",
+  },
+  {
+    "id": "ack_intent_then.1",
+    "note": "open",
+    "text": "and then",
+  },
+  {
+    "id": "bridge_next.0",
+    "note": "closed",
+    "text": "Now, for your other request.",
+  },
+  {
+    "id": "system_slow_dtmf_hint.0",
+    "note": "closed",
+    "text": "Sorry, I'm having trouble on my end. Please say that again, or use your keypad.",
+  },
+  {
+    "id": "system_slow_chat.0",
+    "note": "closed",
+    "text": "Sorry, I'm having trouble on my end. Please send that again.",
+  },
+  {
+    "id": "ask_accountId.0",
+    "note": "closed",
+    "text": "First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.",
+  },
+  {
+    "id": "ask_accountId_retry.0",
+    "note": "closed",
+    "text": "Please say the eight digits of your account ID, one at a time.",
+  },
+  {
+    "id": "ask_accountId_dtmf.0",
+    "note": "closed",
+    "text": "Please enter your eight-digit account ID on your keypad.",
+  },
+  {
+    "id": "ask_dob.0",
+    "note": "closed",
+    "text": "And what's your date of birth?",
+  },
+  {
+    "id": "ask_dob_retry.0",
+    "note": "closed",
+    "text": "Please say your date of birth, including the year.",
+  },
+  {
+    "id": "ask_dob_whole.0",
+    "note": "closed",
+    "text": "Please say your whole date of birth: the month, the day, and the year.",
+  },
+  {
+    "id": "ask_dob_dtmf.0",
+    "note": "closed",
+    "text": "Please enter your date of birth as eight digits: two for the month, two for the day, and four for the year.",
+  },
+  {
+    "id": "ask_dob_year.0",
+    "note": "closed",
+    "text": "And what year were you born?",
+  },
+  {
+    "id": "identity_verified.0",
+    "note": "open",
+    "text": "Thanks,",
+  },
+  {
+    "id": "identity_failed.0",
+    "note": "closed",
+    "text": "I couldn't match that account ID and date of birth. Let's try again.",
+  },
+  {
+    "id": "ask_otp.0",
+    "note": "open",
+    "text": "For your security I need one more check. I've texted a six-digit code to the phone ending in",
+  },
+  {
+    "id": "ask_otp.1",
+    "note": "closed",
+    "text": "Please enter it on your keypad.",
+  },
+  {
+    "id": "ask_otp_spoken.0",
+    "note": "closed",
+    "text": "For your security, please enter the code on your keypad instead of saying it.",
+  },
+  {
+    "id": "otp_spoken_reissued.0",
+    "note": "closed",
+    "text": "For your security, I can't accept a code said out loud, so I've texted you a new one. Please enter the new code on your keypad.",
+  },
+  {
+    "id": "otp_failed.0",
+    "note": "closed",
+    "text": "That code didn't match. Please enter it again on your keypad.",
+  },
+  {
+    "id": "otp_verified.0",
+    "note": "closed",
+    "text": "Thank you, you're verified.",
+  },
+  {
+    "id": "ask_parcelSelect.0",
+    "note": "closed",
+    "text": "Which parcel are you asking about? You can say the parcel number, or what's in it.",
+  },
+  {
+    "id": "ask_parcelSelect_retry.0",
+    "note": "closed",
+    "text": "Please say the four-digit parcel number, or what's in the parcel.",
+  },
+  {
+    "id": "ask_parcelSelect_dtmf.0",
+    "note": "closed",
+    "text": "Please enter the four-digit parcel number on your keypad.",
+  },
+  {
+    "id": "disambiguate_parcelSelect.0",
+    "note": "open",
+    "text": "Did you mean parcel",
+  },
+  {
+    "id": "disambiguate_parcelSelect.1",
+    "note": "open",
+    "text": "or parcel",
+  },
+  {
+    "id": "parcel_blocked_scope.0",
+    "note": "closed",
+    "text": "I don't see that parcel on your account, and I can only share your own parcels.",
+  },
+  {
+    "id": "parcel_blocked_scope_agent.0",
+    "note": "closed",
+    "text": "I don't see that parcel for a customer your depot serves, so I can't share it.",
+  },
+  {
+    "id": "report_blocked_role.0",
+    "note": "closed",
+    "text": "Your role can't file reports. A depot clerk can file one with a person.",
+  },
+  {
+    "id": "ask_deliveryDay.0",
+    "note": "closed",
+    "text": "Which day would you like the delivery?",
+  },
+  {
+    "id": "ask_deliveryDay_retry.0",
+    "note": "closed",
+    "text": "Please tell me the day, like tomorrow, or Monday.",
+  },
+  {
+    "id": "ask_deliveryDay_dtmf.0",
+    "note": "closed",
+    "text": "Please enter the date as four digits: two for the month and two for the day.",
+  },
+  {
+    "id": "ask_deliveryPart.0",
+    "note": "closed",
+    "text": "Would you like it in the morning, the afternoon, or the evening?",
+  },
+  {
+    "id": "ask_deliveryPart_retry.0",
+    "note": "closed",
+    "text": "Please say morning, afternoon, or evening.",
+  },
+  {
+    "id": "ask_deliveryPart_dtmf.0",
+    "note": "closed",
+    "text": "For the morning, press 1. For the afternoon, press 2. For the evening, press 3.",
+  },
+  {
+    "id": "window_open.0",
+    "note": "open",
+    "text": "On",
+  },
+  {
+    "id": "window_open.1",
+    "note": "open",
+    "text": "we can deliver",
+  },
+  {
+    "id": "window_full.0",
+    "note": "open",
+    "text": "On",
+  },
+  {
+    "id": "window_full.1",
+    "note": "open",
+    "text": "we don't deliver",
+  },
+  {
+    "id": "window_full.2",
+    "note": "closed",
+    "text": "You can ask about another day.",
+  },
+  {
+    "id": "ask_missingNote.0",
+    "note": "closed",
+    "text": "In a sentence or two, describe the parcel and where it should have been left.",
+  },
+  {
+    "id": "ask_missingNote_retry.0",
+    "note": "closed",
+    "text": "Please describe the parcel, for example what was in it or where it should have been left.",
+  },
+  {
+    "id": "ask_expectedDate.0",
+    "note": "closed",
+    "text": "What day was it due?",
+  },
+  {
+    "id": "ask_expectedDate_retry.0",
+    "note": "closed",
+    "text": "Please tell me the day it was due, like yesterday, or September fifteenth.",
+  },
+  {
+    "id": "ask_expectedDate_dtmf.0",
+    "note": "closed",
+    "text": "Please enter the date it was due as four digits: two for the month and two for the day.",
+  },
+  {
+    "id": "confirm_report.0",
+    "note": "open",
+    "text": "Let me make sure I have this right. You're reporting a parcel that was due",
+  },
+  {
+    "id": "confirm_report.1",
+    "note": "closed",
+    "text": "and I have your description. Shall I file the report?",
+  },
+  {
+    "id": "ask_change.0",
+    "note": "closed",
+    "text": "What would you like to change?",
+  },
+  {
+    "id": "confirm_dtmf.0",
+    "note": "closed",
+    "text": "To file the report, press 1. To change something, press 2.",
+  },
+  {
+    "id": "report_filed.0",
+    "note": "open",
+    "text": "Your report is filed. Your report number is",
+  },
+  {
+    "id": "depot_unavailable.0",
+    "note": "closed",
+    "text": "The depot will be in touch with next steps.",
+  },
+  {
+    "id": "anything_else.0",
+    "note": "closed",
+    "text": "Is there anything else I can help with?",
+  },
+  {
+    "id": "goodbye.0",
+    "note": "closed",
+    "text": "Thanks for calling Example Parcels. Goodbye.",
+  },
+  {
+    "id": "goodbye_chat.0",
+    "note": "closed",
+    "text": "Thanks for chatting with Example Parcels. Goodbye.",
+  },
+  {
+    "id": "screen_reprompt.0",
+    "note": "closed",
+    "text": "I can help with tracking a parcel, a delivery window, or a missing parcel.",
+  },
+  {
+    "id": "screen_reprompt_form.0",
+    "note": "closed",
+    "text": "Let's keep going.",
+  },
+  {
+    "id": "handoff_live_agent.0",
+    "note": "closed",
+    "text": "Connecting you with a support specialist now.",
+  },
+  {
+    "id": "handoff_frustrated.0",
+    "note": "closed",
+    "text": "I'm sorry for the trouble. Connecting you with a support specialist now.",
+  },
+  {
+    "id": "handoff_max_attempts.0",
+    "note": "closed",
+    "text": "Let me connect you with a support specialist who can help.",
+  },
+  {
+    "id": "handoff_system_failure.0",
+    "note": "closed",
+    "text": "I'm having trouble on my end. Connecting you with a specialist now.",
+  },
+  {
+    "id": "handoff_identity.0",
+    "note": "closed",
+    "text": "I wasn't able to verify your identity, so I'm connecting you with a specialist who can help.",
+  },
+  {
+    "id": "handoff_needs_human.0",
+    "note": "closed",
+    "text": "This one needs a specialist. Connecting you now.",
+  },
+  {
+    "id": "handoff_security.0",
+    "note": "closed",
+    "text": "I'm going to connect you with a support specialist.",
+  },
+  {
+    "id": "handoff_role_person.0",
+    "note": "closed",
+    "text": "Reports for a customer are filed with a person, so I'm connecting you with one now.",
+  },
+  {
+    "id": "handoff_delivered.0",
+    "note": "closed",
+    "text": "Our records show a parcel delivered to you that day, so I'm connecting you with someone who can check.",
+  },
+  {
+    "id": "intent.track_parcel",
+    "note": "closed",
+    "text": "track a parcel",
+  },
+  {
+    "id": "intent.delivery_window",
+    "note": "closed",
+    "text": "book a delivery window",
+  },
+  {
+    "id": "intent.report_missing",
+    "note": "closed",
+    "text": "report a missing parcel",
+  },
+  {
+    "id": "part.morning",
+    "note": "closed",
+    "text": "in the morning",
+  },
+  {
+    "id": "part.afternoon",
+    "note": "closed",
+    "text": "in the afternoon",
+  },
+  {
+    "id": "part.evening",
+    "note": "closed",
+    "text": "in the evening",
+  },
+]
+`;

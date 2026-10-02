@@ -1,0 +1,334 @@
+{
+  "greeting": {
+    "text": "Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?",
+    "interruptible": true
+  },
+  "greeting_chat_delegate": {
+    "text": "Hi {first}, I'm the Example Parcels assistant for depot staff. I can look up a customer's parcel. What do you need?",
+    "interruptible": true
+  },
+  "greeting_chat": {
+    "text": "Hi, I'm the Example Parcels assistant. I can track a parcel, check a delivery window, or report a missing parcel. What can I help with?",
+    "interruptible": true
+  },
+  "greeting_chat_signed_in": {
+    "text": "Hi {first}, I'm the Example Parcels assistant. I can track a parcel, check a delivery window, or report a missing parcel. What can I help with?",
+    "interruptible": true
+  },
+  "signin_required": {
+    "text": "To do that, I need you to sign in first. Use the Sign in button below, and I'll pick up where we left off.",
+    "interruptible": true
+  },
+  "signin_reminder": {
+    "text": "You can sign in with the button below, or ask me something else.",
+    "interruptible": true
+  },
+  "signin_thanks": {
+    "text": "Thanks, {first}. You're signed in.",
+    "interruptible": true
+  },
+  "signin_ready": {
+    "text": "What can I help you with?",
+    "interruptible": true
+  },
+  "ask_intent": {
+    "text": "How can I help you today?",
+    "interruptible": true
+  },
+  "nomatch_open": {
+    "text": "Sorry, I didn't catch that. You can ask to track a parcel, check a delivery window, or report a missing parcel.",
+    "interruptible": true
+  },
+  "nomatch_dtmf_menu": {
+    "text": "Let's try the keypad. To track a parcel, press 1. For a delivery window, press 2. To report a missing parcel, press 3. To speak with someone, press 0.",
+    "interruptible": true
+  },
+  "capabilities": {
+    "text": "I'm the Example Parcels assistant. I can tell you where a parcel is, check a delivery window, and take a report of a missing parcel.",
+    "interruptible": true
+  },
+  "no_input": {
+    "text": "I didn't hear anything.",
+    "interruptible": true
+  },
+  "ack_intent": {
+    "text": "Sure, I can help you {intentLabel}.",
+    "interruptible": true
+  },
+  "confirm_intent_explicit": {
+    "text": "Just to check, you'd like to {intentLabel}. Is that right?",
+    "interruptible": true
+  },
+  "disambiguate_intent": {
+    "text": "Would you like to {a}, or {b}?",
+    "interruptible": true
+  },
+  "ack_frustration": {
+    "text": "I'm sorry this is taking a while.",
+    "interruptible": true
+  },
+  "offer_transfer": {
+    "text": "Would you like me to connect you with a support specialist?",
+    "interruptible": true
+  },
+  "ack_declined": {
+    "text": "Okay, let's keep going.",
+    "interruptible": true
+  },
+  "ack_queued": {
+    "text": "Sure, I'll help with that next.",
+    "interruptible": true
+  },
+  "ack_intent_then": {
+    "text": "Sure, I can help you {a}, and then {b}.",
+    "interruptible": true
+  },
+  "bridge_next": {
+    "text": "Now, for your other request.",
+    "interruptible": true
+  },
+  "system_slow_dtmf_hint": {
+    "text": "Sorry, I'm having trouble on my end. Please say that again, or use your keypad.",
+    "interruptible": true
+  },
+  "system_slow_chat": {
+    "text": "Sorry, I'm having trouble on my end. Please send that again.",
+    "interruptible": true
+  },
+  "ask_accountId": {
+    "text": "First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.",
+    "interruptible": true
+  },
+  "ask_accountId_retry": {
+    "text": "Please say the eight digits of your account ID, one at a time.",
+    "interruptible": true
+  },
+  "ask_accountId_dtmf": {
+    "text": "Please enter your eight-digit account ID on your keypad.",
+    "interruptible": true
+  },
+  "ask_dob": {
+    "text": "And what's your date of birth?",
+    "interruptible": true
+  },
+  "ask_dob_retry": {
+    "text": "Please say your date of birth, including the year.",
+    "interruptible": true
+  },
+  "ask_dob_whole": {
+    "text": "Please say your whole date of birth: the month, the day, and the year.",
+    "interruptible": true
+  },
+  "ask_dob_dtmf": {
+    "text": "Please enter your date of birth as eight digits: two for the month, two for the day, and four for the year.",
+    "interruptible": true
+  },
+  "ask_dob_year": {
+    "text": "And what year were you born?",
+    "interruptible": true
+  },
+  "identity_verified": {
+    "text": "Thanks, {first}.",
+    "interruptible": true
+  },
+  "identity_failed": {
+    "text": "I couldn't match that account ID and date of birth. Let's try again.",
+    "interruptible": true
+  },
+  "ask_otp": {
+    "text": "For your security I need one more check. I've texted a six-digit code to the phone ending in {phoneLast4}. Please enter it on your keypad.",
+    "interruptible": true
+  },
+  "ask_otp_spoken": {
+    "text": "For your security, please enter the code on your keypad instead of saying it.",
+    "interruptible": true
+  },
+  "otp_spoken_reissued": {
+    "text": "For your security, I can't accept a code said out loud, so I've texted you a new one. Please enter the new code on your keypad.",
+    "interruptible": true
+  },
+  "otp_failed": {
+    "text": "That code didn't match. Please enter it again on your keypad.",
+    "interruptible": true
+  },
+  "otp_verified": {
+    "text": "Thank you, you're verified.",
+    "interruptible": true
+  },
+  "ask_parcelSelect": {
+    "text": "Which parcel are you asking about? You can say the parcel number, or what's in it.",
+    "interruptible": true
+  },
+  "ask_parcelSelect_retry": {
+    "text": "Please say the four-digit parcel number, or what's in the parcel.",
+    "interruptible": true
+  },
+  "ask_parcelSelect_dtmf": {
+    "text": "Please enter the four-digit parcel number on your keypad.",
+    "interruptible": true
+  },
+  "disambiguate_parcelSelect": {
+    "text": "Did you mean parcel {a}, or parcel {b}?",
+    "interruptible": true
+  },
+  "parcel_status_in_transit": {
+    "text": "Parcel {parcel}, {item}, is on its way and due {day}.",
+    "interruptible": true
+  },
+  "parcel_status_out_for_delivery": {
+    "text": "Parcel {parcel}, {item}, is out for delivery today.",
+    "interruptible": true
+  },
+  "parcel_status_delivered": {
+    "text": "Parcel {parcel}, {item}, was delivered {day}.",
+    "interruptible": true
+  },
+  "parcel_status_held": {
+    "text": "Parcel {parcel}, {item}, is being held at the depot. You can collect it with photo ID.",
+    "interruptible": true
+  },
+  "parcel_blocked_scope": {
+    "text": "I don't see that parcel on your account, and I can only share your own parcels.",
+    "interruptible": true
+  },
+  "parcel_blocked_scope_agent": {
+    "text": "I don't see that parcel for a customer your depot serves, so I can't share it.",
+    "interruptible": true
+  },
+  "report_blocked_role": {
+    "text": "Your role can't file reports. A depot clerk can file one with a person.",
+    "interruptible": true
+  },
+  "ask_deliveryDay": {
+    "text": "Which day would you like the delivery?",
+    "interruptible": true
+  },
+  "ask_deliveryDay_retry": {
+    "text": "Please tell me the day, like tomorrow, or Monday.",
+    "interruptible": true
+  },
+  "ask_deliveryDay_dtmf": {
+    "text": "Please enter the date as four digits: two for the month and two for the day.",
+    "interruptible": true
+  },
+  "ask_deliveryPart": {
+    "text": "Would you like it in the morning, the afternoon, or the evening?",
+    "interruptible": true
+  },
+  "ask_deliveryPart_retry": {
+    "text": "Please say morning, afternoon, or evening.",
+    "interruptible": true
+  },
+  "ask_deliveryPart_dtmf": {
+    "text": "For the morning, press 1. For the afternoon, press 2. For the evening, press 3.",
+    "interruptible": true
+  },
+  "window_open": {
+    "text": "On {day}, we can deliver {part}.",
+    "interruptible": true
+  },
+  "window_full": {
+    "text": "On {day}, we don't deliver {part}. You can ask about another day.",
+    "interruptible": true
+  },
+  "ask_missingNote": {
+    "text": "In a sentence or two, describe the parcel and where it should have been left.",
+    "interruptible": true
+  },
+  "ask_missingNote_retry": {
+    "text": "Please describe the parcel, for example what was in it or where it should have been left.",
+    "interruptible": true
+  },
+  "ask_expectedDate": {
+    "text": "What day was it due?",
+    "interruptible": true
+  },
+  "ask_expectedDate_retry": {
+    "text": "Please tell me the day it was due, like yesterday, or September fifteenth.",
+    "interruptible": true
+  },
+  "ask_expectedDate_dtmf": {
+    "text": "Please enter the date it was due as four digits: two for the month and two for the day.",
+    "interruptible": true
+  },
+  "confirm_report": {
+    "text": "Let me make sure I have this right. You're reporting a parcel that was due {expectedDate}, and I have your description. Shall I file the report?",
+    "interruptible": true
+  },
+  "ask_change": {
+    "text": "What would you like to change?",
+    "interruptible": true
+  },
+  "confirm_dtmf": {
+    "text": "To file the report, press 1. To change something, press 2.",
+    "interruptible": true
+  },
+  "report_filed": {
+    "text": "Your report is filed. Your report number is {report}.",
+    "interruptible": false
+  },
+  "depot_result": {
+    "text": "The depot will search for it and call you within {days} days.",
+    "interruptible": true
+  },
+  "depot_unavailable": {
+    "text": "The depot will be in touch with next steps.",
+    "interruptible": true
+  },
+  "anything_else": {
+    "text": "Is there anything else I can help with?",
+    "interruptible": true
+  },
+  "goodbye": {
+    "text": "Thanks for calling Example Parcels. Goodbye.",
+    "interruptible": false
+  },
+  "goodbye_chat": {
+    "text": "Thanks for chatting with Example Parcels. Goodbye.",
+    "interruptible": false
+  },
+  "screen_reprompt": {
+    "text": "I can help with tracking a parcel, a delivery window, or a missing parcel.",
+    "interruptible": true
+  },
+  "screen_reprompt_form": {
+    "text": "Let's keep going.",
+    "interruptible": true
+  },
+  "handoff_live_agent": {
+    "text": "Connecting you with a support specialist now.",
+    "interruptible": false
+  },
+  "handoff_frustrated": {
+    "text": "I'm sorry for the trouble. Connecting you with a support specialist now.",
+    "interruptible": false
+  },
+  "handoff_max_attempts": {
+    "text": "Let me connect you with a support specialist who can help.",
+    "interruptible": false
+  },
+  "handoff_system_failure": {
+    "text": "I'm having trouble on my end. Connecting you with a specialist now.",
+    "interruptible": false
+  },
+  "handoff_identity": {
+    "text": "I wasn't able to verify your identity, so I'm connecting you with a specialist who can help.",
+    "interruptible": false
+  },
+  "handoff_needs_human": {
+    "text": "This one needs a specialist. Connecting you now.",
+    "interruptible": false
+  },
+  "handoff_security": {
+    "text": "I'm going to connect you with a support specialist.",
+    "interruptible": false
+  },
+  "handoff_role_person": {
+    "text": "Reports for a customer are filed with a person, so I'm connecting you with one now.",
+    "interruptible": false
+  },
+  "handoff_delivered": {
+    "text": "Our records show a parcel delivered to you that day, so I'm connecting you with someone who can check.",
+    "interruptible": false
+  }
+}

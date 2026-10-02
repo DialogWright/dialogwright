@@ -1,0 +1,296 @@
+import { createServer, type Server } from 'node:http';
+import { join } from 'node:path';
+import { consoleExposure, describeConfig, loadConfig, type ServerConfig } from './config';
+import { createRequestHandler } from './http';
+import { attachWebSocketServer } from './ws';
+import { forgetNoInput, type AdapterDeps } from './adapter';
+import { SessionStore } from './sessions';
+import { CallTokens } from './tokens';
+import { FrameLog } from './frameLog';
+import { buildHints } from './hints';
+import { DashboardBus } from './dashboard/bus';
+import { makeObserver } from './dashboard/observer';
+import { defaultAppId, getApp } from '../core/app/registry';
+import { newSession } from '../core/session';
+import { DEFAULT_THRESHOLDS } from '../core/thresholds';
+import { buildClient } from '../run/client';
+import { localDateIso } from '../run/clock';
+import type { JevClient } from '../jev/types';
+import { TraceWriter } from '../trace/writer';
+import type { TurnObserver } from '../run/turn';
+import { clipVersions, discoverClips, recordableClips } from '../prompts/clips';
+import { clipDurations } from '../prompts/playback';
+import { clipStatus, readRecorded } from '../prompts/sheet';
+import { demoTools } from '../core/tools';
+import { AuditLog } from '../audit/log';
+import type { ServiceUrls } from './services';
+import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoutes';
+import { localOnlyPaths } from './localOnly';
+import { VOICE_RELAY } from '../channel/caps';
+
+export interface RunningServer {
+  server: Server;
+  port: number;
+  store: SessionStore;
+  tokens: CallTokens;
+  /** The dashboard's event bus, or undefined when DASHBOARD=off. */
+  bus?: DashboardBus;
+  /** The app's own pages its launcher mounted (ServerOverrides.routes), in the order they are asked. */
+  routes: readonly AppRoute[];
+  /** One pass of the idle sweep the evictor runs on its interval; exposed for tests. */
+  sweep(): void;
+  close(): Promise<void>;
+}
+
+export interface ServerOverrides {
+  client?: JevClient;
+  now?: () => number;
+  log?: (line: string) => void;
+  /** Tests use a short deadline so a connection that never sends setup does not hold the suite open. */
+  setupTimeoutMs?: number;
+  /** Tests use a short grace period to prove the end-close backstop fires without waiting 30 seconds. */
+  endCloseGraceMs?: number;
+  /** Tests use a short wait so a silence turn runs without sitting through the configured seven seconds. */
+  noInputMs?: number;
+  /**
+   * Where each of the app's downstream services (App.services) is reached, by name, from the services the
+   * app's launcher starts beside the server. A service with no url is not running: a request to it is
+   * answered at once with no result.
+   */
+  serviceUrls?: ServiceUrls;
+  /**
+   * The app's own pages (its web chats, say), built once the server has its
+   * client, tools, audit chain and console. Without it the server serves the phone line and the
+   * console only.
+   */
+  routes?: AppRoutesFactory;
+  /** Tests replace the Claude Haiku call, for the phone line and the chat alike. */
+  summarizeHandoff?: AdapterDeps['summarizeHandoff'];
+}
+
+const TOKEN_TTL_MS = 10 * 60 * 1000;
+const EVICT_EVERY_MS = 60 * 1000;
+/** How long a shutdown waits for turns already in flight before it terminates the sockets anyway. */
+const DRAIN_TIMEOUT_MS = 2_000;
+
+/**
+ * Call SIDs come from Twilio (CA + 32 hex), but they arrive over the socket, so never let one shape a path.
+ * Dots are replaced too, not only separators: a SID of `CA1.frames` would otherwise write its trace to
+ * `CA1.frames.jsonl` and collide with call CA1's frame log.
+ */
+export function safeFileStem(callSid: string): string {
+  const cleaned = callSid.replace(/[^A-Za-z0-9_-]/g, '_');
+  return cleaned.length ? cleaned.slice(0, 64) : 'unknown';
+}
+
+export async function startServer(config: ServerConfig, overrides: ServerOverrides = {}): Promise<RunningServer> {
+  const log = overrides.log ?? ((line: string) => console.log(`[server] ${line}`));
+  const now = overrides.now ?? (() => Date.now());
+  // The one threshold the phone line sets from its environment: the ask budget is a property of the
+  // deployment's network and the day's question count, not of the dialogue policy.
+  const thresholds = { ...DEFAULT_THRESHOLDS, JEV_TIMEOUT_MS: config.jevTimeoutMs };
+  const client = overrides.client ?? buildClient(config.jevClient, undefined, thresholds);
+  // Wall-clock date in the configured zone: a caller at 8pm Pacific means today, not tomorrow.
+  const todayIso = () => config.todayOverride ?? localDateIso(now(), config.timezone);
+
+  const clips = discoverClips(config.audioDir);
+  const durations = clipDurations(config.audioDir);
+  // CLIPS=off leaves the render context unset, which is the harness's own mode: every prompt goes
+  // out as text and ConversationRelay's voice speaks the fixed words, the names and the dates
+  // alike. Nothing about the recorded clips matters then, so the presence/staleness checks below
+  // (and the disk read they depend on) only run when CLIPS=on; off gets a single quiet line.
+  if (config.clips) {
+    let recorded: Record<string, string> | null;
+    try {
+      recorded = readRecorded(config.audioDir);
+    } catch (e) {
+      log(`audio: ignoring unreadable recorded.json: ${e instanceof Error ? e.message : String(e)}`);
+      recorded = null;
+    }
+    const cov = clipStatus(recordableClips(getApp(defaultAppId())), clips, recorded);
+    const missingSuffix =
+      cov.missing.length === 0
+        ? ''
+        : `: missing ${cov.missing.slice(0, 10).join(', ')}${cov.missing.length > 10 ? ` +${cov.missing.length - 10} more` : ''}`;
+    log(`audio: ${cov.present} of ${cov.total} clips present in ${config.audioDir} (${cov.missing.length} segments fall back to TTS)${missingSuffix}`);
+    if (cov.stale.length > 0) {
+      log(`audio: ${cov.stale.length} stale clips (recorded text differs from the sheet): ${cov.stale.join(', ')}`);
+    }
+  } else {
+    log('clips: off (every prompt spoken by the ConversationRelay TTS voice)');
+  }
+  const noInputMs = overrides.noInputMs ?? config.noInputMs;
+  log(noInputMs > 0 ? `no-input: ${noInputMs} ms after playback (${durations.size} clip durations)` : 'no-input: off');
+  // The presence/count logic above stays on the unversioned map; only what the caller actually
+  // fetches carries the content hash, so a regenerated clip is never served from Twilio's cache.
+  const render = config.clips ? { clips: clipVersions(config.audioDir, clips), audioBase: `https://${config.publicHost}/audio/` } : null;
+
+  const serviceUrls = overrides.serviceUrls ?? {};
+  for (const name of Object.keys(getApp(defaultAppId()).services ?? {})) {
+    const url = serviceUrls[name] ?? null;
+    log(url ? `service ${name}: ${url}` : `service ${name}: off (its requests are answered with no result)`);
+  }
+
+  const bus = config.dashboard ? new DashboardBus() : undefined;
+  log(bus ? 'dashboard: /dashboard' : 'dashboard: off');
+
+  // Annotated because the factory below hands `store` to `makeObserver`, and an inferred type
+  // would be circular: the initializer references the very binding it is initializing.
+  // One set of tools (the app's systems) for the process, so a record made on one call can be read on the next.
+  const tools = demoTools();
+  // One audit chain for the process: every call's entries link into the same day file.
+  const audit = new AuditLog(config.auditDir, now);
+  const store: SessionStore = new SessionStore(
+    (callSid) => {
+      const file = safeFileStem(callSid);
+      const trace = new TraceWriter(join(config.traceDir, `${file}.jsonl`));
+      const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
+      return {
+        session: newSession(callSid, now(), VOICE_RELAY),
+        opts: { client, thresholds, todayIso: todayIso(), trace, now, render, observe, tools, audit, screen: config.screen },
+        trace,
+        frames: new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now),
+      };
+    },
+    config.sessionTtlMs,
+    now,
+    config.sessionMaxAgeMs,
+  );
+  const tokens = new CallTokens(TOKEN_TTL_MS, now);
+  // The app's pages share the phone line's client, book of business, audit chain and console.
+  const mounted = overrides.routes?.({
+    config, client, thresholds, todayIso, tools, audit, bus, traceDir: config.traceDir, serviceUrls, log, now,
+    anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
+  }) ?? { routes: [] };
+  const routes = mounted.routes;
+  validateRoutes(routes);
+  if (bus || routes.some((r) => r.localOnly)) log(consoleExposure(config, localOnlyPaths(routes)));
+  for (const warning of mounted.warnings ?? []) log(`WARNING: ${warning}`);
+  const deps = { config, store, tokens, hints: buildHints(getApp(defaultAppId())), log, bus, audit, routes };
+
+  const server = createServer(createRequestHandler(deps));
+  const wss = attachWebSocketServer(
+    server,
+    {
+      store, tokens, log, endCloseGraceMs: overrides.endCloseGraceMs, noInputMs, clipDurations: durations, bus,
+      handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
+      summarizeHandoff: overrides.summarizeHandoff,
+    },
+    overrides.setupTimeoutMs,
+  );
+  /**
+   * One pass of the idle sweep. Named and returned rather than inlined into the interval so a
+   * test can drive a tick without waiting a minute for one.
+   */
+  const sweep = (): void => {
+    // Read before the eviction: `evictIdle` deletes the entry, so afterwards there is no way to
+    // tell whether the call it closed was still live. It closes the socket too, but that close
+    // reaches `handleSocketClose` with the entry already gone, so nothing downstream would ever
+    // publish the end of an evicted call -- this is the only producer of reason 'error'.
+    const live = bus?.current() ?? null;
+    const wasLive = live ? store.get(live)?.ended === false : false;
+    // Snapshot before `evictIdle` deletes the entries: a call still live at the moment it is swept
+    // away is the one end a turn never sees and http.ts's hangup branch never reaches either, so
+    // this sweep is its only producer of a `call_ended` audit entry.
+    const liveBefore = new Set(store.liveCallSids());
+    const evicted = store.evictIdle();
+    for (const sid of evicted) {
+      // An evicted call with a socket gets here again through the socket's own close, but one
+      // whose socket had already gone would otherwise leave its no-input bookkeeping behind.
+      forgetNoInput(sid);
+      log(`${sid}: evicted idle session`);
+      if (liveBefore.has(sid)) audit.append(sid, 'voice', { type: 'call_ended', detail: { reason: 'evicted' } });
+    }
+    if (live && wasLive && evicted.includes(live)) {
+      bus?.publish({ type: 'ended', callSid: live, at: now(), reason: 'error' });
+    }
+    for (const r of routes) r.sweep?.();
+    const swept = tokens.evictExpired();
+    if (swept) log(`swept ${swept} expired call tokens`);
+  };
+  const evictor = setInterval(sweep, EVICT_EVERY_MS);
+  evictor.unref();
+
+  // listen reports failure as an 'error' event, which is unhandled (and fatal) unless it is awaited here.
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (err: Error) => reject(err);
+      server.once('error', onError);
+      server.listen(config.port, () => {
+        server.removeListener('error', onError);
+        resolve();
+      });
+    });
+  } catch (err) {
+    clearInterval(evictor);
+    wss.close();
+    throw err;
+  }
+  const port = (server.address() as { port: number }).port;
+
+  return {
+    server,
+    port,
+    store,
+    tokens,
+    bus,
+    routes,
+    sweep,
+    close: async () => {
+      clearInterval(evictor);
+      // Let turns that are already running finish (and flush their frames) before the sockets go away.
+      const tails = [...store.tails(), ...routes.flatMap((r) => r.tails?.() ?? [])];
+      if (tails.length) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          Promise.allSettled(tails),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, DRAIN_TIMEOUT_MS);
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+      }
+      for (const c of wss.clients) c.terminate();
+      // `server.close` only stops new connections and then waits for the idle ones; an open SSE
+      // stream is never idle, so a connected dashboard page would hold shutdown open forever.
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => wss.close(() => server.close(() => resolve())));
+    },
+  };
+}
+
+/**
+ * What an app's launcher starts beside the server (its downstream services, say): the overrides that
+ * reach them, and how to stop them when the server shuts down.
+ */
+export interface Sidecars {
+  overrides?: ServerOverrides;
+  close?(): Promise<void>;
+}
+
+/**
+ * The process entry point, run by an app's launcher after it has registered the app. `start`, if
+ * given, starts what the app runs beside the server, once the config has loaded.
+ */
+export async function main(start?: (config: ServerConfig) => Promise<Sidecars>): Promise<void> {
+  try {
+    const config = loadConfig(process.env);
+    console.log(`[server] ${describeConfig(config)}`);
+    if (!config.signatureCheck) console.log('[server] WARNING: Twilio signature validation is OFF');
+    const sidecars = start ? await start(config) : {};
+    const running = await startServer(config, sidecars.overrides ?? {});
+    console.log(`[server] listening on ${running.port}; voice webhook https://${config.publicHost}/voice`);
+    const consoleBase = config.consoleLocalOnly ? `http://localhost:${running.port}` : `https://${config.publicHost}`;
+    if (running.bus) console.log(`[server] console ${consoleBase}/dashboard`);
+    for (const r of running.routes) console.log(`[server] ${r.label} ${(r.localOnly ? consoleBase : `https://${config.publicHost}`)}${r.path}`);
+    const stop = () => {
+      console.log('[server] shutting down');
+      void Promise.allSettled([running.close(), sidecars.close?.()]).then(() => process.exit(0));
+    };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+  } catch (e) {
+    console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
+}

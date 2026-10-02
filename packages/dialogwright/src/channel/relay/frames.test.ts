@@ -1,0 +1,40 @@
+import { describe, expect, it } from 'vitest';
+import { endFrame, silenceFrame, type OutboundFrame } from './frames';
+import { dtmfFrames, promptFrame } from '../../testing/relayFrames';
+
+describe('frame constructors', () => {
+  it('builds a final prompt frame', () => {
+    expect(promptFrame('hello')).toEqual({
+      type: 'prompt',
+      voicePrompt: 'hello',
+      lang: 'en-US',
+      last: true,
+    });
+  });
+
+  it('builds a silence frame', () => {
+    expect(silenceFrame()).toEqual({ type: 'silence' });
+  });
+
+  it('builds one dtmf frame per digit', () => {
+    expect(dtmfFrames('12#')).toEqual([
+      { type: 'dtmf', digit: '1' },
+      { type: 'dtmf', digit: '2' },
+      { type: 'dtmf', digit: '#' },
+    ]);
+  });
+
+  it('json-encodes handoff data on end frames', () => {
+    const frame: OutboundFrame = endFrame('live-agent');
+    expect(frame).toEqual({
+      type: 'end',
+      handoffData: '{"reasonCode":"live-agent"}',
+    });
+  });
+
+  it('reports what the call collected, and leaves out what it has nothing to say about', () => {
+    expect(endFrame('billing', ['reschedule'], [], { accountId: '5550 1234' }).handoffData)
+      .toBe('{"reasonCode":"billing","completed":["reschedule"],"slots":{"accountId":"5550 1234"}}');
+    expect(endFrame('live-agent', [], [], {}).handoffData).toBe('{"reasonCode":"live-agent"}');
+  });
+});

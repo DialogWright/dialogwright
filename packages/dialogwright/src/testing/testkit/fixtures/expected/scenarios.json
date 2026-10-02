@@ -1,0 +1,686 @@
+{
+  "inj-announced": {
+    "id": "inj-announced",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "screen_reprompt"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "inj-twice-handoff": {
+    "id": "inj-twice-handoff",
+    "decision": "handoff",
+    "promptId": "handoff_security",
+    "acks": [],
+    "reason": "security",
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "track-happy": {
+    "id": "track-happy",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "parcel_status_in_transit"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "track-other-customers-parcel": {
+    "id": "track-other-customers-parcel",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "otp_verified",
+      "parcel_blocked_scope"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "track-disambiguate": {
+    "id": "track-disambiguate",
+    "decision": "prompt",
+    "promptId": "disambiguate_parcelSelect",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "listParcels:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "track-parcel-keypad": {
+    "id": "track-parcel-keypad",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "parcel_status_out_for_delivery"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "identity-three-fails": {
+    "id": "identity-three-fails",
+    "decision": "handoff",
+    "promptId": "handoff_identity",
+    "acks": [],
+    "reason": "identity",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyCustomer:NEEDS_HUMAN",
+    "pass": true,
+    "mismatches": []
+  },
+  "dob-year-followup": {
+    "id": "dob-year-followup",
+    "decision": "prompt",
+    "promptId": "ask_deliveryDay",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getAccount:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "window-open": {
+    "id": "window-open",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "window_open"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getWindows:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "window-full-sunday": {
+    "id": "window-full-sunday",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "window_full"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getWindows:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-happy": {
+    "id": "report-happy",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "depot_result"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "notifyDepot:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-delivered-that-day": {
+    "id": "report-delivered-that-day",
+    "decision": "handoff",
+    "promptId": "handoff_delivered",
+    "acks": [],
+    "reason": "delivered",
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "it was a small brown box left at the side gate",
+      "expectedDate": "2026-09-16"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "createReport:NEEDS_HUMAN",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-change-date": {
+    "id": "report-change-date",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "it was a small brown box left at the side gate",
+      "expectedDate": "2026-09-17"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getAccount:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-agent-down": {
+    "id": "report-agent-down",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "depot_unavailable"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "notifyDepot:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "intent-retry-to-agent": {
+    "id": "intent-retry-to-agent",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [],
+    "reason": "max-attempts",
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "menu-keypad": {
+    "id": "menu-keypad",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "silence-greeting-agent": {
+    "id": "silence-greeting-agent",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [
+      "no_input"
+    ],
+    "reason": "max-attempts",
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "silence-code-ladder": {
+    "id": "silence-code-ladder",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [
+      "no_input"
+    ],
+    "reason": "max-attempts",
+    "decidedGate": null,
+    "verdict": null,
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-offer-yes": {
+    "id": "frustration-offer-yes",
+    "decision": "handoff",
+    "promptId": "handoff_frustrated",
+    "acks": [],
+    "reason": "frustrated",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-offer-no": {
+    "id": "frustration-offer-no",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "side-speech-ignored": {
+    "id": "side-speech-ignored",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "agent-opener": {
+    "id": "agent-opener",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "staff-track-in-depot": {
+    "id": "staff-track-in-depot",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "parcel_status_in_transit"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "staff-track-outside-depot": {
+    "id": "staff-track-outside-depot",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "parcel_blocked_scope_agent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "staff-report-viewer": {
+    "id": "staff-report-viewer",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "report_blocked_role"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "createReport:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "staff-report-clerk": {
+    "id": "staff-report-clerk",
+    "decision": "handoff",
+    "promptId": "handoff_role_person",
+    "acks": [],
+    "reason": "role-person",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "createReport:NEEDS_HUMAN",
+    "pass": true,
+    "mismatches": []
+  },
+  "web-signin-track": {
+    "id": "web-signin-track",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "signin_thanks",
+      "parcel_status_delivered"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW",
+    "pass": true,
+    "mismatches": []
+  }
+}

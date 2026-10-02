@@ -1,0 +1,208 @@
+import { defaultTimeZone, localDateIso } from '../run/clock';
+
+export type ClientKind = 'stub' | 'heuristic' | 'jev';
+
+/** ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider). */
+import { DEFAULT_THRESHOLDS } from '../core/thresholds';
+import { parseScreenMode, type ScreenMode } from '../core/screen';
+
+const TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
+
+export interface ServerConfig {
+  port: number;
+  publicHost: string;
+  twilioAuthToken: string;
+  handoffNumber: string;
+  jevClient: ClientKind;
+  typesafeApiKey: string | null;
+  todayOverride: string | null;
+  traceDir: string;
+  /** The hash-chained audit log's directory, one JSONL file per UTC day. */
+  auditDir: string;
+  signatureCheck: boolean;
+  reconnectLimit: number;
+  sessionTtlMs: number;
+  sessionMaxAgeMs: number;
+  timezone: string;
+  audioDir: string;
+  ttsProvider: string | null;
+  ttsVoice: string | null;
+  /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
+  noInputMs: number;
+  /**
+   * How long one request to Jev may take before the turn gives up on it, plays the slow-turn
+   * hint and keeps the prompt open. The SDK retries once inside this budget, so a caller waits up
+   * to twice this on a turn the model never answers. A phone-turn budget, not a recording one.
+   */
+  jevTimeoutMs: number;
+  /**
+   * SCREEN_MODE, default inline: where the injection screen is asked (core/screen.ts ScreenMode).
+   * inline puts its question in perception's request; separate sends it in a request of its own.
+   */
+  screen: ScreenMode;
+  /** Serve the live call dashboard and publish call moments to its bus. */
+  dashboard: boolean;
+  /**
+   * Play the recorded clips under `audioDir`. Off (the default), every prompt is spoken by
+   * ConversationRelay's TTS voice: one voice for the fixed text and the names and dates alike, and
+   * no seams between clips. On brings back the recorded voice.
+   */
+  clips: boolean;
+  /** Claude Haiku's key for the handoff summary. Optional; without it the summary is always null. */
+  anthropicApiKey: string | null;
+  /** On/off, default on. Effective only with `anthropicApiKey` set. */
+  handoffSummary: boolean;
+  /**
+   * CONSOLE_LOCAL_ONLY, default on: the operator console (/dashboard*), and each app route that
+   * declares itself local-only (AppRoute.localOnly), answer 404 to any request that came
+   * through the tunnel on PUBLIC_HOST, and are served only to a direct request from this machine.
+   * The Twilio webhooks are unaffected (src/server/localOnly.ts).
+   */
+  consoleLocalOnly: boolean;
+}
+
+export type Env = Record<string, string | undefined>;
+
+function required(env: Env, name: string): string {
+  const v = env[name]?.trim();
+  if (!v) throw new Error(`missing required environment variable ${name}`);
+  return v;
+}
+
+/** A non-negative integer variable, or `fallback` when it is unset or empty. Launchers read their own with it. */
+export function integer(env: Env, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a non-negative integer, got "${raw}"`);
+  return n;
+}
+
+/** An IANA zone name the runtime actually knows; `Intl` is the only authority worth asking. */
+function timeZone(env: Env): string {
+  const raw = env.TIMEZONE?.trim() || defaultTimeZone();
+  try {
+    localDateIso(0, raw);
+  } catch {
+    throw new Error(`TIMEZONE must be an IANA zone like America/Los_Angeles, got "${raw}"`);
+  }
+  return raw;
+}
+
+export function loadConfig(env: Env): ServerConfig {
+  const publicHost = required(env, 'PUBLIC_HOST').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  if (/[/?:]/.test(publicHost)) throw new Error(`PUBLIC_HOST must be a bare hostname, got "${publicHost}"`);
+  const twilioAuthToken = required(env, 'TWILIO_AUTH_TOKEN');
+  const handoffNumber = required(env, 'HANDOFF_NUMBER');
+  if (!/^\+\d{8,15}$/.test(handoffNumber)) throw new Error(`HANDOFF_NUMBER must be an E.164 number like +15551234567, got "${handoffNumber}"`);
+  const port = integer(env, 'PORT', 3000);
+  if (port < 0 || port > 65535) throw new Error(`PORT must be between 0 and 65535, got "${env.PORT}"`);
+  const jevClientRaw = env.JEV_CLIENT ?? 'stub';
+  if (jevClientRaw !== 'stub' && jevClientRaw !== 'heuristic' && jevClientRaw !== 'jev') {
+    throw new Error(`JEV_CLIENT must be stub, heuristic, or jev, got "${jevClientRaw}"`);
+  }
+  const typesafeApiKey = env.TYPESAFE_API_KEY?.trim() || null;
+  if (jevClientRaw === 'jev' && !typesafeApiKey) throw new Error('missing required environment variable TYPESAFE_API_KEY (JEV_CLIENT=jev)');
+  const todayOverride = env.TODAY_OVERRIDE?.trim() || null;
+  if (todayOverride && !/^\d{4}-\d{2}-\d{2}$/.test(todayOverride)) throw new Error(`TODAY_OVERRIDE must be YYYY-MM-DD, got "${todayOverride}"`);
+  const sig = (env.SIGNATURE_CHECK ?? 'on').toLowerCase();
+  if (sig !== 'on' && sig !== 'off') throw new Error(`SIGNATURE_CHECK must be on or off, got "${env.SIGNATURE_CHECK}"`);
+  const dash = (env.DASHBOARD ?? 'on').toLowerCase();
+  if (dash !== 'on' && dash !== 'off') throw new Error(`DASHBOARD must be on or off, got "${env.DASHBOARD}"`);
+  const clipsSwitch = (env.CLIPS ?? 'off').toLowerCase();
+  if (clipsSwitch !== 'on' && clipsSwitch !== 'off') throw new Error(`CLIPS must be on or off, got "${env.CLIPS}"`);
+  const anthropicApiKey = env.ANTHROPIC_API_KEY?.trim() || null;
+  const handoffSummarySwitch = (env.HANDOFF_SUMMARY ?? 'on').toLowerCase();
+  if (handoffSummarySwitch !== 'on' && handoffSummarySwitch !== 'off') {
+    throw new Error(`HANDOFF_SUMMARY must be on or off, got "${env.HANDOFF_SUMMARY}"`);
+  }
+  const localOnlySwitch = (env.CONSOLE_LOCAL_ONLY ?? 'on').toLowerCase();
+  if (localOnlySwitch !== 'on' && localOnlySwitch !== 'off') throw new Error(`CONSOLE_LOCAL_ONLY must be on or off, got "${env.CONSOLE_LOCAL_ONLY}"`);
+  const ttsProvider = env.TTS_PROVIDER?.trim() || null;
+  const ttsVoice = env.TTS_VOICE?.trim() || null;
+  if (ttsProvider && !(TTS_PROVIDERS as readonly string[]).includes(ttsProvider)) {
+    throw new Error(`TTS_PROVIDER must be one of ${TTS_PROVIDERS.join(', ')}, got "${ttsProvider}"`);
+  }
+  // Twilio itself allows a provider with the connection's default voice, but we require both:
+  // the fallback voice for unrecorded segments should be a deliberate match to the recorded
+  // clips, not whatever ConversationRelay defaults to.
+  if ((ttsProvider === null) !== (ttsVoice === null)) throw new Error('TTS_PROVIDER and TTS_VOICE must be set together');
+  return {
+    port,
+    publicHost,
+    twilioAuthToken,
+    handoffNumber,
+    jevClient: jevClientRaw,
+    typesafeApiKey,
+    todayOverride,
+    traceDir: env.TRACE_DIR?.trim() || 'traces',
+    auditDir: env.AUDIT_DIR?.trim() || 'audit',
+    signatureCheck: sig === 'on',
+    reconnectLimit: integer(env, 'RECONNECT_LIMIT', 2),
+    sessionTtlMs: integer(env, 'SESSION_TTL_MS', 1_800_000),
+    sessionMaxAgeMs: integer(env, 'SESSION_MAX_AGE_MS', 7_200_000),
+    timezone: timeZone(env),
+    audioDir: env.AUDIO_DIR?.trim() || 'assets/audio',
+    ttsProvider,
+    ttsVoice,
+    noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
+    jevTimeoutMs: jevTimeout(env),
+    screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
+    dashboard: dash === 'on',
+    clips: clipsSwitch === 'on',
+    anthropicApiKey,
+    handoffSummary: handoffSummarySwitch === 'on',
+    consoleLocalOnly: localOnlySwitch === 'on',
+  };
+}
+
+function jevTimeout(env: Env): number {
+  const ms = integer(env, 'JEV_TIMEOUT_MS', DEFAULT_THRESHOLDS.JEV_TIMEOUT_MS);
+  if (ms <= 0) throw new Error(`JEV_TIMEOUT_MS must be a positive number of milliseconds, got "${env.JEV_TIMEOUT_MS}"`);
+  return ms;
+}
+
+/** "a", "a and b", "a, b and c". */
+function listed(items: readonly string[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)!}` : items.join('');
+}
+
+/**
+ * The startup line that says where the console, and the app's local-only pages, can be reached
+ * from. `paths` are the ones CONSOLE_LOCAL_ONLY guards (localOnly.ts localOnlyPaths).
+ */
+export function consoleExposure(c: ServerConfig, paths: readonly string[] = ['/dashboard']): string {
+  return c.consoleLocalOnly
+    ? `console: ${listed(paths)} local only (http://localhost:${c.port}); 404 through the tunnel on ${c.publicHost}`
+    : `console: ${listed(paths)} PUBLIC on https://${c.publicHost} (CONSOLE_LOCAL_ONLY=off)`;
+}
+
+export function describeConfig(c: ServerConfig): string {
+  // A prefix of a secret is still a piece of the secret; the length alone is enough to tell
+  // "the variable is set" from "the variable is the wrong value".
+  const mask = (s: string | null) => (s ? `set (${s.length} chars)` : 'unset');
+  return [
+    `port ${c.port}`,
+    `public host ${c.publicHost}`,
+    `handoff ${c.handoffNumber}`,
+    `client ${c.jevClient}`,
+    `api key ${mask(c.typesafeApiKey)}`,
+    `auth token ${mask(c.twilioAuthToken)}`,
+    `signature check ${c.signatureCheck ? 'on' : 'OFF'}`,
+    `today ${c.todayOverride ?? 'wall clock'}`,
+    `timezone ${c.timezone}`,
+    `traces ${c.traceDir}`,
+    `audit ${c.auditDir}`,
+    `reconnect limit ${c.reconnectLimit}`,
+    `audio dir ${c.audioDir}`,
+    c.noInputMs > 0 ? `no-input ${c.noInputMs} ms` : 'no-input off',
+    `jev timeout ${c.jevTimeoutMs} ms`,
+    `screen ${c.screen}`,
+    `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
+    `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
+    `clips ${c.clips ? 'on' : 'OFF (all TTS)'}`,
+    `anthropic key ${mask(c.anthropicApiKey)}`,
+    c.handoffSummary ? `handoff note on${c.anthropicApiKey ? '' : ' (no key: none generated)'}` : 'handoff note OFF',
+    c.ttsProvider && c.ttsVoice ? `tts ${c.ttsProvider} ${c.ttsVoice}` : 'tts default',
+  ].join('  ');
+}

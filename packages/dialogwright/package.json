@@ -1,0 +1,43 @@
+{
+  "name": "dialogwright",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Voice and chat agents that act safely: a decision model reads, code decides, every action goes through a policy gate.",
+  "license": "Apache-2.0",
+  "homepage": "https://dialogwright.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DialogWright/dialogwright.git",
+    "directory": "packages/dialogwright"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*.js": "./src/*.js",
+    "./*.json": "./src/*.json",
+    "./*": "./src/*.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "regress:testkit": "tsx src/testing/testkit/regress.ts"
+  },
+  "dependencies": {
+    "@typesafe-ai/sdk": "^0.6.0",
+    "undici": "^8",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

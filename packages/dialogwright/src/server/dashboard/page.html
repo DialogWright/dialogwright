@@ -1,0 +1,1234 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=1920"><title>{{name}} · virtual agent console</title>
+<style>
+  :root {
+    --bg:#0d1016; --panel:#141922; --panel-2:#1a202b; --border:#262e3b; --border-2:#323b4b;
+    --text:#e2e6ee; --muted:#8e97aa; --faint:#5f687b;
+    --caller:#f3cf8e; --sys:#a8c7ff; --accent:#5b8def;
+    --pass:#3ecf8e; --pass-bg:rgba(62,207,142,.12); --fail:#f26470; --fail-bg:rgba(242,100,112,.13);
+    --warn:#f2b54a; --warn-bg:rgba(242,181,74,.13); --idle:#6b7385; --idle-bg:rgba(107,115,133,.12);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  }
+  html { font-size:16px; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); }
+  body { font:1rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing:antialiased; }
+  /* Presenter mode (P): everything below is sized in em, so this one rule scales the page for a Zoom share. */
+  body.presenter { font-size:135%; }
+  .mono { font-family:var(--mono); }
+  .muted { color:var(--muted); }
+  [hidden] { display:none !important; }
+
+  /* ---------- header ---------- */
+  header { height:64px; display:flex; align-items:center; gap:20px; padding:0 24px; border-bottom:1px solid var(--border); box-sizing:border-box; font-size:15px; white-space:nowrap; background:#0f131a; }
+  body.presenter header { height:72px; font-size:18px; }
+  .brand { display:flex; align-items:center; gap:12px; font-weight:600; letter-spacing:.01em; }
+  .brand .mark { width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg,#2f5fb8,#1d3d7a); display:grid; place-items:center; font-size:13px; font-weight:700; color:#dfe9ff; }
+  body.presenter .brand .mark { width:34px; height:34px; font-size:14px; }
+  .brand .title { font-size:1.12em; }
+  .brand .title span { color:var(--muted); font-weight:500; }
+  .live { display:flex; align-items:center; gap:8px; color:var(--muted); }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--idle); flex:none; }
+  .dot.on { background:var(--pass); box-shadow:0 0 0 0 rgba(62,207,142,.6); animation:beat 2s infinite; }
+  .dot.replay { background:var(--accent); }
+  @keyframes beat { 0% { box-shadow:0 0 0 0 rgba(62,207,142,.55); } 70% { box-shadow:0 0 0 8px rgba(62,207,142,0); } 100% { box-shadow:0 0 0 0 rgba(62,207,142,0); } }
+  .badge { display:inline-flex; align-items:center; gap:8px; padding:4px 12px; border-radius:999px; border:1px solid var(--border-2); background:var(--panel-2); font-size:.93em; }
+  .badge .k { color:var(--muted); }
+  .pips { display:inline-flex; gap:3px; }
+  .pips i { width:14px; height:6px; border-radius:3px; background:#2c3444; }
+  .level.l1 .pips i:nth-child(1) { background:var(--warn); }
+  .level.l2 .pips i { background:var(--pass); }
+  .level.l1 { border-color:rgba(242,181,74,.45); }
+  .level.l2 { border-color:rgba(62,207,142,.45); }
+  /* The identity level just rose: one pulse (render() keeps the class for its length; see accents). */
+  .level.pulse { animation:levelup 1.5s ease-out both; }
+  @keyframes levelup {
+    0% { box-shadow:0 0 0 0 rgba(62,207,142,.75); background:rgba(62,207,142,.35); transform:scale(1.08); }
+    35% { box-shadow:0 0 0 10px rgba(62,207,142,0); transform:scale(1); }
+    100% { box-shadow:0 0 0 0 rgba(62,207,142,0); background:var(--panel-2); transform:scale(1); }
+  }
+  .totals { display:flex; gap:18px; color:var(--muted); }
+  .totals b { color:var(--text); font-weight:600; font-family:var(--mono); font-size:.95em; }
+  .actions { display:flex; gap:8px; margin-left:auto; }
+  .controls { display:flex; gap:8px; align-items:center; }
+  button, select, input { font:inherit; font-size:.93em; background:#1f2632; color:var(--text); border:1px solid var(--border-2); border-radius:7px; padding:5px 12px; cursor:pointer; }
+  button:hover { border-color:#46526a; }
+  button.on { border-color:var(--accent); color:#d6e3ff; background:#1c2a44; }
+  #conn { color:var(--warn); font-size:13px; }
+  #note { color:var(--muted); font-size:13px; }
+  /* An option's full ISO timestamp made this ~485px wide and overflowed the header at 1920; the
+     option label is shortened to match (see startReplay in the script below). */
+  .replaybar { display:none; height:48px; align-items:center; gap:10px; padding:0 24px; border-bottom:1px solid var(--border); background:#10151d; font-size:14px; color:var(--muted); box-sizing:border-box; }
+  body.replay .replaybar { display:flex; }
+  .replaybar .card-title { font-size:12px; margin-right:6px; }
+  .replaybar .hint { margin-left:auto; color:var(--faint); }
+  #trace { max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #pos { margin-left:auto; color:var(--text); font-weight:600; }
+  /* Presenter mode has no other way to reach replay: the bar stays up (it no longer hides itself),
+     but only what a presenter mid-call actually reaches for -- the trace picker, back/step/play,
+     and where the call is now. Reset, speed, the narration beat, the keyboard hint and the
+     thresholds note are a keypress or a glance away and just crowd the bar at this size. */
+  body.presenter .replaybar { height:60px; font-size:20px; padding:0 24px; gap:16px; }
+  body.presenter .replaybar button, body.presenter .replaybar select { font-size:20px; padding:9px 18px; }
+  body.presenter .replaybar #trace { max-width:480px; }
+  body.presenter .replaybar #reset, body.presenter .replaybar #rename, body.presenter .replaybar #speedwrap, body.presenter .replaybar #beatwrap,
+  body.presenter .replaybar .hint, body.presenter .replaybar #note { display:none; }
+  body.presenter.replay main { height:calc(100vh - 72px - 60px); }
+
+  /* ---------- layout ---------- */
+  main { display:grid; grid-template-columns:minmax(0,45fr) minmax(0,55fr); gap:20px; padding:20px 24px; height:calc(100vh - 64px); box-sizing:border-box; }
+  body.replay main { height:calc(100vh - 64px - 48px); }
+  body.presenter main { height:calc(100vh - 72px); gap:18px; padding:16px 20px; }
+  .col { display:flex; flex-direction:column; gap:16px; min-height:0; }
+  .right { overflow-y:auto; padding-right:4px; scrollbar-width:thin; }
+  .fit-hidden { display:none !important; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:1em 1.15em; box-sizing:border-box; }
+  .card-head { display:flex; align-items:center; gap:.75em; margin-bottom:.7em; }
+  .card-title { font-size:.78em; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+  .card-head .aside { margin-left:auto; color:var(--faint); font-size:.78em; }
+
+  /* ---------- conversation ---------- */
+  .conv { flex:1; display:flex; flex-direction:column; min-height:0; padding:0; }
+  .conv .card-head { padding:1em 1.15em 0; }
+  #conversation { flex:1; overflow-y:auto; padding:.2em 1.15em 1.2em; scrollbar-width:thin; }
+  .turn { padding:.75em 0 .8em .95em; border-left:3px solid transparent; margin-left:-.95em; }
+  .turn + .turn { border-top:1px solid #1d2430; }
+  .turn.now { border-left-color:var(--accent); background:linear-gradient(90deg, rgba(91,141,239,.06), transparent 60%); }
+  .turn.q { border-left-color:var(--fail); background:linear-gradient(90deg, rgba(242,100,112,.07), transparent 60%); }
+  /* A new turn just landed on top: one flash in the NOW panel's accent, so the eye moves from NOW
+     straight down to it (render() keeps the class, with the time already spent, for its length). */
+  .turn.arrive { animation:turnin 1.5s ease-out both; }
+  @keyframes turnin { 0% { background-color:rgba(91,141,239,.28); } 100% { background-color:rgba(91,141,239,0); } }
+  /* Turns | Script: which way the pane reads. */
+  .convtabs { display:inline-flex; gap:4px; flex:none; }
+  .convtabs button { font-size:.72em; padding:2px 10px; white-space:nowrap; }
+  #conv-aside { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  /* The script: what the agent said and what the caller said, oldest first, nothing else. */
+  .sline { display:grid; grid-template-columns:7.2em minmax(0,1fr); gap:.2em .9em; padding:.45em 0; margin:0; }
+  .sline + .sline { border-top:1px solid #1a202a; }
+  .swho { font-size:.7em; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); font-weight:600; padding-top:.35em; }
+  .sline .said { line-height:1.45; }
+  .sline .marker { margin:0; }
+  .sline.hand .swho, .sline.hand .said { color:var(--warn); }
+  .sline.hand .said { font-weight:600; }
+  .stag { grid-column:2; justify-self:start; padding:.1em .55em; border-radius:6px; background:var(--fail-bg); color:#ffb3ba; font-size:.74em; font-weight:600; }
+  /* A one-time code said aloud: amber, a safeguard that worked rather than an attack. */
+  .marker.a2a-warn { color:var(--warn); font-style:normal; font-weight:600; }
+  .qtag.ctag, .stag.ctag { background:var(--warn-bg); color:var(--warn); }
+  .script-empty { color:var(--muted); font-style:italic; padding:.8em 0; }
+  .who { font-size:.7em; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); font-weight:600; margin:.1em 0 .15em; }
+  .who .pid, .who .turnno { font-family:var(--mono); letter-spacing:0; text-transform:none; font-weight:400; margin-left:.6em; }
+  .who .turnno { color:var(--faint); }
+  .said { font-size:1.06em; line-height:1.45; }
+  .said.caller { color:var(--caller); }
+  .said.sys { color:var(--sys); }
+  .marker { color:var(--muted); font-size:.88em; font-style:italic; margin:.2em 0; }
+  .marker.key { font-style:normal; font-family:var(--mono); color:var(--caller); }
+  /* The transfer to a person: a labelled system row of its own, in the warn color. */
+  .turn.hand { border-left-color:var(--warn); background:linear-gradient(90deg, var(--warn-bg), transparent 60%); }
+  .who.hand { color:var(--warn); }
+  .said.hand { color:var(--warn); font-weight:600; }
+  /* The talk-track line under a keyed digit: why a secret can be typed instead of spoken. */
+  .keynote { color:var(--faint); font-size:.72em; margin:.15em 0 0; }
+  .qtag { display:inline-block; margin:.35em 0 .1em; padding:.15em .6em; border-radius:6px; background:var(--fail-bg); color:#ffb3ba; font-size:.78em; font-weight:600; letter-spacing:.02em; }
+
+  /* the five-stage strip under each caller turn */
+  .stages { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:.4em; margin:.55em 0 .65em; }
+  .pill { display:flex; flex-direction:column; gap:.05em; padding:.35em .6em .4em; border-radius:8px; border:1px solid; min-width:0; }
+  .pill em { font-style:normal; font-size:.7em; letter-spacing:.08em; text-transform:uppercase; opacity:.8; font-weight:600; display:flex; align-items:center; gap:.45em; }
+  .pill em::before { content:''; width:.55em; height:.55em; border-radius:50%; background:currentColor; flex:none; }
+  /* A long label (route: check status) wraps to a second line rather than losing its end. */
+  .pill span { font-size:.84em; font-weight:600; line-height:1.25; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
+  .pill.pass { color:var(--pass); border-color:rgba(62,207,142,.35); background:var(--pass-bg); }
+  .pill.fail { color:var(--fail); border-color:rgba(242,100,112,.45); background:var(--fail-bg); }
+  .pill.warn { color:var(--warn); border-color:rgba(242,181,74,.4); background:var(--warn-bg); }
+  .pill.skip, .pill.idle { color:var(--idle); border-color:#2a3140; background:transparent; }
+  .pill span { color:var(--text); }
+  .pill.skip span, .pill.idle span { color:var(--muted); font-weight:500; }
+  body.presenter .stages { gap:.35em; }
+  body.presenter .pill { padding:.4em .6em .45em; }
+  body.presenter .pill span { font-size:.8em; }
+
+  /* ---------- NOW: the task in progress, above the conversation ---------- */
+  .now { flex:0 0 auto; border-left:3px solid var(--accent); }
+  .now .card-head { margin-bottom:.3em; }
+  body.presenter .card.now { padding:.75em 1.1em .8em; }
+  .now-aside { font-family:var(--mono); color:var(--muted) !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  /* One band whatever the state, so the conversation below never jumps as the panel changes. */
+  .now-body { min-height:3.7em; display:flex; flex-direction:column; justify-content:center; gap:.35em; }
+  .now-main { display:flex; align-items:baseline; gap:.8em; min-width:0; white-space:nowrap; }
+  .now-label { font-size:1.2em; font-weight:650; flex:none; }
+  .now-asking { font-family:var(--mono); font-size:.86em; color:var(--caller); overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .now-fact { font-size:.9em; font-weight:600; color:var(--pass); padding:.1em .65em; border-radius:6px; background:var(--pass-bg); overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .now-was { font-size:.86em; color:var(--muted); overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .now-chips { display:flex; flex-wrap:wrap; gap:.3em .4em; }
+  .nchip { display:inline-flex; align-items:baseline; gap:.4em; padding:.14em .7em; border-radius:999px; border:1px solid var(--border-2); font-size:.86em; white-space:nowrap; }
+  .nchip .n { color:var(--muted); }
+  .nchip b { font-weight:600; }
+  .nchip.filled { border-color:rgba(62,207,142,.55); background:rgba(62,207,142,.08); }
+  .nchip.filled b { color:#c9f2d6; }
+  .nchip.partial { border-color:rgba(242,181,74,.55); } .nchip.partial b { color:#f2e6c9; }
+  .nchip.empty { opacity:.45; border-style:dashed; }
+  /* A value that just arrived glows once; render() keeps the class, with the time already spent as
+     a negative delay, until it is over, so the renders between never restart it. */
+  .nchip.glow { animation:glow 1.5s ease-out both; }
+  @keyframes glow {
+    0% { background:rgba(62,207,142,.5); box-shadow:0 0 0 0 rgba(62,207,142,.7); }
+    30% { box-shadow:0 0 14px 3px rgba(62,207,142,.45); }
+    100% { background:rgba(62,207,142,.08); box-shadow:0 0 0 0 rgba(62,207,142,0); }
+  }
+  /* State classes are prefixed: a bare `.handoff` is the handoff card's own rule. */
+  .now.s-idle { border-left-color:var(--border-2); }
+  .now.s-idle .now-label { color:var(--muted); font-weight:500; }
+  .now.s-completed { border-left-color:var(--pass); }
+  .now.s-completed .now-label { color:var(--pass); }
+  .now.s-handoff { border-left-color:var(--warn); background:linear-gradient(90deg, var(--warn-bg), var(--panel) 75%); }
+  .now.s-handoff .now-label, .now.s-handoff .now-why { color:var(--warn); }
+  .now-why { flex:none; font-weight:600; }
+
+  /* ---------- action gate ---------- */
+  .gate { border-top:3px solid var(--border-2); padding:1.15em 1.3em 1.2em; }
+  .gate.v-ALLOW { border-top-color:var(--pass); } .gate.v-BLOCK { border-top-color:var(--fail); }
+  .gate.v-STEP_UP, .gate.v-NEEDS_HUMAN { border-top-color:var(--warn); }
+  /* A new verdict landed: one pulse in its own color (render() keeps the class for its length). */
+  .gate { --vc:91,141,239; }
+  .gate.v-ALLOW { --vc:62,207,142; } .gate.v-BLOCK { --vc:242,100,112; } .gate.v-STEP_UP, .gate.v-NEEDS_HUMAN { --vc:242,181,74; }
+  .gate.fresh { animation:arrive 1.5s ease-out both; }
+  @keyframes arrive {
+    0% { box-shadow:0 0 0 3px rgba(var(--vc),.8), 0 0 24px 4px rgba(var(--vc),.35); }
+    100% { box-shadow:0 0 0 3px rgba(var(--vc),0), 0 0 24px 4px rgba(var(--vc),0); }
+  }
+  /* The latest turn made no call of its own: the card keeps showing the last one, dimmed. */
+  .gate.stale { opacity:.55; }
+  .gate-turn { color:var(--faint); font-size:.78em; }
+  .verdict { margin-left:auto; font-weight:700; letter-spacing:.06em; font-size:1.05em; padding:.3em .9em; border-radius:8px; border:1px solid; }
+  .verdict.ALLOW { color:var(--pass); background:var(--pass-bg); border-color:rgba(62,207,142,.45); }
+  .verdict.BLOCK { color:var(--fail); background:var(--fail-bg); border-color:rgba(242,100,112,.5); }
+  .verdict.STEP_UP, .verdict.NEEDS_HUMAN { color:var(--warn); background:var(--warn-bg); border-color:rgba(242,181,74,.45); }
+  .call { font-family:var(--mono); font-size:1.28em; color:#f0f3f8; background:#0f141c; border:1px solid var(--border); border-radius:8px; padding:.55em .8em; overflow-wrap:anywhere; }
+  .call .tool { color:#9dc0ff; }
+  .reason { margin-top:.55em; color:var(--muted); font-size:.92em; }
+  .reason b { color:var(--text); font-weight:600; }
+  .rules { list-style:none; margin:.85em 0 0; padding:0; display:flex; flex-direction:column; gap:.5em; }
+  .rule { display:grid; grid-template-columns:1.6em 2.6em minmax(0,1fr); align-items:start; gap:.6em; padding:.55em .7em; border-radius:8px; background:var(--panel-2); border:1px solid var(--border); }
+  .rule.bad { border-color:rgba(242,100,112,.5); background:rgba(242,100,112,.07); }
+  .mark { width:1.45em; height:1.45em; border-radius:50%; display:grid; place-items:center; font-size:.85em; font-weight:700; margin-top:.05em; }
+  .rule.ok .mark { background:var(--pass-bg); color:var(--pass); }
+  .rule.bad .mark { background:var(--fail-bg); color:var(--fail); }
+  .rid { font-family:var(--mono); color:var(--muted); font-size:.95em; padding-top:.05em; }
+  .desc { font-size:.98em; }
+  .cmp { font-family:var(--mono); font-size:.86em; color:#c3cad8; margin-top:.15em; overflow-wrap:anywhere; }
+  .rule.bad .cmp { color:#ffc2c7; }
+  .blank { color:var(--muted); padding:1.1em 0 .6em; text-align:center; }
+  .blank b { display:block; color:var(--text); font-weight:600; font-size:1.05em; margin-bottom:.25em; }
+  body.presenter .gate { padding:1em 1.2em 1.05em; }
+  body.presenter .rules { gap:.4em; margin-top:.7em; }
+  body.presenter .rule { padding:.45em .7em; }
+  body.presenter .card:not(.conv):not(.gate) { padding:.9em 1.1em; }
+  body.presenter .col { gap:14px; }
+  body.presenter .call { font-size:1.2em; }
+
+  /* ---------- source, handoff ---------- */
+  .fresh-badge { margin-left:auto; font-size:.8em; font-weight:600; padding:.2em .7em; border-radius:999px; }
+  .fresh-badge.ok { color:var(--pass); background:var(--pass-bg); }
+  .fresh-badge.stale { color:var(--fail); background:var(--fail-bg); }
+  .doc { font-weight:600; font-size:1.02em; }
+  .meta { color:var(--muted); font-size:.9em; margin-top:.2em; }
+  .meta b { color:var(--text); font-weight:500; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:.2em 1em; font-size:.92em; margin-top:.5em; }
+  .kv dt { color:var(--muted); } .kv dd { margin:0; font-family:var(--mono); font-size:.95em; }
+  .handoff { border-top:3px solid var(--warn); }
+  .reason-badge { font-size:.8em; font-weight:600; padding:.2em .7em; border-radius:999px; color:var(--warn); background:var(--warn-bg); }
+  .summary { margin-top:.75em; padding:.7em .9em; border-radius:8px; background:var(--panel-2); border-left:3px solid #8b7cf6; line-height:1.5; white-space:pre-line; }
+  .summary .note { display:block; margin-top:.5em; color:var(--muted); font-size:.78em; }
+  .summary .nl { display:block; padding-left:6.2em; text-indent:-6.2em; }
+  .summary .nl + .nl { margin-top:.25em; }
+  .summary .lbl { display:inline-block; width:5.8em; text-indent:0; font-weight:700; }
+  .lbl-identity { color:var(--pass); } .lbl-wanted { color:var(--caller); } .lbl-done { color:var(--sys); }
+  .lbl-blocked { color:var(--fail); } .lbl-blocked.quiet { color:var(--muted); } .lbl-next { color:#b79cff; }
+  .summary.none { border-left-color:var(--idle); color:var(--muted); }
+  .summary.wait { border-left-color:var(--idle); color:var(--muted); animation:pulse 1.2s infinite alternate; }
+
+  /* ---------- audit ---------- */
+  /* The whole call's entries in a list of its own height (fitAudit sets it in rows), following the newest. */
+  .alist { font-family:var(--mono); font-size:.84em; overflow-y:auto; scrollbar-width:thin; }
+  .arow { display:grid; grid-template-columns:2.4em 8.2em minmax(0,1fr) 6.4em; gap:.7em; padding:.2em 0; border-bottom:1px solid #1b212b; align-items:baseline; }
+  .arow:last-child { border-bottom:0; }
+  .arow.newest { background:linear-gradient(90deg, rgba(91,141,239,.08), transparent); }
+  .aseq { color:var(--faint); text-align:right; }
+  .atype { font-weight:600; color:#c7cfdd; }
+  .atype.t-good { color:var(--pass); } .atype.t-bad { color:var(--fail); } .atype.t-warn { color:var(--warn); }
+  .adet { color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ahash { color:#7f8cff; text-align:right; }
+  /* A replay-reconstructed row (view.js's pushAuditDrafts): no hash to show, so say so instead. */
+  .arow.from-trace .ahash { color:var(--faint); font-style:italic; font-weight:400; }
+  .afoot { margin-top:.6em; color:var(--faint); font-size:.78em; font-family:var(--mono); }
+  body.presenter .alist { font-size:.74em; }
+  body.presenter .arow { grid-template-columns:2.2em 8.4em minmax(0,1fr) 6.6em; padding:.12em 0; }
+
+  /* ---------- perception ---------- */
+  .jevhead { color:var(--muted); font-family:var(--mono); font-size:.8em; }
+  .toggle { margin-left:auto; font-size:.8em; padding:3px 10px; }
+  .grp { color:var(--muted); font-size:.72em; letter-spacing:.08em; text-transform:uppercase; margin:.8em 0 .25em; border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
+  .row { display:grid; grid-template-columns:13em 1fr 9em; gap:.75em; align-items:center; padding:.1em 0; }
+  .row .id, .row .val { font-size:.84em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); }
+  .bar { position:relative; height:9px; background:#232a36; border-radius:5px; overflow:hidden; }
+  .bar i { position:absolute; left:0; top:0; bottom:0; background:var(--accent); } .bar i.hi { background:var(--pass); } .bar i.lo { background:#4a5264; }
+  .bar em { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--caller); }
+  .bar.pending i { width:100%; opacity:.15; animation:pulse 1s infinite alternate; } @keyframes pulse { to { opacity:.4; } }
+  .top { grid-column:2 / 4; display:flex; gap:6px; flex-wrap:wrap; margin:.1em 0 .25em; } .top span { padding:1px 8px; border-radius:4px; background:#232a36; font-size:.8em; } .top span.win { background:#1f4d33; color:#c9f2d6; }
+  .decision { margin-top:.7em; color:var(--caller); font-family:var(--mono); font-size:.82em; }
+  /* Presenter: top signals only (the card gives way whole when the column is short; see fitAudit). */
+  body.presenter .perception .toggle { display:none; }
+  /* The turn on screen was quarantined: perception ran, but nothing acted on what it read. The
+     banner stays full-strength; the rows and header beneath it dim, but stay legible. */
+  .discarded-banner { margin:0 0 .7em; padding:.5em .7em; border-radius:8px; background:var(--fail-bg); color:#ffb3ba; font-size:.82em; font-weight:600; line-height:1.35; }
+  .perception.discarded .jevhead, .perception.discarded .grp, .perception.discarded .row, .perception.discarded .decision { opacity:.55; }
+
+  /* No motion for a viewer who asked for none: the accents simply do not play. */
+  @media (prefers-reduced-motion: reduce) {
+    .nchip.glow, .level.pulse, .gate.fresh, .turn.arrive, .dot.on, .summary.wait, .bar.pending i { animation:none !important; }
+  }
+</style></head>
+<body>
+<header>
+  <div class="brand"><span class="mark">{{mark}}</span><span class="title">{{name}} <span>· virtual agent console</span></span></div>
+  <div class="live"><i id="dot" class="dot"></i><span id="status">waiting for a call</span></div>
+  <span id="channel" class="badge" hidden></span>
+  <span id="level" class="badge level l0"></span>
+  <div id="totals" class="totals"></div>
+  <div class="actions">
+{{links}}    <button id="presenter" title="Larger type for a screen share">Presenter (P)</button>
+  </div>
+  <div class="controls">
+    <span id="conn" class="mono"></span>
+    <span class="rc"><button id="mode-live" class="on">Live</button> <button id="mode-replay">Replay</button></span>
+  </div>
+</header>
+<!-- The replay controls get a bar of their own: at 1920 they no longer fit beside the header's badges. -->
+<div class="replaybar rc" id="replaybar">
+  <span class="card-title">Replay</span>
+  <select id="trace" hidden></select><button id="rename" hidden title="Name this run, so it is easy to find">Rename</button>
+  <button id="reset" hidden>Reset</button><button id="back" hidden>◀</button><button id="step" hidden>▶ step</button><button id="play" hidden>Play</button>
+  <label id="speedwrap">speed <select id="speed" hidden><option>1</option><option>2</option><option>4</option></select></label>
+  <label id="beatwrap" hidden>beat <input id="beat" type="number" value="800" min="0" step="100" style="width:80px"> ms</label>
+  <span id="pos" class="mono" hidden></span>
+  <span class="hint">← → step · space play · Home start · End end · R live/replay · S script</span>
+  <span id="note" class="mono"></span>
+</div>
+<main>
+  <section class="col">
+    <div class="card now s-idle" id="now"></div>
+    <div class="card conv">
+      <div class="card-head"><span class="card-title">Conversation</span><span class="convtabs"><button id="conv-turns" class="on" title="Each question with its answer and five stages, newest on top">Turns</button><button id="conv-script" title="Just what was said, oldest first (S)">Script (S)</button></span><span class="aside" id="conv-aside"></span></div>
+      <div id="conversation"></div>
+    </div>
+  </section>
+  <section class="col right">
+    <div class="card gate" id="gate"></div>
+    <div class="card handoff" id="handoff" hidden></div>
+    <div class="card source" id="source" hidden></div>
+    <div class="card audit" id="audit"></div>
+    <div class="card perception" id="perception"></div>
+  </section>
+</main>
+<script type="module">
+  // The page is served at /dashboard, so the module is loaded by absolute path: a relative
+  // './dashboard/view.js' would resolve differently when the page is opened at '/dashboard/'.
+  import { configure, reduce, replayEvents, latestTrace, positionText, traceLabel, cleanTraceName, handoffReasonText, exchanges, scriptOf, replayStops, stepStop, CODE_MASK } from '/dashboard/view.js';
+
+  /** The app this console serves (src/server/dashboard/meta.ts ConsoleMeta), put in by the server as it serves the page. */
+  const APP = {{meta}};
+  configure(APP);
+
+  /**
+   * Replay ticks are drawn against today's defaults, mirrored from src/core/thresholds.ts
+   * (DEFAULT_THRESHOLDS) -- keep the numbers here in step with that file. A live call takes the
+   * server's effective thresholds from the `call_started` event instead, so this block is only
+   * consulted in replay, where the trace does not record what it ran under.
+   */
+  const DEFAULTS = {
+    // gate ladder
+    GATE_ADDRESSED: 0.65,
+    GATE_INTELLIGIBLE: 0.45,
+    GATE_COMPLETE: 0.6,
+    GATE_WANTS_HUMAN: 0.7,
+    GATE_FRUSTRATION_HIGH: 0.6,
+    // intent: the two rungs the ladder actually routes from -- outside a form and inside one
+    INTENT_EXPLICIT: 0.4,
+    INTENT_SWITCH: 0.85,
+    INTENT_TENTATIVE: 0.5,
+    INTENT_CHANGE: 0.6,
+    INTENT_SECOND: 0.6,
+    // slots
+    SLOT_DETECT: 0.6,
+    SLOT_CHOICE_CONFIRM: 0.45,
+    SLOT_CHANGE: 0.6,
+    // confirmations and menus
+    CONFIRM_YES: 0.7,
+    CONFIRM_NO: 0.7,
+    MENU_NUMBER: 0.7,
+    // injection screen, and how long a turn waits for it once perception is back
+    SCREEN_FIRE: 0.5,
+    SCREEN_GRACE_MS: 300,
+    // retry policy (the `asking … of N` line)
+    MAX_ATTEMPTS: 3,
+  };
+
+  const CAP_MS = 5_000;
+  /** Where the presenter choice is remembered, per browser. */
+  const PRESENTER_KEY = `${APP.brand.key}-console-presenter`;
+
+  const el = (id) => document.getElementById(id);
+  const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESCAPES[c]);
+  // The handoff note's five labelled lines, each label bold in its own color; Blocked turns red
+  // unless it says none. Anything that isn't a labelled line shows as it came.
+  const NOTE_LABEL = /^(Identity|Wanted|Done|Blocked|Next):\s*(.*)$/;
+  const noteLines = (text) => String(text).split('\n').map((line) => {
+    const m = NOTE_LABEL.exec(line.trim());
+    if (!m) return `<span class="nl">${esc(line)}</span>`;
+    const quiet = m[1] === 'Blocked' && /^none\.?$/i.test(m[2]);
+    return `<span class="nl"><b class="lbl lbl-${m[1].toLowerCase()}${quiet ? ' quiet' : ''}">${m[1]}</b> ${esc(m[2])}</span>`;
+  }).join('');
+  const pct = (x) => `${Math.max(0, Math.min(1, Number(x) || 0)) * 100}%`;
+  const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
+
+  const state = {
+    mode: 'live',
+    /** Live: the events received so far, the highest sequence number seen, and the call they belong to. */
+    events: [], lastSeq: -1, callSid: null, es: null,
+    /** Replay: the whole synthesized event list, how many of them are shown, and the trace they came from. */
+    all: [], cursor: 0, sid: null,
+    /** Where → and ← land in `all` (view.js's replayStops): a keypad entry is one step. */
+    stops: [0],
+    /** The trace's own total turn count (reduce() over the whole list), for the position readout. */
+    totalTurns: 0,
+    playing: false, timer: null,
+    /** Group names the viewer has opened by hand; kept across renders so a click sticks. */
+    open: new Set(),
+    /** Perception shows its decisive rows only, until "Show all". */
+    showAll: false,
+    /**
+     * The attention accents (a chip glowing as its value arrives, the level badge pulsing as it
+     * rises, the gate card pulsing on a new verdict): what the last render showed, and when each
+     * accent started, so a re-render inside an accent's 1.5 s keeps it running instead of either
+     * cutting it off or starting it over. `undefined` baselines mean "nothing drawn yet": the
+     * first render of a page, a mode switch or a newly picked trace sets them without an accent.
+     */
+    accent: null,
+    /** The conversation pane: `turns` (newest on top, with the stage strips) or `script` (just what was said, oldest first). */
+    convView: 'turns',
+    /** Where each view was left, or null for "following the call" (Turns at the top, Script at the bottom). */
+    convScroll: { turns: null, script: null },
+    /** The call the pane last showed: a different one starts over in Turns. */
+    convCall: null,
+    view: reduce([]),
+    /** So a malformed event logs once per page load rather than spamming the console. */
+    renderErrorLogged: false,
+  };
+
+  const speed = () => Number(el('speed').value) || 1;
+  const beatMs = () => {
+    // Number('') is 0, not NaN, so an empty box would otherwise read as "no beat" rather than
+    // falling through to the default.
+    const raw = el('beat').value.trim();
+    if (raw === '') return 800;
+    const v = Number(raw);
+    return Number.isFinite(v) && v >= 0 ? v : 800;
+  };
+
+  // ---------- wording ----------
+
+  const LEVELS = APP.levels;
+  const STAGES = [['screen', 'Screen'], ['perception', 'Perception'], ['policy', 'Policy'], ['gate', 'Gate'], ['audit', 'Audit']];
+  /** STEP_UP reads STEP-UP; a lower-case label such as `route:check_status` reads with spaces. */
+  const verdictText = (v) => String(v ?? '').replace(/_/g, '-');
+  const labelText = (s) => {
+    const t = String(s ?? '');
+    return t === t.toUpperCase() ? t.replace(/_/g, '-') : t.replace(/_/g, ' ').replace(/:(\S)/, ': $1');
+  };
+
+  /** How long each attention accent plays; the CSS animations above are the same length. */
+  const ACCENT_MS = 1500;
+  const freshAccents = () => ({ chips: undefined, glowAt: new Map(), level: undefined, levelAt: -Infinity, gate: undefined, gateAt: -Infinity, turns: undefined, turnAt: -Infinity });
+  state.accent = freshAccents();
+
+  // ---------- conversation ----------
+
+  function stripHtml(stages) {
+    return `<div class="stages">${STAGES.map(([key, name]) => {
+      const s = stages[key] ?? { state: 'idle', label: '' };
+      return `<div class="pill ${esc(s.state)}"><em>${name}</em><span title="${esc(s.label)}">${esc(labelText(s.label))}</span></div>`;
+    }).join('')}</div>`;
+  }
+
+  /** Beside the "Caller" who label: a small muted turn number, using the same index the rest of the view reads off. */
+  /** Under a caller line that held a one-time code said aloud. */
+  const CODE_TAG = '<div class="qtag ctag">code said aloud · masked before anything logged it</div>';
+
+  function inputHtml(l, turn) {
+    const turnTag = turn !== null && turn !== undefined ? `<span class="turnno">Turn ${esc(turn)}</span>` : '';
+    if (l.kind === 'caller') return `<div class="who">Caller${turnTag}</div><div class="said caller">${esc(l.text)}</div>${l.text.includes(CODE_MASK) ? CODE_TAG : ''}`;
+    if (l.kind === 'handoff') return `<div class="who hand">Handoff</div><div class="said hand">${esc(l.text)}</div>`;
+    // Digits buffered toward a slot (an ID, a keyed code) are one caller entry on screen and
+    // share the turn number of the prompt they are answering -- the block's own resolved turn.
+    if (/^keypad /.test(l.text)) {
+      return `<div class="who">Caller · keypad${turnTag}</div><div class="marker key">${esc(l.text.slice('keypad '.length))}</div>`
+        + '<div class="keynote">keypad: digits never reach speech recognition, the transcript, or Jev</div>';
+    }
+    return `<div class="marker">${esc(l.text)}</div>`;
+  }
+
+  /**
+   * The Turns view: view.js's `exchanges`, newest on top, each one reading down as question,
+   * answer, and the stage strip of the turn that handled the answer. The top one is the question
+   * now waiting. `turnAge` is how far into its arrival flash the top block already is (ms), or null
+   * when it has none.
+   */
+  function convHtml(v, blocks, turnAge) {
+    const byTurn = new Map((v.turnsView ?? []).map((t) => [t.turnIndex, t]));
+    // The greeting (the setup turn) has no caller turn to screen, so it carries no strip.
+    const firstTurn = v.turnsView?.[0]?.turnIndex ?? null;
+    return blocks.map((b, i) => {
+      const t = b.turn !== null && b.turn !== firstTurn ? byTurn.get(b.turn) : null;
+      const quarantined = t && t.stages.screen.state === 'fail';
+      const handoff = b.input.some((l) => l.kind === 'handoff');
+      const cls = ['turn', quarantined ? 'q' : '', handoff ? 'hand' : i === 0 ? 'now' : '', i === 0 && turnAge !== null ? 'arrive' : ''].filter(Boolean).join(' ');
+      const delay = i === 0 && turnAge !== null ? ` style="animation-delay:-${Math.round(turnAge)}ms"` : '';
+      const asked = b.prompt.map((l) => {
+        const pid = l.promptId ? `<span class="pid">${esc(l.promptId)}</span>` : '';
+        return `<div class="who">${esc(APP.brand.name)}${pid}</div><div class="said sys">${esc(l.text)}</div>`;
+      }).join('');
+      // A downstream service's answer is a turn of its own with nothing said: name where it came from.
+      // The service's answer, and what its client made of it: refused, or text it never read, in the warning color.
+      const note = t && t.input === 'service.result' && !b.input.length ? (t.service ?? { text: APP.serviceNote.answered, warn: false }) : null;
+      const service = note ? `<div class="who">${esc(APP.serviceNote.label)}</div><div class="marker${note.warn ? ' a2a-warn' : ''}">${esc(note.text)}</div>` : '';
+      return `<div class="${cls}"${delay}>${asked}${service}${b.input.map((l) => inputHtml(l, b.turn)).join('')}`
+        + (quarantined ? '<div class="qtag">quarantined: perception discarded</div>' : '')
+        + (t ? stripHtml(t.stages) : '')
+        + '</div>';
+    }).join('');
+  }
+
+  // ---------- script ----------
+
+  /**
+   * The Script view: view.js's `scriptOf`, oldest first, for reading the call top to bottom. Every
+   * agent line is the rendered prompt the caller heard, taken from the trace, never model text.
+   */
+  function scriptHtml(v) {
+    const lines = scriptOf(v.lines ?? [], v.turnsView ?? []);
+    if (!lines.length) return '<div class="script-empty">Nothing said yet.</div>';
+    return lines.map((l) => {
+      if (l.who === 'caller') {
+        const tag = (l.screened ? '<span class="stag">screened · not acted on</span>' : '')
+          + (l.codeMasked ? '<span class="stag ctag">code said aloud · masked</span>' : '');
+        return `<p class="sline"><span class="swho">Caller</span><span class="said caller">${esc(l.text)}</span>${tag}</p>`;
+      }
+      if (l.who === 'agent') return `<p class="sline"><span class="swho">${esc(APP.brand.name)}</span><span class="said sys">${esc(l.text)}</span></p>`;
+      if (l.who === 'keypad') return `<p class="sline"><span class="swho">Caller · keypad</span><span class="marker key">${esc(l.text)}</span></p>`;
+      if (l.who === 'handoff') return `<p class="sline hand"><span class="swho">Handoff</span><span class="said">${esc(l.text)}</span></p>`;
+      return `<p class="sline"><span class="swho"></span><span class="marker">${esc(l.text)}</span></p>`;
+    }).join('');
+  }
+
+  /** Close enough to the edge the view follows (the top of Turns, the bottom of Script) to count as following the call. */
+  const PIN_SLACK = 40;
+  const pinnedEdge = (conv) => (state.convView === 'script' ? conv.scrollHeight : 0);
+  const isPinned = (conv) => (state.convView === 'script'
+    ? conv.scrollHeight - conv.scrollTop - conv.clientHeight <= PIN_SLACK
+    : conv.scrollTop <= PIN_SLACK);
+
+  /**
+   * Draws the conversation pane. Following the call, it stays at the edge where new lines land. A
+   * presenter who has scrolled away to point at an earlier turn stays on it: in Turns a new block
+   * lands above, so the scroll moves down by what was added; in Script new lines land below and
+   * nothing needs moving.
+   */
+  function paintConversation(v, blocks, turnAge, fresh) {
+    const conv = el('conversation');
+    const beforeH = conv.scrollHeight;
+    const top = conv.scrollTop;
+    const pinned = fresh || isPinned(conv);
+    conv.innerHTML = state.convView === 'script' ? scriptHtml(v) : convHtml(v, blocks, turnAge);
+    if (pinned) conv.scrollTop = pinnedEdge(conv);
+    else conv.scrollTop = state.convView === 'script' ? top : top + (conv.scrollHeight - beforeH);
+  }
+
+  function syncConvTabs() {
+    el('conv-turns').classList.toggle('on', state.convView === 'turns');
+    el('conv-script').classList.toggle('on', state.convView === 'script');
+    el('conv-aside').textContent = state.convView === 'script' ? 'what was said, oldest first' : 'newest on top · question, answer, how it was handled';
+  }
+
+  /** Turns or Script. Each view comes back where it was left, or at its following edge. */
+  function setConvView(which) {
+    if (which === state.convView) return;
+    const conv = el('conversation');
+    state.convScroll[state.convView] = isPinned(conv) ? null : conv.scrollTop;
+    state.convView = which;
+    syncConvTabs();
+    render(state.view);
+    const saved = state.convScroll[which];
+    conv.scrollTop = saved === null ? pinnedEdge(conv) : saved;
+  }
+  syncConvTabs();
+  el('conv-turns').addEventListener('click', (e) => { e.currentTarget.blur(); setConvView('turns'); });
+  el('conv-script').addEventListener('click', (e) => { e.currentTarget.blur(); setConvView('script'); });
+
+  // ---------- NOW ----------
+
+  /**
+   * The NOW panel (view.js's `now`): the task in progress with its slots, what was completed and
+   * what it established, or the handoff. `glowAge(chip)` is how far into its glow a chip already
+   * is (ms), or null when it has none.
+   */
+  function nowHtml(n, glowAge) {
+    const aside = [];
+    if (n.queued && n.queued.length) aside.push(`next: ${n.queued.join(', ')}`);
+    if (n.state === 'task' && n.completedLabel) aside.push(`done: ${n.completedLabel}`);
+    const head = '<div class="card-head"><span class="card-title">Now · what the agent is working on</span>'
+      + (aside.length ? `<span class="aside now-aside">${esc(aside.join(' · '))}</span>` : '') + '</div>';
+    const asking = n.asking ? `<span class="now-asking">${esc(n.asking)}</span>` : '';
+    const fact = n.fact ? `<span class="now-fact">${esc(n.fact)}</span>` : '';
+    let body;
+    if (n.state === 'handoff') {
+      const h = n.handoff ?? { number: null, reason: '', reasonText: '' };
+      const to = h.number ? ` (${esc(h.number)})` : '';
+      const was = n.label ? `<div class="now-main"><span class="now-was">was working on: ${esc(n.label)}</span></div>` : '';
+      body = `<div class="now-main"><span class="now-label">Handed off to a specialist${to}</span>`
+        + `<span class="now-why">· ${esc(h.reasonText || handoffReasonText(h.reason))}</span></div>${was}`;
+    } else if (n.state === 'task') {
+      const chips = (n.chips ?? []).map((c) => {
+        const age = glowAge(c);
+        const glow = age === null ? '' : ` glow" style="animation-delay:-${Math.round(age)}ms`;
+        const value = c.label ? ` <b>${esc(c.label)}</b>` : '';
+        return `<span class="nchip ${esc(c.state)}${glow}"><span class="n">${esc(c.name)}</span>${value}</span>`;
+      }).join('');
+      body = `<div class="now-main"><span class="now-label">${esc(n.label)}</span>${asking}${fact}</div><div class="now-chips">${chips}</div>`;
+    } else if (n.state === 'completed') {
+      body = `<div class="now-main"><span class="now-label">Completed: ${esc(n.completedLabel)}</span>${fact}${asking}</div>`;
+    } else {
+      body = `<div class="now-main"><span class="now-label">Waiting for a request</span>${asking}</div>`;
+    }
+    return `${head}<div class="now-body">${body}</div>`;
+  }
+
+  /**
+   * Starts the accents this render calls for, against what the last render showed, and returns how
+   * far into its glow each chip is. Only a value's first appearance glows: a chip already shown
+   * does not glow again on a later render, and one that was gone (replay stepped back) glows again
+   * when it comes back.
+   */
+  function accents(v, turnCount) {
+    const a = state.accent;
+    const t = performance.now();
+    const keyOf = (c) => `${c.id}=${c.label}`;
+    const filled = new Set((v.now?.chips ?? []).filter((c) => c.state === 'filled').map(keyOf));
+    if (a.chips !== undefined) for (const k of filled) if (!a.chips.has(k)) a.glowAt.set(k, t);
+    a.chips = filled;
+    for (const [k, at] of a.glowAt) if (t - at >= ACCENT_MS) a.glowAt.delete(k);
+    const level = Math.max(0, Math.min(2, Number(v.level) || 0));
+    const levelRose = a.level !== undefined && level > a.level;
+    if (levelRose) a.levelAt = t;
+    a.level = level;
+    const gateKey = v.gate ? `${v.gate.display}|${v.gate.verdict}|${v.gate.turnIndex}` : null;
+    const gateNew = a.gate !== undefined && gateKey !== null && gateKey !== a.gate;
+    if (gateNew) a.gateAt = t;
+    a.gate = gateKey;
+    // A new turn block on top of the conversation (the caller spoke, or keyed, or the call was handed off).
+    if (a.turns !== undefined && turnCount > a.turns) a.turnAt = t;
+    a.turns = turnCount;
+    return {
+      glowAge: (c) => { const at = a.glowAt.get(keyOf(c)); return at === undefined || c.state !== 'filled' ? null : t - at; },
+      levelOn: t - a.levelAt < ACCENT_MS, levelRose,
+      gateOn: t - a.gateAt < ACCENT_MS, gateNew,
+      turnAge: t - a.turnAt < ACCENT_MS ? t - a.turnAt : null,
+    };
+  }
+
+  /** Restarts a one-shot animation class on an element that may still carry it from the last one. */
+  function restart(node, cls) {
+    node.classList.remove(cls);
+    void node.offsetWidth;
+    node.classList.add(cls);
+  }
+
+  // ---------- right column ----------
+
+  function gateHtml(g, isCurrent) {
+    if (!g) {
+      return '<div class="card-head"><span class="card-title">Action gate</span></div>'
+        + '<div class="blank"><b>No tool calls yet</b>Every call the agent proposes is checked here before it runs.</div>';
+    }
+    const call = String(g.display ?? '');
+    const paren = call.indexOf('(');
+    const shown = paren > 0 ? `<span class="tool">${esc(call.slice(0, paren))}</span>${esc(call.slice(paren))}` : esc(call);
+    const rules = (g.rules ?? []).map((r) => `<li class="rule ${r.pass ? 'ok' : 'bad'}"><span class="mark">${r.pass ? '✓' : '✕'}</span>`
+      + `<span class="rid">${esc(r.id)}</span><div><div class="desc">${esc(r.description)}</div><div class="cmp">${esc(r.compared)}</div></div></li>`).join('');
+    const reason = g.reason ? `<div class="reason">Reason: <b>${esc(labelText(g.reason))}</b></div>` : '';
+    // The turn on screen made this call: plain "turn N". It made none of its own (a quarantined
+    // turn, or one that only asked a question) and the card is still showing an earlier call: say so.
+    const turnLabel = isCurrent ? `turn ${g.turnIndex}` : `last call: turn ${g.turnIndex}`;
+    return `<div class="card-head"><span class="card-title">Action gate · proposed call</span><span class="gate-turn">${esc(turnLabel)}</span><span class="verdict ${esc(g.verdict)}">${esc(verdictText(g.verdict))}</span></div>`
+      + `<div class="call">${shown}</div>${reason}<ul class="rules">${rules}</ul>`;
+  }
+
+  function sourceHtml(s) {
+    const badge = s.fresh ? '<span class="fresh-badge ok">Source unchanged</span>' : '<span class="fresh-badge stale">Stale: withheld</span>';
+    return `<div class="card-head"><span class="card-title">Knowledge source</span>${badge}</div>`
+      + `<div class="doc">${esc(s.document)}</div>`
+      + `<div class="meta">§ ${esc(s.section)} · <b>version ${esc(s.version)}</b> · <span class="mono" style="color:var(--faint)">${esc(s.passageId)}</span></div>`
+      + `<div class="meta">Effective ${esc(s.effective)} to present · Approved by Compliance Review on ${esc(s.approved)}</div>`;
+  }
+
+  function handoffHtml(h) {
+    const packet = (h.packet ?? []).map((p) => {
+      const i = p.indexOf(': ');
+      return i > 0 ? `<dt>${esc(p.slice(0, i))}</dt><dd>${esc(p.slice(i + 2))}</dd>` : `<dt></dt><dd>${esc(p)}</dd>`;
+    }).join('');
+    let summary;
+    // The demo feed's summary is scripted text, and the card says so rather than crediting a model.
+    const note = h.summaryDemo
+      ? 'Demo text · not written by a model'
+      : `Identity and Blocked from the audit log · Wanted, Done and Next written by Claude Haiku · never spoken to ${esc(APP.heardBy)}`;
+    if (h.summary) summary = `<div class="summary">${noteLines(h.summary)}<span class="note">${note}</span></div>`;
+    // A replayed trace never carries the summary event, so only a live call is still waiting for one.
+    else if (h.summaryPending && state.mode === 'live') summary = '<div class="summary wait">Writing a summary for the human agent…</div>';
+    else summary = '<div class="summary none">Summary unavailable</div>';
+    return `<div class="card-head"><span class="card-title">Handoff to a person</span><span class="reason-badge">${esc(handoffReasonText(h.reason))}</span></div>`
+      + (packet ? `<dl class="kv">${packet}</dl>` : '<div class="meta">Nothing collected yet</div>') + summary;
+  }
+
+  /** One audit line without what the gate card already says in full: nulls, the tool twice, the rule list. */
+  function auditDetail(a) {
+    let d = String(a.line ?? '');
+    if (d.startsWith(`${a.type}(`) && d.endsWith(')')) d = d.slice(a.type.length + 1, -1);
+    // Drop fields with nothing to say: a null, or an empty list (`completed=`).
+    d = d.replace(/(^|, )[A-Za-z]+=(null)?(?=, |$)/g, '').replace(/^, /, '');
+    if (a.type === 'gate') d = d.replace(/^tool=\w+, /, '').replace(/^call=/, '').replace(/, rules=.*$/, '');
+    return d;
+  }
+
+  function auditClass(a) {
+    if (a.type === 'screen_fired' || /verdict=BLOCK/.test(a.line)) return 't-bad';
+    if (/verdict=(STEP_UP|NEEDS_HUMAN)/.test(a.line) || a.type === 'handoff' || a.type === 'screen_error') return 't-warn';
+    if (a.type === 'identity' || APP.goodAuditTypes.includes(a.type)) return 't-good';
+    return '';
+  }
+
+  function auditHtml(v) {
+    const tail = v.auditTail ?? [];
+    let body;
+    if (tail.length) {
+      body = `<div class="alist">${tail.map((a, i) => `<div class="arow${i === tail.length - 1 ? ' newest' : ''}${a.fromTrace ? ' from-trace' : ''}">`
+        + `<span class="aseq">${a.fromTrace ? '—' : esc(a.seq)}</span><span class="atype ${auditClass(a)}">${esc(a.type)}</span>`
+        + `<span class="adet" title="${esc(a.line)}">${esc(auditDetail(a))}</span><span class="ahash">${a.fromTrace ? 'from trace' : `#${esc(a.hash)}`}</span></div>`).join('')}</div>`;
+    } else if (state.mode === 'replay') {
+      body = '<div class="blank">The audit log streams live; a replayed trace does not carry it.</div>';
+    } else {
+      body = '<div class="blank">No entries yet</div>';
+    }
+    // A reconstructed tail (view.js's pushAuditDrafts) never carries a hash chain, so the footer
+    // says what it actually is instead of pointing at `pnpm audit:verify`.
+    const foot = tail.some((a) => a.fromTrace)
+      ? 'from trace · reconstructed from the record’s own audit drafts, no seq or hash chain'
+      : 'hash-chained · pnpm audit:verify';
+    const count = tail.length ? `${tail.length} this call · newest at the bottom, scroll for earlier` : 'newest at the bottom';
+    return `<div class="card-head"><span class="card-title">Audit log</span><span class="aside">${count}</span></div>`
+      + `${body}<div class="afoot">${foot}</div>`;
+  }
+
+  function barHtml(row) {
+    const threshold = num(row.threshold);
+    const tick = threshold === null ? '' : `<em style="left:${pct(threshold)}"></em>`;
+    const p = num(row.p);
+    // The pulse means "the batch is still out". A row with an answer but no probability to draw
+    // (a score no gate compared, so there is no value/rule pair) gets an empty bar instead.
+    if (row.kind === 'pending') return `<div class="bar pending"><i></i>${tick}</div>`;
+    if (p === null) return `<div class="bar">${tick}</div>`;
+    // Green when the record called the row decisive, plain blue when it merely crossed its tick,
+    // grey when it did neither.
+    const cls = row.decisive ? 'hi' : threshold !== null && p >= threshold ? '' : 'lo';
+    return `<div class="bar"><i class="${cls}" style="width:${pct(p)}"></i>${tick}</div>`;
+  }
+
+  function valueHtml(row) {
+    const p = num(row.p);
+    // An answered row with no probability still has its answer: the winning level of a score.
+    if (p === null) return row.value ? esc(row.value) : '<span class="muted">…</span>';
+    if (row.kind === 'noul') return esc(row.value ?? p.toFixed(2));
+    return `${esc(row.value ?? '')} <span class="muted">${p.toFixed(2)}</span>`;
+  }
+
+  function rowHtml(row) {
+    const top = row.decisive && row.kind === 'choice' && row.top && row.top.length
+      ? `<div class="top">${row.top.map((t) => `<span class="${t.label === row.value ? 'win' : ''}">${esc(t.label)} ${(num(t.p) ?? 0).toFixed(2)}</span>`).join('')}</div>`
+      : '';
+    return `<div class="row"><span class="id" title="${esc(row.id)}">${esc(row.id)}</span>`
+      + `${barHtml(row)}<span class="val">${valueHtml(row)}</span>${top}</div>`;
+  }
+
+  /** Every Jev group, as the full view has always drawn them; a decisive group is always open. */
+  function groupsHtml(jev, groups) {
+    return groups.map((g) => {
+      // While the batch is still out every group is open, so the empty bars of the question batch are what appears.
+      const open = jev.pending || g.decisive || state.open.has(g.name);
+      const quiet = !open && g.quiet ? ` (${g.quiet} quiet)` : '';
+      return `<div class="grp" data-grp="${esc(g.name)}">${esc(g.name)}${quiet}</div>`
+        + (open ? g.rows.map(rowHtml).join('') : '');
+    }).join('');
+  }
+
+  function perceptionHtml(v) {
+    const jev = v.jev ?? { header: 'Jev', pending: false, groups: [], decision: '' };
+    const groups = (jev.groups ?? []).filter((g) => g && g.rows && g.rows.length);
+    // Presenter mode is always top signals: all of them would never fit a shared screen.
+    const showAll = state.showAll && !document.body.classList.contains('presenter');
+    let body;
+    if (showAll) body = groupsHtml(jev, groups);
+    else if (jev.pending) body = `<div class="row"><span class="id muted">asking Jev…</span><div class="bar pending"><i></i></div><span class="val muted">in flight</span></div>`;
+    else {
+      const top = groups.flatMap((g) => g.rows.filter((r) => r.decisive));
+      body = top.length ? top.map(rowHtml).join('') : '<div class="muted" style="font-size:.9em">No decisive signals this turn</div>';
+    }
+    const decision = jev.decision ? `<div class="decision">${esc(jev.decision)}</div>` : '';
+    // The values stay visible, just dimmed (see the .discarded rules): nothing here was acted on,
+    // but it is still what perception read.
+    const banner = v.perceptionDiscarded
+      ? '<div class="discarded-banner">Discarded: quarantined turn. Perception read this; nothing acted on it.</div>'
+      : '';
+    return `<div class="card-head"><span class="card-title">Perception · ${showAll ? 'all signals' : 'top signals'}</span>`
+      + `<button class="toggle" data-toggle="1">${state.showAll ? 'Top signals' : 'Show all'}</button></div>`
+      + banner + `<div class="jevhead">${esc(jev.header)}</div>${body}${decision}`;
+  }
+
+  // ---------- header ----------
+
+  function statusText(v) {
+    if (state.mode !== 'replay') return v.status;
+    if (!v.callSid) return 'waiting for a call';
+    // In replay the call's own id is more use than `live · replay`, but the end of the call still
+    // has to show.
+    const ended = String(v.status).startsWith('ended') ? ` · ${v.status}` : '';
+    const name = traceNames()[v.callSid];
+    return `replay · ${name ? `${name} (${String(v.callSid).slice(0, 10)}…)` : v.callSid}${ended}`;
+  }
+
+  function headerRender(v, acc) {
+    const t = v.totals ?? { askMs: 0, tokens: 0, usd: 0, p50AskMs: 0 };
+    el('status').textContent = statusText(v);
+    const dot = el('dot');
+    dot.className = 'dot' + (state.mode === 'replay' ? (v.callSid ? ' replay' : '') : String(v.status).startsWith('live') ? ' on' : '');
+    const channel = el('channel');
+    channel.hidden = !v.callSid;
+    const chat = v.channel === 'chat';
+    channel.innerHTML = chat ? `<span>Chat</span>${v.caller ? `<span class="k">· ${esc(v.caller)}</span>` : ''}` : '<span>Voice</span>';
+    const level = Math.max(0, Math.min(2, Number(v.level) || 0));
+    const badge = el('level');
+    badge.className = `badge level l${level}${acc.levelOn ? ' pulse' : ''}`;
+    if (acc.levelRose) restart(badge, 'pulse');
+    // On a chat, level 2 is the portal's own sign-in, never a texted code.
+    const label = chat && level === 2 ? 'portal sign-in' : LEVELS[level];
+    badge.innerHTML = `<span class="pips"><i></i><i></i></span><span><span class="k">Level ${level}:</span> ${esc(label)}</span>`;
+    const p50 = Math.round(num(t.p50AskMs) ?? 0);
+    el('totals').innerHTML = `<span><b>${esc(v.turnCount)}</b> turns</span><span><b>$${(num(t.usd) ?? 0).toFixed(4)}</b></span><span>p50 ask <b>${p50}</b> ms</span>`;
+  }
+
+  function render(v) {
+    state.view = v;
+    // A different call starts the accents over: its first render is a baseline, not news.
+    if (state.accent.callSid !== v.callSid) { state.accent = freshAccents(); state.accent.callSid = v.callSid; }
+    const blocks = exchanges(v.lines ?? []);
+    const acc = accents(v, blocks.length);
+    headerRender(v, acc);
+    const now = el('now');
+    const n = v.now ?? { state: 'idle', chips: [], queued: [] };
+    now.className = `card now s-${n.state}`;
+    now.innerHTML = nowHtml(n, acc.glowAge);
+    // A different call starts over in Turns, following it; Live/Replay on the same call keeps the view.
+    const newCall = !!v.callSid && !!state.convCall && v.callSid !== state.convCall;
+    if (newCall) { state.convView = 'turns'; state.convScroll = { turns: null, script: null }; syncConvTabs(); }
+    if (v.callSid) state.convCall = v.callSid;
+    paintConversation(v, blocks, acc.turnAge, newCall);
+
+    const gate = el('gate');
+    gate.innerHTML = gateHtml(v.gate, v.gateIsCurrent);
+    gate.className = `card gate${v.gate ? ` v-${v.gate.verdict}` : ''}${v.gate && !v.gateIsCurrent ? ' stale' : ''}${acc.gateOn ? ' fresh' : ''}`;
+    if (acc.gateNew) restart(gate, 'fresh');
+
+    el('handoff').hidden = !v.handoff;
+    if (v.handoff) el('handoff').innerHTML = handoffHtml(v.handoff);
+    el('source').hidden = !v.source;
+    if (v.source) el('source').innerHTML = sourceHtml(v.source);
+    // The audit list follows the newest entry, unless it has been scrolled up to read earlier ones.
+    const before = document.querySelector('#audit .alist');
+    const following = !before || before.scrollHeight - before.scrollTop - before.clientHeight <= 6;
+    const kept = before ? before.scrollTop : 0;
+    el('audit').innerHTML = auditHtml(v);
+    const perception = el('perception');
+    perception.classList.toggle('discarded', !!v.perceptionDiscarded);
+    perception.innerHTML = perceptionHtml(v);
+    fitAudit();
+    const list = document.querySelector('#audit .alist');
+    if (list) list.scrollTop = following ? list.scrollHeight : kept;
+  }
+
+  /**
+   * The audit list is the call's whole log in a box of its own height, scrolling inside and following
+   * the newest entry: it is read after the call more than during it, so it gets a fixed share of the
+   * right column rather than all of it. The normal view gives it AUDIT_ROWS rows and the column scrolls.
+   * Presenter mode has no room to scroll on a shared screen, so the column gives way in order of what
+   * matters least right now until it fits the window: the audit box shrinks, from AUDIT_ROWS_PRESENTER
+   * rows down to AUDIT_MIN (it is still all there, a scroll away); then the knowledge source card (it
+   * answered a question turns ago); then the perception card, whole (a half-drawn one reads as missing
+   * signals); then the audit box down to one row; then the audit footer. The gate and handoff cards
+   * never give way.
+   */
+  const AUDIT_ROWS = 12;
+  const AUDIT_ROWS_PRESENTER = 8;
+  const AUDIT_MIN = 3;
+  function fitAudit() {
+    const list = document.querySelector('#audit .alist');
+    const row = list?.querySelector('.arow');
+    const rowH = row ? row.getBoundingClientRect().height : 0;
+    const setRows = (n) => { if (list && rowH) list.style.maxHeight = `${Math.round(n * rowH)}px`; };
+    const giveway = [el('perception'), el('source'), document.querySelector('#audit .afoot')].filter(Boolean);
+    for (const g of giveway) g.classList.remove('fit-hidden');
+    if (!document.body.classList.contains('presenter')) { setRows(AUDIT_ROWS); return; }
+    const col = document.querySelector('.right');
+    const over = () => col.scrollHeight > col.clientHeight + 1;
+    let rows = AUDIT_ROWS_PRESENTER;
+    setRows(rows);
+    const shrink = (floor) => { while (rows > floor && over()) setRows(--rows); };
+    shrink(AUDIT_MIN);
+    if (over() && el('source')) el('source').classList.add('fit-hidden');
+    if (over()) el('perception').classList.add('fit-hidden');
+    shrink(1);
+    const foot = document.querySelector('#audit .afoot');
+    if (over() && foot) foot.classList.add('fit-hidden');
+  }
+  window.addEventListener('resize', fitAudit);
+
+  el('perception').addEventListener('click', (e) => {
+    if (!e.target.closest) return;
+    if (e.target.closest('[data-toggle]')) { state.showAll = !state.showAll; render(state.view); return; }
+    const head = e.target.closest('.grp');
+    if (!head) return;
+    const name = head.dataset.grp;
+    if (state.open.has(name)) state.open.delete(name); else state.open.add(name);
+    render(state.view);
+  });
+
+  // ---------- live ----------
+
+  function startLive() {
+    stopPlay();
+    state.mode = 'live';
+    state.events = []; state.lastSeq = -1; state.callSid = null;
+    state.all = []; state.stops = [0]; state.cursor = 0; state.sid = null;
+    state.accent = freshAccents();
+    showControls();
+    if (state.es) state.es.close();
+    const es = new EventSource('/dashboard/events');
+    state.es = es;
+    es.onopen = () => { el('conn').textContent = ''; };
+    es.onerror = () => { el('conn').textContent = 'reconnecting…'; };
+    // A reconnect to a restarted server (a new build) reloads the page, so its styles and scripts are never stale.
+    es.addEventListener('boot', (m) => {
+      let id;
+      try { id = JSON.parse(m.data).bootId; } catch { return; }
+      if (typeof id !== 'string') return;
+      if (state.bootId && state.bootId !== id) { location.reload(); return; }
+      state.bootId = id;
+    });
+    es.onmessage = (m) => {
+      let event;
+      try { event = JSON.parse(m.data); } catch { return; }
+      if (!event || typeof event !== 'object') return;
+      el('conn').textContent = '';
+      // A new call resets both the list and the sequence watermark: the bus starts its history
+      // over, and a restarted server starts its numbering over too.
+      if (event.type === 'call_started' && event.callSid !== state.callSid) {
+        state.events = []; state.lastSeq = -1; state.callSid = event.callSid;
+      }
+      // The bus replays its whole history to every new subscriber, so a reconnect re-delivers
+      // events already held; the sequence number is what makes that idempotent.
+      const seq = num(event.seq);
+      if (seq !== null) {
+        if (seq <= state.lastSeq) return;
+        // A stalled viewer can have events dropped server-side (routes.ts skips writes once the
+        // backlog passes 1 MB); a gap in the sequence is the only sign of that reaching the page.
+        if (state.lastSeq > 0 && seq > state.lastSeq + 1) {
+          el('conn').textContent = `missed ${seq - state.lastSeq - 1} events, reload to catch up`;
+        }
+        state.lastSeq = seq;
+      }
+      state.events.push(event);
+      try {
+        render(reduce(state.events));
+      } catch (err) {
+        // A malformed event must not take down every render after it; drop just this one and keep
+        // showing the last view that worked.
+        if (!state.renderErrorLogged) { console.error('dashboard: failed to render event', event, err); state.renderErrorLogged = true; }
+        state.events.pop();
+      }
+    };
+    render(reduce(state.events));
+  }
+
+  // ---------- replay ----------
+
+  async function json(url) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async function startReplay() {
+    state.mode = 'replay';
+    if (state.es) { state.es.close(); state.es = null; }
+    el('conn').textContent = '';
+    showControls();
+    const rows = (await json('/dashboard/traces')) ?? [];
+    const list = Array.isArray(rows) ? rows : [];
+    state.traceRows = list;
+    fillTraces();
+    // "Replay this call": the most recent trace is the call that just happened, or, if the
+    // dashboard is still live-following one, that call's trace as recorded so far -- either way
+    // the row the traces route already put first (latestTrace just names it).
+    const latest = latestTrace(list);
+    el('trace').value = latest ? String(latest.callSid) : '';
+    await pick(latest ? String(latest.callSid) : '');
+  }
+
+  // ---------- run names ----------
+
+  /**
+   * Names for runs in the Replay picker ("DemoRun"), by call id. Kept in this browser only: nothing
+   * is written to the trace files or the server, and a name outlives restarts and reloads.
+   */
+  const NAMES_KEY = `${APP.brand.key}.console.traceNames`;
+  function traceNames() {
+    try {
+      const v = JSON.parse(localStorage.getItem(NAMES_KEY) ?? '{}');
+      return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    } catch { return {}; }
+  }
+
+  /**
+   * The picker's options, from the last listing. The full sid (and the name, when there is one) lives
+   * in `title` for a hover; the option carries only what fits the bar at 1920 wide.
+   */
+  function fillTraces() {
+    const sel = el('trace');
+    const keep = sel.value;
+    const names = traceNames();
+    const list = state.traceRows ?? [];
+    sel.innerHTML = list.length
+      ? list.map((r) => {
+          const sid = esc(String(r.callSid));
+          return `<option value="${sid}" title="${sid}">${esc(traceLabel(r, names[String(r.callSid)]))}</option>`;
+        }).join('')
+      : '<option value="">no traces yet</option>';
+    if (keep) sel.value = keep;
+  }
+
+  el('rename').addEventListener('click', (e) => {
+    e.currentTarget.blur();
+    const sid = el('trace').value;
+    if (!sid) return;
+    const names = traceNames();
+    const answer = window.prompt('Name this run (leave empty to show its call id again)', names[sid] ?? '');
+    if (answer === null) return;
+    const name = cleanTraceName(answer);
+    if (name) names[sid] = name; else delete names[sid];
+    try { localStorage.setItem(NAMES_KEY, JSON.stringify(names)); } catch { /* storage blocked: the name lasts until the list reloads */ }
+    fillTraces();
+    render(state.view);
+  });
+
+  async function pick(sid) {
+    stopPlay();
+    state.sid = sid; state.all = []; state.stops = [0]; state.cursor = 0; state.totalTurns = 0;
+    state.accent = freshAccents();
+    if (!sid) { render(reduce([])); el('pos').textContent = ''; return; }
+    // Re-fetched every time, including a trace this page already showed: entering Replay while a
+    // call is still in progress must pick up whatever turns have landed since.
+    const data = await json(`/dashboard/traces/${encodeURIComponent(sid)}`);
+    const records = data && Array.isArray(data.records) ? data.records : [];
+    const frames = data && Array.isArray(data.frames) ? data.frames : [];
+    state.all = replayEvents(records, frames, { from: 'replay', thresholds: DEFAULTS });
+    state.stops = replayStops(state.all);
+    state.totalTurns = reduce(state.all).turnCount;
+    draw();
+  }
+
+  /** Cursor 0 shows nothing, 1 shows `call_started`; stepping back re-reduces from the start. */
+  function draw() {
+    const v = reduce(state.all.slice(0, state.cursor), { fromTrace: true });
+    render(v);
+    el('pos').textContent = positionText(v.turnCount, state.totalTurns, state.cursor, state.all.length);
+  }
+
+  function step(delta) {
+    stopPlay();
+    state.cursor = stepStop(state.stops, state.cursor, delta);
+    draw();
+  }
+
+  /** How long to hold the screen before showing `all[i]`: the recorded gap, or the narration beat. */
+  function delayFor(i) {
+    const prev = state.all[i - 1];
+    if (!prev) return 0;
+    // The question batch is out for ~170 ms live, which is invisible; hold it for the beat.
+    if (prev.type === 'asked') return beatMs();
+    const gap = num(state.all[i].at) !== null && num(prev.at) !== null ? state.all[i].at - prev.at : 0;
+    return Math.min(CAP_MS, Math.max(0, gap)) / speed();
+  }
+
+  function tick() {
+    if (!state.playing) return;
+    if (state.cursor >= state.all.length) { setPlaying(false); return; }
+    const i = state.cursor;
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      state.cursor = i + 1;
+      draw();
+      tick();
+    }, delayFor(i));
+  }
+
+  function setPlaying(on) {
+    state.playing = on && state.cursor < state.all.length;
+    el('play').textContent = state.playing ? 'Pause' : 'Play';
+    el('play').classList.toggle('on', state.playing);
+    if (state.playing) tick();
+  }
+
+  function stopPlay() {
+    state.playing = false;
+    if (state.timer !== null) { clearTimeout(state.timer); state.timer = null; }
+    el('play').textContent = 'Play';
+    el('play').classList.remove('on');
+  }
+
+  // ---------- chrome ----------
+
+  function showControls() {
+    const replay = state.mode === 'replay';
+    for (const id of ['trace', 'rename', 'reset', 'back', 'step', 'play', 'speed', 'beatwrap', 'pos']) el(id).hidden = !replay;
+    document.body.classList.toggle('replay', replay);
+    el('mode-live').classList.toggle('on', !replay);
+    el('mode-replay').classList.toggle('on', replay);
+    el('note').textContent = replay ? "thresholds: today's defaults" : '';
+  }
+
+  /** Presenter mode: larger type, perception as top signals only when it fits, a compact replay bar. Remembered per browser. */
+  function setPresenter(on) {
+    document.body.classList.toggle('presenter', on);
+    el('presenter').classList.toggle('on', on);
+    try { localStorage.setItem(PRESENTER_KEY, on ? '1' : '0'); } catch { /* storage blocked: the choice lasts this page only */ }
+    // Redrawn, not just refitted: perception's card differs in presenter mode (top signals only).
+    render(state.view);
+    const conv = el('conversation');
+    conv.scrollTop = pinnedEdge(conv);
+  }
+  let remembered = false;
+  try { remembered = localStorage.getItem(PRESENTER_KEY) === '1'; } catch { /* storage blocked */ }
+  // `?presenter=1` (or 0) in the address wins, for a bookmark or a headless screenshot.
+  const asked = new URLSearchParams(location.search).get('presenter');
+  setPresenter(asked === null ? remembered : asked === '1');
+
+  el('presenter').addEventListener('click', (e) => { e.currentTarget.blur(); setPresenter(!document.body.classList.contains('presenter')); });
+  // The app's own pages (ConsoleMeta.links), each in a window of its own that a second click reuses.
+  for (const link of APP.links) el(link.id).addEventListener('click', () => { window.open(link.href, link.target, link.features); });
+  el('mode-live').addEventListener('click', () => { if (state.mode !== 'live') startLive(); });
+  el('mode-replay').addEventListener('click', () => { if (state.mode !== 'replay') void startReplay(); });
+  el('trace').addEventListener('change', (e) => void pick(e.target.value));
+  el('reset').addEventListener('click', () => { stopPlay(); state.cursor = 0; draw(); });
+  el('back').addEventListener('click', () => step(-1));
+  el('step').addEventListener('click', () => step(1));
+  el('play').addEventListener('click', () => (state.playing ? stopPlay() : setPlaying(true)));
+  el('speed').addEventListener('change', () => { if (state.playing) { stopPlay(); setPlaying(true); } });
+
+  window.addEventListener('keydown', (e) => {
+    // The beat box and the pickers keep their own keys.
+    const tag = e.target && e.target.tagName ? e.target.tagName : '';
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if ((e.key === 'p' || e.key === 'P') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      setPresenter(!document.body.classList.contains('presenter'));
+      return;
+    }
+    if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      setConvView(state.convView === 'script' ? 'turns' : 'script');
+      return;
+    }
+    // Whichever button was last clicked keeps focus; left there, Space/Enter would also fire the
+    // browser's own activation of that button on top of the handling below (a toggle undone by a
+    // second toggle looks like nothing happened). Blurring it makes these keys work no matter which
+    // button was clicked last.
+    const deactivate = () => {
+      e.preventDefault();
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    };
+    // R toggles Live/Replay in either mode -- checked before the replay-only gate below, and
+    // guarded against the modifiers so cmd/ctrl+R still reloads the page as usual.
+    if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      deactivate();
+      if (state.mode === 'replay') startLive(); else void startReplay();
+      return;
+    }
+    if (state.mode !== 'replay') return;
+    if (e.key === 'ArrowRight') { deactivate(); step(1); }
+    else if (e.key === 'ArrowLeft') { deactivate(); step(-1); }
+    else if (e.key === 'Home') { deactivate(); stopPlay(); state.cursor = 0; draw(); }
+    else if (e.key === 'End') { deactivate(); stopPlay(); state.cursor = state.all.length; draw(); }
+    // ' ' is what a browser sends; 'Spacebar' is the old name, `code` the layout-independent one.
+    else if (e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space') { deactivate(); if (state.playing) stopPlay(); else setPlaying(true); }
+  });
+
+  // A restarted server reloads the page in Replay too: Live learns of it from the feed's boot event,
+  // Replay by asking every few seconds. The replay position survives the reload, so a restart never
+  // costs the presenter their place.
+  const RESUME_KEY = `${APP.brand.key}.console.resume`;
+  const BOOT_POLL_MS = 4000;
+  setInterval(async () => {
+    if (state.mode !== 'replay') return;
+    const b = await json('/dashboard/boot');
+    const id = b && typeof b.bootId === 'string' ? b.bootId : null;
+    if (!id) return;
+    if (state.bootId && state.bootId !== id) {
+      try { sessionStorage.setItem(RESUME_KEY, JSON.stringify({ mode: 'replay', sid: state.sid, cursor: state.cursor })); } catch { /* storage blocked: reload starts live */ }
+      location.reload();
+      return;
+    }
+    state.bootId = id;
+  }, BOOT_POLL_MS);
+
+  (async () => {
+    let resume = null;
+    try {
+      resume = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? 'null');
+      sessionStorage.removeItem(RESUME_KEY);
+    } catch { /* storage blocked or bad value: start live */ }
+    if (!resume || resume.mode !== 'replay') { startLive(); return; }
+    const b = await json('/dashboard/boot');
+    if (b && typeof b.bootId === 'string') state.bootId = b.bootId;
+    await startReplay();
+    const sid = typeof resume.sid === 'string' ? resume.sid : '';
+    if (sid && [...el('trace').options].some((o) => o.value === sid)) {
+      el('trace').value = sid;
+      await pick(sid);
+      state.cursor = Math.max(0, Math.min(state.all.length, Number(resume.cursor) || 0));
+      draw();
+    }
+  })();
+</script>
+</body></html>

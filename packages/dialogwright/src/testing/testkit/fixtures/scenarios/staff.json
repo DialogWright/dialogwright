@@ -1,0 +1,62 @@
+[
+  {
+    "id": "staff-track-in-depot",
+    "as": "taylor",
+    "steps": [
+      {
+        "say": "status of parcel 7201"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "a coffee grinder, is on its way",
+      "gate": "getParcel:ALLOW"
+    }
+  },
+  {
+    "id": "staff-track-outside-depot",
+    "as": "taylor",
+    "steps": [
+      {
+        "say": "status of parcel 7301"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "for a customer your depot serves",
+      "gate": "getParcel:BLOCK"
+    }
+  },
+  {
+    "id": "staff-report-viewer",
+    "as": "taylor",
+    "steps": [
+      {
+        "say": "file a missing parcel report for a customer"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "Your role can't file reports.",
+      "gate": "createReport:BLOCK"
+    }
+  },
+  {
+    "id": "staff-report-clerk",
+    "as": "morgan",
+    "steps": [
+      {
+        "say": "i need to report a missing parcel for a customer"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "role-person",
+      "text": "filed with a person",
+      "gate": "createReport:NEEDS_HUMAN"
+    }
+  }
+]

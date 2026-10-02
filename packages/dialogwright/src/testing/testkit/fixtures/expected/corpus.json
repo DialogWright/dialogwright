@@ -1,0 +1,2876 @@
+{
+  "tk-01": {
+    "id": "tk-01",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "tk-02": {
+    "id": "tk-02",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "tk-03": {
+    "id": "tk-03",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": "7101",
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "tk-04": {
+    "id": "tk-04",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "tk-05": {
+    "id": "tk-05",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "tk-06": {
+    "id": "tk-06",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": "7101",
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "tk-07": {
+    "id": "tk-07",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": "7201",
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "tk-08": {
+    "id": "tk-08",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "tk-09": {
+    "id": "tk-09",
+    "decision": "prompt",
+    "promptId": "confirm_intent_explicit",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tk-10": {
+    "id": "tk-10",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": "7102",
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "dw-01": {
+    "id": "dw-01",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "dw-02": {
+    "id": "dw-02",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": "2026-09-21",
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "dw-03": {
+    "id": "dw-03",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "dw-04": {
+    "id": "dw-04",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": "2026-09-19",
+      "deliveryPart": "morning",
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "dw-05": {
+    "id": "dw-05",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "dw-06": {
+    "id": "dw-06",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": "2026-09-22",
+      "deliveryPart": "afternoon",
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "dw-07": {
+    "id": "dw-07",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": "2026-09-20",
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "rm-01": {
+    "id": "rm-01",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "rm-02": {
+    "id": "rm-02",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "rm-03": {
+    "id": "rm-03",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "rm-04": {
+    "id": "rm-04",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a parcel is missing, it was a small box left at the back door",
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "rm-05": {
+    "id": "rm-05",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": "2026-09-17"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "rm-06": {
+    "id": "rm-06",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "i think my parcel was stolen from the porch",
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "ag-01": {
+    "id": "ag-01",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-02": {
+    "id": "ag-02",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-03": {
+    "id": "ag-03",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cp-01": {
+    "id": "cp-01",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "capabilities"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cp-02": {
+    "id": "cp-02",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "capabilities"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-01": {
+    "id": "rp-01",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-02": {
+    "id": "rp-02",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-01": {
+    "id": "dn-01",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-01": {
+    "id": "ot-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-02": {
+    "id": "ot-02",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-01": {
+    "id": "ns-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intelligible",
+    "verdict": "nomatch",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-02": {
+    "id": "ns-02",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-03": {
+    "id": "ns-03",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-04": {
+    "id": "ns-04",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-05": {
+    "id": "ns-05",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "fr-01": {
+    "id": "fr-01",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_frustration",
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "fr-02": {
+    "id": "fr-02",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "fr-03": {
+    "id": "fr-03",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [
+      "ack_frustration"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "fr-04": {
+    "id": "fr-04",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [
+      "ack_frustration"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "mu-01": {
+    "id": "mu-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "mu-02": {
+    "id": "mu-02",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "mu-03": {
+    "id": "mu-03",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "st-01": {
+    "id": "st-01",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent_then"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [
+      "delivery_window"
+    ],
+    "principalLevel": 0,
+    "gate": "listParcels:STEP_UP"
+  },
+  "st-02": {
+    "id": "st-02",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent_then"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [
+      "track_parcel"
+    ],
+    "principalLevel": 0,
+    "gate": "getAccount:STEP_UP"
+  },
+  "mp-01": {
+    "id": "mp-01",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "screen_reprompt"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "mp-02": {
+    "id": "mp-02",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "screen_reprompt"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "mp-03": {
+    "id": "mp-03",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "screen_reprompt_form"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "mp-04": {
+    "id": "mp-04",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [
+      "screen_reprompt_form"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "mp-05": {
+    "id": "mp-05",
+    "decision": "prompt",
+    "promptId": "ask_missingNote",
+    "acks": [
+      "screen_reprompt_form"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "am-01": {
+    "id": "am-01",
+    "decision": "prompt",
+    "promptId": "ask_parcelSelect_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "am-02": {
+    "id": "am-02",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "am-03": {
+    "id": "am-03",
+    "decision": "prompt",
+    "promptId": "ask_expectedDate_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "sf-01": {
+    "id": "sf-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "parcel_status_in_transit"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW"
+  },
+  "sf-02": {
+    "id": "sf-02",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "parcel_blocked_scope_agent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:BLOCK"
+  },
+  "sf-03": {
+    "id": "sf-03",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "report_blocked_role"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "createReport:BLOCK"
+  },
+  "sf-04": {
+    "id": "sf-04",
+    "decision": "handoff",
+    "promptId": "handoff_role_person",
+    "acks": [],
+    "reason": "role-person",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "createReport:NEEDS_HUMAN"
+  },
+  "id-01": {
+    "id": "id-01",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-02": {
+    "id": "id-02",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55501234",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-03": {
+    "id": "id-03",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-04": {
+    "id": "id-04",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-05": {
+    "id": "id-05",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55505678",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-06": {
+    "id": "id-06",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55509012",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-07": {
+    "id": "id-07",
+    "decision": "prompt",
+    "promptId": "ask_accountId_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-08": {
+    "id": "id-08",
+    "decision": "prompt",
+    "promptId": "ask_otp",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW"
+  },
+  "id-09": {
+    "id": "id-09",
+    "decision": "prompt",
+    "promptId": "ask_deliveryDay",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getAccount:ALLOW"
+  },
+  "id-10": {
+    "id": "id-10",
+    "decision": "prompt",
+    "promptId": "ask_dob_year",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-11": {
+    "id": "id-11",
+    "decision": "prompt",
+    "promptId": "ask_dob_whole",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-12": {
+    "id": "id-12",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_failed"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyCustomer:ALLOW"
+  },
+  "id-13": {
+    "id": "id-13",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_failed"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": null,
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyCustomer:ALLOW"
+  },
+  "id-14": {
+    "id": "id-14",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55500000",
+      "dob": null,
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ps-01": {
+    "id": "ps-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "parcel_status_in_transit"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW"
+  },
+  "ps-02": {
+    "id": "ps-02",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "parcel_status_in_transit"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW"
+  },
+  "ps-03": {
+    "id": "ps-03",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "parcel_status_delivered"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW"
+  },
+  "ps-04": {
+    "id": "ps-04",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "parcel_status_delivered"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW"
+  },
+  "ps-05": {
+    "id": "ps-05",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "parcel_blocked_scope"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:BLOCK"
+  },
+  "ps-06": {
+    "id": "ps-06",
+    "decision": "prompt",
+    "promptId": "ask_parcelSelect_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ps-07": {
+    "id": "ps-07",
+    "decision": "prompt",
+    "promptId": "disambiguate_parcelSelect",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ps-08": {
+    "id": "ps-08",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_frustration",
+      "parcel_status_in_transit"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getParcel:ALLOW"
+  },
+  "ps-09": {
+    "id": "ps-09",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ps-10": {
+    "id": "ps-10",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ps-11": {
+    "id": "ps-11",
+    "decision": "prompt",
+    "promptId": "ask_parcelSelect",
+    "acks": [
+      "capabilities"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ps-12": {
+    "id": "ps-12",
+    "decision": "prompt",
+    "promptId": "ask_parcelSelect",
+    "acks": [
+      "ack_queued"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "queue",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [
+      "delivery_window"
+    ],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ps-13": {
+    "id": "ps-13",
+    "decision": "prompt",
+    "promptId": "ask_missingNote",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getAccount:ALLOW"
+  },
+  "dd-01": {
+    "id": "dd-01",
+    "decision": "prompt",
+    "promptId": "ask_deliveryPart",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": "2026-09-21",
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "dd-02": {
+    "id": "dd-02",
+    "decision": "prompt",
+    "promptId": "ask_deliveryPart",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": "2026-09-19",
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "dd-03": {
+    "id": "dd-03",
+    "decision": "prompt",
+    "promptId": "ask_deliveryPart",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": "2026-09-20",
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "dd-04": {
+    "id": "dd-04",
+    "decision": "prompt",
+    "promptId": "ask_deliveryPart",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": "2026-09-24",
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "dd-05": {
+    "id": "dd-05",
+    "decision": "prompt",
+    "promptId": "ask_deliveryDay_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "dd-06": {
+    "id": "dd-06",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "window_open"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getWindows:ALLOW"
+  },
+  "dp-01": {
+    "id": "dp-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "window_open"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getWindows:ALLOW"
+  },
+  "dp-02": {
+    "id": "dp-02",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "window_open"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getWindows:ALLOW"
+  },
+  "dp-03": {
+    "id": "dp-03",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "window_open"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getWindows:ALLOW"
+  },
+  "dp-04": {
+    "id": "dp-04",
+    "decision": "prompt",
+    "promptId": "ask_deliveryPart_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "delivery_window",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": "2026-09-21",
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "nt-01": {
+    "id": "nt-01",
+    "decision": "prompt",
+    "promptId": "ask_expectedDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "it was a small brown box left at the side gate",
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "nt-02": {
+    "id": "nt-02",
+    "decision": "prompt",
+    "promptId": "ask_expectedDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a white envelope that should have gone in the mailbox",
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "nt-03": {
+    "id": "nt-03",
+    "decision": "prompt",
+    "promptId": "ask_expectedDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a large box, it should have been left on the porch",
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "nt-04": {
+    "id": "nt-04",
+    "decision": "prompt",
+    "promptId": "ask_missingNote_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "nt-05": {
+    "id": "nt-05",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "it was a box of plates, due last tuesday",
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ed-01": {
+    "id": "ed-01",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ed-02": {
+    "id": "ed-02",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-17"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ed-03": {
+    "id": "ed-03",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-16"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ed-04": {
+    "id": "ed-04",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ed-05": {
+    "id": "ed-05",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-16"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ed-06": {
+    "id": "ed-06",
+    "decision": "prompt",
+    "promptId": "ask_expectedDate_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ed-07": {
+    "id": "ed-07",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-18"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cf-01": {
+    "id": "cf-01",
+    "decision": "prompt",
+    "promptId": "report_filed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "notifyDepot:ALLOW"
+  },
+  "cf-02": {
+    "id": "cf-02",
+    "decision": "prompt",
+    "promptId": "report_filed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "notifyDepot:ALLOW"
+  },
+  "cf-03": {
+    "id": "cf-03",
+    "decision": "prompt",
+    "promptId": "report_filed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "notifyDepot:ALLOW"
+  },
+  "cf-04": {
+    "id": "cf-04",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cf-05": {
+    "id": "cf-05",
+    "decision": "prompt",
+    "promptId": "ask_expectedDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cf-06": {
+    "id": "cf-06",
+    "decision": "prompt",
+    "promptId": "ask_missingNote",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cf-07": {
+    "id": "cf-07",
+    "decision": "prompt",
+    "promptId": "ask_expectedDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cf-08": {
+    "id": "cf-08",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirm_unanswered",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-15"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cf-09": {
+    "id": "cf-09",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": "a small brown box left at the side gate",
+      "expectedDate": "2026-09-16"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "of-01": {
+    "id": "of-01",
+    "decision": "handoff",
+    "promptId": "handoff_frustrated",
+    "acks": [],
+    "reason": "frustrated",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "of-02": {
+    "id": "of-02",
+    "decision": "prompt",
+    "promptId": "ask_parcelSelect",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "of-03": {
+    "id": "of-03",
+    "decision": "prompt",
+    "promptId": "ask_parcelSelect",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ae-01": {
+    "id": "ae-01",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ae-02": {
+    "id": "ae-02",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ae-03": {
+    "id": "ae-03",
+    "decision": "prompt",
+    "promptId": "ask_parcelSelect",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "track_parcel",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "listParcels:ALLOW"
+  },
+  "ae-04": {
+    "id": "ae-04",
+    "decision": "prompt",
+    "promptId": "ask_missingNote",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_missing",
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getAccount:ALLOW"
+  },
+  "ae-05": {
+    "id": "ae-05",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "accountId": "55501234",
+      "dob": "1985-04-12",
+      "parcelSelect": null,
+      "deliveryDay": null,
+      "deliveryPart": null,
+      "missingNote": null,
+      "expectedDate": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  }
+}

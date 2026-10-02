@@ -1,0 +1,233 @@
+# inj-announced
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"I can help with tracking a parcel, a delivery window, or a missing parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"How can I help you today?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# inj-twice-handoff
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"I can help with tracking a parcel, a delivery window, or a missing parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"How can I help you today?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"I'm going to connect you with a support specialist.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+2 {"type":"end","handoffData":"{\"reasonCode\":\"security\"}"}
+# track-happy
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Thank you, you're verified.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Which parcel are you asking about? You can say the parcel number, or what's in it.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+10 {"type":"text","token":"Parcel 7101, a box of books, is on its way and due Monday, September 21.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+10 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# track-other-customers-parcel
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Thank you, you're verified.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"I don't see that parcel on your account, and I can only share your own parcels.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# track-disambiguate
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Thank you, you're verified.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Which parcel are you asking about? You can say the parcel number, or what's in it.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+10 {"type":"text","token":"Did you mean parcel 7103, or parcel 7101?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# track-parcel-keypad
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Thank you, you're verified.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Which parcel are you asking about? You can say the parcel number, or what's in it.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+10 {"type":"text","token":"Please say the four-digit parcel number, or what's in the parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+11 {"type":"text","token":"Please enter the four-digit parcel number on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+15 {"type":"text","token":"Parcel 7103, a desk lamp, is out for delivery today.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+15 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# identity-three-fails
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you book a delivery window.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"I couldn't match that account ID and date of birth. Let's try again.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+5 {"type":"text","token":"I couldn't match that account ID and date of birth. Let's try again.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+5 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+6 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+7 {"type":"text","token":"I wasn't able to verify your identity, so I'm connecting you with a specialist who can help.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+7 {"type":"end","handoffData":"{\"reasonCode\":\"identity\"}"}
+# dob-year-followup
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you book a delivery window.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"And what year were you born?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"Which day would you like the delivery?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# window-open
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you book a delivery window.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Would you like it in the morning, the afternoon, or the evening?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"On Monday, September 21, we can deliver in the morning.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# window-full-sunday
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you book a delivery window.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Which day would you like the delivery?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"Would you like it in the morning, the afternoon, or the evening?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+5 {"type":"text","token":"On Sunday, September 20, we don't deliver in the afternoon. You can ask about another day.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+5 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# report-happy
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you report a missing parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Thank you, you're verified.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"In a sentence or two, describe the parcel and where it should have been left.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+10 {"type":"text","token":"What day was it due?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+11 {"type":"text","token":"Let me make sure I have this right. You're reporting a parcel that was due Tuesday, September 15, and I have your description. Shall I file the report?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+12 {"type":"text","token":"Your report is filed. Your report number is 9001.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+13 {"type":"text","token":"The depot will search for it and call you within 2 days.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+13 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# report-delivered-that-day
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you report a missing parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Thank you, you're verified.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"In a sentence or two, describe the parcel and where it should have been left.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+10 {"type":"text","token":"What day was it due?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+11 {"type":"text","token":"Let me make sure I have this right. You're reporting a parcel that was due Wednesday, September 16, and I have your description. Shall I file the report?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+12 {"type":"text","token":"Our records show a parcel delivered to you that day, so I'm connecting you with someone who can check.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+12 {"type":"end","handoffData":"{\"reasonCode\":\"delivered\",\"slots\":{\"accountId\":\"...1234\",\"dob\":\"verified\",\"missingNote\":\"your description\",\"expectedDate\":\"Wednesday, September 16\"}}"}
+# report-change-date
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you report a missing parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Thank you, you're verified.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"In a sentence or two, describe the parcel and where it should have been left.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+10 {"type":"text","token":"What day was it due?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+11 {"type":"text","token":"Let me make sure I have this right. You're reporting a parcel that was due Tuesday, September 15, and I have your description. Shall I file the report?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+12 {"type":"text","token":"What day was it due?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+13 {"type":"text","token":"Let me make sure I have this right. You're reporting a parcel that was due Thursday, September 17, and I have your description. Shall I file the report?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# report-agent-down
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you report a missing parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"Thank you, you're verified.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+9 {"type":"text","token":"In a sentence or two, describe the parcel and where it should have been left.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+10 {"type":"text","token":"What day was it due?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+11 {"type":"text","token":"Let me make sure I have this right. You're reporting a parcel that was due Tuesday, September 15, and I have your description. Shall I file the report?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+12 {"type":"text","token":"Your report is filed. Your report number is 9001.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+13 {"type":"text","token":"The depot will be in touch with next steps.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+13 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# intent-retry-to-agent
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sorry, I didn't catch that. You can ask to track a parcel, check a delivery window, or report a missing parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"Let's try the keypad. To track a parcel, press 1. For a delivery window, press 2. To report a missing parcel, press 3. To speak with someone, press 0.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Let me connect you with a support specialist who can help.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+3 {"type":"end","handoffData":"{\"reasonCode\":\"max-attempts\"}"}
+# menu-keypad
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sorry, I didn't catch that. You can ask to track a parcel, check a delivery window, or report a missing parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"Let's try the keypad. To track a parcel, press 1. For a delivery window, press 2. To report a missing parcel, press 3. To speak with someone, press 0.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Sure, I can help you book a delivery window.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# silence-greeting-agent
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"I didn't hear anything.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"How can I help you today?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"I didn't hear anything.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"Let's try the keypad. To track a parcel, press 1. For a delivery window, press 2. To report a missing parcel, press 3. To speak with someone, press 0.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"I didn't hear anything.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+3 {"type":"text","token":"Let me connect you with a support specialist who can help.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+3 {"type":"end","handoffData":"{\"reasonCode\":\"max-attempts\"}"}
+# silence-code-ladder
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"And what's your date of birth?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Thanks, Alex.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"I didn't hear anything.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+5 {"type":"text","token":"I didn't hear anything.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+5 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+6 {"type":"text","token":"I didn't hear anything.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+6 {"type":"text","token":"Let me connect you with a support specialist who can help.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+6 {"type":"end","handoffData":"{\"reasonCode\":\"max-attempts\",\"slots\":{\"accountId\":\"...1234\",\"dob\":\"verified\"}}"}
+# frustration-offer-yes
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"I'm sorry this is taking a while.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"Please say the eight digits of your account ID, one at a time.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Would you like me to connect you with a support specialist?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"I'm sorry for the trouble. Connecting you with a support specialist now.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+4 {"type":"end","handoffData":"{\"reasonCode\":\"frustrated\"}"}
+# frustration-offer-no
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"I'm sorry this is taking a while.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"Please say the eight digits of your account ID, one at a time.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+3 {"type":"text","token":"Would you like me to connect you with a support specialist?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+4 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# side-speech-ignored
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# agent-opener
+0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Connecting you with a support specialist now.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+1 {"type":"end","handoffData":"{\"reasonCode\":\"live-agent\"}"}
+# staff-track-in-depot
+0 {"type":"text","token":"Hi Taylor, I'm the Example Parcels assistant for depot staff. I can look up a customer's parcel. What do you need?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Parcel 7201, a coffee grinder, is on its way and due Tuesday, September 22.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# staff-track-outside-depot
+0 {"type":"text","token":"Hi Taylor, I'm the Example Parcels assistant for depot staff. I can look up a customer's parcel. What do you need?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"I don't see that parcel for a customer your depot serves, so I can't share it.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# staff-report-viewer
+0 {"type":"text","token":"Hi Taylor, I'm the Example Parcels assistant for depot staff. I can look up a customer's parcel. What do you need?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Your role can't file reports. A depot clerk can file one with a person.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+# staff-report-clerk
+0 {"type":"text","token":"Hi Morgan, I'm the Example Parcels assistant for depot staff. I can look up a customer's parcel. What do you need?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Reports for a customer are filed with a person, so I'm connecting you with one now.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
+1 {"type":"end","handoffData":"{\"reasonCode\":\"role-person\"}"}
+# web-signin-track
+0 {"type":"text","token":"Hi, I'm the Example Parcels assistant. I can track a parcel, check a delivery window, or report a missing parcel. What can I help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+1 {"type":"text","token":"To do that, I need you to sign in first. Use the Sign in button below, and I'll pick up where we left off.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"Thanks, Alex. You're signed in.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"Parcel 7102, a pair of boots, was delivered Wednesday, September 16.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"Is there anything else I can help with?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}

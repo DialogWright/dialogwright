@@ -1,0 +1,493 @@
+import { describe, expect, it } from 'vitest';
+import { useTestkit } from '../testing/apps';
+import { evaluateGates, frustrationOf } from './gates';
+import { newSession, setForm, type Session } from './session';
+import { buildTurnState } from './state';
+import { DEFAULT_THRESHOLDS } from './thresholds';
+import { choice, noul, score } from '../testing/answers';
+import type { AnswerMap } from '../jev/types';
+import { VOICE_RELAY } from '../channel/caps';
+
+useTestkit();
+
+const T = { ...DEFAULT_THRESHOLDS };
+
+function baseAnswers(over: AnswerMap = {}): AnswerMap {
+  return {
+    addressedToSystem: noul(0.95),
+    intelligible: noul(0.95),
+    utteranceComplete: noul(0.9),
+    wantsHuman: noul(0.05),
+    rephrasingLastTurn: noul(0.1),
+    confusedByPrompt: noul(0.1),
+    spokeAMenuNumber: noul(0.05),
+    frustration: score({ none: 0.8, mild: 0.15, high: 0.05 }),
+    intent: choice({ report_missing: 0.9, track_parcel: 0.05, none: 0.05 }),
+    ...over,
+  };
+}
+
+function run(session: Session, answers: AnswerMap, isFinal = true) {
+  const ts = buildTurnState(session, { text: 'x', isFinal, dtmf: null }, 0);
+  return evaluateGates(session, ts, answers, T);
+}
+
+/** Mid-form, with the transfer offer waiting for an answer. */
+function atOffer(): Session {
+  const s = setForm(newSession('s', 0, VOICE_RELAY), 'report_missing');
+  s.pendingConfirmation = { target: 'transfer', attempts: 0 };
+  s.promptedFor = 'confirm';
+  return s;
+}
+
+describe('evaluateGates', () => {
+  it('ignores side speech', () => {
+    const r = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ addressedToSystem: noul(0.2) }));
+    expect(r.verdict).toEqual({ kind: 'ignore' });
+    expect(r.rows.find((g) => g.gate === 'addressedToSystem')).toMatchObject({ passed: false, decided: true, threshold: DEFAULT_THRESHOLDS.GATE_ADDRESSED });
+  });
+
+  it('routes on an intent probability that is the threshold up to floating-point rounding', () => {
+    // 0.7 - 0.3 is 0.39999999999999997; INTENT_EXPLICIT is 0.4.
+    const r = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.7 - 0.3, none: 0.35, other: 0.25 }) }));
+    expect(r.verdict).toMatchObject({ kind: 'route', intent: 'report_missing', confirm: 'explicit' });
+    // And a margin that is 0.15 on paper passes GATE_INTENT_MARGIN (0.15).
+    const m = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.6, track_parcel: 0.45, none: 0 }) }));
+    expect(0.6 - 0.45 >= 0.15).toBe(false);
+    expect(m.verdict).toMatchObject({ kind: 'route', intent: 'report_missing' });
+    expect(m.rows.find((g) => g.gate === 'intentMargin')).toMatchObject({ passed: true });
+  });
+
+  it('reprompts on unintelligible text', () => {
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intelligible: noul(0.2) })).verdict).toEqual({ kind: 'nomatch' });
+  });
+
+  it('holds an incomplete partial but only notes an incomplete final', () => {
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ utteranceComplete: noul(0.2) }), false).verdict).toEqual({ kind: 'hold' });
+    const r = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ utteranceComplete: noul(0.2) }), true);
+    expect(r.verdict.kind).toBe('route');
+    expect(r.rows.find((g) => g.gate === 'utteranceComplete')?.outcome).toBe('noted');
+  });
+
+  it('hands off when the caller wants a human', () => {
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ wantsHuman: noul(0.9) })).verdict).toEqual({ kind: 'handoff', reason: 'live-agent' });
+  });
+
+  describe('frustration rungs', () => {
+    const angry = (over: AnswerMap = {}) => baseAnswers({ frustration: score({ none: 0.1, mild: 0.2, high: 0.7 }), ...over });
+    const frustrationRow = (r: ReturnType<typeof run>) => r.rows.find((g) => g.gate === 'frustration');
+
+    it('acknowledges the first frustrated turn, on any attempt', () => {
+      const first = run(newSession('s', 0, VOICE_RELAY), angry());
+      expect(first.verdict).toMatchObject({ kind: 'route', intent: 'report_missing', frustration: 'ack' });
+      expect(frustrationRow(first)).toMatchObject({ value: 0.7, threshold: T.GATE_FRUSTRATION_HIGH, passed: true, outcome: 'ack', decided: false });
+      // The old rule -- high frustration on a repeated attempt hands off at once -- is gone.
+      const s = newSession('s', 0, VOICE_RELAY);
+      s.promptedFor = 'intent';
+      s.intentAttempts = 1;
+      expect(run(s, angry()).verdict).toMatchObject({ kind: 'route', frustration: 'ack' });
+    });
+
+    it('offers a transfer on the second frustrated turn', () => {
+      const s = newSession('s', 0, VOICE_RELAY);
+      s.frustratedTurns = 1;
+      const r = run(s, angry());
+      expect(r.verdict).toMatchObject({ kind: 'route', frustration: 'offer' });
+      expect(frustrationRow(r)).toMatchObject({ passed: true, outcome: 'offer', decided: false });
+    });
+
+    it('hands off on the third frustrated turn', () => {
+      const s = newSession('s', 0, VOICE_RELAY);
+      s.frustratedTurns = 2;
+      const r = run(s, angry());
+      expect(r.verdict).toEqual({ kind: 'handoff', reason: 'frustrated' });
+      expect(frustrationRow(r)).toMatchObject({ passed: false, outcome: 'handoff', decided: true });
+    });
+
+    it('hands off on the second frustrated turn when the offer was already declined', () => {
+      const s = newSession('s', 0, VOICE_RELAY);
+      s.frustratedTurns = 1;
+      s.transferDeclined = true;
+      expect(run(s, angry()).verdict).toEqual({ kind: 'handoff', reason: 'frustrated' });
+    });
+
+    it('transfers on the third rung even when the words came through garbled', () => {
+      // Gate 2 settles a `nomatch` first and `decide` is first-wins, so the rung has to take the
+      // verdict off it: a caller this upset for the third time gets a person either way.
+      const s = newSession('s', 0, VOICE_RELAY);
+      s.frustratedTurns = 2;
+      const r = run(s, angry({ intelligible: noul(0.1) }));
+      expect(r.verdict).toEqual({ kind: 'handoff', reason: 'frustrated' });
+      expect(frustrationRow(r)).toMatchObject({ passed: false, outcome: 'handoff', decided: true });
+      // The intelligible row keeps its failure and loses only the credit for the verdict.
+      expect(r.rows.find((g) => g.gate === 'intelligible')).toMatchObject({ passed: false, outcome: 'nomatch', decided: false });
+    });
+
+    it('does not transfer on an outburst that was not addressed to it, and says so in the row', () => {
+      const s = newSession('s', 0, VOICE_RELAY);
+      s.frustratedTurns = 2;
+      const r = run(s, angry({ addressedToSystem: noul(0.1) }));
+      expect(r.verdict).toEqual({ kind: 'ignore' });
+      expect(frustrationRow(r)).toMatchObject({ passed: true, outcome: 'not_addressed', decided: false });
+      // No rung on the verdict is what keeps `frustratedTurns` where it was: side speech is not
+      // a turn the caller spent on us.
+      expect(frustrationOf(r.verdict)).toBeUndefined();
+    });
+
+    it('does not count the turn that answers the offer', () => {
+      const s = atOffer();
+      s.frustratedTurns = 2;
+      const r = run(s, angry({ confirmsYes: noul(0.9), confirmsNo: noul(0.05) }));
+      // Counting it would hand off the caller who is telling us, crossly, to keep going.
+      expect(r.verdict).toEqual({ kind: 'confirmed' });
+      expect(frustrationRow(r)).toMatchObject({ passed: true, outcome: 'pass' });
+    });
+
+    it('ignores mild frustration', () => {
+      const r = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ frustration: score({ none: 0.3, mild: 0.6, high: 0.1 }) }));
+      expect(r.verdict).toEqual({ kind: 'route', intent: 'report_missing', confirm: 'none' });
+      expect(frustrationRow(r)).toMatchObject({ passed: true, outcome: 'pass' });
+    });
+  });
+
+  describe('the transfer offer', () => {
+    it('confirms on yes and declines on anything else', () => {
+      expect(run(atOffer(), baseAnswers({ confirmsYes: noul(0.9), confirmsNo: noul(0.05) })).verdict).toEqual({ kind: 'confirmed' });
+      expect(run(atOffer(), baseAnswers({ confirmsYes: noul(0.05), confirmsNo: noul(0.9) })).verdict).toEqual({ kind: 'rejected' });
+      // An answer that is neither a yes nor a no declines the offer as well,
+      // rather than leaving it pending and asking it again.
+      const neither = run(atOffer(), baseAnswers({ confirmsYes: noul(0.1), confirmsNo: noul(0.1), intent: choice({ none: 0.9, other: 0.1 }) }));
+      expect(neither.verdict).toEqual({ kind: 'rejected' });
+      expect(neither.rows.find((g) => g.gate === 'confirmation')).toMatchObject({ outcome: 'rejected', decided: true });
+    });
+
+    it('keeps the frustrated reason when the yes also reads as asking for a person', () => {
+      // "yes, connect me" trips the wantsHuman gate, which runs before the confirmation gate.
+      // The caller is accepting the transfer we offered, so the reason -- and the line that plays
+      // with it -- is the frustrated one, not the generic live-agent handoff.
+      const s = atOffer();
+      s.frustratedTurns = 2;
+      const r = run(s, baseAnswers({
+        wantsHuman: noul(0.9), confirmsYes: noul(0.9), confirmsNo: noul(0.05),
+        frustration: score({ none: 0.1, mild: 0.2, high: 0.7 }),
+      }));
+      expect(r.verdict).toEqual({ kind: 'handoff', reason: 'frustrated' });
+      expect(r.rows.find((g) => g.gate === 'wantsHuman')).toMatchObject({ passed: false, outcome: 'handoff', decided: true });
+      // And it is still the turn that answers the offer, so it is not a frustrated turn to count,
+      // however crossly it was said: `frustratedTurns` is the turn's own bookkeeping, driven by a
+      // rung on the verdict, and the gate passes rather than reaching for a third rung.
+      expect(frustrationOf(r.verdict)).toBeUndefined();
+      expect(r.rows.find((g) => g.gate === 'frustration')).toMatchObject({ passed: true, outcome: 'pass' });
+    });
+
+    it('still hands off as live-agent when no transfer is pending', () => {
+      const s = setForm(newSession('s', 0, VOICE_RELAY), 'report_missing');
+      expect(run(s, baseAnswers({ wantsHuman: noul(0.9) })).verdict).toEqual({ kind: 'handoff', reason: 'live-agent' });
+    });
+  });
+
+  it('routes silently, with implicit confirm, or with explicit confirm by band', () => {
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers()).verdict).toEqual({ kind: 'route', intent: 'report_missing', confirm: 'none' });
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.65, none: 0.35 }) })).verdict)
+      .toEqual({ kind: 'route', intent: 'report_missing', confirm: 'implicit' });
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.5, none: 0.5 }) })).verdict)
+      .toEqual({ kind: 'route', intent: 'report_missing', confirm: 'explicit' });
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.3, none: 0.7 }) })).verdict)
+      .toEqual({ kind: 'intent_failed' });
+  });
+
+  it('disambiguates a narrow margin between two form intents', () => {
+    const r = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.5, track_parcel: 0.45, none: 0.05 }) }));
+    expect(r.verdict).toEqual({ kind: 'disambiguate_intent', a: 'report_missing', b: 'track_parcel' });
+  });
+
+  it('proceeds to slot filling when a form is active and no new intent is expressed', () => {
+    const s = setForm(newSession('s', 0, VOICE_RELAY), 'track_parcel');
+    expect(run(s, baseAnswers({ intent: choice({ none: 0.9, track_parcel: 0.1 }) })).verdict).toEqual({ kind: 'proceed' });
+  });
+
+  it('switches forms on a confident new intent', () => {
+    const s = setForm(newSession('s', 0, VOICE_RELAY), 'track_parcel');
+    expect(run(s, baseAnswers({ intent: choice({ report_missing: 0.9, none: 0.1 }), intentChange: choice({ replacing: 0.9, answering: 0.05, adding: 0.05 }) })).verdict)
+      .toEqual({ kind: 'route', intent: 'report_missing', confirm: 'none' });
+  });
+
+  it('resolves a pending explicit confirmation', () => {
+    const s = newSession('s', 0, VOICE_RELAY);
+    s.pendingConfirmation = { target: 'intent', intent: 'track_parcel', answers: {}, text: '' };
+    expect(run(s, baseAnswers({ confirmsYes: noul(0.9), confirmsNo: noul(0.1) })).verdict).toEqual({ kind: 'confirmed' });
+    expect(run(s, baseAnswers({ confirmsYes: noul(0.1), confirmsNo: noul(0.9) })).verdict).toEqual({ kind: 'rejected' });
+  });
+
+  it('routes a spoken menu number when the menu is active', () => {
+    const s = newSession('s', 0, VOICE_RELAY);
+    s.menuActive = true;
+    const r = run(s, baseAnswers({ intent: choice({ none: 0.9, other: 0.1 }), menuNumberSaid: choice({ '3': 0.9, none: 0.1 }) }));
+    expect(r.verdict).toEqual({ kind: 'route', intent: 'report_missing', confirm: 'none' });
+    // 0 is a person, not a form.
+    expect(run(s, baseAnswers({ intent: choice({ none: 0.9, other: 0.1 }), menuNumberSaid: choice({ '0': 0.9, none: 0.1 }) })).verdict).toEqual({ kind: 'handoff', reason: 'live-agent' });
+  });
+
+  it('asks to confirm a mid-confidence intent switch', () => {
+    const s = setForm(newSession('s', 0, VOICE_RELAY), 'track_parcel');
+    expect(run(s, baseAnswers({ intent: choice({ report_missing: 0.7, none: 0.3 }), intentChange: choice({ replacing: 0.9, answering: 0.05, adding: 0.05 }) })).verdict)
+      .toEqual({ kind: 'route', intent: 'report_missing', confirm: 'explicit' });
+  });
+
+  it('reports an unanswered confirmation when no new intent is expressed', () => {
+    const s = newSession('s', 0, VOICE_RELAY);
+    s.pendingConfirmation = { target: 'intent', intent: 'track_parcel', answers: {}, text: '' };
+    const r = run(s, baseAnswers({
+      confirmsYes: noul(0.5), confirmsNo: noul(0.5), intent: choice({ none: 0.9, other: 0.1 }),
+    }));
+    expect(r.verdict).toEqual({ kind: 'confirm_unanswered' });
+  });
+
+  it('handles agent and repeat intents', () => {
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ agent: 0.8, none: 0.2 }) })).verdict).toEqual({ kind: 'handoff', reason: 'live-agent' });
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ repeat_prompt: 0.8, none: 0.2 }) })).verdict).toEqual({ kind: 'replay' });
+  });
+  it('routes a tentative request with an explicit confirm even at full probability', () => {
+    const r = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ track_parcel: 0.98, none: 0.02 }), intentTentative: noul(0.9) }));
+    expect(r.verdict).toEqual({ kind: 'route', intent: 'track_parcel', confirm: 'explicit' });
+    expect(r.rows.find((g) => g.gate === 'intent')?.outcome).toBe('route_tentative:track_parcel');
+    expect(r.rows.find((g) => g.gate === 'intentTentative')).toMatchObject({ threshold: DEFAULT_THRESHOLDS.INTENT_TENTATIVE, passed: true, outcome: 'tentative' });
+  });
+
+  it('leaves agent and repeat requests alone when tentative', () => {
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ agent: 0.9, none: 0.1 }), intentTentative: noul(0.9) })).verdict).toEqual({ kind: 'handoff', reason: 'live-agent' });
+  });
+
+  it('still disambiguates a narrow margin when the request is tentative', () => {
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.52, track_parcel: 0.48 }), intentTentative: noul(0.9) })).verdict)
+      .toEqual({ kind: 'disambiguate_intent', a: 'report_missing', b: 'track_parcel' });
+  });
+
+  describe('inside a form', () => {
+    const inForm = () => setForm(newSession('s', 0, VOICE_RELAY), 'report_missing');
+
+    it('treats a confident different intent as answering when intentChange says so', () => {
+      const r = run(inForm(), baseAnswers({ intent: choice({ delivery_window: 0.95, none: 0.05 }), intentChange: choice({ answering: 0.9, adding: 0.05, replacing: 0.05 }) }));
+      expect(r.verdict).toEqual({ kind: 'proceed' });
+      expect(r.rows.find((g) => g.gate === 'intentChange')).toMatchObject({ outcome: 'answering', threshold: DEFAULT_THRESHOLDS.INTENT_CHANGE });
+    });
+
+    it('queues an added intent', () => {
+      const r = run(inForm(), baseAnswers({ intent: choice({ delivery_window: 0.95, none: 0.05 }), intentChange: choice({ adding: 0.85, answering: 0.1, replacing: 0.05 }) }));
+      expect(r.verdict).toEqual({ kind: 'queue', intent: 'delivery_window' });
+      expect(r.rows.find((g) => g.gate === 'intent')?.outcome).toBe('queue:delivery_window');
+    });
+
+    it('does not queue the active form or a weak intent', () => {
+      const same = run(inForm(), baseAnswers({ intent: choice({ report_missing: 0.95, none: 0.05 }), intentChange: choice({ adding: 0.85, answering: 0.1, replacing: 0.05 }) }));
+      expect(same.verdict).toEqual({ kind: 'proceed' });
+      expect(same.rows.find((g) => g.gate === 'intent')?.outcome).toBe('add_unused:report_missing');
+      expect(run(inForm(), baseAnswers({ intent: choice({ delivery_window: 0.5, none: 0.5 }), intentChange: choice({ adding: 0.85, answering: 0.1, replacing: 0.05 }) })).verdict).toEqual({ kind: 'proceed' });
+    });
+
+    it('reads the added task from what is not the task in hand', () => {
+      // "yes, and can I also track another parcel" at the report's summary, as Jev read it: the
+      // yes goes on with the report, and the rest of the probability is the tracking.
+      const adding = choice({ adding: 1, answering: 0, replacing: 0 });
+      const r = run(inForm(), baseAnswers({ intent: choice({ track_parcel: 0.55, report_missing: 0.41, none: 0.04 }), intentChange: adding }));
+      expect(r.verdict).toEqual({ kind: 'queue', intent: 'track_parcel' });
+      expect(r.rows.find((g) => g.gate === 'intent')).toMatchObject({ outcome: 'queue:track_parcel', value: expect.closeTo(0.55 / 0.59, 5) });
+      // Most of the rest a request for nothing: nothing is added.
+      expect(run(inForm(), baseAnswers({ intent: choice({ report_missing: 0.45, none: 0.4, track_parcel: 0.15 }), intentChange: adding })).verdict).toEqual({ kind: 'proceed' });
+    });
+
+    it('does not queue a sliver beside a near-certain task in hand', () => {
+      // 0.04 beside 0.95 is a 0.8 share of the rest, but under the absolute floor.
+      const adding = choice({ adding: 1, answering: 0, replacing: 0 });
+      const r = run(inForm(), baseAnswers({ intent: choice({ report_missing: 0.95, track_parcel: 0.04, none: 0.01 }), intentChange: adding }));
+      expect(r.verdict).toEqual({ kind: 'proceed' });
+      expect(r.rows.find((g) => g.gate === 'intent')?.outcome).toMatch(/^add_unused/);
+    });
+
+    it('switches on replacing, explicitly when tentative', () => {
+      const replacing = choice({ replacing: 0.9, answering: 0.05, adding: 0.05 });
+      expect(run(inForm(), baseAnswers({ intent: choice({ track_parcel: 0.95, none: 0.05 }), intentChange: replacing })).verdict).toEqual({ kind: 'route', intent: 'track_parcel', confirm: 'none' });
+      const r = run(inForm(), baseAnswers({ intent: choice({ track_parcel: 0.95, none: 0.05 }), intentChange: replacing, intentTentative: noul(0.8) }));
+      expect(r.verdict).toEqual({ kind: 'route', intent: 'track_parcel', confirm: 'explicit' });
+      expect(r.rows.find((g) => g.gate === 'intent')?.outcome).toBe('switch_tentative:track_parcel');
+    });
+
+    it('falls back to answering below the change threshold', () => {
+      const r = run(inForm(), baseAnswers({ intent: choice({ track_parcel: 0.95, none: 0.05 }), intentChange: choice({ replacing: 0.5, answering: 0.45, adding: 0.05 }) }));
+      expect(r.verdict).toEqual({ kind: 'proceed' });
+      expect(r.rows.find((g) => g.gate === 'intentChange')).toMatchObject({ passed: false, outcome: 'answering:below' });
+    });
+
+    it('proceeds on an unrecognized change label', () => {
+      const r = run(inForm(), baseAnswers({ intent: choice({ track_parcel: 0.95, none: 0.05 }), intentChange: choice({ swapping: 0.9, answering: 0.05, replacing: 0.05 }) }));
+      expect(r.verdict).toEqual({ kind: 'proceed' });
+      expect(r.rows.find((g) => g.gate === 'intent')?.outcome).toBe('proceed:track_parcel');
+    });
+
+    it('hands off to an agent before the change mode is consulted', () => {
+      expect(run(inForm(), baseAnswers({ intent: choice({ agent: 0.9, none: 0.1 }), intentChange: choice({ adding: 0.9, answering: 0.05, replacing: 0.05 }) })).verdict)
+        .toEqual({ kind: 'handoff', reason: 'live-agent' });
+    });
+
+    it('still reports an unanswered confirmation when the intent would be queued', () => {
+      const s = inForm();
+      s.pendingConfirmation = { target: 'intent', intent: 'track_parcel', answers: {}, text: '' };
+      expect(run(s, baseAnswers({
+        confirmsYes: noul(0.1), confirmsNo: noul(0.1),
+        intent: choice({ delivery_window: 0.95, none: 0.05 }), intentChange: choice({ adding: 0.9, answering: 0.05, replacing: 0.05 }),
+      })).verdict).toEqual({ kind: 'confirm_unanswered', queue: 'delivery_window' });
+    });
+  });
+
+  describe('form confirmation', () => {
+    const pending = (): Session => {
+      const s = setForm(newSession('s', 0, VOICE_RELAY), 'report_missing');
+      s.pendingConfirmation = { target: 'form', form: 'report_missing', attempts: 0 };
+      s.promptedFor = 'confirm';
+      return s;
+    };
+
+    it('confirms on yes and carries an added intent', () => {
+      const a = baseAnswers({ confirmsYes: noul(0.9), intent: choice({ delivery_window: 0.9, none: 0.1 }), intentChange: choice({ adding: 0.9, answering: 0.05, replacing: 0.05 }) });
+      expect(run(pending(), a).verdict).toEqual({ kind: 'confirmed', queue: 'delivery_window' });
+    });
+
+    it('rejects on no, with the queue when one was added', () => {
+      expect(run(pending(), baseAnswers({ confirmsNo: noul(0.9) })).verdict).toEqual({ kind: 'rejected' });
+      expect(run(pending(), baseAnswers({
+        confirmsNo: noul(0.9), intent: choice({ delivery_window: 0.9, none: 0.1 }), intentChange: choice({ adding: 0.9, answering: 0.05, replacing: 0.05 }),
+      })).verdict).toEqual({ kind: 'rejected', queue: 'delivery_window' });
+    });
+
+    it('reopens the named detail when the no says which one is wrong', () => {
+      const r = run(pending(), baseAnswers({ confirmsNo: noul(0.9), changeSlot: choice({ missingNote: 0.9, expectedDate: 0.1 }) }));
+      expect(r.verdict).toEqual({ kind: 'change_slot', slot: 'missingNote' });
+      expect(r.rows.find((x) => x.gate === 'changeSlot')).toMatchObject({ outcome: 'change:missingNote', decided: true });
+      expect(r.rows.find((x) => x.gate === 'confirmation')?.decided).toBe(false);
+      // The queue still rides along.
+      expect(run(pending(), baseAnswers({
+        confirmsNo: noul(0.9), changeSlot: choice({ missingNote: 0.9, expectedDate: 0.1 }),
+        intent: choice({ delivery_window: 0.9, none: 0.1 }), intentChange: choice({ adding: 0.9, answering: 0.05, replacing: 0.05 }),
+      })).verdict).toEqual({ kind: 'change_slot', slot: 'missingNote', queue: 'delivery_window' });
+    });
+
+    it('stays a plain no when the answer names no detail', () => {
+      const r = run(pending(), baseAnswers({ confirmsNo: noul(0.9), changeSlot: choice({ none: 0.9, missingNote: 0.05, expectedDate: 0.05 }) }));
+      expect(r.verdict).toEqual({ kind: 'rejected' });
+      expect(r.rows.find((x) => x.gate === 'changeSlot')).toMatchObject({ outcome: 'none', passed: false, decided: false });
+      expect(r.rows.find((x) => x.gate === 'confirmation')?.decided).toBe(true);
+      // Below the threshold it is a no as well: turn.ts reads the utterance for a value instead.
+      expect(run(pending(), baseAnswers({ confirmsNo: noul(0.9), changeSlot: choice({ missingNote: 0.5, none: 0.5 }) })).verdict).toEqual({ kind: 'rejected' });
+    });
+
+    it('names the slot to change when asked what to change', () => {
+      const v = run(pending(), baseAnswers({ changeSlot: choice({ expectedDate: 0.9, missingNote: 0.1 }) })).verdict;
+      expect(v).toEqual({ kind: 'change_slot', slot: 'expectedDate' });
+      expect(run(pending(), baseAnswers({ changeSlot: choice({ expectedDate: 0.5, none: 0.5 }) })).verdict).toEqual({ kind: 'confirm_unanswered' });
+    });
+
+    it('does not honor a changeSlot naming a slot the form does not have', () => {
+      // The missing-parcel report has no parcel to choose, so a named 'parcelSelect' must not be honored as a change target.
+      expect(run(pending(), baseAnswers({ changeSlot: choice({ parcelSelect: 0.9, none: 0.1 }) })).verdict).toEqual({ kind: 'confirm_unanswered' });
+      // Nor an identity factor: no form lists one, so the summary cannot reopen it.
+      expect(run(pending(), baseAnswers({ changeSlot: choice({ accountId: 0.9, none: 0.1 }) })).verdict).toEqual({ kind: 'confirm_unanswered' });
+    });
+
+    it('carries an added intent onto a change_slot verdict', () => {
+      const v = run(pending(), baseAnswers({
+        changeSlot: choice({ expectedDate: 0.9, none: 0.1 }), intent: choice({ delivery_window: 0.9, none: 0.1 }), intentChange: choice({ adding: 0.9, answering: 0.05, replacing: 0.05 }),
+      })).verdict;
+      expect(v).toEqual({ kind: 'change_slot', slot: 'expectedDate', queue: 'delivery_window' });
+    });
+
+    it('breaks a yes/no tie toward confirmed', () => {
+      expect(run(pending(), baseAnswers({ confirmsYes: noul(0.9), confirmsNo: noul(0.9) })).verdict).toEqual({ kind: 'confirmed' });
+    });
+
+    it('confirms on yes even when the intent Choice is quiet', () => {
+      // The intent gate has no opinion at all here; the summary's yes still decides.
+      expect(run(pending(), baseAnswers({ confirmsYes: noul(0.9), intent: choice({ none: 0.9 }) })).verdict).toEqual({ kind: 'confirmed' });
+    });
+
+    it('marks the row that actually decided: confirmation for yes/no/unanswered, changeSlot for a named detail', () => {
+      const decidedGate = (r: ReturnType<typeof run>): string | undefined => r.rows.find((x) => x.decided)?.gate;
+      const intentOutcome = (r: ReturnType<typeof run>): string | undefined => r.rows.find((x) => x.gate === 'intent')?.outcome;
+
+      const yes = run(pending(), baseAnswers({ confirmsYes: noul(0.9) }));
+      expect(decidedGate(yes)).toBe('confirmation');
+      expect(intentOutcome(yes)).toBe('summary_confirmed:report_missing');
+      expect(yes.rows.find((x) => x.gate === 'intent')?.decided).toBe(false);
+
+      const no = run(pending(), baseAnswers({ confirmsNo: noul(0.9) }));
+      expect(decidedGate(no)).toBe('confirmation');
+      expect(intentOutcome(no)).toBe('summary_rejected:report_missing');
+
+      const unanswered = run(pending(), baseAnswers());
+      expect(decidedGate(unanswered)).toBe('confirmation');
+      expect(intentOutcome(unanswered)).toBe('summary_confirm_unanswered:report_missing');
+
+      const change = run(pending(), baseAnswers({ changeSlot: choice({ expectedDate: 0.9, none: 0.1 }) }));
+      expect(decidedGate(change)).toBe('changeSlot');
+      expect(intentOutcome(change)).toBe('summary_change_slot:report_missing');
+    });
+
+    it('lets a replace, an agent request, or a replay win over the summary', () => {
+      expect(run(pending(), baseAnswers({ confirmsYes: noul(0.9), wantsHuman: noul(0.95) })).verdict).toEqual({ kind: 'handoff', reason: 'live-agent' });
+      expect(run(pending(), baseAnswers({
+        intent: choice({ track_parcel: 0.95, none: 0.05 }), intentChange: choice({ replacing: 0.9, answering: 0.05, adding: 0.05 }),
+      })).verdict).toMatchObject({ kind: 'route', intent: 'track_parcel' });
+    });
+
+    it('still decides slot and intent confirmations at the confirm gate', () => {
+      const s = setForm(newSession('s', 0, VOICE_RELAY), 'track_parcel');
+      s.pendingConfirmation = { target: 'slot', slot: 'parcelSelect', value: '7101', display: '7101' };
+      const r = run(s, baseAnswers({ confirmsYes: noul(0.9) }));
+      expect(r.verdict).toEqual({ kind: 'confirmed' });
+      expect(r.rows.find((x) => x.gate === 'confirmation')?.decided).toBe(true);
+    });
+  });
+
+  describe('second intent on the first utterance', () => {
+    it('queues a second form intent on a plain route', () => {
+      const v = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.95, none: 0.05 }), secondIntent: choice({ delivery_window: 0.8, none: 0.2 }) })).verdict;
+      expect(v).toEqual({ kind: 'route', intent: 'report_missing', confirm: 'none', queue: 'delivery_window' });
+    });
+
+    it('ignores it below threshold, when it repeats the main intent, and on a tentative or explicit route', () => {
+      expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.95, none: 0.05 }), secondIntent: choice({ delivery_window: 0.5, none: 0.5 }) })).verdict)
+        .toEqual({ kind: 'route', intent: 'report_missing', confirm: 'none' });
+      expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ report_missing: 0.95, none: 0.05 }), secondIntent: choice({ report_missing: 0.9, none: 0.1 }) })).verdict)
+        .toEqual({ kind: 'route', intent: 'report_missing', confirm: 'none' });
+      const r = run(newSession('s', 0, VOICE_RELAY), baseAnswers({
+        intent: choice({ report_missing: 0.95, none: 0.05 }), intentTentative: noul(0.9), secondIntent: choice({ delivery_window: 0.9, none: 0.1 }),
+      }));
+      expect(r.verdict).toEqual({ kind: 'route', intent: 'report_missing', confirm: 'explicit' });
+      // Named, but the route wasn't plain: logged as deliberately dropped, not silently lost.
+      expect(r.rows.find((x) => x.gate === 'secondIntent')).toMatchObject({ outcome: 'ignored:not_plain_route' });
+    });
+  });
+
+  it('answers an informational intent with its prompt, at the implicit band outside a form and the switch band inside', () => {
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.65, none: 0.35 }) })).verdict).toEqual({ kind: 'inform', promptId: 'capabilities' });
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.5, none: 0.5 }) })).verdict).toEqual({ kind: 'intent_failed' });
+    const s = setForm(newSession('s', 0, VOICE_RELAY), 'report_missing');
+    const answering = choice({ answering: 0.9, adding: 0.05, replacing: 0.05 });
+    expect(run(s, baseAnswers({ intent: choice({ capabilities: 0.9, none: 0.1 }), intentChange: answering })).verdict).toEqual({ kind: 'inform', promptId: 'capabilities' });
+    expect(run(s, baseAnswers({ intent: choice({ capabilities: 0.7, none: 0.3 }), intentChange: answering })).verdict).toEqual({ kind: 'proceed' });
+    expect(run(s, baseAnswers({ intent: choice({ capabilities: 0.9, none: 0.1 }), intentChange: answering })).rows.find((g) => g.gate === 'intent')).toMatchObject({ outcome: 'inform:capabilities', decided: true });
+  });
+
+  it('lets an informational intent win over a pending summary and an unanswered confirmation, and carries a rung', () => {
+    const summary = setForm(newSession('s', 0, VOICE_RELAY), 'report_missing');
+    summary.pendingConfirmation = { target: 'form', form: 'report_missing', attempts: 0 };
+    summary.promptedFor = 'confirm';
+    const answering = choice({ answering: 0.9, adding: 0.05, replacing: 0.05 });
+    expect(run(summary, baseAnswers({ intent: choice({ capabilities: 0.9, none: 0.1 }), intentChange: answering, confirmsYes: noul(0.1), confirmsNo: noul(0.1) })).verdict).toEqual({ kind: 'inform', promptId: 'capabilities' });
+    const explicit = newSession('s', 0, VOICE_RELAY);
+    explicit.pendingConfirmation = { target: 'intent', intent: 'track_parcel', answers: {}, text: 'maybe track a parcel' };
+    explicit.promptedFor = 'intent';
+    expect(run(explicit, baseAnswers({ intent: choice({ capabilities: 0.8, none: 0.2 }), confirmsYes: noul(0.1), confirmsNo: noul(0.1) })).verdict).toEqual({ kind: 'inform', promptId: 'capabilities' });
+    const angry = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.8, none: 0.2 }), frustration: score({ none: 0.1, mild: 0.2, high: 0.7 }) }));
+    expect(angry.verdict).toEqual({ kind: 'inform', promptId: 'capabilities', frustration: 'ack' });
+  });
+});

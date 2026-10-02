@@ -1,0 +1,21 @@
+[
+  {
+    "id": "web-signin-track",
+    "as": "web",
+    "steps": [
+      {
+        "say": "has parcel 7102 been delivered"
+      },
+      {
+        "signIn": "55501234"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "was delivered Wednesday, September 16",
+      "principalLevel": 2,
+      "gate": "getParcel:ALLOW"
+    }
+  }
+]

@@ -1,0 +1,150 @@
+import { describe, expect, it } from 'vitest';
+import { useTestkit } from '../../testing/apps';
+import { registerTestkit, testkitApp } from '../../testing/testkit';
+import { registerApp, resetAppsForTest } from './registry';
+import type { App } from './types';
+import { validateApp } from './validate';
+import { formOf, slotSpecOf, toolOf } from './lookup';
+
+useTestkit();
+
+const copy = (): App => ({
+  ...testkitApp,
+  intents: { ...testkitApp.intents },
+  menu: [...testkitApp.menu],
+  forms: { ...testkitApp.forms },
+  identity: { ...testkitApp.identity!, factorSlots: [...testkitApp.identity!.factorSlots] },
+});
+
+describe('validateApp', () => {
+  it('accepts the testkit', () => {
+    expect(() => validateApp(testkitApp)).not.toThrow();
+  });
+
+  it('names a form slot that is not a slot', () => {
+    const app = copy();
+    app.forms.track_parcel = { ...testkitApp.forms.track_parcel!, slots: ['parcelSelect', 'ghostSlot'] };
+    expect(() => validateApp(app)).toThrow(/track_parcel.*ghostSlot/);
+  });
+
+  it('names an identity factor slot that is not a slot', () => {
+    const app = copy();
+    app.identity!.factorSlots = ['accountId', 'ghostFactor'];
+    expect(() => validateApp(app)).toThrow(/ghostFactor/);
+  });
+
+  describe('console links', () => {
+    const link = (id: string) => ({ id, label: 'L', title: 'T', href: '/x', target: `t-${id}`, features: '' });
+    const withLinks = (...ids: string[]): App => ({ ...copy(), console: { ...testkitApp.console, links: ids.map(link) } });
+
+    it('accepts links with their own ids', () => {
+      expect(() => validateApp(withLinks('chat', 'help-page'))).not.toThrow();
+    });
+
+    it.each(['presenter', 'level', 'audit', 'now', 'handoff'])('refuses the console page\'s own element id %s', (id) => {
+      expect(() => validateApp(withLinks(id))).toThrow(/console link id ".*" is an element id the console page already uses/);
+    });
+
+    it('refuses a duplicate id and an id that is not a lowercase word', () => {
+      expect(() => validateApp(withLinks('chat', 'chat'))).toThrow(/used twice/);
+      for (const id of ['', 'Chat', 'a b', 'x"y', '1x']) expect(() => validateApp(withLinks(id)), id).toThrow(/is not a lowercase word/);
+    });
+  });
+
+  it('names a rule the gate does not know', () => {
+    const app = copy();
+    app.policy = { ...testkitApp.policy, rulesFor: { ...testkitApp.policy.rulesFor, getParcel: ['R1', 'R9'] } };
+    expect(() => validateApp(app)).toThrow(/getParcel.*R9/);
+  });
+
+  it('names a tool with rules that is not a tool', () => {
+    const app = copy();
+    app.policy = { ...testkitApp.policy, rulesFor: { ...testkitApp.policy.rulesFor, ghostTool: ['R1'] } };
+    expect(() => validateApp(app)).toThrow(/ghostTool.*not a tool/);
+  });
+
+  for (const role of ['verifyTool', 'codeTool', 'sendCodeTool'] as const) {
+    it(`names an identity ${role} that is not a tool, or has no rules`, () => {
+      const notATool = copy();
+      notATool.identity = { ...notATool.identity!, [role]: 'ghostTool' };
+      expect(() => validateApp(notATool)).toThrow(new RegExp(`${role} "ghostTool" is not a tool`));
+      const noRules = copy();
+      noRules.tools = { ...testkitApp.tools, ghostTool: testkitApp.tools.verifyCode! };
+      noRules.identity = { ...noRules.identity!, [role]: 'ghostTool' };
+      expect(() => validateApp(noRules)).toThrow(new RegExp(`${role} "ghostTool" has no rules`));
+    });
+  }
+
+  it('names a tool with a level but no rules', () => {
+    const app = copy();
+    app.policy = { ...testkitApp.policy, toolLevel: { ...testkitApp.policy.toolLevel, ghostTool: 1 } };
+    expect(() => validateApp(app)).toThrow(/level for tool "ghostTool"/);
+  });
+
+  it('names a tool with roles but no rules', () => {
+    const app = copy();
+    app.policy = { ...testkitApp.policy, roles: { ...testkitApp.policy.roles, ghostTool: { viewer: 'allow' } } };
+    expect(() => validateApp(app)).toThrow(/roles for tool "ghostTool"/);
+  });
+
+  it('names a menu intent that is not an intent', () => {
+    const app = copy();
+    app.menu = [...app.menu, { digit: '9', intent: 'ghostIntent' }];
+    expect(() => validateApp(app)).toThrow(/ghostIntent/);
+  });
+
+  it('names a form intent without a form', () => {
+    const app = copy();
+    app.intents.ghostForm = { criteria: 'x', label: 'x', kind: 'form' };
+    expect(() => validateApp(app)).toThrow(/ghostForm/);
+  });
+
+  it('names a form without a form intent', () => {
+    const app = copy();
+    app.forms.orphan = testkitApp.forms.track_parcel!;
+    expect(() => validateApp(app)).toThrow(/orphan/);
+  });
+
+  it('names an informational intent without a prompt', () => {
+    const app = copy();
+    app.intents.capabilities = { criteria: 'x', label: 'x', kind: 'informational' };
+    expect(() => validateApp(app)).toThrow(/capabilities.*promptId/);
+  });
+
+  it.each(['agent', 'repeat_prompt'])('requires the control intent %s', (id) => {
+    const app = copy();
+    delete app.intents[id];
+    app.menu = app.menu.filter((m) => m.intent !== id);
+    expect(() => validateApp(app)).toThrow(new RegExp(`control intent "${id}"`));
+  });
+
+  it('does not require the control intent done (a call may end only at a completion, a handoff or a hang-up)', () => {
+    const app = copy();
+    delete app.intents.done;
+    app.menu = app.menu.filter((m) => m.intent !== 'done');
+    expect(() => validateApp(app)).not.toThrow();
+  });
+
+  it('is applied at registration', () => {
+    resetAppsForTest();
+    const app = copy();
+    app.identity!.factorSlots = ['ghostFactor'];
+    expect(() => registerApp(app)).toThrow(/ghostFactor/);
+    registerTestkit();
+  });
+});
+
+describe('formOf, slotSpecOf and toolOf', () => {
+  it('return the testkit\'s definitions', () => {
+    expect(formOf(testkitApp, 'track_parcel')).toBe(testkitApp.forms.track_parcel);
+    expect(slotSpecOf(testkitApp, 'accountId')).toBe(testkitApp.slots.accountId);
+    expect(toolOf(testkitApp, 'getParcel')).toBe(testkitApp.tools.getParcel);
+  });
+  it('throw naming the id and the app', () => {
+    expect(() => formOf(testkitApp, 'nope')).toThrow('unknown form "nope" in app "testkit"');
+    expect(() => slotSpecOf(testkitApp, 'nope')).toThrow('unknown slot "nope" in app "testkit"');
+    expect(() => formOf(testkitApp, 'toString')).toThrow(/unknown form "toString"/);
+    expect(() => toolOf(testkitApp, 'nope')).toThrow('unknown tool "nope" in app "testkit"');
+    expect(() => toolOf(testkitApp, 'toString')).toThrow(/unknown tool "toString"/);
+  });
+});

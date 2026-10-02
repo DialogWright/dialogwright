@@ -1,0 +1,516 @@
+[
+  {
+    "id": "track-happy",
+    "steps": [
+      {
+        "say": "where is my parcel"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "the box of books"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "is on its way",
+      "principalLevel": 2,
+      "gate": "getParcel:ALLOW"
+    }
+  },
+  {
+    "id": "track-other-customers-parcel",
+    "steps": [
+      {
+        "say": "where is parcel 7201"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "I can only share your own parcels",
+      "principalLevel": 2,
+      "gate": "getParcel:BLOCK"
+    }
+  },
+  {
+    "id": "track-disambiguate",
+    "steps": [
+      {
+        "say": "where is my parcel"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "the one with the lamp, or maybe the books"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "disambiguate_parcelSelect",
+      "form": "track_parcel",
+      "text": "Did you mean parcel 7103, or parcel 7101?"
+    }
+  },
+  {
+    "id": "track-parcel-keypad",
+    "steps": [
+      {
+        "say": "where is my parcel"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "i'm not sure which one"
+      },
+      {
+        "say": "i'm not sure which one"
+      },
+      {
+        "dtmf": "7103"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "is out for delivery today",
+      "gate": "getParcel:ALLOW"
+    }
+  },
+  {
+    "id": "identity-three-fails",
+    "steps": [
+      {
+        "say": "i want to book a delivery window"
+      },
+      {
+        "say": "five five five zero zero zero zero zero"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "say": "five five five zero zero zero zero zero"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "say": "five five five zero zero zero zero zero"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "identity",
+      "principalLevel": 0,
+      "gate": "verifyCustomer:NEEDS_HUMAN"
+    }
+  },
+  {
+    "id": "dob-year-followup",
+    "steps": [
+      {
+        "say": "i want to book a delivery window"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth"
+      },
+      {
+        "say": "nineteen eighty five"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_deliveryDay",
+      "form": "delivery_window",
+      "principalLevel": 1,
+      "gate": "getAccount:ALLOW"
+    }
+  },
+  {
+    "id": "window-open",
+    "steps": [
+      {
+        "say": "can you deliver on monday"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "say": "in the morning"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "On Monday, September 21, we can deliver in the morning.",
+      "principalLevel": 1,
+      "gate": "getWindows:ALLOW"
+    }
+  },
+  {
+    "id": "window-full-sunday",
+    "steps": [
+      {
+        "say": "i want to book a delivery window"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "say": "the day after tomorrow"
+      },
+      {
+        "say": "afternoon"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "we don't deliver in the afternoon",
+      "gate": "getWindows:ALLOW"
+    }
+  },
+  {
+    "id": "report-happy",
+    "steps": [
+      {
+        "say": "my parcel never arrived"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "it was a small brown box left at the side gate"
+      },
+      {
+        "say": "last tuesday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "call you within 2 days",
+      "principalLevel": 2,
+      "gate": "notifyDepot:ALLOW"
+    }
+  },
+  {
+    "id": "report-delivered-that-day",
+    "steps": [
+      {
+        "say": "my parcel never arrived"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "it was a small brown box left at the side gate"
+      },
+      {
+        "say": "september sixteenth"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "delivered",
+      "form": "report_missing",
+      "gate": "createReport:NEEDS_HUMAN",
+      "text": "Our records show a parcel delivered to you that day"
+    }
+  },
+  {
+    "id": "report-change-date",
+    "steps": [
+      {
+        "say": "my parcel never arrived"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "it was a small brown box left at the side gate"
+      },
+      {
+        "say": "last tuesday"
+      },
+      {
+        "say": "no, the date is wrong"
+      },
+      {
+        "say": "yesterday"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report",
+      "form": "report_missing",
+      "text": "due Thursday, September 17",
+      "slots": {
+        "expectedDate": "2026-09-17"
+      }
+    }
+  },
+  {
+    "id": "report-agent-down",
+    "steps": [
+      {
+        "say": "my parcel never arrived"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "it was a small brown box left at the side gate"
+      },
+      {
+        "say": "last tuesday"
+      },
+      {
+        "serviceDown": true
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "The depot will be in touch with next steps.",
+      "gate": "notifyDepot:ALLOW"
+    }
+  },
+  {
+    "id": "intent-retry-to-agent",
+    "steps": [
+      {
+        "say": "can i change my address"
+      },
+      {
+        "say": "can i change my address"
+      },
+      {
+        "say": "can i change my address"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "form": null
+    }
+  },
+  {
+    "id": "menu-keypad",
+    "steps": [
+      {
+        "say": "what are your opening hours"
+      },
+      {
+        "say": "what are your opening hours"
+      },
+      {
+        "dtmf": "2"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_accountId",
+      "form": "delivery_window",
+      "gate": "getAccount:STEP_UP"
+    }
+  },
+  {
+    "id": "silence-greeting-agent",
+    "steps": [
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "form": null
+    }
+  },
+  {
+    "id": "silence-code-ladder",
+    "steps": [
+      {
+        "say": "where is my parcel"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "april twelfth nineteen eighty five"
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "principalLevel": 1
+    }
+  },
+  {
+    "id": "frustration-offer-yes",
+    "steps": [
+      {
+        "say": "where is my parcel"
+      },
+      {
+        "say": "are you kidding me"
+      },
+      {
+        "say": "this is ridiculous, i just want to know where my parcel is"
+      },
+      {
+        "say": "yes, connect me"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "frustrated",
+      "text": "I'm sorry for the trouble."
+    }
+  },
+  {
+    "id": "frustration-offer-no",
+    "steps": [
+      {
+        "say": "where is my parcel"
+      },
+      {
+        "say": "are you kidding me"
+      },
+      {
+        "say": "this is ridiculous, i just want to know where my parcel is"
+      },
+      {
+        "say": "no, keep going"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_accountId",
+      "form": "track_parcel",
+      "principalLevel": 0,
+      "text": "What's your account ID?"
+    }
+  },
+  {
+    "id": "side-speech-ignored",
+    "steps": [
+      {
+        "say": "where is my parcel"
+      },
+      {
+        "say": "honey can you get the door"
+      }
+    ],
+    "expect": {
+      "decision": "ignore",
+      "form": "track_parcel"
+    }
+  },
+  {
+    "id": "agent-opener",
+    "steps": [
+      {
+        "say": "i want to talk to a person"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "form": null
+    }
+  }
+]
