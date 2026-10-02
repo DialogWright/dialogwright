@@ -261,6 +261,22 @@ describe('checkApp: the app module', () => {
     expect(problems).toContain('prompts.yaml:2:1  prompts  prompt "goodbye" is missing from prompts.yaml; the engine says it when a call ends  ->  add "goodbye:" with its text and interruptible to prompts.yaml');
   });
 
+  it('looks in src/ when the folder has no app module of its own, and reports problems there by that path', async () => {
+    const dir = folder({ 'src/app.ts': `export { code } from ${JSON.stringify(fixtureModule)};\n`, 'forms.yaml': (t) => t.replace('hooks: [complete]', 'hooks: [complete, entry]') });
+    expect(await lines(dir, {})).toEqual([
+      'forms.yaml:10:23  forms.check_hold.hooks[1]  form "check_hold" declares the hook "entry", but the code does not define it  ->  write it in app.ts (code.forms.check_hold.entry), or delete "entry" from this list',
+    ]);
+    const broken = folder({ 'src/app.mjs': 'throw new Error("boom");\n' });
+    expect(await lines(broken, {})).toEqual([
+      'src/app.mjs  (file)  src/app.mjs could not be loaded (boom)  ->  run `tsx src/app.mjs` in the app folder to see the full error; src/app.mjs must import without running anything else',
+    ]);
+  });
+
+  it('prefers the folder\'s own app module to one in src/', async () => {
+    const dir = folder({ 'app.mjs': `export { code } from ${JSON.stringify(fixtureModule)};\n`, 'src/app.mjs': 'throw new Error("not this one");\n' });
+    expect(await checkAppFully(dir)).toEqual({ problems: [], codeChecked: true });
+  });
+
   it('a folder with no app module is checked as YAML only, and says so', async () => {
     expect(await checkAppFully(folder())).toEqual({ problems: [], codeChecked: false });
   });
@@ -337,7 +353,7 @@ describe('dialogwright check', () => {
     const { io, out, err } = cli();
     expect(await main(['check', dir], io)).toBe(0);
     expect(out).toEqual([`${dir}: ok`]);
-    expect(err).toEqual([`${dir}: checked the YAML only; there is no app.ts to check it against (it exports the app's code parts as \`code\`)`]);
+    expect(err).toEqual([`${dir}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`]);
   });
 
   it('--json prints the Problem[] and nothing else', async () => {

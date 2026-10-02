@@ -21,8 +21,9 @@ import { FILE_NAMES } from './schema/index';
  *  - every prompt is `mode: fixed`: the schema allows no other mode, and refuses one with a message
  *    that says so (see the load tests), so there is nothing more to check here.
  *
- * The app module: `app.ts` (or `app.mts`, `app.js`, `app.mjs`) in the app folder, exporting the
- * app's code parts as `code` (an AppCode), or as the default export. It may also call defineApp
+ * The app module: `app.ts` (or `app.mts`, `app.js`, `app.mjs`) in the app folder, or, when the
+ * folder has none, in its `src/` (an app whose folder is its package keeps its code there),
+ * exporting the app's code parts as `code` (an AppCode), or as the default export. It may also call defineApp
  * itself, as the example app does, to be the app's build: a defineApp that throws an
  * AppDefinitionError at import is reported as the problems it carries. Importing needs a TypeScript
  * loader for an app.ts, which is how the `dialogwright` command runs (tsx); a folder with no app
@@ -107,6 +108,9 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
 /** The files an app's module may be, in the order they are looked for. */
 export const APP_MODULES = ['app.ts', 'app.mts', 'app.js', 'app.mjs'] as const;
 
+/** Where an app's module may be, from the app folder, in the order looked in: the folder, then its src/. */
+export const APP_MODULE_PATHS: readonly string[] = [...APP_MODULES, ...APP_MODULES.map((name) => `src/${name}`)];
+
 export interface CheckOptions {
   /** The app's code parts, when the caller has them: they are checked, and no app module is imported. */
   code?: AppCode;
@@ -160,7 +164,7 @@ type Found = { code?: AppCode } | { problems: Problem[]; linked: boolean };
  * cross-checked the folder, and its problems are the answer.
  */
 async function loadCode(dir: string): Promise<Found> {
-  const file = APP_MODULES.find((name) => existsSync(join(dir, name)));
+  const file = APP_MODULE_PATHS.find((path) => existsSync(join(dir, path)));
   if (!file) return {};
   let module: Record<string, unknown>;
   try {
