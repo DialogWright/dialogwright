@@ -19,6 +19,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts",
     "./*.js": "./src/*.js",
     "./*.json": "./src/*.json",
     "./*": "./src/*.ts",

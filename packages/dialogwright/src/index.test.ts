@@ -55,5 +55,17 @@ describe('subpath imports', () => {
     if (pkg.name !== 'dialogwright') return;
     expect(pkg.exports?.['.']).toBe('./src/index.ts');
     expect(pkg.exports?.['./*']).toBe('./src/*.ts');
+    expect(pkg.exports?.['./testing']).toBe('./src/testing/index.ts');
+  });
+});
+
+describe('the test-support entry', () => {
+  it('"dialogwright/testing" has the shadow harness and the cassette-miss test, which the root entry leaves out', async () => {
+    const testing = await import('./testing/index');
+    for (const name of ['shadowSlot', 'withShadowSlots', 'shadowFromEnv', 'createShadowReport', 'ShadowMismatchError', 'isCassetteMiss']) {
+      expect(typeof (testing as Record<string, unknown>)[name], name).toBe('function');
+      expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
+    }
+    expect(testing.shadowSlot).toBe((await import('./testing/shadowSlot')).shadowSlot);
   });
 });
