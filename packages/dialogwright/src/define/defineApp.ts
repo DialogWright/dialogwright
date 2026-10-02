@@ -75,18 +75,24 @@ export class AppDefinitionError extends Error {
   }
 }
 
-/** The file a problem in the app's code is reported against: the code has no YAML line to point at. */
+/** The file a problem in the app's code is reported against by default: the code has no YAML line to point at. */
 export const CODE_FILE = 'app.ts';
+
+export interface DefineAppOptions {
+  /** The app module's path from the app folder, as fixes name it: `src/app.ts` for an app whose code lives in src/. Default: `app.ts`. */
+  codeFile?: string;
+}
 
 /**
  * Builds the app in the folder `dir` with its TypeScript parts `code`. Throws an AppDefinitionError
  * listing every problem when the folder does not load, when the folder and the code do not name the
  * same things, or when validateApp refuses the result.
  */
-export function defineApp(dir: string, code: AppCode): App {
+export function defineApp(dir: string, code: AppCode, options: DefineAppOptions = {}): App {
+  const codeFile = options.codeFile ?? CODE_FILE;
   const loaded = loadAppFolder(dir);
   if (!loaded.config) throw new AppDefinitionError(dir, loaded.problems);
-  const problems = crossLink(loaded.config, code, loaded.locate);
+  const problems = crossLink(loaded.config, code, loaded.locate, codeFile);
   if (problems.length > 0) throw new AppDefinitionError(dir, problems);
   const app = buildApp(loaded.config, code);
   try {
@@ -95,7 +101,7 @@ export function defineApp(dir: string, code: AppCode): App {
     // The cross-links above cover what validateApp checks of the folder; this is the backstop.
     const message = error instanceof Error ? error.message : String(error);
     throw new AppDefinitionError(dir, [
-      { file: '.', line: 0, column: 0, path: WHOLE_FILE, message: `validateApp refused the app: ${message}`, fix: 'correct the reference it names, in the YAML file or in app.ts' },
+      { file: '.', line: 0, column: 0, path: WHOLE_FILE, message: `validateApp refused the app: ${message}`, fix: `correct the reference it names, in the YAML file or in ${codeFile}` },
     ]);
   }
   return app;
@@ -109,9 +115,6 @@ export function defineApp(dir: string, code: AppCode): App {
 export function codePath(...segs: readonly string[]): string {
   return `code${segs.map((s) => (/^[A-Za-z_$][\w$]*$/.test(s) ? `.${s}` : `[${JSON.stringify(s)}]`)).join('')}`;
 }
-
-/** Where an author writes a part of the code, as a fix names it: `app.ts (code.forms.renew.complete)`. */
-const inCode = (...segs: readonly string[]): string => `${CODE_FILE} (${codePath(...segs)})`;
 
 const has = (obj: object | null | undefined, key: string): boolean => obj != null && Object.hasOwn(obj, key);
 
@@ -128,14 +131,16 @@ function renameHint(word: string, known: readonly string[]): string {
  * YAML file where the YAML names something, and in app.ts (line 0) where only the code does.
  * Exported for `dialogwright check`.
  */
-export function crossLink(config: LoadedConfig, code: AppCode, locate: LoadResult['locate']): Problem[] {
+export function crossLink(config: LoadedConfig, code: AppCode, locate: LoadResult['locate'], codeFile: string = CODE_FILE): Problem[] {
   const problems: Problem[] = [];
+  /** Where an author writes a part of the code, as a fix names it: `app.ts (code.forms.renew.complete)`. */
+  const inCode = (...segs: readonly string[]): string => `${codeFile} (${codePath(...segs)})`;
   const yaml = (file: string, path: DataPath, message: string, fix: string): void => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     problems.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   };
   const inTs = (segs: readonly string[], message: string, fix: string): void => {
-    problems.push({ file: CODE_FILE, line: 0, column: 0, path: codePath(...segs), message, fix });
+    problems.push({ file: codeFile, line: 0, column: 0, path: codePath(...segs), message, fix });
   };
 
   const slots = Object.keys(code.slots ?? {});
@@ -310,12 +315,12 @@ export function crossLink(config: LoadedConfig, code: AppCode, locate: LoadResul
     if (spec?.id !== id) inTs(['slots', id], `the slot spec filed under "${id}" has the id "${String(spec?.id)}"`, `file it under ${codePath('slots', String(spec?.id))}, or give it the id "${id}"`);
   }
 
-  return sortProblems(problems);
+  return sortProblems(problems, codeFile);
 }
 
-/** Problems by file (in the folder's file order, app.ts last), then position. */
-function sortProblems(problems: readonly Problem[]): Problem[] {
-  const order: string[] = [...Object.values(FILE_NAMES), CODE_FILE];
+/** Problems by file (in the folder's file order, the code's file last), then position. */
+function sortProblems(problems: readonly Problem[], codeFile: string): Problem[] {
+  const order: string[] = [...Object.values(FILE_NAMES), codeFile];
   const rank = (file: string) => {
     const i = order.indexOf(file);
     return i === -1 ? order.length : i;

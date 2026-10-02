@@ -136,6 +136,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   const { config, locate } = loaded;
 
   const found = options.code ? { code: options.code } : await loadCode(dir);
+  const codeFile = ('file' in found ? found.file : undefined) ?? CODE_FILE;
   const problems: Problem[] = [];
   let code: AppCode | undefined;
   let linked = false;
@@ -144,19 +145,20 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     linked = found.linked;
   } else if (found.code) {
     code = found.code;
-    problems.push(...crossLink(config, code, locate));
+    problems.push(...crossLink(config, code, locate, codeFile));
     linked = true;
   }
   problems.push(...checkPrompts(config, locate, code, linked));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
-  return { problems: sortProblems(problems), codeChecked: code !== undefined || linked };
+  return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
 }
 
 // ---------------------------------------------------------------------------------------------
 // The app's code
 // ---------------------------------------------------------------------------------------------
 
-type Found = { code?: AppCode } | { problems: Problem[]; linked: boolean };
+/** What loadCode found: the code and the module's path from the app folder (none when there is no module), or the problems importing it raised. */
+type Found = { code?: AppCode; file?: string } | { problems: Problem[]; linked: boolean; file: string };
 
 /**
  * Imports the folder's app module and takes its `code` (or default) export. A module that throws
@@ -170,11 +172,12 @@ async function loadCode(dir: string): Promise<Found> {
   try {
     module = (await import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href)) as Record<string, unknown>;
   } catch (error) {
-    if (error instanceof AppDefinitionError) return { problems: [...error.problems], linked: true };
+    if (error instanceof AppDefinitionError) return { problems: [...error.problems], linked: true, file };
     const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
     return {
       problems: [{ file, line: 0, column: 0, path: WHOLE_FILE, message: `${file} could not be loaded (${message})`, fix: `run \`tsx ${file}\` in the app folder to see the full error; ${file} must import without running anything else` }],
       linked: false,
+      file,
     };
   }
   const code = module.code ?? module.default;
@@ -182,9 +185,10 @@ async function loadCode(dir: string): Promise<Found> {
     return {
       problems: [{ file, line: 0, column: 0, path: WHOLE_FILE, message: `${file} exports no app code: neither \`code\` nor a default export is an object`, fix: `in ${file}, write \`export const code: AppCode = { slots, tools, systems, forms }\` (AppCode is exported by "dialogwright")` }],
       linked: false,
+      file,
     };
   }
-  return { code: code as AppCode };
+  return { code: code as AppCode, file };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -323,11 +327,11 @@ function checkCorpus(config: LoadedConfig, locate: LoadResult['locate'], dir: st
 
 // ---------------------------------------------------------------------------------------------
 
-/** Problems by file (the folder's files in their order, locale files, any other file, then app.ts), then position. */
-function sortProblems(problems: readonly Problem[]): Problem[] {
+/** Problems by file (the folder's files in their order, locale files, any other file, then the app module), then position. */
+function sortProblems(problems: readonly Problem[], codeFile: string): Problem[] {
   const names: string[] = Object.values(FILE_NAMES);
   const rank = (file: string): number => {
-    if (file === CODE_FILE) return names.length + 2;
+    if (file === codeFile) return names.length + 2;
     const i = names.indexOf(file);
     if (i !== -1) return i;
     return file.startsWith('locale/') ? names.length : names.length + 1;

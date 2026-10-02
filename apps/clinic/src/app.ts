@@ -37,4 +37,4 @@ export const code: AppCode = {
 };
 
 /** The clinic line: the folder joined with the code above. */
-export const clinicApp: App = defineApp(CLINIC_DIR, code);
+export const clinicApp: App = defineApp(CLINIC_DIR, code, { codeFile: 'src/app.ts' });

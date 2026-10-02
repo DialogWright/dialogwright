@@ -264,7 +264,7 @@ describe('checkApp: the app module', () => {
   it('looks in src/ when the folder has no app module of its own, and reports problems there by that path', async () => {
     const dir = folder({ 'src/app.ts': `export { code } from ${JSON.stringify(fixtureModule)};\n`, 'forms.yaml': (t) => t.replace('hooks: [complete]', 'hooks: [complete, entry]') });
     expect(await lines(dir, {})).toEqual([
-      'forms.yaml:10:23  forms.check_hold.hooks[1]  form "check_hold" declares the hook "entry", but the code does not define it  ->  write it in app.ts (code.forms.check_hold.entry), or delete "entry" from this list',
+      'forms.yaml:10:23  forms.check_hold.hooks[1]  form "check_hold" declares the hook "entry", but the code does not define it  ->  write it in src/app.ts (code.forms.check_hold.entry), or delete "entry" from this list',
     ]);
     const broken = folder({ 'src/app.mjs': 'throw new Error("boom");\n' });
     expect(await lines(broken, {})).toEqual([

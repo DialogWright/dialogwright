@@ -35,9 +35,9 @@ function folder(files: Record<string, string> = {}): string {
 }
 
 /** The problems defineApp throws for this folder and code, one formatted line each. */
-function problems(code: AppCode, dir = LIBRARY_DIR): string[] {
+function problems(code: AppCode, dir = LIBRARY_DIR, codeFile?: string): string[] {
   try {
-    defineApp(dir, code);
+    defineApp(dir, code, codeFile ? { codeFile } : {});
   } catch (error) {
     if (error instanceof AppDefinitionError) return error.problems.map(formatProblem);
     throw error;
@@ -177,6 +177,16 @@ describe('defineApp: the folder and the code must name the same things', () => {
     expect(problems({ ...libraryCode, forms: { ...libraryCode.forms, renew_loan: { complete } } })).toEqual([
       'forms.yaml:6:13  forms.renew_loan.hooks[0]  form "renew_loan" declares the hook "confirmedParams", but the code does not define it  ->  write it in app.ts (code.forms.renew_loan.confirmedParams), or delete "confirmedParams" from this list',
     ]);
+  });
+
+  it('names the app module in its fixes: app.ts by default, the given path when the code lives elsewhere', () => {
+    const code = { ...libraryCode, forms: { ...libraryCode.forms, renew_loan: { complete } } };
+    const fix = (codeFile?: string): string => problems(code, LIBRARY_DIR, codeFile)[0]!.split('  ->  ')[1]!;
+    expect(fix()).toBe('write it in app.ts (code.forms.renew_loan.confirmedParams), or delete "confirmedParams" from this list');
+    expect(fix('src/app.ts')).toBe('write it in src/app.ts (code.forms.renew_loan.confirmedParams), or delete "confirmedParams" from this list');
+    const { findHold: _, ...tools } = libraryCode.tools;
+    const alone = problems({ ...libraryCode, tools, forms: { ...libraryCode.forms, check_hold: { ...libraryCode.forms.check_hold!, onAnswers: () => undefined } } }, LIBRARY_DIR, 'src/app.ts');
+    expect(alone.every((line) => !line.includes('app.ts (') || line.includes('src/app.ts (') || line.startsWith('src/app.ts'))).toBe(true);
   });
 
   it('a hook the code defines that the form does not declare', () => {
