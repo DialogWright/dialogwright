@@ -6,6 +6,7 @@ import { isNoul, noulValue, type NoulAnswer } from '../../jev/types';
 import { meetsThreshold } from '../parts/thresholds';
 import { birthdateType } from '../birthdate/index';
 import { choiceType } from '../choice/index';
+import { dateType } from '../date/index';
 import { digitsType } from '../digits/index';
 import { textType } from '../text/index';
 import type { BuiltSlotSpec, SlotExample, SlotType } from '../types';
@@ -97,6 +98,7 @@ describe('the correct toy, and the built-in types', () => {
     expect(failing(digitsType, { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(choiceType, { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(birthdateType, { locales: ['en-US', 'es'] })).toEqual([]);
+    expect(failing(dateType, { locales: ['en-US', 'es'] })).toEqual([]);
   });
 });
 

@@ -284,6 +284,210 @@
         "properties": {
           "type": {
             "type": "string",
+            "const": "date",
+            "description": "The slot type."
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "future",
+              "past"
+            ],
+            "description": "Which days the slot takes. \"future\": today or a day to come (an appointment, a delivery); \"tomorrow\" and \"Monday\" are the next ones. \"past\": today or a day gone, up to two years back (when something happened); \"yesterday\" and \"Monday\" are the last ones."
+          },
+          "windows": {
+            "default": false,
+            "description": "`range: future` only. Whether the caller may name a span of days (\"next week\", \"in December\") rather than a day: the span is held as the partial { kind: window, start, end, label }, the `narrowPrompt` asks which day in it, and a bare weekday said next is looked for inside it. Adds the window question.",
+            "type": "boolean"
+          },
+          "qualifier": {
+            "default": false,
+            "description": "`range: future` only. Whether to ask if a weekday is \"this\" one or \"next\" one (\"next Tuesday\" is in the next week). Adds the qualifier question.",
+            "type": "boolean"
+          },
+          "narrowPrompt": {
+            "description": "With `windows`: the prompt that asks which day in a span of days (the slot's partialPromptId), given {window} (\"next week\", \"in December\"). Default: ask_<slot>_narrow.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "preferMonthDay": {
+            "default": true,
+            "description": "Whether a month and a day the model is sure of (SLOT_CHOICE_CONFIRM) win over a weekday reading of the mode: \"Monday, September 28\" names one day twice, and a weekday reading would land on the next or last Monday instead of the date said.",
+            "type": "boolean"
+          },
+          "fillAt": {
+            "default": "fill",
+            "description": "How sure the model must be of the day (the least of the parts it read) for it to count. \"fill\": SLOT_CHOICE_FILL; a day below it is treated as not resolved (`whenUnresolved`). \"confirm\": SLOT_CHOICE_CONFIRM; a day below it is invalid (reason low_confidence, raw the ISO day), and `readBack` says whether one below SLOT_CHOICE_FILL is acknowledged.",
+            "type": "string",
+            "enum": [
+              "fill",
+              "confirm"
+            ]
+          },
+          "whenUnsaid": {
+            "default": "invalid-if-prompted",
+            "description": "What a turn that names no day (the mode question answers none, or is below SLOT_CHOICE_CONFIRM) gives. \"invalid-if-prompted\": invalid (reason unresolvable, raw empty) when the caller was asked for the day, so the retry ladder moves on, else absent. \"absent\": always absent.",
+            "type": "string",
+            "enum": [
+              "invalid-if-prompted",
+              "absent"
+            ]
+          },
+          "whenUnresolved": {
+            "default": "invalid-if-prompted",
+            "description": "What a day named but not resolved (no such day, out of range, a span without `windows`, or below the `fillAt` threshold under \"fill\") gives. \"invalid-if-prompted\": invalid (reason unresolvable, raw empty) when the caller was asked for the day, else absent. \"invalid\": always invalid (reason unresolvable), its raw the mode the caller used (absolute, weekday, ...).",
+            "type": "string",
+            "enum": [
+              "invalid-if-prompted",
+              "invalid"
+            ]
+          },
+          "keypad": {
+            "default": false,
+            "description": "Whether the caller can key the day on the keypad as four digits, month then day (MMDD: 0922), resolved as a spoken month and day are for the `range`. Needs an ask_<slot>_dtmf line.",
+            "type": "boolean"
+          },
+          "confirm": {
+            "default": "summary",
+            "description": "\"summary\": a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the day as {<slot>}) when `readBack` says so.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "by-confidence"
+            ]
+          },
+          "readBack": {
+            "default": "implicit",
+            "description": "With `confirm: by-confidence`, what a filled day asks for: \"implicit\" (always acknowledged), \"below-fill\" (only when the model is less sure of it than SLOT_CHOICE_FILL), \"none\" (never).",
+            "type": "string",
+            "enum": [
+              "implicit",
+              "below-fill",
+              "none"
+            ]
+          },
+          "context": {
+            "description": "The sentence each default question starts with after \"Read asr.text.\", saying what day the caller is giving (\"The caller is saying which day a parcel was due.\"). Default, by `range`: \"The caller is saying the day something happened.\" (past), \"The caller is saying the day they want.\" (future).",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "exclude": {
+            "description": "A sentence naming a date the caller may also say that is not this day (\"A date of birth is not the day the parcel was due.\"), which the default mode, month and day questions end with. Default: none.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: mode, modeNone, relative, weekday, qualifier, month, day, window.",
+            "type": "object",
+            "properties": {
+              "mode": {
+                "description": "The question that asks how the caller refers to the day: a relative day, a weekday, a month and day, a span of days (with `windows`), or none. By default {modes} describes each choice for the slot's `range`, and the question ends with the `exclude` sentence.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "modeNone": {
+                "description": "What the mode question's \"none\" choice means (its criterion), such as which dates are not this day. Default: nothing (the label alone).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "relative": {
+                "description": "The question that asks which relative day the caller says: today, yesterday or the day before (`range: past`), or today, tomorrow or the day after (`range: future`).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "weekday": {
+                "description": "The question that asks which day of the week the caller names.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "qualifier": {
+                "description": "With `qualifier`: the question that asks whether a weekday is \"this\" one or \"next\" one.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "month": {
+                "description": "The question that asks which month the caller names. By default it ends with the `exclude` sentence.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "day": {
+                "description": "The question that asks which day of the month the caller names. By default it ends with the `exclude` sentence.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "window": {
+                "description": "With `windows`: the question that asks which span of days the caller names.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: mode, relative, weekday, qualifier, month, day, window), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "mode": {
+                "description": "The id of the question that asks how the caller refers to the day.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "relative": {
+                "description": "The id of the question that asks which relative day the caller says.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "weekday": {
+                "description": "The id of the question that asks which day of the week the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "qualifier": {
+                "description": "The id of the question that asks whether a weekday is this one or next one.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "month": {
+                "description": "The id of the question that asks which month the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "day": {
+                "description": "The id of the question that asks which day of the month the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "window": {
+                "description": "The id of the question that asks which span of days the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "range"
+        ],
+        "additionalProperties": false,
+        "description": "A calendar day, ahead or back: an appointment, a delivery, the day something happened."
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
             "const": "digits",
             "description": "The slot type."
           },

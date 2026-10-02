@@ -13,6 +13,8 @@ export { birthdateType } from './birthdate/index';
 export type { BirthdateOptions, BirthdatePartial } from './birthdate/index';
 export { choiceType } from './choice/index';
 export type { ChoiceOptions, ChoiceOption } from './choice/index';
+export { dateType } from './date/index';
+export type { DateOptions, DateWindowPartial } from './date/index';
 export { digitsType } from './digits/index';
 export type { DigitsOptions } from './digits/index';
 export { textType } from './text/index';
