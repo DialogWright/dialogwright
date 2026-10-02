@@ -44,11 +44,11 @@ export type { Problem } from './define/problems';
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
 export {
   defineSlot, defineSlots, buildSlot, SlotConfigError, isSlotConfigError, slotTypeJsonSchema, BUILT_IN_SLOT_TYPES, registerSlotType, defineSlotType,
-  birthdateType, choiceType, dateType, digitsType, nameType, textType, textParts, questionParts, questionText, renderTemplate, TemplateError, meetsThreshold, examplesFrom, parseSlotExamples,
+  birthdateType, choiceType, dateType, digitsType, nameType, recordType, textType, textParts, questionParts, questionText, renderTemplate, TemplateError, meetsThreshold, examplesFrom, parseSlotExamples,
 } from './slots/index';
 export type {
   BuildSlotOptions, BuildSlotResult, SlotSource, BuiltSlotSpec, SlotType, SlotTypeDocs, LibrarySlotSpec, SlotExample, SlotUtterance,
-  ExampleAnswer, ExampleContext, ExpectedOutcome, SlotKeypadExample, SlotTypes, BirthdateOptions, BirthdatePartial, ChoiceOptions, ChoiceOption, DateOptions, DateWindowPartial, DigitsOptions, NameOptions, TextOptions, TextPartDef, TextParts, QuestionParts,
+  ExampleAnswer, ExampleContext, ExpectedOutcome, SlotKeypadExample, SlotTypes, BirthdateOptions, BirthdatePartial, ChoiceOptions, ChoiceOption, DateOptions, DateWindowPartial, DigitsOptions, NameOptions, RecordOptions, TextOptions, TextPartDef, TextParts, QuestionParts,
 } from './slots/index';
 
 // The channel model: what the engine hears (events), what it does (actions), what a channel can do (caps).
@@ -100,6 +100,8 @@ export {
 } from './core/extract/date';
 export type { ComponentPick, DateComponents, DateWindow, DateResolution } from './core/extract/date';
 export { spokenToDigits, tokenize } from './core/extract/spokenNumber';
+export { numbersSaid } from './core/extract/numbersSaid';
+export type { NumbersSaidOptions } from './core/extract/numbersSaid';
 export { matchesMask } from './core/extract/mask';
 export { candidateSpans, candidateWordSpans, FILLER_WORDS, MAX_WORD_NGRAM } from './core/spans';
 

@@ -90,6 +90,8 @@ export interface ExampleContext {
   todayIso?: string;
   /** The app's records the slot may choose among (SlotContext.records). */
   records?: readonly unknown[];
+  /** The app's records by name (SlotContext.sources), for a slot that names its list. */
+  sources?: Readonly<Record<string, readonly unknown[]>>;
 }
 
 /** The outcome an utterance should give: its kind, and any of its fields to compare exactly. */

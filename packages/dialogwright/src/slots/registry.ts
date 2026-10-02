@@ -3,6 +3,7 @@ import { choiceType } from './choice/index';
 import { dateType } from './date/index';
 import { digitsType } from './digits/index';
 import { nameType } from './name/index';
+import { recordType } from './record/index';
 import { textType } from './text/index';
 import type { SlotType, SlotTypes } from './types';
 
@@ -17,6 +18,7 @@ export const BUILT_IN_SLOT_TYPES: SlotTypes = Object.freeze({
   [dateType.type]: dateType,
   [digitsType.type]: digitsType,
   [nameType.type]: nameType,
+  [recordType.type]: recordType,
   [textType.type]: textType,
 });
 

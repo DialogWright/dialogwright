@@ -27,6 +27,7 @@ export function kitContext(text: string, over: ExampleContext = {}, locale?: str
     records: over.records ?? [],
     prompted: over.prompted ?? false,
   };
+  if (over.sources !== undefined) ctx.sources = over.sources;
   const lang = locale ?? over.locale;
   if (lang !== undefined) ctx.locale = lang;
   return ctx;

@@ -140,12 +140,20 @@ const where = (ctx: SlotContext): string =>
 
 /** The contexts the kit tries a slot in: no words and each utterance's, asked or not, with and without a value on file, in each locale, and each utterance's own. */
 function contextsOf(r: Run, windows: readonly SlotPartial[] = []): SlotContext[] {
-  const texts = ['', ...r.example.utterances.map((u) => u.text)];
+  // Each utterance's words with the records it was said over (an app's lists stay the same whether
+  // or not the slot was asked for), and the empty words with none.
+  const turns: { text: string; lists: ExampleContext }[] = [
+    { text: '', lists: {} },
+    ...r.example.utterances.map((u) => ({
+      text: u.text,
+      lists: { ...(u.context?.records !== undefined ? { records: u.context.records } : {}), ...(u.context?.sources !== undefined ? { sources: u.context.sources } : {}) },
+    })),
+  ];
   const out: SlotContext[] = [];
   for (const locale of [undefined, ...r.locales]) {
-    for (const text of texts) {
-      for (const over of [{}, { prompted: true }, { prompted: true, current: ON_FILE }, { current: ON_FILE }] as ExampleContext[]) out.push(kitContext(text, over, locale));
-      for (const window of windows) out.push(kitContext(text, { prompted: true, window }, locale));
+    for (const { text, lists } of turns) {
+      for (const over of [{}, { prompted: true }, { prompted: true, current: ON_FILE }, { current: ON_FILE }] as ExampleContext[]) out.push(kitContext(text, { ...lists, ...over }, locale));
+      for (const window of windows) out.push(kitContext(text, { ...lists, prompted: true, window }, locale));
     }
   }
   for (const u of r.example.utterances) out.push(kitContext(u.text, u.context));

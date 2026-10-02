@@ -9,6 +9,7 @@ import { choiceType } from '../choice/index';
 import { dateType } from '../date/index';
 import { digitsType } from '../digits/index';
 import { nameType } from '../name/index';
+import { recordType } from '../record/index';
 import { textType } from '../text/index';
 import type { BuiltSlotSpec, SlotExample, SlotType } from '../types';
 import { CHECK_IDS, ConformanceError, slotConformanceChecks, type CheckId, type SlotConformanceOptions } from './checks';
@@ -101,6 +102,7 @@ describe('the correct toy, and the built-in types', () => {
     expect(failing(birthdateType, { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(dateType, { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(nameType, { locales: ['en-US', 'es'] })).toEqual([]);
+    expect(failing(recordType, { locales: ['en-US', 'es'] })).toEqual([]);
   });
 });
 

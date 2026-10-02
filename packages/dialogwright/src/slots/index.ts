@@ -19,6 +19,8 @@ export { digitsType } from './digits/index';
 export type { DigitsOptions } from './digits/index';
 export { nameType } from './name/index';
 export type { NameOptions } from './name/index';
+export { recordType } from './record/index';
+export type { RecordOptions } from './record/index';
 export { textType } from './text/index';
 export type { TextOptions } from './text/index';
 export type {

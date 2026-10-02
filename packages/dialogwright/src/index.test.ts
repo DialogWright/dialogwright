@@ -18,10 +18,10 @@ describe('the package entry', () => {
       'scripted', 'replayRecords', 'MemoryAuditLog',
       // the building blocks an app's hooks and slot parsers use
       'isChoice', 'isNoul', 'isScore', 'noulValue', 'rankProbabilities', 'topMargin', 'handoff', 'handoffPromptId', 'DEFAULT_THRESHOLDS',
-      'parseIso', 'addDays', 'describeDay', 'describeDob', 'resolveDate', 'MONTHS', 'WEEKDAYS', 'spokenToDigits', 'tokenize', 'matchesMask',
+      'parseIso', 'addDays', 'describeDay', 'describeDob', 'resolveDate', 'MONTHS', 'WEEKDAYS', 'spokenToDigits', 'tokenize', 'numbersSaid', 'matchesMask',
       'candidateSpans', 'candidateWordSpans', 'atLeast',
       // the slot library
-      'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType', 'defineSlotType', 'textType', 'digitsType', 'choiceType', 'birthdateType', 'dateType', 'nameType',
+      'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType', 'defineSlotType', 'textType', 'digitsType', 'choiceType', 'birthdateType', 'dateType', 'nameType', 'recordType',
       'textParts', 'questionParts', 'renderTemplate', 'meetsThreshold',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
@@ -48,6 +48,7 @@ describe('the package entry', () => {
     expect(entry.BUILT_IN_SLOT_TYPES.birthdate).toBe(entry.birthdateType);
     expect(entry.BUILT_IN_SLOT_TYPES.date).toBe(entry.dateType);
     expect(entry.BUILT_IN_SLOT_TYPES.name).toBe(entry.nameType);
+    expect(entry.BUILT_IN_SLOT_TYPES.record).toBe(entry.recordType);
     expect(entry.defineSlot('note', { type: 'text', what: 'a note' }).type).toBe('text');
     // the library's types are exported with the functions that take them
     const spec: import('./index').LibrarySlotSpec = entry.defineSlot('note', { type: 'text', what: 'a note' });

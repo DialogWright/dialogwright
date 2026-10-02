@@ -744,6 +744,137 @@
         "properties": {
           "type": {
             "type": "string",
+            "const": "record",
+            "description": "The slot type."
+          },
+          "from": {
+            "description": "The list of records to choose among, by name: the app gives its lists by name from facts.forSlots ({ sources: { <name>: [...] } }), so two record slots can each read their own. Default: the app's one list (facts.forSlots records).",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "key": {
+            "default": "id",
+            "description": "The record field whose value the slot takes (a string or a number), and which the keypad and a spoken number give.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "keyPattern": {
+            "default": "[A-Za-z0-9_-]+",
+            "description": "A regular expression (its source, no slashes) the whole key must match, such as \"\\d{4}\" for four digits. A record whose key does not match is not offered, and a label or keys that do not match are no value.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "labelPrefix": {
+            "default": "record_",
+            "description": "What each label the model chooses starts with, before the key (\"parcel_\" gives parcel_4711). It keeps a key from being taken for the question's own \"none\".",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "label": {
+            "default": "Number {key}",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+            "description": "The criterion the model is given for each record. A template: {field} is the record's field of that name, {key} the record's key, and {field|day} formats an ISO date as a day (\"Friday, September 18\"). Nothing else is evaluated."
+          },
+          "spoken": {
+            "description": "Numbers of `digits` digits the caller says (spoken or written) are offered too, after the records, even when no record has them, so a caller can name one that is not on their list. Default: off, only the records are offered.",
+            "type": "object",
+            "properties": {
+              "digits": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "description": "How many digits a number the caller says has."
+              },
+              "label": {
+                "default": "Number {key}, as the caller said it",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                "description": "The criterion the model is given for a number the caller says; {key} is the number. A template: {field} is the record's field of that name, {key} the record's key, and {field|day} formats an ISO date as a day (\"Friday, September 18\"). Nothing else is evaluated."
+              },
+              "skipYearAfterMonth": {
+                "default": false,
+                "description": "Whether a spoken year right after a month name (\"March twenty twenty five\") is a date rather than a number.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "digits"
+            ],
+            "additionalProperties": false
+          },
+          "missReason": {
+            "default": "no_match",
+            "description": "The reason of the invalid outcome when the slot was asked for and the caller chose nothing (or the model was not sure enough). Not asked for, that is absent.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "keypad": {
+            "description": "How many keys the caller keys the key with, after spoken answers missed; the keys are the value when they match keyPattern. Needs an ask_<slot>_dtmf line. Default: no keypad.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "disambiguate": {
+            "default": true,
+            "description": "Whether two records the model cannot tell apart (the top two within SLOT_CHOICE_MARGIN) make the slot ask which one (disambiguate_<slot>, with {a} and {b}).",
+            "type": "boolean"
+          },
+          "fillAt": {
+            "default": "SLOT_CHOICE_FILL",
+            "description": "The threshold the model's probability for the record must reach for the slot to fill. Below SLOT_CHOICE_CONFIRM nothing was chosen.",
+            "type": "string",
+            "enum": [
+              "SLOT_CHOICE_FILL",
+              "SLOT_CHOICE_CONFIRM"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none.",
+            "type": "object",
+            "properties": {
+              "instructions": {
+                "description": "The question that asks which record the caller means, sent to the model in place of the default.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "none": {
+                "description": "What the question's \"none\" label means: the caller names no record.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the default: `ids.choice` is the question's id (default: the slot's id followed by \"Choice\"), to keep the id an existing slot used.",
+            "type": "object",
+            "properties": {
+              "choice": {
+                "description": "The id of the question that asks which record the caller means.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "One of the app's records, chosen by what the caller says of it: a parcel, an order, a booking.",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
             "const": "text",
             "description": "The slot type."
           },

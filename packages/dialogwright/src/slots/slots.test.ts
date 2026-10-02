@@ -17,6 +17,7 @@ import { choiceType } from './choice/index';
 import { dateType } from './date/index';
 import { digitsType } from './digits/index';
 import { nameType } from './name/index';
+import { recordType } from './record/index';
 import { textType } from './text/index';
 import type { SlotType } from './types';
 
@@ -80,22 +81,23 @@ describe('the registry', () => {
   });
 
   it('holds the built-in types, frozen', () => {
-    expect(Object.keys(BUILT_IN_SLOT_TYPES)).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'text']);
+    expect(Object.keys(BUILT_IN_SLOT_TYPES)).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'record', 'text']);
     expect(BUILT_IN_SLOT_TYPES.text).toBe(textType);
     expect(BUILT_IN_SLOT_TYPES.choice).toBe(choiceType);
     expect(BUILT_IN_SLOT_TYPES.birthdate).toBe(birthdateType);
     expect(BUILT_IN_SLOT_TYPES.date).toBe(dateType);
     expect(BUILT_IN_SLOT_TYPES.digits).toBe(digitsType);
     expect(BUILT_IN_SLOT_TYPES.name).toBe(nameType);
+    expect(BUILT_IN_SLOT_TYPES.record).toBe(recordType);
     expect(Object.isFrozen(BUILT_IN_SLOT_TYPES)).toBe(true);
   });
 
   it('adds an app\'s type to a new map, leaving the built-in one as it was, and refuses a name taken', () => {
     const types = registerSlotType(echo);
-    expect(Object.keys(types)).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'text', 'echo']);
-    expect(Object.keys(BUILT_IN_SLOT_TYPES)).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'text']);
+    expect(Object.keys(types)).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'record', 'text', 'echo']);
+    expect(Object.keys(BUILT_IN_SLOT_TYPES)).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'record', 'text']);
     expect(defineSlot('ping', { type: 'echo' }, types).type).toBe('echo');
-    expect(() => defineSlot('ping', { type: 'echo' })).toThrow('"type" is "echo", which is not a slot type here; the types are "birthdate", "choice", "date", "digits", "name", "text"');
+    expect(() => defineSlot('ping', { type: 'echo' })).toThrow('"type" is "echo", which is not a slot type here; the types are "birthdate", "choice", "date", "digits", "name", "record", "text"');
     expect(() => registerSlotType(echo, types)).toThrow('a slot type named "echo" is already registered');
   });
 
@@ -126,7 +128,7 @@ describe('buildSlot from a YAML file', () => {
     const note = buildSlot('note', doc.toJS().note, { source: { file: 'slots.yaml', doc, lines, at: ['note'] } });
     const other = buildSlot('other', doc.toJS().other, { source: { file: 'slots.yaml', doc, lines, at: ['other'] } });
     expect(!note.ok && note.problems.map(formatProblem)).toEqual(['slots.yaml:4:3  note.maxLenght  unknown key "maxLenght" under note  ->  rename "maxLenght" to "maxLength"']);
-    expect(!other.ok && other.problems.map(formatProblem)).toEqual(['slots.yaml:6:9  other.type  "type" is "txt", which is not a slot type here; the types are "birthdate", "choice", "date", "digits", "name", "text"  ->  change it to "text"']);
+    expect(!other.ok && other.problems.map(formatProblem)).toEqual(['slots.yaml:6:9  other.type  "type" is "txt", which is not a slot type here; the types are "birthdate", "choice", "date", "digits", "name", "record", "text"  ->  change it to "text"']);
   });
 
   it('refuses a slot id that is not an id, and a configuration that is not a map', () => {

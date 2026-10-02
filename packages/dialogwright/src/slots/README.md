@@ -54,7 +54,7 @@ Each type has a folder under `src/slots/`:
 - **Text parts** (`textParts`). A type declares its pieces of question text by name, each with a default template that uses only neutral words. Templates have `{name}` placeholders and nothing else; a placeholder the type does not give is an error when the type is defined. An app replaces a part with `text: { <part>: "..." }`, which is sent to the model exactly as written. That is how an app keeps its own wording, or the words a recording was made with.
 - **Question ids** (`questionParts`). A question's id is the slot's id followed by the part's name (`courierNote` and `given` give `courierNoteGiven`), so two slots of one type never share an id. `ids: { <part>: "..." }` keeps the id an existing slot used.
 - **Thresholds by name** (`meetsThreshold(ctx.thresholds, 'SLOT_DETECT', p)`). A type compares the model's numbers only to thresholds it reads by name from the context, never to a number written in the type.
-- **Readers**, re-exported from their homes in the engine: `noulValue`, `isChoice`, `rankProbabilities`, `topMargin`, `atLeast`, `candidateSpans`, `candidateWordSpans`, `spokenToDigits`, `tokenize`, `matchesMask`, and the date helpers.
+- **Readers**, re-exported from their homes in the engine: `noulValue`, `isChoice`, `rankProbabilities`, `topMargin`, `atLeast`, `candidateSpans`, `candidateWordSpans`, `spokenToDigits`, `tokenize`, `numbersSaid`, `matchesMask`, and the date helpers.
 - **Examples** (`examplesFrom`, `parseSlotExamples`): reading and checking an `examples.yaml`.
 
 ## The conformance kit
@@ -110,7 +110,7 @@ A slot reads the model's answers, not the caller's words, so an example gives bo
       expect: { kind: absent }
 ```
 
-An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso` or `records`. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `raw`, `retryPromptId` and `promptId`. A type with a keypad rung adds `keypad: [{ digits, expect: { value, display? } | null }]`.
+An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso`, `records` or `sources`. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `raw`, `retryPromptId` and `promptId`. A type with a keypad rung adds `keypad: [{ digits, expect: { value, display? } | null }]`.
 
 ## Adding a type
 

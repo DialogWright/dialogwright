@@ -29,6 +29,7 @@ const utterance = z.strictObject({
       window: partial.nullable().optional(),
       todayIso: z.string().optional(),
       records: z.array(z.unknown()).optional(),
+      sources: z.record(z.string(), z.array(z.unknown())).optional(),
     })
     .optional(),
   expect: z.strictObject({

@@ -12,6 +12,8 @@ export { atLeast, THRESHOLD_EPSILON } from '../../core/thresholds';
 export { isChoice, isNoul, isScore, noulValue, rankProbabilities, topMargin } from '../../jev/types';
 export { candidateSpans, candidateWordSpans, FILLER_WORDS } from '../../core/spans';
 export { spokenToDigits, tokenize } from '../../core/extract/spokenNumber';
+export { numbersSaid } from '../../core/extract/numbersSaid';
+export type { NumbersSaidOptions } from '../../core/extract/numbersSaid';
 export { matchesMask } from '../../core/extract/mask';
 export { describeDay, describeDob, describeWindow, resolveDate, parseIso, toIso, addDays, normalizeYear, ordinal } from '../../core/extract/date';
 export { resolvePastDate, pastDayResult } from '../../core/extract/pastDate';
