@@ -137,10 +137,10 @@ describe('defineSlot problems', () => {
 
   it('names an unknown type and the one meant, and a missing one', () => {
     expect((buildSlot('note', { type: 'txt' }) as { problems: unknown[] }).problems.map((p) => formatProblem(p as never))).toEqual([
-      '(code)  note.type  "type" is "txt", which is not a slot type here; the types are "text"  ->  change it to "text"',
+      '(code)  note.type  "type" is "txt", which is not a slot type here; the types are "digits", "text"  ->  change it to "text"',
     ]);
     expect((buildSlot('note', { what: 'a note' }) as { problems: unknown[] }).problems.map((p) => formatProblem(p as never))).toEqual([
-      '(code)  note  required key "type" is missing under note  ->  add "type:" with one of "text"',
+      '(code)  note  required key "type" is missing under note  ->  add "type:" with one of "digits", "text"',
     ]);
   });
 

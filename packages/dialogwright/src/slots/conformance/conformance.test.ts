@@ -4,6 +4,7 @@ import type { SlotOutcome } from '../../core/slots/types';
 import { atLeast } from '../../core/thresholds';
 import { isNoul, noulValue, type NoulAnswer } from '../../jev/types';
 import { meetsThreshold } from '../parts/thresholds';
+import { digitsType } from '../digits/index';
 import { textType } from '../text/index';
 import type { BuiltSlotSpec, SlotExample, SlotType } from '../types';
 import { CHECK_IDS, ConformanceError, slotConformanceChecks, type CheckId, type SlotConformanceOptions } from './checks';
@@ -87,10 +88,11 @@ function failures(type: SlotType<any>, opts: SlotConformanceOptions = {}): Map<C
 
 const failing = (type: SlotType<any>, opts?: SlotConformanceOptions): CheckId[] => [...failures(type, opts).keys()].sort();
 
-describe('the correct toy, and the text type', () => {
+describe('the correct toy, and the built-in types', () => {
   it('pass every check', () => {
     expect(failing(toy('toy'), { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(textType, { locales: ['en-US', 'es'] })).toEqual([]);
+    expect(failing(digitsType, { locales: ['en-US', 'es'] })).toEqual([]);
   });
 });
 

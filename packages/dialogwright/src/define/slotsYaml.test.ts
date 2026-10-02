@@ -18,6 +18,7 @@ import { defineSlot } from '../slots/defineSlot';
 import { defineSlots } from '../slots/defineSlots';
 import { BUILT_IN_SLOT_TYPES, registerSlotType } from '../slots/registry';
 import { defineSlotType } from '../slots/slotType';
+import { digitsType } from '../slots/digits/index';
 import { textType } from '../slots/text/index';
 import { AppDefinitionError, defineApp, isAppDefinitionError, type AppCode } from './defineApp';
 import { checkApp } from './check';
@@ -195,8 +196,8 @@ describe('slots.yaml: the rules', () => {
   it('{ type: code } for a slot the code does not define', () => {
     const { card: _, ...slots } = libraryCode.slots;
     expect(problems(folder({ 'slots.yaml': `${ALL_CODE}cards: { type: code }\n` }), { ...libraryCode, slots })).toEqual([
-      'slots.yaml:3:1  card  slots.yaml says the slot "card" is written in code ({ type: code }), but the code defines no slot "card"  ->  add the slot to app.ts (code.slots.card), or give it a library type here (one of "text")',
-      'slots.yaml:4:1  cards  slots.yaml says the slot "cards" is written in code ({ type: code }), but the code defines no slot "cards"  ->  add the slot to app.ts (code.slots.cards), or give it a library type here (one of "text")',
+      'slots.yaml:3:1  card  slots.yaml says the slot "card" is written in code ({ type: code }), but the code defines no slot "card"  ->  add the slot to app.ts (code.slots.card), or give it a library type here (one of "digits", "text")',
+      'slots.yaml:4:1  cards  slots.yaml says the slot "cards" is written in code ({ type: code }), but the code defines no slot "cards"  ->  add the slot to app.ts (code.slots.cards), or give it a library type here (one of "digits", "text")',
     ]);
   });
 
@@ -208,10 +209,10 @@ describe('slots.yaml: the rules', () => {
 
   it('an unknown type, with the near one offered; and code is always a known type', () => {
     expect(problems(folder({ 'slots.yaml': `${ALL_CODE}note: { type: txt, what: a note }\n` }))).toEqual([
-      'slots.yaml:4:15  note.type  the slot "note" has the type "txt", which is not a slot type here; the types are "text", "code"  ->  change it to "text"',
+      'slots.yaml:4:15  note.type  the slot "note" has the type "txt", which is not a slot type here; the types are "digits", "text", "code"  ->  change it to "text"',
     ]);
     expect(problems(folder({ 'slots.yaml': `${ALL_CODE}note: { type: zzzzzz, what: a note }\n` }))).toEqual([
-      'slots.yaml:4:15  note.type  the slot "note" has the type "zzzzzz", which is not a slot type here; the types are "text", "code"  ->  use one of "text", "code", or register the type (registerSlotType) and pass it in the code\'s slotTypes',
+      'slots.yaml:4:15  note.type  the slot "note" has the type "zzzzzz", which is not a slot type here; the types are "digits", "text", "code"  ->  use one of "digits", "text", "code", or register the type (registerSlotType) and pass it in the code\'s slotTypes',
     ]);
   });
 
@@ -253,7 +254,7 @@ describe('slots.yaml: the app\'s own slot types', () => {
     expect((app.slots.note as unknown as { type: string }).type).toBe('memo');
     // a map from registerSlotType holds the built-in types too, which are not the app's own
     expect(() => defineApp(dir, { ...libraryCode, slotTypes: registerSlotType(memo) })).not.toThrow();
-    expect(Object.keys(BUILT_IN_SLOT_TYPES)).toEqual(['text']);
+    expect(Object.keys(BUILT_IN_SLOT_TYPES)).toEqual(['digits', 'text']);
   });
 
   it('a type that takes a built-in type\'s name is refused, and so are the reserved name and a type listed twice', () => {
@@ -336,14 +337,15 @@ describe('slots.schema.json', () => {
 
   it('is a union over the built-in types and { type: code }, each requiring its type', () => {
     const branches = schema.additionalProperties.oneOf;
-    expect(branches.map((b) => b.properties.type.const)).toEqual(['text', 'code']);
+    expect(branches.map((b) => b.properties.type.const)).toEqual(['digits', 'text', 'code']);
     for (const branch of branches) expect(branch.required).toContain('type');
-    expect(branches[0]!.description).toBe(textType.describe!.summary);
+    expect(branches[0]!.description).toBe(digitsType.describe!.summary);
+    expect(branches[1]!.description).toBe(textType.describe!.summary);
   });
 
   it('lists a type an app registers when it is given the types', () => {
     const memo = defineSlotType({ type: 'memo', options: textType.options as z.ZodType<any>, build: (id, o) => textType.build(id, o), examples: [] });
     const own = slotsJsonSchema(registerSlotType(memo)) as typeof schema;
-    expect(own.additionalProperties.oneOf.map((b) => b.properties.type.const)).toEqual(['text', 'memo', 'code']);
+    expect(own.additionalProperties.oneOf.map((b) => b.properties.type.const)).toEqual(['digits', 'text', 'memo', 'code']);
   });
 });

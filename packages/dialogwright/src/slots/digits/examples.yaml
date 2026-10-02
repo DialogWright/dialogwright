@@ -1,0 +1,148 @@
+# Examples of the `digits` slot type: configurations, and what a caller might say to each.
+# `answers` are the model's answers to the slot's questions, by question id (a slot reads the
+# answers, not the words); `expect` is the outcome the slot must give; `keypad` lists keys and the
+# value they give (null: keys that are no value). The conformance kit runs every utterance and key
+# here, and the type's docs page shows them.
+
+- name: account number
+  about: The defaults. Eight digits, said back in two groups of four, keyable on the keypad, masked by its last four digits.
+  slot: account
+  config:
+    noun: account
+    length: 8
+    keypad: true
+    group: [4, 4]
+  utterances:
+    - text: my account is five five five zero seven seven eight eight
+      answers:
+        accountGiven: { noul: 0.95 }
+        accountSpan: { choice: { five five five zero seven seven eight eight: 0.9, none: 0.1 } }
+        accountComplete: { noul: 0.9 }
+      expect: { kind: filled, value: "55507788", display: 5550 7788, confirm: implicit }
+    - text: I want to change my address
+      answers:
+        accountGiven: { noul: 0.05 }
+        accountSpan: { choice: { none: 1 } }
+        accountComplete: { noul: 0.4 }
+      expect: { kind: absent }
+    - text: it is five five five zero
+      answers:
+        accountGiven: { noul: 0.9 }
+        accountSpan: { choice: { five five five zero: 0.9, none: 0.1 } }
+        accountComplete: { noul: 0.9 }
+      expect: { kind: invalid, reason: length }
+    - text: it is five five five
+      answers:
+        accountGiven: { noul: 0.9 }
+        accountSpan: { choice: { five five five: 0.9, none: 0.1 } }
+        accountComplete: { noul: 0.2 }
+      expect: { kind: invalid, reason: incomplete }
+    - text: it is on the tip of my tongue
+      answers:
+        accountGiven: { noul: 0.9 }
+        accountSpan: { choice: { none: 0.9, tip: 0.1 } }
+        accountComplete: { noul: 0.9 }
+      expect: { kind: invalid, reason: no_span }
+  keypad:
+    - digits: "55507788"
+      expect: { value: "55507788", display: 5550 7788 }
+    - digits: 5550778#
+      expect: null
+
+- name: library card
+  about: A number acknowledged only when the model is less sure of it, refused when it is unsure, with its own re-ask when it is the wrong length.
+  slot: card
+  config:
+    noun: library card
+    length: 8
+    keypad: true
+    confirm: by-confidence
+    readBack: below-fill
+    minConfidence: SLOT_CHOICE_CONFIRM
+    lengthRetryPromptId: ask_card_length
+  utterances:
+    - text: five five five two zero four one seven
+      answers:
+        cardGiven: { noul: 0.95 }
+        cardSpan: { choice: { five five five two zero four one seven: 0.9, none: 0.1 } }
+        cardComplete: { noul: 0.9 }
+      expect: { kind: filled, value: "55520417", display: "55520417", confirm: none }
+    - text: five five five two zero four one seven
+      answers:
+        cardGiven: { noul: 0.95 }
+        cardSpan: { choice: { five five five two zero four one seven: 0.5, none: 0.5 } }
+        cardComplete: { noul: 0.9 }
+      expect: { kind: filled, value: "55520417", display: "55520417", confirm: implicit }
+    - text: five five five two zero four one seven
+      answers:
+        cardGiven: { noul: 0.95 }
+        cardSpan: { choice: { five five five two zero four one seven: 0.4, zero four one seven: 0.35, none: 0.25 } }
+        cardComplete: { noul: 0.9 }
+      expect: { kind: invalid, reason: low_confidence }
+    - text: five five five two zero four one
+      answers:
+        cardGiven: { noul: 0.95 }
+        cardSpan: { choice: { five five five two zero four one: 0.9, none: 0.1 } }
+        cardComplete: { noul: 0.9 }
+      expect: { kind: invalid, reason: length, retryPromptId: ask_card_length }
+  keypad:
+    - digits: "55520417"
+      expect: { value: "55520417", display: "55520417" }
+    - digits: "5552041x"
+      expect: null
+
+- name: parcel tracking number
+  about: Ten digits starting with 9, said back as 3-3-4, shown in the trace as they are and handed over in full.
+  slot: tracking
+  config:
+    noun: parcel tracking
+    length: 10
+    mask: ^9\d{9}$
+    group: [3, 3, 4]
+    keypad: true
+    redact: none
+    handoff: display
+  utterances:
+    - text: nine two one five five five zero one four two
+      answers:
+        trackingGiven: { noul: 0.9 }
+        trackingSpan: { choice: { nine two one five five five zero one four two: 0.85, none: 0.15 } }
+        trackingComplete: { noul: 0.9 }
+      expect: { kind: filled, value: "9215550142", display: 921 555 0142, confirm: implicit }
+    - text: nine two one five five five zero one four two
+      answers:
+        trackingGiven: { noul: 0.9 }
+        trackingSpan: { choice: { two one five five five zero one four two nine: 0.85, none: 0.15 } }
+        trackingComplete: { noul: 0.9 }
+      expect: { kind: invalid, reason: mask }
+  keypad:
+    - digits: "9215550142"
+      expect: { value: "9215550142", display: 921 555 0142 }
+    - digits: "1215550142"
+      expect: null
+
+- name: existing wording and ids
+  about: A slot moved onto the library keeps the question text and ids it was recorded with, word for word. Every question is literal, so there is no noun.
+  slot: reference
+  config:
+    length: 6
+    text:
+      given: Read asr.text. Does the caller give a booking reference, as digits or as number words?
+      span: Read asr.text. Which of these spans is the booking reference the caller gives? Choose none if no span is one.
+      none: No span of asr.text is a booking reference
+      complete: Read asr.text. If the caller gives a booking reference, do they say all of it?
+    ids:
+      given: givesReference
+      span: referenceSpan
+      complete: referenceWhole
+  utterances:
+    - text: four four one two zero nine
+      answers:
+        givesReference: { noul: 0.9 }
+        referenceSpan: { choice: { four four one two zero nine: 0.9, none: 0.1 } }
+        referenceWhole: { noul: 0.9 }
+      expect: { kind: filled, value: "441209", display: "441209", confirm: implicit }
+    - text: I have a reference somewhere
+      answers:
+        givesReference: { noul: 0.2 }
+      expect: { kind: absent }

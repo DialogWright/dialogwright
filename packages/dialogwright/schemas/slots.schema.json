@@ -13,6 +13,166 @@
         "properties": {
           "type": {
             "type": "string",
+            "const": "digits",
+            "description": "The slot type."
+          },
+          "noun": {
+            "description": "What the number identifies, as a noun without \"number\" (\"account\", \"library card\", \"parcel tracking\"). The default questions say \"a <noun> number\". Needed unless text gives every question in its own words.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "article": {
+            "description": "The word before the noun in the default questions. Default: \"an\" when the noun starts with a vowel, otherwise \"a\".",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "length": {
+            "description": "How many digits the number has. Gives the default mask (exactly this many digits) and the length of the keypad rung. Needed unless mask is given.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 40
+          },
+          "mask": {
+            "description": "A regular expression (its source, no slashes) the digits must match, such as \"^5\\d{7}$\" for eight digits starting with 5. Default: exactly `length` digits. A number that fails it is \"invalid\" with the reason \"mask\" (with only `length`, the reason is \"length\").",
+            "type": "string",
+            "minLength": 1
+          },
+          "keypad": {
+            "default": false,
+            "description": "Whether the caller can key the number on the keypad, `length` digits at a time. Needs `length`, and an ask_<slot>_dtmf line.",
+            "type": "boolean"
+          },
+          "group": {
+            "description": "How the number is said back, in groups of these sizes ([4, 4]: \"5550 7788\"). The last group takes any digits left over. Default: all digits together.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "confirm": {
+            "default": "summary",
+            "description": "\"summary\": a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>) when `readBack` says so.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "by-confidence"
+            ]
+          },
+          "readBack": {
+            "default": "implicit",
+            "description": "What a filled number asks for: \"implicit\" (always), \"below-fill\" (only when the model is less sure of the span than SLOT_CHOICE_FILL), \"none\" (never). With `confirm: by-confidence`, \"implicit\" is what makes ack_<slot> be said.",
+            "type": "string",
+            "enum": [
+              "implicit",
+              "below-fill",
+              "none"
+            ]
+          },
+          "minConfidence": {
+            "default": "none",
+            "description": "A floor on how sure the model must be of the span: below this threshold the number is \"invalid\" (reason \"low_confidence\"). \"none\": no floor.",
+            "type": "string",
+            "enum": [
+              "none",
+              "SLOT_DETECT",
+              "SLOT_CHOICE_CONFIRM",
+              "SLOT_CHOICE_FILL"
+            ]
+          },
+          "lengthRetryPromptId": {
+            "description": "The prompt that re-asks, in place of the generic ask_<slot>_retry, when what the caller said is not a number of the right shape (\"A card number has eight digits.\").",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "redact": {
+            "default": "last4",
+            "description": "How the value is masked wherever it leaves the turn (the trace, a tool call's param of the same name): \"last4\" (\"...0417\") or \"none\".",
+            "type": "string",
+            "enum": [
+              "last4",
+              "none"
+            ]
+          },
+          "handoff": {
+            "default": "last4",
+            "description": "What a transfer to a person hands over: its \"last4\", only whether the caller was \"verified\", or its \"display\" in full.",
+            "type": "string",
+            "enum": [
+              "last4",
+              "verified",
+              "display"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: given, span, none, complete.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The yes-or-no question that asks whether the caller states the number at all.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "span": {
+                "description": "The question that asks which span of the caller's words is the number. Its choices are the spans the engine finds, and none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "none": {
+                "description": "What the span question's \"none\" choice means.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "complete": {
+                "description": "The yes-or-no question that asks whether the caller said the whole number.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given, span, complete), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The id of the question that asks whether the caller states the number.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "span": {
+                "description": "The id of the question that asks which span of the caller's words is the number.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "complete": {
+                "description": "The id of the question that asks whether the caller said the whole number.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "A number of a fixed shape that no list holds: an account, a library card, a tracking number.",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
             "const": "text",
             "description": "The slot type."
           },
