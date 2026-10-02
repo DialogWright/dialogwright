@@ -13,7 +13,7 @@ pnpm test
 pnpm --filter dialogwright regress:testkit
 ```
 
-`pnpm check` runs the type check and the tests together. Run all of the above before you open a pull request.
+`pnpm verify` runs the type check and the tests together, and `pnpm check` checks every app folder (its YAML against the schemas and the cross-references, and against the app's code). Run all of the above before you open a pull request.
 
 ## Rules
 

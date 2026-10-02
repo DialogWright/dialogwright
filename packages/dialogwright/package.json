@@ -14,6 +14,9 @@
   "engines": {
     "node": ">=22.19"
   },
+  "bin": {
+    "dialogwright": "./src/define/cli.ts"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./*.js": "./src/*.js",
@@ -29,7 +32,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "regress:testkit": "tsx src/testing/testkit/regress.ts",
-    "schemas": "tsx src/define/schema/generate.ts"
+    "schemas": "tsx src/define/schema/generate.ts",
+    "check": "tsx src/define/cli.ts check"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

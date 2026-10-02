@@ -130,5 +130,8 @@ export const libraryCode: AppCode = {
   customRules: { 'known-branch': knownBranch },
 };
 
+/** The code parts under the name `dialogwright check` imports an app module's code by. */
+export const code = libraryCode;
+
 /** The library line, built from this folder and the code above. */
 export const libraryApp = defineApp(LIBRARY_DIR, libraryCode);
