@@ -4,7 +4,7 @@ import {
 } from 'dialogwright';
 import { daypartBounds, daypartOf, minutesOf, type Booking, type Daypart } from './directory';
 import { factsOf, type ClinicFacts, type Offer } from './facts';
-import { EXISTING_FORMS, SCHEDULING_FORMS } from './intents';
+import type { ClinicForm } from './forms';
 import { ALL_SLOTS } from './slots';
 import { clinicThreshold } from './thresholds';
 import { callClinic } from './tools';
@@ -21,6 +21,11 @@ import { callClinic } from './tools';
  *   a part of the day);
  * - FormDef.keepsSlot keeps the day when "a later time that day" names it.
  */
+
+/** Forms that book an opening the line offers: the summary names the opening, and the caller may move it. */
+export const SCHEDULING_FORMS: readonly string[] = ['schedule_new', 'reschedule'] satisfies readonly ClinicForm[];
+/** Forms that act on a booking the directory finds for the caller. */
+export const EXISTING_FORMS: readonly string[] = ['confirm_appointment', 'cancel', 'reschedule'] satisfies readonly ClinicForm[];
 
 /** The short re-read once only the offered day or time has moved: "{when}. Does that work?" */
 export const SHORT_OFFER_PROMPT = 'confirm_time';

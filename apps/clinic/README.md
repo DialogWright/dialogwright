@@ -10,29 +10,53 @@ It is the app to read first when learning to build on the engine. It is small, a
 - **Reads and writes through the gate.** The directory is reached only through tools: `findAppointment` and `listOpenings` (reads), and `bookAppointment`, `moveAppointment` and `cancelAppointment` (writes). Each call is a gate event and an audit row. The writes run R3: they write only the values the caller just heard read back and said yes to. If the caller says "yes, but Thursday", R3 refuses the write and the summary is read again with Thursday.
 - **Scheduling through the form hooks.** The offer is built, moved and read back by the app's own code. The engine only routes. See the table below.
 - **Carried slots.** The caller's name, date of birth and member ID outlast the task (`App.carrySlots`), so a second task on the call does not ask for them again.
-- **Its own thresholds.** `PROVIDER_UNSURE`, `TIME_OF_DAY` and `TIME_PREFERENCE` sit beside the engine's (`App.thresholds`), and a run overrides them the same way (`--threshold TIME_OF_DAY=0.7`).
+- **Its own thresholds.** `PROVIDER_UNSURE`, `TIME_OF_DAY` and `TIME_PREFERENCE` sit beside the engine's (`App.thresholds`, set in app.yaml), and a run overrides them the same way (`--threshold TIME_OF_DAY=0.7`).
 - **Only the supported API.** Every import is from `'dialogwright'`, the package's documented entry (`packages/dialogwright/src/index.ts`), never an engine subpath; a test checks it.
-- **Text-to-speech only.** There are no recorded clips; the prompt manifest is plain text.
+- **Text-to-speech only.** There are no recorded clips; prompts.yaml is plain text.
+- **An app folder.** The data is YAML and the code is TypeScript, joined by `defineApp`; see the next section.
 
-## Layout
+## The app as a folder
+
+The clinic is an app folder: what the line says, hears and may do is YAML in this folder, and what runs is TypeScript in `src/`. `defineApp` joins the two into the `App` the engine runs (`src/app.ts`), and `dialogwright check` finds everything wrong with either, or with how they meet, in one pass.
 
 ```
-src/
-  index.ts                the App, assembled; registerClinic()
-  domain/
-    intents.ts            intents, labels, criteria, the keypad menu
-    roster.ts             the eight providers
-    directory.ts          the demo directory: bookings and openings, deterministic from the day
-    slots/                name, dob, memberId, provider, date: questions, parsers, keypad shapes
-    scheduling.ts         the scheduling hooks: questions, offer, summary, moves
-    forms.ts              the five forms and their completions
-    facts.ts              what the clinic keeps on the session
-    tools.ts, policy.ts   the tools and the gate's tables
-    wording.ts            the engine's model questions in the clinic's words
-    thresholds.ts         the clinic's own thresholds
-  prompts/manifest.json   every line the caller can hear
-  regress.ts, cli.ts, serve.ts   launchers: register the clinic, then run the engine's mains
+app.yaml        who the app is and how it presents itself
+intents.yaml    what a caller can ask for, and the keypad menu
+forms.yaml      the five forms: their slots, their summaries, the hooks each one has
+prompts.yaml    every line a caller can hear
+policy.yaml     the gate's tables
+src/app.ts      the code: defineApp(this folder, code)
+fixtures/       the corpus, the scripted calls, the baseline and the recorded cassette
 ```
+
+Each YAML file starts with a `yaml-language-server` line that points at its schema in `packages/dialogwright/schemas/`, so an editor with the YAML extension completes and checks it as you type.
+
+- **app.yaml.** The app's id and its locale (`en-US`, the language of prompts.yaml); the brand and what the operator console shows (form and slot labels, the facts a tool call leaves, the level badge, which says "no verification" at every level); the phone line's speech settings (the recognizer's hints, including every provider's surname, and the rule that spells a member ID out in two groups of four); the handoff note's words; the engine's own model questions in the clinic's words (`wording`: whom the caller is addressing, what counts as a hedge or a no, and the question that asks which detail to change); the clinic's own thresholds; the slots carried from one task to the next; and where the fixtures are.
+- **intents.yaml.** The ten intents in the order the decision model is offered them, each with the criteria sent to the model and the label the line says ("I'd be happy to help you reschedule your appointment"). The five tasks are `form` intents, `capabilities` is `informational` (its line is said, and the caller goes back to where they were), and the rest are the engine's `control` intents. There is no `done`: a call ends at its completion. Then the keypad menu: 1 to 5 for the tasks, 0 for a person.
+- **forms.yaml.** Each form's slots in the order they are asked, the prompt that reads it back for a yes (`null` for billing, which has none), and the hooks it has. The hooks are functions in `src/domain/forms.ts` and `src/domain/scheduling.ts`; the list says which ones, and `defineApp` refuses a form whose code writes a hook the list leaves out, or leaves out one the list names.
+- **prompts.yaml.** All 68 lines, word for word, with whether a caller may talk over each. The agent says exactly these and never composes its own. Braces are filled in by the engine (`{intentLabel}`) or by the clinic's code (`{provider}`, `{when}`, `{existing}`).
+- **policy.yaml.** Every tool at level 0, since there is no `identity.yaml` (the clinic verifies no one, and `defineApp` refuses a higher level without one); R1 on every tool and R3 on the three writes, with the fields R3 holds a confirmed write to; and the attempt limit.
+
+What stays in TypeScript is what runs, or what the YAML could only describe by copying code:
+
+- **The slots** (`src/domain/slots/`): each slot's questions to the model, the parser that turns the answers into a value, its keypad shape and how it is read back.
+- **The tools and the directory** (`src/domain/tools.ts`, `directory.ts`, `roster.ts`): the two reads and three writes, and the demo schedule behind them. Policy is never in tool code; the gate decides from policy.yaml whether a tool may run.
+- **The form hooks and the scheduling** (`src/domain/forms.ts`, `scheduling.ts`): the completions, the params each write confirms, the extra questions (`App.questions`), and the offer built and moved at the summary. See the table below.
+- **What the clinic keeps on the session** (`src/domain/facts.ts`), the caller state the model is told, and the hooks the regression harness and the stubs use (`src/domain/testing.ts`).
+- **The thresholds' readers** (`src/domain/thresholds.ts`): the names the code reads; their values are in app.yaml.
+
+`src/index.ts` re-exports the app and registers it, and `regress.ts`, `cli.ts` and `serve.ts` are the launchers: each registers the clinic, then runs the engine's own main.
+
+### Checking the folder
+
+```sh
+pnpm check                                               # at the repository root: every app folder under apps/
+pnpm --filter dialogwright check ../../apps/clinic       # or just this one
+```
+
+The check reads each file against its schema, imports `src/app.ts` (it looks there when the folder has no `app.ts` of its own) and checks the folder against the `code` it exports: every slot, tool, hook and prompt the YAML names exists, every tool has a policy row, every line the engine says is in prompts.yaml, and every intent has examples in the corpus. Each problem is printed with its file, line, the path in the file, and the fix; the summary line reads `apps/clinic: ok` when there are none. CI runs it on every push.
+
+A change to the words in the YAML is a change to what the model is sent: the criteria, the labels, the wording and the lines are all in the model's request, so the recorded replay (below) reports each changed request as a cassette miss until the cassette is recorded again. A change to a slot list, a summary, a hook list or a policy row is a change in behavior, and the stub regression shows it against the baseline.
 
 ## Running it with no keys
 
@@ -114,7 +138,7 @@ An earlier version of this example kept its scheduling inside its own turn loop.
 | "This week" asks "this week. Which day works for you?", and a weekday then narrows inside the week | `SlotSpec.partialPromptId`, `partialVars` | `dateSlot` |
 | A completion ends the call on its line ("Your appointment is moved to ..."), with the form and slots left as they were; with a second task queued, the line is said and the next task bridged into | `Completion { kind: 'end' }` | `forms.ts` |
 | The offer and the booking belong to the form; the part of the day outlasts it | `FactsConfig.onFormClosed` | `facts.ts` |
-| The model is told the caller has an appointment open | `App.callerState` | `index.ts` |
+| The model is told the caller has an appointment open | `App.callerState` | `app.ts` |
 
 Some things the engine does differently from that earlier version, by design:
 

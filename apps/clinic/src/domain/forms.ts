@@ -1,8 +1,10 @@
 import { handoff, type Completion, type CompletionContext, type FormDef, type FormHooks, type Session } from 'dialogwright';
 import { factsOf } from './facts';
-import type { ClinicForm } from './intents';
 import { bookingOf, clinicVars, hasWhatItActsOn, keepsDay, moveOffer, onSchedulingAnswers, readSummary } from './scheduling';
 import type { ClinicTool } from './tools';
+
+/** The clinic's forms, one per task intent (forms.yaml has their slots and summaries). */
+export type ClinicForm = 'schedule_new' | 'reschedule' | 'cancel' | 'confirm_appointment' | 'billing';
 
 const valueOf = (s: Session, slot: string): string => s.slots[slot]?.value ?? '';
 
@@ -101,13 +103,4 @@ export const CLINIC_FORM_HOOKS: Record<ClinicForm, FormHooks> = {
   billing: {
     complete: ({ s, acks }) => ({ kind: 'decision', decision: handoff(s, 'billing', acks) }),
   },
-};
-
-/** TEMPORARY (until the old tables go): the forms as the TypeScript app assembled them. */
-export const FORMS: Record<ClinicForm, FormDef> = {
-  schedule_new: { slots: ['name', 'dob', 'provider', 'date'], summaryPromptId: 'confirm_schedule', ...CLINIC_FORM_HOOKS.schedule_new },
-  reschedule: { slots: ['name', 'dob', 'provider', 'date'], summaryPromptId: 'confirm_reschedule', ...CLINIC_FORM_HOOKS.reschedule },
-  cancel: { slots: ['name', 'dob', 'provider'], summaryPromptId: 'confirm_cancel', ...CLINIC_FORM_HOOKS.cancel },
-  confirm_appointment: { slots: ['name', 'dob', 'provider'], summaryPromptId: 'confirm_appointment_details', ...CLINIC_FORM_HOOKS.confirm_appointment },
-  billing: { slots: ['memberId'], summaryPromptId: null, ...CLINIC_FORM_HOOKS.billing },
 };
