@@ -40,6 +40,16 @@ export type { LoadedConfig, LoadResult } from './define/load';
 export { formatProblem } from './define/problems';
 export type { Problem } from './define/problems';
 
+// The slot library: slots from configuration (a built-in type and its options) rather than code.
+export {
+  defineSlot, buildSlot, SlotConfigError, isSlotConfigError, slotTypeJsonSchema, BUILT_IN_SLOT_TYPES, registerSlotType, defineSlotType,
+  textType, textParts, questionParts, questionText, renderTemplate, TemplateError, meetsThreshold, examplesFrom, parseSlotExamples,
+} from './slots/index';
+export type {
+  BuildSlotOptions, BuildSlotResult, SlotSource, BuiltSlotSpec, SlotType, SlotTypeDocs, LibrarySlotSpec, SlotExample, SlotUtterance,
+  ExampleAnswer, ExampleContext, ExpectedOutcome, SlotKeypadExample, SlotTypes, TextOptions, TextPartDef, TextParts, QuestionParts,
+} from './slots/index';
+
 // The channel model: what the engine hears (events), what it does (actions), what a channel can do (caps).
 export {
   DEFAULT_LANG, startEvent, speechEvent, textEvent, keyEvents, interruptEvent, silenceEvent, errorEvent,
@@ -66,7 +76,7 @@ export { ANONYMOUS, raise, maskId } from './gate/principal';
 export type { Session, SessionFacts } from './core/session';
 export type { Tools, CodeVerifier } from './core/tools';
 export type { Thresholds, ThresholdName } from './core/thresholds';
-export { DEFAULT_THRESHOLDS } from './core/thresholds';
+export { DEFAULT_THRESHOLDS, atLeast, THRESHOLD_EPSILON } from './core/thresholds';
 export type { JevClient } from './jev/types';
 
 // The model's answers: what an app's own questions (App.questions) ask, and how its hooks and slot

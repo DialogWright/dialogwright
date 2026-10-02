@@ -1,0 +1,85 @@
+# Examples of the `text` slot type: configurations, and what a caller might say to each.
+# `answers` are the model's answers to the slot's questions, by question id (a slot reads the
+# answers, not the words); `expect` is the outcome the slot must give. The conformance kit runs
+# every utterance here, and the type's docs page shows them.
+
+- name: problem description
+  about: The defaults. One question asks whether the caller describes the problem; the words are the value, shown as "your description".
+  slot: problem
+  config:
+    what: a description of the problem
+  utterances:
+    - text: The screen on my tablet went dark and it will not turn back on.
+      answers:
+        problemGiven: { noul: 0.93 }
+      expect: { kind: filled, value: The screen on my tablet went dark and it will not turn back on., display: your description, confirm: none }
+    - text: I need some help please
+      answers:
+        problemGiven: { noul: 0.12 }
+      expect: { kind: absent }
+    - text: oh and the charger is missing too
+      answers:
+        problemGiven: { noul: 0.9 }
+      context: { current: The screen went dark., prompted: false }
+      expect: { kind: absent }
+    - text: Actually the screen flickers first and then goes dark.
+      answers:
+        problemGiven: { noul: 0.88 }
+      context: { current: The screen went dark., prompted: true }
+      expect: { kind: filled, value: Actually the screen flickers first and then goes dark., display: your description }
+    - text: "   "
+      answers:
+        problemGiven: { noul: 0.9 }
+      expect: { kind: absent }
+
+- name: courier note
+  about: A note with more guidance for the model, its own stand-in, a length limit, and a first note that is never replaced.
+  slot: courierNote
+  config:
+    what: a note for the courier
+    instructions: Count where to leave the parcel and how to reach the door.
+    say: your note
+    keep: first
+    maxLength: 36
+  utterances:
+    - text: please leave it behind the blue gate next to the shed, thank you
+      answers:
+        courierNoteGiven: { noul: 0.9 }
+      expect: { kind: filled, value: please leave it behind the blue gate, display: your note }
+    - text: ring the bell twice
+      answers:
+        courierNoteGiven: { noul: 0.91 }
+      context: { current: please leave it behind the blue gate, prompted: true }
+      expect: { kind: absent }
+
+- name: existing wording and ids
+  about: A slot moved onto the library keeps the question text and id it was recorded with, word for word.
+  slot: issue
+  config:
+    text:
+      given: Read asr.text. Does the caller say what went wrong with the order? A request alone is not.
+    ids:
+      given: describesIssue
+  utterances:
+    - text: the box arrived crushed and the lamp inside is broken
+      answers:
+        describesIssue: { noul: 0.81 }
+      expect: { kind: filled, value: the box arrived crushed and the lamp inside is broken, display: your description }
+    - text: I want to talk about my order
+      answers:
+        describesIssue: { noul: 0.3 }
+      expect: { kind: absent }
+
+- name: words as the display
+  about: A short phrase that is not sensitive, shown as said and kept in the trace.
+  slot: reference
+  config:
+    what: a short reference phrase for the booking
+    say: null
+    redact: none
+    maxLength: 60
+  utterances:
+    - text: blue heron on the lake
+      answers:
+        referenceGiven: { noul: 0.95 }
+      expect: { kind: filled, value: blue heron on the lake, display: blue heron on the lake }

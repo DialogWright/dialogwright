@@ -19,7 +19,10 @@ describe('the package entry', () => {
       // the building blocks an app's hooks and slot parsers use
       'isChoice', 'isNoul', 'isScore', 'noulValue', 'rankProbabilities', 'topMargin', 'handoff', 'handoffPromptId', 'DEFAULT_THRESHOLDS',
       'parseIso', 'addDays', 'describeDay', 'describeDob', 'resolveDate', 'MONTHS', 'WEEKDAYS', 'spokenToDigits', 'tokenize', 'matchesMask',
-      'candidateSpans', 'candidateWordSpans',
+      'candidateSpans', 'candidateWordSpans', 'atLeast',
+      // the slot library
+      'defineSlot', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType', 'defineSlotType', 'textType',
+      'textParts', 'questionParts', 'renderTemplate', 'meetsThreshold',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
       'buildQuestions', 'ENGINE_QUESTION_IDS', 'buildTurnState', 'FixtureStubClient', 'HeuristicStubClient', 'digitSpanLabel', 'dobParts', 'saysDob', 'saysExplicitYear',
@@ -37,6 +40,14 @@ describe('the package entry', () => {
     expect(entry.defineApp).toBe((await import('./define/defineApp')).defineApp);
     expect(entry.checkApp).toBe((await import('./define/check')).checkApp);
     expect(entry.loadAppFolder).toBe((await import('./define/load')).loadAppFolder);
+    expect(entry.defineSlot).toBe((await import('./slots/defineSlot')).defineSlot);
+    expect(entry.BUILT_IN_SLOT_TYPES.text).toBe(entry.textType);
+    expect(entry.defineSlot('note', { type: 'text', what: 'a note' }).type).toBe('text');
+    // the library's types are exported with the functions that take them
+    const spec: import('./index').LibrarySlotSpec = entry.defineSlot('note', { type: 'text', what: 'a note' });
+    const example: import('./index').SlotExample = { name: 'a', slot: 'a', config: {}, utterances: [] };
+    const type: import('./index').SlotType<import('./index').TextOptions> = entry.textType;
+    expect([spec.id, example.name, type.type]).toEqual(['note', 'a', 'text']);
     // the options type is exported with the function it configures
     const options: import('./index').DefineAppOptions = { codeFile: 'src/app.ts' };
     expect(options.codeFile).toBe('src/app.ts');
@@ -60,12 +71,16 @@ describe('subpath imports', () => {
 });
 
 describe('the test-support entry', () => {
-  it('"dialogwright/testing" has the shadow harness and the cassette-miss test, which the root entry leaves out', async () => {
+  it('"dialogwright/testing" has the shadow harness, the cassette-miss test and the slot conformance kit, which the root entry leaves out', async () => {
     const testing = await import('./testing/index');
-    for (const name of ['shadowSlot', 'withShadowSlots', 'shadowFromEnv', 'createShadowReport', 'ShadowMismatchError', 'isCassetteMiss']) {
+    for (const name of [
+      'shadowSlot', 'withShadowSlots', 'shadowFromEnv', 'createShadowReport', 'ShadowMismatchError', 'isCassetteMiss',
+      'runSlotConformance', 'slotConformanceChecks', 'ConformanceError',
+    ]) {
       expect(typeof (testing as Record<string, unknown>)[name], name).toBe('function');
       expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
     }
     expect(testing.shadowSlot).toBe((await import('./testing/shadowSlot')).shadowSlot);
+    expect(testing.runSlotConformance).toBe((await import('./slots/conformance/run')).runSlotConformance);
   });
 });
