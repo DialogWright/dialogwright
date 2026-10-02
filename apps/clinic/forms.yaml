@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/forms.schema.json
+# The clinic's five forms. None has an entry call (nothing to look up or verify before the slots).
+# The four on an appointment confirm a summary and end the call on their line; billing collects the
+# member ID and hands off to the billing team. The hooks are TypeScript (src/domain/forms.ts and
+# src/domain/scheduling.ts); each form lists the ones it has.
+forms:
+  # Book an opening the line offers: the summary names the opening, and the caller may move it.
+  schedule_new:
+    slots: [name, dob, provider, date]
+    summaryPromptId: confirm_schedule
+    hooks: [onSummaryRead, onAnswers, onSummaryAnswer, keepsSlot, confirmedParams, complete]
+  # Acts on the booking the directory finds, and books an opening in its place.
+  reschedule:
+    slots: [name, dob, provider, date]
+    summaryPromptId: confirm_reschedule
+    hooks: [onSummaryRead, onAnswers, onSummaryAnswer, keepsSlot, confirmedParams, complete]
+  # Acts on the booking the directory finds.
+  cancel:
+    slots: [name, dob, provider]
+    summaryPromptId: confirm_cancel
+    hooks: [onSummaryRead, confirmedParams, complete]
+  # Nothing is written: the caller agrees that the booking read back is theirs.
+  confirm_appointment:
+    slots: [name, dob, provider]
+    summaryPromptId: confirm_appointment_details
+    hooks: [onSummaryRead, complete]
+  # No summary: once the member ID is heard, the call goes to billing.
+  billing:
+    slots: [memberId]
+    summaryPromptId: null
+    hooks: [complete]

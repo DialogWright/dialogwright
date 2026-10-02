@@ -1,0 +1,4 @@
+prompts:
+  greeting:
+    text: Merci d'appeler Example Family Practice. Comment puis-je vous aider ?
+    interruptible: true

@@ -180,6 +180,16 @@ export interface View {
   thresholds: Partial<Thresholds>;
   /** The session's channel kind (`voice`, `chat`), as call_started names it. */
   channel: string | null;
+  /**
+   * The language the session speaks (a language tag), from the latest turn record that names one:
+   * only a call of an app that declares locales (App.locales) has one; absent otherwise.
+   */
+  locale?: string;
+  /**
+   * The combined hash of the configuration the call runs under (App.configHashes.app), from the
+   * latest turn record that names one: only a call of an app built from a folder has one; absent otherwise.
+   */
+  configHash?: string;
   caller: string | null;
   /** The last turn's `turnState.caller.level`; unset while a non-model turn is in flight, it holds the last one seen. */
   level: 0 | 1 | 2;

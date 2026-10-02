@@ -27,25 +27,42 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
   });
 }
 
-export function promptEntry(app: App, id: string): PromptEntry {
-  const entry = app.prompts.manifest[id];
+/**
+ * The line `id` as `locale` says it, and whether that locale's own words are what was found. A
+ * locale other than the app's default (App.locales) says a line from its own prompts where it has
+ * it, and from the default's manifest where it does not; the default locale, a locale the app does
+ * not have, and no locale at all read the manifest, as an app without locales always does.
+ */
+export function localePromptEntry(app: App, id: string, locale?: string): { entry: PromptEntry; localized: boolean } {
+  const own = locale === undefined || !app.locales || locale === app.locales.default ? undefined : app.locales.prompts[locale];
+  if (own && Object.hasOwn(own, id)) return { entry: own[id]!, localized: true };
+  const entry = Object.hasOwn(app.prompts.manifest, id) ? app.prompts.manifest[id] : undefined;
   if (!entry) throw new Error(`unknown prompt id: ${id}`);
-  return entry;
+  return { entry, localized: false };
 }
 
-export function promptText(app: App, id: string, vars: Record<string, string>): string {
-  return renderTemplate(promptEntry(app, id).text, vars);
+/** The line `id` as `locale` says it (localePromptEntry); without a locale, the app's manifest's. */
+export function promptEntry(app: App, id: string, locale?: string): PromptEntry {
+  return localePromptEntry(app, id, locale).entry;
+}
+
+export function promptText(app: App, id: string, vars: Record<string, string>, locale?: string): string {
+  return renderTemplate(promptEntry(app, id, locale).text, vars);
 }
 
 export function handoffPromptId(reason: string): string {
   return `handoff_${reason.replace(/-/g, '_')}`;
 }
 
-/** One prompt as a line: clips where they exist, TTS text otherwise, adjacent text merged. */
-export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null): Say {
-  const segments = segmentTemplate(promptId, promptEntry(app, promptId).text);
+/**
+ * One prompt as a line: clips where they exist, TTS text otherwise, adjacent text merged. A line in
+ * a locale's own words is spoken whole by TTS: the clips are recordings of the default locale's.
+ */
+export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null, locale?: string): Say {
+  const { entry, localized } = localePromptEntry(app, promptId, locale);
+  const segments = segmentTemplate(promptId, entry.text);
   // A line that carries data is spoken whole by TTS, even when clips are on.
-  if (!ctx || ttsOnly(app, segments)) return sayAction([{ text: promptText(app, promptId, vars) }], interruptible);
+  if (!ctx || localized || ttsOnly(app, segments)) return sayAction([{ text: renderTemplate(entry.text, vars) }], interruptible);
   const parts: SayPart[] = [];
   let pieces: string[] = [];
   const flush = (): void => {
@@ -77,8 +94,9 @@ export function promptSay(app: App, promptId: string, vars: Record<string, strin
   return sayAction(parts, interruptible);
 }
 
-/** What a decision asks the channel to do, in order. */
-export function decisionToActions(app: App, decision: Decision, ctx?: RenderContext | null): Action[] {
+/** What a decision asks the channel to do, in order, its lines in `locale` (promptEntry). */
+export function decisionToActions(app: App, decision: Decision, ctx?: RenderContext | null, locale?: string): Action[] {
+  const say = (id: string, vars: Record<string, string>, interruptible: boolean): Say => promptSay(app, id, vars, interruptible, ctx, locale);
   switch (decision.kind) {
     case 'ignore':
     case 'hold':
@@ -86,24 +104,24 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
     case 'replay':
       return [sayAction([{ text: decision.text }], true)];
     case 'prompt': {
-      const actions: Action[] = decision.acks.map((a) => promptSay(app, a.promptId, a.vars, promptEntry(app, a.promptId).interruptible, ctx));
-      actions.push(promptSay(app, decision.promptId, decision.vars, promptEntry(app, decision.promptId).interruptible, ctx));
+      const actions: Action[] = decision.acks.map((a) => say(a.promptId, a.vars, promptEntry(app, a.promptId, locale).interruptible));
+      actions.push(say(decision.promptId, decision.vars, promptEntry(app, decision.promptId, locale).interruptible));
       return actions;
     }
     case 'complete':
       // A barge-in on an ack here could cut the closing line before the end, so only a
       // prompt's acks read their own manifest flag; a terminal decision's acks stay non-interruptible.
       return [
-        ...decision.acks.map((a) => promptSay(app, a.promptId, a.vars, false, ctx)),
-        promptSay(app, decision.promptId, decision.vars, false, ctx),
-        ...(closesWithGoodbye(decision) ? [] : [promptSay(app, GOODBYE, {}, false, ctx)]),
+        ...decision.acks.map((a) => say(a.promptId, a.vars, false)),
+        say(decision.promptId, decision.vars, false),
+        ...(closesWithGoodbye(decision) ? [] : [say(GOODBYE, {}, false)]),
         endAction(decision.completed),
       ];
     case 'handoff':
       // Same reasoning as 'complete': the call is ending, so nothing here is interruptible.
       return [
-        ...decision.acks.map((a) => promptSay(app, a.promptId, a.vars, false, ctx)),
-        promptSay(app, decision.promptId, {}, false, ctx),
+        ...decision.acks.map((a) => say(a.promptId, a.vars, false)),
+        say(decision.promptId, {}, false),
         transferAction(decision.reason, decision.completed, decision.queued, decision.slots),
       ];
   }
@@ -117,9 +135,11 @@ function closesWithGoodbye(decision: Extract<Decision, { kind: 'complete' }>): b
 /**
  * What the caller hears, built straight from the app's manifest. Deriving this from the
  * rendered actions would couple session state to how a line is rendered (clips, parts), so
- * the text a later turn reasons about is defined here instead.
+ * the text a later turn reasons about is defined here instead. In `locale` (promptEntry): a
+ * session's lines are in its own (core/locale.ts localeOf).
  */
-export function spokenText(app: App, decision: Decision): string {
+export function spokenText(app: App, decision: Decision, locale?: string): string {
+  const text = (id: string, vars: Record<string, string>): string => promptText(app, id, vars, locale);
   switch (decision.kind) {
     case 'ignore':
     case 'hold':
@@ -127,19 +147,19 @@ export function spokenText(app: App, decision: Decision): string {
     case 'replay':
       return decision.text;
     case 'prompt':
-      return [...decision.acks.map((a) => promptText(app, a.promptId, a.vars)), promptText(app, decision.promptId, decision.vars)].join(' ');
+      return [...decision.acks.map((a) => text(a.promptId, a.vars)), text(decision.promptId, decision.vars)].join(' ');
     case 'complete':
       return [
-        ...decision.acks.map((a) => promptText(app, a.promptId, a.vars)),
-        promptText(app, decision.promptId, decision.vars),
-        ...(closesWithGoodbye(decision) ? [] : [promptText(app, GOODBYE, {})]),
+        ...decision.acks.map((a) => text(a.promptId, a.vars)),
+        text(decision.promptId, decision.vars),
+        ...(closesWithGoodbye(decision) ? [] : [text(GOODBYE, {})]),
       ].join(' ');
     case 'handoff':
-      return [...decision.acks.map((a) => promptText(app, a.promptId, a.vars)), promptText(app, decision.promptId, {})].join(' ');
+      return [...decision.acks.map((a) => text(a.promptId, a.vars)), text(decision.promptId, {})].join(' ');
   }
 }
 
 /** The spoken text of a decision, for the CLI. */
-export function decisionText(app: App, decision: Decision): string {
-  return spokenText(app, decision);
+export function decisionText(app: App, decision: Decision, locale?: string): string {
+  return spokenText(app, decision, locale);
 }

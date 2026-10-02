@@ -1,8 +1,10 @@
-import { handoff, type Completion, type CompletionContext, type FormDef, type Session } from 'dialogwright';
+import { handoff, type Completion, type CompletionContext, type FormDef, type FormHooks, type Session } from 'dialogwright';
 import { factsOf } from './facts';
-import type { ClinicForm } from './intents';
 import { bookingOf, clinicVars, hasWhatItActsOn, keepsDay, moveOffer, onSchedulingAnswers, readSummary } from './scheduling';
 import type { ClinicTool } from './tools';
+
+/** The clinic's forms, one per task intent (forms.yaml has their slots and summaries). */
+export type ClinicForm = 'schedule_new' | 'reschedule' | 'cancel' | 'confirm_appointment' | 'billing';
 
 const valueOf = (s: Session, slot: string): string => s.slots[slot]?.value ?? '';
 
@@ -72,42 +74,33 @@ const schedules: Pick<FormDef, 'onSummaryRead' | 'onAnswers' | 'onSummaryAnswer'
 };
 
 /**
- * The clinic's five forms. None has an entry call (nothing to look up or verify before the slots).
- * The four on an appointment confirm a summary and end the call on their line; billing collects the
+ * The clinic's five forms' hooks, by form (forms.yaml has their slots and summaries, and lists the
+ * hooks each one has). None has an entry call (nothing to look up or verify before the slots). The
+ * four on an appointment confirm a summary and end the call on their line; billing collects the
  * member ID and hands off to the billing team.
  */
-export const FORMS: Record<ClinicForm, FormDef> = {
+export const CLINIC_FORM_HOOKS: Record<ClinicForm, FormHooks> = {
   schedule_new: {
-    slots: ['name', 'dob', 'provider', 'date'],
-    summaryPromptId: 'confirm_schedule',
     ...schedules,
     confirmedParams: bookingParams,
     complete: writeThenEnd('bookAppointment', bookingParams, 'schedule_confirmed'),
   },
   reschedule: {
-    slots: ['name', 'dob', 'provider', 'date'],
-    summaryPromptId: 'confirm_reschedule',
     ...schedules,
     confirmedParams: bookingParams,
     complete: writeThenEnd('moveAppointment', bookingParams, 'reschedule_confirmed'),
   },
   cancel: {
-    slots: ['name', 'dob', 'provider'],
-    summaryPromptId: 'confirm_cancel',
     ...reads,
     confirmedParams: cancelParams,
     complete: writeThenEnd('cancelAppointment', cancelParams, 'cancel_confirmed'),
   },
   confirm_appointment: {
-    slots: ['name', 'dob', 'provider'],
-    summaryPromptId: 'confirm_appointment_details',
     ...reads,
     // Nothing is written: the caller agreed that the booking read back is theirs (and with none found, a person).
     complete: (c) => nothingToActOn(c) ?? { kind: 'end', promptId: 'appointment_details', vars: clinicVars(c.s), acks: c.acks },
   },
   billing: {
-    slots: ['memberId'],
-    summaryPromptId: null,
     complete: ({ s, acks }) => ({ kind: 'decision', decision: handoff(s, 'billing', acks) }),
   },
 };

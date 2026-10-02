@@ -79,35 +79,29 @@ Today the engine ships as one package, `dialogwright`. As the framework grows it
 | `console` | The live operator console and call replay, with access control |
 | `harness` | Corpus and scenario runner, cassette record and replay, regression, threshold sweep, adversarial suite |
 | `a2a` | A strict client for downstream services that speak the agent-to-agent protocol (optional) |
-| `apps/clinic` | Example: appointment scheduling with name and date of birth |
+| `apps/clinic` | Example: appointment scheduling with name and date of birth, as an app folder |
 | `apps/utility` | Example: identity, policy, writes, delegates, knowledge base |
 
-### An app today
+### An app is a folder
 
-Today an app is a TypeScript object that implements the `App` contract: its intents and keypad menu, forms, slots, identity configuration, tools, policy tables, prompt manifest, and a `systems()` factory for its backends. Optional sections cover session facts, downstream services (`App.services`), console and handoff wording, voice hints, sign-in principals, an app's own portal settings (`App.portal`, never read by the engine), and test fixtures. Apps are registered by id, sessions carry the id, and a boundary test forbids the engine from importing any app.
-
-### An app is a folder (planned)
-
-The next step loads the same contract from a folder that is mostly configuration:
+An app is a folder of YAML for what is data, plus TypeScript for what runs. `defineApp(dir, code)` joins the two into the `App` contract the engine runs, and `pnpm check` finds everything wrong with either, or with how they meet, in one pass. [authoring-an-app.md](authoring-an-app.md) is the guide; `apps/clinic` is the worked example.
 
 ```
 my-app/
-  app.ts            defineApp({ tools, customSlots, customRules })
-  intents.yaml      intents and the forms they start
-  forms.yaml        each form's slots, entry action and completion
-  prompts.yaml      every line the caller hears, with mode: fixed | generative
-  policy.yaml       actions, levels, rules, redaction (§6)
-  identity.yaml     levels, factors, per-channel step-up (§6)
-  style.yaml        persona, tone, word budgets per channel (§5)
-  locale/           per-locale prompts (§11)
-  kb/               approved passages (§9)
-  slots/            custom slot types (TypeScript), optional
-  tools/            backend adapters (TypeScript), or declarative HTTP tools
-  rules/            custom policy rules (TypeScript), each with a test
-  fixtures/         corpus.jsonl, scenarios/*.yaml, recorded cassettes
+  app.yaml          id, locale, brand, console, voice, handoff, wording, thresholds, carried slots, fixtures
+  intents.yaml      intents and the keypad menu
+  forms.yaml        each form's slots, summary prompt and the code hooks it has
+  prompts.yaml      every line the caller hears (mode: fixed)
+  policy.yaml       the gate's tables: levels, rules per tool, confirmed fields, attempts
+  identity.yaml     optional: the principal kind, the factor slots and the identity tools
+  locale/<tag>/     optional: prompts.yaml per extra locale
+  app.ts            export const code: AppCode (slots, tools, systems, form hooks, custom rules, ...)
+  fixtures/         corpus.jsonl, scenarios, the baseline, recorded cassettes
 ```
 
-Every YAML file has a JSON Schema. An app that uses only built-in slots and declarative tools has one line of TypeScript: the `defineApp` call.
+Every YAML file has a JSON Schema (`packages/dialogwright/schemas/`, generated from the zod schemas that validate the files), and each file names its schema on its first line so an editor completes and checks it. The code stays in TypeScript: slot specs (what the perceiver is asked and how the answer becomes a value), tools and the systems behind them, the form hooks, custom policy rules and the test hooks. The folder cannot say any of those without becoming a programming language, and the check keeps the two sides in step: every name the YAML uses must exist in the code, and every hook the code writes must be listed in `forms.yaml`.
+
+Not built yet, and planned for the folder: `style.yaml` (persona and word budgets, with generated wording), `kb/` (approved passages), `slots/` and declarative tools (so an app built from the slot library and HTTP tools has no code beyond one `defineApp` line), named policy rules (Phase 4), and `mode: generative` prompts. Apps are registered by id, sessions carry the id, and a boundary test forbids the engine from importing any app.
 
 ### The slot library
 
@@ -155,12 +149,12 @@ Plain REST calls can be declarative tools (a URL template, an auth reference, a 
 
 A first-class goal: a developer points an AI coding assistant such as Claude Code at the repository and has an app running from a one-paragraph description in one session, with `pnpm check` and the scenario suite green.
 
-1. **`CLAUDE.md`** at the root: the roles and the gate in a page, the commands, and the rules (never put policy in tool code, never let a model write a regulated line, the engine imports no app). Each example app gets a short one of its own.
-2. **A create-app skill** in `.claude/skills/`: from a plain-language description, pick intents, map each piece of information to a built-in slot type, draft prompts, policy, identity and tool stubs, write starter corpus utterances and scenarios, then run the checks until they pass.
-3. **`pnpm create-app <name>`**, a deterministic scaffold the skill calls.
-4. **`pnpm check`**, with errors written for an agent to act on: each names the file and the fix ("forms.yaml: form `pay_bill` uses slot `amount`, which is not defined; add it to slots, e.g. `{ type: money }`"). It validates every schema and cross-checks: referenced prompts exist, forms' slots are defined, every tool has a policy row, every intent has corpus examples, every fact-bearing prompt is `mode: fixed`, every custom rule has a test.
+1. **`CLAUDE.md`** at the root: the roles and the gate in a page, the commands, and the rules (never put policy in tool code, never let a model write a regulated line, the engine imports no app, run `pnpm check` and `pnpm verify` before committing an app). Each example app gets a short one of its own (planned).
+2. **A create-app skill** (planned, Phase 5) in `.claude/skills/`: from a plain-language description, pick intents, map each piece of information to a built-in slot type, draft prompts, policy, identity and tool stubs, write starter corpus utterances and scenarios, then run the checks until they pass.
+3. **`pnpm create-app <name>`** (planned, Phase 5), a deterministic scaffold the skill calls.
+4. **`pnpm check`**, with errors written for an agent to act on: each is one line, `file:line:column  path  message  ->  fix`, such as `forms.yaml:8:19  forms.check_hold.slots[1]  slot "branche" is not defined  ->  rename it to "branch", or add it to the app's slots in app.ts (code.slots.branche)`. It validates every schema (unknown keys, wrong types, a misspelt name with the near match offered) and cross-checks the folder against the code: referenced prompts exist, forms' slots are defined, every form's hooks match exactly what the code writes, every tool has a policy row and every policy row a tool, every custom rule the policy names exists and is used, and the identity tools and carried slots exist. It checks that every line the engine itself says is present in every locale (including the ones it builds from a slot's spec, such as `ask_<slot>_dtmf` for a slot with a keypad rung), that a translated line uses only its default line's variables, that what the console and the clips name exists, and that every intent has examples in the app's corpus. Every prompt is `mode: fixed` because the schema allows no other mode today; checking generated wording waits for it (Phase 9). That each custom rule has a test waits for the policy matrix tests (Phase 4). The command is `dialogwright check [--json] [dir...]`, and exits 1 when there is any problem.
 5. **It runs with no keys.** The stub perceiver answers from the app's own labelled corpus, templates render, and the text harness and console work end to end.
-6. **Docs for agents**: `llms.txt`, a page per slot type with its YAML options and an example, and the example apps as reference patterns.
+6. **Docs for agents**: [authoring-an-app.md](authoring-an-app.md) (written for a developer and an assistant alike) is here; `llms.txt`, a page per slot type with its YAML options and an example, and the example apps as reference patterns.
 
 ## 5. Generated wording
 
@@ -187,7 +181,7 @@ balance_answer:
 
 ### Identity
 
-Identity is a ladder of levels. Today an app declares the principal kind it serves, the factor slots asked on voice, and the tools that verify factors and send and check a one-time code. The planned `identity.yaml` declares the same thing as a file:
+Identity is a ladder of levels. Today an app's optional `identity.yaml` declares the principal kind it serves, the factor slots asked on voice, and the tools that verify factors and send and check a one-time code (an app without the file verifies no one, and every tool must be level 0). The ladder below, with named levels, per-channel step-up and attempts in one file, is planned (Phase 4):
 
 ```yaml
 # identity.yaml
@@ -205,7 +199,7 @@ channels:
 
 ### Policy
 
-Policy is named, parameterized rules in a file compliance owns:
+Policy is a file compliance owns. Today `policy.yaml` holds the gate's tables (`toolLevel`, `rulesFor` with the built-in rule ids R1 to R7 and any custom rule by name, `confirmedFields`, `subjects`, `roles`, `serviceFields`, `maxAttempts`, and the words the rules use in the audit). The planned shape (Phase 4) is named, parameterized rules:
 
 ```yaml
 # policy.yaml
@@ -336,8 +330,8 @@ The web chat widget is a small bundle on a CDN that a site embeds. It opens a We
 
 Each of these is a field, an interface or a few lines of configuration, so later features never need a redesign.
 
-1. **Languages**: a locale on the session and on every prompt, slot parser and passage. The first release ships English; adding a language is content.
-2. **Versioned configuration per decision**: policy, prompts and the knowledge base each carry a content hash; every gate decision and audit entry records the hashes in force; replay shows them.
+1. **Languages**: a locale on the session and on every prompt, slot parser and passage. Built today: `locale:` in app.yaml, a `locale/<tag>/prompts.yaml` per extra language, the session's locale from the channel's start (a `locale` custom parameter on ConversationRelay), and per-line fallback to the default language; translated lines are spoken by text-to-speech, since recorded clips are in the default language. Not yet carried by any channel: the server's TwiML sends no `locale` parameter and sets no `language`, `ttsLanguage` or `transcriptionLanguage`, and the engine never emits `set_language`, so a voice session in another locale is still transcribed and voiced with the relay's defaults; chat has no way to ask for a locale; and the outbound text frames say `lang: en-US`. That channel work is Phase 7 (Channels). Slot parsers, labels and passages by locale come with the slot library and the knowledge base.
+2. **Versioned configuration per decision**: every configuration file carries a content hash (SHA-256 of its parsed content, so comments and key order do not change it) and the app a combined one. Built today: the `call_started` audit row records the combined hash and each file's, every trace record carries the combined hash, and the console shows its first eight characters. The hashes are never sent to the model. Still to come: the knowledge base's hashes, and the hashes on each gate decision.
 3. **Retention and erasure**: the hash chain holds hashes and minimized entries; personal data lives in separately keyed records that can be erased without breaking the chain; retention is set per store.
 4. **Handoff integration**: a handoff-target interface (phone transfer now; SIP transfer with headers; a webhook delivering the note to the agent desktop; contact-center adapters later).
 5. **Time zones and business hours**: a per-app time zone and calendar, an injected clock everywhere, and a built-in after-hours path (callback, voicemail or message).
@@ -358,17 +352,19 @@ Each phase ends with green tests and a working app.
 | App-agnostic engine | No app names, data or assumptions left in the engine; a test fixture app (`testkit`) proves it builds and passes alone | The engine stands on its own | Done |
 | The repository | This workspace, the `dialogwright` package, community files, this document, CI | The engine is public-ready | Done |
 | Example apps | The clinic on the `App` contract (`apps/clinic`): its own corpus, scripted calls and stub baseline, built on the engine's generic hooks; recorded against a decision model through the adapter | A real app on the public engine | Clinic done (recording to come) |
-| App definition | `defineApp`, schemas, loaders, `pnpm check`; the clinic in YAML; locale and configuration hashes | An app is a folder | Planned |
+| App definition | `defineApp`, JSON Schemas, the loader, `pnpm check`; the clinic as a folder; locales; configuration hashes; [authoring-an-app.md](authoring-an-app.md) | An app is a folder | Done |
 | Slot library | The built-in types with options, prompts and suites | Most slots are configuration | Planned |
 | Policy and identity | Named rules, `identity.yaml`, delegates, redaction, matrix tests, `policy:card`, `CODEOWNERS` | Compliance-owned policy, tested against the file | Planned |
 | The utility app, built by an AI coding assistant | The create-app skill, `create-app`, `CLAUDE.md` files; the utility app built through that path from a paragraph, then recorded | The assistant goal, by doing it | Planned |
 | Knowledge base | Passages, staleness, hybrid retrieval with a local embedding model, `kb:index`, `kb:draft`, `kb:approve`, `kb:gaps` | Knowledge that scales without generated answers | Planned |
-| Channels | The relay with Twilio and Telnyx adapters and conformance tests; the CDN widget with token sign-in | Same app, two carriers, plus web | Planned |
+| Channels | The relay with Twilio and Telnyx adapters and conformance tests; the CDN widget with token sign-in; a session's locale carried to the carrier (its language attributes, `set_language`) and requested from chat | Same app, two carriers, plus web | Planned |
 | Production | Store interfaces with production implementations; resume across instances; idempotent writes; readiness and drain; a `docker compose` stack; a reference deployment; console access control | A deploy never drops a call (the kill-an-instance test) | Planned |
 | Generated wording | Renderer interface, the LLM adapter, `style.yaml`, checks, fallback, cassette, console display | The model chooses the words, never the content | Planned |
 | Open source polish | `llms.txt`, slot pages, an adopter's README, adversarial suite inheritance, contribution notes | Someone else can adopt it | Planned |
 
 The foundations (§11) land in the phase that owns their area.
+
+Phases are counted from App definition as Phase 2. What the App definition phase left for later phases: the slot library (Phase 3: so that most slots need no TypeScript), named policy rules and the policy matrix tests (Phase 4), the knowledge base folder `kb/` (Phase 6), `style.yaml` and generated wording (Phase 9), and a locale carried end to end on the channels (Phase 7: the TwiML's `locale` parameter and language attributes, the `set_language` action, a chat request for a locale, and the outbound text frames' language tag).
 
 ## 13. Open source and licensing
 

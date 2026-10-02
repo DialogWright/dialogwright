@@ -1,0 +1,802 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "description": "The app's id (for example \"clinic\"): lowercase letters, digits, hyphens and underscores. It names the app in the registry and, by default, its browser storage."
+    },
+    "locale": {
+      "description": "The default locale of prompts.yaml, as a language tag (\"en-US\"). Other locales' prompts go in locale/<tag>/prompts.yaml. Default \"en-US\".",
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    },
+    "brand": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The app's name, as the console's title and its speaker labels show it (for example \"Example Parcels\")."
+        },
+        "mark": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The console's short mark, top left (for example \"EP\")."
+        },
+        "key": {
+          "description": "The prefix of the console's browser storage keys. Keep it stable and a browser's saved choices survive. Default: the app id.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "mark"
+      ],
+      "additionalProperties": false,
+      "description": "How the app is named on the operator console and in its browser storage."
+    },
+    "console": {
+      "type": "object",
+      "properties": {
+        "formLabels": {
+          "description": "Each form in words, as the NOW panel says it (for example report_missing: \"Report a missing parcel\"). Default: the form id with spaces.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "slotOrder": {
+          "description": "Every slot, in the order the chips and the perception groups show them outside a form. Default: the identity factor slots, then each form's slots in turn, once each.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          }
+        },
+        "slotLabels": {
+          "description": "Each slot as the NOW panel names it (for example accountId: \"Account ID\"). Default: the slot id.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "questionPrefixes": {
+          "description": "The question id prefixes that belong to a slot, where its questions are not named after it (for example parcelSelect: [parcelChoice]). A slot not listed owns the ids that start with its own.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "detectQuestions": {
+          "description": "Slot questions measured against the detection threshold besides the ones ending in \"Given\" (for example containsAccountId).",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "levels": {
+          "description": "The level badge's words for levels 0, 1 and 2, for example [\"anonymous\", \"ID + DOB\", \"+ code\"].",
+          "minItems": 3,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "handoffReasons": {
+          "description": "Handoff reasons the app adds, in words (for example staff-filing: \"a person on staff filed it\").",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "facts": {
+          "description": "The key fact of a task, read off its turn's audit rows, as the NOW panel says it. In order; a row matches the first that fits.",
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "created",
+                    "description": "A row recording a record the turn created."
+                  },
+                  "type": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+                    "description": "The audit row type that records the creation (for example \"report_created\")."
+                  },
+                  "field": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+                    "description": "The audit row's detail field that names the record."
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The fact as the NOW panel says it; write {} where the detail field goes."
+                  }
+                },
+                "required": [
+                  "kind",
+                  "type",
+                  "field",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "lookup",
+                    "description": "A tool's result; the allowed call's param names the record."
+                  },
+                  "tool": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                    "description": "The tool whose allowed call is the fact."
+                  },
+                  "param": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                    "description": "The call param that names the record (for example \"parcelId\")."
+                  },
+                  "noun": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "What the record is, in words (\"parcel\" reads \"parcel 7101 · in transit\")."
+                  }
+                },
+                "required": [
+                  "kind",
+                  "tool",
+                  "param",
+                  "noun"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "answer",
+                    "description": "A knowledge-base answer."
+                  },
+                  "type": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+                    "description": "The audit row type that records the answer (for example \"kb_answer\")."
+                  },
+                  "field": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+                    "description": "The audit row's detail field that names the answer."
+                  },
+                  "topicSlot": {
+                    "description": "A slot whose display names the answer's topic; without one, the detail field is used.",
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "type",
+                  "field"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "note",
+                    "description": "A row that adds text to the fact already held, unless the fact already says `unless`."
+                  },
+                  "type": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+                    "description": "The audit row type that adds the note."
+                  },
+                  "when": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                    },
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean"
+                      ]
+                    },
+                    "description": "The row's detail fields that must have these values for the note to apply."
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The words added to the fact."
+                  },
+                  "unless": {
+                    "description": "Text that, when the fact already says it, stops the note being added.",
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "type",
+                  "when",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "goodAuditTypes": {
+          "description": "Audit row types the audit list shows as good news, beside a passed identity check (for example report_created, kb_answer).",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+          }
+        },
+        "serviceNote": {
+          "description": "A downstream service's answer as the conversation pane shows it.",
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Who answered (for example \"Depot agent · A2A\")."
+            },
+            "answered": {
+              "type": "string",
+              "minLength": 1,
+              "description": "An answer taken (for example \"answered the filed report\")."
+            },
+            "reasons": {
+              "description": "Why an answer was refused or never came, by the client's reason code. A code not listed is shown as it is.",
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "label",
+            "answered"
+          ],
+          "additionalProperties": false
+        },
+        "signIn": {
+          "description": "A portal sign-in mid-chat (an auth.signed_in turn), as the conversation pane shows it.",
+          "type": "object",
+          "properties": {
+            "marker": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The conversation pane's marker for a sign-in mid-chat."
+            },
+            "role": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The role the caller line names the person by."
+            }
+          },
+          "required": [
+            "marker",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "chatPrefixes": {
+          "description": "Session id prefixes of the app's chats (for example CH, WC), so the console knows a replayed trace was a chat.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "heardBy": {
+          "description": "Who hears what the agent says, in the handoff card's note (for example \"the customer\"). Default \"the caller\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "links": {
+          "description": "Buttons in the console's header that open the app's own pages.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "description": "The button's element id (for example \"chat\"). It may not be an id the console page already uses."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The button's label."
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The button's tooltip."
+              },
+              "href": {
+                "type": "string",
+                "description": "The page the button opens: a path on the server (\"/chat\") or an http(s) address."
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The window name (window.open's target), so a second click reuses the window."
+              },
+              "features": {
+                "type": "string",
+                "minLength": 1,
+                "description": "window.open's features, for example \"width=440,height=700\"."
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "title",
+              "href",
+              "target",
+              "features"
+            ],
+            "additionalProperties": false,
+            "description": "A console header button that opens one of the app's own pages in a window of its own."
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "What the operator console shows in the app's words. Each field is optional; without one the console uses the app's own ids and neutral words."
+    },
+    "voice": {
+      "type": "object",
+      "properties": {
+        "hints": {
+          "description": "Words the speech recognizer should expect (ConversationRelay hints), before the engine's number words.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "spokenDigits": {
+          "description": "How digits that are identifiers are spelled out for text-to-speech, tried in order.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "minLength": 1,
+                "description": "A regular expression (its source, without slashes), compiled with the g flag, matching digits that are identifiers. Trusted code run over every line the agent speaks: keep it free of catastrophic backtracking."
+              },
+              "spell": {
+                "type": "string",
+                "enum": [
+                  "lead",
+                  "groups"
+                ],
+                "description": "lead: capture 1 is the words before the digits and capture 2 the digits (\"parcel 7101\" reads \"parcel 7 1 0 1\"). groups: the whole match is digit groups separated by spaces, each spelled out with a pause between groups (\"4471 8293\" reads \"4 4 7 1, 8 2 9 3\")."
+              }
+            },
+            "required": [
+              "pattern",
+              "spell"
+            ],
+            "additionalProperties": false,
+            "description": "One rule for how identifier digits are spelled out for text-to-speech on the wire. Only what goes out is rewritten: the session text, the trace and the manifest keep the readable form."
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "The phone line's speech settings for the app."
+    },
+    "handoff": {
+      "type": "object",
+      "properties": {
+        "recipient": {
+          "description": "Who the note is for, the person the call is handed to, in the summary model's instructions: \"a human <this> agent\" (for example \"delivery contact-center\"). Default \"contact-center\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "levels": {
+          "description": "The Identity line by the level reached, keyed by level number (0, 1, 2); an app may name its factors. Default \"not verified\", \"level 1\", \"level 2\".",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "signedIn": {
+          "description": "The Identity line for a principal kind that starts the call signed in (for example agent: \"signed in as depot staff\").",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "blocked": {
+          "description": "A refusal in words by the gate's reason (for example scope, already-delivered). Default: the engine's neutral words, or the reason as it is.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "blockedAs": {
+          "description": "For a principal kind that started signed in, its own words for a refusal by reason: principal kind, then reason, then words.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "reasons": {
+          "description": "Handoff reasons the app adds, in words (for example staff-filing).",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "created": {
+          "description": "Records the call created, read from an audit row's detail field and listed in the facts under `key`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+              "description": "The audit row type that records a created record (for example \"report_created\")."
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+              "description": "The row's detail field that carries the record (for example \"report\")."
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+              "description": "The key the records are listed under in the note's facts (for example \"reportsFiled\")."
+            }
+          },
+          "required": [
+            "type",
+            "field",
+            "key"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "The handoff note's words about the app's domain. Each field is optional; without one the engine's own neutral words are used."
+    },
+    "wording": {
+      "type": "object",
+      "properties": {
+        "addressee": {
+          "description": "Whom the caller is asking, in the intent question (\"What is the caller asking <this> to do?\"). Default \"this service\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "tentative": {
+          "description": "The hedge question: true when the hedge is about the request itself, false when it is only about a detail.",
+          "type": "object",
+          "properties": {
+            "true": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The criterion for answering yes."
+            },
+            "false": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The criterion for answering no."
+            }
+          },
+          "required": [
+            "true",
+            "false"
+          ],
+          "additionalProperties": false
+        },
+        "confirmsNo": {
+          "description": "What a no to a confirmation is (true; for example with a correction in the app's own values as its example), and what is not (false).",
+          "type": "object",
+          "properties": {
+            "true": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The criterion for answering yes."
+            },
+            "false": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The criterion for answering no."
+            }
+          },
+          "required": [
+            "true",
+            "false"
+          ],
+          "additionalProperties": false
+        },
+        "changeSlot": {
+          "description": "Which detail of a form just read back the caller names as wrong.",
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "description": "The question's instructions.",
+              "type": "string",
+              "minLength": 1
+            },
+            "order": {
+              "description": "The slots the question can offer, in its fixed presentation order (kept so the wire order, and any option-order bias in the model's answer, stay stable); each offered only when the pending form has it. Without it, the form's own slots in its order.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "text": {
+              "description": "Per slot in `order`, the criterion for naming it as the thing to change without its new value. Every slot in `order` needs one.",
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "none": {
+              "description": "The `none` criterion: a new value given rather than a detail named, a plain yes or no, or nothing.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "screen": {
+          "description": "The injection screen, which asks whether the caller is trying to manipulate the agent.",
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The injection screen's one question: its instructions."
+            },
+            "true": {
+              "type": "string",
+              "minLength": 1,
+              "description": "What counts as manipulation."
+            },
+            "false": {
+              "type": "string",
+              "minLength": 1,
+              "description": "What counts as ordinary."
+            }
+          },
+          "required": [
+            "instructions",
+            "true",
+            "false"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "The engine's own model questions in the app's words. Every string is sent to the model as it is, so a change re-keys a recorded cassette. Each field is optional; without one the engine's neutral words are used."
+    },
+    "thresholds": {
+      "description": "The app's own named thresholds and their defaults (for example TIME_OF_DAY: 0.6), read where the engine's are. A name may not be one of the engine's. A run's --threshold NAME=VALUE overrides one.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "carrySlots": {
+      "description": "Slots that, like identity, outlast the form that filled them (for example the caller's own name and birthday). Every other slot of a form is emptied as it closes. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      }
+    },
+    "fixtures": {
+      "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",
+      "type": "object",
+      "properties": {
+        "dir": {
+          "type": "string",
+          "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!(?:.*[/\\\\])?\\.\\.(?:[/\\\\]|$)).+$",
+          "description": "The directory, relative to the app's package root (the folder its commands run in), holding corpus.jsonl, scenarios/, expected/ and recorded/<model>.jsonl. It must stay inside the package: no absolute path, no \"..\"."
+        }
+      },
+      "required": [
+        "dir"
+      ],
+      "additionalProperties": false
+    },
+    "prompts": {
+      "type": "object",
+      "properties": {
+        "greetings": {
+          "description": "The opening line's prompt ids by case. Each prompt must exist in prompts.yaml.",
+          "type": "object",
+          "properties": {
+            "voice": {
+              "description": "The opening line on any channel that speaks. Default \"greeting\".",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "chat": {
+              "description": "The opening line on a text channel for an anonymous visitor. Default \"greeting_chat\".",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "chatSignedIn": {
+              "description": "The opening line on a text channel for a signed-in subject (with {first}). Default \"greeting_chat_signed_in\".",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "chatDelegate": {
+              "description": "The opening line on a text channel for a signed-in delegate (with {first}). Default \"greeting_chat_delegate\".",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "spokenVars": {
+          "description": "Prompt variables always spoken by text-to-speech, as composed values with no clip (for example the account ID, dates, a parcel number). Each must end its clause in a recorded line.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          }
+        },
+        "dataVars": {
+          "description": "Prompt variables that carry data read from a tool or a knowledge base (for example a parcel's status, a passage's approved answer). A line with one is spoken whole by text-to-speech: never recorded, never split into clips.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          }
+        },
+        "vocabulary": {
+          "description": "The spoken values that need a recorded clip of their own, in recording order (for example each form intent's label, then each day part's display).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "description": "The clip id."
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The exact words the clip says."
+              },
+              "vars": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                },
+                "description": "The prompt variables that, rendered as exactly `text`, play this clip in place of text-to-speech."
+              }
+            },
+            "required": [
+              "id",
+              "text",
+              "vars"
+            ],
+            "additionalProperties": false,
+            "description": "One spoken value that has a recorded clip of its own."
+          }
+        },
+        "tags": {
+          "description": "Per-clip voice tags for the clip generator (clip id to tag, for example \"[calm]\"); the tag syntax is the text-to-speech provider's.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "What the app says about its prompts besides their text (which is in prompts.yaml): the opening lines, the variables the clip generator must treat specially, and the clips' vocabulary and voice tags."
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "additionalProperties": false,
+  "description": "app.yaml: who the app is and how it presents itself.",
+  "title": "DialogWright app.yaml"
+}

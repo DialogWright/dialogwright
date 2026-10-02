@@ -22,6 +22,7 @@ import { auditDrafts } from './audit';
 import type { AuditDraft } from '../audit/types';
 import { decisionToActions, spokenText, type RenderContext } from '../prompts/render';
 import { saidCode } from './spokenCode';
+import { matchLocale } from './locale';
 
 export interface TurnContext {
   nowMs: number;
@@ -997,7 +998,7 @@ function bookkeep(s: Session, decision: Decision, verdictLabel: string): void {
   s.history.push({ node: s.lastPromptId ?? 'start', intent: verdictLabel, outcome: decision.kind });
   if (decision.kind === 'prompt') {
     s.lastPromptId = decision.promptId;
-    s.lastPromptText = spokenText(appOf(s), decision);
+    s.lastPromptText = spokenText(appOf(s), decision, s.locale);
     s.lastPromptOptions = [...decision.options];
     s.promptedFor = decision.target;
     s.menuActive = decision.menu === true;
@@ -1007,7 +1008,7 @@ function bookkeep(s: Session, decision: Decision, verdictLabel: string): void {
     if (decision.help) s.slots[decision.help.slot]!.helped.push(decision.help.promptId);
   } else if (decision.kind === 'complete' || decision.kind === 'handoff') {
     s.lastPromptId = decision.promptId;
-    s.lastPromptText = spokenText(appOf(s), decision);
+    s.lastPromptText = spokenText(appOf(s), decision, s.locale);
     // A code keyed partway is not kept past the call: the buffer goes with any decision that leaves the prompt.
     s.dtmfBuffer = '';
     s.ended = true;
@@ -1063,9 +1064,12 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
 
   switch (event.type) {
     case 'session.start': {
+      // The locale the channel asks for, where the app speaks it; any other request leaves the
+      // session in the app's default. An app without locales has no locale to set.
+      if (event.locale !== undefined && io.app.locales) s.locale = matchLocale(io.app, event.locale) ?? io.app.locales.default;
       const decision = greeting(s);
       bookkeep(s, decision, 'setup');
-      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render) };
+      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
     }
     case 'user.key': {
       // The prompt moved between the digit's arrival and this turn: a digit recorded as part of the
@@ -1080,7 +1084,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const { decision: handled, rows } = handleDtmf(s, event.digit, io);
       const decision = readSummary(s, handled, io);
       bookkeep(s, decision, label);
-      return { ...base(), rows, decision, actions: decisionToActions(io.app, decision, tc.render) };
+      return { ...base(), rows, decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
     }
     case 'user.interrupt':
       // Barge-in is state, not a turn: the next speech turn reports it to the model.
@@ -1098,7 +1102,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const ack = onResult(appContext(s, tc, io.out), event.service, event.result);
       const decision = readSummary(s, s.form ? finishForm(s, s.form, [ack], io) : prompt('anything_else', 'intent', {}, [ack]), io);
       bookkeep(s, decision, 'service_result');
-      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render) };
+      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
     }
     case 'auth.signed_in': {
       // Only the customer chat server makes this, after the portal's sign-in; the relay never produces
@@ -1129,7 +1133,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       s.stepUp = null;
       const decision = readSummary(s, parked ? continueForm(s, io, acks, null) : prompt('signin_ready', 'intent', {}, acks), io);
       bookkeep(s, decision, 'signed_in');
-      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render) };
+      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
     }
     case 'user.silence': {
       const decision = readSummary(s, handleSilence(s, io), io);
@@ -1137,7 +1141,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // Silence resolves whatever was prompted; a stale barge-in marker does not carry into
       // the next turn, same as a real one.
       s.lastInterrupt = null;
-      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render) };
+      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
     }
     case 'user.speech':
     case 'user.text': {
@@ -1148,14 +1152,14 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
         const decision = readSummary(s, quarantine(s), io);
         bookkeep(s, decision, 'screen');
         s.lastInterrupt = null;
-        return { ...base(), turnState, rows: screened, decision, actions: decisionToActions(io.app, decision, tc.render), quarantined: true };
+        return { ...base(), turnState, rows: screened, decision, actions: decisionToActions(io.app, decision, tc.render, s.locale), quarantined: true };
       }
       if (error || answers === null) {
         const decision = handleFailure(s);
         bookkeep(s, decision, 'error');
         // The turn state above already reported the barge-in, failed ask or not.
         s.lastInterrupt = null;
-        return { ...base(), turnState, rows: screened, decision, actions: decisionToActions(io.app, decision, tc.render) };
+        return { ...base(), turnState, rows: screened, decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
       }
       s.consecutiveFailures = 0;
       const ctx = slotContext(s, event.text, tc);
@@ -1170,7 +1174,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       bookkeep(s, decision, verdict.kind);
       // The barge-in has now been reported to the model; it does not carry into the next turn.
       s.lastInterrupt = null;
-      return { ...base(), turnState, rows: [...screened, ...rows], verdict, fillEvents: events, decision, actions: decisionToActions(io.app, decision, tc.render) };
+      return { ...base(), turnState, rows: [...screened, ...rows], verdict, fillEvents: events, decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
     }
   }
 }

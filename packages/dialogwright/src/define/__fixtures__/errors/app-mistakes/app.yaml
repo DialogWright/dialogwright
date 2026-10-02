@@ -1,0 +1,21 @@
+id: Fixture Clinic
+locale: english
+brand:
+  name: Example Family Practice
+console:
+  levels: [none, some]
+  links:
+    - id: chat
+      label: Chat
+      title: Open the chat page
+      href: "javascript:alert(1)"
+      target: chat
+      features: width=440
+voice:
+  spokenDigits:
+    - pattern: '(unclosed'
+      spell: groups
+    - pattern: '\d{4,}'
+      spell: lead
+thresholds:
+  TIME_OF_DAY: high

@@ -27,6 +27,19 @@ export { validateApp, CONSOLE_ELEMENT_IDS, CONTROL_INTENTS, REQUIRED_CONTROL_INT
 export { formOf, slotSpecOf, toolOf } from './core/app/lookup';
 export { intentList, formIntents, isFormIntent, intentLabel, informationalPrompt, informationalIntents, intentCriteria } from './core/app/intents';
 
+// The languages an app speaks (App.locales) and the one a session speaks.
+export { DEFAULT_LOCALE, defaultLocaleOf, localesOf, matchLocale, localeOf } from './core/locale';
+
+// The app definition: an app folder's YAML joined with its TypeScript parts into the App above.
+export { defineApp, AppDefinitionError, isAppDefinitionError } from './define/defineApp';
+export type { AppCode, FormHooks, DefineAppOptions } from './define/defineApp';
+export { checkApp } from './define/check';
+export type { CheckOptions } from './define/check';
+export { loadAppFolder } from './define/load';
+export type { LoadedConfig, LoadResult } from './define/load';
+export { formatProblem } from './define/problems';
+export type { Problem } from './define/problems';
+
 // The channel model: what the engine hears (events), what it does (actions), what a channel can do (caps).
 export {
   DEFAULT_LANG, startEvent, speechEvent, textEvent, keyEvents, interruptEvent, silenceEvent, errorEvent,

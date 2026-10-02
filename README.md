@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-DialogWright is an open-source TypeScript framework for voice and chat agents that act safely. A fast decision model reads what the caller said and answers typed questions (judgments, not generated text). Deterministic code decides what happens next. Every action goes through a policy gate that enforces identity levels, scope, confirmation and attempt limits, and every decision is recorded in a hash-chained audit log. Apps are defined against an `App` contract, so the same engine can run a clinic, a utility company or anything else.
+DialogWright is an open-source TypeScript framework for voice and chat agents that act safely. A fast decision model reads what the caller said and answers typed questions (judgments, not generated text). Deterministic code decides what happens next. Every action goes through a policy gate that enforces identity levels, scope, confirmation and attempt limits, and every decision is recorded in a hash-chained audit log. An app is a folder: YAML for what is data (intents, forms, prompts, policy, identity, locales) and TypeScript for what runs (slots, tools, hooks), joined by `defineApp`, so the same engine can run a clinic, a utility company or anything else.
 
 ## Status
 
@@ -16,23 +16,29 @@ The package ships TypeScript source (run it with tsx or vitest) until a release 
 ## What's here
 
 - `packages/dialogwright`: the engine. Its testkit is the engine's own test fixture, not a starting point for an app. An app imports only from `'dialogwright'`, the package's supported API (`src/index.ts`, grouped and documented there); the per-file subpaths (`dialogwright/core/...`) are internals that may change between versions.
-- `apps/clinic`: Example Family Practice, a fictional clinic's appointment line, and the first example app to read. A caller can schedule, reschedule, cancel or confirm an appointment with one of eight providers, or be put through to billing. It shows an app with no identity verification, reads and gated writes through the directory tools, scheduling built from generic form hooks, and its own corpus (241 labelled utterances), scripted calls (89) and regression baseline. It needs no keys: `pnpm --filter @dialogwright/example-clinic cli --client heuristic` is a text console, and `pnpm --filter @dialogwright/example-clinic regress` replays its fixtures. See [apps/clinic/README.md](apps/clinic/README.md).
+- [docs/authoring-an-app.md](docs/authoring-an-app.md): how to build an app, for a developer or an AI coding assistant: the folder, each file with an example, what stays in TypeScript, `pnpm check` and its messages, locales, configuration hashes.
+- `packages/dialogwright/schemas`: the JSON Schema of each YAML file in an app folder; every file names its schema on its first line, so an editor completes and checks it.
+- `apps/clinic`: Example Family Practice, a fictional clinic's appointment line, an app folder, and the first example app to read. A caller can schedule, reschedule, cancel or confirm an appointment with one of eight providers, or be put through to billing. It shows an app with no identity verification, reads and gated writes through the directory tools, scheduling built from generic form hooks, and its own corpus (241 labelled utterances), scripted calls (89) and regression baseline. It needs no keys: `pnpm --filter @dialogwright/example-clinic cli --client heuristic` is a text console, and `pnpm --filter @dialogwright/example-clinic regress` replays its fixtures. See [apps/clinic/README.md](apps/clinic/README.md).
 - A utility company example is coming.
 
 ## Quick start
 
 ```sh
 pnpm install
-pnpm test
+pnpm verify                                  # type check and tests
+pnpm check                                   # every app folder under apps/
 pnpm --filter dialogwright regress:testkit
 pnpm --filter @dialogwright/example-clinic regress
 ```
 
+`pnpm check` reads each app folder's YAML against its schemas and cross-checks it against the app's code, printing each problem with its file, line and fix; it prints `apps/clinic: ok` when there are none. To try an app with no keys, run the clinic's text console: `pnpm --filter @dialogwright/example-clinic cli --client heuristic`. To build your own, start with [docs/authoring-an-app.md](docs/authoring-an-app.md).
+
 Requires Node 22.19 or later and pnpm.
 
-## Design
+## Design and guides
 
-See [docs/design.md](docs/design.md).
+- [docs/authoring-an-app.md](docs/authoring-an-app.md): build an app.
+- [docs/design.md](docs/design.md): the design and the roadmap.
 
 ## License
 

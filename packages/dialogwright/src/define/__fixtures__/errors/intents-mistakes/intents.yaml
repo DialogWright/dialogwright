@@ -1,0 +1,18 @@
+intents:
+  schedule_new:
+    criteria: Wants to book a new appointment
+    label: schedule a new appointment
+    kind: forms
+  capabilities:
+    criteria: Asks what the system can do
+    label: hear what I can do
+    kind: informational
+  repeat_prompt:
+    criteria: Asks the system to repeat what it just said
+    label: hear that again
+    kind: control
+
+menu:
+  - { digit: 1, intent: schedule_new }
+  - { digit: "2", intent: capabilities }
+  - { digit: "2", intent: repeat_prompt }

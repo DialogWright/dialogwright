@@ -9,6 +9,7 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "check": "pnpm typecheck && pnpm test"
+    "check": "pnpm --filter dialogwright check",
+    "verify": "pnpm typecheck && pnpm test"
   }
 }

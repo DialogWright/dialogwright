@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../../../schemas/intents.schema.json
+intents:
+  schedule_new:
+    criteria: Wants to book a new appointment that does not exist yet
+    label: schedule a new appointment
+    kind: form
+  cancel:
+    criteria: Wants to cancel an existing appointment
+    label: cancel your appointment
+    kind: form
+  billing:
+    criteria: Asks about a bill, charge, payment, or a payment plan
+    label: talk to billing
+    kind: form
+  agent:
+    criteria: Asks to speak with a person, representative, or operator
+    label: speak with someone
+    kind: control
+  repeat_prompt:
+    criteria: Asks the system to repeat what it just said
+    label: hear that again
+    kind: control
+  capabilities:
+    criteria: Asks what the system can do or what the options are
+    label: hear what I can do
+    kind: informational
+    promptId: capabilities
+
+menu:
+  - { digit: "1", intent: schedule_new }
+  - { digit: "2", intent: cancel }
+  - { digit: "3", intent: billing }
+  - { digit: "0", intent: agent }

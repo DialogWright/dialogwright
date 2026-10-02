@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/app.schema.json
+# Example Family Practice: the appointment line of a small, fictional clinic. Who the app is and how
+# it presents itself; the dialog is in intents.yaml, forms.yaml, prompts.yaml and policy.yaml, and
+# what runs is in src/app.ts. See README.md.
+id: clinic
+locale: en-US
+
+# The practice as the operator console names it.
+brand:
+  name: Example Family Practice
+  mark: EF
+  key: example-family-practice
+
+# What the operator console shows of the clinic: each form and slot in words, the questions that
+# belong to a slot, and the facts a task's tool calls leave. The clinic verifies no one, so every
+# call stays at the first level.
+console:
+  formLabels:
+    schedule_new: Schedule an appointment
+    reschedule: Reschedule an appointment
+    cancel: Cancel an appointment
+    confirm_appointment: Confirm an appointment
+    billing: Billing
+  slotOrder: [name, dob, memberId, provider, date]
+  slotLabels:
+    name: Name
+    dob: Date of birth
+    memberId: Member ID
+    provider: Provider
+    date: Day
+  # A slot owns the question ids that start with its own; the member ID's detection question does not.
+  questionPrefixes:
+    memberId: [memberId, containsMemberId]
+  detectQuestions: [containsMemberId, memberIdComplete]
+  levels: [no verification, no verification, no verification]
+  handoffReasons:
+    billing: the caller asked for billing
+  facts:
+    - kind: lookup
+      tool: findAppointment
+      param: provider
+      noun: appointment with
+    - kind: lookup
+      tool: listOpenings
+      param: provider
+      noun: openings with
+    - kind: lookup
+      tool: bookAppointment
+      param: provider
+      noun: booking with
+    - kind: lookup
+      tool: moveAppointment
+      param: provider
+      noun: move with
+    - kind: lookup
+      tool: cancelAppointment
+      param: provider
+      noun: cancellation with
+  heardBy: the caller
+
+# The phone line's speech settings: the providers' surnames (src/domain/roster.ts) and the words a
+# caller says first are what the recognizer should expect. A member ID is read in two groups of
+# four ("5550 7788"), each digit spelled out for the text-to-speech.
+voice:
+  hints: [
+    Chen, Cheng, Patel, Okafor, Nguyen, Rossi, Kim, Alvarez,
+    appointment, reschedule, cancel, confirm, billing, member ID, morning, afternoon, agent, representative
+  ]
+  spokenDigits:
+    - pattern: '\d{4,}(?: \d{4,})+|\d{5,}'
+      spell: groups
+
+# The handoff note's words: who takes the call, and the clinic's own handoff reason.
+handoff:
+  recipient: clinic front-desk
+  reasons:
+    billing: the caller asked for billing
+
+# The engine's own model questions in the clinic's words. Each string is sent to the model as it
+# is, so a change re-keys the recorded cassette.
+wording:
+  addressee: the clinic phone line
+  tentative:
+    "true": The hedge is about what the caller wants done, as in maybe cancel it or I guess I need to cancel
+    "false": The request is stated plainly, even if the caller hedges about a detail such as a date, a provider name, or a number
+  confirmsNo:
+    "true": The caller says no, says something is wrong, or gives a value that replaces or contradicts a detail the system just read back, including a bare correction such as "not Chen, Cheng" or "Thursday, not Tuesday", whether or not the system itself named the value they reject
+    "false": The caller agrees, answers something else, or says nothing about the question
+  changeSlot:
+    instructions: Read asr.text and node.promptJustPlayed. The caller was read a summary of their appointment and asked to confirm it, or asked what to change. Which detail do they name as wrong or ask to change?
+    order: [name, dob, provider, date, memberId]
+    text:
+      name: They name their own name as the thing to change, without saying a new name, as in the name, or you got my name wrong
+      dob: They name their date of birth or birthday as the thing to change, without saying the new date, as in the birthday, or my date of birth is wrong
+      provider: They name the doctor or provider as the thing to change, without saying who instead, as in the doctor, or not that doctor
+      date: They name the day or date as the thing to change, without saying which day instead, as in the day, or the date is wrong (not a different time on the same day)
+      memberId: They name the member ID or member number as the thing to change, without saying the digits
+    none: They say a new value rather than naming which detail is wrong, such as a weekday, a doctor name, or a string of digits; or they only answer yes or no; or they name nothing
+
+# The clinic's own thresholds, beside the engine's. A run overrides one like any other
+# (--threshold TIME_OF_DAY=0.7).
+# - PROVIDER_UNSURE: how sure the model must be that the caller hedged about the provider before a
+#   name is read back ("With Dr. Kim.") or two close names are asked about.
+# - TIME_OF_DAY: how sure, that the caller asked for a part of the day, before it is kept.
+# - TIME_PREFERENCE: how sure, that the caller asked for an earlier, later or different time, before
+#   the offer moves.
+thresholds:
+  PROVIDER_UNSURE: 0.45
+  TIME_OF_DAY: 0.6
+  TIME_PREFERENCE: 0.6
+
+# The caller's own details outlast the task, so a second task on the call does not ask for them again.
+carrySlots: [name, dob, memberId]
+
+# The regression fixtures (corpus, scenarios, baseline, cassette), relative to this package.
+fixtures:
+  dir: fixtures

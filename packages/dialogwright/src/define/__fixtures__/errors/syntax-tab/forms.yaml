@@ -1,0 +1,3 @@
+forms:
+  billing:
+	slots: [patientId]

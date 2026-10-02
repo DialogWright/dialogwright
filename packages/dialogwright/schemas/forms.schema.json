@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "forms": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "description": "The form's business slots, in prompt priority order. Each is a slot the app's code defines."
+          },
+          "summaryPromptId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The prompt (an id in prompts.yaml) that reads the filled form back for a yes, or null for a form with no summary (it completes as soon as its slots are full)."
+          },
+          "hooks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "entry",
+                "onEntry",
+                "principalEntry",
+                "confirmedParams",
+                "complete",
+                "onAnswers",
+                "onSummaryAnswer",
+                "keepsSlot",
+                "onSummaryRead"
+              ]
+            },
+            "description": "The code hooks this form uses, written in the app's TypeScript; \"complete\" is required. entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), confirmedParams (the values a confirmed write sends, for the gate's R3), complete (runs when the form is full and confirmed), onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), onSummaryRead (looks at what the summary is about to name)."
+          }
+        },
+        "required": [
+          "slots",
+          "summaryPromptId",
+          "hooks"
+        ],
+        "additionalProperties": false,
+        "description": "One form: the slots it collects, the summary it reads back, and the code hooks it uses."
+      },
+      "description": "Every form, by id. Each id must also be a form intent in intents.yaml."
+    }
+  },
+  "required": [
+    "forms"
+  ],
+  "additionalProperties": false,
+  "description": "forms.yaml: the forms the app runs.",
+  "title": "DialogWright forms.yaml"
+}

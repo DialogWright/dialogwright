@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "prompts": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The words said. Variables go in braces ({first}); the engine fills them. Approved wording: the agent says exactly this and never composes its own."
+          },
+          "interruptible": {
+            "type": "boolean",
+            "description": "Whether the caller may talk over the line (barge-in). false for lines that must be heard whole, such as a keypad instruction or a legal statement."
+          },
+          "mode": {
+            "default": "fixed",
+            "description": "How the line is produced. fixed: the text above, word for word; the only mode there is for now (generated wording is not available). Default \"fixed\".",
+            "type": "string",
+            "const": "fixed"
+          }
+        },
+        "required": [
+          "text",
+          "interruptible"
+        ],
+        "additionalProperties": false,
+        "description": "One line the agent says."
+      },
+      "description": "Every prompt, by id."
+    }
+  },
+  "required": [
+    "prompts"
+  ],
+  "additionalProperties": false,
+  "description": "prompts.yaml: the lines the agent says, for one locale.",
+  "title": "DialogWright prompts.yaml"
+}

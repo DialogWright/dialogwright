@@ -1,0 +1,6 @@
+forms:
+  billing:
+    slots: [patientId]
+    summaryPromptId: null
+    hooks: [complete]
+    slots: [name]

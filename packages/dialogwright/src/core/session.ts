@@ -116,6 +116,12 @@ export interface Session {
   channel: string;
   /** What the channel can do. The core decides by these, never by the channel's name. */
   caps: ChannelCaps;
+  /**
+   * The language the call is spoken in: one of the app's locales (App.locales), its default until the
+   * session's start names another the app has (core/locale.ts matchLocale). Only a session of an app
+   * that declares locales has one; read it with localeOf, which gives the app's default otherwise.
+   */
+  locale?: string;
   /** Who the caller is proven to be. Written only from a verifier result or a portal sign-in (src/gate/types.ts Principal). */
   principal: Principal;
   facts: SessionFacts;
@@ -193,6 +199,7 @@ export function newSession(
   principal: Principal = ANONYMOUS,
   appId: string = defaultAppId(),
 ): Session {
+  const app = getApp(appId);
   return {
     sessionId,
     appId,
@@ -212,8 +219,10 @@ export function newSession(
     history: [],
     channel: channel.kind,
     caps: { ...channel.caps },
+    // Only for an app that declares locales: any other app's sessions are as they were before locales.
+    ...(app.locales ? { locale: app.locales.default } : {}),
     principal,
-    facts: getApp(appId).facts?.initial() ?? {},
+    facts: app.facts?.initial() ?? {},
     stepUp: null,
     entered: null,
     identityAttempts: { factors: 0, code: 0 },

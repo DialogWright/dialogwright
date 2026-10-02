@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../../schemas/app.schema.json
+# Example Town Library: a fictional library's phone line, the engine's own YAML fixture app.
+id: library
+locale: en-US
+
+brand:
+  name: Example Town Library
+  mark: TL
+
+console:
+  formLabels:
+    renew_loan: Renew a book
+    check_hold: Check a hold
+  slotLabels:
+    book: Book
+    branch: Branch
+
+voice:
+  hints: [renew, hold, branch, Riverside]
+  spokenDigits:
+    - pattern: '(card )(\d{4,})'
+      spell: lead
+
+wording:
+  addressee: the library line
+
+carrySlots: [branch]
+
+prompts:
+  spokenVars: [due]

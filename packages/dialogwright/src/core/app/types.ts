@@ -629,6 +629,7 @@ export interface App {
   handoff?: HandoffWording;
   /** The prompt manifest and voice tags, plus the spoken vocabulary that gets a clip of its own. */
   prompts: {
+    /** Every line, in the app's default locale (App.locales.default; en-US for an app without locales). */
     manifest: Record<string, { text: string; interruptible: boolean }>;
     /** Per-clip voice tags for the clip generator (clip id to tag, e.g. "[calm]"); the tag syntax is the TTS provider's. */
     tags: Record<string, string>;
@@ -660,6 +661,14 @@ export interface App {
     greetings?: { voice?: string; chat?: string; chatSignedIn?: string; chatDelegate?: string };
   };
   /**
+   * The languages the app speaks. A session speaks one of them (Session.locale): the default, or the
+   * one its start names (SessionStart.locale) where the app has it; a line is said from the session's
+   * locale and, where that locale leaves the line out, from the default (prompts.manifest). Without
+   * it the app speaks one language, en-US, and its sessions carry no locale: the session, the trace
+   * and the console are exactly as they were before locales.
+   */
+  locales?: AppLocales;
+  /**
    * The principals the app's people sign in as (a subject at a level, a delegate by id). The engine
    * reads it in its harness only: a scenario's or corpus entry's `as` (a delegate) and a scenario's
    * `signIn` step (a subject) name their principal through it. An app's own sign-in routes (its
@@ -686,6 +695,44 @@ export interface App {
    * them (src/run/fixtures.ts). Without it the harness has no fixtures to run against and says so.
    */
   fixtures?: AppFixtures;
+  /**
+   * The content hashes of the configuration the app was built from (an app folder's YAML; defineApp
+   * sets them). The engine records them once per call, in the call_started audit row, and puts the
+   * combined hash on every trace record, so a call can be tied to the policy and prompts in force.
+   * They are never sent to the model. Without it, the audit rows, the traces and the console are
+   * exactly as they were before configuration hashes.
+   */
+  configHashes?: ConfigHashes;
+}
+
+/**
+ * The content hashes of an app's configuration files (App.configHashes; core/app/configHash.ts).
+ * Each is a SHA-256, 64 lowercase hex characters, of the file's parsed content as canonical JSON
+ * (object keys sorted at every level, arrays in order, no whitespace): comments, whitespace, key
+ * order and quoting style do not change it; any value does.
+ */
+export interface ConfigHashes {
+  /** The combined hash: SHA-256 of the files' `<file>:<hash>` lines, sorted by file and joined by newlines (configHashLines). */
+  readonly app: string;
+  /** Each file's hash, by its path in the app folder (app.yaml, policy.yaml, locale/es/prompts.yaml, ...). */
+  readonly files: Readonly<Record<string, string>>;
+}
+
+/** One line as a manifest holds it (App.prompts.manifest, AppLocales.prompts). */
+export interface PromptManifestEntry {
+  text: string;
+  interruptible: boolean;
+}
+
+/** The languages an app speaks (App.locales). */
+export interface AppLocales {
+  /** The locale of App.prompts.manifest, a language tag (e.g. en-US): what a session speaks unless its start names another the app has. */
+  readonly default: string;
+  /**
+   * The lines of each other locale, by language tag (e.g. es, pt-BR), then prompt id. A locale need
+   * not have every line: one it leaves out is said from App.prompts.manifest. Never the default locale.
+   */
+  readonly prompts: Readonly<Record<string, Readonly<Record<string, PromptManifestEntry>>>>;
 }
 
 /**

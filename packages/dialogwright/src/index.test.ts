@@ -7,6 +7,10 @@ describe('the package entry', () => {
     for (const name of [
       'registerApp', 'getApp', 'defaultAppId', 'appOf', 'resetAppsForTest',
       'validateApp', 'formOf', 'slotSpecOf', 'toolOf',
+      // the app definition: a folder's YAML joined with the app's code
+      'defineApp', 'AppDefinitionError', 'isAppDefinitionError', 'formatProblem', 'checkApp', 'loadAppFolder',
+      // the languages an app speaks
+      'DEFAULT_LOCALE', 'defaultLocaleOf', 'localesOf', 'matchLocale', 'localeOf',
       'serviceResultEvent', 'speechEvent', 'sayAction', 'endAction', 'transferAction', 'VOICE_RELAY', 'WEB_CHAT',
       'isAnonymous', 'isParty', 'ANONYMOUS',
       'startServer', 'serverMain', 'validateRoutes', 'routeOwns',
@@ -30,6 +34,12 @@ describe('the package entry', () => {
     expect(entry.serviceResultEvent('intake', { ok: true })).toEqual({ type: 'service.result', service: 'intake', result: { ok: true } });
     expect(entry.isAnonymous(entry.ANONYMOUS)).toBe(true);
     expect(entry.resolveTurn).toBe((await import('./core/turn')).resolve);
+    expect(entry.defineApp).toBe((await import('./define/defineApp')).defineApp);
+    expect(entry.checkApp).toBe((await import('./define/check')).checkApp);
+    expect(entry.loadAppFolder).toBe((await import('./define/load')).loadAppFolder);
+    // the options type is exported with the function it configures
+    const options: import('./index').DefineAppOptions = { codeFile: 'src/app.ts' };
+    expect(options.codeFile).toBe('src/app.ts');
   });
 
   it('importing it registers nothing', () => {

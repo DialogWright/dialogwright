@@ -1,0 +1,4 @@
+subjectKind: Patient
+factorSlots: [patientId, patientId]
+verifyTool: verifyPatient
+codeTool: 7
