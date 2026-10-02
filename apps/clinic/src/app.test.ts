@@ -251,17 +251,25 @@ describe('the clinic folder: dialogwright check', () => {
     for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
   });
 
-  /** The clinic's YAML in a temporary folder, with prompts.yaml changed by `edit`. */
-  const copy = (edit: (text: string) => string): string => {
+  /** The clinic's YAML in a temporary folder, with prompts.yaml changed by `edit` and slots.yaml by `editSlots`. */
+  const copy = (edit: (text: string) => string, editSlots: (text: string) => string = (t) => t): string => {
     const dir = mkdtempSync(join(tmpdir(), 'clinic-check-'));
     scratch.push(dir);
     for (const file of ['app.yaml', 'intents.yaml', 'forms.yaml', 'prompts.yaml', 'policy.yaml', 'slots.yaml']) cpSync(join(CLINIC_DIR, file), join(dir, file));
     writeFileSync(join(dir, 'prompts.yaml'), edit(readFileSync(join(dir, 'prompts.yaml'), 'utf8')));
+    writeFileSync(join(dir, 'slots.yaml'), editSlots(readFileSync(join(dir, 'slots.yaml'), 'utf8')));
     return dir;
   };
 
   it('passes: the folder, the code and the corpus agree', async () => {
     expect((await checkApp(CLINIC_DIR, { code })).map(formatProblem)).toEqual([]);
+  });
+
+  it('fails on a threshold a slot names that neither the engine nor app.yaml has (a misspelt PROVIDER_UNSURE)', async () => {
+    const dir = copy((t) => t, (t) => t.replace('threshold: PROVIDER_UNSURE', 'threshold: PROVIDER_UNSURR'));
+    expect((await checkApp(dir, { code, fixturesRoot: CLINIC_DIR })).map(formatProblem)).toEqual([
+      'slots.yaml:87:16  provider.hedge.threshold  slot "provider" names the threshold "PROVIDER_UNSURR", which is neither one of the engine\'s thresholds nor one the app names  ->  rename it to "PROVIDER_UNSURE", or add "PROVIDER_UNSURR" under thresholds in app.yaml',
+    ]);
   });
 
   it('fails without a keypad line a slot with a keypad rung needs (ask_dob_dtmf)', async () => {

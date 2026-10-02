@@ -100,6 +100,14 @@ export interface SlotSpec {
    * check knows only the derived ones.
    */
   prompts?: readonly SlotPrompt[];
+  /**
+   * The thresholds the slot's own options name, each one the engine has (core/thresholds.ts) or one
+   * the app names (App.thresholds): `choice` declares its `hedge.threshold` and `help.threshold`, and
+   * the others the one their `fillAt` or `minConfidence` selects. Declared up front so a name that is
+   * neither (a misspelt PROVIDER_UNSURE, which would never be met) is found when the app is validated,
+   * rather than as a slot that quietly never fills. Absent: nothing to check.
+   */
+  thresholds?: readonly string[];
   /** always: a spoken fill is read back and must be confirmed before it counts, which needs a `confirm_<slot>`
    * entry in the prompt manifest (no slot uses this today, so none is there); by-confidence: the fill outcome
    * decides; summary: a spoken fill is neither acked nor read back; the final confirm covers it */

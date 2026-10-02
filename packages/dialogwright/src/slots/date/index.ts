@@ -56,6 +56,7 @@ export const dateType: SlotType<DateOptions> = defineSlotType<DateOptions>({
       ...(o.windows ? { partialPromptId: narrowPromptOf(id, o), partialVars } : {}),
       questionIds: questionIdsOf(id, o),
       prompts: promptsOf(id, o),
+      thresholds: [o.fillAt === 'fill' ? 'SLOT_CHOICE_FILL' : 'SLOT_CHOICE_CONFIRM'],
       questions: dateQuestions(id, o),
       fill: dateFill(o, ids, display),
       ...(o.keypad ? { dtmf: { length: 4, parse: dateKeys(o, display) } } : {}),

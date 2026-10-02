@@ -36,6 +36,9 @@ function promptsOf(id: string, o: ChoiceOptions): SlotPrompt[] {
 /** Every question id the slot may ask: the choice, then the hedge and help questions it has. */
 const questionIdsOf = (ids: ChoiceIds): string[] => [ids.choice, ...(ids.hedge ? [ids.hedge] : []), ...(ids.help ? [ids.help] : [])];
 
+/** The thresholds the options name: how sure the model must be of the choice, of a hedge, of a help answer. */
+const thresholdsOf = (o: ChoiceOptions): string[] => [...new Set([o.fillAt, ...(o.hedge ? [o.hedge.threshold] : []), ...(o.help ? [o.help.threshold] : [])])];
+
 /**
  * `choice`: one of a fixed list of options (a delivery speed, a branch, a colour). The model is
  * asked which option the caller names, with one criterion per option and one for none; the slot
@@ -55,6 +58,7 @@ export const choiceType: SlotType<ChoiceOptions, ChoiceWording> = defineSlotType
       spokenConfirm: o.confirm,
       questionIds: questionIdsOf(ids),
       prompts: promptsOf(id, o),
+      thresholds: thresholdsOf(o),
       questions: choiceQuestions(id, o),
       fill: choiceFill(o, ids, display),
       ...(o.keypad

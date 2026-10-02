@@ -5,6 +5,7 @@ import type {
 import type { SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
 import { clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
+import { thresholdNamesOf, unknownSlotThresholds, unknownThresholdMessage } from '../core/slotThresholds';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
@@ -500,7 +501,29 @@ export function crossLink(
     inTs(['slots', clash.slot, 'questionIds'], clashMessage(clash), fix);
   }
 
+  // The thresholds a slot's options name (SlotSpec.thresholds): each the engine's or one app.yaml names.
+  for (const u of unknownSlotThresholds(linked.slots, app.thresholds)) {
+    const known = thresholdNamesOf(app.thresholds);
+    const message = unknownThresholdMessage(u);
+    const rename = renameHint(u.name, known);
+    if (linked.library.has(u.slot)) {
+      const config = (linked.slots[u.slot] as LibrarySlotSpec).config;
+      const at = pathsOfValue(config, u.name);
+      for (const path of at.length > 0 ? at : [[]]) yaml(SLOTS_FILE, [u.slot, ...path], message, `${rename}add "${u.name}" under thresholds in app.yaml`);
+    } else {
+      inTs(['slots', u.slot, 'thresholds'], message, `${rename}add "${u.name}" under thresholds in app.yaml`);
+    }
+  }
+
   return sortProblems(problems, codeFile);
+}
+
+/** Where in an options object (as it was written) a string value `value` stands: every path to it, in order. */
+function pathsOfValue(config: unknown, value: string, path: DataPath = []): DataPath[] {
+  if (config === value) return [path];
+  if (Array.isArray(config)) return config.flatMap((item, i) => pathsOfValue(item, value, [...path, i]));
+  if (typeof config === 'object' && config !== null) return Object.entries(config).flatMap(([key, item]) => pathsOfValue(item, value, [...path, key]));
+  return [];
 }
 
 /** Problems by file (in the folder's file order, the code's file last), then position. */

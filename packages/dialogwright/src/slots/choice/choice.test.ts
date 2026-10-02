@@ -223,6 +223,22 @@ describe('display', () => {
   });
 });
 
+describe('the thresholds a choice slot names (SlotSpec.thresholds, which validateApp and check read)', () => {
+  const options = { a: 'the first', b: 'the second' };
+  const labels = { neither: { means: 'Names an option' }, list: { means: 'Asks for the list', prompt: 'the_list' } };
+
+  it('are its fillAt, and the hedge and help thresholds when it has them', () => {
+    expect(defineSlot('pick', { type: 'choice', options }).thresholds).toEqual(['SLOT_CHOICE_FILL']);
+    expect(defineSlot('pick', { type: 'choice', options, fillAt: 'SLOT_CHOICE_CONFIRM' }).thresholds).toEqual(['SLOT_CHOICE_CONFIRM']);
+    expect(defineSlot('pick', { type: 'choice', options, hedge: { threshold: 'OWN_UNSURE' }, help: { labels } }).thresholds).toEqual(['SLOT_CHOICE_FILL', 'OWN_UNSURE', 'SLOT_HELP']);
+    expect(defineSlot('pick', { type: 'choice', options, help: { threshold: 'OWN_HELP', labels } }).thresholds).toEqual(['SLOT_CHOICE_FILL', 'OWN_HELP']);
+  });
+
+  it('list a name once', () => {
+    expect(defineSlot('pick', { type: 'choice', options, hedge: { threshold: 'SLOT_CHOICE_FILL' } }).thresholds).toEqual(['SLOT_CHOICE_FILL']);
+  });
+});
+
 describe('the advanced options', () => {
   const T2 = { ...T, UNSURE: 0.45 };
   const at = (text = '') => testSlotContext(text, { thresholds: T2 });

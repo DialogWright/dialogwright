@@ -29,6 +29,14 @@ const ctx = testSlotContext('');
 const asked = testSlotContext('', { prompted: true });
 
 const ahead = defineSlot('visit', { type: 'date', range: 'future' });
+
+describe('the threshold a date slot names (SlotSpec.thresholds)', () => {
+  it('is the one its fillAt selects', () => {
+    expect(ahead.thresholds).toEqual(['SLOT_CHOICE_FILL']);
+    expect(defineSlot('visit', { type: 'date', range: 'future', fillAt: 'confirm' }).thresholds).toEqual(['SLOT_CHOICE_CONFIRM']);
+  });
+});
+
 const back = defineSlot('seen', { type: 'date', range: 'past' });
 const booking = defineSlot('booking', {
   type: 'date', range: 'future', windows: true, qualifier: true, fillAt: 'confirm', whenUnsaid: 'absent', whenUnresolved: 'invalid', confirm: 'by-confidence', readBack: 'below-fill', keypad: true,

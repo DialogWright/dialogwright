@@ -142,6 +142,15 @@ describe('group', () => {
   });
 });
 
+describe('the threshold a digits slot names (SlotSpec.thresholds)', () => {
+  it('is its minConfidence floor, and none when there is no floor', () => {
+    expect(account.thresholds).toBeUndefined();
+    expect(defineSlot('account', { type: 'digits', noun: 'account', length: 8, minConfidence: 'SLOT_CHOICE_CONFIRM' }).thresholds).toEqual(['SLOT_CHOICE_CONFIRM']);
+    expect(defineSlot('account', { type: 'digits', noun: 'account', length: 8, minConfidence: 'SLOT_DETECT' }).thresholds).toEqual(['SLOT_DETECT']);
+    expect(defineSlot('account', { type: 'digits', noun: 'account', length: 8, minConfidence: 'none' }).thresholds).toBeUndefined();
+  });
+});
+
 describe('confirm, readBack and minConfidence', () => {
   const card = defineSlot('card', { type: 'digits', noun: 'library card', length: 8, confirm: 'by-confidence', readBack: 'below-fill', minConfidence: 'SLOT_CHOICE_CONFIRM', lengthRetryPromptId: 'ask_card_length' });
   // the model chose the span, however sure it was of it

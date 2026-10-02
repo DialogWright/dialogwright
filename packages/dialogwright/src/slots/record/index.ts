@@ -46,6 +46,7 @@ export const recordType: SlotType<RecordOptions> = defineSlotType<RecordOptions>
       spokenConfirm: 'summary',
       questionIds: [questionId],
       prompts: promptsOf(id, o),
+      thresholds: [o.fillAt],
       questions: recordQuestions(id, o),
       fill: recordFill(o, questionId, display),
       ...(o.keypad !== undefined ? { dtmf: { length: o.keypad, parse: recordKeys({ keyPattern: o.keyPattern, keypad: o.keypad }, display) } } : {}),

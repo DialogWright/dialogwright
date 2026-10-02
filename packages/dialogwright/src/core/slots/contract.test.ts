@@ -90,6 +90,41 @@ describe('declared question ids, when the app is validated', () => {
   });
 });
 
+describe('named thresholds, when the app is validated', () => {
+  const unsure: SlotSpec = { ...branch, thresholds: ['SLOT_CHOICE_FILL', 'PROVIDER_UNSUR'] };
+
+  it('a library slot declares the thresholds its options name', () => {
+    expect(book.thresholds).toEqual(['SLOT_CHOICE_FILL']);
+    expect(branch.thresholds).toEqual(['SLOT_CHOICE_FILL']);
+    // the card's floor on how sure the model is of the span
+    expect(card.thresholds).toEqual(['SLOT_CHOICE_CONFIRM']);
+  });
+
+  it('refuses a name that is neither the engine\'s nor the app\'s', () => {
+    expect(() => validateApp({ ...libraryApp, slots: { ...libraryApp.slots, branch: unsure } })).toThrow(
+      'app "library": slot "branch" names the threshold "PROVIDER_UNSUR", which is neither one of the engine\'s thresholds nor one the app names (App.thresholds)',
+    );
+  });
+
+  it('accepts one the app names under thresholds', () => {
+    expect(() => validateApp({ ...libraryApp, thresholds: { PROVIDER_UNSUR: 0.45 }, slots: { ...libraryApp.slots, branch: unsure } })).not.toThrow();
+  });
+
+  it('defineApp (and so check) reports it, in the loader\'s format, with the closest name as the fix', () => {
+    const near: SlotSpec = { ...branch, thresholds: ['SLOT_CHOICE_FIL'] };
+    let problems: string[] = [];
+    try {
+      defineApp(LIBRARY_DIR, { ...libraryCode, slots: { ...libraryCode.slots, branch: near } });
+    } catch (e) {
+      if (!(e instanceof AppDefinitionError)) throw e;
+      problems = e.problems.map(formatProblem);
+    }
+    expect(problems[0]).toBe(
+      'app.ts  code.slots.branch.thresholds  slot "branch" names the threshold "SLOT_CHOICE_FIL", which is neither one of the engine\'s thresholds nor one the app names  ->  rename it to "SLOT_CHOICE_FILL", or add "SLOT_CHOICE_FIL" under thresholds in app.yaml',
+    );
+  });
+});
+
 describe('slot question ids, turn by turn', () => {
   /** The library's book as a hand-written slot that declares nothing, asking `own` besides its question. */
   const legacyBook = (own: Record<string, Question>): SlotSpec => {

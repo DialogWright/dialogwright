@@ -76,6 +76,13 @@ describe('a record slot built from the defaults', () => {
   });
 });
 
+describe('the threshold a record slot names (SlotSpec.thresholds)', () => {
+  it('is its fillAt', () => {
+    expect(booking.thresholds).toEqual(['SLOT_CHOICE_FILL']);
+    expect(defineSlot('booking', { type: 'record', fillAt: 'SLOT_CHOICE_CONFIRM' }).thresholds).toEqual(['SLOT_CHOICE_CONFIRM']);
+  });
+});
+
 describe('the records offered', () => {
   it('labels each record from its fields, through a filter where one is named, in the order listed', () => {
     expect(criteriaOf(parcel.questions(ctx('', { records: PARCELS })), 'parcelChoice')).toEqual({

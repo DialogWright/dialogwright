@@ -49,6 +49,7 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
       detect: true,
       questionIds: [ids.given, ids.span, ids.complete],
       prompts: promptsOf(id, o),
+      ...(o.minConfidence !== 'none' ? { thresholds: [o.minConfidence] } : {}),
       questions: digitsQuestions(id, o),
       fill: digitsFill(o, ids, display),
       ...(o.keypad && o.length !== undefined
