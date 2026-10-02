@@ -30,6 +30,13 @@ export interface SlotContext {
    * the app gives none, or before it has any.
    */
   records: readonly unknown[];
+  /**
+   * The app's records by name (App.facts.forSlots), for a slot that names the list it chooses from
+   * (a `record` slot's `from`), so two such slots can each read their own (a customer's parcels and
+   * their orders). Opaque to the engine; absent when the app names none, so an app that gives only
+   * `records` sees the context it always has.
+   */
+  sources?: Readonly<Record<string, readonly unknown[]>>;
   /** The last prompt asked for this slot (slotCtx sets it per spec); a miss then is invalid rather than absent. */
   prompted: boolean;
   /**

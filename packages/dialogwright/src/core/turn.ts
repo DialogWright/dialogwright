@@ -169,15 +169,18 @@ export interface TurnResult {
 
 /** What the slot specs see of a turn's words and the session (exported for tests). */
 export function slotContext(session: Session, text: string, tc: TurnContext): SlotContext {
+  // What the app's slot specs read of its facts (e.g. the customer's parcels, once listParcels has
+  // passed the gate; none before identity): one list, and lists by name for slots that name theirs.
+  const given = appOf(session).facts?.forSlots?.(session.facts);
   return {
     text,
     candidateSpans: candidateSpans(text),
     candidateWordSpans: candidateWordSpans(text),
     todayIso: tc.todayIso,
     thresholds: tc.thresholds,
-    // What the app's slot specs read of its facts (e.g. the customer's parcels, once listParcels has
-    // passed the gate; none before identity).
-    records: appOf(session).facts?.forSlots?.(session.facts).records ?? [],
+    records: given?.records ?? [],
+    // Only for an app that names its lists: any other app's slots see the context they always have.
+    ...(given?.sources !== undefined ? { sources: given.sources } : {}),
     // Never a real slot's window or prompt: fillSlots and buildQuestions each substitute a spec's
     // own slot's pending partial and `prompted` in via slotCtx (fia.ts) before calling
     // fill/questions, so no slot's fill or questions ever sees another slot's. applyDtmf shares

@@ -360,8 +360,18 @@ export interface FactsConfig {
   clone(f: Readonly<SessionFacts>): SessionFacts;
   /** Clears what a closed form leaves stale (e.g. the parcel list, since the call may just have reported one). */
   onFormClosed?(f: SessionFacts): void;
-  /** What the app's slot specs read of the facts (SlotContext.records: e.g. the customer's parcels, to choose one). Without it, none. */
-  forSlots?(f: Readonly<SessionFacts>): Pick<SlotContext, 'records'>;
+  /**
+   * What the app's slot specs read of the facts: `records` (SlotContext.records: e.g. the customer's
+   * parcels, to choose one), and `sources`, lists by name for slots that name theirs
+   * (SlotContext.sources: a `record` slot's `from`). Without it, none.
+   */
+  forSlots?(f: Readonly<SessionFacts>): SlotRecords;
+}
+
+/** What FactsConfig.forSlots gives the slot specs: one list (`records`), lists by name (`sources`), or both. Absent parts are empty. */
+export interface SlotRecords {
+  records?: readonly unknown[];
+  sources?: Readonly<Record<string, readonly unknown[]>>;
 }
 
 /**

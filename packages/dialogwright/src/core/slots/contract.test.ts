@@ -168,3 +168,38 @@ describe('the session\'s locale reaches the slots', () => {
     expect(calls).toEqual([['title', 'es'], ['dob', undefined]]);
   });
 });
+
+describe('the app\'s records reach the slots', () => {
+  const facts = (given: App['facts']) => given;
+  const PARCELS = [{ number: '7101' }];
+  const ORDERS = [{ ref: 'A12' }];
+
+  it('lists by name (facts.forSlots sources), in the slot context and so in each slot\'s own, beside the one list', () => {
+    const seen: unknown[] = [];
+    const spy: SlotSpec = { ...book, questions: (ctx: SlotContext) => (seen.push(ctx.sources), book.questions(ctx)) };
+    const app = library('sources-app', { book: spy }, {
+      facts: facts({ initial: () => ({}), clone: (f) => ({ ...f }), forSlots: () => ({ records: PARCELS, sources: { parcels: PARCELS, orders: ORDERS } }) }),
+    });
+    const s = fresh(app);
+    const ctx = slotContext(s, 'hello', tc);
+    expect(ctx.records).toBe(PARCELS);
+    expect(ctx.sources).toEqual({ parcels: PARCELS, orders: ORDERS });
+    questionsAt(s);
+    expect(seen).toEqual([{ parcels: PARCELS, orders: ORDERS }]);
+  });
+
+  it('lists by name alone: no one list, so records is empty', () => {
+    const app = library('sources-only-app', {}, { facts: facts({ initial: () => ({}), clone: (f) => ({ ...f }), forSlots: () => ({ sources: { orders: ORDERS } }) }) });
+    const ctx = slotContext(fresh(app), 'hello', tc);
+    expect(ctx.records).toEqual([]);
+    expect(ctx.sources).toEqual({ orders: ORDERS });
+  });
+
+  it('an app that gives only records, or nothing: no sources at all, the context it always had', () => {
+    const one = library('records-app', {}, { facts: facts({ initial: () => ({}), clone: (f) => ({ ...f }), forSlots: () => ({ records: PARCELS }) }) });
+    const ctx = slotContext(fresh(one), 'hello', tc);
+    expect(ctx.records).toBe(PARCELS);
+    expect(Object.hasOwn(ctx, 'sources')).toBe(false);
+    expect(Object.hasOwn(slotContext(newSession('t', 0, VOICE_RELAY), 'hello', tc), 'sources')).toBe(false);
+  });
+});
