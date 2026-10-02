@@ -1,0 +1,2195 @@
+[
+  {
+    "id": "reschedule-happy",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "chen",
+        "date": "2026-09-22"
+      }
+    }
+  },
+  {
+    "id": "schedule-dtmf-dob",
+    "steps": [
+      {
+        "say": "I need to book an appointment with Dr. Patel"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "dtmf": "06141975"
+      },
+      {
+        "say": "next Tuesday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "schedule_confirmed",
+      "form": "schedule_new",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "patel",
+        "date": "2026-09-22"
+      }
+    }
+  },
+  {
+    "id": "cancel-happy",
+    "steps": [
+      {
+        "say": "I need to cancel my appointment with Dr. Okafor"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "cancel_confirmed",
+      "form": "cancel",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "okafor"
+      }
+    }
+  },
+  {
+    "id": "confirm-happy",
+    "steps": [
+      {
+        "say": "Confirm my appointment with Dr. Okafor"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "appointment_details",
+      "form": "confirm_appointment",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "okafor"
+      }
+    }
+  },
+  {
+    "id": "billing-handoff",
+    "steps": [
+      {
+        "say": "I have a question about my bill"
+      },
+      {
+        "say": "my member ID is eight one two zero four four five seven"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "billing",
+      "form": "billing",
+      "slots": {
+        "memberId": "81204457"
+      }
+    }
+  },
+  {
+    "id": "over-answer-one-turn",
+    "steps": [
+      {
+        "say": "Make an appointment with Dr. Okafor, this is Morgan Ellis, born June fourteenth nineteen seventy five, Friday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "schedule_confirmed",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "okafor",
+        "date": "2026-09-25"
+      },
+      "form": "schedule_new"
+    }
+  },
+  {
+    "id": "intent-switch-mid-form",
+    "steps": [
+      {
+        "say": "Reschedule my appointment with Dr. Cheng"
+      },
+      {
+        "say": "actually I want to cancel it instead"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "cancel",
+      "slots": {
+        "provider": "cheng"
+      }
+    }
+  },
+  {
+    "id": "window-then-day",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "how about Wednesday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "chen",
+        "date": "2026-09-23"
+      },
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "text": "Your appointment is moved to Wednesday, September 23 at"
+    }
+  },
+  {
+    "id": "month-window-narrow",
+    "steps": [
+      {
+        "say": "I need a different date for my appointment, something in December"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_provider",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "intent-retry-to-agent",
+    "steps": [
+      {
+        "say": "What are your hours"
+      },
+      {
+        "say": "What are your hours"
+      },
+      {
+        "say": "What are your hours"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "form": null
+    }
+  },
+  {
+    "id": "name-retry-to-agent",
+    "steps": [
+      {
+        "say": "Cancel my appointment"
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "form": "cancel"
+    }
+  },
+  {
+    "id": "dtmf-menu",
+    "steps": [
+      {
+        "say": "What are your hours"
+      },
+      {
+        "say": "What are your hours"
+      },
+      {
+        "dtmf": "2"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "spoken-menu-number",
+    "steps": [
+      {
+        "say": "What are your hours"
+      },
+      {
+        "say": "What are your hours"
+      },
+      {
+        "say": "press three"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "cancel"
+    }
+  },
+  {
+    "id": "explicit-confirm-yes",
+    "steps": [
+      {
+        "say": "Maybe cancel it"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "cancel"
+    }
+  },
+  {
+    "id": "explicit-confirm-no",
+    "steps": [
+      {
+        "say": "Maybe cancel it"
+      },
+      {
+        "say": "no"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "nomatch_open",
+      "form": null
+    }
+  },
+  {
+    "id": "tentative-two-intents",
+    "steps": [
+      {
+        "say": "I think I need to reschedule or maybe cancel"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_intent_explicit",
+      "form": null
+    }
+  },
+  {
+    "id": "disambiguate-provider",
+    "steps": [
+      {
+        "say": "Reschedule with Dr. Chen"
+      },
+      {
+        "say": "Dr. Cheng, C H E N G"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "reschedule",
+      "slots": {
+        "provider": "cheng"
+      }
+    }
+  },
+  {
+    "id": "frustration-escalation",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "five five five zero, that's it"
+      },
+      {
+        "say": "This is ridiculous, I already said Dr. Chen three times"
+      },
+      {
+        "say": "Are you kidding me"
+      },
+      {
+        "say": "keep going"
+      },
+      {
+        "say": "This is ridiculous, I just want to reschedule"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "frustrated",
+      "form": "reschedule",
+      "slots": {
+        "provider": "chen"
+      },
+      "text": "Let me get you to someone who can help."
+    }
+  },
+  {
+    "id": "frustration-offer-yes",
+    "cosmeticDrift": true,
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "This is ridiculous, I already said Dr. Chen three times"
+      },
+      {
+        "say": "Are you kidding me"
+      },
+      {
+        "say": "yes, connect me"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "frustrated",
+      "form": "reschedule",
+      "text": "Let me get you to someone who can help."
+    }
+  },
+  {
+    "id": "frustration-offer-silence",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "This is ridiculous, I already said Dr. Chen three times"
+      },
+      {
+        "say": "Are you kidding me"
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "reschedule",
+      "text": "I didn't hear anything."
+    }
+  },
+  {
+    "id": "frustration-content-at-offer",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Are you kidding me"
+      },
+      {
+        "say": "This is ridiculous, I just want to reschedule"
+      },
+      {
+        "say": "make it Dr. Chen"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_date",
+      "form": "reschedule",
+      "slots": {
+        "provider": "chen"
+      }
+    }
+  },
+  {
+    "id": "wants-human-mid-form",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "actually can I just talk to someone"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "repeat-prompt",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "what did you say"
+      }
+    ],
+    "expect": {
+      "decision": "replay",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "client-failure-once",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment",
+        "fail": true
+      },
+      {
+        "say": "I need to reschedule my appointment"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "client-failure-twice",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment",
+        "fail": true
+      },
+      {
+        "say": "I need to reschedule my appointment",
+        "fail": true
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "system-failure",
+      "form": null
+    }
+  },
+  {
+    "id": "side-speech-ignored",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "honey where did you put the keys"
+      }
+    ],
+    "expect": {
+      "decision": "ignore",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "invalid-date-retry",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Dr. Chen"
+      },
+      {
+        "say": "February 30th"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_date_retry",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "dtmf-provider-digit",
+    "steps": [
+      {
+        "say": "Cancel my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "I don't remember the doctor's name"
+      },
+      {
+        "say": "I don't remember the doctor's name"
+      },
+      {
+        "dtmf": "4"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "cancel_confirmed",
+      "form": "cancel",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "okafor"
+      }
+    }
+  },
+  {
+    "id": "dtmf-date-mmdd",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Dr. Chen"
+      },
+      {
+        "say": "any day is fine"
+      },
+      {
+        "say": "any day is fine"
+      },
+      {
+        "dtmf": "0922"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "chen",
+        "date": "2026-09-22"
+      }
+    }
+  },
+  {
+    "id": "confirm-unanswered-reask",
+    "steps": [
+      {
+        "say": "Maybe cancel it"
+      },
+      {
+        "say": "I don't remember the doctor's name"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_intent_explicit",
+      "form": null
+    }
+  },
+  {
+    "id": "confirm-unanswered-to-agent",
+    "steps": [
+      {
+        "say": "Maybe cancel it"
+      },
+      {
+        "say": "I don't remember the doctor's name"
+      },
+      {
+        "say": "I don't remember the doctor's name"
+      },
+      {
+        "say": "I don't remember the doctor's name"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "form": null
+    }
+  },
+  {
+    "id": "switch-confirm-yes-mid-form",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "or maybe just cancel it instead"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "cancel"
+    }
+  },
+  {
+    "id": "switch-confirm-no-resumes-form",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "or maybe just cancel it instead"
+      },
+      {
+        "say": "no"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "month-window-constrains-weekday",
+    "steps": [
+      {
+        "say": "I need a different date for my appointment, something in December"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Dr. Chen"
+      },
+      {
+        "say": "Wednesday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "date": "2026-12-02"
+      }
+    }
+  },
+  {
+    "id": "partial-frame-holds",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "I was wondering if",
+        "partial": true
+      }
+    ],
+    "expect": {
+      "decision": "hold",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "summary-reads-back-name-and-dob",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_reschedule",
+      "form": "reschedule",
+      "text": "for Morgan Ellis, born June 14th, 1975"
+    }
+  },
+  {
+    "id": "weekday-outside-window",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Dr. Chen"
+      },
+      {
+        "say": "sometime this week"
+      },
+      {
+        "say": "Monday"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "date_narrow_window",
+      "form": "reschedule",
+      "text": "this week"
+    }
+  },
+  {
+    "id": "weekday-in-window-one-turn",
+    "steps": [
+      {
+        "say": "I'd like to reschedule my appointment with dr chen to tuesday of next week. My name is Morgan Ellis and I was born June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "chen",
+        "date": "2026-09-22"
+      }
+    }
+  },
+  {
+    "id": "add-intent-chained",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "and can I also ask about my bill"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_memberId",
+      "form": "billing",
+      "text": "Now, let's talk to billing."
+    }
+  },
+  {
+    "id": "replace-intent-mid-form",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "never mind, I have a question about my bill"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_memberId",
+      "form": "billing"
+    }
+  },
+  {
+    "id": "replace-intent-keeps-same-appointment",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "actually forget the reschedule, just cancel it"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "cancel_confirmed",
+      "form": "cancel",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "chen"
+      }
+    }
+  },
+  {
+    "id": "summary-yes",
+    "steps": [
+      {
+        "say": "Cancel my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "It's with Patel"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "cancel_confirmed",
+      "form": "cancel",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "patel"
+      }
+    }
+  },
+  {
+    "id": "summary-no-asks-what-to-change",
+    "steps": [
+      {
+        "say": "Cancel my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "It's with Patel"
+      },
+      {
+        "say": "no"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_change",
+      "form": "cancel",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "patel"
+      }
+    }
+  },
+  {
+    "id": "chunked-memberId",
+    "steps": [
+      {
+        "say": "I have a question about my bill"
+      },
+      {
+        "say": "forty four one eighty seven three hundred fifty five"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "billing",
+      "form": "billing",
+      "slots": {
+        "memberId": "44187355"
+      }
+    }
+  },
+  {
+    "id": "digit-string-memberId",
+    "steps": [
+      {
+        "say": "How much do I owe"
+      },
+      {
+        "say": "8 1 7 9 3 3 1 4"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "billing",
+      "form": "billing",
+      "slots": {
+        "memberId": "81793314"
+      }
+    }
+  },
+  {
+    "id": "hedged-provider-implicit",
+    "steps": [
+      {
+        "say": "Cancel my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "It might be Dr. Kim"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_cancel",
+      "form": "cancel",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "kim"
+      },
+      "text": "With Dr. Kim."
+    }
+  },
+  {
+    "id": "hedged-two-providers-disambiguate",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "either Dr. Chen or Dr. Cheng, I'm not sure which"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "disambiguate_provider",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "tentative-carries-slots",
+    "steps": [
+      {
+        "say": "Maybe cancel it, it's with Dr. Chen"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "cancel",
+      "slots": {
+        "provider": "chen"
+      }
+    }
+  },
+  {
+    "id": "summary-reschedule-yes",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "text": "Your appointment is moved to Tuesday, September 22 at"
+    }
+  },
+  {
+    "id": "summary-no-then-day",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "no"
+      },
+      {
+        "say": "the day"
+      },
+      {
+        "say": "Friday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "date": "2026-09-25"
+      }
+    }
+  },
+  {
+    "id": "summary-no-names-doctor",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "no, the doctor is wrong"
+      },
+      {
+        "say": "Dr. Kim"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "provider": "kim"
+      }
+    }
+  },
+  {
+    "id": "summary-repeated-no-hands-off",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "no"
+      },
+      {
+        "say": "no"
+      },
+      {
+        "say": "no"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "summary-no-with-value",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "no, Thursday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "date": "2026-09-24"
+      }
+    }
+  },
+  {
+    "id": "summary-no-two-values",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "no, Thursday with Dr. Alvarez"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "provider": "alvarez",
+        "date": "2026-09-24"
+      }
+    }
+  },
+  {
+    "id": "summary-no-window",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "no, next week"
+      },
+      {
+        "say": "Wednesday"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "date": "2026-09-23"
+      }
+    }
+  },
+  {
+    "id": "summary-unanswered-reask",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "what are your hours"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_time",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "summary-unanswered-keypad-1",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "what are your hours"
+      },
+      {
+        "say": "what are your hours"
+      },
+      {
+        "dtmf": "1"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "summary-unanswered-keypad-2",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "what are your hours"
+      },
+      {
+        "say": "what are your hours"
+      },
+      {
+        "dtmf": "2"
+      },
+      {
+        "say": "the doctor"
+      },
+      {
+        "say": "Dr. Kim"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "provider": "kim"
+      }
+    }
+  },
+  {
+    "id": "summary-unanswered-agent",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "what are your hours"
+      },
+      {
+        "say": "what are your hours"
+      },
+      {
+        "say": "what are your hours"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts"
+    }
+  },
+  {
+    "id": "summary-yes-adds-billing",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "yes, and can I also ask about my bill"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_memberId",
+      "form": "billing"
+    }
+  },
+  {
+    "id": "second-intent-first-utterance",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment with Dr. Alvarez for next Thursday, and also I have a question about my bill"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "yes"
+      },
+      {
+        "say": "my member ID is eight one two zero four four five seven"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "billing",
+      "form": "billing",
+      "slots": {
+        "memberId": "81204457"
+      }
+    }
+  },
+  {
+    "id": "second-intent-tentative-ignored",
+    "steps": [
+      {
+        "say": "maybe reschedule, and also my bill"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_intent_explicit",
+      "form": null
+    }
+  },
+  {
+    "id": "silence-greeting-reask",
+    "steps": [
+      {
+        "silence": true
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent",
+      "form": null,
+      "text": "I didn't hear anything."
+    }
+  },
+  {
+    "id": "silence-greeting-menu",
+    "steps": [
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "nomatch_dtmf_menu",
+      "form": null
+    }
+  },
+  {
+    "id": "silence-greeting-agent",
+    "steps": [
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "form": null
+    }
+  },
+  {
+    "id": "silence-then-answer",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "silence": true
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Dr. Chen"
+      },
+      {
+        "say": "Tuesday"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_reschedule",
+      "form": "reschedule",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "chen",
+        "date": "2026-09-22"
+      }
+    }
+  },
+  {
+    "id": "silence-summary-reask",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "silence": true
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_time",
+      "form": "reschedule",
+      "text": "I didn't hear anything."
+    }
+  },
+  {
+    "id": "silence-summary-agent",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "silence-confirm-dtmf-then-1",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "dtmf": "1"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "dob-year-followup",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June 14th"
+      },
+      {
+        "say": "nineteen seventy five"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_provider",
+      "form": "reschedule",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14"
+      }
+    }
+  },
+  {
+    "id": "dob-year-prompt",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June 14th"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_dob_year",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "dob-keypad",
+    "steps": [
+      {
+        "say": "Cancel my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "dtmf": "06141975"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_provider",
+      "form": "cancel",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14"
+      }
+    }
+  },
+  {
+    "id": "dob-future-retry",
+    "steps": [
+      {
+        "say": "Cancel my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "December 25th 2030"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_dob_retry",
+      "form": "cancel"
+    }
+  },
+  {
+    "id": "name-correction-at-summary",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "no, it's Morgan Elliot"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "name": "morgan elliot"
+      }
+    }
+  },
+  {
+    "id": "billing-still-asks-memberId",
+    "steps": [
+      {
+        "say": "How much do I owe"
+      },
+      {
+        "say": "one two three four five six seven eight"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "billing",
+      "form": "billing",
+      "slots": {
+        "memberId": "12345678"
+      }
+    }
+  },
+  {
+    "id": "capabilities-open",
+    "steps": [
+      {
+        "say": "what can you do"
+      },
+      {
+        "say": "I need to reschedule my appointment"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_name",
+      "form": "reschedule"
+    }
+  },
+  {
+    "id": "capabilities-midform",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "what else can you do"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_dob",
+      "form": "reschedule",
+      "slots": {
+        "name": "morgan ellis"
+      },
+      "text": "I can help you schedule"
+    }
+  },
+  {
+    "id": "capabilities-at-summary",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "what can you do"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_time",
+      "form": "reschedule",
+      "text": "Does that work?"
+    }
+  },
+  {
+    "id": "provider-no-name",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "I don't know"
+      },
+      {
+        "say": "Dr. Kim"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_date",
+      "form": "reschedule",
+      "slots": {
+        "provider": "kim"
+      }
+    }
+  },
+  {
+    "id": "provider-has-name",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "yes I do"
+      },
+      {
+        "say": "Dr. Kim"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_date",
+      "form": "reschedule",
+      "slots": {
+        "provider": "kim"
+      }
+    }
+  },
+  {
+    "id": "provider-no-twice",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "I don't know"
+      },
+      {
+        "say": "I still don't know"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_provider_retry",
+      "form": "reschedule",
+      "text": "Sorry, which doctor is it with?"
+    }
+  },
+  {
+    "id": "slot-daypart-opener",
+    "steps": [
+      {
+        "say": "Book me with Dr. Chen next Thursday afternoon"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_schedule",
+      "form": "schedule_new",
+      "slots": {
+        "provider": "chen"
+      },
+      "text": "Thursday, September 24 at 4:15 PM"
+    }
+  },
+  {
+    "id": "slot-later-then-yes",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "later please"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "text": "Your appointment is moved to Tuesday, September 22 at 10:00 AM"
+    }
+  },
+  {
+    "id": "slot-earlier-edge-then-day",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "earlier"
+      },
+      {
+        "say": "no, Thursday morning"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_time",
+      "form": "reschedule",
+      "slots": {
+        "date": "2026-09-24"
+      },
+      "text": "Thursday, September 24 at 10:00 AM"
+    }
+  },
+  {
+    "id": "slot-found-on-confirm",
+    "steps": [
+      {
+        "say": "Just confirming my visit with Dr. Chen next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_appointment_details",
+      "form": "confirm_appointment",
+      "text": "I found your appointment with Dr. Chen. It's on"
+    }
+  },
+  {
+    "id": "slot-found-on-cancel",
+    "steps": [
+      {
+        "say": "I want to cancel my visit with Dr. Chen, my name is Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_cancel",
+      "form": "cancel",
+      "text": "would be cancelled, for Morgan Ellis"
+    }
+  },
+  {
+    "id": "slot-different-to-edge",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "that time doesn't work"
+      },
+      {
+        "say": "that time doesn't work"
+      },
+      {
+        "say": "that time doesn't work"
+      },
+      {
+        "say": "that time doesn't work"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_dtmf",
+      "form": "reschedule",
+      "text": "Press 1 to confirm, or 2 to change something."
+    }
+  },
+  {
+    "id": "slot-nearest-opening",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "afternoon please"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_time",
+      "form": "reschedule",
+      "text": "The closest I have to the afternoon is 12:30 PM."
+    }
+  },
+  {
+    "id": "slot-daypart-remembered",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "sometime around lunchtime works"
+      },
+      {
+        "say": "Tuesday"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_reschedule",
+      "form": "reschedule",
+      "text": "Tuesday, September 22 at 12:30 PM"
+    }
+  }
+]

@@ -1,0 +1,2008 @@
+{
+  "reschedule-happy": {
+    "id": "reschedule-happy",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "schedule-dtmf-dob": {
+    "id": "schedule-dtmf-dob",
+    "decision": "complete",
+    "promptId": "schedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "schedule_new",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "patel",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "bookAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "cancel-happy": {
+    "id": "cancel-happy",
+    "decision": "complete",
+    "promptId": "cancel_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "cancel",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "okafor",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "cancelAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "confirm-happy": {
+    "id": "confirm-happy",
+    "decision": "complete",
+    "promptId": "appointment_details",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "confirm_appointment",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "okafor",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "billing-handoff": {
+    "id": "billing-handoff",
+    "decision": "handoff",
+    "promptId": "handoff_billing",
+    "acks": [],
+    "reason": "billing",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "billing",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": "81204457",
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "over-answer-one-turn": {
+    "id": "over-answer-one-turn",
+    "decision": "complete",
+    "promptId": "schedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "schedule_new",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "okafor",
+      "date": "2026-09-25"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "bookAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "intent-switch-mid-form": {
+    "id": "intent-switch-mid-form",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "cancel",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": "cheng",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "window-then-day": {
+    "id": "window-then-day",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-23"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "month-window-narrow": {
+    "id": "month-window-narrow",
+    "decision": "prompt",
+    "promptId": "ask_provider",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "intent-retry-to-agent": {
+    "id": "intent-retry-to-agent",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [],
+    "reason": "max-attempts",
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "name-retry-to-agent": {
+    "id": "name-retry-to-agent",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [
+      "no_input"
+    ],
+    "reason": "max-attempts",
+    "decidedGate": null,
+    "verdict": null,
+    "form": "cancel",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "dtmf-menu": {
+    "id": "dtmf-menu",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "spoken-menu-number": {
+    "id": "spoken-menu-number",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "menuNumber",
+    "verdict": "route",
+    "form": "cancel",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "explicit-confirm-yes": {
+    "id": "explicit-confirm-yes",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "cancel",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "explicit-confirm-no": {
+    "id": "explicit-confirm-no",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "tentative-two-intents": {
+    "id": "tentative-two-intents",
+    "decision": "prompt",
+    "promptId": "confirm_intent_explicit",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "disambiguate-provider": {
+    "id": "disambiguate-provider",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": "cheng",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-escalation": {
+    "id": "frustration-escalation",
+    "decision": "handoff",
+    "promptId": "handoff_frustrated",
+    "acks": [],
+    "reason": "frustrated",
+    "decidedGate": "frustration",
+    "verdict": "handoff",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-offer-yes": {
+    "id": "frustration-offer-yes",
+    "decision": "handoff",
+    "promptId": "handoff_frustrated",
+    "acks": [],
+    "reason": "frustrated",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-offer-silence": {
+    "id": "frustration-offer-silence",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [
+      "no_input"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-content-at-offer": {
+    "id": "frustration-content-at-offer",
+    "decision": "prompt",
+    "promptId": "ask_date",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "wants-human-mid-form": {
+    "id": "wants-human-mid-form",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "repeat-prompt": {
+    "id": "repeat-prompt",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "client-failure-once": {
+    "id": "client-failure-once",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "client-failure-twice": {
+    "id": "client-failure-twice",
+    "decision": "handoff",
+    "promptId": "handoff_system_failure",
+    "acks": [],
+    "reason": "system-failure",
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "side-speech-ignored": {
+    "id": "side-speech-ignored",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "invalid-date-retry": {
+    "id": "invalid-date-retry",
+    "decision": "prompt",
+    "promptId": "ask_date_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "dtmf-provider-digit": {
+    "id": "dtmf-provider-digit",
+    "decision": "complete",
+    "promptId": "cancel_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "cancel",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "okafor",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "cancelAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "dtmf-date-mmdd": {
+    "id": "dtmf-date-mmdd",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "confirm-unanswered-reask": {
+    "id": "confirm-unanswered-reask",
+    "decision": "prompt",
+    "promptId": "confirm_intent_explicit",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "confirm_unanswered",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "confirm-unanswered-to-agent": {
+    "id": "confirm-unanswered-to-agent",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [],
+    "reason": "max-attempts",
+    "decidedGate": "intent",
+    "verdict": "confirm_unanswered",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "switch-confirm-yes-mid-form": {
+    "id": "switch-confirm-yes-mid-form",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "cancel",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "switch-confirm-no-resumes-form": {
+    "id": "switch-confirm-no-resumes-form",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "month-window-constrains-weekday": {
+    "id": "month-window-constrains-weekday",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-12-02"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "partial-frame-holds": {
+    "id": "partial-frame-holds",
+    "decision": "hold",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "utteranceComplete",
+    "verdict": "hold",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-reads-back-name-and-dob": {
+    "id": "summary-reads-back-name-and-dob",
+    "decision": "prompt",
+    "promptId": "confirm_reschedule",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listOpenings:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "weekday-outside-window": {
+    "id": "weekday-outside-window",
+    "decision": "prompt",
+    "promptId": "date_narrow_window",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "weekday-in-window-one-turn": {
+    "id": "weekday-in-window-one-turn",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "add-intent-chained": {
+    "id": "add-intent-chained",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "reschedule_confirmed",
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "billing",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "replace-intent-mid-form": {
+    "id": "replace-intent-mid-form",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "billing",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "replace-intent-keeps-same-appointment": {
+    "id": "replace-intent-keeps-same-appointment",
+    "decision": "complete",
+    "promptId": "cancel_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "cancel",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "cancelAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-yes": {
+    "id": "summary-yes",
+    "decision": "complete",
+    "promptId": "cancel_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "cancel",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "patel",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "cancelAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-no-asks-what-to-change": {
+    "id": "summary-no-asks-what-to-change",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "cancel",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "patel",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "chunked-memberId": {
+    "id": "chunked-memberId",
+    "decision": "handoff",
+    "promptId": "handoff_billing",
+    "acks": [],
+    "reason": "billing",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "billing",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": "44187355",
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "digit-string-memberId": {
+    "id": "digit-string-memberId",
+    "decision": "handoff",
+    "promptId": "handoff_billing",
+    "acks": [],
+    "reason": "billing",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "billing",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": "81793314",
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "hedged-provider-implicit": {
+    "id": "hedged-provider-implicit",
+    "decision": "prompt",
+    "promptId": "confirm_cancel",
+    "acks": [
+      "ack_provider"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "cancel",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "kim",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "hedged-two-providers-disambiguate": {
+    "id": "hedged-two-providers-disambiguate",
+    "decision": "prompt",
+    "promptId": "disambiguate_provider",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "tentative-carries-slots": {
+    "id": "tentative-carries-slots",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "cancel",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-reschedule-yes": {
+    "id": "summary-reschedule-yes",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-no-then-day": {
+    "id": "summary-no-then-day",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-25"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-no-names-doctor": {
+    "id": "summary-no-names-doctor",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "kim",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-repeated-no-hands-off": {
+    "id": "summary-repeated-no-hands-off",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [],
+    "reason": "max-attempts",
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listOpenings:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-no-with-value": {
+    "id": "summary-no-with-value",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-24"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-no-two-values": {
+    "id": "summary-no-two-values",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "alvarez",
+      "date": "2026-09-24"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-no-window": {
+    "id": "summary-no-window",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-23"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-unanswered-reask": {
+    "id": "summary-unanswered-reask",
+    "decision": "prompt",
+    "promptId": "confirm_time",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirm_unanswered",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-unanswered-keypad-1": {
+    "id": "summary-unanswered-keypad-1",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-unanswered-keypad-2": {
+    "id": "summary-unanswered-keypad-2",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "kim",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-unanswered-agent": {
+    "id": "summary-unanswered-agent",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [],
+    "reason": "max-attempts",
+    "decidedGate": "confirmation",
+    "verdict": "confirm_unanswered",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "summary-yes-adds-billing": {
+    "id": "summary-yes-adds-billing",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "reschedule_confirmed",
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "billing",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "second-intent-first-utterance": {
+    "id": "second-intent-first-utterance",
+    "decision": "handoff",
+    "promptId": "handoff_billing",
+    "acks": [],
+    "reason": "billing",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "billing",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": "81204457",
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "second-intent-tentative-ignored": {
+    "id": "second-intent-tentative-ignored",
+    "decision": "prompt",
+    "promptId": "confirm_intent_explicit",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "silence-greeting-reask": {
+    "id": "silence-greeting-reask",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "no_input"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "silence-greeting-menu": {
+    "id": "silence-greeting-menu",
+    "decision": "prompt",
+    "promptId": "nomatch_dtmf_menu",
+    "acks": [
+      "no_input"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "silence-greeting-agent": {
+    "id": "silence-greeting-agent",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [
+      "no_input"
+    ],
+    "reason": "max-attempts",
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "silence-then-answer": {
+    "id": "silence-then-answer",
+    "decision": "prompt",
+    "promptId": "confirm_reschedule",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listOpenings:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "silence-summary-reask": {
+    "id": "silence-summary-reask",
+    "decision": "prompt",
+    "promptId": "confirm_time",
+    "acks": [
+      "no_input"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "silence-summary-agent": {
+    "id": "silence-summary-agent",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [
+      "no_input"
+    ],
+    "reason": "max-attempts",
+    "decidedGate": null,
+    "verdict": null,
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "silence-confirm-dtmf-then-1": {
+    "id": "silence-confirm-dtmf-then-1",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "dob-year-followup": {
+    "id": "dob-year-followup",
+    "decision": "prompt",
+    "promptId": "ask_provider",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "dob-year-prompt": {
+    "id": "dob-year-prompt",
+    "decision": "prompt",
+    "promptId": "ask_dob_year",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "dob-keypad": {
+    "id": "dob-keypad",
+    "decision": "prompt",
+    "promptId": "ask_provider",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "cancel",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "dob-future-retry": {
+    "id": "dob-future-retry",
+    "decision": "prompt",
+    "promptId": "ask_dob_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "cancel",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "name-correction-at-summary": {
+    "id": "name-correction-at-summary",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan elliot",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "billing-still-asks-memberId": {
+    "id": "billing-still-asks-memberId",
+    "decision": "handoff",
+    "promptId": "handoff_billing",
+    "acks": [],
+    "reason": "billing",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "billing",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": "12345678",
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "capabilities-open": {
+    "id": "capabilities-open",
+    "decision": "prompt",
+    "promptId": "ask_name",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "reschedule",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "capabilities-midform": {
+    "id": "capabilities-midform",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [
+      "capabilities"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "capabilities-at-summary": {
+    "id": "capabilities-at-summary",
+    "decision": "prompt",
+    "promptId": "confirm_time",
+    "acks": [
+      "capabilities"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "provider-no-name": {
+    "id": "provider-no-name",
+    "decision": "prompt",
+    "promptId": "ask_date",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "kim",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "provider-has-name": {
+    "id": "provider-has-name",
+    "decision": "prompt",
+    "promptId": "ask_date",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "kim",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "provider-no-twice": {
+    "id": "provider-no-twice",
+    "decision": "prompt",
+    "promptId": "ask_provider_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "slot-daypart-opener": {
+    "id": "slot-daypart-opener",
+    "decision": "prompt",
+    "promptId": "confirm_schedule",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "schedule_new",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-24"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listOpenings:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "slot-later-then-yes": {
+    "id": "slot-later-then-yes",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "slot-earlier-edge-then-day": {
+    "id": "slot-earlier-edge-then-day",
+    "decision": "prompt",
+    "promptId": "confirm_time",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-24"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listOpenings:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "slot-found-on-confirm": {
+    "id": "slot-found-on-confirm",
+    "decision": "prompt",
+    "promptId": "confirm_appointment_details",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "confirm_appointment",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "slot-found-on-cancel": {
+    "id": "slot-found-on-cancel",
+    "decision": "prompt",
+    "promptId": "confirm_cancel",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "cancel",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "slot-different-to-edge": {
+    "id": "slot-different-to-edge",
+    "decision": "prompt",
+    "promptId": "confirm_dtmf",
+    "acks": [
+      "slot_edge_later"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "slot-nearest-opening": {
+    "id": "slot-nearest-opening",
+    "decision": "prompt",
+    "promptId": "confirm_time",
+    "acks": [
+      "slot_nearest"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirm_unanswered",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "slot-daypart-remembered": {
+    "id": "slot-daypart-remembered",
+    "decision": "prompt",
+    "promptId": "confirm_reschedule",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listOpenings:ALLOW",
+    "pass": true,
+    "mismatches": []
+  }
+}
