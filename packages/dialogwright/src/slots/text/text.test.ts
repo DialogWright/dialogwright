@@ -5,7 +5,7 @@ import { formatProblem } from '../../define/problems';
 import { noul } from '../../testing/answers';
 import { shadowSlot } from '../../testing/shadowSlot';
 import { testSlotContext } from '../../testing/slots';
-import { missingNoteSlot } from '../../testing/testkit/domain/slots/missingNote';
+import { missingNoteSlot } from '../../testing/testkit/oracles/missingNote';
 import { runSlotConformance } from '../conformance/run';
 import { buildSlot, defineSlot, isSlotConfigError, slotTypeJsonSchema } from '../defineSlot';
 import { textType } from './index';

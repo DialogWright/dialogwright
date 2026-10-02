@@ -1,14 +1,17 @@
+// ORACLE: a frozen copy of the hand-written slot the library `birthdate` type replaced.
+// Used only by the grid tests (src/shadow.test.ts and the slot tests beside it) to catch drift in
+// the library. Never edit except to delete. Nothing in app runtime may import this file (src/oracles.test.ts).
 import {
   describeDob, isChoice, MONTHS, normalizeYear, noulValue, type AnswerMap, type SlotOutcome, type SlotPartial,
   type SlotSpec,
 } from 'dialogwright';
 
 /** The day-of-month choice labels: "1" .. "31", exactly as dobDay offers them. */
-export const DOB_DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
+const DOB_DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
 const MIN_YEAR = 1900;
 
 /** A month and day heard without the year (SlotPartial kind 'dob'), which ask_dob_year asks for. */
-export interface DobPartial extends SlotPartial {
+interface DobPartial extends SlotPartial {
   kind: 'dob';
   month: number;
   day: number;

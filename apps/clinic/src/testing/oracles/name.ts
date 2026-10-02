@@ -1,7 +1,10 @@
+// ORACLE: a frozen copy of the hand-written slot the library `name` type replaced.
+// Used only by the grid tests (src/shadow.test.ts and the slot tests beside it) to catch drift in
+// the library. Never edit except to delete. Nothing in app runtime may import this file (src/oracles.test.ts).
 import { isChoice, noulValue, type SlotContext, type SlotOutcome, type SlotSpec } from 'dialogwright';
-import { EXCLUDED_NAME_TOKENS } from '../roster';
+import { EXCLUDED_NAME_TOKENS } from '../../domain/roster';
 
-export function titleCase(s: string): string {
+function titleCase(s: string): string {
   return s.replace(/[a-z]+/gi, (w) => w[0]!.toUpperCase() + w.slice(1).toLowerCase());
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { matchesMask } from './mask';
-import { ACCOUNT_ID_MASK } from '../../testing/testkit/domain/slots/accountId';
+import { ACCOUNT_ID_MASK } from '../../testing/testkit/domain/slots/shared';
 
 describe('matchesMask', () => {
   it('accepts eight digits as an account ID', () => {

@@ -7,11 +7,11 @@ import { CLINIC_DIR, clinicApp, code } from './app';
 import { CLINIC_FORM_HOOKS } from './domain/forms';
 import { EXCLUDED_NAME_TOKENS, PROVIDERS, providerDisplay, providerLibrarySlot } from './domain/roster';
 import { ALL_SLOTS, SLOTS } from './domain/slots';
-import { dateSlot } from './domain/slots/date';
-import { dobSlot } from './domain/slots/dob';
-import { memberIdSlot } from './domain/slots/memberId';
-import { nameSlot } from './domain/slots/name';
-import { providerSlot } from './domain/slots/provider';
+import { dateSlot } from './testing/oracles/date';
+import { dobSlot } from './testing/oracles/dob';
+import { memberIdSlot } from './testing/oracles/memberId';
+import { nameSlot } from './testing/oracles/name';
+import { providerSlot } from './testing/oracles/provider';
 
 /**
  * The clinic as its folder builds it: a few pinned facts about what the YAML holds and how it meets

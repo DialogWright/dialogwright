@@ -9,7 +9,7 @@ import { formatProblem } from '../../define/problems';
 import { choice, noul } from '../../testing/answers';
 import { shadowSlot } from '../../testing/shadowSlot';
 import { testSlotContext } from '../../testing/slots';
-import { accountIdSlot } from '../../testing/testkit/domain/slots/accountId';
+import { accountIdSlot } from '../../testing/testkit/oracles/accountId';
 import { runSlotConformance } from '../conformance/run';
 import { buildSlot, defineSlot, slotTypeJsonSchema } from '../defineSlot';
 import { digitsType } from './index';

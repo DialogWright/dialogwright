@@ -6,9 +6,8 @@ import { defineSlot } from '../../../../slots/defineSlot';
  * four-digit number they said that is not theirs (spoken, no year rule), keyable as four digits. The
  * question keeps the testkit's own words and id (parcelChoice), its labels (parcel_<number>), its
  * criteria ("Parcel 7101, a box of books, due Monday, September 14"; "Parcel number 4412, as the
- * caller said it") and its reason for a miss when asked (no_parcel). parcelSelect.ts is the
- * hand-written slot this replaces, kept until the library is whole (the shadow pair in
- * ../../shadowPairs.ts compares the two).
+ * caller said it") and its reason for a miss when asked (no_parcel). oracles/parcelSelect.ts is the
+ * hand-written slot this replaced, kept as a test oracle for the grid test.
  */
 export const parcelSelectRecordSlot = defineSlot('parcelSelect', {
   type: 'record',

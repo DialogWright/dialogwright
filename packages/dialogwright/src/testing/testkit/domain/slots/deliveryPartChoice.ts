@@ -1,12 +1,12 @@
 import { defineSlot } from '../../../../slots/defineSlot';
-import { DAY_PART_DISPLAY } from './deliveryPart';
+import { DAY_PART_DISPLAY } from './shared';
 
 /**
  * Which part of the day the delivery should come in, as a library `choice` slot: the three parts in
  * keypad order (1, 2, 3), each with the line's words for it (say) and the testkit's own criterion
  * (means), and the testkit's own question and none criterion. The question keeps the slot's id, as it
- * always had. deliveryPart.ts is the hand-written slot this replaces, kept until the library is whole
- * (the shadow pair in ../../shadowPairs.ts compares the two).
+ * always had. oracles/deliveryPart.ts is the hand-written slot this replaced, kept as a
+ * test oracle for the grid test.
  */
 export const deliveryPartChoiceSlot = defineSlot('deliveryPart', {
   type: 'choice',

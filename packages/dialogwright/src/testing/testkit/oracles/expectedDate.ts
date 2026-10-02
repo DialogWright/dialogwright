@@ -1,9 +1,12 @@
-import type { SlotOutcome, SlotSpec } from '../../../../core/slots/types';
-import { isChoice, type AnswerMap, type QuestionMap } from '../../../../jev/types';
-import { describeDay, MONTHS, WEEKDAYS, type ComponentPick } from '../../../../core/extract/date';
-import { PAST_MODES, PAST_RELATIVE, resolvePastDate, type PastDateComponents } from '../../../../core/extract/pastDate';
-import { atLeast } from '../../../../core/thresholds';
-import { DAYS } from './dob';
+// ORACLE: a frozen copy of the hand-written slot the library `date` type replaced.
+// Used only by the grid tests (src/slots/date/date.test.ts) to catch drift in the library.
+// Never edit except to delete. Nothing in app runtime may import this file (oracles.test.ts).
+import type { SlotOutcome, SlotSpec } from '../../../core/slots/types';
+import { isChoice, type AnswerMap, type QuestionMap } from '../../../jev/types';
+import { describeDay, MONTHS, WEEKDAYS, type ComponentPick } from '../../../core/extract/date';
+import { PAST_MODES, PAST_RELATIVE, resolvePastDate, type PastDateComponents } from '../../../core/extract/pastDate';
+import { atLeast } from '../../../core/thresholds';
+import { DAYS } from '../domain/slots/shared';
 
 const CONTEXT = 'Read asr.text. The caller is saying which day a parcel was due to arrive.';
 const NOT_BIRTHDAY = "The caller's date of birth is not the day the parcel was due.";

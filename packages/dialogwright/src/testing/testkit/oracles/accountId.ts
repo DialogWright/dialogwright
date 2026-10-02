@@ -1,12 +1,12 @@
-import type { SlotOutcome, SlotSpec } from '../../../../core/slots/types';
-import { isChoice, noulValue } from '../../../../jev/types';
-import { spokenToDigits } from '../../../../core/extract/spokenNumber';
-import { matchesMask } from '../../../../core/extract/mask';
-import { atLeast } from '../../../../core/thresholds';
-
-/** An account ID: eight digits. */
-export const ACCOUNT_ID_MASK = /^\d{8}$/;
-export const ACCOUNT_ID_DIGITS = 8;
+// ORACLE: a frozen copy of the hand-written slot the library `digits` type replaced.
+// Used only by the grid tests (src/slots/digits/digits.test.ts) to catch drift in the library.
+// Never edit except to delete. Nothing in app runtime may import this file (oracles.test.ts).
+import type { SlotOutcome, SlotSpec } from '../../../core/slots/types';
+import { isChoice, noulValue } from '../../../jev/types';
+import { spokenToDigits } from '../../../core/extract/spokenNumber';
+import { matchesMask } from '../../../core/extract/mask';
+import { atLeast } from '../../../core/thresholds';
+import { ACCOUNT_ID_DIGITS, ACCOUNT_ID_MASK } from '../domain/slots/shared';
 
 /** "5550 1234": two groups of four, as the line reads it back. */
 export function formatAccountId(value: string): string {

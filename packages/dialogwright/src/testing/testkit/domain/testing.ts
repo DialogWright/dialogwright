@@ -10,9 +10,7 @@ import { dayNearMonth, digitSpanLabel, dobParts, saysExplicitYear } from '../../
 import { CUSTOMERS } from './data';
 import { depotSearch } from './agent';
 import { customerPrincipal } from './principals';
-import { ACCOUNT_ID_DIGITS } from './slots/accountId';
-import { AHEAD_MODES, AHEAD_RELATIVE } from './slots/deliveryDay';
-import { DAYS } from './slots/dob';
+import { ACCOUNT_ID_DIGITS, AHEAD_MODES, AHEAD_RELATIVE, DAYS } from './slots/shared';
 import { parcelSelectRecordSlot } from './slots/parcelSelectRecord';
 import { DAY_PARTS } from './systems';
 

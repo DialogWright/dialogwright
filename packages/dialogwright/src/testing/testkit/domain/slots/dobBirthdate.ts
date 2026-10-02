@@ -9,8 +9,8 @@ const NUMBERS = 'A date said as numbers is month first, then day, then year.';
  * verified. A month and day with no year ask for the year alone (ask_dob_year, the default); a month
  * or a day missing asks for the whole date again (ask_dob_whole). Its questions keep the testkit's own
  * words where they differ from the library's defaults (text), and its ids are the defaults (dobGiven,
- * dobMonth, dobDay, dobYear). dob.ts is the hand-written slot this replaces, kept until the library is
- * whole (the shadow pair in ../../shadowPairs.ts compares the two).
+ * dobMonth, dobDay, dobYear). oracles/dob.ts is the hand-written slot this replaced,
+ * kept as a test oracle for the grid test.
  */
 export const dobBirthdateSlot = defineSlot('dob', {
   type: 'birthdate',

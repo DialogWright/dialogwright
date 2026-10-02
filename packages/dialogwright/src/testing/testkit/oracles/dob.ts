@@ -1,10 +1,12 @@
-import type { SlotOutcome, SlotPartial, SlotSpec } from '../../../../core/slots/types';
-import { isChoice, noulValue, type AnswerMap } from '../../../../jev/types';
-import { describeDob, MONTHS, normalizeYear } from '../../../../core/extract/date';
-import { atLeast } from '../../../../core/thresholds';
+// ORACLE: a frozen copy of the hand-written slot the library `birthdate` type replaced.
+// Used only by the grid tests (src/slots/birthdate/birthdate.test.ts) to catch drift in the library.
+// Never edit except to delete. Nothing in app runtime may import this file (oracles.test.ts).
+import type { SlotOutcome, SlotPartial, SlotSpec } from '../../../core/slots/types';
+import { isChoice, noulValue, type AnswerMap } from '../../../jev/types';
+import { describeDob, MONTHS, normalizeYear } from '../../../core/extract/date';
+import { atLeast } from '../../../core/thresholds';
+import { DAYS } from '../domain/slots/shared';
 
-/** The day-of-month labels, "1" .. "31". */
-export const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
 const MIN_YEAR = 1900;
 
 /** A date of birth heard in part: the month and day, the year still to come. */

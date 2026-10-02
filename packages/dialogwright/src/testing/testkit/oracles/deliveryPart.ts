@@ -1,18 +1,13 @@
-import type { SlotOutcome, SlotSpec } from '../../../../core/slots/types';
-import { isChoice } from '../../../../jev/types';
-import { atLeast } from '../../../../core/thresholds';
-import { DAY_PARTS, type DayPart } from '../systems';
-
-/** How the line says each part of the day: "in the morning". */
-export const DAY_PART_DISPLAY: Readonly<Record<DayPart, string>> = {
-  morning: 'in the morning',
-  afternoon: 'in the afternoon',
-  evening: 'in the evening',
-};
+// ORACLE: a frozen copy of the hand-written slot the library `choice` type replaced.
+// Used only by the grid tests (src/slots/choice/choice.test.ts) to catch drift in the library.
+// Never edit except to delete. Nothing in app runtime may import this file (oracles.test.ts).
+import type { SlotOutcome, SlotSpec } from '../../../core/slots/types';
+import { isChoice } from '../../../jev/types';
+import { atLeast } from '../../../core/thresholds';
+import { DAY_PARTS, type DayPart } from '../domain/systems';
+import { DAY_PART_DISPLAY, dayPartDisplay } from '../domain/slots/shared';
 
 const isPart = (label: string): label is DayPart => (DAY_PARTS as readonly string[]).includes(label);
-
-export const dayPartDisplay = (value: string): string => (isPart(value) ? DAY_PART_DISPLAY[value] : value);
 
 /** A plain choice: which part of the day the delivery should come in. */
 export const deliveryPartSlot: SlotSpec = {

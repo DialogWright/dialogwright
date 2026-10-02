@@ -1,10 +1,13 @@
+// ORACLE: a frozen copy of the hand-written slot the library `digits` type replaced.
+// Used only by the grid tests (src/shadow.test.ts and the slot tests beside it) to catch drift in
+// the library. Never edit except to delete. Nothing in app runtime may import this file (src/oracles.test.ts).
 import { isChoice, matchesMask, noulValue, spokenToDigits, type SlotOutcome, type SlotSpec } from 'dialogwright';
 
 /** A billing member ID: eight digits. */
-export const MEMBER_ID_MASK = /^\d{8}$/;
+const MEMBER_ID_MASK = /^\d{8}$/;
 
 /** "5550 7788": read back in two groups of four. */
-export function formatMemberId(value: string): string {
+function formatMemberId(value: string): string {
   return `${value.slice(0, 4)} ${value.slice(4)}`;
 }
 

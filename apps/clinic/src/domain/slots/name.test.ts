@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { candidateWordSpans, choice, noul, testSlotContext as ctx, type SlotSpec } from 'dialogwright';
 import { clinicApp } from '../../app';
-import { nameSlot as handWritten, titleCase } from './name';
+import { nameSlot as handWritten } from '../../testing/oracles/name';
 
 /** The same expectations of the hand-written slot and of the library `name` slot slots.yaml builds in its place. */
 describe.each<[string, SlotSpec]>([
@@ -68,11 +68,5 @@ describe.each<[string, SlotSpec]>([
 
   it('title-cases each word', () => {
     expect(nameSlot.display('mary kate o neil')).toBe('Mary Kate O Neil');
-  });
-});
-
-describe('titleCase', () => {
-  it('title-cases each word', () => {
-    expect(titleCase('mary kate o neil')).toBe('Mary Kate O Neil');
   });
 });

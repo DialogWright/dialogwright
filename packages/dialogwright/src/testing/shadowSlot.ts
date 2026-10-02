@@ -25,9 +25,16 @@ import type { SlotCandidate, SlotContext, SlotOutcome, SlotPartial, SlotSpec } f
  * ShadowMismatchError naming the slot, the method, the inputs and both results; in `report` mode it
  * records the difference in a ShadowReport instead and carries on with the legacy result.
  *
- * Apps turn it on for a whole run with `shadowFromEnv(app, pairs)` in their regression launchers:
- * with DIALOGWRIGHT_SHADOW unset the app is returned as it is, so a run without the flag is the run
- * it always was. Kept out of the package's root entry: import it from `dialogwright/testing/shadowSlot`.
+ * Its use: porting a slot you wrote by hand onto a library type. Keep the hand-written slot in the
+ * app, build the library slot from the options you mean to use, and run the library slot beside it
+ * (`shadowSlot` in a test over a grid of answers; `withShadowSlots(app, [librarySlot])` over a whole
+ * regression or replay). When nothing differs on the grids and on every recorded call, the library
+ * slot can replace the hand-written one; freeze the old file as a test-only oracle for the grid
+ * tests, as the testkit and the clinic did (docs/authoring-an-app.md, "Porting a slot to a library type").
+ *
+ * A regression launcher can turn it on for a whole run with `shadowFromEnv(app, candidates)`: with
+ * DIALOGWRIGHT_SHADOW unset the app is returned as it is, so a run without the flag is the run it
+ * always was. Kept out of the package's root entry: import it from `dialogwright/testing`.
  */
 
 export type ShadowMode = 'throw' | 'report';

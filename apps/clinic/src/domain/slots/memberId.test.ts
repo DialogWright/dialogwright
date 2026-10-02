@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { choice, noul, testSlotContext as ctx, type SlotSpec } from 'dialogwright';
 import { clinicApp } from '../../app';
-import { memberIdSlot as handWritten } from './memberId';
+import { memberIdSlot as handWritten } from '../../testing/oracles/memberId';
 
 /** The same expectations of the hand-written slot and of the library `digits` slot slots.yaml builds in its place. */
 describe.each<[string, SlotSpec]>([

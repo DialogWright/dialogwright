@@ -5,16 +5,18 @@ import {
 } from 'dialogwright';
 import { createShadowReport, formatShadowReport, isCassetteMiss, shadowSlot, withShadowSlots, type ShadowReport } from 'dialogwright/testing';
 import { clinicApp, registerClinic } from './index';
-import { dateSlot } from './domain/slots/date';
-import { dobSlot } from './domain/slots/dob';
-import { memberIdSlot } from './domain/slots/memberId';
-import { nameSlot } from './domain/slots/name';
-import { providerSlot } from './domain/slots/provider';
-import { CLINIC_SHADOW_PAIRS } from './testing/shadowPairs';
+import { dateSlot } from './testing/oracles/date';
+import { dobSlot } from './testing/oracles/dob';
+import { memberIdSlot } from './testing/oracles/memberId';
+import { nameSlot } from './testing/oracles/name';
+import { providerSlot } from './testing/oracles/provider';
+
+/** The hand-written slots the library types replaced (testing/oracles/), by the slot each shadows. */
+const ORACLE_PAIRS: readonly SlotSpec[] = [nameSlot, dobSlot, memberIdSlot, providerSlot, dateSlot];
 
 /**
  * The shadow harness over whole runs of the clinic. First the name, the birth date, the member ID, the provider and the day
- * against the hand-written slots they replaced (CLINIC_SHADOW_PAIRS), then every clinic slot shadowed by a copy of itself
+ * against the hand-written slots they replaced (ORACLE_PAIRS), then every clinic slot shadowed by a copy of itself
  * (the same behavior, so any mismatch is the harness's own), through the full stub regression and
  * the full replay of the recorded calls. Nothing may change: the stub run is the committed
  * baseline, the replay is the unshadowed replay with no cassette miss, and the report is empty
@@ -61,13 +63,9 @@ describe('the shadow harness on the clinic', () => {
     }
   }
 
-  it('pairs the name, the birth date, the member ID, the provider and the day, now library slots, with the hand-written slots they replaced', () => {
-    expect(CLINIC_SHADOW_PAIRS.map((s) => s.id)).toEqual(['name', 'dob', 'memberId', 'provider', 'date']);
-    expect(CLINIC_SHADOW_PAIRS[0]).toBe(nameSlot);
-    expect(CLINIC_SHADOW_PAIRS[1]).toBe(dobSlot);
-    expect(CLINIC_SHADOW_PAIRS[2]).toBe(memberIdSlot);
-    expect(CLINIC_SHADOW_PAIRS[3]).toBe(providerSlot);
-    expect(CLINIC_SHADOW_PAIRS[4]).toBe(dateSlot);
+  it('pairs the name, the birth date, the member ID, the provider and the day, now library slots, with the oracles that replaced them', () => {
+    expect(ORACLE_PAIRS.map((s) => s.id)).toEqual(['name', 'dob', 'memberId', 'provider', 'date']);
+    expect(ORACLE_PAIRS.map((s) => s.id)).toEqual(Object.keys(clinicApp.slots));
     expect((clinicApp.slots.provider as LibrarySlotSpec).type).toBe('choice');
     expect((clinicApp.slots.name as LibrarySlotSpec).type).toBe('name');
     expect((clinicApp.slots.dob as LibrarySlotSpec).type).toBe('birthdate');
@@ -77,7 +75,7 @@ describe('the shadow harness on the clinic', () => {
 
   it('compares the library slots with the hand-written ones on every call of a full stub run, and nothing changes', async () => {
     const report = createShadowReport();
-    const actual = await run('stub', withShadowSlots(clinicApp, CLINIC_SHADOW_PAIRS, { mode: 'report', report }));
+    const actual = await run('stub', withShadowSlots(clinicApp, ORACLE_PAIRS, { mode: 'report', report }));
     const expected = readBaseline();
     expect(actual.scenarios).toEqual(expected.scenarios);
     expect(actual.corpus).toEqual(expected.corpus);
@@ -394,7 +392,7 @@ describe('the shadow harness on the clinic', () => {
   it('compares them on every call of a full replay of the recorded calls: no mismatch and no cassette miss', async () => {
     const plain = await run('recorded', clinicApp);
     const report = createShadowReport();
-    const shadowed = await run('recorded', withShadowSlots(clinicApp, CLINIC_SHADOW_PAIRS, { mode: 'report', report }));
+    const shadowed = await run('recorded', withShadowSlots(clinicApp, ORACLE_PAIRS, { mode: 'report', report }));
     expect(shadowed.records.filter((r) => isCassetteMiss(r))).toEqual([]);
     expect(shadowed.records.length).toBe(plain.records.length);
     expect(shadowed.scenarios).toEqual(plain.scenarios);

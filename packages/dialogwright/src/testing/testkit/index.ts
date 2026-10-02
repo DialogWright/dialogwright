@@ -9,7 +9,7 @@ import { TESTKIT_POLICY } from './domain/policy';
 import { TESTKIT_BRAND, TESTKIT_CONSOLE, TESTKIT_HANDOFF, TESTKIT_VOICE, TESTKIT_WORDING } from './domain/present';
 import { TESTKIT_PRINCIPALS } from './domain/principals';
 import { SLOTS } from './domain/slots';
-import { DAY_PART_DISPLAY } from './domain/slots/deliveryPart';
+import { DAY_PART_DISPLAY } from './domain/slots/shared';
 import { lookupsFor, ParcelSystems, DAY_PARTS } from './domain/systems';
 import { TESTKIT_TESTING } from './domain/testing';
 import { TESTKIT_TOOLS } from './domain/tools';

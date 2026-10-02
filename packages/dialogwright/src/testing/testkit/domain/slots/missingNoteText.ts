@@ -1,12 +1,12 @@
 import { defineSlot } from '../../../../slots/defineSlot';
-import { MAX_NOTE } from './missingNote';
+import { MAX_NOTE } from './shared';
 
 /**
  * The caller's own words about the missing parcel, as a library `text` slot: what it is and where it
  * should have been left. The value is the utterance verbatim; the summary does not read it back, so
  * its display is a stand-in. The words of the question are the testkit's own (text.given) and its
- * question keeps its id (ids.given). missingNote.ts is the hand-written slot this replaces, kept
- * until the library is whole (the shadow pair in ../../shadowPairs.ts compares the two).
+ * question keeps its id (ids.given). oracles/missingNote.ts is the hand-written slot this
+ * replaced, kept as a test oracle for the grid test.
  */
 export const missingNoteTextSlot = defineSlot('missingNote', {
   type: 'text',

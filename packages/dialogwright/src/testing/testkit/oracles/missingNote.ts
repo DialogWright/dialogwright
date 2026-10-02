@@ -1,9 +1,10 @@
-import type { SlotOutcome, SlotSpec } from '../../../../core/slots/types';
-import { noulValue } from '../../../../jev/types';
-import { atLeast } from '../../../../core/thresholds';
-
-/** The most of the caller's words a note keeps. */
-export const MAX_NOTE = 500;
+// ORACLE: a frozen copy of the hand-written slot the library `text` type replaced.
+// Used only by the grid tests (src/slots/text/text.test.ts) to catch drift in the library.
+// Never edit except to delete. Nothing in app runtime may import this file (oracles.test.ts).
+import type { SlotOutcome, SlotSpec } from '../../../core/slots/types';
+import { noulValue } from '../../../jev/types';
+import { atLeast } from '../../../core/thresholds';
+import { MAX_NOTE } from '../domain/slots/shared';
 
 /**
  * The caller's own words about the missing parcel: what it is and where it should have been left.

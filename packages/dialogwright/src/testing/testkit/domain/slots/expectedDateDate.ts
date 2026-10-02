@@ -7,8 +7,8 @@ import { defineSlot } from '../../../../slots/defineSlot';
  * testkit's own context sentence and its date-of-birth sentence (the mode, month and day questions end
  * with it); their ids are the defaults (expectedDateMode, expectedDateRelative, expectedDateWeekday,
  * expectedDateMonth, expectedDateDay). The hand-written slot never let a confident month and day win
- * over a weekday reading, so preferMonthDay is off. expectedDate.ts is the hand-written slot this
- * replaces, kept until the library is whole (the shadow pair in ../../shadowPairs.ts compares the two).
+ * over a weekday reading, so preferMonthDay is off. oracles/expectedDate.ts is the hand-written
+ * slot this replaced, kept as a test oracle for the grid test.
  */
 export const expectedDateDateSlot = defineSlot('expectedDate', {
   type: 'date',

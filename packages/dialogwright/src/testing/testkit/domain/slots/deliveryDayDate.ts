@@ -7,8 +7,8 @@ import { defineSlot } from '../../../../slots/defineSlot';
  * absent otherwise (the defaults). Its questions keep the testkit's own context sentence; their ids
  * are the defaults (deliveryDayMode, deliveryDayRelative, deliveryDayWeekday, deliveryDayMonth,
  * deliveryDayDay). The hand-written slot never let a confident month and day win over a weekday
- * reading, so preferMonthDay is off. deliveryDay.ts is the hand-written slot this replaces, kept until
- * the library is whole (the shadow pair in ../../shadowPairs.ts compares the two).
+ * reading, so preferMonthDay is off. oracles/deliveryDay.ts is the hand-written slot this
+ * replaced, kept as a test oracle for the grid test.
  */
 export const deliveryDayDateSlot = defineSlot('deliveryDay', {
   type: 'date',

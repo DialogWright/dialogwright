@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { choice, testSlotContext, type AnswerMap, type SlotSpec } from 'dialogwright';
 import { clinicApp } from '../../app';
-import { dateSlot as handWritten } from './date';
+import { dateSlot as handWritten } from '../../testing/oracles/date';
 import { SLOTS } from './index';
 
 const ctx = testSlotContext('');

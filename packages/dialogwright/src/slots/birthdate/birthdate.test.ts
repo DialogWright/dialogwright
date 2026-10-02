@@ -8,7 +8,7 @@ import { formatProblem } from '../../define/problems';
 import { choice, noul } from '../../testing/answers';
 import { createShadowReport, shadowSlot } from '../../testing/shadowSlot';
 import { testSlotContext } from '../../testing/slots';
-import { dobSlot as testkitDob } from '../../testing/testkit/domain/slots/dob';
+import { dobSlot as testkitDob } from '../../testing/testkit/oracles/dob';
 import { dobBirthdateSlot } from '../../testing/testkit/domain/slots/dobBirthdate';
 import { runSlotConformance } from '../conformance/run';
 import { buildSlot, defineSlot, slotTypeJsonSchema } from '../defineSlot';

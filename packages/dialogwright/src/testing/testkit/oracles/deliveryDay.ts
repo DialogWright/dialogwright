@@ -1,12 +1,11 @@
-import type { SlotOutcome, SlotSpec } from '../../../../core/slots/types';
-import { isChoice, type AnswerMap, type QuestionMap } from '../../../../jev/types';
-import { describeDay, MONTHS, resolveDate, WEEKDAYS, type ComponentPick } from '../../../../core/extract/date';
-import { atLeast } from '../../../../core/thresholds';
-import { DAYS } from './dob';
-
-/** How the caller names a day ahead: today, tomorrow or the day after; a weekday; a month and day. */
-export const AHEAD_MODES = ['relative_day', 'weekday', 'absolute', 'none'] as const;
-export const AHEAD_RELATIVE = ['today', 'tomorrow', 'day_after_tomorrow', 'none'] as const;
+// ORACLE: a frozen copy of the hand-written slot the library `date` type replaced.
+// Used only by the grid tests (src/slots/date/date.test.ts) to catch drift in the library.
+// Never edit except to delete. Nothing in app runtime may import this file (oracles.test.ts).
+import type { SlotOutcome, SlotSpec } from '../../../core/slots/types';
+import { isChoice, type AnswerMap, type QuestionMap } from '../../../jev/types';
+import { describeDay, MONTHS, resolveDate, WEEKDAYS, type ComponentPick } from '../../../core/extract/date';
+import { atLeast } from '../../../core/thresholds';
+import { AHEAD_MODES, AHEAD_RELATIVE, DAYS } from '../domain/slots/shared';
 
 const CONTEXT = 'Read asr.text. The caller is saying which day they want a delivery on.';
 

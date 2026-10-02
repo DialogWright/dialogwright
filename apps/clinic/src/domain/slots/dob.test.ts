@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { candidateSpans, choice, noul, testSlotContext as ctx, type SlotSpec } from 'dialogwright';
 import { clinicApp } from '../../app';
-import { dobSlot as handWritten } from './dob';
+import { dobSlot as handWritten } from '../../testing/oracles/dob';
 
 const pending = (text: string) => ({ ...ctx(text), window: { kind: 'dob', month: 6, day: 14 } });
 

@@ -1,3 +1,6 @@
+// ORACLE: a frozen copy of the hand-written slot the library `date` type replaced.
+// Used only by the grid tests (src/shadow.test.ts and the slot tests beside it) to catch drift in
+// the library. Never edit except to delete. Nothing in app runtime may import this file (src/oracles.test.ts).
 import {
   DATE_MODES, describeDay, describeWindow, isChoice, MONTHS, QUALIFIERS, RELATIVE_DAYS, resolveDate,
   snapWeekdayOnOrAfter, WEEKDAYS, WINDOWS, type AnswerMap, type ComponentPick, type DateComponents,
@@ -11,14 +14,14 @@ const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
  * kind 'window'), which date_narrow_window asks to narrow. Its parts are strings, so the engine never
  * reads it as a day heard (only numeric month and day parts are).
  */
-export interface WindowPartial extends SlotPartial {
+interface WindowPartial extends SlotPartial {
   kind: 'window';
   start: string;
   end: string;
   label: string;
 }
 
-export function windowPartialOf(w: SlotPartial | null): DateWindow | null {
+function windowPartialOf(w: SlotPartial | null): DateWindow | null {
   return w?.kind === 'window' && typeof w.start === 'string' && typeof w.end === 'string' && typeof w.label === 'string'
     ? { start: w.start, end: w.end, label: w.label }
     : null;
@@ -31,7 +34,7 @@ export function windowPartialOf(w: SlotPartial | null): DateWindow | null {
  * window already began, so it never yields a past day. Null when the weekday has no occurrence left
  * inside the window.
  */
-export function constrainToWindow(iso: string, mode: string, window: DateWindow | null, todayIso: string): string | null {
+function constrainToWindow(iso: string, mode: string, window: DateWindow | null, todayIso: string): string | null {
   if (!window || mode !== 'weekday') return iso;
   if (iso >= window.start && iso <= window.end) return iso;
   const snapped = snapWeekdayOnOrAfter(iso, window.start > todayIso ? window.start : todayIso);
@@ -48,7 +51,7 @@ function pick(answers: AnswerMap, id: string): ComponentPick {
   return { choice: a.choice, p: a.probabilities[a.choice] ?? a.confidence };
 }
 
-export function dateComponentsFrom(answers: AnswerMap): DateComponents {
+function dateComponentsFrom(answers: AnswerMap): DateComponents {
   return {
     mode: pick(answers, 'dateMode'),
     month: pick(answers, 'dateMonth'),

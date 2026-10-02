@@ -1,6 +1,9 @@
+// ORACLE: a frozen copy of the hand-written slot the library `choice` type replaced.
+// Used only by the grid tests (src/shadow.test.ts and the slot tests beside it) to catch drift in
+// the library. Never edit except to delete. Nothing in app runtime may import this file (src/oracles.test.ts).
 import { isChoice, noulValue, rankProbabilities, type AnswerMap, type SlotOutcome, type SlotSpec, type Thresholds } from 'dialogwright';
-import { PROVIDERS, providerDisplay } from '../roster';
-import { clinicThreshold } from '../thresholds';
+import { PROVIDERS, providerDisplay } from '../../domain/roster';
+import { clinicThreshold } from '../../domain/thresholds';
 
 /** The lines for the two ways a caller answers "Do you have the name of the provider?" without a name. */
 const HELP_PROMPTS: Record<string, string> = { has_name: 'ask_provider_name', no_name: 'provider_list' };

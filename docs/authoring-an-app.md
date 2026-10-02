@@ -417,7 +417,7 @@ An order number, a code, a card number: the model cannot choose it from a list, 
 2. **Judgment, by the model.** A yes-or-no question asks whether a value is said at all; a choice question offers the spans as its labels (with `null` criteria, since each span describes itself) and `none`; a second yes-or-no question asks whether it was said whole.
 3. **Normalisation and checking, in code.** `spokenToDigits(span)` turns "five five five two zero four one seven" or "5552 0417" into `55520417`, and `matchesMask(digits, /^\d{8}$/)` checks its shape. Anything wrong is `invalid`, with its reason.
 
-What is not on the ballot cannot be chosen, so narrow the candidates rather than arguing in the instructions. The clinic's name slot (`apps/clinic/src/domain/slots/name.ts`) leaves out every span that holds a provider's name, so a caller correcting the doctor is never taken as giving their own name. It also checks that the chosen span is one it offered on this turn, since an answer recorded against other words can name a span the turn never offered.
+What is not on the ballot cannot be chosen, so narrow the candidates rather than arguing in the instructions. The clinic's name slot (a library `name` slot, with its `exclude` list, in `apps/clinic/slots.yaml`) leaves out every span that holds a provider's name, so a caller correcting the doctor is never taken as giving their own name. It also checks that the chosen span is one it offered on this turn, since an answer recorded against other words can name a span the turn never offered.
 
 The questions and fill of such a slot written by hand, as the library's card had them before the `digits` type (the type's default wording is a little different: it says "either as digits or as spoken number words", and its span question names number words like "forty-four" and modifiers like "double"):
 
@@ -514,6 +514,100 @@ How a spoken value is confirmed. A keyed value never is.
 ### display
 
 `display(value, locale)` is how the line says a value: "55520417" for the card, "Dr. Patel" for a provider, "Tuesday, September 22" for a date ("martes, 22 de septiembre" in a Spanish call). `locale` is the session's (`ctx.locale` in `fill` and `dtmf.parse`), which only an app that declares locales has; format en-US exactly as with no locale. The engine does not call it itself: what a line says, what the console shows and what the model sees is the `display` your `fill`, `dtmf.parse` or `disambiguate` candidate returned, stored on the slot. Write one formatter, make it the spec's `display`, and use it in all three, so they agree (the library's `choiceSlot` and the clinic's date do). The library's card is said digit by digit because app.yaml's `voice.spokenDigits` rule spells `card ` followed by digits for text to speech, so its lines say "card {card}".
+
+### Porting a slot to a library type
+
+If you wrote a slot by hand before a library type covered it, move it onto the type without changing what callers hear. The shadow harness, in `dialogwright/testing`, runs the library slot beside the hand-written one and fails on any difference:
+
+1. Keep the hand-written slot as the app's slot. Build the library slot with `defineSlot` from the options you mean to use (its question wording as literals, so the text does not move).
+2. In a test, `shadowSlot(handWritten, librarySlot)` returns a slot that behaves as the hand-written one and, on every call, also runs the library one and compares the questions (as the model's request keys them), the `fill` outcomes, the keypad results, `display` and `partialVars`. Drive it over a large grid of answers, around every threshold, so branches no recorded call reaches are covered. `createShadowReport()` collects differences instead of throwing.
+3. For a whole run, `withShadowSlots(app, [librarySlot], { mode: 'report', report })` does the same inside the regression and the recorded replay, and `shadowFromEnv(app, [librarySlot])` in a regression launcher turns it on when `DIALOGWRIGHT_SHADOW` is set (`1` or `throw` to fail on the first difference, `report` to list them all at the end).
+4. When nothing differs, switch the app to the library slot and move the hand-written file to a test-only folder (the clinic's is `src/testing/oracles/`) with a header saying it is a frozen copy, used only by the grid tests, never edited. Keep a test that fails if any non-test file imports from it.
+
+### Testing a slot
+
+1. **Unit tests of `fill`.** Write the model's answers out with `choice`, `noul` and `score`, build a context with `testSlotContext(text)` (all exported by `'dialogwright'`; the context uses today 2026-09-18 and the default thresholds), and assert the outcome. Test every branch: absent on unrelated words, each `invalid` reason, the fill, and `dtmf.parse` with good and bad keys. From the library's test:
+
+   ```ts
+   it('is invalid, with its own re-ask, when the digits are not eight', () => {
+     expect(cardSlot.fill(heard('five five five two zero four one'), ctx('five five five two zero four one'))).toEqual({
+       kind: 'invalid', reason: 'length', raw: '5552041', retryPromptId: 'ask_card_length',
+     });
+   });
+   ```
+
+2. **Whole calls.** `resolveTurn` (the engine's turn), `newSession`, `spokenText` and the event helpers drive a call one turn at a time with written-out answers, so you can assert the lines heard, the gate events (with the masked param) and the keypad path. The library's are in `packages/dialogwright/src/define/cardSlot.test.ts`; the clinic's are in `apps/clinic/src/index.test.ts`, with their helpers in `src/testing/turns.ts`.
+3. **The corpus and the scenarios.** In an app with fixtures, add labelled lines to `fixtures/corpus.jsonl` with the slot's labels, in the shape the app's testing hooks read. Two of the clinic's, one opening a form and one answering the birthday question inside it:
+
+   ```json
+   {"id":"cn-09","text":"Cancel my appointment, I was born June fourteenth nineteen seventy five","intent":"cancel","context":"no_form","slots":{"dob":{"month":"june","day":"14","year":"nineteen seventy five"}}}
+   {"id":"db-03","text":"the fourteenth of June, 1975","intent":"none","context":"schedule_new","prompted":"dob","slots":{"dob":{"month":"june","day":"14","year":"1975"}}}
+   ```
+
+   Add scripted calls to `fixtures/scenarios/*.json` for the paths: spoken, keyed (a `{"dtmf": "06141975"}` step), and a miss. The app's `testing` hooks (`apps/clinic/src/domain/testing.ts`) tell the stubs how to answer the new questions: `labeled.spans` for a span question (the label is checked to be a span the question offers), `labeled.noul` and `labeled.choice` for the rest, `quietNoul` for a yes-or-no the words do not bear on, `heuristics` for the keyword stub, `checkCorpusSlots` to reject a label no question could pick, and `seed.placeholders` for a corpus line spoken inside a form.
+4. **The regressions.** The stub regression then shows each new line as `+ corpus <id>: new` and any changed outcome as a difference. Read each one; a changed outcome is a finding to explain before the baseline is updated, never something to overwrite. Note that a new slot changes the model's request on every turn: its questions are asked wherever it listens, and every slot is in the turn state. So the recorded replay misses on every turn until the cassette is recorded again, which calls the paid model and is a deliberate step (the clinic's README, "Recording the cassette").
+5. **`pnpm check`** (or `pnpm check <folder>`) says which of the slot's lines are missing, in every locale, and why the engine says each. Taking `ask_card_dtmf` and `ack_card` out of the library gives:
+
+   ```
+   prompts.yaml:2:1  prompts  prompt "ask_card_dtmf" is missing from prompts.yaml; the engine says it when it asks for the slot "card" on the keypad after spoken answers missed (its slot spec has dtmf)  ->  add "ask_card_dtmf:" with its text and interruptible to prompts.yaml
+   prompts.yaml:2:1  prompts  prompt "ack_card" is missing from prompts.yaml; the engine says it when it acknowledges a value it heard for the slot "card" (its slot spec's spokenConfirm is "by-confidence")  ->  add "ack_card:" with its text and interruptible to prompts.yaml
+   ```
+
+### Worked example: the library card
+
+The library's `check_loans` form asks for a library card number and says which book on the card is due back first. Everything it took:
+
+- `intents.yaml`: the `check_loans` intent, `kind: form`.
+- `forms.yaml`: `check_loans` with `slots: [card]`, `summaryPromptId: null` and `hooks: [complete]`.
+- `policy.yaml`: `listLoans: 0` under `toolLevel` and `listLoans: [R1]` under `rulesFor`.
+- `prompts.yaml` and `locale/es/prompts.yaml`: `ask_card`, `ask_card_retry`, `ask_card_dtmf` (the keypad rung), `ack_card` (`by-confidence`), `ask_card_length` (the `retryPromptId`), and the form's `next_due`, `no_loans` and `no_card`.
+- `app.ts`: the slot, the `listLoans` tool and the form's `complete`.
+
+The slot, from `packages/dialogwright/src/define/fixture/app.ts`. It is a library `digits` slot, so its questions, fill, keypad, display and the lines it declares come from the type, and its options say what the hand-written version above did:
+
+```ts
+export const cardSlot = defineSlot('card', {
+  type: 'digits',
+  noun: 'library card',               // "Does the caller state a library card number ..."
+  length: 8,                          // exactly eight digits; a wrong length is invalid, reason "length"
+  keypad: true,                       // dtmf length 8; needs ask_card_dtmf
+  confirm: 'by-confidence',           // spokenConfirm; needs ack_card
+  readBack: 'below-fill',             // ack_card only when the span's probability is under SLOT_CHOICE_FILL
+  minConfidence: 'SLOT_CHOICE_CONFIRM', // under it: invalid, reason "low_confidence"
+  lengthRetryPromptId: 'ask_card_length',
+});
+```
+
+In a folder app the same options go in `slots.yaml` (`card: { type: digits, noun: library card, ... }`). The defaults give the rest: `questionIds` (`cardGiven`, `cardSpan`, `cardComplete`), `detect: true`, `redact: last4`, `handoff: last4`, the display as the digits, and `prompts` (`ask_card_length`, `ack_card` given `{card}`, `ask_card_dtmf`). The options are in `packages/dialogwright/src/slots/digits/README.md`.
+
+The tool takes the value under the slot's own name, so the gate event, the trace and the audit record `card=...0417`:
+
+```ts
+  listLoans: {
+    run(call, sys) {
+      const { loans: onFile } = sys as LibrarySystems;
+      const card = call.params.card ?? '';
+      const loans = Object.hasOwn(onFile, card) ? onFile[card]! : null;
+      return { value: loans, summary: loans ? `${loans.length} loans` : 'no card' };
+    },
+  },
+```
+
+What a caller hears, from the tests: "Sure, I can help you check your loans. What's your library card number?", then for a confident answer "On card 55520417, A Quiet Orchard is due back next, on Friday, September 25.", and for a less certain one "That's card 55531290." in front of the answer. Seven digits get "A library card number has eight digits. Please say all eight, one at a time."; a second miss gets "Please enter your eight digit library card number on the keypad."; eight keys then fill the slot.
+
+### The clinic's slots, by pattern
+
+All five are library slots, configured in `apps/clinic/slots.yaml` with the clinic's own wording:
+
+| Pattern | Library type |
+|---|---|
+| A choice from a list, with close names asked about (`disambiguate`), a hedged name read back, help lines for "I don't know the name", and a one-digit keypad | `choice`: the provider |
+| A value no list holds: detected, picked as a span, turned into digits and checked, keyed as eight digits, recorded and handed over by its last four | `digits`: the member ID |
+| A date from parts (mode, month, day, weekday, a span of days), resolved against today; a span is a partial with a prompt and variables; keypad MMDD | `date`: the appointment day |
+| A date of birth: month and day without the year is a partial (`ask_dob_year`), masked to the year, keypad MMDDYYYY | `birthdate` |
+| Free text picked from word spans, with the candidates narrowed in code; no keypad | `name` |
+
+The hand-written slots these replaced are kept, frozen, in `apps/clinic/src/testing/oracles/`, and used only by the clinic's grid tests (`src/shadow.test.ts`), which compare each library slot with its oracle over large grids of answers. The oracles are not app code, and a test fails if any non-test file imports one.
 
 ### Testing a slot
 

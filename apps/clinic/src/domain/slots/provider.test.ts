@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { choice, noul, testSlotContext, type SlotContext, type SlotSpec } from 'dialogwright';
 import { clinicApp } from '../../app';
-import { otherProviderNamed, providerSlot as handWritten } from './provider';
+import { otherProviderNamed, providerSlot as handWritten } from '../../testing/oracles/provider';
 
 /**
  * A turn's context as the engine gives it: the engine's thresholds and the clinic's own

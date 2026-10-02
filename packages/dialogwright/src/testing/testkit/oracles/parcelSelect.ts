@@ -1,8 +1,11 @@
-import type { SlotContext, SlotOutcome, SlotSpec } from '../../../../core/slots/types';
-import { isChoice, rankProbabilities, type QuestionMap } from '../../../../jev/types';
-import { NUMBER_WORDS, spokenToDigits, tokenize } from '../../../../core/extract/spokenNumber';
-import { describeDay } from '../../../../core/extract/date';
-import { atLeast } from '../../../../core/thresholds';
+// ORACLE: a frozen copy of the hand-written slot the library `record` type replaced.
+// Used only by the grid tests (src/slots/record/record.test.ts) to catch drift in the library.
+// Never edit except to delete. Nothing in app runtime may import this file (oracles.test.ts).
+import type { SlotContext, SlotOutcome, SlotSpec } from '../../../core/slots/types';
+import { isChoice, rankProbabilities, type QuestionMap } from '../../../jev/types';
+import { NUMBER_WORDS, spokenToDigits, tokenize } from '../../../core/extract/spokenNumber';
+import { describeDay } from '../../../core/extract/date';
+import { atLeast } from '../../../core/thresholds';
 
 const PARCEL_NUMBER = /^\d{4}$/;
 const PREFIX = 'parcel_';
