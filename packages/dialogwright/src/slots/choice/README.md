@@ -47,7 +47,7 @@ speed:
   options:
     standard: standard delivery
     express: express delivery
-    next_day: { say: next-day delivery, means: Delivery on the next day, whatever it is called }
+    next_day: { say: next-day delivery, means: "Delivery on the next day, whatever it is called" }
 ```
 
 the question, sent to the model, is:

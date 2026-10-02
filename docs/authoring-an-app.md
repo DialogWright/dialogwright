@@ -246,7 +246,7 @@ note:
 The rules, each checked by `defineApp` and `check` with the file and line:
 
 - **The file lists every slot.** Each key of `code.slots` must appear as `{ type: code }`, and each `{ type: code }` must have a `code.slots` entry. A slot that is both a library slot and in `code.slots` is refused: it would be built twice.
-- **The order is the file's.** Outside a form the engine fills slots in that order, says their acknowledgements in it, asks the first slot that needs the caller to choose between two values, and lists the slots in it in the model's turn state and in a transfer's handoff. A form's own slots stay in the order forms.yaml gives. Without a slots.yaml, the order is whatever order `code.slots` was written in, which is easy to change by accident; with one, it is written down in one place, and a reorder shows in a diff.
+- **The order is the file's.** Outside a form the engine fills slots in that order, says their acknowledgements in it, asks the first slot that needs the caller to choose between two values, and lists the slots in it in the model's turn state and in a transfer's handoff. A form's own slots stay in the order forms.yaml gives. Without a slots.yaml, the order is whatever order `code.slots` was written in, which is easy to change unintentionally; with one, it is written down in one place, and a reorder shows in a diff.
 - **A type is a library type, an app type or `code`.** An app adds its own types with `slotTypes` in its code (`code.slotTypes: registerSlotType(myType)`); a name a built-in type has, and `code`, are refused. An unknown type names the closest one.
 - **A library slot's options are checked by its type**, strictly: a misspelt option is refused with the one meant, at its line in slots.yaml.
 
@@ -510,7 +510,7 @@ All five are library slots, configured in `apps/clinic/slots.yaml` with the clin
 | Pattern | Library type |
 |---|---|
 | A choice from a list, with close names asked about (`disambiguate`), a hedged name read back, help lines for "I don't know the name", and a one-digit keypad | `choice`: the provider |
-| A value no list holds: detected, picked as a span, turned into digits and checked, keyed as eight digits, recorded and handed over by its last four | `digits`: the member ID |
+| A value no list holds: detected, picked as a span, turned into digits and checked, keyed as eight digits, recorded and handed over by its last four | `digits`: the clinic's billing ID (`memberId`) |
 | A date from parts (mode, month, day, weekday, a span of days), resolved against today; a span is a partial with a prompt and variables; keypad MMDD | `date`: the appointment day |
 | A date of birth: month and day without the year is a partial (`ask_dob_year`), masked to the year, keypad MMDDYYYY | `birthdate` |
 | The caller's own name, picked from word spans with every provider's name left out of the candidates; no keypad | `name` |
@@ -593,7 +593,7 @@ For every slot a form or identity.yaml names, `check` requires `ask_<slot>`, `as
 
 ### Values no list holds
 
-An order number, a code, a card number: the model cannot choose it from a list, and it is never asked to write it. Instead, the code finds every run of the caller's words that could be the value, the model judges which one it is, and the code turns that run into the value and checks it. The value is then always something the caller said, and the code, not the model, decides whether it is valid. The library's `digits` type works this way (the clinic's member ID and the library's card are slots of it), and this section shows the steps as a hand-written slot takes them, for a value the type does not fit:
+An order number, a code, a card number: the model cannot choose it from a list, and it is never asked to write it. Instead, the code finds every run of the caller's words that could be the value, the model judges which one it is, and the code turns that run into the value and checks it. The value is then always something the caller said, and the code, not the model, decides whether it is valid. The library's `digits` type works this way (the clinic's billing ID, `memberId`, and the library's card are slots of it), and this section shows the steps as a hand-written slot takes them, for a value the type does not fit:
 
 1. **Candidates, in code.** `ctx.candidateSpans` is every run of one to ten words of the caller's text that holds a digit or a number word, shortest first, at most 120, in the tokenized form (lower case, no punctuation): "it's 5552 0417" gives `5552`, `0417`, `5552 0417` and the longer runs around them. For words rather than numbers (a name), `ctx.candidateWordSpans` is every run of one to four words with no number word that does not start or end with a filler word ("my", "is", "the"), at most 320. Both functions are exported, for tests.
 2. **Judgment, by the model.** A yes-or-no question asks whether a value is said at all; a choice question offers the spans as its labels (with `null` criteria, since each span describes itself) and `none`; a second yes-or-no question asks whether it was said whole.
@@ -660,7 +660,7 @@ A slot with `dtmf` needs `ask_<slot>_dtmf`, the line that asks for the keys ("Pl
 
 | `redact` | Shows as | For |
 |---|---|---|
-| `last4` | `...0417` | An identifier (the card, the clinic's member ID). |
+| `last4` | `...0417` | An identifier (the card, the clinic's billing ID, `memberId`). |
 | `mask` | `••/••/1975`, the year alone; a tool param as `•` | A date of birth (the clinic's `dob`). |
 | `length` | `<38 chars>` | The caller's own words, such as a free-text note. The slot's display is a stand-in ("your description") and is kept; the live console keeps the words. The engine's testkit has one (`missingNote`). |
 
@@ -695,7 +695,7 @@ How a spoken value is confirmed. A keyed value never is.
 
 ### display
 
-`display(value, locale)` is how the line says a value: "55520417" for the card, "Dr. Patel" for a provider, "Tuesday, September 22" for a date ("martes, 22 de septiembre" in a Spanish call). `locale` is the session's (`ctx.locale` in `fill` and `dtmf.parse`), which only an app that declares locales has; format en-US exactly as with no locale. The engine does not call it itself: what a line says, what the console shows and what the model sees is the `display` your `fill`, `dtmf.parse` or `disambiguate` candidate returned, stored on the slot. Write one formatter, make it the spec's `display`, and use it in all three, so they agree (the library's `choiceSlot` and the clinic's date do). The library's card is said digit by digit because app.yaml's `voice.spokenDigits` rule spells `card ` followed by digits for text to speech, so its lines say "card {card}".
+`display(value, locale)` is how the line says a value: "55520417" for the card, "Dr. Patel" for a provider, "Tuesday, September 22" for a date ("martes, 22 de septiembre" in a Spanish call). `locale` is the session's (`ctx.locale` in `fill` and `dtmf.parse`), which only an app that declares locales has; format en-US exactly as with no locale. The engine does not call it itself: what a line says, what the console shows and what the model sees is the `display` your `fill`, `dtmf.parse` or `disambiguate` candidate returned, stored on the slot. Write one formatter, make it the spec's `display`, and use it in all three, so they agree (the library's `bookSlot` and `branchSlot`, both `choice` slots, and the clinic's date do). The library's card is said digit by digit because app.yaml's `voice.spokenDigits` rule spells `card ` followed by digits for text to speech, so its lines say "card {card}".
 
 ### Your own slot type
 
@@ -925,6 +925,8 @@ Every configuration file of an app built by `defineApp` has a content hash, so a
 - They are never sent to the model.
 
 An app that is not built from a folder has no hashes, and its rows are as they were.
+
+The hashes changed format in this release: a file's hash used to be taken over its content with object keys sorted, and now keeps them in the order written. A `config` or `configFiles` hash in a `call_started` row written before the change is not comparable with one written after it, even for the same files; compare hashes only between rows written by the same version.
 
 ## 9. Editor support
 

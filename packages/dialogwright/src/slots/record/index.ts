@@ -32,7 +32,7 @@ function promptsOf(id: string, o: RecordOptions): SlotPrompt[] {
  * of it, its number or what it holds. The question offers each record of the list the slot reads
  * (the app's, from facts.forSlots), labelled from the record's fields, and, when `spoken` is set,
  * the numbers the caller says that no record has. The slot fills with the record's key, so the value
- * is always a key the code offered. See README.md beside this file.
+ * is always a key that matches keyPattern, never words the model wrote. See README.md beside this file.
  */
 export const recordType: SlotType<RecordOptions> = defineSlotType<RecordOptions>({
   type: 'record',
@@ -58,6 +58,6 @@ export const recordType: SlotType<RecordOptions> = defineSlotType<RecordOptions>
   },
   describe: {
     summary: 'One of the app\'s records, chosen by what the caller says of it: a parcel, an order, a booking.',
-    notes: 'The model judges which of the offered records the caller means, or none; the code offers the records (labelled from their fields) and, optionally, the numbers the caller says, so the value is always a key the code offered. Two records the model cannot tell apart make the slot ask which one.',
+    notes: 'The model judges which of the offered records the caller means, or none; the code offers the records (labelled from their fields) and, optionally, the numbers the caller says, so the value is a key that matches keyPattern, never words the model wrote (the fill takes any such label, as the hand-written slots it replaced did, not only one offered on that turn). Two records the model cannot tell apart make the slot ask which one.',
   },
 });

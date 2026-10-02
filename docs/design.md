@@ -109,7 +109,7 @@ A slot is one value a form collects. Most slots are configuration: an app names 
 
 ```yaml
 # slots.yaml
-accountNumber: { type: digits, length: 10, keypad: true }
+accountNumber: { type: digits, noun: account, length: 10, keypad: true }
 outageType:
   type: choice
   options: { no_power: no power at all, partial: some lights out }

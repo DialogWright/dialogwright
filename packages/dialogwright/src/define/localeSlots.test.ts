@@ -55,6 +55,16 @@ describe('locale/<tag>/slots.yaml: loading', () => {
     expect(app.slots.branch!.display('north', 'es')).toBe('North');
   });
 
+  it('is refused for a locale the app does not declare: a folder with slots.yaml and no prompts.yaml', async () => {
+    const dir = folder();
+    const fr = join(dir, 'locale', 'fr');
+    cpSync(join(dir, 'locale', 'es', 'slots.yaml'), join(fr, 'slots.yaml'), { recursive: true });
+    const problems = await lines(dir);
+    expect(problems).toEqual(['locale/fr:1:1  (file)  locale/fr has no prompts.yaml, so the locale fr has no prompts  ->  add locale/fr/prompts.yaml with a "prompts:" map (same shape as prompts.yaml), or delete the folder']);
+    expect(loadAppFolder(dir).config?.localeSlots ?? {}).not.toHaveProperty('fr');
+    expect(() => defineApp(dir, libraryCode)).toThrow('locale/fr has no prompts.yaml');
+  });
+
   it('must be a map of slot ids to maps', async () => {
     expect(await lines(folder(`${HEAD}- branch\n`))).toEqual([
       expect.stringMatching(/^locale\/es\/slots\.yaml:2:1 {2}\(file\) {2}/),
