@@ -103,13 +103,13 @@ prompts:
     text: ¿Qué libro es?
     interruptible: true
   ask_book_retry:
-    text: Perdone, ¿qué libro? Por ejemplo, The River Atlas.
+    text: Perdone, ¿qué libro? Por ejemplo, El atlas del río.
     interruptible: true
   ask_branch:
-    text: ¿En qué sucursal está la reserva, North o Riverside?
+    text: ¿En qué sucursal está la reserva, Norte o Ribera?
     interruptible: true
   ask_branch_retry:
-    text: Perdone, ¿la reserva está en la sucursal North o en la sucursal Riverside?
+    text: Perdone, ¿la reserva está en la sucursal Norte o en la sucursal Ribera?
     interruptible: true
 
   # The forms
@@ -117,7 +117,7 @@ prompts:
     text: Quiere renovar {book} por dos semanas más. ¿Lo hago?
     interruptible: true
   renewed:
-    text: Listo. Ahora {book} se devuelve {due}.
+    text: Listo. Ahora {book} se devuelve el {due}.
     interruptible: false
   hold_ready:
     text: Buenas noticias, {book} le espera en la sucursal {branch}.

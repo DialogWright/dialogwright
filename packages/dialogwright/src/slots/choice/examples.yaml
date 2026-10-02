@@ -41,7 +41,7 @@
       expect: null
 
 - name: branch
-  about: The shorthand (a bare string for what the option says), with a question of its own and no keypad.
+  about: The shorthand (a bare string for what the option says), with a question of its own and no keypad. In Spanish (a locale's slots.yaml, here `wording`) the branches are said in Spanish; the question stays as it is.
   slot: branch
   config:
     text:
@@ -63,6 +63,26 @@
       answers:
         branch: { choice: { none: 0.9, north: 0.1 } }
       expect: { kind: absent }
+    - text: la sucursal del norte
+      context: { locale: es }
+      answers:
+        branch: { choice: { north: 0.91, riverside: 0.05, none: 0.04 } }
+      expect: { kind: filled, value: north, display: Norte }
+    - text: la del viejo molino
+      context: { locale: es-US }
+      answers:
+        branch: { choice: { old_mill: 0.84, none: 0.16 } }
+      expect: { kind: filled, value: old_mill, display: Viejo Molino }
+    - text: la de la ribera
+      context: { locale: es }
+      answers:
+        branch: { choice: { riverside: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: riverside, display: Riverside }
+  wording:
+    es:
+      options:
+        north: Norte
+        old_mill: { say: Viejo Molino }
 
 - name: colour
   about: Every text in its own words (the question and `none` under `text`, `means` on an option and a template for the rest, a question id kept), a stricter threshold, and a keypad.

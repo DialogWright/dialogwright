@@ -3,11 +3,11 @@ import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { textDisplay } from './display';
 import { textFill } from './fill';
-import { textOptions, type TextOptions } from './options';
+import { textOptions, textWording, type TextOptions, type TextWording } from './options';
 import { givenIdOf, textQuestions } from './questions';
 
-export { textOptions, TEXT_PARTS, TEXT_QUESTIONS, DEFAULT_MAX_LENGTH, DEFAULT_SAY } from './options';
-export type { TextOptions } from './options';
+export { textOptions, textWording, TEXT_PARTS, TEXT_QUESTIONS, DEFAULT_MAX_LENGTH, DEFAULT_SAY } from './options';
+export type { TextOptions, TextWording } from './options';
 
 const examples = examplesFrom(new URL('./examples.yaml', import.meta.url));
 
@@ -17,12 +17,13 @@ const examples = examplesFrom(new URL('./examples.yaml', import.meta.url));
  * a paraphrase. A summary reads the slot back by a stand-in, and the words leave the turn by their
  * length only. See README.md beside this file.
  */
-export const textType: SlotType<TextOptions> = defineSlotType<TextOptions>({
+export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextOptions, TextWording>({
   type: 'text',
   options: textOptions,
-  build(id, o) {
+  wording: (o) => textWording(o),
+  build(id, o, wording) {
     const givenId = givenIdOf(id, o);
-    const display = textDisplay(o);
+    const display = textDisplay(o, wording);
     return {
       id,
       // Never acknowledged or read back on its own: the stand-in says nothing a caller could correct.

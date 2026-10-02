@@ -73,3 +73,21 @@ export const textOptions = z
   });
 
 export type TextOptions = z.output<typeof textOptions>;
+
+/**
+ * What a locale's slots.yaml may give for a text slot: its stand-in in that locale (`say: su nota`).
+ * The words themselves are the caller's, in whatever language they spoke. A slot whose display is
+ * the words (`say: null`) has no stand-in to give.
+ */
+export function textWording(o?: Pick<TextOptions, 'say'>) {
+  const say = questionText().describe('The stand-in in this locale: what a line, the console and the model\'s turn state show in place of the words ("su nota").');
+  if (o !== undefined && o.say === null) {
+    return z.strictObject({}).describe('A text slot whose display is the caller\'s own words (say: null) has no stand-in to give per locale.');
+  }
+  return z.strictObject({ say: say.optional() }).describe('A text slot\'s wording in this locale.');
+}
+
+/** A text slot's wording in one locale, as parsed. */
+export interface TextWording {
+  say?: string;
+}

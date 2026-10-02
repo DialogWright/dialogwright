@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { slotTypeJsonSchema } from '../../slots/defineSlot';
 import { BUILT_IN_SLOT_TYPES } from '../../slots/registry';
 import type { SlotTypes } from '../../slots/types';
+import { slotTypeWordingJsonSchema } from '../../slots/wording';
 import { CODE_SLOT_TYPE } from './slots';
 import { FILE_KINDS, SCHEMAS, type FileKind } from './index';
 
@@ -48,6 +49,27 @@ export function slotsJsonSchema(types: SlotTypes = BUILT_IN_SLOT_TYPES): JsonSch
     type: 'object',
     propertyNames: { pattern: '^[A-Za-z][A-Za-z0-9_]*$' },
     additionalProperties: { oneOf: [...Object.values(types).map(branch), code] },
+  };
+}
+
+/**
+ * locale/<tag>/slots.yaml's JSON Schema: a map of slot ids to the wording of any type that takes one
+ * (a choice slot's `options` and their `say`, a text slot's `say`). The committed schema
+ * (schemas/locale-slots.schema.json) has the built-in types. What a slot may give also depends on
+ * its options (a choice option it does not have is refused), which only defineApp and `check` know.
+ */
+export function localeSlotsJsonSchema(types: SlotTypes = BUILT_IN_SLOT_TYPES): JsonSchema {
+  const branches = Object.values(types).flatMap((type) => {
+    const schema = slotTypeWordingJsonSchema(type);
+    return schema === null ? [] : [{ ...schema, description: `${type.type}: ${typeof schema.description === 'string' ? schema.description : 'its wording in this locale'}` }];
+  });
+  return {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    title: 'DialogWright locale/<tag>/slots.yaml',
+    description: 'How the app\'s library slots say their values in this locale, by slot id: what each slot\'s type lets a locale say its own way (a choice option\'s say, a text slot\'s stand-in). Never the questions, which the model reads as written.',
+    type: 'object',
+    propertyNames: { pattern: '^[A-Za-z][A-Za-z0-9_]*$' },
+    additionalProperties: { anyOf: branches, description: 'One slot\'s wording in this locale.' },
   };
 }
 

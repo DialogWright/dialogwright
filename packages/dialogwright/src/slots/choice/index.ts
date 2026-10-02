@@ -4,13 +4,13 @@ import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { choiceDisplay } from './display';
 import { choiceFill } from './fill';
-import { choiceOptions, type ChoiceOptions } from './options';
+import { choiceOptions, choiceWording, type ChoiceOptions, type ChoiceWording } from './options';
 import { choiceIdsOf, choiceQuestions, type ChoiceIds } from './questions';
 
 export {
-  choiceOptions, CHOICE_PARTS, CHOICE_QUESTIONS, DEFAULT_INSTRUCTIONS, DEFAULT_MEANS, DEFAULT_NONE, FILL_AT, HEDGE_PARTS, HELP_PARTS, MAX_KEYPAD_OPTIONS, MEANS_VARS,
+  choiceOptions, choiceWording, CHOICE_PARTS, CHOICE_QUESTIONS, DEFAULT_INSTRUCTIONS, DEFAULT_MEANS, DEFAULT_NONE, FILL_AT, HEDGE_PARTS, HELP_PARTS, MAX_KEYPAD_OPTIONS, MEANS_VARS,
 } from './options';
-export type { ChoiceOptions, ChoiceOption, ChoiceHelpLabel } from './options';
+export type { ChoiceOptions, ChoiceOption, ChoiceHelpLabel, ChoiceWording } from './options';
 export { choiceDisplay } from './display';
 export { otherOptionNamed } from './fill';
 export { choiceIdsOf } from './questions';
@@ -42,12 +42,13 @@ const questionIdsOf = (ids: ChoiceIds): string[] => [ids.choice, ...(ids.hedge ?
  * fills with the option's key when the model is sure enough, so the value is always one of the
  * options and the model never writes it. See README.md beside this file.
  */
-export const choiceType: SlotType<ChoiceOptions> = defineSlotType<ChoiceOptions>({
+export const choiceType: SlotType<ChoiceOptions, ChoiceWording> = defineSlotType<ChoiceOptions, ChoiceWording>({
   type: 'choice',
   options: choiceOptions,
-  build(id, o) {
+  wording: (o) => choiceWording(o),
+  build(id, o, wording) {
     const ids = choiceIdsOf(id, o);
-    const display = choiceDisplay(o);
+    const display = choiceDisplay(o, wording);
     const keys = Object.keys(o.options);
     return {
       id,

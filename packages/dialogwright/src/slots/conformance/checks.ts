@@ -2,7 +2,7 @@ import { ENGINE_QUESTION_IDS } from '../../core/questionIds';
 import type { SlotContext, SlotOutcome, SlotPartial } from '../../core/slots/types';
 import { canonicalJson } from '../../jev/cassette';
 import type { AnswerMap, QuestionMap } from '../../jev/types';
-import { buildSlot, defineSlot, slotTypeJsonSchema } from '../defineSlot';
+import { buildSlot, defineSlot, SlotConfigError, slotTypeJsonSchema } from '../defineSlot';
 import { BUILT_IN_SLOT_TYPES } from '../registry';
 import { refusesUnknownKeys } from '../slotType';
 import type { ExampleContext, LibrarySlotSpec, SlotExample, SlotType, SlotTypes, SlotUtterance } from '../types';
@@ -28,7 +28,7 @@ export type CheckId = (typeof CHECK_IDS)[number];
 export const CHECK_ABOUT: Readonly<Record<CheckId, string>> = {
   builds: 'the configuration builds a slot that declares its question ids and its lines',
   'unknown-keys': 'an option the type does not have is refused, with a problem that names it',
-  'question-ids': 'questions() asks only the ids the slot declares, none of them the engine\'s, the same ids for the same configuration, and other ids for another slot',
+  'question-ids': 'questions() asks only the ids the slot declares, none of them the engine\'s, the same ids for the same configuration, other ids for another slot, and the same questions whatever its wording by locale',
   empty: 'no answers at all give absent when the slot was not asked for, and absent or invalid (never a value) when it was',
   quiet: 'answers that hear nothing for the slot give absent or invalid, never a value',
   malformed: 'answers of the wrong type, missing or out of range, and keys that are no value, never make it throw',
@@ -79,7 +79,7 @@ const SCALES = [0.5, 0.2];
 const UNREACHABLE = 2;
 
 /** Every check of `type`, over each of its examples. */
-export function slotConformanceChecks(type: SlotType<any>, options: SlotConformanceOptions = {}): ConformanceCheck[] {
+export function slotConformanceChecks(type: SlotType<any, any>, options: SlotConformanceOptions = {}): ConformanceCheck[] {
   const types: SlotTypes = { ...(options.types ?? BUILT_IN_SLOT_TYPES), [type.type]: type };
   const locales = options.locales ?? ['en-US'];
   const examples = options.examples ?? type.examples;
@@ -101,7 +101,7 @@ export function slotConformanceChecks(type: SlotType<any>, options: SlotConforma
 }
 
 interface Run {
-  type: SlotType<any>;
+  type: SlotType<any, any>;
   types: SlotTypes;
   locales: readonly string[];
   example: SlotExample;
@@ -109,7 +109,13 @@ interface Run {
 }
 
 const configOf = (r: Run, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ type: r.type.type, ...r.example.config, ...extra });
-const build = (r: Run, slot = r.example.slot): LibrarySlotSpec => defineSlot(slot, configOf(r), r.types);
+/** The example's slot, with its wording by locale when it gives any. */
+const build = (r: Run, slot = r.example.slot): LibrarySlotSpec => {
+  if (r.example.wording === undefined) return defineSlot(slot, configOf(r), r.types);
+  const built = buildSlot(slot, configOf(r), { types: r.types, wording: r.example.wording });
+  if (!built.ok) throw new SlotConfigError(slot, built.problems);
+  return built.spec;
+};
 const said = (u: SlotUtterance): string => JSON.stringify(u.text);
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -230,9 +236,13 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
       const shared = (other?.questionIds ?? []).filter((id) => declared.includes(id));
       if (shared.length > 0) r.fail(`a second slot of this type would ask the same question ids (${shared.join(', ')}): derive each id from the slot's id`);
     }
+    // A locale's wording changes what the slot says, never what the model is asked.
+    const plain = r.example.wording === undefined ? undefined : attempt(r, 'defineSlot without the wording', () => defineSlot(r.example.slot, configOf(r), r.types));
     for (const ctx of contextsOf(r, windowsOf(r, spec))) {
       const qs = attempt(r, `questions(${where(ctx)})`, () => spec.questions(ctx));
       if (!qs) continue;
+      const unworded = plain ? attempt(r, `questions(${where(ctx)}), without the wording`, () => plain.questions(ctx)) : undefined;
+      if (unworded && canonicalJson(unworded) !== canonicalJson(qs)) r.fail(`questions(${where(ctx)}) differ with the slot's wording: a locale's wording may change what the slot says, never what the model is asked`);
       for (const id of Object.keys(qs)) if (!declared.includes(id)) r.fail(`questions(${where(ctx)}) asks "${id}", which questionIds does not declare`);
       for (const problem of questionProblems(qs)) r.fail(`questions(${where(ctx)}): ${problem}`);
       const twice = attempt(r, `questions(${where(ctx)}), again`, () => spec.questions(ctx));

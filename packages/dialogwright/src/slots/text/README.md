@@ -45,4 +45,5 @@ courierNote:
 
 - Every slot listens on every turn, so the question is asked even while the form is on another slot. That is why `keep` defaults to `first-unless-prompted`: "and ring the bell" said later must not replace the note.
 - The value is the whole turn's words, not the part that is the note. If the caller says "yes, leave it by the gate", the value is that sentence.
+- In another locale the stand-in can be that locale's: `locale/<tag>/slots.yaml` gives `say: <stand-in>` for the slot. The words themselves are the caller's, in whatever language they spoke. A slot whose display is the words (`say: null`) takes none.
 - Run its checks with `pnpm --filter dialogwright test slots/text`.

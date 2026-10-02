@@ -84,6 +84,8 @@ describe('declared question ids, when the app is validated', () => {
       'app.ts  code.slots.branch.questionIds  slot "branch" declares the question id "book", which the slot "book" declares too, so one slot\'s question would replace the other\'s  ->  give the question an id of the slot\'s own, such as "branchBook", in the slot\'s questions and in app.ts (code.slots.branch.questionIds)',
       'app.ts  code.slots.card.questionIds  slot "card" declares the question id "urgency", which is one the engine asks, so its answers would be read as the engine\'s  ->  give the question an id of the slot\'s own, such as "cardUrgency", in the slot\'s questions and in app.ts (code.slots.card.questionIds)',
       'app.ts  code.slots.card.questionIds  slot "card" declares the question id "cardGiven" twice  ->  list it once in app.ts (code.slots.card.questionIds)',
+      // and the branch, changed in code after the library built it, can no longer take its es wording
+      'locale/es/slots.yaml:10:1  branch  the slot "branch" was built by the "choice" type and then changed in code (a copy with a field replaced), so locale/es/slots.yaml cannot give its wording: built again with it from its options, the slot would lose the change  ->  build the slot with defineSlot (or in slots.yaml) and use it as built, or delete "branch" from locale/es/slots.yaml and have the code\'s slot say its value by its locale',
     ]);
   });
 });

@@ -11,8 +11,15 @@ import type { SlotOutcome, SlotPartial, SlotPrompt, SlotSpec } from '../core/slo
 /** What a type builds: a SlotSpec that declares every question id it may ask and every line it may lead to. */
 export type BuiltSlotSpec = SlotSpec & { questionIds: readonly string[]; prompts: readonly SlotPrompt[] };
 
-/** A built-in or contributed slot type. `O` is its options as parsed (defaults applied). */
-export interface SlotType<O = unknown> {
+/**
+ * A slot's wording by locale tag (a locale's slots.yaml, `locale/<tag>/slots.yaml`): for each locale
+ * that gives any, the words the slot says its values with there, as the type's `wording` schema
+ * parsed them.
+ */
+export type SlotWording<W = unknown> = Readonly<Record<string, W>>;
+
+/** A built-in or contributed slot type. `O` is its options as parsed (defaults applied); `W` its wording for one locale, as parsed. */
+export interface SlotType<O = unknown, W = unknown> {
   /** Its name, as an app writes it (`type: text`): lower case letters, digits and hyphens. */
   type: string;
   /**
@@ -21,8 +28,23 @@ export interface SlotType<O = unknown> {
    * (`.describe(...)`), since its docs page and the problems an author is shown read those words.
    */
   options: z.ZodType<O>;
-  /** The slot, from its id and its parsed options. Must declare `questionIds` and `prompts`. */
-  build(id: string, options: O): BuiltSlotSpec;
+  /**
+   * The words a slot of this type says its values with that a locale may give in its own language
+   * (`locale/<tag>/slots.yaml`): a choice option's `say`, a text slot's stand-in. Never its
+   * questions: the model reads those as written, and their labels are keys. Called with a slot's
+   * options it returns a strict schema for that slot (an option the slot does not have is refused);
+   * called with none, the general shape, for the published JSON Schema. Absent: the type has nothing
+   * to give per locale (it says its values the same everywhere, or formats them by locale itself,
+   * as `date` does).
+   */
+  wording?(options?: O): z.ZodType<W>;
+  /**
+   * The slot, from its id, its parsed options and, when any locale gives some, its wording by locale
+   * (read with parts/locale.ts wordingFor, at fill and display time, from the locale the fill's
+   * context or the display call names). Must declare `questionIds` and `prompts`, and ask the same
+   * questions whatever the wording.
+   */
+  build(id: string, options: O, wording?: SlotWording<W>): BuiltSlotSpec;
   /**
    * Configurations with starter utterances (a type keeps them in its examples.yaml), which the docs
    * show and the conformance kit runs. Read when first asked for, not when the type is imported.
@@ -47,6 +69,8 @@ export interface SlotTypeDocs {
 export type LibrarySlotSpec<O = unknown> = SlotSpec & {
   readonly type: string;
   readonly config: Readonly<O>;
+  /** Its wording by locale, when a locale's slots.yaml gives any (SlotType.wording). */
+  readonly wording?: SlotWording;
 };
 
 /** One example configuration of a type, with what a caller might say to a slot built from it. */
@@ -63,6 +87,8 @@ export interface SlotExample {
   utterances: readonly SlotUtterance[];
   /** For a type with a keypad rung: keys and the value they give, or null for keys that are no value. */
   keypad?: readonly SlotKeypadExample[];
+  /** The slot's wording by locale tag, as a locale's slots.yaml writes it (`{ es: { options: { north: Norte } } }`), for a type that takes any. */
+  wording?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -115,4 +141,4 @@ export interface SlotKeypadExample {
 }
 
 /** Slot types by name: the built-in ones, and any an app adds (registerSlotType). */
-export type SlotTypes = Readonly<Record<string, SlotType<any>>>;
+export type SlotTypes = Readonly<Record<string, SlotType<any, any>>>;

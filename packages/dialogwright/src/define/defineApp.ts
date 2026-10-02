@@ -6,12 +6,14 @@ import type { SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
 import { clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { VAR } from '../prompts/segments';
+import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
-import type { SlotTypes } from '../slots/types';
+import type { LibrarySlotSpec, SlotTypes } from '../slots/types';
+import { applySlotWording, isLibrarySlot, localeSlotsFile } from '../slots/wording';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { RULE_IDS, isRuleId } from '../gate/policy';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
-import { WHOLE_FILE, closest, formatPath, formatProblem, type DataPath, type Problem } from './problems';
+import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook, type PolicyYaml } from './schema/index';
 
 /**
@@ -171,9 +173,65 @@ export function linkSlots(config: LoadedConfig, code: AppCode, document: LoadRes
   const merged = mergeSlotTypes(code.slotTypes, inCode);
   const typeProblems: Problem[] = merged.problems.map((p) => ({ file: codeFile, line: 0, column: 0, ...p }));
   const codeSlots = code.slots ?? {};
-  if (!config.slots) return { slots: codeSlots, library: new Set(), ids: Object.keys(codeSlots), known: new Set(Object.keys(codeSlots)), problems: typeProblems };
+  if (!config.slots) {
+    return withLocaleWording({ slots: codeSlots, library: new Set(), ids: Object.keys(codeSlots), known: new Set(Object.keys(codeSlots)), problems: typeProblems }, config, merged.types, document, inCode);
+  }
   const resolved = resolveSlots({ configs: config.slots, codeSlots, types: merged.types, file: SLOTS_FILE, source: document?.(SLOTS_FILE) ?? undefined, inCode });
-  return { ...resolved, known: new Set([...resolved.ids, ...Object.keys(codeSlots)]), problems: [...typeProblems, ...resolved.problems] };
+  return withLocaleWording({ ...resolved, known: new Set([...resolved.ids, ...Object.keys(codeSlots)]), problems: [...typeProblems, ...resolved.problems] }, config, merged.types, document, inCode);
+}
+
+/**
+ * The slots with each locale's wording (locale/<tag>/slots.yaml) applied: every library slot a
+ * locale gives wording for is built again with it (slots/wording.ts), keeping its place in the
+ * order. A slot the app does not have, one the code writes by hand (it has no options to merge
+ * over), and wording its type does not take are problems, each at its line in the locale's file.
+ * A folder without any locale slots.yaml gets its slots exactly as they were.
+ */
+function withLocaleWording(linked: LinkedSlots, config: LoadedConfig, types: SlotTypes, document: LoadResult['document'], inCode: (...segs: readonly string[]) => string): LinkedSlots {
+  const tags = Object.keys(config.localeSlots ?? {});
+  if (tags.length === 0) return linked;
+  const problems: Problem[] = [];
+  const raw: Record<string, Record<string, unknown>> = {};
+  const sources: Record<string, Record<string, SlotSource>> = {};
+  const known = [...linked.known];
+  for (const tag of tags) {
+    const file = localeSlotsFile(tag);
+    const read = document?.(file) ?? null;
+    const atKey = (id: string, message: string, fix: string): void => {
+      const at = read ? keyPositionOf(read.doc, read.lines, [id]) : { line: 0, column: 0 };
+      problems.push({ file, ...at, path: formatPath([id]), message, fix });
+    };
+    for (const [id, entry] of Object.entries(config.localeSlots[tag]!)) {
+      if (!linked.known.has(id)) {
+        atKey(
+          id,
+          `slot "${id}" has wording in ${file}, but ${config.slots ? 'the app' : 'the code'} defines no slot "${id}"`,
+          `${renameHint(id, known)}delete it, or ${config.slots ? `add "${id}:" to ${SLOTS_FILE}` : `add the slot to ${inCode('slots', id)}`}`,
+        );
+        continue;
+      }
+      const spec = linked.slots[id];
+      // A slot that did not build has its own problem already.
+      if (spec === undefined) continue;
+      if (!isLibrarySlot(spec)) {
+        atKey(
+          id,
+          `the slot "${id}" is written in code (${inCode('slots', id)}), so ${file} cannot give its wording: only a library slot (a type in slots.yaml, or one built with defineSlot) takes a locale's wording`,
+          `delete "${id}" from ${file}, and have the code's slot say its value by SlotContext.locale and display(value, locale)`,
+        );
+        continue;
+      }
+      (raw[id] ??= {})[tag] = entry;
+      if (read) (sources[id] ??= {})[tag] = { file, doc: read.doc, lines: read.lines, at: [id] };
+    }
+  }
+  const slots = { ...linked.slots };
+  for (const [id, byTag] of Object.entries(raw)) {
+    const result = applySlotWording({ spec: slots[id] as LibrarySlotSpec, types, raw: byTag, ...(sources[id] ? { sources: sources[id] } : {}) });
+    if (result.ok) slots[id] = result.spec;
+    else problems.push(...result.problems);
+  }
+  return { ...linked, slots, problems: [...linked.problems, ...problems] };
 }
 
 /** ", or rename it to "x"" when a known name is close enough to be what was meant. */

@@ -11,9 +11,9 @@ import { identitySchema } from './identity';
 import { intentsSchema } from './intents';
 import { policySchema } from './policy';
 import { promptsSchema } from './prompts';
-import { SLOTS_FILE, slotsSchema } from './slots';
+import { localeSlotsSchema, SLOTS_FILE, slotsSchema } from './slots';
 
-export { appSchema, formsSchema, identitySchema, intentsSchema, policySchema, promptsSchema, slotsSchema };
+export { appSchema, formsSchema, identitySchema, intentsSchema, localeSlotsSchema, policySchema, promptsSchema, slotsSchema };
 export { FILE_KINDS, fixForPattern, type FileKind } from './common';
 export type { AppYaml, ConsoleFactYaml } from './app';
 export type { FormHook, FormYaml, FormsYaml } from './forms';
@@ -23,7 +23,7 @@ export type { IntentYaml, IntentsYaml } from './intents';
 export type { PolicyYaml } from './policy';
 export type { PromptYaml, PromptsYaml } from './prompts';
 export { SLOTS_FILE, CODE_SLOT_TYPE } from './slots';
-export type { SlotsYaml } from './slots';
+export type { LocaleSlotsYaml, SlotsYaml } from './slots';
 
 /** The schema for each kind of file. */
 export const SCHEMAS = {

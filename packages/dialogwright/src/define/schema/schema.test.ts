@@ -5,7 +5,7 @@ import { parse } from 'yaml';
 import type { ZodType } from 'zod';
 import { SCHEMAS, FILE_KINDS, FILE_NAMES, type FileKind } from './index';
 import { SCHEMAS_DIR } from './generate';
-import { jsonSchemas, serializeSchema, slotsJsonSchema } from './json';
+import { jsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
 import { slotsSchema } from './slots';
 
 const FIXTURE = join(__dirname, '..', '__fixtures__', 'valid');
@@ -167,6 +167,11 @@ describe('the JSON Schemas', () => {
     expect(committed, 'schemas/slots.schema.json is stale: run `pnpm --filter dialogwright schemas` and commit the result').toBe(serializeSchema(slotsJsonSchema()));
   });
 
+  it('schemas/locale-slots.schema.json is up to date (run: pnpm --filter dialogwright schemas)', () => {
+    const committed = readFileSync(join(SCHEMAS_DIR, 'locale-slots.schema.json'), 'utf8');
+    expect(committed, 'schemas/locale-slots.schema.json is stale: run `pnpm --filter dialogwright schemas` and commit the result').toBe(serializeSchema(localeSlotsJsonSchema()));
+  });
+
   it('slots.yaml: the outer shape is a map of ids to maps with a type, and each type\'s options are the type\'s to check', () => {
     expect(slotsSchema.safeParse(parse('book: { type: code }\nnote: { type: text, what: a note, anything: 1 }\n')).success).toBe(true);
     expect(slotsSchema.safeParse(parse('book: { what: a note }\n')).success).toBe(false);
@@ -189,6 +194,7 @@ describe('the JSON Schemas', () => {
     };
     for (const kind of FILE_KINDS) walk(generated[kind], kind);
     walk(slotsJsonSchema(), 'slots');
+    walk(localeSlotsJsonSchema(), 'locale-slots');
     expect(undescribed).toEqual([]);
   });
 

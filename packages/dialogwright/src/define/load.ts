@@ -3,8 +3,8 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { LineCounter, Document as YamlDocument, isMap, isScalar, isSeq, parseDocument, type Document, type Node } from 'yaml';
 import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from './problems';
 import {
-  FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, slotsSchema,
-  type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type PolicyYaml, type PromptYaml, type PromptsYaml, type SlotsYaml,
+  FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeSlotsSchema, slotsSchema,
+  type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml, type PromptsYaml, type SlotsYaml,
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
 import { z } from 'zod';
@@ -25,6 +25,7 @@ export type { Problem } from './problems';
  *   identity.yaml                                                     optional (no file: the app verifies no one)
  *   slots.yaml                                                        optional (no file: every slot is the code's)
  *   locale/<tag>/prompts.yaml                                         the prompts of another locale
+ *   locale/<tag>/slots.yaml                                           optional: its wording for the library slots
  *
  * The YAML is only ever data. It is parsed with the YAML 1.2 core schema (no custom tags, no
  * timestamps or binary, no merge keys), duplicate keys are errors, aliases are capped, and nothing
@@ -52,8 +53,14 @@ export interface LoadedConfig {
   /** Every prompt of each locale, by locale tag then prompt id. The default locale's come from prompts.yaml, the others' from locale/<tag>/prompts.yaml. */
   prompts: Record<string, Record<string, PromptYaml>>;
   /**
+   * Each other locale's wording for the library slots (locale/<tag>/slots.yaml), by locale tag then
+   * slot id, for the locales that have the file. Only the outer shape is checked here; what each
+   * entry may hold is the slot type's to say, checked when the slots are built (slots/wording.ts).
+   */
+  localeSlots: Record<string, LocaleSlotsYaml>;
+  /**
    * The content hash of every file read (app.yaml, ..., identity.yaml and slots.yaml when there are, and each
-   * locale/<tag>/prompts.yaml), by its path in the folder, and the combined hash (App.configHashes;
+   * locale/<tag>/prompts.yaml and locale/<tag>/slots.yaml), by its path in the folder, and the combined hash (App.configHashes;
    * core/app/configHash.ts). Each is taken over the file's parsed content, so comments, whitespace
    * and quoting do not change it; key order does, since it is meaning (slots.yaml's is the slot order).
    */
@@ -100,7 +107,7 @@ const RESERVED_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 
 const LOCALE_TAG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
 /** What each file starts with, for a missing or empty file's fix. */
-const STARTS_WITH: Record<FileKind | 'slots', string> = {
+const STARTS_WITH: Record<FileKind | 'slots' | 'localeSlots', string> = {
   app: 'an id, for example "id: my-app"',
   intents: 'the "intents:" map and the "menu:" list',
   forms: 'the "forms:" map',
@@ -108,11 +115,12 @@ const STARTS_WITH: Record<FileKind | 'slots', string> = {
   policy: '"toolLevel:", "rulesFor:", "confirmedFields:" and "maxAttempts:"',
   identity: '"subjectKind:", "factorSlots:", "verifyTool:", "codeTool:" and "sendCodeTool:"',
   slots: 'a slot id and its type, for example "note: { type: code }"',
+  localeSlots: 'a slot id and what it says in this locale, for example "branch: { options: { north: Norte } }"',
 };
 
-/** A kind of file the loader checks: the six, and the optional slots.yaml. */
-type Kind = FileKind | 'slots';
-const SCHEMAS_OF: Record<Kind, z.ZodType> = { ...SCHEMAS, slots: slotsSchema };
+/** A kind of file the loader checks: the six, the optional slots.yaml, and a locale's optional slots.yaml. */
+type Kind = FileKind | 'slots' | 'localeSlots';
+const SCHEMAS_OF: Record<Kind, z.ZodType> = { ...SCHEMAS, slots: slotsSchema, localeSlots: localeSlotsSchema };
 
 /** What to do about each kind of YAML syntax error (the codes are the `yaml` library's). */
 const SYNTAX_FIXES: Record<string, string> = {
@@ -183,6 +191,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
 
   const defaultLocale = valid.app?.locale ?? DEFAULT_LOCALE;
   const prompts: Record<string, Record<string, PromptYaml>> = {};
+  const localeSlots: Record<string, LocaleSlotsYaml> = {};
   if (valid.prompts) prompts[defaultLocale] = valid.prompts.prompts;
   for (const { tag, dirName } of listLocales(root.real, problems)) {
     if (tag.toLowerCase() === defaultLocale.toLowerCase() && valid.app) {
@@ -215,6 +224,13 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     }
     const checked = checkFile(file, 'prompts', read.text, problems, documents, contents);
     if (checked) prompts[tag] = (checked as { prompts: Record<string, PromptYaml> }).prompts;
+    // The locale's wording for the library slots, when it has any.
+    const slotsFile = `locale/${dirName}/${SLOTS_FILE}`;
+    const slotsRead = readFile(root.real, slotsFile);
+    if (slotsRead.kind === 'problem') problems.push(slotsRead.problem);
+    if (slotsRead.kind !== 'ok') continue;
+    const wording = checkFile(slotsFile, 'localeSlots', slotsRead.text, problems, documents, contents);
+    if (wording !== undefined) localeSlots[tag] = wording as LocaleSlotsYaml;
   }
 
   if (!valid.app || !valid.intents || !valid.forms || !valid.policy || !valid.prompts) return null;
@@ -227,6 +243,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     slots: valid.slots ?? null,
     defaultLocale,
     prompts,
+    localeSlots,
     hashes: configHashesOf(contents),
   };
 }
@@ -416,8 +433,8 @@ const jsonSchemas = new Map<Kind, JsonSchema>();
 function jsonSchemaOf(kind: Kind): JsonSchema {
   let schema = jsonSchemas.get(kind);
   if (!schema) {
-    // slots.yaml's published schema is the full union over the types; the loader checks the outer shape, whose schema is this.
-    schema = kind === 'slots' ? (z.toJSONSchema(slotsSchema, { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
+    // slots.yaml's published schema is the full union over the types (and a locale's, over their wording); the loader checks the outer shape, whose schema is this.
+    schema = kind === 'slots' || kind === 'localeSlots' ? (z.toJSONSchema(SCHEMAS_OF[kind], { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
     jsonSchemas.set(kind, schema);
   }
   return schema;

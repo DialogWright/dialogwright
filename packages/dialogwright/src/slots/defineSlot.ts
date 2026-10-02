@@ -5,6 +5,7 @@ import { closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type 
 import type { JsonSchema } from '../define/schema/json';
 import { BUILT_IN_SLOT_TYPES } from './registry';
 import type { LibrarySlotSpec, SlotType, SlotTypes } from './types';
+import { applySlotWording, markBuilt } from './wording';
 
 /**
  * A slot from configuration: `defineSlot('note', { type: 'text', what: 'a note for the courier' })`.
@@ -29,6 +30,14 @@ export interface BuildSlotOptions {
   /** Where the configuration was written. Absent: problems name `file` (default "(code)") and no line. */
   source?: SlotSource;
   file?: string;
+  /**
+   * The slot's wording by locale tag, as a locale's slots.yaml writes it (`{ es: { options: { north:
+   * Norte } } }`): checked against the type's wording schema and given to the type's build
+   * (./wording.ts). Absent: the slot says its values in its options' words in every locale.
+   */
+  wording?: Readonly<Record<string, unknown>>;
+  /** Where each locale's wording was written, so its problems point at the line. */
+  wordingSources?: Readonly<Record<string, SlotSource>>;
 }
 
 export type BuildSlotResult = { ok: true; spec: LibrarySlotSpec } | { ok: false; problems: Problem[] };
@@ -122,7 +131,9 @@ export function buildSlot(id: string, config: unknown, options: BuildSlotOptions
   });
   if (clashes.length > 0) return { ok: false, problems: clashes };
 
-  return { ok: true, spec: { ...built, type: name, config: Object.freeze(parsed.data) } };
+  const spec: LibrarySlotSpec = markBuilt({ ...built, type: name, config: Object.freeze(parsed.data) });
+  if (options.wording === undefined || Object.keys(options.wording).length === 0) return { ok: true, spec };
+  return applySlotWording({ spec, types, raw: options.wording, ...(options.wordingSources ? { sources: options.wordingSources } : {}) });
 }
 
 const fail = (p: Problem): BuildSlotResult => ({ ok: false, problems: [p] });
@@ -133,9 +144,9 @@ function unlocated(id: string, config: unknown, file: string): SlotSource {
 }
 
 /** Each type's JSON Schema, with `type` added: what an unknown key's fix lists the known keys from. */
-const SCHEMAS = new WeakMap<SlotType<any>, JsonSchema>();
+const SCHEMAS = new WeakMap<SlotType<any, any>, JsonSchema>();
 
-function schemaOf(type: SlotType<any>): JsonSchema {
+function schemaOf(type: SlotType<any, any>): JsonSchema {
   let schema = SCHEMAS.get(type);
   if (schema) return schema;
   try {
@@ -155,6 +166,6 @@ function nest(at: DataPath, schema: JsonSchema): JsonSchema {
 }
 
 /** A type's options as a JSON Schema (draft-07, the input side), for its docs page and an editor. */
-export function slotTypeJsonSchema(type: SlotType<any>): JsonSchema {
+export function slotTypeJsonSchema(type: SlotType<any, any>): JsonSchema {
   return schemaOf(type);
 }

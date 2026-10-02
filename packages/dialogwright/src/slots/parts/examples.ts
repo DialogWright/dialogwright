@@ -54,6 +54,7 @@ export const slotExamplesSchema = z.array(
     keypad: z
       .array(z.strictObject({ digits: z.string(), locale: z.string().optional(), expect: z.strictObject({ value: z.string(), display: z.string().optional() }).nullable() }))
       .optional(),
+    wording: z.record(z.string(), z.unknown()).optional(),
   }),
 );
 

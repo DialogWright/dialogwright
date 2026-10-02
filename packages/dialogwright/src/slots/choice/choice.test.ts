@@ -458,3 +458,40 @@ describe('the docs', () => {
     }
   });
 });
+
+describe('a choice slot in Spanish: its wording by locale', () => {
+  const config = { type: 'choice', text: { instructions: 'Read asr.text. Which library branch does the caller name?' }, options: { north: 'North', riverside: 'Riverside' }, keypad: true };
+  const built = buildSlot('branch', config, { wording: { es: { options: { north: 'Norte', riverside: { say: 'Ribera' } } } } });
+  if (!built.ok) throw new Error(built.problems.map(formatProblem).join('\n'));
+  const branch = built.spec;
+  const plain = defineSlot('branch', config);
+
+  it('says each option in the locale\'s words there and in the options\' own everywhere else', () => {
+    expect(branch.display('north', 'es')).toBe('Norte');
+    expect(branch.display('riverside', 'es-US')).toBe('Ribera');
+    expect(branch.display('north', 'en-US')).toBe('North');
+    expect(branch.display('north')).toBe('North');
+    expect(branch.display('elsewhere', 'es')).toBe('elsewhere');
+    expect(branch.fill({ branch: choice({ north: 0.92, none: 0.08 }) }, testSlotContext('la del norte', { locale: 'es' }))).toMatchObject({ kind: 'filled', value: 'north', display: 'Norte' });
+    expect(branch.dtmf!.parse('2', testSlotContext('', { locale: 'es' }))).toEqual({ value: 'riverside', display: 'Ribera' });
+    expect(branch.wording).toEqual({ es: { options: { north: 'Norte', riverside: 'Ribera' } } });
+  });
+
+  it('asks the model exactly what it asks without the wording: the options\' own words are the criteria', () => {
+    for (const locale of [undefined, 'en-US', 'es']) {
+      const ctx = testSlotContext('la del norte', { locale });
+      expect(branch.questions(ctx)).toEqual(plain.questions(ctx));
+    }
+    expect(branch.questions(testSlotContext('x')).branch).toMatchObject({ criteria: { north: 'The caller names North', riverside: 'The caller names Riverside' } });
+  });
+
+  it('refuses wording for an option the slot does not have, and anything but say', () => {
+    const bad = buildSlot('branch', config, { wording: { es: { options: { nort: 'Norte', north: { say: 'Norte', means: 'x' } } } } });
+    expect(bad.ok).toBe(false);
+    if (bad.ok) return;
+    expect(bad.problems.map(formatProblem)).toEqual([
+      'locale/es/slots.yaml  branch.options.north.means  unknown key "means" under branch.options.north  ->  delete "means"; the keys allowed under branch.options.north are say',
+      'locale/es/slots.yaml  branch.options.nort  unknown key "nort" under branch.options  ->  rename "nort" to "north"',
+    ]);
+  });
+});

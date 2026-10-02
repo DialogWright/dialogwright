@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  addDays, defineApp, defineSlot, describeDay,
+  addDays, defineApp, defineSlot, describeDay, slotLocaleOf,
   type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotSpec, type ToolDef,
 } from '../../index';
 
@@ -10,7 +10,9 @@ import {
  * beside this file holds its intents, forms, prompts, policy and presentation; this file holds what
  * runs: three slots (a book from the catalog and a branch, library `choice` slots, and a library
  * card number, a library `digits` slot), three tools, one rule of the app's own, and the three
- * forms' hooks. A caller renews a book (a confirmed write, so the
+ * forms' hooks. It speaks English and Spanish: locale/es/ has the Spanish lines and how the books and
+ * branches are said in Spanish (slots.yaml), and the lines its code says give each book and due day
+ * in the call's language. A caller renews a book (a confirmed write, so the
  * gate's R3 holds it to the title read back), asks whether a hold is ready at a branch, or asks what
  * is checked out on their card. The engine's tests build it with defineApp and run calls through it.
  */
@@ -138,7 +140,7 @@ function renew(c: CompletionContext): Completion {
   if (decision.verdict !== 'ALLOW') return c.refusal(decision);
   s.pendingHash = null;
   const { due } = value as { due: string };
-  return { kind: 'said', acks: [...acks, { promptId: 'renewed', vars: { book: displayOf(s, 'book'), due: describeDay(due) } }] };
+  return { kind: 'said', acks: [...acks, { promptId: 'renewed', vars: { book: displayOf(s, 'book'), due: describeDay(due, slotLocaleOf(s)) } }] };
 }
 
 function checkHold(c: CompletionContext): Completion {
@@ -160,7 +162,10 @@ function checkLoans(c: CompletionContext): Completion {
   if (loans === null) return { kind: 'said', acks: [...acks, { promptId: 'no_card', vars: { card } }] };
   const [next] = [...loans].sort((a, b) => a.due.localeCompare(b.due));
   if (!next) return { kind: 'said', acks: [...acks, { promptId: 'no_loans', vars: { card } }] };
-  return { kind: 'said', acks: [...acks, { promptId: 'next_due', vars: { card, book: BOOKS[next.book] ?? next.book, due: describeDay(next.due) } }] };
+  // The book and the day as the call's language says them: the book slot's display (its Spanish
+  // wording in a Spanish call), the day in that language's words.
+  const locale = slotLocaleOf(s);
+  return { kind: 'said', acks: [...acks, { promptId: 'next_due', vars: { card, book: libraryApp.slots.book!.display(next.book, locale), due: describeDay(next.due, locale) } }] };
 }
 
 /** The library's code: everything the YAML names that runs. */

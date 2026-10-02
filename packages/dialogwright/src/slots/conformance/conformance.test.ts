@@ -78,7 +78,7 @@ function toy(name: string, change: (spec: BuiltSlotSpec, id: string, o: ToyOptio
 }
 
 /** The checks a type fails, each with its message. */
-function failures(type: SlotType<any>, opts: SlotConformanceOptions = {}): Map<CheckId, string> {
+function failures(type: SlotType<any, any>, opts: SlotConformanceOptions = {}): Map<CheckId, string> {
   const out = new Map<CheckId, string>();
   for (const check of slotConformanceChecks(type, opts)) {
     try {
@@ -91,7 +91,7 @@ function failures(type: SlotType<any>, opts: SlotConformanceOptions = {}): Map<C
   return out;
 }
 
-const failing = (type: SlotType<any>, opts?: SlotConformanceOptions): CheckId[] => [...failures(type, opts).keys()].sort();
+const failing = (type: SlotType<any, any>, opts?: SlotConformanceOptions): CheckId[] => [...failures(type, opts).keys()].sort();
 
 describe('the correct toy, and the built-in types', () => {
   it('pass every check', () => {

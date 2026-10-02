@@ -27,7 +27,7 @@ import { recordType } from '../slots/record/index';
 import { textType } from '../slots/text/index';
 import { AppDefinitionError, defineApp, isAppDefinitionError, type AppCode } from './defineApp';
 import { checkApp } from './check';
-import { libraryCode, LIBRARY_DIR } from './fixture/app';
+import { libraryApp, libraryCode, LIBRARY_DIR } from './fixture/app';
 import { loadAppFolder } from './load';
 import { formatProblem } from './problems';
 import { slotsJsonSchema } from './schema/json';
@@ -122,7 +122,10 @@ describe('slots.yaml: building the app', () => {
   it('lists code slots as { type: code }: the slots are the code\'s own specs, in the file\'s order', () => {
     const app = defineApp(folder({ 'slots.yaml': ALL_CODE }), libraryCode);
     expect(Object.keys(app.slots)).toEqual(['book', 'branch', 'card']);
-    for (const id of Object.keys(libraryCode.slots)) expect(app.slots[id]).toBe(libraryCode.slots[id]);
+    // The code's own specs: the card as it is, and the book and the branch as the library's es
+    // wording (locale/es/slots.yaml) builds them, the same objects every build.
+    for (const id of Object.keys(libraryCode.slots)) expect(app.slots[id]).toBe(libraryApp.slots[id]);
+    expect(app.slots.card).toBe(libraryCode.slots.card);
     const reversed = defineApp(folder({ 'slots.yaml': 'card: { type: code }\nbranch: { type: code }\nbook: { type: code }\n' }), libraryCode);
     expect(Object.keys(reversed.slots)).toEqual(['card', 'branch', 'book']);
   });
@@ -134,7 +137,7 @@ describe('slots.yaml: building the app', () => {
     expect(note.type).toBe('text');
     expect(note.config).toMatchObject({ what: 'a note for the librarian', say: 'your note', maxLength: 500 });
     expect(note.questionIds).toEqual(['noteGiven']);
-    expect(app.slots.book).toBe(libraryCode.slots.book);
+    expect(app.slots.book).toBe(libraryApp.slots.book);
     expect(app.forms.renew_loan!.slots).toEqual(['book', 'note']);
   });
 

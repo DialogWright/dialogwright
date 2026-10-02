@@ -7,12 +7,14 @@ export type { BuildSlotOptions, BuildSlotResult, SlotSource } from './defineSlot
 export { defineSlots } from './defineSlots';
 export { resolveSlots, mergeSlotTypes } from './resolveSlots';
 export type { ResolveSlotsInput, ResolvedSlots, SlotsFileSource, SlotTypeProblem } from './resolveSlots';
+export { applySlotWording, isLibrarySlot, localeSlotsFile, slotTypeWordingJsonSchema } from './wording';
+export type { WordingInput, WordingResult } from './wording';
 export { BUILT_IN_SLOT_TYPES, registerSlotType } from './registry';
 export { defineSlotType, refusesUnknownKeys, SLOT_TYPE_NAME } from './slotType';
 export { birthdateType } from './birthdate/index';
 export type { BirthdateOptions, BirthdatePartial } from './birthdate/index';
 export { choiceType } from './choice/index';
-export type { ChoiceOptions, ChoiceOption } from './choice/index';
+export type { ChoiceOptions, ChoiceOption, ChoiceWording } from './choice/index';
 export { dateType } from './date/index';
 export type { DateOptions, DateWindowPartial } from './date/index';
 export { digitsType } from './digits/index';
@@ -22,9 +24,9 @@ export type { NameOptions } from './name/index';
 export { recordType } from './record/index';
 export type { RecordOptions } from './record/index';
 export { textType } from './text/index';
-export type { TextOptions } from './text/index';
+export type { TextOptions, TextWording } from './text/index';
 export type {
-  BuiltSlotSpec, SlotType, SlotTypeDocs, LibrarySlotSpec, SlotExample, SlotUtterance, ExampleAnswer, ExampleContext,
+  BuiltSlotSpec, SlotType, SlotTypeDocs, LibrarySlotSpec, SlotWording, SlotExample, SlotUtterance, ExampleAnswer, ExampleContext,
   ExpectedOutcome, SlotKeypadExample, SlotTypes,
 } from './types';
 export * from './parts/index';

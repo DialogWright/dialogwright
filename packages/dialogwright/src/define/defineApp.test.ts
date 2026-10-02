@@ -14,6 +14,7 @@ import { resolve, type TurnContext, type TurnResult } from '../core/turn';
 import { mockCodeVerifier } from '../core/tools';
 import { spokenText } from '../prompts/render';
 import { choice, noul, score } from '../testing/answers';
+import { testSlotContext } from '../testing/slots';
 import type { AnswerMap } from '../jev/types';
 import { AppDefinitionError, defineApp, type AppCode } from './defineApp';
 import { libraryApp, libraryCode, LibrarySystems, LIBRARY_DIR } from './fixture/app';
@@ -56,7 +57,15 @@ describe('defineApp: the library fixture', () => {
     expect(() => validateApp(libraryApp)).not.toThrow();
     expect(libraryApp.id).toBe('library');
     expect(libraryApp.identity).toBeUndefined();
-    expect(libraryApp.slots).toBe(libraryCode.slots);
+    // The code's slots, the book and the branch built again with their es wording (locale/es/slots.yaml).
+    expect(Object.keys(libraryApp.slots)).toEqual(Object.keys(libraryCode.slots));
+    expect(libraryApp.slots.card).toBe(libraryCode.slots.card);
+    for (const id of ['book', 'branch']) {
+      expect(libraryApp.slots[id]).toMatchObject({ id, type: 'choice', config: (libraryCode.slots[id] as unknown as { config: object }).config });
+      // the wording changes what the slot says, never what the model is asked
+      for (const locale of [undefined, 'en-US', 'es']) expect(libraryApp.slots[id]!.questions(testSlotContext('North', { locale }))).toEqual(libraryCode.slots[id]!.questions(testSlotContext('North', { locale })));
+    }
+    expect((libraryApp.slots.branch as { wording?: unknown }).wording).toEqual({ es: { options: { north: 'Norte', riverside: 'Ribera' } } });
     expect(libraryApp.tools).toBe(libraryCode.tools);
     expect(libraryApp.systems).toBe(libraryCode.systems);
     expect(libraryApp.policy.customRules).toBe(libraryCode.customRules);
@@ -209,6 +218,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
       'app.yaml:16:5  console.slotLabels.branch  slot "branch" has a label, but the code defines no slot "branch"  ->  delete it, or add the slot to app.ts (code.slots.branch)',
       'app.yaml:27:14  carrySlots[0]  slot "branch" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.branch)',
       'forms.yaml:8:19  forms.check_hold.slots[1]  slot "branch" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.branch)',
+      'locale/es/slots.yaml:10:1  branch  slot "branch" has wording in locale/es/slots.yaml, but the code defines no slot "branch"  ->  delete it, or add the slot to app.ts (code.slots.branch)',
     ]);
   });
 
@@ -257,9 +267,9 @@ describe('defineApp: the folder and the code must name the same things', () => {
     }
     expect(error).toBeInstanceOf(AppDefinitionError);
     const lines = (error as Error).message.split('\n');
-    expect(lines[0]).toBe(`the app in ${LIBRARY_DIR} is not valid (4 problems):`);
+    expect(lines[0]).toBe(`the app in ${LIBRARY_DIR} is not valid (5 problems):`);
     expect(lines.slice(1)).toEqual((error as AppDefinitionError).problems.map((p) => `  ${formatProblem(p)}`));
-    expect(lines.slice(1).map((l) => l.trim().split('  ')[0])).toEqual(['app.yaml:16:5', 'app.yaml:27:14', 'forms.yaml:8:19', 'policy.yaml:8:18']);
+    expect(lines.slice(1).map((l) => l.trim().split('  ')[0])).toEqual(['app.yaml:16:5', 'app.yaml:27:14', 'forms.yaml:8:19', 'policy.yaml:8:18', 'locale/es/slots.yaml:10:1']);
   });
 });
 

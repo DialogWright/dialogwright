@@ -184,3 +184,23 @@ describe('the testkit\'s note, written as configuration', () => {
     expect(shadow.display('x')).toBe('your description');
   });
 });
+
+describe('a text slot in Spanish: its stand-in by locale', () => {
+  const config = { type: 'text', what: 'a note for the courier', say: 'your note' };
+
+  it('says the locale\'s stand-in there and the option\'s elsewhere; the words are kept as said', () => {
+    const built = buildSlot('note', config, { wording: { es: { say: 'su nota' } } });
+    if (!built.ok) throw new Error(built.problems.map(formatProblem).join('\n'));
+    const note = built.spec;
+    expect(note.fill({ noteGiven: noul(0.9) }, testSlotContext('déjelo con el vecino', { locale: 'es' }))).toMatchObject({ kind: 'filled', value: 'déjelo con el vecino', display: 'su nota' });
+    expect(note.display('x', 'en-US')).toBe('your note');
+    expect(note.display('x')).toBe('your note');
+    expect(note.questions(testSlotContext('x', { locale: 'es' }))).toEqual(defineSlot('note', config).questions(testSlotContext('x', { locale: 'es' })));
+  });
+
+  it('takes no stand-in for a slot whose display is the words', () => {
+    const bad = buildSlot('note', { ...config, say: null, redact: 'none' }, { wording: { es: { say: 'su nota' } } });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.problems.map(formatProblem)).toEqual([expect.stringContaining('locale/es/slots.yaml  note.say  unknown key "say"')]);
+  });
+});

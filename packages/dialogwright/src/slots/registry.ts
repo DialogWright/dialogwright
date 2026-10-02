@@ -26,7 +26,7 @@ export const BUILT_IN_SLOT_TYPES: SlotTypes = Object.freeze({
  * `types` (the built-in ones by default) with `type` added, as a new map. A name already taken is
  * refused: a type replacing a built-in one would change every slot that names it.
  */
-export function registerSlotType(type: SlotType<any>, types: SlotTypes = BUILT_IN_SLOT_TYPES): SlotTypes {
+export function registerSlotType(type: SlotType<any, any>, types: SlotTypes = BUILT_IN_SLOT_TYPES): SlotTypes {
   if (Object.hasOwn(types, type.type)) throw new Error(`a slot type named "${type.type}" is already registered; give the new type another name`);
   return Object.freeze({ ...types, [type.type]: type });
 }

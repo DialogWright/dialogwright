@@ -242,3 +242,27 @@ export const choiceOptions = z
   });
 
 export type ChoiceOptions = z.output<typeof choiceOptions>;
+
+/**
+ * What a locale's slots.yaml may give for a choice slot: how each option is said in that locale
+ * (`options: { north: Norte }`, or `{ say: Norte }`). Only `say`: what the model is told an option
+ * means stays the slot's own, in every locale. With the slot's options, a strict schema over its
+ * option keys (any of them, none required); without, the general shape.
+ */
+export function choiceWording(o?: Pick<ChoiceOptions, 'options'>) {
+  const say = questionText().describe('How the option is said in this locale: the display a line, the summary and the model\'s turn state show.');
+  const entry = z.union([say, z.strictObject({ say })]).transform((e) => (typeof e === 'string' ? e : e.say));
+  const options = o
+    ? z.strictObject(Object.fromEntries(Object.keys(o.options).map((key) => [key, entry.optional()])) as Record<string, z.ZodOptional<typeof entry>>)
+    : z.record(z.string(), entry);
+  return z
+    .strictObject({
+      options: options.describe('How each option is said in this locale, by its key: `key: Said` or `key: { say: Said }`. An option left out is said as the slot\'s options say it.'),
+    })
+    .describe('A choice slot\'s wording in this locale.');
+}
+
+/** A choice slot's wording in one locale, as parsed: each option's display, by key (only the options it gives). */
+export interface ChoiceWording {
+  options: Readonly<Record<string, string | undefined>>;
+}

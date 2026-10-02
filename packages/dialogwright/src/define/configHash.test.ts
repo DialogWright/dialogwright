@@ -57,7 +57,7 @@ function hashesOf(dir: string): App['configHashes'] & object {
 
 const sha256 = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
 
-const LIBRARY_FILES = ['app.yaml', 'forms.yaml', 'intents.yaml', 'locale/es/prompts.yaml', 'policy.yaml', 'prompts.yaml'];
+const LIBRARY_FILES = ['app.yaml', 'forms.yaml', 'intents.yaml', 'locale/es/prompts.yaml', 'locale/es/slots.yaml', 'policy.yaml', 'prompts.yaml'];
 
 describe('configuration hashes: the arithmetic', () => {
   it('hashes a value as JSON: keys in document order at every level, arrays in order, no whitespace', () => {

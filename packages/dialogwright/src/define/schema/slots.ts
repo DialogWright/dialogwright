@@ -33,3 +33,21 @@ export const slotsSchema = z
 
 /** A parsed slots.yaml: each slot id and its `type` with the type's options beside it. */
 export type SlotsYaml = z.infer<typeof slotsSchema>;
+
+/**
+ * locale/<tag>/slots.yaml: a locale's wording for the app's library slots, by slot id. Optional. Each
+ * entry gives what the slot's type lets a locale say its own way (a choice option's `say`, a text
+ * slot's stand-in), merged over the slot's options for sessions in that locale; never its questions.
+ *
+ * This is the outer shape only: a map of slot ids to maps. What each entry may hold depends on the
+ * slot's type and options, so it is checked when the slots are built (slots/wording.ts).
+ */
+export const localeSlotsSchema = z
+  .record(
+    identifier(),
+    z.record(z.string(), z.unknown(), { error: 'must be a map of what the slot says its own way in this locale, such as "options:" or "say:"' }).describe('One slot\'s wording in this locale.'),
+  )
+  .describe('locale/<tag>/slots.yaml: how the app\'s library slots say their values in this locale, by slot id.');
+
+/** A parsed locale/<tag>/slots.yaml: each slot id and what the locale gives for it. */
+export type LocaleSlotsYaml = z.infer<typeof localeSlotsSchema>;

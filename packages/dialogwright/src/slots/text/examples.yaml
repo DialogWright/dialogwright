@@ -33,7 +33,7 @@
       expect: { kind: absent }
 
 - name: courier note
-  about: A note with more guidance for the model, its own stand-in, a length limit, and a first note that is never replaced.
+  about: A note with more guidance for the model, its own stand-in (in Spanish, the locale's), a length limit, and a first note that is never replaced.
   slot: courierNote
   config:
     what: a note for the courier
@@ -51,6 +51,13 @@
         courierNoteGiven: { noul: 0.91 }
       context: { current: please leave it behind the blue gate, prompted: true }
       expect: { kind: absent }
+    - text: déjelo detrás de la puerta azul
+      context: { locale: es }
+      answers:
+        courierNoteGiven: { noul: 0.9 }
+      expect: { kind: filled, value: déjelo detrás de la puerta azul, display: su nota }
+  wording:
+    es: { say: su nota }
 
 - name: existing wording and ids
   about: A slot moved onto the library keeps the question text and id it was recorded with, word for word.

@@ -15,7 +15,7 @@ export interface TestRegistrar {
  *   import { runSlotConformance } from 'dialogwright/testing';
  *   runSlotConformance(myType, { describe, it, locales: ['en-US', 'es'] });
  */
-export function runSlotConformance(type: SlotType<any>, options: TestRegistrar & SlotConformanceOptions): void {
+export function runSlotConformance(type: SlotType<any, any>, options: TestRegistrar & SlotConformanceOptions): void {
   const { describe, it, ...rest } = options;
   describe(`slot type "${type.type}" conforms`, () => {
     const checks = slotConformanceChecks(type, rest);

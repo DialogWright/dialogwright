@@ -45,9 +45,10 @@ export type { Problem } from './define/problems';
 export {
   defineSlot, defineSlots, buildSlot, SlotConfigError, isSlotConfigError, slotTypeJsonSchema, BUILT_IN_SLOT_TYPES, registerSlotType, defineSlotType,
   birthdateType, choiceType, dateType, digitsType, nameType, recordType, textType, textParts, questionParts, questionText, renderTemplate, TemplateError, meetsThreshold, examplesFrom, parseSlotExamples,
+  applySlotWording, isLibrarySlot, localeSlotsFile, wordingFor,
 } from './slots/index';
 export type {
-  BuildSlotOptions, BuildSlotResult, SlotSource, BuiltSlotSpec, SlotType, SlotTypeDocs, LibrarySlotSpec, SlotExample, SlotUtterance,
+  BuildSlotOptions, BuildSlotResult, SlotSource, BuiltSlotSpec, SlotType, SlotTypeDocs, LibrarySlotSpec, SlotWording, ChoiceWording, TextWording, SlotExample, SlotUtterance,
   ExampleAnswer, ExampleContext, ExpectedOutcome, SlotKeypadExample, SlotTypes, BirthdateOptions, BirthdatePartial, ChoiceOptions, ChoiceOption, DateOptions, DateWindowPartial, DigitsOptions, NameOptions, RecordOptions, TextOptions, TextPartDef, TextParts, QuestionParts,
 } from './slots/index';
 

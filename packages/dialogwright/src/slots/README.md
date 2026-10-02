@@ -65,7 +65,7 @@ The kit (`conformance/`, exported from `dialogwright/testing`, not the root entr
 |---|---|
 | `builds` | The configuration builds a slot that declares its question ids and its lines. |
 | `unknown-keys` | An option the type does not have is refused, with a problem that names it (and so is an unknown part under `text` or `ids`). |
-| `question-ids` | `questions()` asks only the ids the slot declares, in every context the kit tries; none is the engine's; the same configuration gives the same ids and questions; a second slot of the type gets other ids. |
+| `question-ids` | `questions()` asks only the ids the slot declares, in every context the kit tries; none is the engine's; the same configuration gives the same ids and questions; a second slot of the type gets other ids; an example's `wording` (a locale's) leaves the questions as they are. |
 | `empty` | No answers at all give `absent` when the slot was not asked for. When it was asked for, they give `absent` or `invalid` (a slot with nothing to offer, or one that reads a turn that named nothing as a miss, says so), never a value, a pair to choose between or a partial. |
 | `quiet` | Answers that hear nothing (every yes-or-no at 0, every choice on `none`, every score on its lowest level) give `absent` or `invalid`, never a value. |
 | `malformed` | Answers of the wrong type, missing or out of range, and keys that are no value, never make it throw, and what it returns is an outcome. |
@@ -110,7 +110,16 @@ A slot reads the model's answers, not the caller's words, so an example gives bo
       expect: { kind: absent }
 ```
 
-An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso`, `records` or `sources`. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `raw`, `retryPromptId` and `promptId`. A type with a keypad rung adds `keypad: [{ digits, expect: { value, display? } | null }]`.
+An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso`, `records` or `sources`. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `raw`, `retryPromptId` and `promptId`. A type with a keypad rung adds `keypad: [{ digits, locale?, expect: { value, display? } | null }]` (`locale`: the keys are pressed in that locale, as a day-first date is in Spanish). An example of a type that takes a locale's wording may add `wording: { <tag>: ... }`, written as a locale's slots.yaml writes it; the kit builds the slot with it, checks every display in that locale, and checks the questions are the same as without it.
+
+## Locales
+
+A slot hears and says its value in the session's locale (`ctx.locale`, and the `locale` of `display` and `partialVars`), which only an app that declares locales has. Every type formats en-US exactly as it does with no locale; anything another locale changes is gated on it:
+
+- **Words.** `ctx.candidateSpans` and `ctx.candidateWordSpans` are already in the session's language, and `spokenToDigits`, `numbersSaid`, `tokenize` and `normalizeYear` take the locale (core/extract/lexicon.ts: one lexicon per language, English and Spanish so far; `es-*` reads as `es`). A Spanish span keeps its accents; the tables compare it without them.
+- **Formats.** `describeDay`, `describeDob` and `describeWindow` take the locale ("martes, 22 de septiembre", "22 de noviembre de 1991", "la próxima semana"); `titleCase` keeps Spanish particles in lower case ("Muñoz de la Cruz"). `dayFirst(locale)` says whether numbers give the day first, for a keypad (`DDMM`) and the day-first sentence of a date's default questions.
+- **Wording.** A type whose display has words an app chooses (a choice option's `say`, a text slot's stand-in) declares `wording(options?)`: the schema of what a locale's `locale/<tag>/slots.yaml` may give, strict over the slot's options. `build(id, options, wording)` receives it by locale tag, and the display reads `wordingFor(wording, locale)`. Wording never reaches the questions: the model reads them as written in every locale, and their labels are keys.
+
 
 ## Adding a type
 
