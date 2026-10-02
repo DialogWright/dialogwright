@@ -4,6 +4,7 @@ import type {
 } from '../core/app/types';
 import type { SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
+import { VAR } from '../prompts/segments';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { RULE_IDS, isRuleId } from '../gate/policy';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
@@ -63,9 +64,17 @@ export interface AppCode {
   identity?: { sendCodeParams?: IdentityConfig['sendCodeParams'] };
 }
 
+/**
+ * The brand every AppDefinitionError carries. It is a registered symbol, so an error thrown by
+ * another copy of this module (the app module imported through a different loader, or a second
+ * installed copy of the package) has it too, where `instanceof` would say no.
+ */
+export const APP_DEFINITION_ERROR = Symbol.for('dialogwright.AppDefinitionError');
+
 /** Thrown by defineApp when the folder, the code or the two together are not a valid app: every problem, in one message. */
 export class AppDefinitionError extends Error {
   readonly problems: readonly Problem[];
+  readonly [APP_DEFINITION_ERROR] = true;
 
   constructor(dir: string, problems: readonly Problem[]) {
     const count = `${problems.length} problem${problems.length === 1 ? '' : 's'}`;
@@ -73,6 +82,16 @@ export class AppDefinitionError extends Error {
     this.name = 'AppDefinitionError';
     this.problems = problems;
   }
+}
+
+/**
+ * Whether `error` is an AppDefinitionError from any copy of this module: it carries the brand, or
+ * (from a copy older than the brand) the name, and in either case a list of problems.
+ */
+export function isAppDefinitionError(error: unknown): error is { problems: readonly Problem[]; message: string } {
+  if (typeof error !== 'object' || error === null) return false;
+  const e = error as { [APP_DEFINITION_ERROR]?: unknown; name?: unknown; problems?: unknown };
+  return (e[APP_DEFINITION_ERROR] === true || e.name === 'AppDefinitionError') && Array.isArray(e.problems);
 }
 
 /** The file a problem in the app's code is reported against by default: the code has no YAML line to point at. */
@@ -92,7 +111,7 @@ export function defineApp(dir: string, code: AppCode, options: DefineAppOptions 
   const codeFile = options.codeFile ?? CODE_FILE;
   const loaded = loadAppFolder(dir);
   if (!loaded.config) throw new AppDefinitionError(dir, loaded.problems);
-  const problems = crossLink(loaded.config, code, loaded.locate, codeFile);
+  const problems = crossLink(loaded.config, code, loaded.locate, codeFile, loaded.locateKey);
   if (problems.length > 0) throw new AppDefinitionError(dir, problems);
   const app = buildApp(loaded.config, code);
   try {
@@ -131,12 +150,19 @@ function renameHint(word: string, known: readonly string[]): string {
  * YAML file where the YAML names something, and in app.ts (line 0) where only the code does.
  * Exported for `dialogwright check`.
  */
-export function crossLink(config: LoadedConfig, code: AppCode, locate: LoadResult['locate'], codeFile: string = CODE_FILE): Problem[] {
+export function crossLink(
+  config: LoadedConfig,
+  code: AppCode,
+  locate: LoadResult['locate'],
+  codeFile: string = CODE_FILE,
+  locateKey: LoadResult['locateKey'] = locate,
+): Problem[] {
   const problems: Problem[] = [];
   /** Where an author writes a part of the code, as a fix names it: `app.ts (code.forms.renew.complete)`. */
   const inCode = (...segs: readonly string[]): string => `${codeFile} (${codePath(...segs)})`;
-  const yaml = (file: string, path: DataPath, message: string, fix: string): void => {
-    const at = locate(file, path) ?? { line: 1, column: 1 };
+  /** A problem in a YAML file, at the value `path` leads to, or at its key when the key is what is wrong. */
+  const yaml = (file: string, path: DataPath, message: string, fix: string, atKey = false): void => {
+    const at = (atKey ? locateKey(file, path) : locate(file, path)) ?? { line: 1, column: 1 };
     problems.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   };
   const inTs = (segs: readonly string[], message: string, fix: string): void => {
@@ -308,6 +334,50 @@ export function crossLink(config: LoadedConfig, code: AppCode, locate: LoadResul
   });
   for (const [which, id] of Object.entries(app.prompts?.greetings ?? {})) {
     if (id !== undefined) promptExists('app.yaml', ['prompts', 'greetings', which], id);
+  }
+
+  // app.yaml: what the console and the clip generator name, which nothing else would notice is wrong
+  const formIds = Object.keys(forms);
+  const shown = app.console;
+  for (const id of Object.keys(shown?.formLabels ?? {})) {
+    if (!has(forms, id)) yaml('app.yaml', ['console', 'formLabels', id], `form "${id}" has a label, but forms.yaml has no form "${id}"`, `${renameHint(id, formIds)}delete the label`, true);
+  }
+  const slotNamed = (path: DataPath, slot: string, what: string, atKey = false): void => {
+    if (!has(code.slots, slot)) yaml('app.yaml', path, `slot "${slot}" ${what}, but the code defines no slot "${slot}"`, `${renameHint(slot, slots)}delete it, or add the slot to ${inCode('slots', slot)}`, atKey);
+  };
+  for (const slot of Object.keys(shown?.slotLabels ?? {})) slotNamed(['console', 'slotLabels', slot], slot, 'has a label', true);
+  shown?.slotOrder?.forEach((slot, i) => slotNamed(['console', 'slotOrder', i], slot, 'is in the console\'s slot order'));
+  for (const slot of Object.keys(shown?.questionPrefixes ?? {})) slotNamed(['console', 'questionPrefixes', slot], slot, 'has question prefixes', true);
+  shown?.facts?.forEach((fact, i) => {
+    if (fact.kind === 'lookup' && !has(code.tools, fact.tool)) {
+      yaml('app.yaml', ['console', 'facts', i, 'tool'], `the console fact names the tool "${fact.tool}", which the code does not define`, `${renameHint(fact.tool, tools)}name a tool in ${inCode('tools')}`);
+    }
+    if (fact.kind === 'answer' && fact.topicSlot !== undefined) slotNamed(['console', 'facts', i, 'topicSlot'], fact.topicSlot, 'is a console fact\'s topic');
+  });
+  const vocabulary = app.prompts?.vocabulary ?? [];
+  const clipIds = vocabulary.map((v) => v.id);
+  const promptVars = new Set(Object.values(prompts).flatMap((p) => [...p.text.matchAll(VAR)].map((m) => m[1]!)));
+  vocabulary.forEach((entry, i) => {
+    if (clipIds.indexOf(entry.id) !== i) yaml('app.yaml', ['prompts', 'vocabulary', i, 'id'], `vocabulary id "${entry.id}" is used twice`, 'give each clip its own id');
+    entry.vars.forEach((name, j) => {
+      if (!promptVars.has(name)) yaml('app.yaml', ['prompts', 'vocabulary', i, 'vars', j], `the clip "${entry.id}" plays for {${name}}, but no line in prompts.yaml has {${name}}`, `${renameHint(name, [...promptVars])}delete it`);
+    });
+  });
+  for (const id of Object.keys(app.prompts?.tags ?? {})) {
+    if (!clipIds.includes(id)) {
+      yaml('app.yaml', ['prompts', 'tags', id], `the voice tag for "${id}" names no clip: the tags are keyed by the vocabulary's clip ids`, `${renameHint(id, clipIds)}delete it, or add "${id}" to prompts.vocabulary`, true);
+    }
+  }
+
+  // policy.yaml: R3 compares a write's params to confirmedFields and to the hash of what the caller said yes to
+  const confirmedWrites = Object.entries(policy.rulesFor).filter(([, rules]) => rules.includes('R3')).map(([tool]) => tool);
+  if (confirmedWrites.length > 0) {
+    if (policy.confirmedFields.length === 0) {
+      yaml('policy.yaml', ['confirmedFields'], `${quoteList(confirmedWrites)} run${confirmedWrites.length === 1 ? 's' : ''} R3, but confirmedFields is empty, so R3 blocks every call`, 'list the fields a confirmed write carries, in the order its confirmedParams hook returns them');
+    }
+    if (!Object.values(forms).some((form) => form.hooks.includes('confirmedParams'))) {
+      yaml('policy.yaml', ['rulesFor', confirmedWrites[0]!], `${quoteList(confirmedWrites)} run${confirmedWrites.length === 1 ? 's' : ''} R3, but no form has a confirmedParams hook, so nothing is ever confirmed and R3 blocks every call`, 'add "confirmedParams" to the hooks of the form that makes the write, and write it in the code');
+    }
   }
 
   // The code alone

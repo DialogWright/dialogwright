@@ -1,8 +1,8 @@
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative as relativePath } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { loadAppFolder, type LoadResult } from './load';
+import { caseTwins, loadAppFolder, type LoadResult } from './load';
 
 const FIXTURES = join(__dirname, '__fixtures__');
 const VALID = join(FIXTURES, 'valid');
@@ -160,8 +160,8 @@ describe('loadAppFolder: problems', () => {
         line: 1,
         column: 1,
         path: '(file)',
-        message: 'the file cannot be read as data (Excessive alias count indicates a resource exhaustion attack)',
-        fix: 'remove the YAML aliases (*name) or reduce how many there are; configuration needs none'
+        message: "the file's aliases (*name) expand too far: an anchor may be used at most 20 times, and fewer when its value holds aliases itself",
+        fix: 'write the values out in full instead of with anchors (&name) and aliases (*name); configuration needs none'
       }
     ]);
   });
@@ -196,18 +196,12 @@ describe('loadAppFolder: problems', () => {
     ]);
   });
 
-  it('forms.yaml: a missing key, a number where text goes, a typo in a key, a missing hooks list and a misspelled hook', () => {
+  it('forms.yaml: a typo in a required key (reported once, as the rename), a number where text goes, a missing hooks list and a misspelled hook', () => {
     const result = loadCase('forms-mistakes');
     expect(result.config).toBeNull();
+    // summaryPrompId is the required summaryPromptId misspelt: the rename is the one fix, so
+    // "required key summaryPromptId is missing" is not said as well.
     expect(result.problems).toEqual([
-      {
-        file: 'forms.yaml',
-        line: 2,
-        column: 3,
-        path: 'forms.schedule_new.summaryPromptId',
-        message: 'required key "summaryPromptId" is missing under forms.schedule_new',
-        fix: 'add "summaryPromptId:" (text or null) under forms.schedule_new. The prompt (an id in prompts.yaml) that reads the filled form back for a yes, or null for a form with no summary (it completes as soon as its slots are full).'
-      },
       {
         file: 'forms.yaml',
         line: 3,
@@ -716,6 +710,75 @@ describe('loadAppFolder: files that are not there, or not safe to read', () => {
       expect(() => loadAppFolder(dir), JSON.stringify(garbage)).not.toThrow();
       expect(loadAppFolder(dir).config).toBeNull();
     }
+  });
+});
+
+describe('loadAppFolder: the review fixes', () => {
+  /** The valid folder with `file`'s text changed by `edit`. */
+  const edited = (file: string, edit: (text: string) => string): string =>
+    folder((dir) => writeFileSync(join(dir, file), edit(readFileSync(join(dir, file), 'utf8'))));
+
+  it('a key JavaScript objects reserve (__proto__, constructor, prototype) is a problem at the key, never dropped without a word', () => {
+    const dir = edited('app.yaml', (t) => t.replace('    billing: Billing\n', '    billing: Billing\n    __proto__: Hidden\n    constructor: Built\n'));
+    const result = loadAppFolder(dir);
+    expect(result.config).toBeNull();
+    expect(result.problems.map((p) => [p.file, p.line, p.column, p.path, p.message])).toEqual([
+      ['app.yaml', 15, 5, 'console.formLabels.__proto__', 'the key "__proto__" is a name JavaScript objects reserve, so it cannot be a key in these files'],
+      ['app.yaml', 16, 5, 'console.formLabels.constructor', 'the key "constructor" is a name JavaScript objects reserve, so it cannot be a key in these files'],
+    ]);
+    const prompts = loadAppFolder(edited('prompts.yaml', (t) => t.replace('prompts:\n', 'prompts:\n  prototype:\n    text: x\n    interruptible: true\n')));
+    expect(prompts.problems.map((p) => p.path)).toEqual(['prompts.prototype']);
+  });
+
+  it('a key that is not a valid id is reported at the key, not at the text it holds', () => {
+    const dir = edited('app.yaml', (t) => t.replace('    billing: Billing\n', '    pay bill: Billing\n'));
+    expect(loadAppFolder(dir).problems.map((p) => [p.line, p.column, p.path])).toEqual([[14, 5, 'console.formLabels["pay bill"]']]);
+  });
+
+  it('fixtures.dir must stay inside the package: an absolute path and one with ".." are refused at the line that says them', () => {
+    for (const bad of ['/etc', '../elsewhere', 'fixtures/../../up', 'C:/fixtures', '\\\\server\\share']) {
+      const dir = edited('app.yaml', (t) => t.replace('  dir: fixtures', `  dir: ${JSON.stringify(bad)}`));
+      const problems = loadAppFolder(dir).problems;
+      expect(problems, bad).toHaveLength(1);
+      expect(problems[0], bad).toMatchObject({ file: 'app.yaml', path: 'fixtures.dir', fix: 'write the folder relative to the package root, for example "fixtures"' });
+      expect(problems[0]!.message, bad).toContain('is not a folder inside the package');
+    }
+    for (const good of ['fixtures', 'test/fixtures', 'fixtures/', './fixtures', 'a..b']) {
+      expect(loadAppFolder(edited('app.yaml', (t) => t.replace('  dir: fixtures', `  dir: ${JSON.stringify(good)}`))).problems, good).toEqual([]);
+    }
+  });
+
+  it('locale/ holds folders: a file there is a problem (hidden files aside), and so is a file named locale', () => {
+    const dir = folder((d) => {
+      writeFileSync(join(d, 'locale', 'prompts.yaml'), 'prompts: {}\n');
+      writeFileSync(join(d, 'locale', '.DS_Store'), '');
+    });
+    expect(loadAppFolder(dir).problems.map((p) => [p.file, p.message, p.fix])).toEqual([
+      ['locale/prompts.yaml', 'locale/prompts.yaml is a file; locale/ holds one folder per locale, each with its prompts.yaml', 'move it into a folder named for its language tag: locale/<tag>/prompts.yaml (for example locale/fr/prompts.yaml)'],
+    ]);
+    const flat = folder((d) => {
+      rmSync(join(d, 'locale'), { recursive: true });
+      writeFileSync(join(d, 'locale'), '');
+    });
+    expect(loadAppFolder(flat).problems.map((p) => [p.file, p.message])).toEqual([
+      ['locale', 'locale is a file; it must be a folder with one folder per locale (locale/<tag>/prompts.yaml)'],
+    ]);
+  });
+
+  it('two locale folders that differ only by letter case are one locale, and the second is a problem', () => {
+    expect([...caseTwins(['pt-br', 'fr', 'pt-BR', 'PT-BR'])]).toEqual([['pt-BR', 'PT-BR'], ['pt-br', 'PT-BR']]);
+    expect(caseTwins(['fr', 'pt-BR', 'es'])).toEqual(new Map());
+    // Where the file system keeps both (it does not ignore letter case), the loader reports the second.
+    const dir = folder((d) => {
+      cpSync(join(d, 'locale', 'fr'), join(d, 'locale', 'pt-BR'), { recursive: true });
+      cpSync(join(d, 'locale', 'fr'), join(d, 'locale', 'pt-br'), { recursive: true });
+    });
+    const caseSensitive = readdirSync(join(dir, 'locale')).length === 3;
+    expect(loadAppFolder(dir).problems.map((p) => [p.file, p.message, p.fix])).toEqual(
+      caseSensitive
+        ? [['locale/pt-br', 'locale/pt-br and locale/pt-BR are the same locale: a language tag\'s letter case does not make it another', 'merge the two into one folder, with the tag written the usual way (language lowercase, region uppercase, as in pt-BR)']]
+        : [],
+    );
   });
 });
 

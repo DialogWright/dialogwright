@@ -8,6 +8,13 @@ import { checkAlways, identifier, matching, name, text, textMap, unique } from '
  * policy.yaml and identity.yaml.
  */
 
+/**
+ * A fixtures folder inside the package: relative (no leading "/" or "\", no drive letter like
+ * "C:"), with no ".." segment. The engine reads it from the working directory, so a path that left
+ * the package would read whatever is there.
+ */
+const FIXTURES_DIR = /^(?![/\\])(?![A-Za-z]:)(?!(?:.*[/\\])?\.\.(?:[/\\]|$)).+$/;
+
 const brand = z
   .strictObject({
     name: text().describe('The app\'s name, as the console\'s title and its speaker labels show it (for example "Example Parcels").'),
@@ -255,7 +262,13 @@ export const appSchema = z
       .describe("The app's own named thresholds and their defaults (for example TIME_OF_DAY: 0.6), read where the engine's are. A name may not be one of the engine's. A run's --threshold NAME=VALUE overrides one."),
     carrySlots: unique(identifier(), 'slot').optional().describe("Slots that, like identity, outlast the form that filled them (for example the caller's own name and birthday). Every other slot of a form is emptied as it closes. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary."),
     fixtures: z
-      .strictObject({ dir: text().describe('The directory, relative to the package, holding corpus.jsonl, scenarios/, expected/ and recorded/<model>.jsonl.') })
+      .strictObject({
+        dir: matching(
+          FIXTURES_DIR,
+          'is not a folder inside the package: it must be a relative path, with no ".." and not starting with "/", "\\" or a drive letter',
+          'write the folder relative to the package root, for example "fixtures"',
+        ).describe("The directory, relative to the app's package root (the folder its commands run in), holding corpus.jsonl, scenarios/, expected/ and recorded/<model>.jsonl. It must stay inside the package: no absolute path, no \"..\"."),
+      })
       .optional()
       .describe("Where the app's regression fixtures live, for the harness, the stubs and the clients that read them."),
     prompts: promptSettings.optional(),

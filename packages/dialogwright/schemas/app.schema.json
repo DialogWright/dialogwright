@@ -687,8 +687,8 @@
       "properties": {
         "dir": {
           "type": "string",
-          "minLength": 1,
-          "description": "The directory, relative to the package, holding corpus.jsonl, scenarios/, expected/ and recorded/<model>.jsonl."
+          "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!(?:.*[/\\\\])?\\.\\.(?:[/\\\\]|$)).+$",
+          "description": "The directory, relative to the app's package root (the folder its commands run in), holding corpus.jsonl, scenarios/, expected/ and recorded/<model>.jsonl. It must stay inside the package: no absolute path, no \"..\"."
         }
       },
       "required": [

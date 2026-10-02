@@ -206,6 +206,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
   it('a slot a form (or app.yaml) names that the code does not define', () => {
     const { branch: _, ...slots } = libraryCode.slots;
     expect(problems({ ...libraryCode, slots })).toEqual([
+      'app.yaml:16:5  console.slotLabels.branch  slot "branch" has a label, but the code defines no slot "branch"  ->  delete it, or add the slot to app.ts (code.slots.branch)',
       'app.yaml:27:14  carrySlots[0]  slot "branch" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.branch)',
       'forms.yaml:8:19  forms.check_hold.slots[1]  slot "branch" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.branch)',
     ]);
@@ -256,9 +257,71 @@ describe('defineApp: the folder and the code must name the same things', () => {
     }
     expect(error).toBeInstanceOf(AppDefinitionError);
     const lines = (error as Error).message.split('\n');
-    expect(lines[0]).toBe(`the app in ${LIBRARY_DIR} is not valid (3 problems):`);
+    expect(lines[0]).toBe(`the app in ${LIBRARY_DIR} is not valid (4 problems):`);
     expect(lines.slice(1)).toEqual((error as AppDefinitionError).problems.map((p) => `  ${formatProblem(p)}`));
-    expect(lines.slice(1).map((l) => l.trim().split('  ')[0])).toEqual(['app.yaml:27:14', 'forms.yaml:8:19', 'policy.yaml:7:18']);
+    expect(lines.slice(1).map((l) => l.trim().split('  ')[0])).toEqual(['app.yaml:16:5', 'app.yaml:27:14', 'forms.yaml:8:19', 'policy.yaml:7:18']);
+  });
+});
+
+describe('defineApp: what app.yaml shows and the clips name, and what R3 needs', () => {
+  const app = (edit: (text: string) => string): string => folder({ 'app.yaml': edit(readFileSync(join(LIBRARY_DIR, 'app.yaml'), 'utf8')) });
+
+  it('console labels, the slot order and question prefixes name forms and slots that exist; a lookup fact names a tool', () => {
+    const dir = app((t) =>
+      t
+        .replace('    renew_loan: Renew a book', '    renew_lone: Renew a book')
+        .replace('    branch: Branch', '    brnach: Branch\n  slotOrder: [book, branchh]\n  questionPrefixes:\n    bok: [bok]\n  facts:\n    - kind: lookup\n      tool: findHolds\n      param: book\n      noun: hold for'),
+    );
+    expect(problems(libraryCode, dir)).toEqual([
+      'app.yaml:12:5  console.formLabels.renew_lone  form "renew_lone" has a label, but forms.yaml has no form "renew_lone"  ->  rename it to "renew_loan", or delete the label',
+      'app.yaml:16:5  console.slotLabels.brnach  slot "brnach" has a label, but the code defines no slot "brnach"  ->  rename it to "branch", or delete it, or add the slot to app.ts (code.slots.brnach)',
+      'app.yaml:17:21  console.slotOrder[1]  slot "branchh" is in the console\'s slot order, but the code defines no slot "branchh"  ->  rename it to "branch", or delete it, or add the slot to app.ts (code.slots.branchh)',
+      'app.yaml:19:5  console.questionPrefixes.bok  slot "bok" has question prefixes, but the code defines no slot "bok"  ->  rename it to "book", or delete it, or add the slot to app.ts (code.slots.bok)',
+      'app.yaml:22:13  console.facts[0].tool  the console fact names the tool "findHolds", which the code does not define  ->  rename it to "findHold", or name a tool in app.ts (code.tools)',
+    ]);
+  });
+
+  it('a voice tag names a vocabulary clip, a clip id is used once, and a clip plays for a variable some line has', () => {
+    const dir = app((t) =>
+      t.replace(
+        'prompts:\n  spokenVars: [due]',
+        'prompts:\n  spokenVars: [due]\n  vocabulary:\n    - id: riverside\n      text: Riverside\n      vars: [branch]\n    - id: riverside\n      text: Riverside\n      vars: [brnch]\n  tags:\n    riversde: "[calm]"\n    riverside: "[calm]"',
+      ),
+    );
+    expect(problems(libraryCode, dir)).toEqual([
+      'app.yaml:35:11  prompts.vocabulary[1].id  vocabulary id "riverside" is used twice  ->  give each clip its own id',
+      'app.yaml:37:14  prompts.vocabulary[1].vars[0]  the clip "riverside" plays for {brnch}, but no line in prompts.yaml has {brnch}  ->  rename it to "branch", or delete it',
+      'app.yaml:39:5  prompts.tags.riversde  the voice tag for "riversde" names no clip: the tags are keyed by the vocabulary\'s clip ids  ->  rename it to "riverside", or delete it, or add "riversde" to prompts.vocabulary',
+    ]);
+  });
+
+  it('a tool that runs R3 needs confirmedFields and a form with confirmedParams, or R3 blocks every call', () => {
+    const policy = readFileSync(join(LIBRARY_DIR, 'policy.yaml'), 'utf8').replace('confirmedFields: [book]', 'confirmedFields: []');
+    const forms = readFileSync(join(LIBRARY_DIR, 'forms.yaml'), 'utf8').replace('hooks: [confirmedParams, complete]', 'hooks: [complete]');
+    const { confirmedParams: _, ...renew } = libraryCode.forms.renew_loan!;
+    expect(problems({ ...libraryCode, forms: { ...libraryCode.forms, renew_loan: renew } }, folder({ 'policy.yaml': policy, 'forms.yaml': forms }))).toEqual([
+      'policy.yaml:6:3  rulesFor.renewLoan  "renewLoan" runs R3, but no form has a confirmedParams hook, so nothing is ever confirmed and R3 blocks every call  ->  add "confirmedParams" to the hooks of the form that makes the write, and write it in the code',
+      'policy.yaml:8:1  confirmedFields  "renewLoan" runs R3, but confirmedFields is empty, so R3 blocks every call  ->  list the fields a confirmed write carries, in the order its confirmedParams hook returns them',
+    ]);
+  });
+});
+
+describe('defineApp: the locales an App has', () => {
+  const withoutLocales = (appYaml: (text: string) => string): App => {
+    const dir = folder({ 'app.yaml': appYaml(readFileSync(join(LIBRARY_DIR, 'app.yaml'), 'utf8')) });
+    rmSync(join(dir, 'locale'), { recursive: true });
+    return defineApp(dir, libraryCode);
+  };
+
+  it('app.yaml\'s locale: alone gives the App its locales, the default\'s and no others', () => {
+    expect(withoutLocales((t) => t).locales).toEqual({ default: 'en-US', prompts: {} });
+    expect(withoutLocales((t) => t.replace('locale: en-US', 'locale: en-GB')).locales).toEqual({ default: 'en-GB', prompts: {} });
+  });
+
+  it('neither locale: nor a locale/ folder: the App has no locales at all', () => {
+    const app = withoutLocales((t) => t.replace('locale: en-US\n', ''));
+    expect(app.locales).toBeUndefined();
+    expect(Object.keys(app)).not.toContain('locales');
   });
 });
 

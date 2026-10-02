@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { LineCounter, parseDocument, type Document } from 'yaml';
-import { WHOLE_FILE, closest, positionOf, problemsOf, type DataPath, type Problem } from './problems';
+import { LineCounter, isMap, isScalar, isSeq, parseDocument, type Document, type Node } from 'yaml';
+import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from './problems';
 import {
   FILE_NAMES, REQUIRED_KINDS, SCHEMAS,
   type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type PolicyYaml, type PromptYaml, type PromptsYaml,
@@ -62,6 +62,8 @@ export interface LoadResult {
    * folder ("forms.yaml"); null when the file was not read or the path is not in it.
    */
   locate(file: string, path: DataPath): { line: number; column: number } | null;
+  /** Where the key that holds the value at `path` is (for a problem with the key itself, such as a label for a form that does not exist); as `locate` otherwise. */
+  locateKey?(file: string, path: DataPath): { line: number; column: number } | null;
 }
 
 /** The locale an app has when it does not say (core/locale.ts). */
@@ -70,8 +72,18 @@ export { DEFAULT_LOCALE };
 /** A YAML file bigger than this is refused: configuration is hand-written text, and parsing is bounded by size. */
 const MAX_FILE_BYTES = 1024 * 1024;
 
-/** The most aliases a file may use (anchors and `*refs`). Apps need none; a few are allowed for reuse. */
+/**
+ * The yaml library's `maxAliasCount`: a bound on how much aliases may expand, not on how many a file
+ * has. Each time an alias (`*name`) is resolved, its anchor's use count goes up by one, and that
+ * count times the anchor's own expansion (1 for an anchored value with no aliases inside; for one
+ * that holds aliases, the largest such product among them) must stay at or under this. So a plain
+ * anchor may be referred to 20 times, and an anchor whose value itself refers to others far fewer:
+ * the nested "billion laughs" expansion is refused. Apps need no aliases.
+ */
 const MAX_ALIAS_COUNT = 20;
+
+/** Keys JavaScript objects give a meaning of their own: as an id they are dropped or shadow the object's own properties. */
+const RESERVED_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
 
 /** A language tag as a locale directory or `locale:` names it. */
 const LOCALE_TAG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
@@ -111,6 +123,10 @@ export function loadAppFolder(dir: string): LoadResult {
     const read = documents.get(file);
     return read ? positionOf(read.doc, read.lines, path) : null;
   };
+  const locateKey: LoadResult['locateKey'] = (file, path) => {
+    const read = documents.get(file);
+    return read ? keyPositionOf(read.doc, read.lines, path) : null;
+  };
   let config: LoadedConfig | null = null;
   try {
     config = load(dir, problems, documents);
@@ -118,7 +134,7 @@ export function loadAppFolder(dir: string): LoadResult {
     // Nothing in a folder should get here; if something does, it is reported, not thrown at the caller.
     problems.push(problemAt('.', WHOLE_FILE, `the app folder could not be loaded (${error instanceof Error ? error.message : String(error)})`, 'check the folder is readable and its files are plain text'));
   }
-  return { config: problems.length === 0 ? config : null, problems: sortProblems(problems), locate };
+  return { config: problems.length === 0 ? config : null, problems: sortProblems(problems), locate, locateKey };
 }
 
 function load(dir: string, problems: Problem[], documents: Map<string, { doc: Document; lines: LineCounter }>): LoadedConfig | null {
@@ -313,17 +329,50 @@ function strayYamlFiles(top: readonly string[], problems: Problem[]): void {
   }
 }
 
-/** The locale directories (locale/<tag>), each with a valid language tag. */
+/**
+ * The locale directories (locale/<tag>), each with a valid language tag and each tag once (a tag's
+ * letter case does not make it another locale). A file where a locale folder belongs is a problem;
+ * a hidden file (an editor's or the system's, like .DS_Store) is not.
+ */
 function listLocales(root: string, problems: Problem[]): { tag: string; dirName: string }[] {
   const base = join(root, 'locale');
   let entries: string[];
   try {
-    entries = readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory() || e.isSymbolicLink()).map((e) => e.name);
-  } catch {
+    const all = readdirSync(base, { withFileTypes: true }).filter((e) => !e.name.startsWith('.'));
+    for (const e of all.filter((x) => !x.isDirectory() && !x.isSymbolicLink())) {
+      problems.push(
+        problemAt(
+          `locale/${e.name}`,
+          WHOLE_FILE,
+          `locale/${e.name} is a file; locale/ holds one folder per locale, each with its prompts.yaml`,
+          e.name === FILE_NAMES.prompts
+            ? 'move it into a folder named for its language tag: locale/<tag>/prompts.yaml (for example locale/fr/prompts.yaml)'
+            : `delete locale/${e.name}, or move it out of the app folder`,
+        ),
+      );
+    }
+    entries = all.filter((e) => e.isDirectory() || e.isSymbolicLink()).map((e) => e.name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOTDIR') {
+      problems.push(problemAt('locale', WHOLE_FILE, 'locale is a file; it must be a folder with one folder per locale (locale/<tag>/prompts.yaml)', 'delete the file, or make locale a folder'));
+    }
     return [];
   }
   const locales: { tag: string; dirName: string }[] = [];
+  const twins = caseTwins(entries);
   for (const name of entries.sort()) {
+    const same = twins.get(name);
+    if (same !== undefined) {
+      problems.push(
+        problemAt(
+          `locale/${name}`,
+          WHOLE_FILE,
+          `locale/${name} and locale/${same} are the same locale: a language tag's letter case does not make it another`,
+          `merge the two into one folder, with the tag written the usual way (language lowercase, region uppercase, as in pt-BR)`,
+        ),
+      );
+      continue;
+    }
     if (!LOCALE_TAG.test(name)) {
       problems.push(
         problemAt(
@@ -399,8 +448,25 @@ function checkFile(
     value = doc.toJS({ maxAliasCount: MAX_ALIAS_COUNT });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    syntax('ALIAS', `the file cannot be read as data (${message})`, 0, 'remove the YAML aliases (*name) or reduce how many there are; configuration needs none');
+    const said = /excessive alias count/i.test(message)
+      ? `the file's aliases (*name) expand too far: an anchor may be used at most ${MAX_ALIAS_COUNT} times, and fewer when its value holds aliases itself`
+      : `the file cannot be read as data (${message})`;
+    syntax('ALIAS', said, 0, 'write the values out in full instead of with anchors (&name) and aliases (*name); configuration needs none');
     return undefined;
+  }
+  // zod drops a "__proto__" key without a word, and the other reserved names shadow an object's own properties.
+  const reserved = reservedKeys(doc);
+  for (const { path, offset } of reserved) {
+    const at = lines.linePos(offset);
+    const key = String(path[path.length - 1]);
+    problems.push({
+      file,
+      line: at.line,
+      column: at.col,
+      path: formatPath(path),
+      message: `the key "${key}" is a name JavaScript objects reserve, so it cannot be a key in these files`,
+      fix: `rename "${key}" to a name of the app's own`,
+    });
   }
   if (value === null || value === undefined) {
     problems.push(problemAt(file, WHOLE_FILE, `${file} is empty`, `add its content; the file starts with ${STARTS_WITH[kind]}`));
@@ -409,22 +475,48 @@ function checkFile(
 
   const result = SCHEMAS[kind].safeParse(value);
   if (result.success) {
+    if (reserved.length > 0) return undefined;
     // Hashed as parsed, before the schema reads it: the file's own content, whatever the schema makes of it.
     contents[file] = value;
     return result.data;
   }
-  const source = { file, doc, lines, value, schema: jsonSchemaOf(kind) };
-  const seen = new Set<string>();
-  for (const issue of result.error.issues) {
-    for (const problem of problemsOf(issue, source)) {
-      const id = `${problem.line}:${problem.column}:${problem.path}:${problem.message}`;
-      if (!seen.has(id)) {
-        seen.add(id);
-        problems.push(problem);
-      }
-    }
-  }
+  problems.push(...problemsOfIssues(result.error.issues, { file, doc, lines, value, schema: jsonSchemaOf(kind) }));
   return undefined;
+}
+
+/**
+ * The names that differ from an earlier one only by letter case, each mapped to that earlier one
+ * (names in sorted order: "pt-BR" comes before "pt-br"). On a file system that ignores case the two
+ * cannot both exist; on one that does not, they would be two folders for one locale.
+ */
+export function caseTwins(names: readonly string[]): Map<string, string> {
+  const first = new Map<string, string>();
+  const twins = new Map<string, string>();
+  for (const name of [...names].sort()) {
+    const same = first.get(name.toLowerCase());
+    if (same === undefined) first.set(name.toLowerCase(), name);
+    else twins.set(name, same);
+  }
+  return twins;
+}
+
+/** Every key in the document that RESERVED_KEYS names: its data path and where the key starts. */
+function reservedKeys(doc: Document): { path: DataPath; offset: number }[] {
+  const found: { path: DataPath; offset: number }[] = [];
+  const walk = (node: unknown, path: (string | number)[]): void => {
+    if (isMap(node)) {
+      for (const pair of node.items) {
+        if (!isScalar(pair.key)) continue;
+        const key = String(pair.key.value);
+        if (RESERVED_KEYS.has(key)) found.push({ path: [...path, key], offset: pair.key.range?.[0] ?? 0 });
+        walk(pair.value, [...path, key]);
+      }
+    } else if (isSeq(node)) {
+      node.items.forEach((item, i) => walk(item, [...path, i]));
+    }
+  };
+  walk(doc.contents as Node | null, []);
+  return found;
 }
 
 function sortProblems(problems: readonly Problem[]): Problem[] {

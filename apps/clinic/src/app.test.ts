@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { clinicApp, code } from './app';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { checkApp, formatProblem } from 'dialogwright';
+import { afterAll, describe, expect, it } from 'vitest';
+import { CLINIC_DIR, clinicApp, code } from './app';
 import { CLINIC_FORM_HOOKS } from './domain/forms';
 import { PROVIDERS } from './domain/roster';
 import { ALL_SLOTS, SLOTS } from './domain/slots';
@@ -103,6 +107,33 @@ describe('the clinic folder: app.yaml', () => {
     expect(rule?.spell).toBe('groups');
     expect([rule?.pattern.source, rule?.pattern.flags]).toEqual(['\\d{4,}(?: \\d{4,})+|\\d{5,}', 'g']);
     expect('member ID 5550 7788, ref A1001'.match(rule!.pattern)).toEqual(['5550 7788']);
+  });
+});
+
+describe('the clinic folder: dialogwright check', () => {
+  const scratch: string[] = [];
+  afterAll(() => {
+    for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** The clinic's YAML in a temporary folder, with prompts.yaml changed by `edit`. */
+  const copy = (edit: (text: string) => string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'clinic-check-'));
+    scratch.push(dir);
+    for (const file of ['app.yaml', 'intents.yaml', 'forms.yaml', 'prompts.yaml', 'policy.yaml']) cpSync(join(CLINIC_DIR, file), join(dir, file));
+    writeFileSync(join(dir, 'prompts.yaml'), edit(readFileSync(join(dir, 'prompts.yaml'), 'utf8')));
+    return dir;
+  };
+
+  it('passes: the folder, the code and the corpus agree', async () => {
+    expect((await checkApp(CLINIC_DIR, { code })).map(formatProblem)).toEqual([]);
+  });
+
+  it('fails without a keypad line a slot with a keypad rung needs (ask_dob_dtmf)', async () => {
+    const dir = copy((t) => t.replace(/^  ask_dob_dtmf:\n(    .*\n)+/m, ''));
+    expect((await checkApp(dir, { code, fixturesRoot: CLINIC_DIR })).map(formatProblem)).toEqual([
+      'prompts.yaml:7:1  prompts  prompt "ask_dob_dtmf" is missing from prompts.yaml; the engine says it when it asks for the slot "dob" on the keypad after spoken answers missed (its slot spec has dtmf)  ->  add "ask_dob_dtmf:" with its text and interruptible to prompts.yaml',
+    ]);
   });
 });
 

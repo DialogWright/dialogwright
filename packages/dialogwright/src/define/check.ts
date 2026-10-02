@@ -1,7 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { AppDefinitionError, CODE_FILE, crossLink, type AppCode } from './defineApp';
+import { handoffPromptId } from '../prompts/render';
+import { VAR } from '../prompts/segments';
+import { CODE_FILE, crossLink, isAppDefinitionError, type AppCode } from './defineApp';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES } from './schema/index';
@@ -16,7 +18,10 @@ import { FILE_NAMES } from './schema/index';
  *
  *  - every prompt an intent, a form, identity.yaml or app.yaml names exists in every locale the
  *    folder has (crossLink checks the default locale's when it runs; without the code, this does);
- *  - every prompt the engine itself says exists in every locale (ENGINE_PROMPTS below);
+ *  - every prompt the engine itself says exists in every locale (ENGINE_PROMPTS below, and the
+ *    lines it builds from a slot's id or a policy's reason: enginePrompts);
+ *  - every line of another locale is a line prompts.yaml has, and uses no variable the
+ *    prompts.yaml line lacks (the code fills the default line's variables, and no others);
  *  - every intent has examples in the app's corpus, when app.yaml names a fixtures directory;
  *  - every prompt is `mode: fixed`: the schema allows no other mode, and refuses one with a message
  *    that says so (see the load tests), so there is nothing more to check here.
@@ -27,7 +32,8 @@ import { FILE_NAMES } from './schema/index';
  * itself, as the example app does, to be the app's build: a defineApp that throws an
  * AppDefinitionError at import is reported as the problems it carries. Importing needs a TypeScript
  * loader for an app.ts, which is how the `dialogwright` command runs (tsx); a folder with no app
- * module is checked as YAML only, and the check says so.
+ * module is checked as YAML only, and the check says so. Importing the module runs it: never check
+ * a folder whose code you would not run.
  */
 
 /** A line the engine says by name in every app: its id, and when it says it (for the message). */
@@ -81,7 +87,20 @@ export const PORTAL_PROMPTS: readonly { id: string; why: string }[] = [
   { id: 'greeting_chat_delegate', why: 'a chat opens for someone acting for subjects' },
 ];
 
-/** The prompt ids the engine says for this app, each with when it says it. */
+/** R5's NEEDS_HUMAN reason when policy.yaml names none (gate/policy.ts DEFAULT_ROLE_PERSON_REASON; a test holds the two together). */
+export const DEFAULT_ROLE_PERSON_REASON = 'role-person';
+
+/**
+ * The prompt ids the engine says for this app, each with when it says it: the fixed list, and the
+ * ones it builds. For each slot a form or identity asks for (core/turn.ts, core/fia.ts,
+ * core/decision.ts): `ask_<slot>` and `ask_<slot>_retry` always; with the code's slot spec,
+ * `ask_<slot>_dtmf` when the spec has a keypad rung (`dtmf`) or reads every spoken value back
+ * (`spokenConfirm: always`, whose declined or unanswered read-back goes to the keypad),
+ * `confirm_<slot>` for that read-back, `ack_<slot>` when a spoken value may be acknowledged
+ * (`spokenConfirm: by-confidence`), and the spec's `partialPromptId`. And the handoff line for R5's
+ * reason, when a role's access to a tool is `person`. `disambiguate_<slot>` is not here: the engine
+ * says it only when a slot's fill offers two values, which only the code knows it does.
+ */
 export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: string; why: string }[] {
   const greetings = config.app.prompts?.greetings;
   const needs: { id: string; why: string }[] = [
@@ -95,6 +114,21 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
   for (const slot of slots) {
     needs.push({ id: `ask_${slot}`, why: `it asks for the slot "${slot}"` });
     needs.push({ id: `ask_${slot}_retry`, why: `it asks for the slot "${slot}" again after an answer that missed` });
+    const spec = code?.slots && Object.hasOwn(code.slots, slot) ? code.slots[slot] : undefined;
+    if (!spec) continue;
+    if (spec.dtmf !== undefined) {
+      needs.push({ id: `ask_${slot}_dtmf`, why: `it asks for the slot "${slot}" on the keypad after spoken answers missed (its slot spec has dtmf)` });
+    } else if (spec.spokenConfirm === 'always') {
+      needs.push({ id: `ask_${slot}_dtmf`, why: `a read-back of the slot "${slot}" was declined or not answered, and it asks on the keypad (its slot spec's spokenConfirm is "always")` });
+    }
+    if (spec.spokenConfirm === 'always') needs.push({ id: `confirm_${slot}`, why: `it reads a spoken value of the slot "${slot}" back for a yes (its slot spec's spokenConfirm is "always")` });
+    if (spec.spokenConfirm === 'by-confidence') needs.push({ id: `ack_${slot}`, why: `it acknowledges a value it heard for the slot "${slot}" (its slot spec's spokenConfirm is "by-confidence")` });
+    if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
+  }
+  const roles = Object.values(config.policy.roles ?? {});
+  if (roles.some((byRole) => Object.values(byRole).includes('person'))) {
+    const reason = config.policy.rolePersonReason ?? DEFAULT_ROLE_PERSON_REASON;
+    needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (policy.yaml roles) and the call goes to a person for the reason "${reason}"` });
   }
   if (config.identity) {
     needs.push(...IDENTITY_PROMPTS);
@@ -145,7 +179,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     linked = found.linked;
   } else if (found.code) {
     code = found.code;
-    problems.push(...crossLink(config, code, locate, codeFile));
+    problems.push(...crossLink(config, code, locate, codeFile, loaded.locateKey));
     linked = true;
   }
   problems.push(...checkPrompts(config, locate, code, linked));
@@ -172,8 +206,12 @@ async function loadCode(dir: string): Promise<Found> {
   try {
     module = (await import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href)) as Record<string, unknown>;
   } catch (error) {
-    if (error instanceof AppDefinitionError) return { problems: [...error.problems], linked: true, file };
-    const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    // By its brand, not instanceof: the module may have reached defineApp through another copy of this one.
+    if (isAppDefinitionError(error) && error.problems.length > 0 && error.problems.every(isProblem)) {
+      return { problems: [...error.problems], linked: true, file };
+    }
+    // The whole message, on one line: an error that lists several things must keep every one of them.
+    const message = typeof (error as { message?: unknown } | null)?.message === 'string' ? oneLine((error as { message: string }).message) : String(error);
     return {
       problems: [{ file, line: 0, column: 0, path: WHOLE_FILE, message: `${file} could not be loaded (${message})`, fix: `run \`tsx ${file}\` in the app folder to see the full error; ${file} must import without running anything else` }],
       linked: false,
@@ -190,6 +228,16 @@ async function loadCode(dir: string): Promise<Found> {
   }
   return { code: code as AppCode, file };
 }
+
+/** Whether a value has the shape of a Problem (what another copy of defineApp put in its error). */
+function isProblem(p: unknown): p is Problem {
+  if (typeof p !== 'object' || p === null) return false;
+  const { file, line, column, path, message, fix } = p as Record<string, unknown>;
+  return typeof file === 'string' && typeof line === 'number' && typeof column === 'number' && typeof path === 'string' && typeof message === 'string' && typeof fix === 'string';
+}
+
+/** A message of several lines as one: each line trimmed, joined with " / ". */
+const oneLine = (message: string): string => message.split('\n').map((l) => l.trim()).filter((l) => l !== '').join(' / ');
 
 // ---------------------------------------------------------------------------------------------
 // Prompts: every reference and every line the engine says, in every locale
@@ -227,10 +275,13 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
   const problems: Problem[] = [];
   const refs = referencesOf(config);
   const engine = enginePrompts(config, code);
+  // A line prompts.yaml lacks that the engine or the YAML names is reported missing there, not as a translation of nothing.
+  const needed = new Set([...refs.map((r) => r.id), ...engine.map((e) => e.id)]);
   for (const [locale, prompts] of Object.entries(config.prompts)) {
     const file = promptsFile(locale, config);
     const at = locate(file, ['prompts']) ?? { line: 1, column: 1 };
-    const known = Object.keys(prompts);
+    // A rename is offered only from a line nothing else needs: renaming a needed one would lose it.
+    const known = Object.keys(prompts).filter((id) => !needed.has(id));
     const where = locale === config.defaultLocale ? file : `the ${locale} prompts`;
     const missing = (id: string, why: string, path: DataPath = ['prompts']): void => {
       const near = closest(id, known);
@@ -254,6 +305,63 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
     for (const { id, why } of engine) {
       if (!has(prompts, id) && !reported.has(id)) missing(id, `the engine says it when ${why}`);
     }
+    if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));
+  }
+  return problems;
+}
+
+/** The variables a line's text uses, in order, each once. */
+function variablesOf(text: string): string[] {
+  return [...new Set([...text.matchAll(VAR)].map((m) => m[1]!))];
+}
+
+/**
+ * A locale's lines against the default's: a line only the locale has is never said (the engine and
+ * the code name lines by the default's ids; one the engine or the YAML needs is reported missing from
+ * prompts.yaml instead), and a line that uses a variable the default line lacks fails when it is
+ * said (the code passes the default line's variables, and no others).
+ */
+function checkTranslation(
+  config: LoadedConfig,
+  locale: string,
+  prompts: LoadedConfig['prompts'][string],
+  file: string,
+  locate: LoadResult['locate'],
+  needed: ReadonlySet<string>,
+): Problem[] {
+  const problems: Problem[] = [];
+  const defaults = config.prompts[config.defaultLocale] ?? {};
+  const ids = Object.keys(defaults);
+  for (const [id, line] of Object.entries(prompts)) {
+    if (!has(defaults, id)) {
+      if (needed.has(id)) continue;
+      const at = locate(file, ['prompts', id]) ?? { line: 1, column: 1 };
+      const near = closest(id, ids.filter((known) => !has(prompts, known)));
+      // A misspelt line the engine or the YAML needs is reported missing, with this rename as its fix.
+      if (near !== undefined && needed.has(near)) continue;
+      problems.push({
+        file,
+        ...at,
+        path: formatPath(['prompts', id]),
+        message: `prompt "${id}" is in the ${locale} prompts but not in ${FILE_NAMES.prompts}, so it is never said`,
+        fix: near ? `rename it to "${near}" if it is that line, or delete it` : `add "${id}:" to ${FILE_NAMES.prompts} if the app says it, or delete it here`,
+      });
+      continue;
+    }
+    const allowed = variablesOf(defaults[id]!.text);
+    const extra = variablesOf(line.text).filter((name) => !allowed.includes(name));
+    if (extra.length === 0) continue;
+    const at = locate(file, ['prompts', id, 'text']) ?? { line: 1, column: 1 };
+    const names = extra.map((name) => `{${name}}`).join(', ');
+    problems.push({
+      file,
+      ...at,
+      path: formatPath(['prompts', id, 'text']),
+      message: `the ${locale} line "${id}" uses ${names}, which the ${FILE_NAMES.prompts} line does not, so saying it would fail: the line is given only the variables the ${FILE_NAMES.prompts} line has`,
+      fix: allowed.length > 0
+        ? `use only ${allowed.map((name) => `{${name}}`).join(', ')} in this line (check the spelling), or add ${names} to the ${FILE_NAMES.prompts} line and to the code that says it`
+        : `write this line without variables, as the ${FILE_NAMES.prompts} line has none, or add ${names} to the ${FILE_NAMES.prompts} line and to the code that says it`,
+    });
   }
   return problems;
 }
@@ -264,7 +372,12 @@ const has = (obj: object, key: string): boolean => Object.hasOwn(obj, key);
 // The corpus
 // ---------------------------------------------------------------------------------------------
 
-/** The folder app.yaml's fixtures `dir` is relative to: the app's package, which is the nearest folder above the app folder that has a package.json. */
+/**
+ * The folder app.yaml's fixtures `dir` is relative to: the app's package, which is the nearest
+ * folder above the app folder that has a package.json. The engine reads the directory relative to
+ * the working directory (run/fixtures.ts), and an app's commands (its regress, cli and serve
+ * scripts) run in its package, so the two are the same folder.
+ */
 function packageRootOf(dir: string): string {
   for (let at = resolve(dir); ; at = dirname(at)) {
     if (existsSync(join(at, 'package.json'))) return at;
@@ -272,29 +385,44 @@ function packageRootOf(dir: string): string {
   }
 }
 
+/** A corpus bigger than this is refused rather than read: it is a list of labelled sentences, and reading it is bounded by size. */
+export const MAX_CORPUS_BYTES = 16 * 1024 * 1024;
+
+/** Whether `child` is `parent` or inside it. */
+function isInside(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
 /** Every intent has a labelled example in the corpus, for an app whose app.yaml names a fixtures directory. */
 function checkCorpus(config: LoadedConfig, locate: LoadResult['locate'], dir: string, fixturesRoot?: string): Problem[] {
   const fixtures = config.app.fixtures;
   if (!fixtures) return [];
   const corpus = `${fixtures.dir.replace(/\/+$/, '')}/corpus.jsonl`;
-  const absolute = resolve(fixturesRoot ?? packageRootOf(dir), corpus);
+  const root = fixturesRoot ?? packageRootOf(dir);
+  const absolute = resolve(root, corpus);
   const at = locate('app.yaml', ['fixtures', 'dir']) ?? { line: 1, column: 1 };
+  const atDir = (message: string, fix: string): Problem[] => [{ file: 'app.yaml', line: at.line, column: at.column, path: 'fixtures.dir', message, fix }];
   if (!existsSync(absolute)) {
-    return [
-      {
-        file: 'app.yaml',
-        line: at.line,
-        column: at.column,
-        path: 'fixtures.dir',
-        message: `the app has no corpus: ${corpus} does not exist (looked in ${absolute})`,
-        fix: `create ${corpus} with a line per labelled utterance, such as {"id":"hours-01","text":"when are you open","intent":"hours","context":"no_form"}, or point fixtures.dir at the folder that has it (it is relative to the package)`,
-      },
-    ];
+    return atDir(
+      `the app has no corpus: ${corpus} does not exist (looked in ${absolute})`,
+      `create ${corpus} with a line per labelled utterance, such as {"id":"hours-01","text":"when are you open","intent":"hours","context":"no_form"}, or point fixtures.dir at the folder that has it (it is relative to the package)`,
+    );
+  }
+  // The schema refuses an absolute dir and one with "..", so only a link can lead out of the package.
+  const real = realpathSync(absolute);
+  if (!isInside(realpathSync(root), real)) {
+    return atDir(`${corpus} resolves to ${real}, which is outside the app's package (${root})`, `keep the fixtures inside the package, and replace the link with the folder itself`);
+  }
+  const stat = statSync(real);
+  if (!stat.isFile()) return atDir(`${corpus} is not a regular file`, `make ${corpus} a file with one JSON object per line`);
+  if (stat.size > MAX_CORPUS_BYTES) {
+    return atDir(`${corpus} is ${stat.size} bytes, over the ${MAX_CORPUS_BYTES} byte limit for a corpus`, 'keep the corpus to labelled sentences, one per line; split anything else out of it');
   }
   const problems: Problem[] = [];
   const file = relative(resolve(dir), absolute).split('\\').join('/');
   const counts = new Map<string, number>();
-  readFileSync(absolute, 'utf8').split('\n').forEach((text, i) => {
+  readFileSync(real, 'utf8').split('\n').forEach((text, i) => {
     if (text.trim() === '') return;
     let entry: unknown;
     try {

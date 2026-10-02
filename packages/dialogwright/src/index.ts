@@ -31,8 +31,12 @@ export { intentList, formIntents, isFormIntent, intentLabel, informationalPrompt
 export { DEFAULT_LOCALE, defaultLocaleOf, localesOf, matchLocale, localeOf } from './core/locale';
 
 // The app definition: an app folder's YAML joined with its TypeScript parts into the App above.
-export { defineApp, AppDefinitionError } from './define/defineApp';
-export type { AppCode, FormHooks } from './define/defineApp';
+export { defineApp, AppDefinitionError, isAppDefinitionError } from './define/defineApp';
+export type { AppCode, FormHooks, DefineAppOptions } from './define/defineApp';
+export { checkApp } from './define/check';
+export type { CheckOptions } from './define/check';
+export { loadAppFolder } from './define/load';
+export type { LoadedConfig, LoadResult } from './define/load';
 export { formatProblem } from './define/problems';
 export type { Problem } from './define/problems';
 

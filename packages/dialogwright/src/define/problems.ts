@@ -104,6 +104,12 @@ export function positionOf(doc: Document, lines: LineCounter, path: DataPath): {
   return positionOfNode(lines, target, found.nearestKey);
 }
 
+/** The line and column of the key that holds the value at `path` (for a problem with the key itself); positionOf where there is no key. */
+export function keyPositionOf(doc: Document, lines: LineCounter, path: DataPath): { line: number; column: number } {
+  const found = find(doc, path);
+  return found.keyNode ? positionOfNode(lines, found.keyNode, null) : positionOf(doc, lines, path);
+}
+
 /** A node's position; a key is preferred to a collection, which starts on the line of its first entry. */
 function positionOfNode(lines: LineCounter, node: Node | null, fallback: Node | null): { line: number; column: number } {
   const offset = node?.range?.[0] ?? fallback?.range?.[0];
@@ -244,6 +250,41 @@ export interface IssueSource {
   schema: JsonSchema;
 }
 
+/**
+ * The problems a file's zod issues amount to, each once. A key typed wrong is both an unknown key
+ * and, when the key it was meant to be is required, a missing one; only the first is reported, as
+ * its fix (the rename) clears both.
+ */
+export function problemsOfIssues(issues: readonly ZodIssue[], src: IssueSource): Problem[] {
+  const pathOf = (issue: ZodIssue): (string | number)[] => issue.path.map((seg) => (typeof seg === 'symbol' ? String(seg) : seg)) as (string | number)[];
+  const meant = new Set<string>();
+  for (const issue of issues) {
+    if (issue.code !== 'unrecognized_keys') continue;
+    const path = pathOf(issue);
+    const known = knownKeys(src.schema, path, valueAt(src.value, path));
+    for (const key of issue.keys) {
+      const guess = closest(key, known);
+      if (guess !== undefined) meant.add(JSON.stringify([...path, guess]));
+    }
+  }
+  const problems: Problem[] = [];
+  const seen = new Set<string>();
+  for (const issue of issues) {
+    const path = pathOf(issue);
+    if ((issue.code === 'invalid_type' || issue.code === 'invalid_union') && meant.has(JSON.stringify(path))) {
+      const here = find(src.doc, path);
+      if (here.node === null && here.keyNode === null) continue;
+    }
+    for (const problem of problemsOf(issue, src)) {
+      const id = `${problem.line}:${problem.column}:${problem.path}:${problem.message}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      problems.push(problem);
+    }
+  }
+  return problems;
+}
+
 /** The problems one zod issue amounts to (an issue that names several unknown keys is several problems). */
 export function problemsOf(issue: ZodIssue, src: IssueSource): Problem[] {
   const make = (path: DataPath, message: string, fix: string, at: DataPath = path): Problem => ({
@@ -273,7 +314,8 @@ export function problemsOf(issue: ZodIssue, src: IssueSource): Problem[] {
       const nested = issue.issues[0];
       const key = String(path[path.length - 1]);
       const fix = nested && 'pattern' in nested && typeof nested.pattern === 'string' ? fixForPattern(nested.pattern) : undefined;
-      return [make(path, `the key "${key}" ${nested ? nested.message : 'is not allowed here'}`, fix ?? 'rename the key')];
+      // The key is what is wrong, so the problem points at it, not at the value it holds.
+      return [{ ...make(path, `the key "${key}" ${nested ? nested.message : 'is not allowed here'}`, fix ?? 'rename the key'), ...keyPositionOf(src.doc, src.lines, path) }];
     }
 
     case 'invalid_type': {

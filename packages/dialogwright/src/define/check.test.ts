@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ENGINE_PROMPTS, IDENTITY_PROMPTS, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts } from './check';
+import { DEFAULT_ROLE_PERSON_REASON, ENGINE_PROMPTS, IDENTITY_PROMPTS, MAX_CORPUS_BYTES, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts } from './check';
+import type { AppCode } from './defineApp';
 import { USAGE, findAppFolders, main, type Io } from './cli';
 import { libraryCode, LIBRARY_DIR } from './fixture/app';
 import { loadAppFolder } from './load';
@@ -155,6 +156,69 @@ describe('checkApp: the prompts every locale needs', () => {
   });
 });
 
+describe('checkApp: each locale\'s lines against prompts.yaml', () => {
+  it('a translated line that uses a variable the prompts.yaml line lacks is a problem at its text: saying it would fail', async () => {
+    const dir = folder({
+      'locale/es/prompts.yaml': (t) => t.replace('Listo. Ahora {book} se devuelve {due}.', 'Listo. Ahora {libro} se devuelve {due}.').replace("'{book} está reservado", "'{book} {extra} está reservado"),
+    });
+    expect(await lines(dir)).toEqual([
+      'locale/es/prompts.yaml:120:11  prompts.renewed.text  the es line "renewed" uses {libro}, which the prompts.yaml line does not, so saying it would fail: the line is given only the variables the prompts.yaml line has  ->  use only {book}, {due} in this line (check the spelling), or add {libro} to the prompts.yaml line and to the code that says it',
+      'locale/es/prompts.yaml:126:11  prompts.hold_waiting.text  the es line "hold_waiting" uses {extra}, which the prompts.yaml line does not, so saying it would fail: the line is given only the variables the prompts.yaml line has  ->  use only {book}, {branch} in this line (check the spelling), or add {extra} to the prompts.yaml line and to the code that says it',
+    ]);
+    const none = folder({ 'locale/es/prompts.yaml': (t) => t.replace('Para confirmar, ¿quiere {intentLabel}?', 'Hola {first}, ¿quiere {intentLabel}?').replace('  goodbye:\n    text: ', '  goodbye:\n    text: Adiós {first}. ') });
+    expect((await lines(none)).find((l) => l.includes('"goodbye"'))).toContain('->  write this line without variables, as the prompts.yaml line has none, or add {first} to the prompts.yaml line and to the code that says it');
+  });
+
+  it('a line only a locale has is never said: a problem, with the rename when one is close', async () => {
+    const dir = folder({ 'locale/es/prompts.yaml': (t) => `${t}  no_hlod:\n    text: No veo una reserva de {book}.\n    interruptible: false\n  farewell_extra:\n    text: Adiós.\n    interruptible: true\n` });
+    expect(await lines(dir)).toEqual([
+      'locale/es/prompts.yaml:128:3  prompts.no_hlod  prompt "no_hlod" is in the es prompts but not in prompts.yaml, so it is never said  ->  rename it to "no_hold" if it is that line, or delete it',
+      'locale/es/prompts.yaml:131:3  prompts.farewell_extra  prompt "farewell_extra" is in the es prompts but not in prompts.yaml, so it is never said  ->  add "farewell_extra:" to prompts.yaml if the app says it, or delete it here',
+    ]);
+  });
+
+  it('a needed line misspelt in a locale is reported once, as missing, with the rename', async () => {
+    const dir = folder({ 'locale/es/prompts.yaml': (t) => t.replace('  anything_else:\n', '  anything_els:\n') });
+    expect(await lines(dir)).toEqual([
+      'locale/es/prompts.yaml:3:1  prompts  prompt "anything_else" is missing from the es prompts; the engine says it when a form is done and it asks whether there is more  ->  rename "anything_els" to "anything_else" if that is the line, or add "anything_else:" with its text and interruptible to locale/es/prompts.yaml',
+    ]);
+  });
+});
+
+describe('checkApp: the lines the engine builds from the code', () => {
+  const book = libraryCode.slots.book!;
+  const withBook = (spec: Partial<typeof book>): AppCode => ({ ...libraryCode, slots: { ...libraryCode.slots, book: { ...book, ...spec } } });
+  const ids = (code: AppCode, dir = LIBRARY_DIR): string[] => enginePrompts(loadAppFolder(dir).config!, code).map((p) => p.id);
+
+  it('a slot with a keypad rung needs ask_<slot>_dtmf, in every locale', async () => {
+    const code = withBook({ dtmf: { length: 4, parse: () => null } });
+    expect(ids(libraryCode)).not.toContain('ask_book_dtmf');
+    expect(ids(code)).toContain('ask_book_dtmf');
+    expect(await lines(folder(), { code })).toEqual([
+      'prompts.yaml:2:1  prompts  prompt "ask_book_dtmf" is missing from prompts.yaml; the engine says it when it asks for the slot "book" on the keypad after spoken answers missed (its slot spec has dtmf)  ->  add "ask_book_dtmf:" with its text and interruptible to prompts.yaml',
+      'locale/es/prompts.yaml:3:1  prompts  prompt "ask_book_dtmf" is missing from the es prompts; the engine says it when it asks for the slot "book" on the keypad after spoken answers missed (its slot spec has dtmf)  ->  add "ask_book_dtmf:" with its text and interruptible to locale/es/prompts.yaml',
+    ]);
+  });
+
+  it('a slot read back on every spoken value needs confirm_<slot> and its keypad line; one acknowledged by confidence needs ack_<slot>; a partial value needs its prompt', () => {
+    expect(ids(withBook({ spokenConfirm: 'always' }))).toEqual(expect.arrayContaining(['confirm_book', 'ask_book_dtmf']));
+    expect(ids(withBook({ spokenConfirm: 'by-confidence' }))).toContain('ack_book');
+    expect(ids(withBook({ spokenConfirm: 'by-confidence' }))).not.toContain('confirm_book');
+    expect(ids(withBook({ partialPromptId: 'ask_book_title' }))).toContain('ask_book_title');
+    // summary: neither acknowledged nor read back on its own
+    expect(ids(libraryCode).filter((id) => /^(ack|confirm)_book$/.test(id))).toEqual([]);
+  });
+
+  it('a role whose access is "person" needs the handoff line for R5\'s reason: role-person, or the policy\'s own', () => {
+    const roles = (extra: string) => folder({ 'policy.yaml': (t) => `${t}\nroles:\n  findHold:\n    clerk: person\n${extra}` });
+    expect(ids(libraryCode, roles(''))).toContain('handoff_role_person');
+    const own = ids(libraryCode, roles('rolePersonReason: staff-hold\n'));
+    expect(own).toContain('handoff_staff_hold');
+    expect(own).not.toContain('handoff_role_person');
+    expect(ids(libraryCode)).not.toContain('handoff_role_person');
+  });
+});
+
 describe('checkApp: every prompt is mode: fixed', () => {
   it('a prompt in any other mode is refused, and the message says what to write', async () => {
     const dir = folder({
@@ -210,6 +274,22 @@ describe('checkApp: every intent has corpus examples', () => {
     ]);
   });
 
+  it('a corpus that a link takes out of the package is refused, and so is one over the size limit', async () => {
+    const outside = temp();
+    writeFileSync(join(outside, 'corpus.jsonl'), `${ALL.map(entry).join('\n')}\n`);
+    const linked = withFixtures(folder(), null);
+    symlinkSync(outside, join(linked.root, 'fixtures'));
+    const [escaped] = await checkApp(linked.dir, { code: libraryCode, fixturesRoot: linked.root });
+    expect(escaped).toMatchObject({ file: 'app.yaml', path: 'fixtures.dir', fix: 'keep the fixtures inside the package, and replace the link with the folder itself' });
+    expect(escaped!.message).toMatch(/^fixtures\/corpus\.jsonl resolves to .*corpus\.jsonl, which is outside the app's package/);
+
+    const big = withFixtures(folder(), '');
+    truncateSync(join(big.root, 'fixtures', 'corpus.jsonl'), MAX_CORPUS_BYTES + 1);
+    expect(await checkApp(big.dir, { code: libraryCode, fixturesRoot: big.root })).toEqual([
+      expect.objectContaining({ file: 'app.yaml', path: 'fixtures.dir', message: `fixtures/corpus.jsonl is ${MAX_CORPUS_BYTES + 1} bytes, over the ${MAX_CORPUS_BYTES} byte limit for a corpus` }),
+    ]);
+  });
+
   it('the fixtures directory is relative to the nearest package.json above the app folder', async () => {
     const root = temp();
     writeFileSync(join(root, 'package.json'), '{}');
@@ -242,6 +322,33 @@ describe('checkApp: the app module', () => {
     expect(await lines(dir, {})).toEqual([
       'app.mjs  (file)  app.mjs could not be loaded (boom)  ->  run `tsx app.mjs` in the app folder to see the full error; app.mjs must import without running anything else',
     ]);
+  });
+
+  it('an AppDefinitionError from another copy of defineApp (no instanceof) is unpacked into its problems, by its brand', async () => {
+    const problem = { file: 'forms.yaml', line: 8, column: 19, path: 'forms.check_hold.slots[1]', message: 'slot "x" is not defined', fix: 'add it' };
+    const other = { ...problem, line: 9, message: 'slot "y" is not defined' };
+    const problems = JSON.stringify([problem, other]);
+    const throwers = {
+      // a class of the same name from another module instance: instanceof AppDefinitionError is false
+      subclass: `class AppDefinitionError extends Error { constructor(p) { super('the app is not valid (2 problems):\\n  one\\n  two'); this.name = 'AppDefinitionError'; this[Symbol.for('dialogwright.AppDefinitionError')] = true; this.problems = p; } }\nthrow new AppDefinitionError(${problems});\n`,
+      // a plain object with the brand
+      branded: `throw { [Symbol.for('dialogwright.AppDefinitionError')]: true, problems: ${problems} };\n`,
+      // an older copy, before the brand: the name and the problems
+      named: `const e = new Error('not valid'); e.name = 'AppDefinitionError'; e.problems = ${problems}; throw e;\n`,
+    };
+    for (const [how, source] of Object.entries(throwers)) {
+      expect(await checkApp(folder({ 'app.mjs': source }), {}), how).toEqual([problem, other]);
+    }
+  });
+
+  it('a module that fails with a message of several lines keeps every line of it', async () => {
+    const dir = folder({ 'app.mjs': 'throw new Error("first thing wrong\\n  second thing wrong\\nthird");\n' });
+    expect(await lines(dir, {})).toEqual([
+      'app.mjs  (file)  app.mjs could not be loaded (first thing wrong / second thing wrong / third)  ->  run `tsx app.mjs` in the app folder to see the full error; app.mjs must import without running anything else',
+    ]);
+    // an error named AppDefinitionError whose problems are not problems is not trusted as one
+    const odd = folder({ 'app.mjs': 'const e = new Error("odd"); e.name = "AppDefinitionError"; e.problems = [1]; throw e;\n' });
+    expect(await lines(odd, {})).toEqual([expect.stringContaining('app.mjs could not be loaded (odd)')]);
   });
 
   it('a module with no code export is a problem that says what to write', async () => {
@@ -303,6 +410,24 @@ describe('the engine prompt list', () => {
     }
     return ids;
   };
+
+  it('names every family of prompt ids the engine builds from a slot or a reason', () => {
+    const families = new Set<string>();
+    for (const text of sources()) {
+      // A turn's outcome label (`summary_${kind}` in the trace) is not a line.
+      for (const line of text.split('\n').filter((l) => !/\boutcome = `/.test(l))) {
+        for (const m of line.matchAll(/`([a-z]+_)\$\{[^}`]+\}((?:_[a-z]+)*)`/g)) families.add(`${m[1]!}<x>${m[2]!}`);
+      }
+    }
+    // enginePrompts requires each of these where the engine says it; disambiguate_<slot> only the
+    // slot's code can offer (two candidates from its fill), and handoff_<reason> is the reason's.
+    expect([...families].sort()).toEqual(['ack_<x>', 'ask_<x>', 'ask_<x>_dtmf', 'ask_<x>_retry', 'confirm_<x>', 'disambiguate_<x>', 'handoff_<x>']);
+  });
+
+  it('the role-person reason check names is the gate\'s', () => {
+    const policy = readFileSync(join(PACKAGE_DIR, 'src', 'gate', 'policy.ts'), 'utf8');
+    expect(policy).toContain(`const DEFAULT_ROLE_PERSON_REASON = '${DEFAULT_ROLE_PERSON_REASON}';`);
+  });
 
   it('names every prompt id the engine says as a literal, or says why not', () => {
     const named = new Set([...Object.keys(ENGINE_PROMPTS), 'greeting', 'greeting_chat', 'nomatch_dtmf_menu', ...IDENTITY_PROMPTS.map((p) => p.id), ...PORTAL_PROMPTS.map((p) => p.id)]);
