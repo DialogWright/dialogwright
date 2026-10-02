@@ -207,6 +207,14 @@ describe('the options', () => {
     expect(problems({ options: { a: 'A' }, means: 'Says {say} ({key})' })).toEqual([]);
   });
 
+  it('number 200 at most, with a problem that says why and what to use instead', () => {
+    const many = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`o${i}`, `Option ${i}`]));
+    expect(problems({ options: many(200) })).toEqual([]);
+    expect(problems({ options: many(201) })).toEqual([
+      '(code)  s.options  the slot has 201 options, more than the 200 one question can offer the model (every option is a label it reads on every turn)  ->  keep 200 options or fewer, or use a record slot, which offers the caller\'s own records from the app\'s facts',
+    ]);
+  });
+
   it('a shorthand option and its long form are the same option', () => {
     const short = defineSlot('s', { type: 'choice', options: { a: 'Apple' } });
     const long = defineSlot('s', { type: 'choice', options: { a: { say: 'Apple' } } });
@@ -260,6 +268,22 @@ describe('the advanced options', () => {
     },
   });
   const sure = (p: Record<string, number>, unsure = 0.1) => ({ room: choice(p), roomHedge: { type: 'noul' as const, noul: unsure } });
+
+  it('build the patterns hedge.byName reads the words with once, with the slot, never on a fill', () => {
+    const Real = globalThis.RegExp;
+    let built = 0;
+    globalThis.RegExp = new Proxy(Real, { construct: (target, args) => (built++, Reflect.construct(target, args)) }) as RegExpConstructor;
+    try {
+      const slot = defineSlot('room', { type: 'choice', options: { north: 'N', garden_room: 'G' }, hedge: { threshold: 'UNSURE', byName: true }, disambiguate: 'margin' });
+      const atBuild = built;
+      for (let i = 0; i < 50; i++) {
+        expect(slot.fill({ room: choice({ north: 0.8, none: 0.2 }), roomHedge: { type: 'noul', noul: 0.9 } }, at('north, or the garden room'))).toMatchObject({ kind: 'disambiguate', b: { value: 'garden_room' } });
+      }
+      expect(built).toBe(atBuild);
+    } finally {
+      globalThis.RegExp = Real;
+    }
+  });
 
   it('are off unless written: a basic slot\'s config, questions and prompts gain nothing', () => {
     const basic = defineSlot('s', { type: 'choice', options: { a: 'A' } });

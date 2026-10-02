@@ -10,18 +10,27 @@ const probabilitiesOf = (a: { probabilities?: unknown }): Record<string, number>
   typeof a.probabilities === 'object' && a.probabilities !== null ? (a.probabilities as Record<string, number>) : {};
 
 /**
- * The first option other than `top` whose key the words name as a whole word, case aside, an
- * underscore in a key read as a space or a hyphen ("Cheng" never matches inside "Chen", nor "Chen"
- * inside "Cheng"). The one said first wins; two said at the same place, the one listed first.
+ * A reader of the first option other than `top` whose key the words name as a whole word, case
+ * aside, an underscore in a key read as a space or a hyphen ("Cheng" never matches inside "Chen", nor
+ * "Chen" inside "Cheng"). The one said first wins; two said at the same place, the one listed first.
+ * Each option's pattern is built once, with the slot, not on every fill.
  */
+export function optionNamer(o: Pick<ChoiceOptions, 'options'>): (text: string, top: string) => string | null {
+  const patterns = Object.keys(o.options).map((key) => ({ key, pattern: new RegExp(`\\b${key.split('_').join('[\\s-]+')}\\b`, 'i') }));
+  return (text, top) => {
+    let first: { key: string; at: number } | null = null;
+    for (const { key, pattern } of patterns) {
+      if (key === top) continue;
+      const at = text.search(pattern);
+      if (at >= 0 && (first === null || at < first.at)) first = { key, at };
+    }
+    return first?.key ?? null;
+  };
+}
+
+/** optionNamer, built for one call. */
 export function otherOptionNamed(o: Pick<ChoiceOptions, 'options'>, text: string, top: string): string | null {
-  let first: { key: string; at: number } | null = null;
-  for (const key of Object.keys(o.options)) {
-    if (key === top) continue;
-    const at = text.search(new RegExp(`\\b${key.split('_').join('[\\s-]+')}\\b`, 'i'));
-    if (at >= 0 && (first === null || at < first.at)) first = { key, at };
-  }
-  return first?.key ?? null;
+  return optionNamer(o)(text, top);
 }
 
 /**
@@ -62,6 +71,7 @@ export function choiceFill(
   display: (value: string, locale?: string) => string,
 ): (answers: AnswerMap, ctx: SlotContext) => SlotOutcome {
   const isOption = (label: string): boolean => Object.hasOwn(o.options, label);
+  const otherNamed = o.hedge?.byName ? optionNamer(o) : null;
   const candidate = (key: string, locale: string | undefined): SlotCandidate => ({ value: key, display: display(key, locale) });
   return (answers, ctx) => {
     const t = ctx.thresholds;
@@ -82,7 +92,7 @@ export function choiceFill(
     if (o.disambiguate && rival && (!meetsThreshold(t, 'SLOT_CHOICE_MARGIN', top.p - rival.p) || (unsure && meetsThreshold(t, 'SLOT_CHOICE_CONFIRM', rival.p)))) {
       return { kind: 'disambiguate', a: candidate(top.label, ctx.locale), b: candidate(rival.label, ctx.locale) };
     }
-    const other = unsure && o.hedge?.byName ? otherOptionNamed(o, ctx.text, top.label) : null;
+    const other = unsure && otherNamed ? otherNamed(ctx.text, top.label) : null;
     if (other !== null) return { kind: 'disambiguate', a: candidate(top.label, ctx.locale), b: candidate(other, ctx.locale) };
     if (!meetsThreshold(t, o.fillAt, top.p)) return miss();
     const readBack = o.readBack ?? 'implicit';

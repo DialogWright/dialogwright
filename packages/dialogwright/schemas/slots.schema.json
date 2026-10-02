@@ -180,7 +180,7 @@
             "description": "The slot type."
           },
           "options": {
-            "description": "The options the caller can choose, in order, as `key: Say` or `key: { say, means }`. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.",
+            "description": "The options the caller can choose, in order, as `key: Say` or `key: { say, means }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.",
             "type": "object",
             "propertyNames": {
               "type": "string"

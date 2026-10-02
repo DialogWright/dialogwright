@@ -16,7 +16,7 @@ A slot of this type is written under its id in slots.yaml, with `type: choice` a
 
 | Option | Type | Default | What it does |
 |---|---|---|---|
-| `options` | map of string or map | required | The options the caller can choose, in order, as `key: Say` or `key: { say, means }`. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered. |
+| `options` | map of string or map | required | The options the caller can choose, in order, as `key: Say` or `key: { say, means }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered. |
 | `options.<key>.say` | string | required | The display: how a line, the summary and the model's turn state say the option ("an express delivery"). |
 | `options.<key>.means` | string | unset | What the model is told this option is: the text of its criterion, sent exactly as written. Default: the slot's `means` template. |
 | `means` | string | `The caller names {say}` | The criterion the model is given for each option that has no `means` of its own, as a template over `{say}` and `{key}`. |

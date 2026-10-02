@@ -77,6 +77,8 @@ export interface ChoiceHelpLabel {
 export const MEANS_VARS = ['key', 'say'] as const;
 /** The most options a keypad can choose among (the digits 1 to 9). */
 export const MAX_KEYPAD_OPTIONS = 9;
+/** The most options a choice slot offers the model in one question; a longer list is a record slot's. */
+export const MAX_OPTIONS = 200;
 /** The thresholds `fillAt` may name: how sure the model must be of its choice. */
 export const FILL_AT = ['SLOT_CHOICE_FILL', 'SLOT_CHOICE_CONFIRM'] as const;
 
@@ -113,7 +115,7 @@ export const choiceOptions = z
       .transform((entries): Record<string, ChoiceOption> =>
         Object.fromEntries(Object.entries(entries).map(([key, entry]) => [key, typeof entry === 'string' ? { say: entry } : { say: entry.say, ...(entry.means !== undefined ? { means: entry.means } : {}) }])),
       )
-      .describe('The options the caller can choose, in order, as `key: Say` or `key: { say, means }`. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.'),
+      .describe('The options the caller can choose, in order, as `key: Say` or `key: { say, means }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.'),
     means: questionText()
       .default(DEFAULT_MEANS)
       .describe('The criterion the model is given for each option that has no `means` of its own, as a template over `{say}` and `{key}`.'),
@@ -166,6 +168,14 @@ export const choiceOptions = z
         path: ['options'],
         message: 'a choice slot needs at least one option',
         params: { fix: 'add an option, such as "standard: Standard delivery"' },
+      });
+    }
+    if (keys.length > MAX_OPTIONS) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['options'],
+        message: `the slot has ${keys.length} options, more than the ${MAX_OPTIONS} one question can offer the model (every option is a label it reads on every turn)`,
+        params: { fix: `keep ${MAX_OPTIONS} options or fewer, or use a record slot, which offers the caller's own records from the app's facts` },
       });
     }
     for (const key of keys) {
