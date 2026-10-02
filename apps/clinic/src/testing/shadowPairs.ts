@@ -1,8 +1,10 @@
 import type { SlotSpec } from 'dialogwright';
+import { memberIdSlot } from '../domain/slots/memberId';
 
 /**
- * The clinic's shadow pairs: each a library slot paired with the clinic's slot of the same id, run
- * beside it in every regression run (stub and recorded) when DIALOGWRIGHT_SHADOW is set
- * (dialogwright/testing). Empty until a clinic slot moves to a library type.
+ * The clinic's shadow pairs: for each slot that now runs as a library type, the hand-written slot it
+ * replaced, run beside it in every regression run (stub and recorded) when DIALOGWRIGHT_SHADOW is set
+ * (dialogwright/testing). The app's own (library) slot is what the engine sees; the pair is compared
+ * on every call, so the two cannot drift apart before the hand-written one is deleted.
  */
-export const CLINIC_SHADOW_PAIRS: readonly SlotSpec[] = [];
+export const CLINIC_SHADOW_PAIRS: readonly SlotSpec[] = [memberIdSlot];

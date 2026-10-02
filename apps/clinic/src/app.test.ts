@@ -1,12 +1,13 @@
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkApp, formatProblem, loadAppFolder } from 'dialogwright';
+import { checkApp, formatProblem, loadAppFolder, type LibrarySlotSpec } from 'dialogwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { CLINIC_DIR, clinicApp, code } from './app';
 import { CLINIC_FORM_HOOKS } from './domain/forms';
 import { PROVIDERS } from './domain/roster';
 import { ALL_SLOTS, SLOTS } from './domain/slots';
+import { memberIdSlot } from './domain/slots/memberId';
 
 /**
  * The clinic as its folder builds it: a few pinned facts about what the YAML holds and how it meets
@@ -61,12 +62,27 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
 });
 
 describe('the clinic folder: slots.yaml', () => {
-  it('lists all five slots as code, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
+  it('lists all five slots, four as code and the member ID as a library digits slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
     const slots = loadAppFolder(CLINIC_DIR).config?.slots;
-    expect(slots).toEqual({ name: { type: 'code' }, dob: { type: 'code' }, memberId: { type: 'code' }, provider: { type: 'code' }, date: { type: 'code' } });
+    expect(Object.keys(slots ?? {})).toEqual([...ALL_SLOTS]);
+    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['code', 'code', 'digits', 'code', 'code']);
     expect(Object.keys(clinicApp.slots)).toEqual(Object.keys(slots ?? {}));
     expect(Object.keys(clinicApp.slots)).toEqual([...ALL_SLOTS]);
     for (const id of Object.keys(SLOTS)) expect(clinicApp.slots[id], id).toBe(SLOTS[id as keyof typeof SLOTS]);
+  });
+
+  it('configures the member ID as the hand-written slot was: its wording and ids, eight digits in two groups, keyed, recorded by its last four', () => {
+    const lib = clinicApp.slots.memberId as LibrarySlotSpec;
+    expect(lib.type).toBe('digits');
+    expect(lib.config).toEqual({
+      noun: 'member ID', length: 8, mask: '^\\d{8}$', keypad: true, group: [4, 4], ids: { given: 'containsMemberId' },
+      confirm: 'summary', readBack: 'implicit', minConfidence: 'none', redact: 'last4', handoff: 'last4',
+    });
+    expect(lib).toMatchObject({ id: memberIdSlot.id, spokenConfirm: memberIdSlot.spokenConfirm, redact: 'last4', handoff: 'last4', detect: true });
+    expect(lib.dtmf?.length).toBe(8);
+    expect(lib.questionIds).toEqual(['containsMemberId', 'memberIdSpan', 'memberIdComplete']);
+    // never said: a summary slot is not acknowledged (the manifest keeps ack_memberId, pinned in index.test.ts)
+    expect(lib.prompts).toEqual([{ id: 'ask_memberId_dtmf', why: 'it asks for a member ID on the keypad after spoken answers missed' }]);
   });
 });
 
@@ -102,7 +118,7 @@ describe('the clinic folder: app.yaml', () => {
 
   it('names every slot the code has, in the console and in the change question', () => {
     expect(clinicApp.console?.slotOrder).toEqual([...ALL_SLOTS]);
-    expect(Object.keys(clinicApp.console?.slotLabels ?? {}).sort()).toEqual(Object.keys(SLOTS).sort());
+    expect(Object.keys(clinicApp.console?.slotLabels ?? {}).sort()).toEqual([...ALL_SLOTS].sort());
     expect(clinicApp.wording?.changeSlot?.order).toEqual(['name', 'dob', 'provider', 'date', 'memberId']);
   });
 

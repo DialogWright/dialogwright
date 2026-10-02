@@ -320,7 +320,7 @@ An app outside the engine package imports only from `'dialogwright'` (the clinic
 
 A slot is one value a form collects: a book, a day, a card number. Its `SlotSpec` says what the decision model is asked about the caller's words and how the answers become a value. The model never writes the value: it answers typed questions (yes or no, which of these labels), and the slot's code turns the answers into a value and decides whether it is good. The types are in `packages/dialogwright/src/core/slots/types.ts` and are exported by `'dialogwright'`.
 
-The library has both kinds of slot. `book` and `branch` are choices from a fixed list (`choiceSlot` in its `app.ts`). `card`, the library card number, is a value no list holds, and it is the worked example at the end of this section.
+The library has both kinds of slot. `book` and `branch` are choices from a fixed list (`choiceSlot` in its `app.ts`). `card`, the library card number, is a value no list holds, and it is the worked example at the end of this section. It is a slot of the library's `digits` type (`defineSlot` in `app.ts`, with options rather than code): the hand-written slot shown in the sections below is what that type generalizes, and what a slot of your own that no library type fits looks like.
 
 ### The contract
 
@@ -406,7 +406,7 @@ Set `detect: true` when the slot's fill rests on a yes-or-no detection question,
 
 ### Values no list holds
 
-An order number, a code, a card number: the model cannot choose it from a list, and it is never asked to write it. Instead, the code finds every run of the caller's words that could be the value, the model judges which one it is, and the code turns that run into the value and checks it. The value is then always something the caller said, and the code, not the model, decides whether it is valid. The clinic's patient ID slot works this way, and so does the library's card:
+An order number, a code, a card number: the model cannot choose it from a list, and it is never asked to write it. Instead, the code finds every run of the caller's words that could be the value, the model judges which one it is, and the code turns that run into the value and checks it. The value is then always something the caller said, and the code, not the model, decides whether it is valid. The library's `digits` type works this way (the clinic's member ID and the library's card are slots of it), and this section shows the steps as a hand-written slot takes them, for a value the type does not fit:
 
 1. **Candidates, in code.** `ctx.candidateSpans` is every run of one to ten words of the caller's text that holds a digit or a number word, shortest first, at most 120, in the tokenized form (lower case, no punctuation): "it's 5552 0417" gives `5552`, `0417`, `5552 0417` and the longer runs around them. For words rather than numbers (a name), `ctx.candidateWordSpans` is every run of one to four words with no number word that does not start or end with a filler word ("my", "is", "the"), at most 320. Both functions are exported, for tests.
 2. **Judgment, by the model.** A yes-or-no question asks whether a value is said at all; a choice question offers the spans as its labels (with `null` criteria, since each span describes itself) and `none`; a second yes-or-no question asks whether it was said whole.
@@ -414,7 +414,7 @@ An order number, a code, a card number: the model cannot choose it from a list, 
 
 What is not on the ballot cannot be chosen, so narrow the candidates rather than arguing in the instructions. The clinic's name slot (`apps/clinic/src/domain/slots/name.ts`) leaves out every span that holds a provider's name, so a caller correcting the doctor is never taken as giving their own name. It also checks that the chosen span is one it offered on this turn, since an answer recorded against other words can name a span the turn never offered.
 
-The card's questions and fill, from `packages/dialogwright/src/define/fixture/app.ts`:
+The questions and fill of such a slot written by hand, as the library's card had them before the `digits` type (the type's default wording is a little different: it says "either as digits or as spoken number words", and its span question names number words like "forty-four" and modifiers like "double"):
 
 ```ts
   questions(ctx) {
@@ -456,7 +456,7 @@ The order matters. Not said is `absent`, so a turn about something else leaves t
 
 ### The keypad
 
-`dtmf: { length, parse }` gives the slot a keypad rung. While the slot is the question the caller was last asked, keys are collected until there are `length` of them, then `parse(digits, ctx)` returns `{ value, display }`, or null for keys that are not a value. A keyed value counts as confirmed: it is not acknowledged or read back, whatever `spokenConfirm` says. A null is a missed answer on the ladder. Keys are taken whenever the slot was the last thing asked, not only at the keypad rung, and `parse` gets a context with no words (`text` is empty, and there is no pending partial). The card's:
+`dtmf: { length, parse }` gives the slot a keypad rung. While the slot is the question the caller was last asked, keys are collected until there are `length` of them, then `parse(digits, ctx)` returns `{ value, display }`, or null for keys that are not a value. A keyed value counts as confirmed: it is not acknowledged or read back, whatever `spokenConfirm` says. A null is a missed answer on the ladder. Keys are taken whenever the slot was the last thing asked, not only at the keypad rung, and `parse` gets a context with no words (`text` is empty, and there is no pending partial). Written by hand, the card's was:
 
 ```ts
   dtmf: {
@@ -473,7 +473,7 @@ A slot with `dtmf` needs `ask_<slot>_dtmf`, the line that asks for the keys ("Pl
 
 | `redact` | Shows as | For |
 |---|---|---|
-| `last4` | `...0417` | An identifier (the card, the clinic's patient ID). |
+| `last4` | `...0417` | An identifier (the card, the clinic's member ID). |
 | `mask` | `••/••/1975`, the year alone; a tool param as `•` | A date of birth (the clinic's `dob`). |
 | `length` | `<38 chars>` | The caller's own words, such as a free-text note. The slot's display is a stand-in ("your description") and is kept; the live console keeps the words. The engine's testkit has one (`missingNote`). |
 
@@ -549,33 +549,22 @@ The library's `check_loans` form asks for a library card number and says which b
 - `prompts.yaml` and `locale/es/prompts.yaml`: `ask_card`, `ask_card_retry`, `ask_card_dtmf` (the keypad rung), `ack_card` (`by-confidence`), `ask_card_length` (the `retryPromptId`), and the form's `next_due`, `no_loans` and `no_card`.
 - `app.ts`: the slot, the `listLoans` tool and the form's `complete`.
 
-The slot's fields, from `packages/dialogwright/src/define/fixture/app.ts` (its questions, fill and keypad are shown above):
+The slot, from `packages/dialogwright/src/define/fixture/app.ts`. It is a library `digits` slot, so its questions, fill, keypad, display and the lines it declares come from the type, and its options say what the hand-written version above did:
 
 ```ts
-/** A library card number: eight digits. */
-export const CARD_MASK = /^\d{8}$/;
-
-export const cardSlot: SlotSpec = {
-  id: 'card',
-  spokenConfirm: 'by-confidence',
-  redact: 'last4',
-  handoff: 'last4',
-  detect: true,
-  questionIds: ['cardGiven', 'cardSpan', 'cardComplete'],
-  prompts: [
-    { id: 'ask_card_length', why: 'the caller said a number that is not eight digits (the fill\'s retryPromptId)' },
-    { id: 'ack_card', why: 'it acknowledges a card number it is less sure of', vars: ['card'] },
-    { id: 'ask_card_dtmf', why: 'it asks for the card number on the keypad after spoken answers missed' },
-  ],
-  questions(ctx) { /* cardGiven, cardSpan, cardComplete */ },
-  fill(answers, ctx): SlotOutcome { /* absent, invalid, or filled */ },
-  dtmf: {
-    length: 8,
-    parse: (digits) => (matchesMask(digits, CARD_MASK) ? { value: digits, display: digits } : null),
-  },
-  display: (value) => value,
-};
+export const cardSlot = defineSlot('card', {
+  type: 'digits',
+  noun: 'library card',               // "Does the caller state a library card number ..."
+  length: 8,                          // exactly eight digits; a wrong length is invalid, reason "length"
+  keypad: true,                       // dtmf length 8; needs ask_card_dtmf
+  confirm: 'by-confidence',           // spokenConfirm; needs ack_card
+  readBack: 'below-fill',             // ack_card only when the span's probability is under SLOT_CHOICE_FILL
+  minConfidence: 'SLOT_CHOICE_CONFIRM', // under it: invalid, reason "low_confidence"
+  lengthRetryPromptId: 'ask_card_length',
+});
 ```
+
+In a folder app the same options go in `slots.yaml` (`card: { type: digits, noun: library card, ... }`). The defaults give the rest: `questionIds` (`cardGiven`, `cardSpan`, `cardComplete`), `detect: true`, `redact: last4`, `handoff: last4`, the display as the digits, and `prompts` (`ask_card_length`, `ack_card` given `{card}`, `ask_card_dtmf`). The options are in `packages/dialogwright/src/slots/digits/README.md`.
 
 The tool takes the value under the slot's own name, so the gate event, the trace and the audit record `card=...0417`:
 
@@ -599,7 +588,7 @@ All in `apps/clinic/src/domain/slots/`, each with its test beside it:
 | Pattern | Where |
 |---|---|
 | A choice from a list, with close names asked about (`disambiguate`), a hedged name read back (`by-confidence`), help lines for "I don't know the name", and a one-digit keypad | `provider.ts` |
-| A value no list holds: detected, picked as a span, turned into digits and checked, keyed as eight digits, recorded and handed over by its last four | the clinic's patient ID slot (in the same folder) |
+| A value no list holds: detected, picked as a span, turned into digits and checked, keyed as eight digits, recorded and handed over by its last four | a library `digits` slot: the clinic's member ID is configured in `apps/clinic/slots.yaml`; `memberId.ts` in the same folder is the hand-written slot it replaced |
 | A date from parts (mode, month, day, weekday, a span of days), resolved against today; a span is a partial with `partialPromptId` and `partialVars`; `valueKind: 'date'`; keypad MMDD | `date.ts` |
 | A date of birth: month and day without the year is a partial (`ask_dob_year`), `redact: 'mask'`, `valueKind: 'date'`, keypad MMDDYYYY | `dob.ts` |
 | Free text picked from word spans, with the candidates narrowed in code; no keypad | `name.ts` |

@@ -1,14 +1,14 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  addDays, defineApp, describeDay, isChoice, matchesMask, noulValue, spokenToDigits,
+  addDays, defineApp, defineSlot, describeDay, isChoice,
   type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotOutcome, type SlotSpec, type ToolDef,
 } from '../../index';
 
 /**
  * Example Town Library: a small, fictional library's phone line, written as an app folder. The YAML
  * beside this file holds its intents, forms, prompts, policy and presentation; this file holds what
- * runs: three slots (a book from the catalog, a branch, a library card number), three tools, one rule
+ * runs: three slots (a book from the catalog and a branch, written here as choices, and a library card number, a library `digits` slot), three tools, one rule
  * of the app's own, and the three forms' hooks. A caller renews a book (a confirmed write, so the
  * gate's R3 holds it to the title read back), asks whether a hold is ready at a branch, or asks what
  * is checked out on their card. The engine's tests build it with defineApp and run calls through it.
@@ -55,69 +55,24 @@ function choiceSlot(id: string, options: Readonly<Record<string, string>>, instr
   };
 }
 
-/** A library card number: eight digits. */
-export const CARD_MASK = /^\d{8}$/;
-
 /**
  * The library card number: a value no list holds, so the model cannot choose it from one. It is
  * asked whether a number is said, which span of the words it is, and whether it was said whole;
- * the code turns the span into digits and checks them. Acknowledged when the model is less sure of the
- * span, keyed as eight digits after two misses, recorded and handed over by its last four.
+ * the code turns the span into digits and checks them. A library `digits` slot: eight digits, keyed
+ * on the keypad after two misses, acknowledged (ack_card) when the model is less sure of the span,
+ * refused when it is unsure of it, re-asked with its own line (ask_card_length) when the digits are
+ * not eight, recorded and handed over by its last four.
  */
-export const cardSlot: SlotSpec = {
-  id: 'card',
-  spokenConfirm: 'by-confidence',
-  redact: 'last4',
-  handoff: 'last4',
-  detect: true,
-  questionIds: ['cardGiven', 'cardSpan', 'cardComplete'],
-  prompts: [
-    { id: 'ask_card_length', why: 'the caller said a number that is not eight digits (the fill\'s retryPromptId)' },
-    { id: 'ack_card', why: 'it acknowledges a card number it is less sure of', vars: ['card'] },
-    { id: 'ask_card_dtmf', why: 'it asks for the card number on the keypad after spoken answers missed' },
-  ],
-
-  questions(ctx) {
-    const criteria: Record<string, string | null> = {};
-    for (const span of ctx.candidateSpans) criteria[span] = null;
-    criteria.none = 'No span of asr.text is a library card number';
-    return {
-      cardGiven: {
-        type: 'noul',
-        instructions: 'Read asr.text. Does the caller state a library card number, as digits or as spoken number words?',
-      },
-      cardSpan: {
-        type: 'choice',
-        instructions: 'Read asr.text. Which of these spans is the library card number the caller states? Choose the span that covers the whole number as spoken, and no words that are not part of it. Choose none if no span is a card number.',
-        criteria,
-      },
-      cardComplete: {
-        type: 'noul',
-        instructions: 'Read asr.text. If the caller states a library card number, do they finish saying the whole number rather than trailing off?',
-      },
-    };
-  },
-
-  fill(answers, ctx): SlotOutcome {
-    const t = ctx.thresholds;
-    if (noulValue(answers, 'cardGiven') < t.SLOT_DETECT) return { kind: 'absent' };
-    if (noulValue(answers, 'cardComplete') < t.SLOT_DETECT) return { kind: 'invalid', reason: 'incomplete', raw: '' };
-    const span = answers.cardSpan;
-    if (!isChoice(span) || span.choice === 'none') return { kind: 'invalid', reason: 'no_span', raw: '' };
-    const p = span.probabilities[span.choice] ?? span.confidence;
-    if (p < t.SLOT_CHOICE_CONFIRM) return { kind: 'invalid', reason: 'low_confidence', raw: '' };
-    const digits = spokenToDigits(span.choice);
-    if (!matchesMask(digits, CARD_MASK)) return { kind: 'invalid', reason: 'length', raw: digits, retryPromptId: 'ask_card_length' };
-    return { kind: 'filled', value: digits, display: digits, confidence: p, confirm: p >= t.SLOT_CHOICE_FILL ? 'none' : 'implicit' };
-  },
-
-  dtmf: {
-    length: 8,
-    parse: (digits) => (matchesMask(digits, CARD_MASK) ? { value: digits, display: digits } : null),
-  },
-
-  display: (value) => value,
-};
+export const cardSlot = defineSlot('card', {
+  type: 'digits',
+  noun: 'library card',
+  length: 8,
+  keypad: true,
+  confirm: 'by-confidence',
+  readBack: 'below-fill',
+  minConfidence: 'SLOT_CHOICE_CONFIRM',
+  lengthRetryPromptId: 'ask_card_length',
+});
 
 export const LIBRARY_SLOTS: Record<string, SlotSpec> = {
   book: choiceSlot('book', BOOKS, 'Read asr.text. Which book in the catalog does the caller name?'),

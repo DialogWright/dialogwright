@@ -1,4 +1,5 @@
 import type { SlotSpec } from '../../core/slots/types';
+import { accountIdSlot } from './domain/slots/accountId';
 import { missingNoteSlot } from './domain/slots/missingNote';
 
 /**
@@ -7,4 +8,4 @@ import { missingNoteSlot } from './domain/slots/missingNote';
  * (testing/shadowSlot.ts). The app's own (library) slot is what the engine sees; the pair is
  * compared on every call, so the two cannot drift apart before the hand-written one is deleted.
  */
-export const TESTKIT_SHADOW_PAIRS: readonly SlotSpec[] = [missingNoteSlot];
+export const TESTKIT_SHADOW_PAIRS: readonly SlotSpec[] = [accountIdSlot, missingNoteSlot];

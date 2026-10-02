@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { matchesMask } from '../../core/extract/mask';
+import { spokenToDigits } from '../../core/extract/spokenNumber';
+import type { SlotOutcome, SlotSpec } from '../../core/slots/types';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
+import { isChoice, noulValue } from '../../jev/types';
 import { formatProblem } from '../../define/problems';
 import { choice, noul } from '../../testing/answers';
 import { shadowSlot } from '../../testing/shadowSlot';
@@ -252,6 +256,87 @@ describe('the testkit\'s account ID, written as configuration', () => {
     }
     for (const keys of ['55501234', '5550123#', '555012345', '', '12345678']) shadow.dtmf!.parse(keys, testSlotContext(''));
     expect(shadow.display('55501234')).toBe('5550 1234');
+  });
+});
+
+describe('the library fixture\'s card, written as configuration', () => {
+  // The card was hand-written before it was a digits slot: acknowledged below SLOT_CHOICE_FILL, refused
+  // below SLOT_CHOICE_CONFIRM, with its own re-ask for a wrong length. This is that slot, as it was,
+  // shadowed by the same configuration with the old words as literals: everything but the words is the
+  // type's (the default words are asserted above).
+  const MASK = /^\d{8}$/;
+  const legacy: SlotSpec = {
+    id: 'card',
+    spokenConfirm: 'by-confidence',
+    redact: 'last4',
+    handoff: 'last4',
+    detect: true,
+    questions(ctx) {
+      const criteria: Record<string, string | null> = {};
+      for (const span of ctx.candidateSpans) criteria[span] = null;
+      criteria.none = 'No span of asr.text is a library card number';
+      return {
+        cardGiven: { type: 'noul', instructions: 'Read asr.text. Does the caller state a library card number, as digits or as spoken number words?' },
+        cardSpan: {
+          type: 'choice',
+          instructions: 'Read asr.text. Which of these spans is the library card number the caller states? Choose the span that covers the whole number as spoken, and no words that are not part of it. Choose none if no span is a card number.',
+          criteria,
+        },
+        cardComplete: { type: 'noul', instructions: 'Read asr.text. If the caller states a library card number, do they finish saying the whole number rather than trailing off?' },
+      };
+    },
+    fill(answers, ctx): SlotOutcome {
+      const t = ctx.thresholds;
+      if (noulValue(answers, 'cardGiven') < t.SLOT_DETECT) return { kind: 'absent' };
+      if (noulValue(answers, 'cardComplete') < t.SLOT_DETECT) return { kind: 'invalid', reason: 'incomplete', raw: '' };
+      const span = answers.cardSpan;
+      if (!isChoice(span) || span.choice === 'none') return { kind: 'invalid', reason: 'no_span', raw: '' };
+      const p = span.probabilities[span.choice] ?? span.confidence;
+      if (p < t.SLOT_CHOICE_CONFIRM) return { kind: 'invalid', reason: 'low_confidence', raw: '' };
+      const digits = spokenToDigits(span.choice);
+      if (!matchesMask(digits, MASK)) return { kind: 'invalid', reason: 'length', raw: digits, retryPromptId: 'ask_card_length' };
+      return { kind: 'filled', value: digits, display: digits, confidence: p, confirm: p >= t.SLOT_CHOICE_FILL ? 'none' : 'implicit' };
+    },
+    dtmf: { length: 8, parse: (digits) => (matchesMask(digits, MASK) ? { value: digits, display: digits } : null) },
+    display: (value) => value,
+  };
+  const library = defineSlot('card', {
+    type: 'digits',
+    length: 8,
+    keypad: true,
+    confirm: 'by-confidence',
+    readBack: 'below-fill',
+    minConfidence: 'SLOT_CHOICE_CONFIRM',
+    lengthRetryPromptId: 'ask_card_length',
+    text: {
+      given: 'Read asr.text. Does the caller state a library card number, as digits or as spoken number words?',
+      span: 'Read asr.text. Which of these spans is the library card number the caller states? Choose the span that covers the whole number as spoken, and no words that are not part of it. Choose none if no span is a card number.',
+      none: 'No span of asr.text is a library card number',
+      complete: 'Read asr.text. If the caller states a library card number, do they finish saying the whole number rather than trailing off?',
+    },
+  });
+  const shadow = shadowSlot(legacy, library);
+
+  it('asks the same questions and fills the same way on every branch, probabilities away from the thresholds', () => {
+    // (the legacy slot compares with < and the type with atLeast: they differ only on a probability
+    // within 1e-9 of a threshold, so the grid stays off the thresholds)
+    const spans = ['five five five two zero four one seven', '5552 0417', 'five five five two', 'none'];
+    for (const text of ['', 'my card is five five five two zero four one seven', 'five five five']) {
+      const ctx = testSlotContext(text);
+      shadow.questions(ctx);
+      for (const given of [0.2, 0.9]) {
+        for (const complete of [0.2, 0.9]) {
+          for (const span of spans) {
+            for (const p of [0.2, 0.44, 0.5, 0.56, 0.95]) {
+              const answer = span === 'none' ? choice({ none: 1 }) : { type: 'choice' as const, choice: span, probabilities: { [span]: p, none: 1 - p }, confidence: p };
+              shadow.fill({ cardGiven: noul(given), cardComplete: noul(complete), cardSpan: answer }, ctx);
+            }
+          }
+        }
+      }
+      shadow.fill({}, ctx);
+    }
+    for (const keys of ['55520417', '5552041#', '555204171', '']) shadow.dtmf!.parse(keys, testSlotContext(''));
   });
 });
 

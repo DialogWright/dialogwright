@@ -1,12 +1,27 @@
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
-# Every slot the clinic has, in the order the engine works through them. All five are written in
-# code for now (src/domain/slots/): `type: code` names a slot the code supplies, and this file lists
-# it, so it is the one place that says which slots there are and in what order. The order matters:
+# Every slot the clinic has, in the order the engine works through them. This file is the one place
+# that says which slots there are and in what order. `type: code` names a slot the code supplies
+# (src/domain/slots/); the member ID is a library `digits` slot, configured here with the clinic's own
+# wording. The order matters:
 # outside a form the engine fills slots in it, says their acknowledgements in it, and when two slots
 # each want to ask the caller to choose between two values, the first one asks. The model's turn
 # state and a transfer's handoff list the slots in it too.
 name: { type: code }
 dob: { type: code }
-memberId: { type: code }
+memberId:
+  type: digits
+  # The billing member ID: eight digits, said back in two groups of four, keyable on the keypad,
+  # recorded and handed to billing by its last four only. The questions keep the wording and ids
+  # they were recorded with (the default wording with "member ID" as the noun, and containsMemberId
+  # for the first question), and a number that does not match the mask is reported as "mask".
+  noun: member ID
+  length: 8
+  mask: ^\d{8}$
+  keypad: true
+  group: [4, 4]
+  ids:
+    given: containsMemberId
+  redact: last4
+  handoff: last4
 provider: { type: code }
 date: { type: code }

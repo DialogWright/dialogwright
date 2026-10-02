@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { choice, noul, testSlotContext as ctx } from 'dialogwright';
-import { memberIdSlot } from './memberId';
+import { choice, noul, testSlotContext as ctx, type SlotSpec } from 'dialogwright';
+import { clinicApp } from '../../app';
+import { memberIdSlot as handWritten } from './memberId';
 
-describe('memberIdSlot', () => {
+/** The same expectations of the hand-written slot and of the library `digits` slot slots.yaml builds in its place. */
+describe.each<[string, SlotSpec]>([
+  ['the hand-written memberIdSlot', handWritten],
+  ['the library memberId slot (slots.yaml)', clinicApp.slots.memberId!],
+])('%s', (_name, memberIdSlot) => {
   it('asks three questions with the spans as choice criteria', () => {
     const q = memberIdSlot.questions(ctx('it is five five five'));
     expect(Object.keys(q)).toEqual(['containsMemberId', 'memberIdSpan', 'memberIdComplete']);
