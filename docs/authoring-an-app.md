@@ -33,7 +33,7 @@ my-app/
   policy.yaml       the gate's tables
   identity.yaml     optional: how a caller proves who they are
   slots.yaml        optional: every slot the app has, and their order
-  locale/<tag>/     optional: prompts.yaml for each extra language
+  locale/<tag>/     optional: prompts.yaml for each extra language, and slots.yaml for how its slots say values
   app.ts            the code: export const code: AppCode = { ... }
   fixtures/         optional: corpus.jsonl, scripted calls, a baseline, recorded cassettes
 ```
@@ -245,6 +245,10 @@ Without the file, every slot is the code's, as before. The file is part of the c
 ### locale/&lt;tag&gt;/prompts.yaml (optional)
 
 The prompts for another language, in the same shape as prompts.yaml. See section 7.
+
+### locale/&lt;tag&gt;/slots.yaml (optional)
+
+How the library slots say their values in that language: a choice option's `say`, a text slot's stand-in. Never what the model is asked. See section 7.
 
 ### fixtures/ (optional)
 
@@ -509,7 +513,7 @@ How a spoken value is confirmed. A keyed value never is.
 
 ### display
 
-`display(value)` is how the line says a value: "55520417" for the card, "Dr. Patel" for a provider, "Tuesday, September 22" for a date. The engine does not call it itself: what a line says, what the console shows and what the model sees is the `display` your `fill`, `dtmf.parse` or `disambiguate` candidate returned, stored on the slot. Write one formatter, make it the spec's `display`, and use it in all three, so they agree (the library's `choiceSlot` and the clinic's date do). The library's card is said digit by digit because app.yaml's `voice.spokenDigits` rule spells `card ` followed by digits for text to speech, so its lines say "card {card}".
+`display(value, locale)` is how the line says a value: "55520417" for the card, "Dr. Patel" for a provider, "Tuesday, September 22" for a date ("martes, 22 de septiembre" in a Spanish call). `locale` is the session's (`ctx.locale` in `fill` and `dtmf.parse`), which only an app that declares locales has; format en-US exactly as with no locale. The engine does not call it itself: what a line says, what the console shows and what the model sees is the `display` your `fill`, `dtmf.parse` or `disambiguate` candidate returned, stored on the slot. Write one formatter, make it the spec's `display`, and use it in all three, so they agree (the library's `choiceSlot` and the clinic's date do). The library's card is said digit by digit because app.yaml's `voice.spokenDigits` rule spells `card ` followed by digits for text to speech, so its lines say "card {card}".
 
 ### Testing a slot
 
@@ -691,7 +695,7 @@ What `check` does not do yet: it cannot check generated wording (every prompt is
 
 ## 7. Locales
 
-An app speaks the language of its `prompts.yaml`, named by `locale:` in app.yaml (default `en-US`). To add a language, add `locale/<tag>/prompts.yaml` with the same shape. The library has `locale/es/prompts.yaml`:
+An app speaks the language of its `prompts.yaml`, named by `locale:` in app.yaml (default `en-US`). To add a language, add `locale/<tag>/prompts.yaml` with the same shape, and, for how its library slots say their values there, an optional `locale/<tag>/slots.yaml` (below). The library has `locale/es/prompts.yaml` and `locale/es/slots.yaml`:
 
 ```yaml
 prompts:
@@ -705,14 +709,34 @@ prompts:
 - **Fallback.** A line missing from a locale is said from the default locale, one line at a time, so a half-translated app still works.
 - **Choosing the locale.** The session starts in the default locale. A channel can name another: the `session.start` event carries a `locale`, and the ConversationRelay adapter reads it from a custom parameter named `locale`. It is matched against the app's locales: the same tag (letter case aside), else the app's locale that is the request's language alone (`es-US` finds `es`), else the app's first locale in that language (`es` finds `es-MX`), else the default. The request is untrusted: it is only compared, and what is used is always one of the app's own tags.
 - **Spoken text.** A translated line is spoken by text to speech. Recorded clips are in the default language only.
-- **Known limits.** Today a locale is chosen and its lines are said, but no channel yet carries the language end to end:
+- **Slots hear and say the session's language.** A slot's context carries the session's locale (`ctx.locale`), and the library types read it. What changes for a Spanish session (`es`, or any `es-*` tag); every other locale, and an app without locales, reads and says values exactly as en-US always has:
+  - **Numbers.** The spans a number question offers and the digits read from them are Spanish: "cinco cinco cinco dos cero cuatro uno siete", "cincuenta y cinco cincuenta y dos cero cuatro diecisiete", "mil novecientos noventa y uno". Accents are optional ("dieciséis", "dieciseis"); a span keeps them as said. The engine keeps one word table per language (`core/extract/lexicon.ts`), English and Spanish so far.
+  - **Names.** Word spans are Unicode ("María José"), the words around a name are Spanish ("me llamo", "soy", "sí"), a compound surname is one span ("Muñoz de la Cruz": `de`, `del`, `la`, `las`, `los`, `y`, `e` inside a name, never at its ends), and a name is said back with its particles in lower case ("María José Muñoz de la Cruz").
+  - **Dates.** A day is said "martes, 22 de septiembre", a birth date "22 de noviembre de 1991", a span of days "la próxima semana" or "en diciembre". A date said as numbers puts the day first: the default month and day questions say so to the model, and the keypad takes `DDMM` (a `date`) and `DDMMYYYY` (a `birthdate`), the same number of keys; write the `ask_<slot>_dtmf` line in each locale to match.
+  - **Wording, `locale/<tag>/slots.yaml`.** Words an app chooses for a value are given per locale, by slot id: a choice option's `say` and a text slot's stand-in. They replace the slot's own for sessions in that locale; an option left out keeps its own words.
+
+    ```yaml
+    # yaml-language-server: $schema=../../../../packages/dialogwright/schemas/locale-slots.schema.json
+    branch:
+      options:
+        north: Norte
+        riverside: { say: Ribera }
+    note:
+      say: su nota
+    ```
+
+    `defineApp` builds each library slot it names again with its wording, whether the slot is in slots.yaml or built in code with `defineSlot`, and `check` reports, at the line: a slot the app does not have (with the closest name), a slot written by hand in code (it has no options to word; format its `display` by `locale` instead), a library slot changed in code after it was built (`{ ...slot, dtmf }`: built again it would lose the change), a type that takes no wording (`digits`, `date`, `birthdate`, `name` and `record` say their values by locale themselves), an option the slot does not have, and any key but `say`. The file is in the configuration hashes, by its path. An app that is not a folder (`defineSlots`) has no locale files.
+  - **What stays in the default language, by design.** The questions: their instructions and criteria are what the model reads, and their labels are keys (`north`, `november`), so a Spanish caller is asked about in English, with the Spanish words among a span question's choices. A choice option's `means` and a record's `label` are criteria, so they are not worded per locale either.
+- **Known limits.** Today a locale is chosen, its lines are said and its slots hear and say its language, but no channel yet carries the language end to end:
   - The server's ConversationRelay TwiML (`server/twiml.ts`) sends no `locale` parameter and sets no `language`, `ttsLanguage` or `transcriptionLanguage`, and the engine never emits the `set_language` action. So a voice session in a locale other than the default is transcribed and voiced with the relay's defaults (English), even when its lines are Spanish.
   - The chat channel has no way to ask for a locale, so every chat session speaks the default.
   - Outbound ConversationRelay text frames say `lang: en-US` whatever the session's locale.
-  - Intent labels (`label:` in intents.yaml) and slot displays stay in the default language, so a Spanish line that says "Claro, puedo ayudarle a {intentLabel}" still ends with the English label.
+  - Intent labels (`label:` in intents.yaml) stay in the default language, so a Spanish line that says "Claro, puedo ayudarle a {intentLabel}" still ends with the English label.
+  - A slot written by hand in code formats its own values: it says them in Spanish only if it reads `ctx.locale` and `display(value, locale)`.
+  - Spanish is the one language besides English the slots read and say; another language's sessions read words as English and say values in English until its lexicon and formats are added.
   - Matching a requested locale looks at the language and the whole tag, not at a script subtag: a request for `zh-Hant` in an app with only `zh-Hans` finds `zh-Hans` by its language, `zh`.
 
-  The channel parts (the TwiML's language attributes and `locale` parameter, `set_language`, a chat request for a locale, the text frames' language tag) belong to Phase 7 (Channels); localized labels and displays come with the slot library (Phase 3). See the roadmap in [design.md](design.md).
+  The channel parts (the TwiML's language attributes and `locale` parameter, `set_language`, a chat request for a locale, the text frames' language tag) belong to Phase 7 (Channels). See the roadmap in [design.md](design.md).
 - An app with neither `locale:` in app.yaml nor a `locale/` folder behaves exactly as before: its App has no locales, its sessions carry no locale, and nothing it writes changes. `locale:` alone (as the clinic has) gives the App its locales, the default's and no others.
 
 ## 8. Configuration hashes
