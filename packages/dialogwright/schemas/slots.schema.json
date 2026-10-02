@@ -643,7 +643,7 @@
             "maximum": 40
           },
           "mask": {
-            "description": "A regular expression (its source, no slashes) the digits must match, such as \"^5\\d{7}$\" for eight digits starting with 5. Default: exactly `length` digits. A number that fails it is \"invalid\" with the reason \"mask\" (with only `length`, the reason is \"length\").",
+            "description": "A regular expression (its source, no slashes) the whole of the digits must match: it is anchored at both ends, so \"5\\d{7}\" and \"^5\\d{7}$\" both mean eight digits starting with 5. With `length` too, the digits must also be that many. Default: exactly `length` digits. A number that fails it is \"invalid\" with the reason \"mask\" (with only `length`, the reason is \"length\"). A group that repeats a repeat, such as (\\d+)+, is refused.",
             "type": "string",
             "minLength": 1
           },
@@ -893,7 +893,7 @@
           },
           "keyPattern": {
             "default": "[A-Za-z0-9_-]+",
-            "description": "A regular expression (its source, no slashes) the whole key must match, such as \"\\d{4}\" for four digits. A record whose key does not match is not offered, and a label or keys that do not match are no value.",
+            "description": "A regular expression (its source, no slashes) the whole key must match, such as \"\\d{4}\" for four digits. A record whose key does not match is not offered, and a label or keys that do not match are no value. A key longer than 64 characters is never tried, and a group that repeats a repeat, such as (\\d+)+, is refused.",
             "type": "string",
             "minLength": 1,
             "pattern": "^[^\\u0000-\\u001f\\u007f]*$"

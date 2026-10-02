@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { repeatsARepeat } from '../parts/pattern';
 import { identifier } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
 import { checkLabelTemplate, LABEL_FILTERS } from './label';
@@ -65,7 +66,7 @@ export const recordOptions = z
     key: identifier().default(DEFAULT_KEY).describe('The record field whose value the slot takes (a string or a number), and which the keypad and a spoken number give.'),
     keyPattern: questionText()
       .default(DEFAULT_KEY_PATTERN)
-      .describe('A regular expression (its source, no slashes) the whole key must match, such as "\\d{4}" for four digits. A record whose key does not match is not offered, and a label or keys that do not match are no value.'),
+      .describe('A regular expression (its source, no slashes) the whole key must match, such as "\\d{4}" for four digits. A record whose key does not match is not offered, and a label or keys that do not match are no value. A key longer than 64 characters is never tried, and a group that repeats a repeat, such as (\\d+)+, is refused.'),
     labelPrefix: z
       .string()
       .regex(/^[A-Za-z][A-Za-z0-9_]*$/, { error: 'must start with a letter and use only letters, digits and underscores' })
@@ -111,6 +112,14 @@ export const recordOptions = z
         path: ['keyPattern'],
         message: `"${o.keyPattern}" is not a regular expression`,
         params: { fix: 'write the source of a regular expression without slashes, such as "\\d{4}"' },
+      });
+    }
+    if (compiles(o.keyPattern) && repeatsARepeat(o.keyPattern)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['keyPattern'],
+        message: `"${o.keyPattern}" repeats a group that itself repeats (as (\\d+)+ does), which can take minutes to refuse a key that almost matches`,
+        params: { fix: 'write it without the repeat inside the repeat, such as "\\d+5" for "(\\d+)+5"' },
       });
     }
     const labels: [string, string, readonly string[] | undefined][] = [['label', o.label, undefined]];

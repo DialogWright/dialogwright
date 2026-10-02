@@ -17,7 +17,7 @@ A slot of this type is written under its id in slots.yaml, with `type: digits` a
 | `noun` | string | unset | What the number identifies, as a noun without "number" ("account", "library card", "parcel tracking"). The default questions say "a `<noun>` number". Needed unless text gives every question in its own words. |
 | `article` | string | unset | The word before the noun in the default questions. Default: "an" when the noun starts with a vowel, otherwise "a". |
 | `length` | integer, 1 to 40 | unset | How many digits the number has. Gives the default mask (exactly this many digits) and the length of the keypad rung. Needed unless mask is given. |
-| `mask` | string | unset | A regular expression (its source, no slashes) the digits must match, such as "^5\d{7}$" for eight digits starting with 5. Default: exactly `length` digits. A number that fails it is "invalid" with the reason "mask" (with only `length`, the reason is "length"). |
+| `mask` | string | unset | A regular expression (its source, no slashes) the whole of the digits must match: it is anchored at both ends, so "5\d{7}" and "^5\d{7}$" both mean eight digits starting with 5. With `length` too, the digits must also be that many. Default: exactly `length` digits. A number that fails it is "invalid" with the reason "mask" (with only `length`, the reason is "length"). A group that repeats a repeat, such as (\d+)+, is refused. |
 | `keypad` | boolean | `false` | Whether the caller can key the number on the keypad, `length` digits at a time. Needs `length`, and an `ask_<slot>_dtmf` line. |
 | `group` | list of integer, 1 or more | unset | How the number is said back, in groups of these sizes ([4, 4]: "5550 7788"). The last group takes any digits left over. Default: all digits together. |
 | `confirm` | one of `summary`, `by-confidence` | `summary` | "summary": a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. "by-confidence": it is acknowledged (`ack_<slot>`) when `readBack` says so. |
@@ -60,7 +60,7 @@ The slot is always `detect: true`: its row in the console is measured against `S
 | A number, trailed off (the third question is below `SLOT_DETECT`) | `invalid`, reason `incomplete` |
 | A number, no span chosen | `invalid`, reason `no_span` |
 | A span the model is less sure of than `minConfidence` | `invalid`, reason `low_confidence` |
-| Digits that do not fit the pattern | `invalid`, reason `mask` or `length`, with `lengthRetryPromptId` when it is set |
+| Digits that do not fit the pattern (the whole of them must match `mask`, which is anchored at both ends, and be `length` long when `length` is given; more than 40 digits never fit) | `invalid`, reason `mask` (`length` when there is no `mask`), with `lengthRetryPromptId` when it is set |
 | Digits that fit | `filled`: the value is the digits, the display is the digits in `group`s, and `readBack` says what it asks for |
 
 ## The questions
@@ -245,4 +245,5 @@ reference:
 - A keyed number counts as confirmed: it is not acknowledged or read back, whatever `confirm` says.
 - The value is masked by its last four digits by default, in the trace and in a transfer's handoff. Turn that off (`redact: none`, `handoff: display`) only for a number that is no one's secret, such as a tracking number.
 - In a Spanish session (`es`, `es-*`) the spans offered are Spanish number words, and a span is read as Spanish: "cinco cinco cinco dos cero cuatro uno siete" and "cincuenta y cinco cincuenta y dos cero cuatro diecisiete" are both 55520417. The questions and the display are the same in every locale.
+- `mask` is matched against the whole of the digits, as if written `^(?:mask)$`, so `5\d{3}` and `^5\d{3}$` are the same pattern; a mask written with `^` and `$` already means what it always did. A group that repeats a repeat, such as `(\d+)+`, is refused when the slot is defined, since such a pattern can take minutes to refuse a number that almost matches.
 - Run its checks with `pnpm --filter dialogwright test slots/digits`.

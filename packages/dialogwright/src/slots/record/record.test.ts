@@ -327,6 +327,23 @@ function recordGrid(shadow: SlotSpec, o: { id: string; prefix: string; records: 
   for (const value of ['7101', '4412', '0000']) shadow.display(value);
 }
 
+describe('a keyPattern that could take minutes', () => {
+  it('is refused when it repeats a repeat', () => {
+    const r = buildSlot('r', { type: 'record', keyPattern: '(\\d+)+5' });
+    expect(!r.ok && r.problems.map(formatProblem)).toEqual([
+      '(code)  r.keyPattern  "(\\d+)+5" repeats a group that itself repeats (as (\\d+)+ does), which can take minutes to refuse a key that almost matches  ->  write it without the repeat inside the repeat, such as "\\d+5" for "(\\d+)+5"',
+    ]);
+  });
+
+  it('is never tried on a key longer than 64 characters', () => {
+    const slot = defineSlot('r', { type: 'record', keypad: 4 });
+    const long = `record_${'a'.repeat(65)}`;
+    expect(slot.fill({ rChoice: choice({ [long]: 1 }) } as AnswerMap, testSlotContext(''))).toEqual({ kind: 'absent' });
+    const offered = slot.questions(testSlotContext('', { records: [{ id: 'a'.repeat(65) }, { id: 'a'.repeat(64) }] })).rChoice as ChoiceQuestion;
+    expect(Object.keys(offered.criteria)).toEqual([`record_${'a'.repeat(64)}`, 'none']);
+  });
+});
+
 describe('the testkit\'s parcel, written as configuration', () => {
   // The testkit's hand-written parcel slot and the library slot that replaces it (its own words, id,
   // labels, criteria and reason, a four-digit number said offered, no year rule, the keypad), through

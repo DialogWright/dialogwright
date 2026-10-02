@@ -20,7 +20,7 @@ The slot is always `detect: true`: its row in the console is measured against `S
 | A number, trailed off (the third question is below `SLOT_DETECT`) | `invalid`, reason `incomplete` |
 | A number, no span chosen | `invalid`, reason `no_span` |
 | A span the model is less sure of than `minConfidence` | `invalid`, reason `low_confidence` |
-| Digits that do not fit the pattern | `invalid`, reason `mask` or `length`, with `lengthRetryPromptId` when it is set |
+| Digits that do not fit the pattern (the whole of them must match `mask`, which is anchored at both ends, and be `length` long when `length` is given; more than 40 digits never fit) | `invalid`, reason `mask` (`length` when there is no `mask`), with `lengthRetryPromptId` when it is set |
 | Digits that fit | `filled`: the value is the digits, the display is the digits in `group`s, and `readBack` says what it asks for |
 
 ## The questions
@@ -60,4 +60,5 @@ account:
 - A keyed number counts as confirmed: it is not acknowledged or read back, whatever `confirm` says.
 - The value is masked by its last four digits by default, in the trace and in a transfer's handoff. Turn that off (`redact: none`, `handoff: display`) only for a number that is no one's secret, such as a tracking number.
 - In a Spanish session (`es`, `es-*`) the spans offered are Spanish number words, and a span is read as Spanish: "cinco cinco cinco dos cero cuatro uno siete" and "cincuenta y cinco cincuenta y dos cero cuatro diecisiete" are both 55520417. The questions and the display are the same in every locale.
+- `mask` is matched against the whole of the digits, as if written `^(?:mask)$`, so `5\d{3}` and `^5\d{3}$` are the same pattern; a mask written with `^` and `$` already means what it always did. A group that repeats a repeat, such as `(\d+)+`, is refused when the slot is defined, since such a pattern can take minutes to refuse a number that almost matches.
 - Run its checks with `pnpm --filter dialogwright test slots/digits`.

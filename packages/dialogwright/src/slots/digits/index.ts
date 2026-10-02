@@ -1,10 +1,9 @@
-import { matchesMask } from '../../core/extract/mask';
 import type { SlotPrompt } from '../../core/slots/types';
 import { examplesFrom } from '../parts/examples';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { digitsDisplay } from './display';
-import { digitsFill, maskOf } from './fill';
+import { digitsFill, digitsFit } from './fill';
 import { digitsOptions, type DigitsOptions } from './options';
 import { digitsQuestions, idsOf, thingOf } from './questions';
 
@@ -40,7 +39,7 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
   build(id, o) {
     const ids = idsOf(id, o);
     const display = digitsDisplay(o);
-    const mask = maskOf(o);
+    const fits = digitsFit(o);
     return {
       id,
       spokenConfirm: o.confirm,
@@ -53,7 +52,7 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
       questions: digitsQuestions(id, o),
       fill: digitsFill(o, ids, display),
       ...(o.keypad && o.length !== undefined
-        ? { dtmf: { length: o.length, parse: (digits: string, ctx: { locale?: string }) => (matchesMask(digits, mask) ? { value: digits, display: display(digits, ctx.locale) } : null) } }
+        ? { dtmf: { length: o.length, parse: (digits: string, ctx: { locale?: string }) => (fits(digits) ? { value: digits, display: display(digits, ctx.locale) } : null) } }
         : {}),
       display,
     };

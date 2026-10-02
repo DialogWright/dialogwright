@@ -1,14 +1,21 @@
 import { numbersSaid } from '../../core/extract/numbersSaid';
 import type { SlotContext } from '../../core/slots/types';
 import type { QuestionMap } from '../../jev/types';
+import { MAX_KEY_LENGTH } from '../parts/pattern';
 import { renderLabel } from './label';
 import { RECORD_PARTS, RECORD_QUESTIONS, type RecordOptions } from './options';
 
 /** The id of a record slot's question: the slot's id followed by `Choice`, unless `ids.choice` says otherwise. */
 export const recordIdOf = (slot: string, o: Pick<RecordOptions, 'ids'>): string => RECORD_QUESTIONS.id(slot, 'choice', o.ids);
 
-/** The whole of a key, by `keyPattern`. */
-export const keyMatcher = (o: Pick<RecordOptions, 'keyPattern'>): RegExp => new RegExp(`^(?:${o.keyPattern})$`);
+/**
+ * Whether a string is the whole of a key, by `keyPattern`: no longer than MAX_KEY_LENGTH (a longer
+ * one is never tried on the pattern) and matching it from end to end.
+ */
+export function keyMatcher(o: Pick<RecordOptions, 'keyPattern'>): { test(key: string): boolean } {
+  const pattern = new RegExp(`^(?:${o.keyPattern})$`);
+  return { test: (key) => key.length <= MAX_KEY_LENGTH && pattern.test(key) };
+}
 
 /** One thing the question offers: a key, and the criterion the model is given for it. */
 export interface RecordCandidate {

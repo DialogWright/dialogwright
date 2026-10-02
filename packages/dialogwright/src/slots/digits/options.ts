@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { repeatsARepeat } from '../parts/pattern';
 import { identifier } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
 
@@ -63,7 +64,7 @@ export const digitsOptions = z
       .string()
       .min(1)
       .optional()
-      .describe('A regular expression (its source, no slashes) the digits must match, such as "^5\\d{7}$" for eight digits starting with 5. Default: exactly `length` digits. A number that fails it is "invalid" with the reason "mask" (with only `length`, the reason is "length").'),
+      .describe('A regular expression (its source, no slashes) the whole of the digits must match: it is anchored at both ends, so "5\\d{7}" and "^5\\d{7}$" both mean eight digits starting with 5. With `length` too, the digits must also be that many. Default: exactly `length` digits. A number that fails it is "invalid" with the reason "mask" (with only `length`, the reason is "length"). A group that repeats a repeat, such as (\\d+)+, is refused.'),
     keypad: z.boolean().default(false).describe('Whether the caller can key the number on the keypad, `length` digits at a time. Needs `length`, and an ask_<slot>_dtmf line.'),
     group: z
       .array(z.number().int().min(1))
@@ -127,6 +128,14 @@ export const digitsOptions = z
         path: ['mask'],
         message: `"mask" is not a regular expression: ${JSON.stringify(o.mask)}`,
         params: { fix: 'write the pattern\'s source without slashes, such as "^\\d{8}$"' },
+      });
+    }
+    if (o.mask !== undefined && validMask(o.mask) && repeatsARepeat(o.mask)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mask'],
+        message: `"mask" repeats a group that itself repeats (as (\\d+)+ does), which can take minutes to refuse a number that almost matches: ${JSON.stringify(o.mask)}`,
+        params: { fix: 'write it without the repeat inside the repeat, such as "\\d+5" for "(\\d+)+5"' },
       });
     }
     if (o.keypad && o.length === undefined) {

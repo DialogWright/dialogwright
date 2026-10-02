@@ -12,7 +12,9 @@ import { testSlotContext } from '../../testing/slots';
 import { accountIdSlot } from '../../testing/testkit/oracles/accountId';
 import { runSlotConformance } from '../conformance/run';
 import { buildSlot, defineSlot, slotTypeJsonSchema } from '../defineSlot';
+import { digitsFill } from './fill';
 import { digitsType } from './index';
+import { digitsOptions } from './options';
 
 /** The `digits` type: the conformance kit over its examples, then what the kit does not cover. */
 runSlotConformance(digitsType, { describe, it, locales: ['en-US', 'es'] });
@@ -114,6 +116,43 @@ describe('mask and length', () => {
     const both = defineSlot('code', { type: 'digits', noun: 'code', length: 4, mask: '^5\\d{3}$', keypad: true });
     expect(both.dtmf?.parse('5123', testSlotContext(''))).toEqual({ value: '5123', display: '5123' });
     expect(both.dtmf?.parse('6123', testSlotContext(''))).toBeNull();
+  });
+
+  it('a mask is anchored at both ends: it must match the whole of the digits', () => {
+    const fives = defineSlot('code', { type: 'digits', noun: 'code', mask: '5\\d{3}', keypad: false });
+    const ids = { codeGiven: noul(0.9), codeComplete: noul(1) };
+    const said = (span: string) => fives.fill({ ...ids, codeSpan: choice({ [span]: 1 }) }, testSlotContext(span));
+    expect(said('9951234567')).toEqual({ kind: 'invalid', reason: 'mask', raw: '9951234567' });
+    expect(said('51234')).toEqual({ kind: 'invalid', reason: 'mask', raw: '51234' });
+    expect(said('5123')).toMatchObject({ kind: 'filled', value: '5123' });
+    // An anchored mask, as every app's in the repository is, means the same as before.
+    const anchored = defineSlot('code', { type: 'digits', noun: 'code', mask: '^\\d{8}$', length: 8, keypad: true });
+    const fill = (span: string) => anchored.fill({ ...ids, codeSpan: choice({ [span]: 1 }) }, testSlotContext(span));
+    expect(fill('55507788')).toMatchObject({ kind: 'filled', value: '55507788' });
+    expect(fill('5550778')).toEqual({ kind: 'invalid', reason: 'mask', raw: '5550778' });
+    expect(anchored.dtmf?.parse('55507788', testSlotContext(''))).toEqual({ value: '55507788', display: '55507788' });
+  });
+
+  it('with both a mask and a length, the digits must be that many as well as match', () => {
+    const both = defineSlot('code', { type: 'digits', noun: 'code', length: 4, mask: '^5\\d+$', keypad: true });
+    const ids = { codeGiven: noul(0.9), codeComplete: noul(1) };
+    expect(both.fill({ ...ids, codeSpan: choice({ '512345678': 1 }) }, testSlotContext('512345678'))).toEqual({ kind: 'invalid', reason: 'mask', raw: '512345678' });
+    expect(both.fill({ ...ids, codeSpan: choice({ '5123': 1 }) }, testSlotContext('5123'))).toMatchObject({ kind: 'filled', value: '5123' });
+    expect(both.dtmf?.parse('51234', testSlotContext(''))).toBeNull();
+  });
+
+  it('refuses a mask that repeats a repeat, and never tries a mask on more than 40 digits', () => {
+    const nested = buildSlot('acct', { type: 'digits', noun: 'account', mask: '^(\\d+)+5$' });
+    expect(!nested.ok && nested.problems.map(formatProblem)).toEqual([
+      '(code)  acct.mask  "mask" repeats a group that itself repeats (as (\\d+)+ does), which can take minutes to refuse a number that almost matches: "^(\\\\d+)+5$"  ->  write it without the repeat inside the repeat, such as "\\d+5" for "(\\d+)+5"',
+    ]);
+    // Past the options check (a type built by hand from the fill), the cap still keeps a long number from the pattern.
+    const o = digitsOptions.parse({ noun: 'account', mask: '^\\d{1,40}$' });
+    const fill = digitsFill({ ...o, mask: '^(\\d+)+5$' }, { given: 'g', span: 's', complete: 'c' }, (v) => v);
+    const long = '1'.repeat(100);
+    const t0 = performance.now();
+    expect(fill({ g: noul(1), c: noul(1), s: choice({ [long]: 1 }) }, testSlotContext(long))).toEqual({ kind: 'invalid', reason: 'mask', raw: long });
+    expect(performance.now() - t0).toBeLessThan(500);
   });
 
   it('needs a length or a mask, a mask that is a pattern, and groups that add up to the length', () => {
