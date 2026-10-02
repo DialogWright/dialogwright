@@ -206,10 +206,10 @@ describe('fill', () => {
     }
   });
 
-  it('no answer at all is absent, asked or not: the question was not asked (there was nothing to offer), so nothing was heard', () => {
+  it('no answer at all (the question was not asked, there being nothing to offer) is nothing chosen: invalid when asked, else absent', () => {
     expect(parcel.fill({}, c)).toEqual({ kind: 'absent' });
-    expect(parcel.fill({}, asked)).toEqual({ kind: 'absent' });
-    expect(parcel.fill({}, ctx('', { prompted: true }))).toEqual({ kind: 'absent' });
+    expect(parcel.fill({}, asked)).toEqual({ kind: 'invalid', reason: 'no_parcel', raw: '' });
+    expect(parcel.fill({}, ctx('', { prompted: true }))).toEqual({ kind: 'invalid', reason: 'no_parcel', raw: '' });
   });
 
   it('reads every threshold from the context', () => {
@@ -284,7 +284,7 @@ describe('defineSlot problems', () => {
  * number, or say several; and fills, asked and not, with the top label each record, a number said, a
  * key too short, a label of another prefix and none, at, around and between the thresholds, against
  * every second label (or none), at every gap around SLOT_CHOICE_MARGIN; then every four keys and keys
- * of other lengths. No answer at all, while asked, is left out: the one deliberate difference (below).
+ * of other lengths; and no answer at all (nothing to offer), asked and not.
  */
 function recordGrid(shadow: SlotSpec, o: { id: string; prefix: string; records: readonly unknown[]; said: string }): void {
   const lists: readonly (readonly unknown[])[] = [[], o.records, [...o.records, o.records[0], { number: o.said, item: 'something said', day: '2026-09-01', service: 'something said', serviceDate: '2026-09-01' }]];
@@ -312,7 +312,7 @@ function recordGrid(shadow: SlotSpec, o: { id: string; prefix: string; records: 
         }
       }
       shadow.fill({ [o.id]: { type: 'noul', noul: 0.9 } } as never, c);
-      if (!prompted) shadow.fill({}, c);
+      shadow.fill({}, c);
     }
   }
   for (let n = 0; n < 10_000; n++) shadow.dtmf!.parse(String(n).padStart(4, '0'), testSlotContext(''));
@@ -346,7 +346,7 @@ describe('the testkit\'s parcel, written as configuration', () => {
     recordGrid(shadowSlot(testkitParcel, parcelSelectRecordSlot, { report }), testkit);
     expect(report.mismatches).toEqual([]);
     expect(report.calls['parcelSelect.questions']).toBe(60);
-    expect(report.calls['parcelSelect.fill']).toBe(8_937);
+    expect(report.calls['parcelSelect.fill']).toBe(8_940);
     expect(report.calls['parcelSelect.dtmf.parse']).toBe(10_007);
   });
 
@@ -363,16 +363,17 @@ describe('the testkit\'s parcel, written as configuration', () => {
     }
   });
 
-  it('differs from the hand-written slot only where no turn reaches: no answer at all, when the parcel was asked for', () => {
-    // With nothing to offer (no parcels listed, no number said) neither slot asks a question, and the
-    // hand-written slot read the missing answer as a miss; the library reads it as nothing heard
-    // (absent), as the conformance kit requires. Either way the turn is a missed answer to the
-    // question asked (no progress, the same retry ladder and lines); only the trace's row differs
-    // (invalid:no_parcel, or no row). No stub turn reaches it: the shadowed run shows no mismatch.
-    const asked = testSlotContext('', { prompted: true });
-    expect(testkitParcel.fill({}, asked)).toEqual({ kind: 'invalid', reason: 'no_parcel', raw: '' });
-    expect(parcelSelectRecordSlot.fill({}, asked)).toEqual({ kind: 'absent' });
-    expect(parcelSelectRecordSlot.fill({}, testSlotContext(''))).toEqual(testkitParcel.fill({}, testSlotContext('')));
+  it('agrees with the hand-written slot with no answer at all: nothing chosen, invalid when the parcel was asked for', () => {
+    // With nothing to offer (no parcels listed, no number said) neither slot asks a question, and both
+    // read the missing answer as a miss when the parcel was asked for (the retry ladder moves on). No
+    // stub turn reaches it; the grid above includes it, asked and not, and finds no mismatch.
+    const report = createShadowReport();
+    const shadow = shadowSlot(testkitParcel, parcelSelectRecordSlot, { report });
+    for (const records of [[], PARCELS]) {
+      expect(shadow.fill({}, testSlotContext('', { records, prompted: true }))).toEqual({ kind: 'invalid', reason: 'no_parcel', raw: '' });
+      expect(shadow.fill({}, testSlotContext('', { records }))).toEqual({ kind: 'absent' });
+    }
+    expect(report.mismatches).toEqual([]);
   });
 });
 

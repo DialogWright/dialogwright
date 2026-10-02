@@ -66,7 +66,7 @@ The kit (`conformance/`, exported from `dialogwright/testing`, not the root entr
 | `builds` | The configuration builds a slot that declares its question ids and its lines. |
 | `unknown-keys` | An option the type does not have is refused, with a problem that names it (and so is an unknown part under `text` or `ids`). |
 | `question-ids` | `questions()` asks only the ids the slot declares, in every context the kit tries; none is the engine's; the same configuration gives the same ids and questions; a second slot of the type gets other ids. |
-| `empty` | No answers at all give `absent`. |
+| `empty` | No answers at all give `absent` when the slot was not asked for. When it was asked for, they give `absent` or `invalid` (a slot with nothing to offer, or one that reads a turn that named nothing as a miss, says so), never a value, a pair to choose between or a partial. |
 | `quiet` | Answers that hear nothing (every yes-or-no at 0, every choice on `none`, every score on its lowest level) give `absent` or `invalid`, never a value. |
 | `malformed` | Answers of the wrong type, missing or out of range, and keys that are no value, never make it throw, and what it returns is an outcome. |
 | `thresholds` | A fill reads at least one threshold by name; with every threshold it reads out of reach it does not fill; and with every probability and every threshold scaled by the same factor, every outcome stays the same. A number written into the type breaks that last one. |

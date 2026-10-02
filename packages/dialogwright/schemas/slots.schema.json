@@ -326,7 +326,7 @@
           },
           "whenUnsaid": {
             "default": "invalid-if-prompted",
-            "description": "What a turn that names no day (the mode question answers none, or is below SLOT_CHOICE_CONFIRM) gives. \"invalid-if-prompted\": invalid (reason unresolvable, raw empty) when the caller was asked for the day, so the retry ladder moves on, else absent. \"absent\": always absent.",
+            "description": "What a turn that names no day (the mode question answers none, is below SLOT_CHOICE_CONFIRM, or is not answered at all) gives. \"invalid-if-prompted\": invalid (reason unresolvable, raw empty) when the caller was asked for the day, so the retry ladder moves on, else absent. \"absent\": always absent.",
             "type": "string",
             "enum": [
               "invalid-if-prompted",

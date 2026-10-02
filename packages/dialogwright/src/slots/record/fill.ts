@@ -17,10 +17,9 @@ export function keyOfLabel(o: Pick<RecordOptions, 'labelPrefix' | 'keyPattern'>)
 
 /**
  * A record slot's fill, read from the probabilities the model gives each label (not from its one pick):
- * - The question not answered at all (it was not asked, having nothing to offer): absent.
- * - The top label is not a key (none, or a label the slot never offers), or it is below
- *   SLOT_CHOICE_CONFIRM: nothing chosen. That is invalid with `missReason` when the slot was asked
- *   for, else absent.
+ * - The question not answered (it was not asked, having nothing to offer), the top label not a key
+ *   (none, or a label the slot never offers), or below SLOT_CHOICE_CONFIRM: nothing chosen. That is
+ *   invalid with `missReason` when the slot was asked for, else absent.
  * - With `disambiguate`, the second label a key too and within SLOT_CHOICE_MARGIN of the top: ask
  *   which of the two.
  * - Below `fillAt`: nothing chosen.
@@ -35,7 +34,6 @@ export function recordFill(
   return (answers, ctx) => {
     const t = ctx.thresholds;
     const a = answers[questionId];
-    if (a === undefined) return { kind: 'absent' };
     const miss: SlotOutcome = ctx.prompted ? { kind: 'invalid', reason: o.missReason, raw: '' } : { kind: 'absent' };
     if (!isChoice(a)) return miss;
     const probabilities = typeof a.probabilities === 'object' && a.probabilities !== null ? a.probabilities : {};

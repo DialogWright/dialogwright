@@ -146,9 +146,10 @@ describe('fill', () => {
     expect(defineSlot('visit', { type: 'date', range: 'future', whenUnsaid: 'absent' }).fill(none, asked)).toEqual({ kind: 'absent' });
   });
 
-  it('is absent when the mode question was not answered at all, asked or not', () => {
+  it('reads the mode question not answered at all as a turn that named no day (whenUnsaid)', () => {
     expect(ahead.fill({}, ctx)).toEqual({ kind: 'absent' });
-    expect(ahead.fill({}, asked)).toEqual({ kind: 'absent' });
+    expect(ahead.fill({}, asked)).toEqual({ kind: 'invalid', reason: 'unresolvable', raw: '' });
+    expect(booking.fill({}, asked)).toEqual({ kind: 'absent' });
   });
 
   it('whenUnresolved: a day that does not resolve is invalid when asked and absent otherwise, or always invalid with the mode as raw', () => {
@@ -312,7 +313,8 @@ interface GridIds {
  * Every mix of answers a date slot reads, for a shadowed pair (shadowSlot throws on the first
  * difference), in slices so the mixes that interact are crossed with each other: on three todays
  * (a Friday, the Sunday after February 28th, New Year's Eve), asked and not, with no partial, another
- * kind's, and (with windows) a week, a month and a span too short for most weekdays pending, the mode
+ * kind's, and (with windows) a week, a month and a span too short for most weekdays pending, no
+ * answer at all (asked, a miss when the slot reads an unsaid day as one), the mode
  * chosen below, at and above SLOT_CHOICE_CONFIRM (each mode, and labels the question may not offer),
  * then: the month and day with the weekday (a month and day over a weekday); the weekday with its
  * qualifier; the span with the weekday; the relative day. Each part is chosen below
@@ -339,6 +341,7 @@ function dateGrid(shadow: SlotSpec, ids: GridIds): void {
     for (const window of windows) {
       for (const prompted of [false, true]) {
         const c = testSlotContext('', { window, todayIso, prompted });
+        shadow.fill({}, c);
         for (const mode of ['absolute', 'relative_day', 'weekday', 'window', 'none']) {
           for (const mp of [0.3, T.SLOT_CHOICE_CONFIRM, 0.6]) {
             const base: AnswerMap = { ...quiet, [ids.mode]: chose(mode, mp) };
@@ -425,15 +428,17 @@ describe('the testkit\'s dates, written as configuration', () => {
     expect(() => dateGrid(shadowSlot(testkitDeliveryDay, fillAt), idsOf('deliveryDay'))).toThrow(/fill/);
   });
 
-  it('differ from the hand-written slots only where no turn reaches: no answer to the mode question at all, when the day was asked for', () => {
-    // The engine asks a listening slot's questions on every turn it fills it, so a fill with no answer
-    // to them does not happen; the library reads that as nothing heard (absent, as the conformance kit
-    // requires), where the hand-written slots read it as a turn that named no day.
+  it('agree with the hand-written slots with no answer at all: a turn that named no day, invalid when the day was asked for', () => {
+    // The engine asks a listening slot's questions on every turn it fills it, so no stub or recorded
+    // turn gives no answer at all; the grids above include it, asked and not, and find no mismatch.
     for (const [legacy, lib] of [[testkitDeliveryDay, deliveryDayDateSlot], [testkitExpectedDate, expectedDateDateSlot]] as const) {
-      expect(legacy.fill({}, asked)).toEqual({ kind: 'invalid', reason: 'unresolvable', raw: '' });
-      expect(lib.fill({}, asked)).toEqual({ kind: 'absent' });
-      expect(lib.fill({}, ctx)).toEqual(legacy.fill({}, ctx));
+      const report = createShadowReport();
+      const shadow = shadowSlot(legacy, lib, { report });
+      expect(shadow.fill({}, asked)).toEqual({ kind: 'invalid', reason: 'unresolvable', raw: '' });
+      expect(shadow.fill({}, ctx)).toEqual({ kind: 'absent' });
+      expect(report.mismatches).toEqual([]);
     }
+    expect(defineSlot('due', { type: 'date', range: 'future', whenUnsaid: 'absent' }).fill({}, asked)).toEqual({ kind: 'absent' });
   });
 });
 

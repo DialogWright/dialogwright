@@ -95,7 +95,7 @@ export const dateOptions = z
     whenUnsaid: z
       .enum(['invalid-if-prompted', 'absent'])
       .default('invalid-if-prompted')
-      .describe('What a turn that names no day (the mode question answers none, or is below SLOT_CHOICE_CONFIRM) gives. "invalid-if-prompted": invalid (reason unresolvable, raw empty) when the caller was asked for the day, so the retry ladder moves on, else absent. "absent": always absent.'),
+      .describe('What a turn that names no day (the mode question answers none, is below SLOT_CHOICE_CONFIRM, or is not answered at all) gives. "invalid-if-prompted": invalid (reason unresolvable, raw empty) when the caller was asked for the day, so the retry ladder moves on, else absent. "absent": always absent.'),
     whenUnresolved: z
       .enum(['invalid-if-prompted', 'invalid'])
       .default('invalid-if-prompted')

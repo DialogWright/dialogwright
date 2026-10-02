@@ -20,7 +20,7 @@ Reach for it for any day a caller names that is not their date of birth (use `bi
 | `narrowPrompt` | `ask_<slot>_narrow` | With `windows`: the prompt that asks which day in a span (the slot's `partialPromptId`), given `{window}`: "next week", "in December". |
 | `preferMonthDay` | `true` | A month and a day the model is sure of (at `SLOT_CHOICE_CONFIRM`) win over a weekday reading of the mode: "Monday, September 28" names one day twice, and the weekday reading would land on the next (or last) Monday instead of the date said. |
 | `fillAt` | `fill` | How sure the model must be of the day (the least of the parts it read). `fill`: `SLOT_CHOICE_FILL`, and a day below it is treated as not resolved (`whenUnresolved`). `confirm`: `SLOT_CHOICE_CONFIRM`, and a day below it is `invalid` with the reason `low_confidence` and the ISO day as raw. |
-| `whenUnsaid` | `invalid-if-prompted` | A turn that names no day (the mode is none, or below `SLOT_CHOICE_CONFIRM`). `invalid-if-prompted`: `invalid`, reason `unresolvable`, raw empty, when the caller was asked for the day (so the retry ladder moves on), else `absent`. `absent`: always `absent`. |
+| `whenUnsaid` | `invalid-if-prompted` | A turn that names no day (the mode is none, below `SLOT_CHOICE_CONFIRM`, or not answered at all). `invalid-if-prompted`: `invalid`, reason `unresolvable`, raw empty, when the caller was asked for the day (so the retry ladder moves on), else `absent`. `absent`: always `absent`. |
 | `whenUnresolved` | `invalid-if-prompted` | A day named that does not resolve: no such day, out of range, a span without `windows`, or below `SLOT_CHOICE_FILL` under `fillAt: fill`. `invalid-if-prompted`: `invalid`, reason `unresolvable`, raw empty, when the caller was asked for the day, else `absent`. `invalid`: always `invalid`, reason `unresolvable`, with the mode as raw (`absolute`, `weekday`, ...). |
 | `keypad` | `false` | The caller can key the day as four digits, the month then the day (`MMDD`: 0922), resolved as a spoken month and day are for the range. Needs an `ask_<slot>_dtmf` line. |
 | `confirm` | `summary` | `summary`: a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. `by-confidence`: it is acknowledged (`ack_<slot>`, given the day as `{<slot>}`) when `readBack` says so. |
@@ -36,8 +36,7 @@ The slot is always `valueKind: date`: when the caller was asked for another date
 
 | What the caller said | The outcome |
 |---|---|
-| Nothing for the mode question at all (it was not asked) | `absent` |
-| No day (the mode is none or below `SLOT_CHOICE_CONFIRM`) | `whenUnsaid` |
+| No day (the mode is none, below `SLOT_CHOICE_CONFIRM`, or not answered at all) | `whenUnsaid` |
 | A day that does not resolve (February 30th; a month without a day and no `windows`; back, more than two years ago) | `whenUnresolved` |
 | A span of days, with `windows` | `window`: `{ kind: window, start, end, label }` (ISO days and the span's label), and `narrowPrompt` asks which day |
 | A day below the `fillAt` threshold | `fill`: `whenUnresolved`; `confirm`: `invalid`, reason `low_confidence`, raw the ISO day |

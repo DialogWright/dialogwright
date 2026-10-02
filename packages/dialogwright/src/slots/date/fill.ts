@@ -48,8 +48,7 @@ function resolve(o: Pick<DateOptions, 'range'>, c: Picks, todayIso: string): Dat
 
 /**
  * A date slot's fill.
- * - The mode question not answered at all: absent (nothing was asked or heard).
- * - The mode none, or below SLOT_CHOICE_CONFIRM: no day named (`whenUnsaid`).
+ * - The mode none, below SLOT_CHOICE_CONFIRM, or not answered at all: no day named (`whenUnsaid`).
  * - "weekday" with a month and a day each at SLOT_CHOICE_CONFIRM or above reads as "absolute"
  *   (`preferMonthDay`): the date said, not the next or last such weekday.
  * - The parts resolved against today for the range (core/extract resolveDate, resolvePastDate). No
@@ -71,8 +70,6 @@ export function dateFill(
 ): (answers: AnswerMap, ctx: SlotContext) => SlotOutcome {
   return (answers, ctx) => {
     const t = ctx.thresholds;
-    const asked = answers[ids.mode];
-    if (!isChoice(asked) || typeof asked.choice !== 'string') return { kind: 'absent' };
     const c = picksOf(answers, ids, o);
     if (c.mode.choice === 'none' || !meetsThreshold(t, 'SLOT_CHOICE_CONFIRM', c.mode.p)) {
       return o.whenUnsaid === 'invalid-if-prompted' && ctx.prompted ? { kind: 'invalid', reason: 'unresolvable', raw: '' } : { kind: 'absent' };

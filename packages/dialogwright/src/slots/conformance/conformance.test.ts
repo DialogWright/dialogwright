@@ -204,6 +204,29 @@ describe('each broken toy fails the check meant to catch it', () => {
     expect(f.get('empty')).toContain('no answers ("hello", unprompted, nothing on file) gave filled "hello" ("hello"), not absent');
   });
 
+  it('a fill that reads no answers as a miss when not asked for: empty', () => {
+    const broken = toy('toy-miss', (spec, id) => ({
+      fill: (a, ctx) => (a[`${id}Said`] === undefined ? { kind: 'invalid', reason: 'nothing', raw: '' } : spec.fill(a, ctx)),
+    }));
+    const f = failures(broken);
+    expect([...f.keys()]).toEqual(['empty']);
+    expect(f.get('empty')).toContain('no answers ("", unprompted, nothing on file) gave invalid:nothing, not absent: a slot not asked for that hears nothing is absent');
+    expect(f.get('empty')).not.toContain(', prompted,');
+  });
+
+  it('a fill asked for with nothing to ask may be absent or invalid, never a value: empty', () => {
+    const miss = toy('toy-asked-miss', (spec, id) => ({
+      fill: (a, ctx) => (a[`${id}Said`] === undefined && ctx.prompted ? { kind: 'invalid', reason: 'nothing', raw: '' } : spec.fill(a, ctx)),
+    }));
+    expect(failing(miss)).toEqual([]);
+    const value = toy('toy-asked-value', (spec, id) => ({
+      fill: (a, ctx) => (a[`${id}Said`] === undefined && ctx.prompted ? { kind: 'filled', value: 'hello', display: 'hello', confidence: 1, confirm: 'none' } : spec.fill(a, ctx)),
+    }));
+    const f = failures(value);
+    expect([...f.keys()]).toEqual(['empty']);
+    expect(f.get('empty')).toContain('no answers ("", prompted, nothing on file) gave filled "hello" ("hello"): a slot asked for that hears nothing is absent or invalid');
+  });
+
   it('a fill that hears a value in answers that say nothing: quiet', () => {
     const broken = toy('toy-quiet', (spec, id) => ({
       fill: (a, ctx) => {

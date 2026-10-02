@@ -29,7 +29,7 @@ export const CHECK_ABOUT: Readonly<Record<CheckId, string>> = {
   builds: 'the configuration builds a slot that declares its question ids and its lines',
   'unknown-keys': 'an option the type does not have is refused, with a problem that names it',
   'question-ids': 'questions() asks only the ids the slot declares, none of them the engine\'s, the same ids for the same configuration, and other ids for another slot',
-  empty: 'no answers at all give absent',
+  empty: 'no answers at all give absent when the slot was not asked for, and absent or invalid (never a value) when it was',
   quiet: 'answers that hear nothing for the slot give absent or invalid, never a value',
   malformed: 'answers of the wrong type, missing or out of range, and keys that are no value, never make it throw',
   thresholds: 'thresholds are read by name from ctx.thresholds, never written into the type',
@@ -246,8 +246,12 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
     const spec = attempt(r, 'defineSlot', () => build(r));
     if (!spec) return;
     for (const ctx of contextsOf(r, windowsOf(r, spec))) {
+      // Asked, a slot with nothing to ask (no list to offer) or nothing answered may read the turn as
+      // a miss (invalid, so the retry ladder moves on); never as a value, a pair or a partial.
       const o = fillOf(r, spec, {}, ctx, `no answers (${where(ctx)})`);
-      if (o && o.kind !== 'absent') r.fail(`no answers (${where(ctx)}) gave ${describeOutcome(o)}, not absent`);
+      if (!o || o.kind === 'absent') continue;
+      if (!ctx.prompted) r.fail(`no answers (${where(ctx)}) gave ${describeOutcome(o)}, not absent: a slot not asked for that hears nothing is absent`);
+      else if (o.kind !== 'invalid') r.fail(`no answers (${where(ctx)}) gave ${describeOutcome(o)}: a slot asked for that hears nothing is absent or invalid`);
     }
   },
 
