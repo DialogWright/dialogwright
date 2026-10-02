@@ -4,7 +4,7 @@ import { dobSlot } from './dob';
 import { parcelSelectSlot } from './parcelSelect';
 import { deliveryDaySlot } from './deliveryDay';
 import { deliveryPartSlot } from './deliveryPart';
-import { missingNoteSlot } from './missingNote';
+import { missingNoteTextSlot } from './missingNoteText';
 import { expectedDateSlot } from './expectedDate';
 
 /** Every slot, identity factors first, then each form's in turn. */
@@ -17,6 +17,7 @@ export const SLOTS: Record<TestkitSlot, SlotSpec> = {
   parcelSelect: parcelSelectSlot,
   deliveryDay: deliveryDaySlot,
   deliveryPart: deliveryPartSlot,
-  missingNote: missingNoteSlot,
+  // A library `text` slot; missingNote.ts (hand-written) is what the shadow pair compares it with.
+  missingNote: missingNoteTextSlot,
   expectedDate: expectedDateSlot,
 };
