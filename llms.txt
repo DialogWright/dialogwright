@@ -1,0 +1,41 @@
+# DialogWright
+
+> An open-source TypeScript framework for voice and chat agents that act safely. A fast decision model reads what the caller said and answers typed questions (judgments, never generated text). Deterministic code decides what happens next. Every action goes through a policy gate (identity level, scope, confirmation, attempt limits), and every decision is written to a hash-chained audit log. An app is a folder: YAML for what is data (intents, forms, prompts, policy, identity, slots, locales) and TypeScript for what runs (tools, form hooks, custom rules, and any slot no library type fits), joined by `defineApp`.
+
+Pre-release; APIs will change. The package ships TypeScript source. Requires Node 22.19 or later and pnpm. An app imports only from `'dialogwright'`. Read CLAUDE.md before changing anything: the gate decides, a model never writes a regulated line, the engine imports no app, no real personal data (555 phone numbers, invented names), and the engine package uses neutral vocabulary.
+
+## Start here
+
+- [CLAUDE.md](CLAUDE.md): the three roles, the layout, the commands and the rules.
+- [Authoring an app](docs/authoring-an-app.md): the folder, each YAML file with an example, what stays in TypeScript, how to write a slot (library types first, code second), how `pnpm check` reports problems, locales, configuration hashes.
+- [Design](docs/design.md): the idea, the roles, how policy and identity work, testing, the roadmap.
+- [Contributing](CONTRIBUTING.md): rules, pull requests, and "Adding a slot type".
+- [apps/clinic](apps/clinic/README.md): the example app to learn from (a fictional clinic's appointment line; no keys needed).
+
+## Slot types
+
+A slot is one value a form collects. Most slots are configuration: name a type in the app's `slots.yaml` and give it options. The model never writes the value; code turns its answers into one. Each page lists every option with its type and default, the default question text, the outcomes, the prompts it needs, and starter examples.
+
+- [Index of slot types](docs/slots/README.md): which type to use, and the types not built yet (`otp`, `topic`, `time-slot`).
+- [digits](docs/slots/digits.md): a number of a fixed shape (an account, a card, a tracking number).
+- [choice](docs/slots/choice.md): one of a fixed list, with an advanced tier for names that sound alike.
+- [date](docs/slots/date.md): a calendar day, ahead or back, with optional spans such as "next week".
+- [birthdate](docs/slots/birthdate.md): a date of birth, heard whole or in part, masked by default.
+- [name](docs/slots/name.md): the caller's own name.
+- [record](docs/slots/record.md): one of the app's own records, chosen by what the caller says of it.
+- [text](docs/slots/text.md): the caller's own words, kept as said.
+
+## Schemas
+
+- `packages/dialogwright/schemas/*.schema.json`: the JSON Schema of every YAML file in an app folder (`app`, `intents`, `forms`, `prompts`, `policy`, `identity`, `slots`, `locale-slots`). Generated from the zod schemas; never edit by hand. Every YAML file names its schema on its first line.
+
+## Commands
+
+- `pnpm install`
+- `pnpm check`: check every app folder under `apps/`: YAML against the schemas, cross-references to the code, prompts in every locale, the corpus. Prints one line per problem, `file:line:column  path  message  ->  fix`, and exits 1 on any. Act on the fix text.
+- `pnpm verify`: the type check and the tests together.
+- `pnpm --filter dialogwright regress:testkit` and `pnpm --filter @dialogwright/example-clinic regress`: the regressions. Never regenerate a baseline or snapshot to make a test pass; a changed output is a finding to explain.
+- `pnpm --filter dialogwright schemas`: regenerate the JSON Schemas after a schema change.
+- `pnpm --filter dialogwright slot-docs`: regenerate the slot type pages after a type's options, README or examples change.
+- `pnpm --filter dialogwright test slots/<type>`: run a slot type's tests, including the conformance kit.
+- `pnpm --filter @dialogwright/example-clinic cli --client heuristic`: a text console for the clinic, with no keys.
