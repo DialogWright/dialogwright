@@ -306,7 +306,8 @@ export function problemsOf(issue: ZodIssue, src: IssueSource): Problem[] {
         const fix = guess
           ? `rename "${key}" to "${guess}"`
           : `delete "${key}"${known.length > 0 ? `; the keys allowed ${where} are ${known.join(', ')}` : ''}`;
-        return make([...path, key], `unknown key "${key}" ${where}`, fix);
+        // The key is what is wrong, so the problem points at it, not at the value it holds.
+        return { ...make([...path, key], `unknown key "${key}" ${where}`, fix), ...keyPositionOf(src.doc, src.lines, [...path, key]) };
       });
     }
 

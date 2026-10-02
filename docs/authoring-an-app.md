@@ -327,7 +327,7 @@ When a schema problem is found, the cross-checks against the code do not run unt
 These are real messages. The folder was a copy of the library fixture, with these edits: an unknown key `colour: blue` in app.yaml, `maxAttempts: three` in policy.yaml. The first run:
 
 ```
-app.yaml:5:9  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, fixtures, prompts
+app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, fixtures, prompts
 policy.yaml:9:14  maxAttempts  "maxAttempts" must be a number, but is text ("three")  ->  write a number without quotes
 2 problems in broken-library
 ```

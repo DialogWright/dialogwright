@@ -213,7 +213,7 @@ describe('loadAppFolder: problems', () => {
       {
         file: 'forms.yaml',
         line: 4,
-        column: 21,
+        column: 5,
         path: 'forms.schedule_new.summaryPrompId',
         message: 'unknown key "summaryPrompId" under forms.schedule_new',
         fix: 'rename "summaryPrompId" to "summaryPromptId"'
@@ -393,7 +393,7 @@ describe('loadAppFolder: problems', () => {
       {
         file: 'policy.yaml',
         line: 8,
-        column: 47,
+        column: 42,
         path: 'subjects.cancelAppointment.vai',
         message: 'unknown key "vai" under subjects.cancelAppointment',
         fix: 'rename "vai" to "via"'

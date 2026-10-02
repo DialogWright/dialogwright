@@ -333,7 +333,7 @@ describe('defineApp: a folder that does not load', () => {
     expect(expected.length).toBeGreaterThan(0);
     expect(problems({ ...libraryCode, slots: {} }, dir)).toEqual(expected);
     expect(expected).toEqual(expect.arrayContaining([
-      'forms.yaml:5:21  forms.renew_loan.summaryPrompId  unknown key "summaryPrompId" under forms.renew_loan  ->  rename "summaryPrompId" to "summaryPromptId"',
+      'forms.yaml:5:5  forms.renew_loan.summaryPrompId  unknown key "summaryPrompId" under forms.renew_loan  ->  rename "summaryPrompId" to "summaryPromptId"',
     ]));
     expect(expected.some((line) => line.startsWith('prompts.yaml:') && line.includes('"interruptible"'))).toBe(true);
   });
