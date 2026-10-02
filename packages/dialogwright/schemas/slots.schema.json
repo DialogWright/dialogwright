@@ -13,6 +13,169 @@
         "properties": {
           "type": {
             "type": "string",
+            "const": "birthdate",
+            "description": "The slot type."
+          },
+          "keypad": {
+            "default": false,
+            "description": "Whether the caller can key the date on the keypad as eight digits, month, day and year (MMDDYYYY). Needs an ask_<slot>_dtmf line.",
+            "type": "boolean"
+          },
+          "yearPrompt": {
+            "description": "The prompt that asks for the year alone once a month and day are heard without it (the slot's partialPromptId). Default: ask_<slot>_year.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "wholePrompt": {
+            "description": "The prompt that asks for the whole date again when a month or a day was not heard; the outcome is invalid, with the reason no_month_day, no_month or no_day. Absent: the outcome is invalid with the reason no_year and the slot's generic retry asks again.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "minYear": {
+            "default": 1900,
+            "description": "The earliest year a date of birth may be in. An earlier one is invalid (reason impossible), and the keypad refuses it.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "notThisDate": {
+            "description": "Another date the caller is likely to mention, which the birth date is not, as a noun phrase (\"an appointment date\", \"the date of the order\"). The default month and day questions then say \"This is the birth date, not <it>.\", and the default \"false\" criterion names it.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "redact": {
+            "default": "mask",
+            "description": "How the value is masked wherever it leaves the turn (the trace, the console, a tool call's param of the same name): \"mask\" keeps the year only (\"••/••/1985\"); \"none\" keeps it as it is.",
+            "type": "string",
+            "enum": [
+              "mask",
+              "none"
+            ]
+          },
+          "handoff": {
+            "default": "display",
+            "description": "What a transfer to a person hands over: the date as it is said (\"display\"), or, for a birth date asked to verify identity, only whether the caller was \"verified\".",
+            "type": "string",
+            "enum": [
+              "display",
+              "verified"
+            ]
+          },
+          "confirm": {
+            "default": "summary",
+            "description": "\"summary\": a birth date is neither acknowledged nor read back on its own; the form's final confirm covers it.",
+            "type": "string",
+            "enum": [
+              "summary"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: given, givenTrue, givenFalse, month, monthHint, day, dayHint, year, yearAsked, yearNone.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The yes-or-no question that asks whether the caller states their date of birth at all.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "givenTrue": {
+                "description": "What a yes to the first question means (its \"true\" criterion).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "givenFalse": {
+                "description": "What a no to the first question means (its \"false\" criterion). By default it names `notThisDate`, when given, and someone else's birth date.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "month": {
+                "description": "The question that asks which month the birth date is in. Its choices are the twelve months and none. By default it ends with the `notThisDate` sentence and `monthHint`.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "monthHint": {
+                "description": "A sentence the default month question ends with, such as how a month said as a number is read. Default: none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "day": {
+                "description": "The question that asks which day of the month the birth date is. Its choices are 1 to 31 and none. By default it ends with the `notThisDate` sentence and `dayHint`.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "dayHint": {
+                "description": "A sentence the default day question ends with, such as which number of a date said as numbers is the day. Default: none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "year": {
+                "description": "The question that asks which span of the caller's words is the year, when no month and day are on hand. Its choices are the spans the engine finds, and none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "yearAsked": {
+                "description": "The year question in place of `year` while a month and day are on hand, so the caller was just asked for the year alone (they may still restate the whole date).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "yearNone": {
+                "description": "What the year question's \"none\" choice means.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given, month, day, year), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The id of the question that asks whether the caller states their date of birth.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "month": {
+                "description": "The id of the question that asks which month the date of birth is in.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "day": {
+                "description": "The id of the question that asks which day of the month the date of birth is.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "year": {
+                "description": "The id of the question that asks which span of the caller's words is the year of birth.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "A caller's date of birth: a month, a day and a year, heard whole or in part.",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
             "const": "choice",
             "description": "The slot type."
           },

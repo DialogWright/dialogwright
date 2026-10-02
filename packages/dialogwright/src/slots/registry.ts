@@ -1,3 +1,4 @@
+import { birthdateType } from './birthdate/index';
 import { choiceType } from './choice/index';
 import { digitsType } from './digits/index';
 import { textType } from './text/index';
@@ -8,7 +9,12 @@ import type { SlotType, SlotTypes } from './types';
  * with registerSlotType, which returns a new map to pass to defineSlot, so no import changes what
  * another app sees.
  */
-export const BUILT_IN_SLOT_TYPES: SlotTypes = Object.freeze({ [choiceType.type]: choiceType, [digitsType.type]: digitsType, [textType.type]: textType });
+export const BUILT_IN_SLOT_TYPES: SlotTypes = Object.freeze({
+  [birthdateType.type]: birthdateType,
+  [choiceType.type]: choiceType,
+  [digitsType.type]: digitsType,
+  [textType.type]: textType,
+});
 
 /**
  * `types` (the built-in ones by default) with `type` added, as a new map. A name already taken is

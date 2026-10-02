@@ -21,7 +21,7 @@ describe('the package entry', () => {
       'parseIso', 'addDays', 'describeDay', 'describeDob', 'resolveDate', 'MONTHS', 'WEEKDAYS', 'spokenToDigits', 'tokenize', 'matchesMask',
       'candidateSpans', 'candidateWordSpans', 'atLeast',
       // the slot library
-      'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType', 'defineSlotType', 'textType', 'digitsType', 'choiceType',
+      'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType', 'defineSlotType', 'textType', 'digitsType', 'choiceType', 'birthdateType',
       'textParts', 'questionParts', 'renderTemplate', 'meetsThreshold',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
@@ -45,6 +45,7 @@ describe('the package entry', () => {
     expect(entry.BUILT_IN_SLOT_TYPES.text).toBe(entry.textType);
     expect(entry.BUILT_IN_SLOT_TYPES.digits).toBe(entry.digitsType);
     expect(entry.BUILT_IN_SLOT_TYPES.choice).toBe(entry.choiceType);
+    expect(entry.BUILT_IN_SLOT_TYPES.birthdate).toBe(entry.birthdateType);
     expect(entry.defineSlot('note', { type: 'text', what: 'a note' }).type).toBe('text');
     // the library's types are exported with the functions that take them
     const spec: import('./index').LibrarySlotSpec = entry.defineSlot('note', { type: 'text', what: 'a note' });

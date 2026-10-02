@@ -37,6 +37,7 @@ const utterance = z.strictObject({
     display: z.string().optional(),
     confirm: z.enum(['none', 'implicit']).optional(),
     reason: z.string().optional(),
+    raw: z.string().optional(),
     retryPromptId: z.string().optional(),
     promptId: z.string().optional(),
   }),

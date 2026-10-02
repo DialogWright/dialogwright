@@ -9,6 +9,8 @@ export { resolveSlots, mergeSlotTypes } from './resolveSlots';
 export type { ResolveSlotsInput, ResolvedSlots, SlotsFileSource, SlotTypeProblem } from './resolveSlots';
 export { BUILT_IN_SLOT_TYPES, registerSlotType } from './registry';
 export { defineSlotType, refusesUnknownKeys, SLOT_TYPE_NAME } from './slotType';
+export { birthdateType } from './birthdate/index';
+export type { BirthdateOptions, BirthdatePartial } from './birthdate/index';
 export { choiceType } from './choice/index';
 export type { ChoiceOptions, ChoiceOption } from './choice/index';
 export { digitsType } from './digits/index';

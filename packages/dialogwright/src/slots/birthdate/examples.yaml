@@ -1,0 +1,169 @@
+# Examples of the `birthdate` slot type: configurations, and what a caller might say to each.
+# `answers` are the model's answers to the slot's questions, by question id (a slot reads the
+# answers, not the words); `expect` is the outcome the slot must give; `keypad` lists keys and the
+# value they give (null: keys that are no value). The conformance kit runs every utterance and key
+# here (on 2026-09-18, the kit's today), and the type's docs page shows them.
+
+- name: account holder
+  about: The defaults, with the keypad on. A month and day without the year are held, and the year is asked for alone (ask_dob_year); a month or a day missing is "no_year", and the generic retry asks again.
+  slot: dob
+  config:
+    keypad: true
+  utterances:
+    - text: I was born June fourteenth nineteen seventy five
+      answers:
+        dobGiven: { noul: 0.96 }
+        dobMonth: { choice: { june: 0.95, none: 0.05 } }
+        dobDay: { choice: { "14": 0.93, none: 0.07 } }
+        dobYear: { choice: { nineteen seventy five: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: "1975-06-14", display: "June 14th, 1975", confirm: none }
+    - text: it's June fourteenth
+      answers:
+        dobGiven: { noul: 0.9 }
+        dobMonth: { choice: { june: 0.94, none: 0.06 } }
+        dobDay: { choice: { "14": 0.92, none: 0.08 } }
+        dobYear: { choice: { none: 0.97 } }
+      expect: { kind: window }
+    - text: seventy five
+      answers:
+        dobGiven: { noul: 0.88 }
+        dobMonth: { choice: { none: 0.9 } }
+        dobDay: { choice: { none: 0.9 } }
+        dobYear: { choice: { seventy five: 0.9, none: 0.1 } }
+      context: { prompted: true, window: { kind: dob, month: 6, day: 14 } }
+      expect: { kind: filled, value: "1975-06-14", display: "June 14th, 1975" }
+    - text: I'd like to update my mailing address
+      answers:
+        dobGiven: { noul: 0.03 }
+        dobMonth: { choice: { none: 0.99 } }
+        dobDay: { choice: { none: 0.99 } }
+        dobYear: { choice: { none: 0.99 } }
+      expect: { kind: absent }
+    - text: nineteen seventy five
+      answers:
+        dobGiven: { noul: 0.8 }
+        dobMonth: { choice: { none: 0.9 } }
+        dobDay: { choice: { none: 0.9 } }
+        dobYear: { choice: { nineteen seventy five: 0.9, none: 0.1 } }
+      expect: { kind: invalid, reason: no_year }
+    - text: February thirtieth nineteen ninety
+      answers:
+        dobGiven: { noul: 0.9 }
+        dobMonth: { choice: { february: 0.9, none: 0.1 } }
+        dobDay: { choice: { "30": 0.9, none: 0.1 } }
+        dobYear: { choice: { nineteen ninety: 0.9, none: 0.1 } }
+      expect: { kind: invalid, reason: impossible, raw: "1990-2-30" }
+    - text: October second twenty thirty
+      answers:
+        dobGiven: { noul: 0.9 }
+        dobMonth: { choice: { october: 0.9, none: 0.1 } }
+        dobDay: { choice: { "2": 0.9, none: 0.1 } }
+        dobYear: { choice: { twenty thirty: 0.9, none: 0.1 } }
+      expect: { kind: invalid, reason: future, raw: "2030-10-02" }
+  keypad:
+    - digits: "06141975"
+      expect: { value: "1975-06-14", display: "June 14th, 1975" }
+    - digits: "02301990"
+      expect: null
+    - digits: "10022030"
+      expect: null
+    - digits: "06141875"
+      expect: null
+
+- name: library patron
+  about: A birth date asked to confirm who a patron is, beside the date a book is due. The month and day questions say which date this is not, and give a hint for a date said as numbers; a month or a day missing asks for the whole date again; a transfer hands over only whether the patron was verified.
+  slot: patronBirth
+  config:
+    keypad: true
+    notThisDate: the date a book is due
+    wholePrompt: ask_patronBirth_whole
+    minYear: 1910
+    handoff: verified
+    text:
+      monthHint: "A date said as numbers is month first, then day, then year."
+      dayHint: "A date said as numbers is month first, then day, then year."
+  utterances:
+    - text: three nine sixty two
+      answers:
+        patronBirthGiven: { noul: 0.9 }
+        patronBirthMonth: { choice: { march: 0.9, none: 0.1 } }
+        patronBirthDay: { choice: { "9": 0.88, none: 0.12 } }
+        patronBirthYear: { choice: { sixty two: 0.91, none: 0.09 } }
+      expect: { kind: filled, value: "1962-03-09", display: "March 9th, 1962", confirm: none }
+    - text: the ninth, nineteen sixty two
+      answers:
+        patronBirthGiven: { noul: 0.85 }
+        patronBirthMonth: { choice: { none: 0.8, march: 0.2 } }
+        patronBirthDay: { choice: { "9": 0.9, none: 0.1 } }
+        patronBirthYear: { choice: { nineteen sixty two: 0.9, none: 0.1 } }
+      expect: { kind: invalid, reason: no_month, retryPromptId: ask_patronBirth_whole }
+    - text: March, I think
+      answers:
+        patronBirthGiven: { noul: 0.8 }
+        patronBirthMonth: { choice: { march: 0.9, none: 0.1 } }
+        patronBirthDay: { choice: { none: 0.95 } }
+        patronBirthYear: { choice: { none: 0.95 } }
+      expect: { kind: invalid, reason: no_day, retryPromptId: ask_patronBirth_whole }
+    - text: nineteen sixty two
+      answers:
+        patronBirthGiven: { noul: 0.8 }
+        patronBirthMonth: { choice: { none: 0.95 } }
+        patronBirthDay: { choice: { none: 0.95 } }
+        patronBirthYear: { choice: { nineteen sixty two: 0.9, none: 0.1 } }
+      expect: { kind: invalid, reason: no_month_day, retryPromptId: ask_patronBirth_whole }
+    - text: March ninth nineteen oh five
+      answers:
+        patronBirthGiven: { noul: 0.9 }
+        patronBirthMonth: { choice: { march: 0.9, none: 0.1 } }
+        patronBirthDay: { choice: { "9": 0.9, none: 0.1 } }
+        patronBirthYear: { choice: { nineteen oh five: 0.9, none: 0.1 } }
+      expect: { kind: invalid, reason: impossible, raw: "1905" }
+    - text: the book is due March ninth
+      answers:
+        patronBirthGiven: { noul: 0.1 }
+        patronBirthMonth: { choice: { march: 0.6, none: 0.4 } }
+        patronBirthDay: { choice: { "9": 0.6, none: 0.4 } }
+        patronBirthYear: { choice: { none: 0.95 } }
+      expect: { kind: absent }
+  keypad:
+    - digits: "03091962"
+      expect: { value: "1962-03-09", display: "March 9th, 1962" }
+    - digits: "03091905"
+      expect: null
+    - digits: "13091962"
+      expect: null
+
+- name: kept wording
+  about: A slot keeping the question ids and the year prompt it was recorded with, and its own words for the year question and its none.
+  slot: customerBirth
+  config:
+    yearPrompt: ask_birth_year
+    ids: { given: givesBirthDate, month: birthMonth, day: birthDay, year: birthYear }
+    text:
+      year: "Read asr.text. Which of these spans is the year of the caller's birth, if they say one? Choose none when no year is said."
+      yearAsked: "Read asr.text. The caller was asked for the year of their birth. Which of these spans is that year? Choose none when no year is said."
+      yearNone: "No span of asr.text is the year of the caller's birth"
+  utterances:
+    - text: November twenty second
+      answers:
+        givesBirthDate: { noul: 0.9 }
+        birthMonth: { choice: { november: 0.9, none: 0.1 } }
+        birthDay: { choice: { "22": 0.9, none: 0.1 } }
+        birthYear: { choice: { none: 0.95 } }
+      expect: { kind: window }
+    - text: forty eight
+      answers:
+        givesBirthDate: { noul: 0.9 }
+        birthMonth: { choice: { none: 0.95 } }
+        birthDay: { choice: { none: 0.95 } }
+        birthYear: { choice: { forty eight: 0.9, none: 0.1 } }
+      context: { prompted: true, window: { kind: dob, month: 11, day: 22 } }
+      expect: { kind: filled, value: "1948-11-22", display: "November 22nd, 1948" }
+    - text: um, let me think
+      answers:
+        givesBirthDate: { noul: 0.7 }
+        birthMonth: { choice: { none: 0.95 } }
+        birthDay: { choice: { none: 0.95 } }
+        birthYear: { choice: { none: 0.95 } }
+      context: { prompted: true, window: { kind: dob, month: 11, day: 22 } }
+      expect: { kind: absent }

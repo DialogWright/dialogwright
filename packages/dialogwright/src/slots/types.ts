@@ -99,6 +99,8 @@ export interface ExpectedOutcome {
   display?: string;
   confirm?: 'none' | 'implicit';
   reason?: string;
+  /** An invalid outcome's `raw`: what was heard that cannot be the value. */
+  raw?: string;
   retryPromptId?: string;
   promptId?: string;
 }

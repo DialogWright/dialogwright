@@ -110,7 +110,7 @@ A slot reads the model's answers, not the caller's words, so an example gives bo
       expect: { kind: absent }
 ```
 
-An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso` or `records`. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `retryPromptId` and `promptId`. A type with a keypad rung adds `keypad: [{ digits, expect: { value, display? } | null }]`.
+An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso` or `records`. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `raw`, `retryPromptId` and `promptId`. A type with a keypad rung adds `keypad: [{ digits, expect: { value, display? } | null }]`.
 
 ## Adding a type
 
