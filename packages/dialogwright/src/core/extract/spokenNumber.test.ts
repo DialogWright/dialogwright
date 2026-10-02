@@ -18,6 +18,16 @@ describe('spokenToDigits', () => {
   ])('%s -> %s', (input, expected) => {
     expect(spokenToDigits(input)).toBe(expected);
   });
+
+  it('is not fooled by a word an object has, such as "constructor": it is no number word, as in Spanish', () => {
+    // Before, "constructor" was read as a repeat ("in" found it on the table's prototype) and the
+    // next digit repeated "constructor" times: no digits at all.
+    expect(spokenToDigits('constructor five')).toBe('5');
+    expect(spokenToDigits('double constructor five')).toBe('5');
+    expect(spokenToDigits('five toString six')).toBe('56');
+    expect(spokenToDigits('valueOf hasOwnProperty seven __proto__ eight')).toBe('78');
+    expect(spokenToDigits('constructor five', 'en-US')).toBe('5');
+  });
 });
 
 describe('chunked groups', () => {

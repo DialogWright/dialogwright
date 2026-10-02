@@ -27,8 +27,17 @@ export interface Lexicon {
   readonly hundreds: Readonly<Record<string, number>>;
   /** Words that repeat the next digit ("double four"). Spanish has none. */
   readonly repeats: Readonly<Record<string, number>>;
-  /** Words that scale the group said before them ("three hundred", "dos mil"). */
+  /**
+   * Words that scale the group said before them ("three hundred", "dos mil", "dos millones"). A
+   * million or more scales everything said before it in the number, so a thousand after it counts
+   * apart ("un millón doscientos mil" is 1200000).
+   */
   readonly multipliers: Readonly<Record<string, number>>;
+  /**
+   * A ten that joins a unit of six to nine after the joiner as one number ("diez y seis" is 16, the
+   * older spelling of "dieciséis"), and is ten anywhere else. English has none.
+   */
+  readonly joinedTeens: Readonly<Record<string, number>>;
   /** The word that joins parts of one number ("and", "y"). */
   readonly joiner: string;
   /** Whether the joiner joins a ten to the unit after it ("cincuenta y cinco" is 55); English "and" only follows a multiplier. */
@@ -95,6 +104,7 @@ export const ENGLISH: Lexicon = Object.freeze({
   hundreds: {},
   repeats: EN_REPEATS,
   multipliers: EN_MULTIPLIERS,
+  joinedTeens: {},
   joiner: 'and',
   joinsTens: false,
   bareMultiplierOpens: false,
@@ -134,7 +144,7 @@ const ES_HUNDREDS: Record<string, number> = table({
   quinientos: 500, quinientas: 500, seiscientos: 600, seiscientas: 600, setecientos: 700, setecientas: 700,
   ochocientos: 800, ochocientas: 800, novecientos: 900, novecientas: 900,
 });
-const ES_MULTIPLIERS: Record<string, number> = table({ mil: 1000 });
+const ES_MULTIPLIERS: Record<string, number> = table({ mil: 1000, millon: 1_000_000, millones: 1_000_000 });
 
 /**
  * Words a Spanish caller says around a name: greetings, "me llamo", "soy", "mi nombre es", yes and
@@ -166,12 +176,13 @@ export const SPANISH: Lexicon = Object.freeze({
   hundreds: ES_HUNDREDS,
   repeats: table({}),
   multipliers: ES_MULTIPLIERS,
+  joinedTeens: table({ diez: 10 }),
   joiner: 'y',
   joinsTens: true,
   bareMultiplierOpens: true,
   numberWords: new Set(keysOf(ES_UNITS, ES_TEENS, ES_TENS, ES_HUNDREDS, ES_MULTIPLIERS)),
-  // "cien por ciento seguro" and "un momento" are not numbers said.
-  weakWords: new Set(['mil', 'cien', 'ciento', 'un', 'una']),
+  // "cien por ciento seguro", "un momento" and "un millón de gracias" are not numbers said.
+  weakWords: new Set(['mil', 'millon', 'millones', 'cien', 'ciento', 'un', 'una']),
   fillers: new Set(ES_FILLERS),
   nameParticles: new Set(ES_NAME_PARTICLES),
   months: ES_MONTHS,

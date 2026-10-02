@@ -87,6 +87,22 @@ describe('spokenToDigits in Spanish', () => {
     ['hola', ''],
     // "y" between two units is a break
     ['cinco y seis', '56'],
+    // "diez y" six to nine is one number, the older spelling of dieciséis to diecinueve; any other unit is a break
+    ['diez y seis', '16'],
+    ['diez y siete', '17'],
+    ['diez y ocho', '18'],
+    ['diez y nueve', '19'],
+    ['cinco diez y ocho', '518'],
+    ['diez y cinco', '105'],
+    ['diez seis', '106'],
+    // millions scale all said before them, and a thousand after them counts apart
+    ['un millón', '1000000'],
+    ['un millon', '1000000'],
+    ['dos millones', '2000000'],
+    ['un millón doscientos mil', '1200000'],
+    ['dos millones trescientos mil cuatrocientos cinco', '2300405'],
+    ['mil millones', '1000000000'],
+    ['un millón cinco', '1000005'],
   ])('%s -> %s', (input, expected) => {
     expect(spokenToDigits(input, 'es')).toBe(expected);
     expect(spokenToDigits(input, 'es-MX')).toBe(expected);
