@@ -4,7 +4,8 @@ import type {
 } from '../core/app/types';
 import type { SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
-import { clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
+import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
+import { askedQuestionIds, probeContexts } from '../core/app/probeQuestions';
 import { thresholdNamesOf, unknownSlotThresholds, unknownThresholdMessage } from '../core/slotThresholds';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
@@ -499,6 +500,22 @@ export function crossLink(
       ? `list it once in ${where}`
       : `give the question an id of the slot's own, such as "${own}", in the slot's questions and in ${where}`;
     inTs(['slots', clash.slot, 'questionIds'], clashMessage(clash), fix);
+  }
+
+  // The question ids a slot asks, tried on a few made-up turns: none the engine asks, none another
+  // slot asks or declares, and none its own questionIds leave out.
+  const locales = Object.keys(config.prompts).length > 1 ? Object.keys(config.prompts) : [];
+  const asked = askedQuestionIds(linked.slots, probeContexts(locales, app.thresholds ?? {}));
+  for (const clash of askedQuestionIdClashes(linked.slots, asked)) {
+    const own = `${clash.slot}${clash.id.charAt(0).toUpperCase()}${clash.id.slice(1)}`;
+    if (linked.library.has(clash.slot)) {
+      yaml(SLOTS_FILE, [clash.slot], clashMessage(clash), `give one of the two questions another id (a library type's \`ids\` option renames its questions), or rename one of the slots`, true);
+      continue;
+    }
+    const fix = clash.with === 'undeclared'
+      ? `add "${clash.id}" to ${inCode('slots', clash.slot, 'questionIds')}, or stop asking it`
+      : `give the question an id of the slot's own, such as "${own}", in the slot's questions${linked.slots[clash.slot]?.questionIds ? ` and in ${inCode('slots', clash.slot, 'questionIds')}` : ''}`;
+    inTs(clash.with === 'undeclared' ? ['slots', clash.slot, 'questionIds'] : ['slots', clash.slot], clashMessage(clash), fix);
   }
 
   // The thresholds a slot's options name (SlotSpec.thresholds): each the engine's or one app.yaml names.
