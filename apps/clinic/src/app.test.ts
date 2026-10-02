@@ -1,12 +1,13 @@
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkApp, formatProblem, loadAppFolder, type LibrarySlotSpec } from 'dialogwright';
+import { checkApp, formatProblem, loadAppFolder, testSlotContext, type LibrarySlotSpec } from 'dialogwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { CLINIC_DIR, clinicApp, code } from './app';
 import { CLINIC_FORM_HOOKS } from './domain/forms';
 import { PROVIDERS } from './domain/roster';
 import { ALL_SLOTS, SLOTS } from './domain/slots';
+import { dateSlot } from './domain/slots/date';
 import { dobSlot } from './domain/slots/dob';
 import { memberIdSlot } from './domain/slots/memberId';
 
@@ -63,10 +64,10 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
 });
 
 describe('the clinic folder: slots.yaml', () => {
-  it('lists all five slots, three as code, the birth date as a library birthdate slot and the member ID as a library digits slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
+  it('lists all five slots, two as code, the birth date as a library birthdate slot, the member ID as a library digits slot and the day as a library date slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
     const slots = loadAppFolder(CLINIC_DIR).config?.slots;
     expect(Object.keys(slots ?? {})).toEqual([...ALL_SLOTS]);
-    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['code', 'birthdate', 'digits', 'code', 'code']);
+    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['code', 'birthdate', 'digits', 'code', 'date']);
     expect(Object.keys(clinicApp.slots)).toEqual(Object.keys(slots ?? {}));
     expect(Object.keys(clinicApp.slots)).toEqual([...ALL_SLOTS]);
     for (const id of Object.keys(SLOTS)) expect(clinicApp.slots[id], id).toBe(SLOTS[id as keyof typeof SLOTS]);
@@ -91,6 +92,25 @@ describe('the clinic folder: slots.yaml', () => {
     expect(lib.dtmf?.length).toBe(8);
     expect(lib.questionIds).toEqual(['dobGiven', 'dobMonth', 'dobDay', 'dobYear']);
     expect(lib.prompts!.map((p) => p.id)).toEqual(['ask_dob_year', 'ask_dob_dtmf']);
+  });
+
+  it('configures the day as the hand-written slot was: ahead, spans of days narrowed with date_narrow_window, this or next, by confidence, keyed, its seven questions word for word and its ids', () => {
+    const lib = clinicApp.slots.date as LibrarySlotSpec;
+    expect(lib.type).toBe('date');
+    const q = dateSlot.questions(testSlotContext('')) as Record<string, { instructions: string; criteria: Record<string, string | null> }>;
+    expect(lib.config).toEqual({
+      range: 'future', windows: true, qualifier: true, narrowPrompt: 'date_narrow_window', fillAt: 'confirm', whenUnsaid: 'absent', whenUnresolved: 'invalid',
+      confirm: 'by-confidence', readBack: 'below-fill', keypad: true, preferMonthDay: true,
+      ids: { relative: 'dateRelativeDay', qualifier: 'dateWeekdayQualifier' },
+      text: {
+        mode: q.dateMode!.instructions, modeNone: q.dateMode!.criteria.none, month: q.dateMonth!.instructions, day: q.dateDay!.instructions, weekday: q.dateWeekday!.instructions,
+        qualifier: q.dateWeekdayQualifier!.instructions, relative: q.dateRelativeDay!.instructions, window: q.dateWindow!.instructions,
+      },
+    });
+    expect(lib).toMatchObject({ id: dateSlot.id, spokenConfirm: dateSlot.spokenConfirm, valueKind: 'date', partialPromptId: 'date_narrow_window' });
+    expect(lib.dtmf?.length).toBe(4);
+    expect(lib.questionIds).toEqual(['dateMode', 'dateMonth', 'dateDay', 'dateWeekday', 'dateWeekdayQualifier', 'dateRelativeDay', 'dateWindow']);
+    expect(lib.prompts!.map((p) => [p.id, p.vars])).toEqual([['date_narrow_window', ['window']], ['ack_date', ['date']], ['ask_date_dtmf', undefined]]);
   });
 
   it('configures the member ID as the hand-written slot was: its wording and ids, eight digits in two groups, keyed, recorded by its last four', () => {

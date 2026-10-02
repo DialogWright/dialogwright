@@ -2,10 +2,10 @@ import type { SlotSpec } from '../../../../core/slots/types';
 import { accountIdDigitsSlot } from './accountIdDigits';
 import { dobBirthdateSlot } from './dobBirthdate';
 import { parcelSelectSlot } from './parcelSelect';
-import { deliveryDaySlot } from './deliveryDay';
+import { deliveryDayDateSlot } from './deliveryDayDate';
 import { deliveryPartChoiceSlot } from './deliveryPartChoice';
 import { missingNoteTextSlot } from './missingNoteText';
-import { expectedDateSlot } from './expectedDate';
+import { expectedDateDateSlot } from './expectedDateDate';
 
 /** Every slot, identity factors first, then each form's in turn. */
 export const ALL_SLOTS = ['accountId', 'dob', 'parcelSelect', 'deliveryDay', 'deliveryPart', 'missingNote', 'expectedDate'] as const;
@@ -17,10 +17,12 @@ export const SLOTS: Record<TestkitSlot, SlotSpec> = {
   // A library `birthdate` slot; dob.ts (hand-written) is what the shadow pair compares it with.
   dob: dobBirthdateSlot,
   parcelSelect: parcelSelectSlot,
-  deliveryDay: deliveryDaySlot,
+  // A library `date` slot; deliveryDay.ts (hand-written) is what the shadow pair compares it with.
+  deliveryDay: deliveryDayDateSlot,
   // A library `choice` slot; deliveryPart.ts (hand-written) is what the shadow pair compares it with.
   deliveryPart: deliveryPartChoiceSlot,
   // A library `text` slot; missingNote.ts (hand-written) is what the shadow pair compares it with.
   missingNote: missingNoteTextSlot,
-  expectedDate: expectedDateSlot,
+  // A library `date` slot; expectedDate.ts (hand-written) is what the shadow pair compares it with.
+  expectedDate: expectedDateDateSlot,
 };

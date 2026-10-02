@@ -25,7 +25,7 @@ intents.yaml    what a caller can ask for, and the keypad menu
 forms.yaml      the five forms: their slots, their summaries, the hooks each one has
 prompts.yaml    every line a caller can hear
 policy.yaml     the gate's tables
-slots.yaml      every slot, in the order the engine works through them (the birth date is a library `birthdate` slot and the member ID a library `digits` slot; the other three are `type: code`)
+slots.yaml      every slot, in the order the engine works through them (the birth date is a library `birthdate` slot, the member ID a library `digits` slot and the appointment day a library `date` slot; the other two are `type: code`)
 src/app.ts      the code: defineApp(this folder, code)
 fixtures/       the corpus, the scripted calls, the baseline and the recorded cassette
 ```
@@ -136,7 +136,7 @@ An earlier version of this example kept its scheduling inside its own turn loop.
 | Once the whole summary has been heard, a re-read says only "Tuesday, September 22 at 10:00 AM. Does that work?". It is the same pending question, so yes, no, the keypad's 1 and 2 and the retry ladder all work there | `FormDef.onSummaryRead` (`promptId: 'confirm_time'`) | `readSummary` |
 | "Later", "earlier" or "a different time" at the summary moves the offer, and the summary is read again with a fresh count. At the first or last opening, a line says so and the turn counts on the ladder | `FormDef.onSummaryAnswer` | `moveOffer` |
 | "Anything later that day?" names the day but keeps it: the time moves, and the day is not asked again | `FormDef.keepsSlot` | `keepsDay` |
-| "This week" asks "this week. Which day works for you?", and a weekday then narrows inside the week | `SlotSpec.partialPromptId`, `partialVars` | `dateSlot` |
+| "This week" asks "this week. Which day works for you?", and a weekday then narrows inside the week | `SlotSpec.partialPromptId`, `partialVars` (a library `date` slot with `windows`) | `slots.yaml` (`date`) |
 | A completion ends the call on its line ("Your appointment is moved to ..."), with the form and slots left as they were; with a second task queued, the line is said and the next task bridged into | `Completion { kind: 'end' }` | `forms.ts` |
 | The offer and the booking belong to the form; the part of the day outlasts it | `FactsConfig.onFormClosed` | `facts.ts` |
 | The model is told the caller has an appointment open | `App.callerState` | `app.ts` |

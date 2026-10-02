@@ -1,17 +1,18 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import {
-  buildClient, buildThresholds, choice, defaultCorpusFile, loadCorpus, loadScenarios, noul, readBaseline, registerApp, REGRESS_TODAY,
-  resetAppsForTest, runAll, scenariosDir, testSlotContext, type App, type LibrarySlotSpec, type SlotPartial, type SlotSpec,
+  buildClient, buildThresholds, choice, defaultCorpusFile, defineSlot, loadCorpus, loadScenarios, noul, readBaseline, registerApp, REGRESS_TODAY,
+  resetAppsForTest, runAll, scenariosDir, testSlotContext, type AnswerMap, type App, type LibrarySlotSpec, type SlotPartial, type SlotSpec,
 } from 'dialogwright';
 import { createShadowReport, formatShadowReport, isCassetteMiss, shadowSlot, withShadowSlots, type ShadowReport } from 'dialogwright/testing';
 import { clinicApp, registerClinic } from './index';
+import { dateSlot } from './domain/slots/date';
 import { dobSlot } from './domain/slots/dob';
 import { memberIdSlot } from './domain/slots/memberId';
 import { CLINIC_SHADOW_PAIRS } from './testing/shadowPairs';
 
 /**
- * The shadow harness over whole runs of the clinic. First the birth date and the member ID against the
- * hand-written slots they replaced (CLINIC_SHADOW_PAIRS), then every clinic slot shadowed by a copy of itself
+ * The shadow harness over whole runs of the clinic. First the birth date, the member ID and the day
+ * against the hand-written slots they replaced (CLINIC_SHADOW_PAIRS), then every clinic slot shadowed by a copy of itself
  * (the same behavior, so any mismatch is the harness's own), through the full stub regression and
  * the full replay of the recorded calls. Nothing may change: the stub run is the committed
  * baseline, the replay is the unshadowed replay with no cassette miss, and the report is empty
@@ -46,7 +47,9 @@ describe('the shadow harness on the clinic', () => {
   }
 
   /** The library slots and the methods every whole run must have compared for each. */
-  const PAIRED = { dob: ['questions', 'fill', 'display', 'partialVars'], memberId: ['questions', 'fill', 'display'] } as const;
+  const PAIRED = {
+    dob: ['questions', 'fill', 'display', 'partialVars'], memberId: ['questions', 'fill', 'display'], date: ['questions', 'fill', 'display', 'partialVars', 'dtmf.parse'],
+  } as const;
 
   function expectPairsAgree(report: ShadowReport): void {
     expect(report.mismatches, formatShadowReport(report, Object.keys(PAIRED))).toEqual([]);
@@ -55,12 +58,14 @@ describe('the shadow harness on the clinic', () => {
     }
   }
 
-  it('pairs the birth date and the member ID, now library slots, with the hand-written slots they replaced', () => {
-    expect(CLINIC_SHADOW_PAIRS.map((s) => s.id)).toEqual(['dob', 'memberId']);
+  it('pairs the birth date, the member ID and the day, now library slots, with the hand-written slots they replaced', () => {
+    expect(CLINIC_SHADOW_PAIRS.map((s) => s.id)).toEqual(['dob', 'memberId', 'date']);
     expect(CLINIC_SHADOW_PAIRS[0]).toBe(dobSlot);
     expect(CLINIC_SHADOW_PAIRS[1]).toBe(memberIdSlot);
+    expect(CLINIC_SHADOW_PAIRS[2]).toBe(dateSlot);
     expect((clinicApp.slots.dob as LibrarySlotSpec).type).toBe('birthdate');
     expect((clinicApp.slots.memberId as LibrarySlotSpec).type).toBe('digits');
+    expect((clinicApp.slots.date as LibrarySlotSpec).type).toBe('date');
   });
 
   it('compares the library slots with the hand-written ones on every call of a full stub run, and nothing changes', async () => {
@@ -139,6 +144,93 @@ describe('the shadow harness on the clinic', () => {
     expect(report.mismatches).toEqual([]);
     expect(report.calls['dob.fill']).toBeGreaterThan(30_000);
     expect(report.calls['dob.dtmf.parse']).toBeGreaterThan(900);
+  });
+
+  /**
+   * Every mix of answers the day reads, in slices so the mixes that interact are crossed with each
+   * other: on three todays (a Friday, the Sunday after February 28th, New Year's Eve), asked and not,
+   * with no span pending, a week, a month, a span too short for most weekdays, and another kind's
+   * partial, the mode chosen below, at and above SLOT_CHOICE_CONFIRM (each mode, and a label the
+   * question does not offer), then: the month and day with the weekday (a month and day over a
+   * weekday); the weekday with "this" or "next"; the span with the weekday; the relative day. Each part
+   * is chosen below SLOT_CHOICE_CONFIRM, between the thresholds, at SLOT_CHOICE_FILL and above it, and
+   * again with the weekday sure while the rest are not. Then every four keys a keypad can send.
+   */
+  function dateGrid(shadow: SlotSpec): void {
+    const T = buildThresholds([]);
+    const chose = (label: string, p: number) =>
+      label === 'none' ? choice({ none: 1 }) : { type: 'choice' as const, choice: label, probabilities: { [label]: p, none: 1 - p }, confidence: p };
+    const windows: (SlotPartial | null)[] = [
+      null, { kind: 'dob', month: 6, day: 14 },
+      { kind: 'window', start: '2026-09-21', end: '2026-09-27', label: 'next_week' },
+      { kind: 'window', start: '2026-12-01', end: '2026-12-31', label: 'december' },
+      { kind: 'window', start: '2026-12-01', end: '2026-12-02', label: 'december' },
+    ];
+    for (const window of windows) {
+      for (const text of ['', 'next tuesday', 'sometime in december', 'one zero zero five']) {
+        for (const prompted of [false, true]) shadow.questions(testSlotContext(text, { window, prompted }));
+      }
+    }
+    const quiet: AnswerMap = Object.fromEntries(
+      ['dateMode', 'dateMonth', 'dateDay', 'dateWeekday', 'dateWeekdayQualifier', 'dateRelativeDay', 'dateWindow'].map((id) => [id, choice({ none: 1 })]),
+    );
+    for (const todayIso of ['2026-09-18', '2026-03-01', '2026-12-31']) {
+      for (const window of windows) {
+        for (const prompted of [false, true]) {
+          const c = testSlotContext('', { window, todayIso, prompted });
+          shadow.fill({}, c);
+          for (const mode of ['absolute', 'relative_day', 'weekday', 'window', 'none', 'someday']) {
+            for (const mp of [0.3, T.SLOT_CHOICE_CONFIRM, 0.6]) {
+              const base: AnswerMap = { ...quiet, dateMode: chose(mode, mp) };
+              for (const p of [0.3, 0.5, T.SLOT_CHOICE_FILL, 0.9]) {
+                for (const month of ['september', 'february', 'december', 'none']) {
+                  for (const day of ['12', '19', '29', '31', 'none']) {
+                    for (const weekday of ['saturday', 'tuesday', 'none']) {
+                      shadow.fill({ ...base, dateMonth: chose(month, p), dateDay: chose(day, p), dateWeekday: chose(weekday, p) }, c);
+                      shadow.fill({ ...base, dateMonth: chose(month, p), dateDay: chose(day, p), dateWeekday: chose(weekday, 0.9) }, c);
+                    }
+                  }
+                }
+                for (const weekday of ['friday', 'tuesday', 'wednesday', 'none']) {
+                  for (const qualifier of ['this', 'next', 'none']) {
+                    shadow.fill({ ...base, dateWeekday: chose(weekday, p), dateWeekdayQualifier: chose(qualifier, p) }, c);
+                    shadow.fill({ ...base, dateWeekday: chose(weekday, 0.9), dateWeekdayQualifier: chose(qualifier, p) }, c);
+                  }
+                }
+                for (const span of ['this_week', 'next_week', 'this_month', 'next_month', 'none']) {
+                  for (const weekday of ['friday', 'sunday', 'none']) {
+                    shadow.fill({ ...base, dateWindow: chose(span, p), dateWeekday: chose(weekday, p) }, c);
+                    shadow.fill({ ...base, dateWindow: chose(span, p), dateWeekday: chose(weekday, 0.9) }, c);
+                  }
+                }
+                for (const relative of ['today', 'tomorrow', 'day_after_tomorrow', 'yesterday', 'none']) shadow.fill({ ...base, dateRelativeDay: chose(relative, p) }, c);
+              }
+            }
+          }
+        }
+      }
+    }
+    const pad = (n: number) => String(n).padStart(2, '0');
+    for (const todayIso of ['2026-09-18', '2026-03-01', '2026-12-31']) {
+      const c = testSlotContext('', { todayIso });
+      for (let m = 0; m <= 13; m++) for (let d = 0; d <= 32; d++) shadow.dtmf!.parse(`${pad(m)}${pad(d)}`, c);
+      for (const keys of ['100*', '#005', '10*5', '0000', '9999']) shadow.dtmf!.parse(keys, c);
+    }
+    for (const iso of ['2026-09-22', '2026-10-05', '2027-01-01']) shadow.display(iso);
+  }
+
+  it('the days agree on branches no run reaches: every mix of parts around the thresholds, with and without a span pending, and the keypad', () => {
+    const report = createShadowReport();
+    dateGrid(shadowSlot(dateSlot, clinicApp.slots.date!, { report }));
+    expect(report.mismatches).toEqual([]);
+    expect(report.calls['date.fill']).toBeGreaterThan(30_000);
+    expect(report.calls['date.dtmf.parse']).toBeGreaterThan(1_000);
+    expect(report.calls['date.partialVars']).toBeGreaterThan(0);
+  });
+
+  it('the day\'s grid would find a slot that differs by one option (a day that does not resolve: invalid only when asked)', () => {
+    const off = defineSlot('date', { ...(clinicApp.slots.date as LibrarySlotSpec).config as object, type: 'date', whenUnresolved: 'invalid-if-prompted' });
+    expect(() => dateGrid(shadowSlot(dateSlot, off))).toThrow(/fill/);
   });
 
   it('compares them on every call of a full replay of the recorded calls: no mismatch and no cassette miss', async () => {
