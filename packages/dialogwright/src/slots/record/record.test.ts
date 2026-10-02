@@ -385,11 +385,11 @@ describe('the testkit\'s parcel, written as configuration', () => {
 });
 
 describe('the docs', () => {
-  it('the README names every option and every text part', () => {
-    const readme = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+  it('the docs page names every option and every text part', () => {
+    const readme = readFileSync(new URL('../../../../../docs/slots/record.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(recordType).properties ?? {}) as object).filter((k) => k !== 'type');
     expect(options.sort()).toEqual(['disambiguate', 'fillAt', 'from', 'ids', 'key', 'keyPattern', 'keypad', 'label', 'labelPrefix', 'missReason', 'spoken', 'text']);
-    for (const option of [...options, 'digits', 'skipYearAfterMonth', 'instructions', 'none', 'choice']) expect(readme, option).toContain(`\`${option}\``);
+    for (const option of [...options, 'spoken.digits', 'spoken.skipYearAfterMonth', 'text.instructions', 'text.none', 'ids.choice']) expect(readme, option).toContain(`\`${option}\``);
   });
 });
 

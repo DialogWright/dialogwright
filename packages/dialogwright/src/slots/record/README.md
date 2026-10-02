@@ -8,20 +8,7 @@ Reach for it when the caller chooses among things the app has looked up. For a f
 
 ## Options
 
-| Option | Default | What it does |
-|---|---|---|
-| `from` | the app's one list | The list of records to choose among, by name: the app gives lists by name from `facts.forSlots` (`{ sources: { parcels: [...], orders: [...] } }`), so two record slots can each read their own. Without it, the slot reads the app's one list (`facts.forSlots` `records`). A name the app does not give is an empty list. |
-| `key` | `id` | The record field whose value the slot takes (text, or a number written out). A record without it is not offered. |
-| `keyPattern` | `[A-Za-z0-9_-]+` | A regular expression (its source, no slashes) the whole key must match, such as `\d{4}`. A record whose key does not match is not offered; a label, a spoken number or keys that do not match are no value. |
-| `labelPrefix` | `record_` | What each label the model chooses starts with, before the key (`parcel_` gives `parcel_4711`). A letter first, then letters, digits and underscores. It keeps a key from being taken for the question's own `none`. |
-| `label` | `Number {key}` | The criterion the model is given for each record, a template over the record's fields (below). |
-| `spoken` | off | Numbers the caller says become candidates too: `{ digits, label, skipYearAfterMonth }`. `digits` is how many digits a number has; `label` (default `Number {key}, as the caller said it`) is its criterion, a template over `{key}`, the number; `skipYearAfterMonth` (default `false`) drops a spoken year right after a month name ("March twenty twenty five"). |
-| `missReason` | `no_match` | The reason of the `invalid` outcome when the slot was asked for and the caller chose nothing. Not asked for, that is `absent`. |
-| `keypad` | none | How many keys the caller keys the key with, after spoken answers missed. Exactly that many digits that match `keyPattern` are the value. Needs an `ask_<slot>_dtmf` line. |
-| `disambiguate` | `true` | Whether two records the model cannot tell apart (the top two within `SLOT_CHOICE_MARGIN` of each other) make the slot ask which one, with `disambiguate_<slot>`. |
-| `fillAt` | `SLOT_CHOICE_FILL` | The threshold the model's probability for the record must reach to fill: `SLOT_CHOICE_FILL` or the lower `SLOT_CHOICE_CONFIRM`. |
-| `text` | none | A literal for `instructions` or `none` (below), sent to the model exactly as written in place of the default. One line each. |
-| `ids` | none | `ids.choice`: the question's id in place of `<slot>Choice`, to keep the id an existing slot was recorded with. |
+<!-- slot-docs:options -->
 
 The slot is read back in the final summary and never on its own (`spokenConfirm: summary`), and its display is the key as it is.
 
@@ -50,11 +37,6 @@ The slot reads the probabilities the model gives each label, not its one pick:
 
 On the slot `parcel`, the question is `parcelChoice`, a choice whose labels are the records and spoken numbers, in that order, then `none`. With nothing to offer (no records, no number said), the slot asks nothing that turn.
 
-| Part | Default |
-|---|---|
-| `instructions` | Read asr.text and node.promptJustPlayed. Which of these does the caller mean? They may name it by its number or by what the list says about it. Choose none only when they name none of these. |
-| `none` | Names none of these |
-
 With this configuration:
 
 ```yaml
@@ -80,7 +62,7 @@ the records `{ number: "7101", item: a box of books, day: "2026-09-14" }` and `{
 
 ## Examples
 
-`examples.yaml` beside this file has three configurations with starter utterances: a customer's parcels from the app's one list, with spoken numbers and a keypad; orders read from a list by name beside another list, with their own words, no disambiguation and a lower threshold; and bookings with the defaults. In an app's `slots.yaml`:
+The starter examples, listed below, are three configurations with starter utterances: a customer's parcels from the app's one list, with spoken numbers and a keypad; orders read from a list by name beside another list, with their own words, no disambiguation and a lower threshold; and bookings with the defaults. In an app's `slots.yaml`:
 
 ```yaml
 order:
@@ -91,6 +73,8 @@ order:
 ```
 
 with the app's facts giving `forSlots: (f) => ({ sources: { orders: ordersOf(f) } })`.
+
+<!-- slot-docs:examples -->
 
 ## Notes
 

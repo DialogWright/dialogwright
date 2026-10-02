@@ -40,7 +40,7 @@ Each YAML file starts with a `yaml-language-server` line that points at its sche
 
 What stays in TypeScript is what runs, or what the YAML could only describe by copying code:
 
-- **The slots** (`src/domain/slots/`): each slot's questions to the model, the parser that turns the answers into a value, its keypad shape and how it is read back.
+- **No slot code.** All five are library slots configured in `slots.yaml` (see the [slot types](../../docs/slots/README.md)); no slot is written in code. The hand-written slots they replaced are kept as test-only oracles in `src/testing/oracles/`, compared with the library slots over large grids of answers (`src/shadow.test.ts`).
 - **The tools and the directory** (`src/domain/tools.ts`, `directory.ts`, `roster.ts`): the two reads and three writes, and the demo schedule behind them. Policy is never in tool code; the gate decides from policy.yaml whether a tool may run.
 - **The form hooks and the scheduling** (`src/domain/forms.ts`, `scheduling.ts`): the completions, the params each write confirms, the extra questions (`App.questions`), and the offer built and moved at the summary. See the table below.
 - **What the clinic keeps on the session** (`src/domain/facts.ts`), the caller state the model is told, and the hooks the regression harness and the stubs use (`src/domain/testing.ts`).

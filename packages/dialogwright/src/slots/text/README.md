@@ -8,16 +8,7 @@ Reach for it for a value no list holds and no code can check. For a number, a da
 
 ## Options
 
-| Option | Default | What it does |
-|---|---|---|
-| `what` | none | What the caller gives, as a noun phrase the default question names ("a description of the problem"). Needed unless `text.given` gives the whole question. |
-| `instructions` | none | More guidance for the model, added after the default question ("Count it even when it comes with a request."). |
-| `maxLength` | 500 | The most characters of the caller's words the value keeps. |
-| `say` | `your description` | The display: what a line, the console and the model's turn state show in place of the words. `null` shows the words themselves, and then needs `redact: none`. |
-| `keep` | `first-unless-prompted` | When a value is on file: `first-unless-prompted` replaces it only when the slot was just asked for (a later aside never overwrites it); `first` never replaces it. A correction at the summary replaces it either way. |
-| `redact` | `length` | `length`: the words leave the turn as their length only ("<38 chars>"), and the stand-in display is kept. `none`: as they are. |
-| `text` | none | `text.given`: the question in its own words, sent to the model exactly as written, in place of the default. One line. |
-| `ids` | none | `ids.given`: the question's id in place of `<slot>Given`, to keep the id an existing slot was recorded with. |
+<!-- slot-docs:options -->
 
 The slot is fixed to `spokenConfirm: summary` and `detect: true`, has no keypad rung, and says no line beyond its `ask_<slot>` and `ask_<slot>_retry`.
 
@@ -31,7 +22,7 @@ With `instructions`, its words follow, after a space.
 
 ## Examples
 
-`examples.yaml` beside this file has four configurations with starter utterances: the defaults, a courier note with its own stand-in and length, a slot keeping its recorded wording and id (`text.given`, `ids.given`), and a phrase shown as said. In an app's `slots.yaml`:
+The starter examples, listed below, are four configurations with starter utterances: the defaults, a courier note with its own stand-in and length, a slot keeping its recorded wording and id (`text.given`, `ids.given`), and a phrase shown as said. In an app's `slots.yaml`:
 
 ```yaml
 courierNote:
@@ -40,6 +31,8 @@ courierNote:
   instructions: Count where to leave the parcel and how to reach the door.
   say: your note
 ```
+
+<!-- slot-docs:examples -->
 
 ## Notes
 

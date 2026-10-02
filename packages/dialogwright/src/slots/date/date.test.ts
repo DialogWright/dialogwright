@@ -451,14 +451,14 @@ describe('the testkit\'s dates, written as configuration', () => {
 });
 
 describe('the docs', () => {
-  it('the README names every option and every text part', () => {
-    const readme = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+  it('the docs page names every option and every text part', () => {
+    const readme = readFileSync(new URL('../../../../../docs/slots/date.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(dateType).properties ?? {}) as object).filter((k) => k !== 'type');
     expect(options.sort()).toEqual([
       'confirm', 'context', 'exclude', 'fillAt', 'ids', 'keypad', 'narrowPrompt', 'preferMonthDay', 'qualifier', 'range', 'readBack', 'text', 'whenUnresolved', 'whenUnsaid', 'windows',
     ]);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
-    for (const part of ['mode', 'modeNone', 'relative', 'weekday', 'qualifier', 'month', 'day', 'window']) expect(readme, part).toContain(`\`${part}\``);
+    for (const part of ['mode', 'modeNone', 'relative', 'weekday', 'qualifier', 'month', 'day', 'window']) expect(readme, part).toContain(`\`text.${part}\``);
   });
 });
 

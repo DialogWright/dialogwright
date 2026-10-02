@@ -8,22 +8,7 @@ Reach for it for an identifier a caller reads out: a number of digits and nothin
 
 ## Options
 
-| Option | Default | What it does |
-|---|---|---|
-| `noun` | none | What the number identifies, as a noun without "number" ("account", "library card", "parcel tracking"). The default questions say "a library card number". Needed unless `text` gives every question in its own words. |
-| `article` | `a`, or `an` before a vowel | The word before the noun in the default questions. |
-| `length` | none | How many digits the number has. Gives the default `mask` (exactly this many digits) and the length of the keypad rung. Needed unless `mask` is given. |
-| `mask` | exactly `length` digits | A regular expression (its source, no slashes) the digits must match, such as `^9\d{9}$`. A number that fails it is `invalid` with the reason `mask`; with only `length`, the reason is `length`. |
-| `keypad` | `false` | The caller can key the number, `length` digits at a time. Needs `length` and an `ask_<slot>_dtmf` line. |
-| `group` | all together | How the number is said back, in groups of these sizes (`[4, 4]` says 5550 7788). The last group takes any digits left over. Must add up to `length`. |
-| `confirm` | `summary` | `summary`: a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. `by-confidence`: it is acknowledged (`ack_<slot>`) when `readBack` says so. |
-| `readBack` | `implicit` | What a filled number asks for: `implicit` (always), `below-fill` (only when the model is less sure of the span than `SLOT_CHOICE_FILL`), `none` (never). Only with `confirm: by-confidence`. |
-| `minConfidence` | `none` | A floor on how sure the model must be of the span: one of `SLOT_DETECT`, `SLOT_CHOICE_CONFIRM`, `SLOT_CHOICE_FILL`. Below it the number is `invalid` with the reason `low_confidence`. |
-| `lengthRetryPromptId` | none | The prompt that re-asks, in place of the generic `ask_<slot>_retry`, when what the caller said does not fit the pattern ("A card number has eight digits."). |
-| `redact` | `last4` | How the value is masked wherever it leaves the turn (the trace, a tool call's param of the same name): `last4` ("...0417") or `none`. |
-| `handoff` | `last4` | What a transfer to a person hands over: the `last4`, only whether the caller was `verified`, or the `display` in full. |
-| `text` | none | A literal for any of the four question texts, `given`, `span`, `none` and `complete`, sent to the model exactly as written, in place of the default. One line. |
-| `ids` | none | A question id for `given`, `span` or `complete` in place of `<slot>Given`, `<slot>Span` and `<slot>Complete`, to keep the ids an existing slot was recorded with. |
+<!-- slot-docs:options -->
 
 The slot is always `detect: true`: its row in the console is measured against `SLOT_DETECT`.
 
@@ -56,7 +41,7 @@ The span question's choices are the spans the engine found in the caller's words
 
 ## Examples
 
-`examples.yaml` beside this file has four configurations with starter utterances and keypad keys: an account number said back in groups of four, a library card acknowledged only when the model is less sure of it, a tracking number with its own pattern, and a slot keeping its recorded wording and ids. In an app's `slots.yaml`:
+The starter examples, listed below, are four configurations with starter utterances and keypad keys: an account number said back in groups of four, a library card acknowledged only when the model is less sure of it, a tracking number with its own pattern, and a slot keeping its recorded wording and ids. In an app's `slots.yaml`:
 
 ```yaml
 account:
@@ -66,6 +51,8 @@ account:
   keypad: true
   group: [4, 4]
 ```
+
+<!-- slot-docs:examples -->
 
 ## Notes
 

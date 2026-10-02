@@ -12,23 +12,7 @@ Reach for it for any day a caller names that is not their date of birth (use `bi
 
 ## Options
 
-| Option | Default | What it does |
-|---|---|---|
-| `range` | (required) | `future`: today or a day to come. `past`: today or a day gone, up to two years back. |
-| `windows` | `false` | `range: future` only. A span of days may be named: it is held as the partial `{ kind: window, start, end, label }`, `narrowPrompt` asks which day in it, and a weekday said next is looked for inside it. Adds the `window` question and the `window` mode. |
-| `qualifier` | `false` | `range: future` only. Asks whether a weekday is "this" one or "next" one ("next Tuesday" is in the next week). Adds the `qualifier` question. |
-| `narrowPrompt` | `ask_<slot>_narrow` | With `windows`: the prompt that asks which day in a span (the slot's `partialPromptId`), given `{window}`: "next week", "in December". |
-| `preferMonthDay` | `true` | A month and a day the model is sure of (at `SLOT_CHOICE_CONFIRM`) win over a weekday reading of the mode: "Monday, September 28" names one day twice, and the weekday reading would land on the next (or last) Monday instead of the date said. |
-| `fillAt` | `fill` | How sure the model must be of the day (the least of the parts it read). `fill`: `SLOT_CHOICE_FILL`, and a day below it is treated as not resolved (`whenUnresolved`). `confirm`: `SLOT_CHOICE_CONFIRM`, and a day below it is `invalid` with the reason `low_confidence` and the ISO day as raw. |
-| `whenUnsaid` | `invalid-if-prompted` | A turn that names no day (the mode is none, below `SLOT_CHOICE_CONFIRM`, or not answered at all). `invalid-if-prompted`: `invalid`, reason `unresolvable`, raw empty, when the caller was asked for the day (so the retry ladder moves on), else `absent`. `absent`: always `absent`. |
-| `whenUnresolved` | `invalid-if-prompted` | A day named that does not resolve: no such day, out of range, a span without `windows`, or below `SLOT_CHOICE_FILL` under `fillAt: fill`. `invalid-if-prompted`: `invalid`, reason `unresolvable`, raw empty, when the caller was asked for the day, else `absent`. `invalid`: always `invalid`, reason `unresolvable`, with the mode as raw (`absolute`, `weekday`, ...). |
-| `keypad` | `false` | The caller can key the day as four digits, the month then the day (`MMDD`: 0922), or in a Spanish session the day then the month (`DDMM`: 2209), resolved as a spoken month and day are for the range. Needs an `ask_<slot>_dtmf` line in each locale, saying the order. |
-| `confirm` | `summary` | `summary`: a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. `by-confidence`: it is acknowledged (`ack_<slot>`, given the day as `{<slot>}`) when `readBack` says so. |
-| `readBack` | `implicit` | With `confirm: by-confidence`: `implicit` acknowledges every day, `below-fill` only a day the model is less sure of than `SLOT_CHOICE_FILL`, `none` never. |
-| `context` | by range | The sentence every default question starts with after "Read asr.text.", saying what day the caller is giving. Default: "The caller is saying the day something happened." (past), "The caller is saying the day they want." (future). |
-| `exclude` | none | A sentence naming a date the caller may also say that is not this day ("A date of birth is not the day the parcel was due."). The default mode, month and day questions end with it. |
-| `text` | none | A literal for any text part (below), sent to the model exactly as written in place of the default. One line each. |
-| `ids` | none | A question id for any part (`mode`, `relative`, `weekday`, `qualifier`, `month`, `day`, `window`) in place of `<slot>Mode`, `<slot>Relative` and so on, to keep the ids an existing slot was recorded with. |
+<!-- slot-docs:options -->
 
 The slot is always `valueKind: date`: when the caller was asked for another date-valued slot (a birth date) and this slot hears the same month and day on that turn, the engine drops this slot's reading, so a birthday is never also taken as this day.
 
@@ -49,18 +33,7 @@ The keypad takes four digits that make a real month and day in range, and nothin
 
 ## The questions
 
-On the slot `visit` with `range: future`, the questions are `visitMode`, `visitRelative`, `visitWeekday`, `visitMonth` and `visitDay`; `qualifier` adds `visitQualifier` and `windows` adds `visitWindow` (with `windows` they are asked in the order mode, month, day, weekday, qualifier, relative, window). Each is made of text parts, and `text.<part>` replaces a part word for word:
-
-| Part | Default |
-|---|---|
-| `mode` | Read asr.text. {context} How do they refer to the day? {modes} "none" if no day is mentioned. (then the `exclude` sentence, when there is one) |
-| `modeNone` | none: what the mode question's "none" means, its criterion (the label alone by default) |
-| `relative` | Read asr.text. {context} Do they say today, tomorrow, or the day after tomorrow? (past: today, yesterday, or the day before yesterday) |
-| `weekday` | Read asr.text. {context} Which day of the week do they name, if any? |
-| `qualifier` | Read asr.text. {context} If they name a day of the week, do they say "this" or "next" before it? |
-| `month` | Read asr.text. {context} Which month do they name, if any? (then the `exclude` sentence) |
-| `day` | Read asr.text. {context} Which day of the month do they name, if any? (then the `exclude` sentence) |
-| `window` | Read asr.text. {context} Do they name a span of days such as this week, next week, this month, or next month? |
+On the slot `visit` with `range: future`, the questions are `visitMode`, `visitRelative`, `visitWeekday`, `visitMonth` and `visitDay`; `qualifier` adds `visitQualifier` and `windows` adds `visitWindow` (with `windows` they are asked in the order mode, month, day, weekday, qualifier, relative, window). Each is made of text parts, and `text.<part>` replaces a part word for word (the defaults are listed under Text parts, after the options table).
 
 `{context}` is the `context` sentence. `{modes}` says what each mode means for the range:
 
@@ -78,7 +51,7 @@ A correction is the place for a sentence of your own: "When they correct a day, 
 
 ## Examples
 
-`examples.yaml` beside this file has three configurations with starter utterances and keypad keys: the day a parcel was due (back, keyable, a context sentence and a date-of-birth sentence), a delivery day (ahead, the defaults), and a table booking (ahead, with spans of days and "this" or "next", taken at `SLOT_CHOICE_CONFIRM` and acknowledged below `SLOT_CHOICE_FILL`, a day that does not resolve always invalid, keyable). In an app's `slots.yaml`:
+The starter examples, listed below, are three configurations with starter utterances and keypad keys: the day a parcel was due (back, keyable, a context sentence and a date-of-birth sentence), a delivery day (ahead, the defaults), and a table booking (ahead, with spans of days and "this" or "next", taken at `SLOT_CHOICE_CONFIRM` and acknowledged below `SLOT_CHOICE_FILL`, a day that does not resolve always invalid, keyable). In an app's `slots.yaml`:
 
 ```yaml
 booking:
@@ -94,6 +67,8 @@ booking:
   keypad: true
   context: The caller is saying which day they want to book a table for.
 ```
+
+<!-- slot-docs:examples -->
 
 ## Notes
 

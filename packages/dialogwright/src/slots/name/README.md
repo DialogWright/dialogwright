@@ -10,13 +10,7 @@ Reach for it for the caller's own name. For a name chosen from a list (a doctor,
 
 ## Options
 
-| Option | Default | What it does |
-|---|---|---|
-| `exclude` | none | Words that never belong to the caller's name: a span holding any of them is not offered, and one answered anyway is `invalid` with the reason `no_span`. One word per entry, letters and digits only, compared in lower case word by word (so `chen` withholds "chen" and "dr chen" but not "chenoweth"). A caller who shares one of the words cannot give their name by voice, so list only what is needed. |
-| `redact` | `none` | How the value is masked wherever it leaves the turn (the trace, the console, a tool call's param of the same name): `mask` ("•"), or `none` to keep it as it is. |
-| `handoff` | `display` | What a transfer to a person hands over: the name as it is said (`display`), or only whether the caller was `verified`. |
-| `text` | none | A literal for any text part (below), sent to the model exactly as written in place of the default. One line each. |
-| `ids` | none | A question id for `given` or `span` in place of `<slot>Given` and `<slot>Span`, to keep the ids an existing slot was recorded with. |
+<!-- slot-docs:options -->
 
 The slot is always `detect: true` (its row in the console is measured against `SLOT_DETECT`), read back in the final summary and never on its own (`spokenConfirm: summary`), and has no keypad rung: a name cannot be keyed, so a caller whose name is not heard goes through the retry ladder to a person.
 
@@ -31,15 +25,7 @@ The slot is always `detect: true` (its row in the console is measured against `S
 
 ## The questions
 
-On the slot `name` the questions are `nameGiven` and `nameSpan`. Each text part has a default; `text` replaces any of them.
-
-| Part | Default |
-|---|---|
-| `given` | Read asr.text. Does the caller state their own name, first name alone or first and last? |
-| `givenTrue` | The caller gives their own name, as in my name is Anna Petrov, this is Sam, or Priya Raghunathan, including a correction to their own name just read back to them, as in no, it's Sam Lee |
-| `givenFalse` | No personal name, or a name that is not the caller's, such as the name of someone they are talking about |
-| `span` | Read asr.text. Which of these spans is the caller's own full name as they say it, first and last when both are given? Do not include words such as my name is or this is, and do not choose anyone else's name. When `slots.<slot>` is already set and the caller gives a different name for themselves, as in no, it's Sam Lee, choose that span. A single word can be the whole name, as in Prince. Choose none if no span is the caller's name. |
-| `spanNone` | No span of asr.text is the caller's name, as when the caller only agrees, refuses, or names something other than themselves |
+On the slot `name` the questions are `nameGiven` and `nameSpan`. Each text part has a default, listed under Text parts after the options table; `text` replaces any of them.
 
 `given` is a yes-or-no question whose criteria are `givenTrue` and `givenFalse`. `span` is a choice whose labels are the offered spans and `none`, which means `spanNone`; `<slot>` is the slot's id. The word `none` said aloud is a span like any other and would collide with the question's own `none`, so it is never offered as a span.
 
@@ -49,13 +35,15 @@ On the slot `name` the questions are `nameGiven` and `nameSpan`. Each text part 
 
 ## Examples
 
-`examples.yaml` beside this file has three configurations with starter utterances: the defaults, a call where the caller names someone else too (words withheld, handed over as verified), and a masked name with its own wording and ids. In an app's `slots.yaml`:
+The starter examples, listed below, are three configurations with starter utterances: the defaults, a call where the caller names someone else too (words withheld, handed over as verified), and a masked name with its own wording and ids. In an app's `slots.yaml`:
 
 ```yaml
 caller:
   type: name
   exclude: [dr, doctor, rivera, quinn]
 ```
+
+<!-- slot-docs:examples -->
 
 ## Notes
 

@@ -1,6 +1,6 @@
 # The slot library
 
-A slot is one value a form collects. An app can write each slot by hand as a `SlotSpec` (see "Writing a slot" in `docs/authoring-an-app.md`), or name a slot type from this library and give it options:
+A slot is one value a form collects. An app can write each slot by hand as a `SlotSpec` (see section 4 of `docs/authoring-an-app.md`), or name a slot type from this library and give it options:
 
 ```ts
 import { defineSlot } from 'dialogwright';
@@ -43,7 +43,9 @@ Each type has a folder under `src/slots/`:
 | `display.ts` | `display(value, locale)`: how a value is said. The fill, the keypad and any disambiguation candidates use the same function, so they always agree. |
 | `<type>.test.ts` | `runSlotConformance` over the examples, then unit tests of what the kit does not cover. |
 | `examples.yaml` | Example configurations with starter utterances. |
-| `README.md` | The type's docs page: what it collects, every option, its question text, examples and notes. |
+| `README.md` | The type's hand-written docs: what it collects, the outcomes, its question wording, the prompts it needs, notes. Two marker lines, `<!-- slot-docs:options -->` and `<!-- slot-docs:examples -->`, say where the generated options, text parts, question ids and examples go. |
+
+The docs page for a type, `docs/slots/<type>.md`, is its README with those two markers replaced by tables read from the options schema (names, types, defaults and the `.describe(...)` text) and from `examples.yaml`. Run `pnpm --filter dialogwright slot-docs` to write the pages; a test fails when a committed page is stale, and when a type lacks a page or the index (`docs/slots/README.md`) lacks the type.
 
 `text/` is the pattern to copy.
 
@@ -129,6 +131,6 @@ A slot hears and says its value in the session's locale (`ctx.locale`, and the `
 4. Write `examples.yaml`: a few configurations, each with utterances that fill, that miss, and that hit each `invalid` reason the type has.
 5. Add the type to `BUILT_IN_SLOT_TYPES` in `registry.ts` and export it from `index.ts`.
 6. Run its checks: `pnpm --filter dialogwright test slots/<type>`. Then the whole suite, `pnpm verify`, and `pnpm check`.
-7. Write its `README.md`: what it collects, every option (a test checks each is named), the default question text, and notes.
+7. Write its `README.md`: what it collects, the outcomes, the question wording, the prompts it needs and notes, with the two marker lines where the options and examples go. Do not write an options table; the page generates it. Then `pnpm --filter dialogwright slot-docs`, commit `docs/slots/<type>.md`, and add the type to the index in `docs/slots/README.md`.
 
 Keep the words of the engine package neutral: no one industry's vocabulary in a type, its defaults, its examples or its docs. Names, numbers and dates in examples are invented.

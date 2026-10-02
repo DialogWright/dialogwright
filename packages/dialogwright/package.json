@@ -34,6 +34,7 @@
     "test": "vitest run",
     "regress:testkit": "tsx src/testing/testkit/regress.ts",
     "schemas": "tsx src/define/schema/generate.ts",
+    "slot-docs": "tsx scripts/slotDocs.ts",
     "check": "tsx src/define/cli.ts check"
   },
   "dependencies": {

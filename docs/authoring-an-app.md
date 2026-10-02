@@ -213,18 +213,28 @@ failedPromptId: identity_failed
 
 ### slots.yaml (optional)
 
-Names every slot the app has, one key per slot, and the order of the keys is the order of `App.slots`. Each slot is a library type with its options (the types and their options are in `schemas/slots.schema.json`; section 4 covers writing a slot) or `{ type: code }`, a slot the code writes in `code.slots.<id>`. The clinic's file, with all five of its slots in code:
+Names every slot the app has, one key per slot, and the order of the keys is the order of `App.slots`. Each slot is a library type with its options (the types and their options are in `schemas/slots.schema.json`; section 4 covers choosing and writing a slot) or `{ type: code }`, a slot the code writes in `code.slots.<id>`.
+
+A slots.yaml with three library slots and one written in code (`{ type: code }`). The clinic's own file, with all five of its slots from the library, is `apps/clinic/slots.yaml`.
 
 ```yaml
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
-name: { type: code }
-dob: { type: code }
-memberId: { type: code }
-provider: { type: code }
-date: { type: code }
+name:
+  type: name
+  exclude: [dr, doctor, chen, cheng, patel]
+dob:
+  type: birthdate
+  keypad: true
+card:
+  type: digits
+  noun: library card
+  length: 8
+  keypad: true
+  group: [4, 4]
+plate: { type: code }                          # an example of a slot the code writes (code.slots.plate)
 ```
 
-A library slot looks like this (`text` is the one type so far):
+The seven types and their options are in section 4 and in [docs/slots](slots/README.md); a small library slot looks like this:
 
 ```yaml
 note:
@@ -264,7 +274,7 @@ The test for what is data: could a person who does not write code review it, and
 
 | Part of `code` | What it is | Why it is not YAML |
 |---|---|---|
-| `slots` | A `SlotSpec` per slot: the questions the decision model is asked, how its answers become a value (`fill`), the keypad shape, how it is read back (`display`). [Section 4](#4-writing-a-slot) says how to write one. | It is a parser. A slot library of built-in types, so most slots need no code, is planned. |
+| `slots` | A `SlotSpec` per slot: the questions the decision model is asked, how its answers become a value (`fill`), the keypad shape, how it is read back (`display`). [Section 4](#4-writing-a-slot) says how to write one. | It is a parser. Most slots need none: a library type named in slots.yaml (section 4) supplies it, and code is for a value no type fits. |
 | `tools` | A `ToolDef` per tool: `run(call, sys, ctx)` does the work and returns `{ value, summary }` | It calls the app's systems. It never decides whether it may run: the gate does, from policy.yaml. |
 | `systems` | A factory for a fresh copy of the app's systems for each call, and the gate's lookups over them (`ownerOf`, `scopeOf`) | State and connections. |
 | `forms` | The hooks of each form, by form id (section 5) | They run during the dialog. |
@@ -322,9 +332,196 @@ An app outside the engine package imports only from `'dialogwright'` (the clinic
 
 ## 4. Writing a slot
 
-A slot is one value a form collects: a book, a day, a card number. Its `SlotSpec` says what the decision model is asked about the caller's words and how the answers become a value. The model never writes the value: it answers typed questions (yes or no, which of these labels), and the slot's code turns the answers into a value and decides whether it is good. The types are in `packages/dialogwright/src/core/slots/types.ts` and are exported by `'dialogwright'`.
+A slot is one value a form collects: a book, a day, a card number. The model never writes the value: it answers typed questions (yes or no, which of these labels), and the slot turns the answers into a value and decides whether it is good.
 
-The library has both kinds of slot. `book` and `branch` are choices from a fixed list: slots of the library's `choice` type (`defineSlot` in its `app.ts`, with the options as `key: title`). `card`, the library card number, is a value no list holds, and it is the worked example at the end of this section. It is a slot of the library's `digits` type (`defineSlot` in `app.ts`, with options rather than code): the hand-written slot shown in the sections below is what that type generalizes, and what a slot of your own that no library type fits looks like.
+**Most slots are configuration.** Pick a type in `slots.yaml`, give it options, and the library supplies the questions the model is asked, how its answers become a value, the keypad, and how the value is said back. Write a slot in code only when no type fits. This section covers the types first, then what is true of every slot, then writing one in code.
+
+### Pick a type in slots.yaml
+
+The library has seven types. Each has a page with every option, its default, the default question text, the outcomes it can give, the prompts it needs and starter examples (the pages are [indexed here](slots/README.md)):
+
+| Type | It collects |
+|---|---|
+| [`digits`](slots/digits.md) | A number of a fixed shape: an account, a library card, a tracking number |
+| [`choice`](slots/choice.md) | One of a fixed list: a delivery speed, a branch, a colour |
+| [`date`](slots/date.md) | A calendar day, ahead or back: a delivery, an appointment |
+| [`birthdate`](slots/birthdate.md) | A date of birth, heard whole or in part |
+| [`name`](slots/name.md) | The caller's own name |
+| [`record`](slots/record.md) | One of the app's own records, chosen by what the caller says of it |
+| [`text`](slots/text.md) | The caller's own words, kept as said |
+
+A slot is a key in `slots.yaml` with a `type` and that type's options. The common cases, each a few lines:
+
+An identifier the caller reads out. The model says whether a number was stated and which span of the words is it; code turns the span into digits and checks them.
+
+```yaml
+card:
+  type: digits
+  noun: library card        # "Does the caller state a library card number ..."
+  length: 8                 # a wrong length is invalid; the default pattern is exactly eight digits
+  keypad: true              # eight keys after two spoken misses; needs ask_card_dtmf
+```
+
+One of a fixed list. The key is the value; the text after it is how the line says it.
+
+```yaml
+branch:
+  type: choice
+  keypad: true              # 1 for the first option, 2 for the second
+  options:
+    north: the North branch
+    riverside: the Riverside branch
+```
+
+A list whose entries sound alike has an advanced tier (`disambiguate`, `hedge`, `help`): the clinic's provider slot in `apps/clinic/slots.yaml` uses all three.
+
+A day, ahead or back, and a date of birth. They are two types because a birth date is asked differently, masked, and held in part when the year is missing.
+
+```yaml
+pickupDay:
+  type: date
+  range: future             # or past: today or a day gone, up to two years back
+  windows: true             # "next week" is held, and the slot asks which day
+dob:
+  type: birthdate
+  keypad: true              # MMDDYYYY (DDMMYYYY in a Spanish session)
+```
+
+The caller's own name. `exclude` lists words that are never the caller's name (a title, the people they may be discussing), so a span holding one is never offered to the model.
+
+```yaml
+caller:
+  type: name
+  exclude: [dr, doctor, rivera, quinn]
+```
+
+One of the records a tool returned for this caller. The app gives the records to its slots from `facts.forSlots`; the model picks a label, and the value is the record's key.
+
+```yaml
+order:
+  type: record
+  from: orders
+  key: ref
+  label: "Order {ref}, {what}, placed {placed|day}"
+```
+
+Free words no list holds and no code can check. The words are the value; the summary says the stand-in (`say`), and the trace keeps only their length.
+
+```yaml
+note:
+  type: text
+  what: a note for the courier
+  say: your note
+```
+
+What the type does not do for you:
+
+- **The lines it says.** A type declares the prompts it may lead to (`ask_<slot>` and `ask_<slot>_retry` for every slot; `ask_<slot>_dtmf` with a keypad; `ack_<slot>` when a value is acknowledged; `disambiguate_<slot>`; a type's own named lines). You write them in `prompts.yaml`, and `pnpm check` says which are missing in every locale, and why.
+- **The words the model reads.** Defaults are neutral (`Does the caller state a library card number ...`). To keep the words a recording was made with, or to name your own domain, write a text part as a literal: `text: { given: "..." }`, sent to the model exactly as written. `ids: { given: ... }` keeps a question id. A changed word is a changed model request, so a recorded cassette misses until it is recorded again.
+- **Thresholds.** A type compares the model's numbers only to thresholds it reads by name. An option that names one (`fillAt`, a `hedge.threshold`) is checked when the app is defined; see "Thresholds" below.
+- **Sensitive values.** The types that hold an identifier mask it by default: `digits` shows `...0417` wherever it leaves the turn and hands a transfer its last four; `birthdate` shows the year only. Turn that off (`redact: none`) only for a value that is no one's secret. Name the tool param and the prompt variable that carry the value exactly as the slot (`card`, `{card}`).
+- **Another language.** The types read and say Spanish (`es`, `es-*`); a choice option's `say` and a text stand-in can be worded per locale in `locale/<tag>/slots.yaml` (section 7).
+- **Reading a slot from code.** A slot built from a type is an ordinary `SlotSpec` with two more fields: `type` and `config` (the options as parsed, defaults filled in), so code can list a choice slot's options or read a record slot's key.
+
+Every option is strict. A misspelt one is refused at its line, with the one meant:
+
+```
+slots.yaml:4:3  card.lenth  unknown key "lenth" under card  ->  rename "lenth" to "length"
+```
+
+An app that is not built from a folder gets the same slots from code: `defineSlot('card', { type: 'digits', noun: 'library card', length: 8 })` throws a `SlotConfigError` listing every problem. The library's `app.ts` does this for its three slots, and the clinic's `slots.yaml` is the complete example of a folder.
+
+### Every slot listens on every turn
+
+The engine asks the questions of every slot the turn listens for, not only the one it just asked about: inside a form, the form's slots (and, while an anonymous caller is still to be verified, the identity factors); outside a form, every slot the app has. That is what lets a caller volunteer several details at once, and lets "what do I have out on card 5552 0417" fill the card on the opening turn. It is true of library slots and slots in code alike, and it has two consequences:
+
+- A slot must give `absent` when the words say nothing about it. The library types do; a slot in code must.
+- Adding or changing a slot changes the model's request on every turn where it listens, because its questions are in the request and every slot's display is in the turn state. A recorded cassette then misses until it is recorded again, which calls the paid model and is a deliberate step (the clinic's README, "Recording the cassette").
+
+A per-slot `listen:` option, to narrow when a slot's questions are asked, is not built. Any non-default value would change the questions on most turns, so it belongs with a deliberate re-record, not with a type's options.
+### Thresholds
+
+Compare the model's numbers against `ctx.thresholds`, by name, never against a number written in the slot. Thresholds can then be overridden for a run (`--threshold SLOT_DETECT=0.7`) and tuned by the sweep, and every slot moves together. The slot thresholds (their defaults are in `core/thresholds.ts`):
+
+| Threshold | Default | What it is for |
+|---|---|---|
+| `SLOT_DETECT` | 0.6 | A yes-or-no detection question: is a value said at all, was it said whole. |
+| `SLOT_CHOICE_CONFIRM` | 0.45 | The least a picked label needs to be taken at all. |
+| `SLOT_CHOICE_FILL` | 0.55 | Enough to take a picked label silently; between the two, take it and read it back. |
+| `SLOT_CHOICE_MARGIN` | 0.15 | Two labels closer than this are asked about (`disambiguate`). |
+| `SLOT_HELP` | 0.6 | A help answer ("I don't know it") to take as one. |
+
+An app's own thresholds go in app.yaml (`thresholds:`, the clinic's `PROVIDER_UNSURE`), and the engine adds them to `ctx.thresholds` on every turn. A unit test's `testSlotContext` has only the engine's, so the clinic reads its own through a helper that falls back to the registered app's value (`clinicThreshold` in `apps/clinic/src/domain/thresholds.ts`).
+
+A slot that names a threshold in its options (a library `choice` slot's `hedge.threshold` or `help.threshold`, the one a `fillAt` or `minConfidence` selects) lists the names in `thresholds`, and a name that is neither one of the engine's nor one under `thresholds:` in app.yaml is refused when the app is defined, `pnpm check` included, with the closest name as the fix. A misspelt name would otherwise be a threshold no probability ever meets, so the slot would quietly never fill:
+
+```
+slots.yaml:87:16  provider.hedge.threshold  slot "provider" names the threshold "PROVIDER_UNSURR", which is neither one of the engine's thresholds nor one the app names  ->  rename it to "PROVIDER_UNSURE", or add "PROVIDER_UNSURR" under thresholds in app.yaml
+```
+
+Set `detect: true` when the slot's fill rests on a yes-or-no detection question, as the card's does (`cardGiven`). It changes what the trace and the console show, not what fills: the slot's row (`slot:<id>`) is shown against `SLOT_DETECT` instead of `SLOT_CHOICE_CONFIRM`. The comparison that decides is the one in your `fill`.
+
+### Worked example: the library card
+
+The library's `check_loans` form asks for a library card number and says which book on the card is due back first. Everything it took:
+
+- `intents.yaml`: the `check_loans` intent, `kind: form`.
+- `forms.yaml`: `check_loans` with `slots: [card]`, `summaryPromptId: null` and `hooks: [complete]`.
+- `policy.yaml`: `listLoans: 0` under `toolLevel` and `listLoans: [R1]` under `rulesFor`.
+- `prompts.yaml` and `locale/es/prompts.yaml`: `ask_card`, `ask_card_retry`, `ask_card_dtmf` (the keypad rung), `ack_card` (`by-confidence`), `ask_card_length` (the `retryPromptId`), and the form's `next_due`, `no_loans` and `no_card`.
+- `app.ts`: the slot, the `listLoans` tool and the form's `complete`.
+
+The slot, from `packages/dialogwright/src/define/fixture/app.ts`. It is a library `digits` slot, so its questions, fill, keypad, display and the lines it declares come from the type, and its options say what the hand-written slot in "Values no list holds", below, did:
+
+```ts
+export const cardSlot = defineSlot('card', {
+  type: 'digits',
+  noun: 'library card',               // "Does the caller state a library card number ..."
+  length: 8,                          // exactly eight digits; a wrong length is invalid, reason "length"
+  keypad: true,                       // dtmf length 8; needs ask_card_dtmf
+  confirm: 'by-confidence',           // spokenConfirm; needs ack_card
+  readBack: 'below-fill',             // ack_card only when the span's probability is under SLOT_CHOICE_FILL
+  minConfidence: 'SLOT_CHOICE_CONFIRM', // under it: invalid, reason "low_confidence"
+  lengthRetryPromptId: 'ask_card_length',
+});
+```
+
+In a folder app the same options go in `slots.yaml` (`card: { type: digits, noun: library card, ... }`). The defaults give the rest: `questionIds` (`cardGiven`, `cardSpan`, `cardComplete`), `detect: true`, `redact: last4`, `handoff: last4`, the display as the digits, and `prompts` (`ask_card_length`, `ack_card` given `{card}`, `ask_card_dtmf`). The options are in `packages/dialogwright/src/slots/digits/README.md`.
+
+The tool takes the value under the slot's own name, so the gate event, the trace and the audit record `card=...0417`:
+
+```ts
+  listLoans: {
+    run(call, sys) {
+      const { loans: onFile } = sys as LibrarySystems;
+      const card = call.params.card ?? '';
+      const loans = Object.hasOwn(onFile, card) ? onFile[card]! : null;
+      return { value: loans, summary: loans ? `${loans.length} loans` : 'no card' };
+    },
+  },
+```
+
+What a caller hears, from the tests: "Sure, I can help you check your loans. What's your library card number?", then for a confident answer "On card 55520417, A Quiet Orchard is due back next, on Friday, September 25.", and for a less certain one "That's card 55531290." in front of the answer. Seven digits get "A library card number has eight digits. Please say all eight, one at a time."; a second miss gets "Please enter your eight digit library card number on the keypad."; eight keys then fill the slot.
+
+### The clinic's slots, by pattern
+
+All five are library slots, configured in `apps/clinic/slots.yaml` with the clinic's own wording:
+
+| Pattern | Library type |
+|---|---|
+| A choice from a list, with close names asked about (`disambiguate`), a hedged name read back, help lines for "I don't know the name", and a one-digit keypad | `choice`: the provider |
+| A value no list holds: detected, picked as a span, turned into digits and checked, keyed as eight digits, recorded and handed over by its last four | `digits`: the member ID |
+| A date from parts (mode, month, day, weekday, a span of days), resolved against today; a span is a partial with a prompt and variables; keypad MMDD | `date`: the appointment day |
+| A date of birth: month and day without the year is a partial (`ask_dob_year`), masked to the year, keypad MMDDYYYY | `birthdate` |
+| The caller's own name, picked from word spans with every provider's name left out of the candidates; no keypad | `name` |
+
+The hand-written slots these replaced are kept, frozen, in `apps/clinic/src/testing/oracles/`, and used only by the clinic's grid tests (`src/shadow.test.ts`), which compare each library slot with its oracle over large grids of answers. The oracles are not app code, and a test fails if any non-test file imports one.
+
+### When no type fits: a slot in code
+
+The rest of this section is for a slot no library type covers: a value with its own shape, such as a code with letters, or a pairing of two values. In `slots.yaml` it is `{ type: code }`, written as a `SlotSpec` in `code.slots.<id>`. If the same shape would serve other apps, consider contributing it as a type instead (see "Your own slot type", below, and [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-slot-type)).
+
+The types are in `packages/dialogwright/src/core/slots/types.ts` and are exported by `'dialogwright'`. Everything the library types do, they do by building one of these, so reading a type's code (`packages/dialogwright/src/slots/text/` is the plainest) is the best way to learn the contract.
 
 ### The contract
 
@@ -362,7 +559,7 @@ Some rules about questions:
 
 - **Ids are shared.** Every slot's questions and the engine's own go into one map for the turn, so no two may share an id: a turn on which a slot asks an id the engine asks (`ENGINE_QUESTION_IDS`, such as `urgency`) or another slot asks throws. Start each id with the slot's id (`cardGiven`, `cardSpan`), and list them in `questionIds` (the library's slots do): then a collision is refused when the app is defined, `pnpm check` included, rather than on the turn that meets it, and the slot may ask no id it has not listed. The console groups questions under a slot by that prefix (app.yaml `console.questionPrefixes` names others) and shows an id ending in `Given` against the detection threshold (`console.detectQuestions` names others).
 - **The words are the request.** `instructions` and the criteria are sent to the model as written. Changing them changes what a recorded cassette holds.
-- **Every slot listens on every turn.** The engine asks the questions of every slot the turn listens for, not only the one it just asked about: inside a form, the form's slots (and, while an anonymous caller is still to be verified, the identity factors); outside a form, every slot the app has. That is what lets "what do I have out on card 5552 0417" fill the card on the opening turn. It also means `fill` must return `absent` when the words say nothing about its slot.
+- **Every slot listens on every turn** (see above). `fill` must return `absent` when the words say nothing about its slot.
 
 `ctx` (a `SlotContext`) is what the slot sees of the turn:
 
@@ -393,28 +590,6 @@ Some rules about questions:
 The retry ladder. A missed answer adds one to the slot's attempts. With `MAX_ATTEMPTS` at its default of 3: the first miss re-asks with `ask_<slot>_retry` (or the outcome's `retryPromptId`, or the partial prompt when a partial is pending); the second asks for the keypad with `ask_<slot>_dtmf` when the slot has `dtmf` and the channel has a keypad, and re-asks with the retry line otherwise; the third hands the call to a person (`max-attempts`). Silence counts as a miss too, but its first re-ask is the plain `ask_<slot>` after "I didn't hear anything".
 
 For every slot a form or identity.yaml names, `check` requires `ask_<slot>`, `ask_<slot>_retry` and the lines below that the spec's fields call for. It cannot see the prompts a `fill` returns, so declare them in the spec's `prompts` (`disambiguate_<slot>` with `vars: ['a', 'b']`, a `retryPromptId`, a help `promptId`; the library's card declares `ask_card_length`): `check` then requires each in every locale, and refuses a line that uses a variable the slot does not declare for it.
-
-### Thresholds
-
-Compare the model's numbers against `ctx.thresholds`, by name, never against a number written in the slot. Thresholds can then be overridden for a run (`--threshold SLOT_DETECT=0.7`) and tuned by the sweep, and every slot moves together. The slot thresholds (their defaults are in `core/thresholds.ts`):
-
-| Threshold | Default | What it is for |
-|---|---|---|
-| `SLOT_DETECT` | 0.6 | A yes-or-no detection question: is a value said at all, was it said whole. |
-| `SLOT_CHOICE_CONFIRM` | 0.45 | The least a picked label needs to be taken at all. |
-| `SLOT_CHOICE_FILL` | 0.55 | Enough to take a picked label silently; between the two, take it and read it back. |
-| `SLOT_CHOICE_MARGIN` | 0.15 | Two labels closer than this are asked about (`disambiguate`). |
-| `SLOT_HELP` | 0.6 | A help answer ("I don't know it") to take as one. |
-
-An app's own thresholds go in app.yaml (`thresholds:`, the clinic's `PROVIDER_UNSURE`), and the engine adds them to `ctx.thresholds` on every turn. A unit test's `testSlotContext` has only the engine's, so the clinic reads its own through a helper that falls back to the registered app's value (`clinicThreshold` in `apps/clinic/src/domain/thresholds.ts`).
-
-A slot that names a threshold in its options (a library `choice` slot's `hedge.threshold` or `help.threshold`, the one a `fillAt` or `minConfidence` selects) lists the names in `thresholds`, and a name that is neither one of the engine's nor one under `thresholds:` in app.yaml is refused when the app is defined, `pnpm check` included, with the closest name as the fix. A misspelt name would otherwise be a threshold no probability ever meets, so the slot would quietly never fill:
-
-```
-slots.yaml:87:16  provider.hedge.threshold  slot "provider" names the threshold "PROVIDER_UNSURR", which is neither one of the engine's thresholds nor one the app names  ->  rename it to "PROVIDER_UNSURE", or add "PROVIDER_UNSURR" under thresholds in app.yaml
-```
-
-Set `detect: true` when the slot's fill rests on a yes-or-no detection question, as the card's does (`cardGiven`). It changes what the trace and the console show, not what fills: the slot's row (`slot:<id>`) is shown against `SLOT_DETECT` instead of `SLOT_CHOICE_CONFIRM`. The comparison that decides is the one in your `fill`.
 
 ### Values no list holds
 
@@ -522,6 +697,40 @@ How a spoken value is confirmed. A keyed value never is.
 
 `display(value, locale)` is how the line says a value: "55520417" for the card, "Dr. Patel" for a provider, "Tuesday, September 22" for a date ("martes, 22 de septiembre" in a Spanish call). `locale` is the session's (`ctx.locale` in `fill` and `dtmf.parse`), which only an app that declares locales has; format en-US exactly as with no locale. The engine does not call it itself: what a line says, what the console shows and what the model sees is the `display` your `fill`, `dtmf.parse` or `disambiguate` candidate returned, stored on the slot. Write one formatter, make it the spec's `display`, and use it in all three, so they agree (the library's `choiceSlot` and the clinic's date do). The library's card is said digit by digit because app.yaml's `voice.spokenDigits` rule spells `card ` followed by digits for text to speech, so its lines say "card {card}".
 
+### Your own slot type
+
+A slot you write for one app can be a `SlotSpec` in `code.slots`. A shape you will use more than once, or want others to use, is better as a slot type: a function from validated options to a `SlotSpec`, named in `slots.yaml` like the built-in ones. An app registers its own types with `code.slotTypes`:
+
+```ts
+import { defineSlotType, registerSlotType } from 'dialogwright';
+
+export const plateType = defineSlotType({
+  type: 'plate',                 // what slots.yaml writes after "type:"
+  options: plateOptions,         // a z.strictObject, every option with .describe(...)
+  build: (id, options) => ({ id, ...,
+    questionIds: [`${id}Given`], // every question id it may ask
+    prompts: [],                 // every line it may lead to, beyond ask_<slot> and ask_<slot>_retry
+  }),
+  examples: plateExamples,       // configurations with starter utterances
+});
+
+export const code: AppCode = { slotTypes: registerSlotType(plateType), /* ... */ };
+```
+
+A name a built-in type has, and `code`, are refused. The contract a type must keep, and how to write one, are in [the library's README](../packages/dialogwright/src/slots/README.md) and in CONTRIBUTING's "Adding a slot type".
+
+**The conformance kit** proves a type keeps that contract, over its examples, with no model and no keys. In the type's test file:
+
+```ts
+import { describe, it } from 'vitest';
+import { runSlotConformance } from 'dialogwright/testing';
+import { plateType } from './plate';
+
+runSlotConformance(plateType, { describe, it, locales: ['en-US'] });
+```
+
+It checks that the type builds, refuses unknown options, declares every question id and keeps them its own (never the engine's, and different for a second slot), says nothing when it hears nothing, never throws on malformed answers, reads its thresholds by name (scaling every probability and every threshold by one factor must change nothing), formats its display the same in the fill, the keypad and every locale, declares every line it can lead to, and gives the outcome each example utterance expects. A type that passes can run in an app. A check that fails says which example, which check and every problem it found.
+
 ### Porting a slot to a library type
 
 If you wrote a slot by hand before a library type covered it, move it onto the type without changing what callers hear. The shadow harness, in `dialogwright/testing`, runs the library slot beside the hand-written one and fails on any difference:
@@ -533,90 +742,7 @@ If you wrote a slot by hand before a library type covered it, move it onto the t
 
 ### Testing a slot
 
-1. **Unit tests of `fill`.** Write the model's answers out with `choice`, `noul` and `score`, build a context with `testSlotContext(text)` (all exported by `'dialogwright'`; the context uses today 2026-09-18 and the default thresholds), and assert the outcome. Test every branch: absent on unrelated words, each `invalid` reason, the fill, and `dtmf.parse` with good and bad keys. From the library's test:
-
-   ```ts
-   it('is invalid, with its own re-ask, when the digits are not eight', () => {
-     expect(cardSlot.fill(heard('five five five two zero four one'), ctx('five five five two zero four one'))).toEqual({
-       kind: 'invalid', reason: 'length', raw: '5552041', retryPromptId: 'ask_card_length',
-     });
-   });
-   ```
-
-2. **Whole calls.** `resolveTurn` (the engine's turn), `newSession`, `spokenText` and the event helpers drive a call one turn at a time with written-out answers, so you can assert the lines heard, the gate events (with the masked param) and the keypad path. The library's are in `packages/dialogwright/src/define/cardSlot.test.ts`; the clinic's are in `apps/clinic/src/index.test.ts`, with their helpers in `src/testing/turns.ts`.
-3. **The corpus and the scenarios.** In an app with fixtures, add labelled lines to `fixtures/corpus.jsonl` with the slot's labels, in the shape the app's testing hooks read. Two of the clinic's, one opening a form and one answering the birthday question inside it:
-
-   ```json
-   {"id":"cn-09","text":"Cancel my appointment, I was born June fourteenth nineteen seventy five","intent":"cancel","context":"no_form","slots":{"dob":{"month":"june","day":"14","year":"nineteen seventy five"}}}
-   {"id":"db-03","text":"the fourteenth of June, 1975","intent":"none","context":"schedule_new","prompted":"dob","slots":{"dob":{"month":"june","day":"14","year":"1975"}}}
-   ```
-
-   Add scripted calls to `fixtures/scenarios/*.json` for the paths: spoken, keyed (a `{"dtmf": "06141975"}` step), and a miss. The app's `testing` hooks (`apps/clinic/src/domain/testing.ts`) tell the stubs how to answer the new questions: `labeled.spans` for a span question (the label is checked to be a span the question offers), `labeled.noul` and `labeled.choice` for the rest, `quietNoul` for a yes-or-no the words do not bear on, `heuristics` for the keyword stub, `checkCorpusSlots` to reject a label no question could pick, and `seed.placeholders` for a corpus line spoken inside a form.
-4. **The regressions.** The stub regression then shows each new line as `+ corpus <id>: new` and any changed outcome as a difference. Read each one; a changed outcome is a finding to explain before the baseline is updated, never something to overwrite. Note that a new slot changes the model's request on every turn: its questions are asked wherever it listens, and every slot is in the turn state. So the recorded replay misses on every turn until the cassette is recorded again, which calls the paid model and is a deliberate step (the clinic's README, "Recording the cassette").
-5. **`pnpm check`** (or `pnpm check <folder>`) says which of the slot's lines are missing, in every locale, and why the engine says each. Taking `ask_card_dtmf` and `ack_card` out of the library gives:
-
-   ```
-   prompts.yaml:2:1  prompts  prompt "ask_card_dtmf" is missing from prompts.yaml; the engine says it when it asks for the slot "card" on the keypad after spoken answers missed (its slot spec has dtmf)  ->  add "ask_card_dtmf:" with its text and interruptible to prompts.yaml
-   prompts.yaml:2:1  prompts  prompt "ack_card" is missing from prompts.yaml; the engine says it when it acknowledges a value it heard for the slot "card" (its slot spec's spokenConfirm is "by-confidence")  ->  add "ack_card:" with its text and interruptible to prompts.yaml
-   ```
-
-### Worked example: the library card
-
-The library's `check_loans` form asks for a library card number and says which book on the card is due back first. Everything it took:
-
-- `intents.yaml`: the `check_loans` intent, `kind: form`.
-- `forms.yaml`: `check_loans` with `slots: [card]`, `summaryPromptId: null` and `hooks: [complete]`.
-- `policy.yaml`: `listLoans: 0` under `toolLevel` and `listLoans: [R1]` under `rulesFor`.
-- `prompts.yaml` and `locale/es/prompts.yaml`: `ask_card`, `ask_card_retry`, `ask_card_dtmf` (the keypad rung), `ack_card` (`by-confidence`), `ask_card_length` (the `retryPromptId`), and the form's `next_due`, `no_loans` and `no_card`.
-- `app.ts`: the slot, the `listLoans` tool and the form's `complete`.
-
-The slot, from `packages/dialogwright/src/define/fixture/app.ts`. It is a library `digits` slot, so its questions, fill, keypad, display and the lines it declares come from the type, and its options say what the hand-written version above did:
-
-```ts
-export const cardSlot = defineSlot('card', {
-  type: 'digits',
-  noun: 'library card',               // "Does the caller state a library card number ..."
-  length: 8,                          // exactly eight digits; a wrong length is invalid, reason "length"
-  keypad: true,                       // dtmf length 8; needs ask_card_dtmf
-  confirm: 'by-confidence',           // spokenConfirm; needs ack_card
-  readBack: 'below-fill',             // ack_card only when the span's probability is under SLOT_CHOICE_FILL
-  minConfidence: 'SLOT_CHOICE_CONFIRM', // under it: invalid, reason "low_confidence"
-  lengthRetryPromptId: 'ask_card_length',
-});
-```
-
-In a folder app the same options go in `slots.yaml` (`card: { type: digits, noun: library card, ... }`). The defaults give the rest: `questionIds` (`cardGiven`, `cardSpan`, `cardComplete`), `detect: true`, `redact: last4`, `handoff: last4`, the display as the digits, and `prompts` (`ask_card_length`, `ack_card` given `{card}`, `ask_card_dtmf`). The options are in `packages/dialogwright/src/slots/digits/README.md`.
-
-The tool takes the value under the slot's own name, so the gate event, the trace and the audit record `card=...0417`:
-
-```ts
-  listLoans: {
-    run(call, sys) {
-      const { loans: onFile } = sys as LibrarySystems;
-      const card = call.params.card ?? '';
-      const loans = Object.hasOwn(onFile, card) ? onFile[card]! : null;
-      return { value: loans, summary: loans ? `${loans.length} loans` : 'no card' };
-    },
-  },
-```
-
-What a caller hears, from the tests: "Sure, I can help you check your loans. What's your library card number?", then for a confident answer "On card 55520417, A Quiet Orchard is due back next, on Friday, September 25.", and for a less certain one "That's card 55531290." in front of the answer. Seven digits get "A library card number has eight digits. Please say all eight, one at a time."; a second miss gets "Please enter your eight digit library card number on the keypad."; eight keys then fill the slot.
-
-### The clinic's slots, by pattern
-
-All five are library slots, configured in `apps/clinic/slots.yaml` with the clinic's own wording:
-
-| Pattern | Library type |
-|---|---|
-| A choice from a list, with close names asked about (`disambiguate`), a hedged name read back, help lines for "I don't know the name", and a one-digit keypad | `choice`: the provider |
-| A value no list holds: detected, picked as a span, turned into digits and checked, keyed as eight digits, recorded and handed over by its last four | `digits`: the member ID |
-| A date from parts (mode, month, day, weekday, a span of days), resolved against today; a span is a partial with a prompt and variables; keypad MMDD | `date`: the appointment day |
-| A date of birth: month and day without the year is a partial (`ask_dob_year`), masked to the year, keypad MMDDYYYY | `birthdate` |
-| Free text picked from word spans, with the candidates narrowed in code; no keypad | `name` |
-
-The hand-written slots these replaced are kept, frozen, in `apps/clinic/src/testing/oracles/`, and used only by the clinic's grid tests (`src/shadow.test.ts`), which compare each library slot with its oracle over large grids of answers. The oracles are not app code, and a test fails if any non-test file imports one.
-
-### Testing a slot
+A library type's own tests (the conformance kit and its unit tests) cover its parsing, so a slot built from one needs no `fill` tests of its own; test the app's use of it (your options and wording, and the whole call). Of the five steps below, step 1 is only for a slot written in code; the others apply to every slot.
 
 1. **Unit tests of `fill`.** Write the model's answers out with `choice`, `noul` and `score`, build a context with `testSlotContext(text)` (all exported by `'dialogwright'`; the context uses today 2026-09-18 and the default thresholds), and assert the outcome. Test every branch: absent on unrelated words, each `invalid` reason, the fill, and `dtmf.parse` with good and bad keys. From the library's test:
 
@@ -644,60 +770,6 @@ The hand-written slots these replaced are kept, frozen, in `apps/clinic/src/test
    prompts.yaml:2:1  prompts  prompt "ask_card_dtmf" is missing from prompts.yaml; the engine says it when it asks for the slot "card" on the keypad after spoken answers missed (its slot spec has dtmf)  ->  add "ask_card_dtmf:" with its text and interruptible to prompts.yaml
    prompts.yaml:2:1  prompts  prompt "ack_card" is missing from prompts.yaml; the engine says it when it acknowledges a value it heard for the slot "card" (its slot spec's spokenConfirm is "by-confidence")  ->  add "ack_card:" with its text and interruptible to prompts.yaml
    ```
-
-### Worked example: the library card
-
-The library's `check_loans` form asks for a library card number and says which book on the card is due back first. Everything it took:
-
-- `intents.yaml`: the `check_loans` intent, `kind: form`.
-- `forms.yaml`: `check_loans` with `slots: [card]`, `summaryPromptId: null` and `hooks: [complete]`.
-- `policy.yaml`: `listLoans: 0` under `toolLevel` and `listLoans: [R1]` under `rulesFor`.
-- `prompts.yaml` and `locale/es/prompts.yaml`: `ask_card`, `ask_card_retry`, `ask_card_dtmf` (the keypad rung), `ack_card` (`by-confidence`), `ask_card_length` (the `retryPromptId`), and the form's `next_due`, `no_loans` and `no_card`.
-- `app.ts`: the slot, the `listLoans` tool and the form's `complete`.
-
-The slot, from `packages/dialogwright/src/define/fixture/app.ts`. It is a library `digits` slot, so its questions, fill, keypad, display and the lines it declares come from the type, and its options say what the hand-written version above did:
-
-```ts
-export const cardSlot = defineSlot('card', {
-  type: 'digits',
-  noun: 'library card',               // "Does the caller state a library card number ..."
-  length: 8,                          // exactly eight digits; a wrong length is invalid, reason "length"
-  keypad: true,                       // dtmf length 8; needs ask_card_dtmf
-  confirm: 'by-confidence',           // spokenConfirm; needs ack_card
-  readBack: 'below-fill',             // ack_card only when the span's probability is under SLOT_CHOICE_FILL
-  minConfidence: 'SLOT_CHOICE_CONFIRM', // under it: invalid, reason "low_confidence"
-  lengthRetryPromptId: 'ask_card_length',
-});
-```
-
-In a folder app the same options go in `slots.yaml` (`card: { type: digits, noun: library card, ... }`). The defaults give the rest: `questionIds` (`cardGiven`, `cardSpan`, `cardComplete`), `detect: true`, `redact: last4`, `handoff: last4`, the display as the digits, and `prompts` (`ask_card_length`, `ack_card` given `{card}`, `ask_card_dtmf`). The options are in `packages/dialogwright/src/slots/digits/README.md`.
-
-The tool takes the value under the slot's own name, so the gate event, the trace and the audit record `card=...0417`:
-
-```ts
-  listLoans: {
-    run(call, sys) {
-      const { loans: onFile } = sys as LibrarySystems;
-      const card = call.params.card ?? '';
-      const loans = Object.hasOwn(onFile, card) ? onFile[card]! : null;
-      return { value: loans, summary: loans ? `${loans.length} loans` : 'no card' };
-    },
-  },
-```
-
-What a caller hears, from the tests: "Sure, I can help you check your loans. What's your library card number?", then for a confident answer "On card 55520417, A Quiet Orchard is due back next, on Friday, September 25.", and for a less certain one "That's card 55531290." in front of the answer. Seven digits get "A library card number has eight digits. Please say all eight, one at a time."; a second miss gets "Please enter your eight digit library card number on the keypad."; eight keys then fill the slot.
-
-### The clinic's slots, by pattern
-
-All in `apps/clinic/src/domain/slots/`, each with its test beside it:
-
-| Pattern | Where |
-|---|---|
-| A choice from a list, with close names asked about (`disambiguate`), a hedged name read back (`by-confidence`), help lines for "I don't know the name", and a one-digit keypad | `provider.ts` |
-| A value no list holds: detected, picked as a span, turned into digits and checked, keyed as eight digits, recorded and handed over by its last four | a library `digits` slot: the clinic's member ID is configured in `apps/clinic/slots.yaml`; `memberId.ts` in the same folder is the hand-written slot it replaced |
-| A date from parts (mode, month, day, weekday, a span of days), resolved against today; a span is a partial with `partialPromptId` and `partialVars`; `valueKind: 'date'`; keypad MMDD | `date.ts` |
-| A date of birth: month and day without the year is a partial (`ask_dob_year`), `redact: 'mask'`, `valueKind: 'date'`, keypad MMDDYYYY | `dob.ts` |
-| Free text picked from word spans, with the candidates narrowed in code; no keypad | `name.ts` |
 
 ## 5. The form hooks
 
@@ -886,7 +958,7 @@ For a form that collects slots and acts, such as renewing a loan:
 1. `intents.yaml`: add the intent with `kind: form`. Its id is the form's id.
 2. `forms.yaml`: add the form with its `slots`, a `summaryPromptId` (or `null`) and `hooks: [complete]`. Add `confirmedParams` too if completing it is a confirmed write.
 3. `prompts.yaml`: add `ask_<slot>` and `ask_<slot>_retry` for every new slot, the summary prompt, and the line the form says when it completes. Add them to each locale.
-4. `app.ts`: for every new slot, add a `SlotSpec` to `code.slots` (and `slot: { type: code }` to slots.yaml, if the app has one; [section 4](#4-writing-a-slot): the library's `choiceSlot` is the pattern for a list of options, its `cardSlot` for a value no list holds). Add the lines its spec calls for (`ask_<slot>_dtmf`, `ack_<slot>`, `confirm_<slot>`, its partial line) to prompts.yaml and each locale. Add the form's hooks under `code.forms.<id>`: `complete` calls the tool and returns what to say.
+4. `slots.yaml`: for every new slot, add a key with a library `type` and its options ([section 4](#4-writing-a-slot); [the type pages](slots/README.md)). Only when no type fits, write a `SlotSpec` in `code.slots` in `app.ts` and add `<slot>: { type: code }` to slots.yaml. Add the lines the slot's type says it needs (`ask_<slot>_dtmf`, `ack_<slot>`, `disambiguate_<slot>`, its partial line) to prompts.yaml and each locale. In `app.ts`, add the form's hooks under `code.forms.<id>`: `complete` calls the tool and returns what to say.
 5. If the form needs a tool, follow the next walkthrough.
 6. `pnpm check`, then `pnpm verify`.
 
