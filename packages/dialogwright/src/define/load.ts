@@ -1,12 +1,13 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
-import { LineCounter, isMap, isScalar, isSeq, parseDocument, type Document, type Node } from 'yaml';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { LineCounter, Document as YamlDocument, isMap, isScalar, isSeq, parseDocument, type Document, type Node } from 'yaml';
 import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from './problems';
 import {
-  FILE_NAMES, REQUIRED_KINDS, SCHEMAS,
-  type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type PolicyYaml, type PromptYaml, type PromptsYaml,
+  FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, slotsSchema,
+  type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type PolicyYaml, type PromptYaml, type PromptsYaml, type SlotsYaml,
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
+import { z } from 'zod';
 import { DEFAULT_LOCALE } from '../core/locale';
 import { configHashesOf } from '../core/app/configHash';
 import type { ConfigHashes } from '../core/app/types';
@@ -22,6 +23,7 @@ export type { Problem } from './problems';
  *
  *   app.yaml  intents.yaml  forms.yaml  prompts.yaml  policy.yaml     required
  *   identity.yaml                                                     optional (no file: the app verifies no one)
+ *   slots.yaml                                                        optional (no file: every slot is the code's)
  *   locale/<tag>/prompts.yaml                                         the prompts of another locale
  *
  * The YAML is only ever data. It is parsed with the YAML 1.2 core schema (no custom tags, no
@@ -38,12 +40,19 @@ export interface LoadedConfig {
   policy: PolicyYaml;
   /** Null when the folder has no identity.yaml: the app verifies no one. */
   identity: IdentityYaml | null;
+  /**
+   * slots.yaml as parsed: each slot's `type` and options, in the file's order (the order of
+   * `App.slots`). Null when the folder has no slots.yaml: every slot is the code's. Only the outer
+   * shape is checked here; the options of a library type are checked when the slots are built
+   * (defineApp, `check`), since they depend on the types the app registers.
+   */
+  slots: SlotsYaml | null;
   /** The locale of prompts.yaml: app.yaml's `locale`, else en-US. */
   defaultLocale: string;
   /** Every prompt of each locale, by locale tag then prompt id. The default locale's come from prompts.yaml, the others' from locale/<tag>/prompts.yaml. */
   prompts: Record<string, Record<string, PromptYaml>>;
   /**
-   * The content hash of every file read (app.yaml, ..., identity.yaml when there is one, and each
+   * The content hash of every file read (app.yaml, ..., identity.yaml and slots.yaml when there are, and each
    * locale/<tag>/prompts.yaml), by its path in the folder, and the combined hash (App.configHashes;
    * core/app/configHash.ts). Each is taken over the file's parsed content, so comments, whitespace,
    * key order and quoting do not change it.
@@ -64,6 +73,8 @@ export interface LoadResult {
   locate(file: string, path: DataPath): { line: number; column: number } | null;
   /** Where the key that holds the value at `path` is (for a problem with the key itself, such as a label for a form that does not exist); as `locate` otherwise. */
   locateKey?(file: string, path: DataPath): { line: number; column: number } | null;
+  /** The parsed YAML of a file that was read, with its line table, for a check that builds something from it and positions its problems (slots.yaml's library slots). */
+  document?(file: string): { doc: Document; lines: LineCounter } | null;
 }
 
 /** The locale an app has when it does not say (core/locale.ts). */
@@ -89,14 +100,19 @@ const RESERVED_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 
 const LOCALE_TAG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
 /** What each file starts with, for a missing or empty file's fix. */
-const STARTS_WITH: Record<FileKind, string> = {
+const STARTS_WITH: Record<FileKind | 'slots', string> = {
   app: 'an id, for example "id: my-app"',
   intents: 'the "intents:" map and the "menu:" list',
   forms: 'the "forms:" map',
   prompts: 'the "prompts:" map',
   policy: '"toolLevel:", "rulesFor:", "confirmedFields:" and "maxAttempts:"',
   identity: '"subjectKind:", "factorSlots:", "verifyTool:", "codeTool:" and "sendCodeTool:"',
+  slots: 'a slot id and its type, for example "note: { type: code }"',
 };
+
+/** A kind of file the loader checks: the six, and the optional slots.yaml. */
+type Kind = FileKind | 'slots';
+const SCHEMAS_OF: Record<Kind, z.ZodType> = { ...SCHEMAS, slots: slotsSchema };
 
 /** What to do about each kind of YAML syntax error (the codes are the `yaml` library's). */
 const SYNTAX_FIXES: Record<string, string> = {
@@ -134,7 +150,8 @@ export function loadAppFolder(dir: string): LoadResult {
     // Nothing in a folder should get here; if something does, it is reported, not thrown at the caller.
     problems.push(problemAt('.', WHOLE_FILE, `the app folder could not be loaded (${error instanceof Error ? error.message : String(error)})`, 'check the folder is readable and its files are plain text'));
   }
-  return { config: problems.length === 0 ? config : null, problems: sortProblems(problems), locate, locateKey };
+  const document: LoadResult['document'] = (file) => documents.get(file) ?? null;
+  return { config: problems.length === 0 ? config : null, problems: sortProblems(problems), locate, locateKey, document };
 }
 
 function load(dir: string, problems: Problem[], documents: Map<string, { doc: Document; lines: LineCounter }>): LoadedConfig | null {
@@ -146,13 +163,13 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     return null;
   }
 
-  const valid: Partial<{ app: AppYaml; intents: IntentsYaml; forms: FormsYaml; prompts: PromptsYaml; policy: PolicyYaml; identity: IdentityYaml }> = {};
+  const valid: Partial<{ app: AppYaml; intents: IntentsYaml; forms: FormsYaml; prompts: PromptsYaml; policy: PolicyYaml; identity: IdentityYaml; slots: SlotsYaml }> = {};
   const top = listTopLevel(root.real);
-  for (const kind of Object.keys(FILE_NAMES) as FileKind[]) {
-    const file = FILE_NAMES[kind];
+  for (const kind of [...(Object.keys(FILE_NAMES) as FileKind[]), 'slots' as const]) {
+    const file = kind === 'slots' ? SLOTS_FILE : FILE_NAMES[kind];
     const read = readFile(root.real, file);
     if (read.kind === 'missing') {
-      if (REQUIRED_KINDS.includes(kind)) problems.push(missingFile(file, kind, top));
+      if (kind !== 'slots' && REQUIRED_KINDS.includes(kind)) problems.push(missingFile(file, kind, top));
       continue;
     }
     if (read.kind === 'problem') {
@@ -207,6 +224,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     forms: valid.forms,
     policy: valid.policy,
     identity: valid.identity ?? null,
+    slots: valid.slots ?? null,
     defaultLocale,
     prompts,
     hashes: configHashesOf(contents),
@@ -305,7 +323,7 @@ function listTopLevel(root: string): string[] {
 }
 
 /** The fix for a required file that is not there: a near miss in the folder is the likely cause. */
-function missingFile(file: string, kind: FileKind, top: readonly string[]): Problem {
+function missingFile(file: string, kind: Kind, top: readonly string[]): Problem {
   const stem = file.replace(/\.yaml$/, '');
   const near = top.find((name) => name === `${stem}.yml`) ?? closest(file, top.filter((name) => /\.ya?ml$/.test(name)));
   const hint = near ? ` There is a "${near}" here: rename it to ${file}.` : '';
@@ -314,7 +332,7 @@ function missingFile(file: string, kind: FileKind, top: readonly string[]): Prob
 
 /** YAML files in the folder that DialogWright does not read: almost always a misspelled name. */
 function strayYamlFiles(top: readonly string[], problems: Problem[]): void {
-  const known = new Set<string>(Object.values(FILE_NAMES));
+  const known = new Set<string>(FOLDER_FILES);
   for (const name of top) {
     if (!/\.ya?ml$/.test(name) || known.has(name)) continue;
     const near = closest(name.replace(/\.ya?ml$/, '.yaml'), [...known]);
@@ -394,10 +412,14 @@ function listLocales(root: string, problems: Problem[]): { tag: string; dirName:
 // ---------------------------------------------------------------------------------------------
 
 /** JSON Schemas are generated once per kind: the problem messages read keys and descriptions from them. */
-const jsonSchemas = new Map<FileKind, JsonSchema>();
-function jsonSchemaOf(kind: FileKind): JsonSchema {
+const jsonSchemas = new Map<Kind, JsonSchema>();
+function jsonSchemaOf(kind: Kind): JsonSchema {
   let schema = jsonSchemas.get(kind);
-  if (!schema) jsonSchemas.set(kind, (schema = jsonSchemaFor(kind)));
+  if (!schema) {
+    // slots.yaml's published schema is the full union over the types; the loader checks the outer shape, whose schema is this.
+    schema = kind === 'slots' ? (z.toJSONSchema(slotsSchema, { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
+    jsonSchemas.set(kind, schema);
+  }
   return schema;
 }
 
@@ -408,7 +430,7 @@ function jsonSchemaOf(kind: FileKind): JsonSchema {
  */
 function checkFile(
   file: string,
-  kind: FileKind,
+  kind: Kind,
   text: string,
   problems: Problem[],
   documents: Map<string, { doc: Document; lines: LineCounter }>,
@@ -473,7 +495,7 @@ function checkFile(
     return undefined;
   }
 
-  const result = SCHEMAS[kind].safeParse(value);
+  const result = SCHEMAS_OF[kind].safeParse(value);
   if (result.success) {
     if (reserved.length > 0) return undefined;
     // Hashed as parsed, before the schema reads it: the file's own content, whatever the schema makes of it.
@@ -520,10 +542,49 @@ function reservedKeys(doc: Document): { path: DataPath; offset: number }[] {
 }
 
 function sortProblems(problems: readonly Problem[]): Problem[] {
-  const order = [...Object.values(FILE_NAMES)];
+  const order = [...FOLDER_FILES];
   const rank = (file: string) => {
     const i = order.indexOf(file);
     return i === -1 ? order.length : i;
   };
   return [...problems].sort((a, b) => rank(a.file) - rank(b.file) || a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);
+}
+
+/** What loadSlotsFile found: the parsed slots (null when there is a problem) and the document, to position later problems. */
+export interface SlotsFile {
+  slots: SlotsYaml | null;
+  doc: Document;
+  lines: LineCounter;
+  /** Every problem with reading and parsing the file; empty when it is valid. */
+  problems: Problem[];
+}
+
+/**
+ * Reads one slots.yaml, for an app that is not a folder (defineSlots): the same safe reading and
+ * parsing as the folder's file (no tags, no aliases past the cap, a file inside its folder, size
+ * bounded), the outer shape checked. `path` is also the file name problems carry.
+ */
+export function loadSlotsFile(path: string): SlotsFile {
+  const problems: Problem[] = [];
+  const documents = new Map<string, { doc: Document; lines: LineCounter }>();
+  const none = (): SlotsFile => ({ slots: null, doc: new YamlDocument(), lines: new LineCounter(), problems });
+  let root: string;
+  try {
+    root = realpathSync(dirname(resolve(path)));
+  } catch {
+    problems.push(problemAt(path, WHOLE_FILE, `${path} cannot be read: its folder does not exist`, 'pass the path of the slots.yaml file'));
+    return none();
+  }
+  const read = readFile(root, basename(path));
+  if (read.kind === 'missing') {
+    problems.push(problemAt(path, WHOLE_FILE, `${path} does not exist`, `create it, or pass the slots as an object; it starts with ${STARTS_WITH.slots}`));
+    return none();
+  }
+  if (read.kind === 'problem') {
+    problems.push({ ...read.problem, file: path });
+    return none();
+  }
+  const checked = checkFile(path, 'slots', read.text, problems, documents, {});
+  const parsed = documents.get(path)!;
+  return { slots: problems.length === 0 ? (checked as SlotsYaml) : null, doc: parsed.doc, lines: parsed.lines, problems };
 }

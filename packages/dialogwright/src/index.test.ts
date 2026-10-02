@@ -21,7 +21,7 @@ describe('the package entry', () => {
       'parseIso', 'addDays', 'describeDay', 'describeDob', 'resolveDate', 'MONTHS', 'WEEKDAYS', 'spokenToDigits', 'tokenize', 'matchesMask',
       'candidateSpans', 'candidateWordSpans', 'atLeast',
       // the slot library
-      'defineSlot', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType', 'defineSlotType', 'textType',
+      'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType', 'defineSlotType', 'textType',
       'textParts', 'questionParts', 'renderTemplate', 'meetsThreshold',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
@@ -41,6 +41,7 @@ describe('the package entry', () => {
     expect(entry.checkApp).toBe((await import('./define/check')).checkApp);
     expect(entry.loadAppFolder).toBe((await import('./define/load')).loadAppFolder);
     expect(entry.defineSlot).toBe((await import('./slots/defineSlot')).defineSlot);
+    expect(entry.defineSlots).toBe((await import('./slots/defineSlots')).defineSlots);
     expect(entry.BUILT_IN_SLOT_TYPES.text).toBe(entry.textType);
     expect(entry.defineSlot('note', { type: 'text', what: 'a note' }).type).toBe('text');
     // the library's types are exported with the functions that take them

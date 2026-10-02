@@ -1,7 +1,7 @@
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkApp, formatProblem } from 'dialogwright';
+import { checkApp, formatProblem, loadAppFolder } from 'dialogwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { CLINIC_DIR, clinicApp, code } from './app';
 import { CLINIC_FORM_HOOKS } from './domain/forms';
@@ -60,6 +60,16 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
   });
 });
 
+describe('the clinic folder: slots.yaml', () => {
+  it('lists all five slots as code, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
+    const slots = loadAppFolder(CLINIC_DIR).config?.slots;
+    expect(slots).toEqual({ name: { type: 'code' }, dob: { type: 'code' }, memberId: { type: 'code' }, provider: { type: 'code' }, date: { type: 'code' } });
+    expect(Object.keys(clinicApp.slots)).toEqual(Object.keys(slots ?? {}));
+    expect(Object.keys(clinicApp.slots)).toEqual([...ALL_SLOTS]);
+    for (const id of Object.keys(SLOTS)) expect(clinicApp.slots[id], id).toBe(SLOTS[id as keyof typeof SLOTS]);
+  });
+});
+
 describe('the clinic folder: policy.yaml', () => {
   it('verifies no one: no identity, and every tool at level 0', () => {
     expect(clinicApp.identity).toBeUndefined();
@@ -81,7 +91,7 @@ describe('the clinic folder: app.yaml', () => {
     expect(clinicApp.id).toBe('clinic');
     expect(clinicApp.brand).toEqual({ name: 'Example Family Practice', mark: 'EF', key: 'example-family-practice' });
     expect(clinicApp.locales).toEqual({ default: 'en-US', prompts: {} });
-    expect(Object.keys(clinicApp.configHashes?.files ?? {}).sort()).toEqual(['app.yaml', 'forms.yaml', 'intents.yaml', 'policy.yaml', 'prompts.yaml']);
+    expect(Object.keys(clinicApp.configHashes?.files ?? {}).sort()).toEqual(['app.yaml', 'forms.yaml', 'intents.yaml', 'policy.yaml', 'prompts.yaml', 'slots.yaml']);
   });
 
   it('has the clinic\'s own thresholds, carries the caller\'s details, and finds its fixtures', () => {
@@ -120,7 +130,7 @@ describe('the clinic folder: dialogwright check', () => {
   const copy = (edit: (text: string) => string): string => {
     const dir = mkdtempSync(join(tmpdir(), 'clinic-check-'));
     scratch.push(dir);
-    for (const file of ['app.yaml', 'intents.yaml', 'forms.yaml', 'prompts.yaml', 'policy.yaml']) cpSync(join(CLINIC_DIR, file), join(dir, file));
+    for (const file of ['app.yaml', 'intents.yaml', 'forms.yaml', 'prompts.yaml', 'policy.yaml', 'slots.yaml']) cpSync(join(CLINIC_DIR, file), join(dir, file));
     writeFileSync(join(dir, 'prompts.yaml'), edit(readFileSync(join(dir, 'prompts.yaml'), 'utf8')));
     return dir;
   };

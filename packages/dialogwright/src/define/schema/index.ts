@@ -11,8 +11,9 @@ import { identitySchema } from './identity';
 import { intentsSchema } from './intents';
 import { policySchema } from './policy';
 import { promptsSchema } from './prompts';
+import { SLOTS_FILE, slotsSchema } from './slots';
 
-export { appSchema, formsSchema, identitySchema, intentsSchema, policySchema, promptsSchema };
+export { appSchema, formsSchema, identitySchema, intentsSchema, policySchema, promptsSchema, slotsSchema };
 export { FILE_KINDS, fixForPattern, type FileKind } from './common';
 export type { AppYaml, ConsoleFactYaml } from './app';
 export type { FormHook, FormYaml, FormsYaml } from './forms';
@@ -21,6 +22,8 @@ export type { IdentityYaml } from './identity';
 export type { IntentYaml, IntentsYaml } from './intents';
 export type { PolicyYaml } from './policy';
 export type { PromptYaml, PromptsYaml } from './prompts';
+export { SLOTS_FILE, CODE_SLOT_TYPE } from './slots';
+export type { SlotsYaml } from './slots';
 
 /** The schema for each kind of file. */
 export const SCHEMAS = {
@@ -37,3 +40,6 @@ export const FILE_NAMES: Readonly<Record<FileKind, string>> = Object.fromEntries
 
 /** Kinds whose file an app must have; identity.yaml is optional (an app without it verifies no one). */
 export const REQUIRED_KINDS: readonly FileKind[] = ['app', 'intents', 'forms', 'prompts', 'policy'];
+
+/** Every YAML file the loader reads from the folder itself, in the order problems are sorted: the six kinds, then the optional slots.yaml. */
+export const FOLDER_FILES: readonly string[] = [...Object.values(FILE_NAMES), SLOTS_FILE];

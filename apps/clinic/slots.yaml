@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
+# Every slot the clinic has, in the order the engine works through them. All five are written in
+# code for now (src/domain/slots/): `type: code` names a slot the code supplies, and this file lists
+# it, so it is the one place that says which slots there are and in what order. The order matters:
+# outside a form the engine fills slots in it, says their acknowledgements in it, and when two slots
+# each want to ask the caller to choose between two values, the first one asks. The model's turn
+# state and a transfer's handoff list the slots in it too.
+name: { type: code }
+dob: { type: code }
+memberId: { type: code }
+provider: { type: code }
+date: { type: code }

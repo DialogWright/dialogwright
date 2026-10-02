@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DialogWright slots.yaml",
+  "description": "The app's slots by id, in the order they are filled and acknowledged. Lists every slot the app has: a library type with its options, or { type: code } for a slot the code writes.",
+  "type": "object",
+  "propertyNames": {
+    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+  },
+  "additionalProperties": {
+    "oneOf": [
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "text",
+            "description": "The slot type."
+          },
+          "what": {
+            "description": "What the caller gives, as a noun phrase the default question names (\"a description of the problem\"). Needed unless text.given gives the question in its own words.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "instructions": {
+            "description": "More guidance for the model, added after the default question (\"Count it even when it comes with a request.\").",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "maxLength": {
+            "default": 500,
+            "description": "The most characters of the caller's words the value keeps; the rest is cut off.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "say": {
+            "default": "your description",
+            "description": "The display: what a line, the console and the model's turn state show in place of the words (\"your note\"). null: the words themselves.",
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "keep": {
+            "default": "first-unless-prompted",
+            "description": "When a value is on file: \"first-unless-prompted\" replaces it only when the slot was just asked for; \"first\" never does. A correction at the summary replaces it either way.",
+            "type": "string",
+            "enum": [
+              "first",
+              "first-unless-prompted"
+            ]
+          },
+          "redact": {
+            "default": "length",
+            "description": "\"length\": the words leave the turn (the trace, a tool call's param) as their length only, and the display is kept. \"none\": as they are.",
+            "type": "string",
+            "enum": [
+              "length",
+              "none"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: given.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The yes-or-no question that asks whether the caller gives the text, word for word.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The id of the question that asks whether the caller gives the text.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "The caller's own words, kept as said: a description, a note, a reason.",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "code",
+            "description": "The slot is written in code: code.slots.<id>."
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "additionalProperties": false,
+        "description": "A slot the app's code writes (code.slots.<id>), listed here so slots.yaml names every slot and sets their order."
+      }
+    ]
+  }
+}

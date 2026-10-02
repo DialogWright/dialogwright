@@ -3,10 +3,10 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
-import { CODE_FILE, codePath, crossLink, isAppDefinitionError, type AppCode } from './defineApp';
+import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, type AppCode } from './defineApp';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
-import { FILE_NAMES } from './schema/index';
+import { FILE_NAMES, FOLDER_FILES } from './schema/index';
 
 /**
  * `dialogwright check`: everything that can be wrong with an app folder, found in one pass.
@@ -187,8 +187,9 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     problems.push(...found.problems);
     linked = found.linked;
   } else if (found.code) {
-    code = found.code;
-    problems.push(...crossLink(config, code, locate, codeFile, loaded.locateKey));
+    problems.push(...crossLink(config, found.code, locate, codeFile, loaded.locateKey, loaded.document));
+    // The checks below read the slots' specs: the folder's library slots count as the code's.
+    code = { ...found.code, slots: linkSlots(config, found.code, loaded.document, codeFile).slots };
     linked = true;
   }
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
@@ -507,7 +508,7 @@ function checkCorpus(config: LoadedConfig, locate: LoadResult['locate'], dir: st
 
 /** Problems by file (the folder's files in their order, locale files, any other file, then the app module), then position. */
 function sortProblems(problems: readonly Problem[], codeFile: string): Problem[] {
-  const names: string[] = Object.values(FILE_NAMES);
+  const names: string[] = [...FOLDER_FILES];
   const rank = (file: string): number => {
     if (file === codeFile) return names.length + 2;
     const i = names.indexOf(file);

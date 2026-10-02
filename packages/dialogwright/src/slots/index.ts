@@ -4,6 +4,9 @@
  */
 export { defineSlot, buildSlot, SlotConfigError, isSlotConfigError, slotTypeJsonSchema } from './defineSlot';
 export type { BuildSlotOptions, BuildSlotResult, SlotSource } from './defineSlot';
+export { defineSlots } from './defineSlots';
+export { resolveSlots, mergeSlotTypes } from './resolveSlots';
+export type { ResolveSlotsInput, ResolvedSlots, SlotsFileSource, SlotTypeProblem } from './resolveSlots';
 export { BUILT_IN_SLOT_TYPES, registerSlotType } from './registry';
 export { defineSlotType, refusesUnknownKeys, SLOT_TYPE_NAME } from './slotType';
 export { textType } from './text/index';

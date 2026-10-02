@@ -34,6 +34,7 @@ export { DEFAULT_LOCALE, defaultLocaleOf, localesOf, matchLocale, localeOf, slot
 export { defineApp, AppDefinitionError, isAppDefinitionError } from './define/defineApp';
 export type { AppCode, FormHooks, DefineAppOptions } from './define/defineApp';
 export { checkApp } from './define/check';
+export { slotsJsonSchema } from './define/schema/json';
 export type { CheckOptions } from './define/check';
 export { loadAppFolder } from './define/load';
 export type { LoadedConfig, LoadResult } from './define/load';
@@ -42,7 +43,7 @@ export type { Problem } from './define/problems';
 
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
 export {
-  defineSlot, buildSlot, SlotConfigError, isSlotConfigError, slotTypeJsonSchema, BUILT_IN_SLOT_TYPES, registerSlotType, defineSlotType,
+  defineSlot, defineSlots, buildSlot, SlotConfigError, isSlotConfigError, slotTypeJsonSchema, BUILT_IN_SLOT_TYPES, registerSlotType, defineSlotType,
   textType, textParts, questionParts, questionText, renderTemplate, TemplateError, meetsThreshold, examplesFrom, parseSlotExamples,
 } from './slots/index';
 export type {

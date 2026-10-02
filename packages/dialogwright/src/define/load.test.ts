@@ -575,7 +575,7 @@ describe('loadAppFolder: problems', () => {
         line: 1,
         column: 1,
         path: '(file)',
-        message: 'polcy.yaml is not a file DialogWright reads; the YAML files are app.yaml, intents.yaml, forms.yaml, prompts.yaml, policy.yaml, identity.yaml',
+        message: 'polcy.yaml is not a file DialogWright reads; the YAML files are app.yaml, intents.yaml, forms.yaml, prompts.yaml, policy.yaml, identity.yaml, slots.yaml',
         fix: 'rename polcy.yaml to policy.yaml'
       }
     ]);

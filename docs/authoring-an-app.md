@@ -32,6 +32,7 @@ my-app/
   prompts.yaml      every line a caller can hear
   policy.yaml       the gate's tables
   identity.yaml     optional: how a caller proves who they are
+  slots.yaml        optional: every slot the app has, and their order
   locale/<tag>/     optional: prompts.yaml for each extra language
   app.ts            the code: export const code: AppCode = { ... }
   fixtures/         optional: corpus.jsonl, scripted calls, a baseline, recorded cassettes
@@ -209,6 +210,37 @@ failedPromptId: identity_failed
 ```
 
 `factorSlots` are slots the code defines, asked on voice for a step-up; each slot id is also the name of the verify tool's param that carries its value. The three tools are tools in the code, with rows in policy.yaml. The one function in this part, the params of the one-time code call, stays in code as `code.identity.sendCodeParams`. With an identity.yaml, the engine also says the identity lines (`identity_verified`, `ask_otp`, `otp_failed` and others), and `check` requires them in every locale.
+
+### slots.yaml (optional)
+
+Names every slot the app has, one key per slot, and the order of the keys is the order of `App.slots`. Each slot is a library type with its options (the types and their options are in `schemas/slots.schema.json`; section 4 covers writing a slot) or `{ type: code }`, a slot the code writes in `code.slots.<id>`. The clinic's file, with all five of its slots in code:
+
+```yaml
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
+name: { type: code }
+dob: { type: code }
+memberId: { type: code }
+provider: { type: code }
+date: { type: code }
+```
+
+A library slot looks like this (`text` is the one type so far):
+
+```yaml
+note:
+  type: text
+  what: a note for the librarian
+  say: your note
+```
+
+The rules, each checked by `defineApp` and `check` with the file and line:
+
+- **The file lists every slot.** Each key of `code.slots` must appear as `{ type: code }`, and each `{ type: code }` must have a `code.slots` entry. A slot that is both a library slot and in `code.slots` is refused: it would be built twice.
+- **The order is the file's.** Outside a form the engine fills slots in that order, says their acknowledgements in it, asks the first slot that needs the caller to choose between two values, and lists the slots in it in the model's turn state and in a transfer's handoff. A form's own slots stay in the order forms.yaml gives. Without a slots.yaml, the order is whatever order `code.slots` was written in, which is easy to change by accident; with one, it is written down in one place, and a reorder shows in a diff.
+- **A type is a library type, an app type or `code`.** An app adds its own types with `slotTypes` in its code (`code.slotTypes: registerSlotType(myType)`); a name a built-in type has, and `code`, are refused. An unknown type names the closest one.
+- **A library slot's options are checked by its type**, strictly: a misspelt option is refused with the one meant, at its line in slots.yaml.
+
+Without the file, every slot is the code's, as before. The file is part of the configuration hashes (section 8). An app that is not built from a folder gets the same rules from `defineSlots(source, codeSlots, types?)`, where `source` is the path of a slots.yaml or the same map as an object; it returns the slots in the file's order, or throws an `AppDefinitionError` listing every problem.
 
 ### locale/&lt;tag&gt;/prompts.yaml (optional)
 
@@ -714,7 +746,7 @@ Every YAML file starts with a line that names its schema:
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/app.schema.json
 ```
 
-The path is relative to the file (`apps/clinic/app.yaml` points two folders up to the repository root; the library's `locale/es/prompts.yaml` points five up). An editor with the YAML extension then completes keys, shows each field's description, and flags mistakes as you type. Keep the line when you copy a file into a new app, and fix the path if the new folder is at a different depth. The schemas are `app`, `intents`, `forms`, `prompts`, `policy` and `identity`; the locale files use `prompts`.
+The path is relative to the file (`apps/clinic/app.yaml` points two folders up to the repository root; the library's `locale/es/prompts.yaml` points five up). An editor with the YAML extension then completes keys, shows each field's description, and flags mistakes as you type. Keep the line when you copy a file into a new app, and fix the path if the new folder is at a different depth. The schemas are `app`, `intents`, `forms`, `prompts`, `policy`, `identity` and `slots`; the locale files use `prompts`. The `slots` schema covers the built-in slot types; an app with types of its own can generate one that lists them too (`slotsJsonSchema(registerSlotType(myType))`, exported by `'dialogwright'`) and point the line at that.
 
 The schemas are generated from the zod schemas in `packages/dialogwright/src/define/schema/`, which are also what `check` validates with, so they cannot disagree. Never edit a `.schema.json` by hand. After changing a zod schema, run `pnpm --filter dialogwright schemas`; a test fails when the committed files are stale.
 
@@ -739,7 +771,7 @@ For a form that collects slots and acts, such as renewing a loan:
 1. `intents.yaml`: add the intent with `kind: form`. Its id is the form's id.
 2. `forms.yaml`: add the form with its `slots`, a `summaryPromptId` (or `null`) and `hooks: [complete]`. Add `confirmedParams` too if completing it is a confirmed write.
 3. `prompts.yaml`: add `ask_<slot>` and `ask_<slot>_retry` for every new slot, the summary prompt, and the line the form says when it completes. Add them to each locale.
-4. `app.ts`: for every new slot, add a `SlotSpec` to `code.slots` ([section 4](#4-writing-a-slot): the library's `choiceSlot` is the pattern for a list of options, its `cardSlot` for a value no list holds). Add the lines its spec calls for (`ask_<slot>_dtmf`, `ack_<slot>`, `confirm_<slot>`, its partial line) to prompts.yaml and each locale. Add the form's hooks under `code.forms.<id>`: `complete` calls the tool and returns what to say.
+4. `app.ts`: for every new slot, add a `SlotSpec` to `code.slots` (and `slot: { type: code }` to slots.yaml, if the app has one; [section 4](#4-writing-a-slot): the library's `choiceSlot` is the pattern for a list of options, its `cardSlot` for a value no list holds). Add the lines its spec calls for (`ask_<slot>_dtmf`, `ack_<slot>`, `confirm_<slot>`, its partial line) to prompts.yaml and each locale. Add the form's hooks under `code.forms.<id>`: `complete` calls the tool and returns what to say.
 5. If the form needs a tool, follow the next walkthrough.
 6. `pnpm check`, then `pnpm verify`.
 
