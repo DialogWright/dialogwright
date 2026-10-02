@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import type { SlotContext } from '../../core/slots/types';
+import type { SlotContext, SlotSpec } from '../../core/slots/types';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { formatProblem } from '../../define/problems';
-import type { ChoiceQuestion, QuestionMap } from '../../jev/types';
+import type { AnswerMap, ChoiceQuestion, QuestionMap } from '../../jev/types';
 import { choice } from '../../testing/answers';
+import { createShadowReport, shadowSlot } from '../../testing/shadowSlot';
+import { parcelSelectSlot as testkitParcel } from '../../testing/testkit/domain/slots/parcelSelect';
+import { parcelSelectRecordSlot } from '../../testing/testkit/domain/slots/parcelSelectRecord';
+import { numbersSaid } from '../../core/extract/numbersSaid';
+import { spokenParcelNumbers } from '../../testing/testkit/domain/slots/parcelSelect';
 import { testSlotContext } from '../../testing/slots';
 import { runSlotConformance } from '../conformance/run';
 import { buildSlot, defineSlot, slotTypeJsonSchema } from '../defineSlot';
@@ -269,6 +274,105 @@ describe('defineSlot problems', () => {
     expect(buildSlot('parcel', { type: 'record', text: { label: 'x' } }).ok).toBe(false);
     expect(buildSlot('parcel', { type: 'record', ids: { span: 'x' } }).ok).toBe(false);
     expect(buildSlot('parcel', { type: 'record', spoken: { digits: 4, skip: true } }).ok).toBe(false);
+  });
+});
+
+/**
+ * Every mix a record slot reads, for a shadowed pair (shadowSlot throws on the first difference):
+ * the questions over no records, two, and a list with a repeat and a number said, for words that say
+ * nothing, name a record, say a number on and off the list, say a year after a month, say a longer
+ * number, or say several; and fills, asked and not, with the top label each record, a number said, a
+ * key too short, a label of another prefix and none, at, around and between the thresholds, against
+ * every second label (or none), at every gap around SLOT_CHOICE_MARGIN; then every four keys and keys
+ * of other lengths. No answer at all, while asked, is left out: the one deliberate difference (below).
+ */
+function recordGrid(shadow: SlotSpec, o: { id: string; prefix: string; records: readonly unknown[]; said: string }): void {
+  const lists: readonly (readonly unknown[])[] = [[], o.records, [...o.records, o.records[0], { number: o.said, item: 'something said', day: '2026-09-01', service: 'something said', serviceDate: '2026-09-01' }]];
+  const texts = [
+    '', 'the first one', `number ${o.said}`, 'four four one two', 'it was march twenty twenty five, number four four one two', 'march 2025',
+    'three one eight seven four zero two six', '7101, 4412 and 5550', 'the twelfth, nineteen ninety', 'one two three',
+  ];
+  for (const records of lists) for (const text of texts) for (const prompted of [false, true]) shadow.questions(testSlotContext(text, { records, prompted }));
+  const labels = [...(o.records as { number: string }[]).map((r) => `${o.prefix}${r.number}`), `${o.prefix}4412`, `${o.prefix}710`, `other_${(o.records[0] as { number: string }).number}`, 'none'];
+  const tops = [0.2, 0.44, T.SLOT_CHOICE_CONFIRM, 0.5, T.SLOT_CHOICE_FILL, 0.56, 0.7, 0.9];
+  const gaps = [0, 0.05, T.SLOT_CHOICE_MARGIN - 0.01, T.SLOT_CHOICE_MARGIN, T.SLOT_CHOICE_MARGIN + 0.01, 0.3];
+  for (const records of lists) {
+    for (const prompted of [false, true]) {
+      const c = testSlotContext('', { records, prompted });
+      for (const top of labels) {
+        for (const p of tops) {
+          shadow.fill({ [o.id]: choice({ [top]: p, ...(top === 'none' ? {} : { none: 1 - p }) }) }, c);
+          for (const second of labels) {
+            if (second === top) continue;
+            for (const gap of gaps) {
+              const answers: AnswerMap = { [o.id]: { type: 'choice', choice: top, probabilities: { [top]: p, [second]: Math.max(0, p - gap) }, confidence: p } };
+              shadow.fill(answers, c);
+            }
+          }
+        }
+      }
+      shadow.fill({ [o.id]: { type: 'noul', noul: 0.9 } } as never, c);
+      if (!prompted) shadow.fill({}, c);
+    }
+  }
+  for (let n = 0; n < 10_000; n++) shadow.dtmf!.parse(String(n).padStart(4, '0'), testSlotContext(''));
+  for (const keys of ['', '1', '441', '44120', '44*2', '#123', 'abcd']) shadow.dtmf!.parse(keys, testSlotContext(''));
+  for (const value of ['7101', '4412', '0000']) shadow.display(value);
+}
+
+describe('the testkit\'s parcel, written as configuration', () => {
+  // The testkit's hand-written parcel slot and the library slot that replaces it (its own words, id,
+  // labels, criteria and reason, a four-digit number said offered, no year rule, the keypad), through
+  // the same shadow harness the migration uses.
+  const testkit = { id: 'parcelChoice', prefix: 'parcel_', records: PARCELS, said: '4412' };
+
+  it('declares what the hand-written slot did', () => {
+    expect(parcelSelectRecordSlot.config).toEqual({
+      key: 'number', keyPattern: '\\d{4}', labelPrefix: 'parcel_', label: 'Parcel {number}, {item}, due {day|day}',
+      spoken: { digits: 4, label: 'Parcel number {key}, as the caller said it', skipYearAfterMonth: false },
+      missReason: 'no_parcel', keypad: 4, disambiguate: true, fillAt: 'SLOT_CHOICE_FILL',
+      text: {
+        instructions: 'Read asr.text and node.promptJustPlayed. Which parcel does the caller mean? They may name it by number, by what is in it, or by its day. Choose none only when they name no parcel.',
+        none: 'Names no parcel',
+      },
+      ids: { choice: 'parcelChoice' },
+    });
+    expect(parcelSelectRecordSlot.questionIds).toEqual(['parcelChoice']);
+    expect(parcelSelectRecordSlot.prompts!.map((p) => p.id)).toEqual(['disambiguate_parcelSelect', 'ask_parcelSelect_dtmf']);
+  });
+
+  it('asks the same questions, fills the same way and keys the same numbers on every branch', () => {
+    const report = createShadowReport();
+    recordGrid(shadowSlot(testkitParcel, parcelSelectRecordSlot, { report }), testkit);
+    expect(report.mismatches).toEqual([]);
+    expect(report.calls['parcelSelect.questions']).toBe(60);
+    expect(report.calls['parcelSelect.fill']).toBe(8_937);
+    expect(report.calls['parcelSelect.dtmf.parse']).toBe(10_007);
+  });
+
+  it('would find a slot that differs by one option', () => {
+    const off = defineSlot('parcelSelect', { ...parcelSelectRecordSlot.config, type: 'record', disambiguate: false });
+    expect(() => recordGrid(shadowSlot(testkitParcel, off), testkit)).toThrow(/fill/);
+    const year = defineSlot('parcelSelect', { ...parcelSelectRecordSlot.config, type: 'record', spoken: { digits: 4, label: 'Parcel number {key}, as the caller said it', skipYearAfterMonth: true } });
+    expect(() => recordGrid(shadowSlot(testkitParcel, year), testkit)).toThrow(/questions/);
+  });
+
+  it('the stub reads the numbers said with the slot\'s own reader, which says what the hand-written one did', () => {
+    for (const text of ['four four one two', 'not 7101 but 4412', 'three one eight seven four zero two six', 'march twenty twenty five', '47 11, 5550', 'one two three four five six seven eight and nine nine nine nine']) {
+      expect(numbersSaid(text, { digits: 4 }), text).toEqual(spokenParcelNumbers(text));
+    }
+  });
+
+  it('differs from the hand-written slot only where no turn reaches: no answer at all, when the parcel was asked for', () => {
+    // With nothing to offer (no parcels listed, no number said) neither slot asks a question, and the
+    // hand-written slot read the missing answer as a miss; the library reads it as nothing heard
+    // (absent), as the conformance kit requires. Either way the turn is a missed answer to the
+    // question asked (no progress, the same retry ladder and lines); only the trace's row differs
+    // (invalid:no_parcel, or no row). No stub turn reaches it: the shadowed run shows no mismatch.
+    const asked = testSlotContext('', { prompted: true });
+    expect(testkitParcel.fill({}, asked)).toEqual({ kind: 'invalid', reason: 'no_parcel', raw: '' });
+    expect(parcelSelectRecordSlot.fill({}, asked)).toEqual({ kind: 'absent' });
+    expect(parcelSelectRecordSlot.fill({}, testSlotContext(''))).toEqual(testkitParcel.fill({}, testSlotContext('')));
   });
 });
 

@@ -1,7 +1,9 @@
 import type { HeuristicContext, TestingHooks } from '../../../core/app/types';
 import { MONTHS, WEEKDAYS } from '../../../core/extract/date';
 import { PAST_MODES, PAST_RELATIVE } from '../../../core/extract/pastDate';
+import { numbersSaid } from '../../../core/extract/numbersSaid';
 import { spokenToDigits, tokenize } from '../../../core/extract/spokenNumber';
+import type { RecordOptions } from '../../../slots/record/index';
 import { candidateSpans } from '../../../core/spans';
 import { normalizeText } from '../../../jev/corpus';
 import { dayNearMonth, digitSpanLabel, dobParts, saysExplicitYear } from '../../../jev/heuristicKit';
@@ -11,8 +13,11 @@ import { customerPrincipal } from './principals';
 import { ACCOUNT_ID_DIGITS } from './slots/accountId';
 import { AHEAD_MODES, AHEAD_RELATIVE } from './slots/deliveryDay';
 import { DAYS } from './slots/dob';
-import { spokenParcelNumbers } from './slots/parcelSelect';
+import { parcelSelectRecordSlot } from './slots/parcelSelectRecord';
 import { DAY_PARTS } from './systems';
+
+/** The numbers the parcel slot offers as said (its `spoken` option): the stub chooses among the same ones. */
+const PARCEL_NUMBERS = (parcelSelectRecordSlot.config as RecordOptions).spoken!;
 
 /**
  * Example Parcels for the regression harness and the decision-model stubs (App.testing): the labels its
@@ -136,7 +141,7 @@ const HEURISTICS: NonNullable<TestingHooks['heuristics']> = {
   choice: {
     // A number said that is one on offer; a birthday's year is not a parcel number.
     parcelChoice: (text, labels, ctx) => ({
-      label: saysExplicitYear(text, ctx.todayIso) ? null : spokenParcelNumbers(text).map((n) => `parcel_${n}`).find((l) => labels.includes(l)) ?? ITEM_WORDS.find(([, re]) => re.test(text))?.[0] ?? null,
+      label: saysExplicitYear(text, ctx.todayIso) ? null : numbersSaid(text, PARCEL_NUMBERS).map((n) => `parcel_${n}`).find((l) => labels.includes(l)) ?? ITEM_WORDS.find(([, re]) => re.test(text))?.[0] ?? null,
       p: 0.9,
     }),
     accountIdSpan: (_text, labels) => ({ label: digitSpanLabel(labels, ACCOUNT_ID_DIGITS), p: 0.9 }),
