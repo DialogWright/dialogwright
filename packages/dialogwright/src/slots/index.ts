@@ -17,6 +17,8 @@ export { dateType } from './date/index';
 export type { DateOptions, DateWindowPartial } from './date/index';
 export { digitsType } from './digits/index';
 export type { DigitsOptions } from './digits/index';
+export { nameType } from './name/index';
+export type { NameOptions } from './name/index';
 export { textType } from './text/index';
 export type { TextOptions } from './text/index';
 export type {

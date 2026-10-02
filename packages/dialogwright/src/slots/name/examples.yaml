@@ -1,0 +1,94 @@
+# Examples of the `name` slot type: configurations, and what a caller might say to each.
+# `answers` are the model's answers to the slot's questions, by question id (a slot reads the
+# answers, not the words); `expect` is the outcome the slot must give. The conformance kit runs every
+# utterance here, and the type's docs page shows them.
+
+- name: caller's name
+  about: The defaults. First and last name, or one word, said back title-cased. A correction to a name already on file replaces it, and a turn that gives no name leaves the slot alone.
+  slot: name
+  config: {}
+  utterances:
+    - text: my name is Morgan Ellis
+      answers:
+        nameGiven: { noul: 0.95 }
+        nameSpan: { choice: { morgan ellis: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: morgan ellis, display: Morgan Ellis, confirm: none }
+    - text: it's Cher
+      answers:
+        nameGiven: { noul: 0.9 }
+        nameSpan: { choice: { cher: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: cher, display: Cher }
+    - text: no, it's Sam Lee
+      answers:
+        nameGiven: { noul: 0.9 }
+        nameSpan: { choice: { sam lee: 0.9, none: 0.1 } }
+      context: { current: sam leigh, prompted: true }
+      expect: { kind: filled, value: sam lee, display: Sam Lee }
+    - text: I want to change my address
+      answers:
+        nameGiven: { noul: 0.05 }
+        nameSpan: { choice: { none: 1 } }
+      expect: { kind: absent }
+    - text: none of your business
+      answers:
+        nameGiven: { noul: 0.7 }
+        nameSpan: { choice: { none: 0.95 } }
+      expect: { kind: invalid, reason: no_span, raw: "" }
+    - text: this is Morgan Ellis
+      answers:
+        nameGiven: { noul: 0.9 }
+        nameSpan: { choice: { ellis morgan: 0.9, none: 0.1 } }
+      expect: { kind: invalid, reason: no_span, raw: ellis morgan }
+
+- name: name beside a second person's
+  about: A call where the caller names someone else too (a technician, a manager). The words that are never the caller's name are listed, and no span holding one is offered, so a correction to the other person's name cannot be taken as the caller's own.
+  slot: caller
+  config:
+    exclude: [tech, technician, rivera, quinn]
+    handoff: verified
+  utterances:
+    - text: this is Morgan Ellis calling about technician Rivera
+      answers:
+        callerGiven: { noul: 0.95 }
+        callerSpan: { choice: { morgan ellis: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: morgan ellis, display: Morgan Ellis }
+    - text: not Rivera, Quinn
+      answers:
+        callerGiven: { noul: 0.4 }
+        callerSpan: { choice: { none: 1 } }
+      expect: { kind: absent }
+    - text: not Rivera, Quinn
+      answers:
+        callerGiven: { noul: 0.8 }
+        callerSpan: { choice: { rivera quinn: 0.8, none: 0.2 } }
+      expect: { kind: invalid, reason: no_span, raw: rivera quinn }
+    - text: I'd like to talk to technician Quinn
+      answers:
+        callerGiven: { noul: 0.9 }
+        callerSpan: { choice: { technician quinn: 0.8, none: 0.2 } }
+      expect: { kind: invalid, reason: no_span, raw: technician quinn }
+
+- name: name in the line's own words
+  about: A masked name with its own wording and its own question ids, as an app keeps the words a recording was made with.
+  slot: contact
+  config:
+    redact: mask
+    ids:
+      given: saysContactName
+    text:
+      given: Read asr.text. Does the caller give the name of the person to contact?
+      givenTrue: The caller names the person to contact, with or without their own name
+      givenFalse: No name, or a name that is not the contact's
+      span: Read asr.text. Which of these spans is the contact's name? Choose none if no span is a name.
+      spanNone: No span of asr.text is the contact's name
+  utterances:
+    - text: ask for Priya Raghunathan
+      answers:
+        saysContactName: { noul: 0.93 }
+        contactSpan: { choice: { priya raghunathan: 0.88, none: 0.12 } }
+      expect: { kind: filled, value: priya raghunathan, display: Priya Raghunathan }
+    - text: I'll tell you later
+      answers:
+        saysContactName: { noul: 0.1 }
+        contactSpan: { choice: { none: 1 } }
+      expect: { kind: absent }

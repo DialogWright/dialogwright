@@ -648,6 +648,102 @@
         "properties": {
           "type": {
             "type": "string",
+            "const": "name",
+            "description": "The slot type."
+          },
+          "exclude": {
+            "default": [],
+            "description": "Words that never belong to the caller's name: a span holding any of them is not offered to the model, and one answered anyway is refused. For the titles and names of people who are discussed on the call but are not the caller (a doctor, a technician). Compared in lower case, word by word. A caller who shares one of the words cannot give their name by voice, so list only what is needed. Default: none.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]+$"
+            }
+          },
+          "redact": {
+            "default": "none",
+            "description": "How the value is masked wherever it leaves the turn (the trace, a tool call's param of the same name): \"mask\" (\"•\") or \"none\", kept as it is.",
+            "type": "string",
+            "enum": [
+              "none",
+              "mask"
+            ]
+          },
+          "handoff": {
+            "default": "display",
+            "description": "What a transfer to a person hands over: the name as its \"display\", or only whether the caller was \"verified\", never the name.",
+            "type": "string",
+            "enum": [
+              "display",
+              "verified"
+            ]
+          },
+          "text": {
+            "description": "Text to say to the model in place of a default, word for word, by part: given, givenTrue, givenFalse, span, spanNone.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The yes-or-no question that asks whether the caller gives their own name at all.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "givenTrue": {
+                "description": "What a yes to the first question means (its \"true\" criterion).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "givenFalse": {
+                "description": "What a no to the first question means (its \"false\" criterion).",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "span": {
+                "description": "The question that asks which span of the caller's words is their name. Its choices are the word spans the engine finds, less the ones `exclude` withholds, and none.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "spanNone": {
+                "description": "What the span question's \"none\" choice means.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ids": {
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given, span), to keep the ids an existing slot used.",
+            "type": "object",
+            "properties": {
+              "given": {
+                "description": "The id of the question that asks whether the caller states their own name.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "span": {
+                "description": "The id of the question that asks which span of the caller's words is their name.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "The caller's own name, first and last as they say it: \"Anna Petrov\", \"Sam\".",
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
             "const": "text",
             "description": "The slot type."
           },
