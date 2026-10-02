@@ -20,6 +20,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./testing": "./src/testing/index.ts",
+    "./slot-kit": "./src/slots/kit.ts",
     "./*.js": "./src/*.js",
     "./*.json": "./src/*.json",
     "./*": "./src/*.ts",

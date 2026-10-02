@@ -38,7 +38,7 @@ Slot types are where most contributions will arrive. A slot type turns validated
 | `<type>.test.ts` | `runSlotConformance` over the examples, then tests of what the kit cannot know |
 | `README.md` | The hand-written part of the docs page: what it is for, outcomes, question wording, notes |
 
-Add the type to `BUILT_IN_SLOT_TYPES` in `slots/registry.ts` and export it from `slots/index.ts` and the root `src/index.ts`. A type is a pure function of its options: no global state, and no import from an app.
+Add the type to `BUILT_IN_SLOT_TYPES` in `slots/registry.ts`, and export its options type from `slots/index.ts` and the root `src/index.ts` (the type itself is reached through `BUILT_IN_SLOT_TYPES`). A type is a pure function of its options: no global state, and no import from an app. A type written outside the package imports its helpers from `dialogwright/slot-kit` (`defineSlotType`, `textParts`, `questionParts`, `meetsThreshold`, `examplesFrom`, ...), the readers from `dialogwright`, and the conformance kit from `dialogwright/testing`.
 
 **Options.** Write them as a `z.strictObject`, so a misspelt option is an error, and give every option a `.describe(...)`. That text is the option's documentation: the generated docs page and the problems an author sees are made of it. Say what the option does, its default, and when it is needed. Put cross-option rules in a `superRefine` with a `fix` that tells the author what to write.
 

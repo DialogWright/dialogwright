@@ -10,7 +10,7 @@ describe('the package entry', () => {
       // the app definition: a folder's YAML joined with the app's code
       'defineApp', 'AppDefinitionError', 'isAppDefinitionError', 'formatProblem', 'checkApp', 'loadAppFolder',
       // the languages an app speaks
-      'DEFAULT_LOCALE', 'defaultLocaleOf', 'localesOf', 'matchLocale', 'localeOf', 'slotLocaleOf',
+      'DEFAULT_LOCALE', 'defaultLocaleOf', 'localesOf', 'matchLocale', 'localeOf',
       'serviceResultEvent', 'speechEvent', 'sayAction', 'endAction', 'transferAction', 'VOICE_RELAY', 'WEB_CHAT',
       'isAnonymous', 'isParty', 'ANONYMOUS',
       'startServer', 'serverMain', 'validateRoutes', 'routeOwns',
@@ -21,8 +21,7 @@ describe('the package entry', () => {
       'parseIso', 'addDays', 'describeDay', 'describeDob', 'resolveDate', 'MONTHS', 'WEEKDAYS', 'spokenToDigits', 'tokenize', 'numbersSaid', 'matchesMask',
       'candidateSpans', 'candidateWordSpans', 'atLeast',
       // the slot library
-      'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType', 'defineSlotType', 'textType', 'digitsType', 'choiceType', 'birthdateType', 'dateType', 'nameType', 'recordType',
-      'textParts', 'questionParts', 'renderTemplate', 'meetsThreshold',
+      'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
       'buildQuestions', 'ENGINE_QUESTION_IDS', 'buildTurnState', 'FixtureStubClient', 'HeuristicStubClient', 'digitSpanLabel', 'dobParts', 'saysDob', 'saysExplicitYear',
@@ -42,22 +41,27 @@ describe('the package entry', () => {
     expect(entry.loadAppFolder).toBe((await import('./define/load')).loadAppFolder);
     expect(entry.defineSlot).toBe((await import('./slots/defineSlot')).defineSlot);
     expect(entry.defineSlots).toBe((await import('./slots/defineSlots')).defineSlots);
-    expect(entry.BUILT_IN_SLOT_TYPES.text).toBe(entry.textType);
-    expect(entry.BUILT_IN_SLOT_TYPES.digits).toBe(entry.digitsType);
-    expect(entry.BUILT_IN_SLOT_TYPES.choice).toBe(entry.choiceType);
-    expect(entry.BUILT_IN_SLOT_TYPES.birthdate).toBe(entry.birthdateType);
-    expect(entry.BUILT_IN_SLOT_TYPES.date).toBe(entry.dateType);
-    expect(entry.BUILT_IN_SLOT_TYPES.name).toBe(entry.nameType);
-    expect(entry.BUILT_IN_SLOT_TYPES.record).toBe(entry.recordType);
+    expect(Object.keys(entry.BUILT_IN_SLOT_TYPES).sort()).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'record', 'text']);
+    expect(entry.BUILT_IN_SLOT_TYPES.text).toBe((await import('./slots/text/index')).textType);
     expect(entry.defineSlot('note', { type: 'text', what: 'a note' }).type).toBe('text');
     // the library's types are exported with the functions that take them
     const spec: import('./index').LibrarySlotSpec = entry.defineSlot('note', { type: 'text', what: 'a note' });
-    const example: import('./index').SlotExample = { name: 'a', slot: 'a', config: {}, utterances: [] };
-    const type: import('./index').SlotType<import('./index').TextOptions> = entry.textType;
-    expect([spec.id, example.name, type.type]).toEqual(['note', 'a', 'text']);
+    const type: import('./index').SlotType<import('./index').TextOptions> = entry.BUILT_IN_SLOT_TYPES.text as import('./index').SlotType<import('./index').TextOptions>;
+    const option: import('./index').ChoiceOption = { say: 'A' };
+    expect([spec.id, type.type, option.say]).toEqual(['note', 'text', 'A']);
     // the options type is exported with the function it configures
     const options: import('./index').DefineAppOptions = { codeFile: 'src/app.ts' };
     expect(options.codeFile).toBe('src/app.ts');
+  });
+
+  it('keeps what an app author needs: the helpers a slot type is written with are in dialogwright/slot-kit, and the engine\'s own tables stay inside', () => {
+    for (const name of [
+      // dialogwright/slot-kit
+      'defineSlotType', 'textParts', 'questionParts', 'questionText', 'renderTemplate', 'TemplateError', 'meetsThreshold', 'examplesFrom', 'parseSlotExamples', 'wordingFor',
+      // internal
+      'applySlotWording', 'isLibrarySlot', 'localeSlotsFile', 'slotTypeJsonSchema', 'slotLocaleOf', 'ENGLISH', 'SPANISH', 'foldAccents', 'lexiconOf', 'MONTHS_ES', 'WEEKDAYS_ES',
+      'birthdateType', 'choiceType', 'dateType', 'digitsType', 'nameType', 'recordType', 'textType',
+    ]) expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
   });
 
   it('importing it registers nothing', () => {
@@ -74,6 +78,23 @@ describe('subpath imports', () => {
     expect(pkg.exports?.['.']).toBe('./src/index.ts');
     expect(pkg.exports?.['./*']).toBe('./src/*.ts');
     expect(pkg.exports?.['./testing']).toBe('./src/testing/index.ts');
+    expect(pkg.exports?.['./slot-kit']).toBe('./src/slots/kit.ts');
+  });
+});
+
+describe('the slot type author\'s entry', () => {
+  it('"dialogwright/slot-kit" has the helpers a slot type is written with, which the root entry leaves out', async () => {
+    const kit = await import('./slots/kit');
+    expect(Object.keys(kit).sort()).toEqual([
+      'TemplateError', 'defineSlotType', 'examplesFrom', 'meetsThreshold', 'parseSlotExamples', 'questionParts', 'questionText', 'renderTemplate', 'textParts', 'wordingFor',
+    ]);
+    for (const name of Object.keys(kit)) expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
+    expect(kit.defineSlotType).toBe((await import('./slots/slotType')).defineSlotType);
+    expect(kit.meetsThreshold).toBe((await import('./slots/parts/thresholds')).meetsThreshold);
+    // its types: an example, as a type's examples.yaml holds them, and what a type builds
+    const example: import('./slots/kit').SlotExample = { name: 'a', slot: 'a', config: {}, utterances: [] };
+    const parts: import('./slots/kit').TextPartDef = { template: 'a {noun}', vars: ['noun'] } as unknown as import('./slots/kit').TextPartDef;
+    expect([example.name, typeof parts]).toEqual(['a', 'object']);
   });
 });
 

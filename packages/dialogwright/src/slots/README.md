@@ -51,12 +51,17 @@ The docs page for a type, `docs/slots/<type>.md`, is its README with those two m
 
 ## Shared parts
 
-`parts/` holds what types share:
+`parts/` holds what types share. A type written outside this package imports them from `dialogwright/slot-kit` (`defineSlotType`, `textParts`, `questionParts`, `questionText`, `renderTemplate`, `meetsThreshold`, `examplesFrom`, `parseSlotExamples`, `wordingFor`, and the types of an example), the readers from `dialogwright`, and the conformance kit from `dialogwright/testing`:
+
+```ts
+import { defineSlotType, meetsThreshold, questionParts, textParts } from 'dialogwright/slot-kit';
+import { noulValue, type SlotType } from 'dialogwright';
+```
 
 - **Text parts** (`textParts`). A type declares its pieces of question text by name, each with a default template that uses only neutral words. Templates have `{name}` placeholders and nothing else; a placeholder the type does not give is an error when the type is defined. An app replaces a part with `text: { <part>: "..." }`, which is sent to the model exactly as written. That is how an app keeps its own wording, or the words a recording was made with.
 - **Question ids** (`questionParts`). A question's id is the slot's id followed by the part's name (`courierNote` and `given` give `courierNoteGiven`), so two slots of one type never share an id. `ids: { <part>: "..." }` keeps the id an existing slot used.
 - **Thresholds by name** (`meetsThreshold(ctx.thresholds, 'SLOT_DETECT', p)`). A type compares the model's numbers only to thresholds it reads by name from the context, never to a number written in the type.
-- **Readers**, re-exported from their homes in the engine: `noulValue`, `isChoice`, `rankProbabilities`, `topMargin`, `atLeast`, `candidateSpans`, `candidateWordSpans`, `spokenToDigits`, `tokenize`, `numbersSaid`, `matchesMask`, and the date helpers.
+- **Readers**, from the package root (`dialogwright`): `noulValue`, `isChoice`, `rankProbabilities`, `topMargin`, `atLeast`, `candidateSpans`, `candidateWordSpans`, `spokenToDigits`, `tokenize`, `numbersSaid`, `matchesMask`, and the date helpers.
 - **Examples** (`examplesFrom`, `parseSlotExamples`): reading and checking an `examples.yaml`.
 
 ## The conformance kit
@@ -133,7 +138,7 @@ A slot hears and says its value in the session's locale (`ctx.locale`, and the `
 2. Write the options in `options.ts` with `z.strictObject`, describing each one. Use `textParts` for any question text and `questionParts` for question ids, with neutral default wording (account, card, parcel, book, appointment).
 3. Write `questions.ts`, `fill.ts` and `display.ts`. Compare probabilities only through `meetsThreshold` (or `atLeast` against `ctx.thresholds.<NAME>`). Format every display with the one `display` function, given `ctx.locale`.
 4. Write `examples.yaml`: a few configurations, each with utterances that fill, that miss, and that hit each `invalid` reason the type has.
-5. Add the type to `BUILT_IN_SLOT_TYPES` in `registry.ts` and export it from `index.ts`.
+5. Add the type to `BUILT_IN_SLOT_TYPES` in `registry.ts`, and export its options type from `index.ts` (the package root re-exports it). The type itself is reached through `BUILT_IN_SLOT_TYPES`, not exported by name.
 6. Run its checks: `pnpm --filter dialogwright test slots/<type>`. Then the whole suite, `pnpm verify`, and `pnpm check`.
 7. Write its `README.md`: what it collects, the outcomes, the question wording, the prompts it needs and notes, with the two marker lines where the options and examples go. Do not write an options table; the page generates it. Then `pnpm --filter dialogwright slot-docs`, commit `docs/slots/<type>.md`, and add the type to the index in `docs/slots/README.md`.
 

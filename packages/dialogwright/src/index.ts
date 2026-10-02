@@ -10,6 +10,9 @@
  * builders, a turn driver, the stubs, the fixtures and the regression pieces). Importing it starts
  * nothing: no server, no registration, no I/O.
  *
+ * Two more entries are supported: `dialogwright/testing` (an app's tests: the shadow harness, the
+ * slot conformance kit) and `dialogwright/slot-kit` (the helpers a slot type is written with).
+ *
  * The package also maps every source file to a subpath, `dialogwright/<dir>/<file>` (package.json
  * "exports" "./*": `src/<dir>/<file>.ts`). Those are the engine's internals: reachable, but not part
  * of the supported API, and free to move or change between versions. An app that wants to keep
@@ -28,7 +31,7 @@ export { formOf, slotSpecOf, toolOf } from './core/app/lookup';
 export { intentList, formIntents, isFormIntent, intentLabel, informationalPrompt, informationalIntents, intentCriteria } from './core/app/intents';
 
 // The languages an app speaks (App.locales) and the one a session speaks.
-export { DEFAULT_LOCALE, defaultLocaleOf, localesOf, matchLocale, localeOf, slotLocaleOf } from './core/locale';
+export { DEFAULT_LOCALE, defaultLocaleOf, localesOf, matchLocale, localeOf } from './core/locale';
 
 // The app definition: an app folder's YAML joined with its TypeScript parts into the App above.
 export { defineApp, AppDefinitionError, isAppDefinitionError } from './define/defineApp';
@@ -42,14 +45,12 @@ export { formatProblem } from './define/problems';
 export type { Problem } from './define/problems';
 
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
-export {
-  defineSlot, defineSlots, buildSlot, SlotConfigError, isSlotConfigError, slotTypeJsonSchema, BUILT_IN_SLOT_TYPES, registerSlotType, defineSlotType,
-  birthdateType, choiceType, dateType, digitsType, nameType, recordType, textType, textParts, questionParts, questionText, renderTemplate, TemplateError, meetsThreshold, examplesFrom, parseSlotExamples,
-  applySlotWording, isLibrarySlot, localeSlotsFile, wordingFor,
-} from './slots/index';
+// What the author of a slot type uses is in 'dialogwright/slot-kit'; the conformance kit is in
+// 'dialogwright/testing'.
+export { defineSlot, defineSlots, buildSlot, SlotConfigError, isSlotConfigError, BUILT_IN_SLOT_TYPES, registerSlotType } from './slots/index';
 export type {
-  BuildSlotOptions, BuildSlotResult, SlotSource, BuiltSlotSpec, SlotType, SlotTypeDocs, LibrarySlotSpec, SlotWording, ChoiceWording, TextWording, SlotExample, SlotUtterance,
-  ExampleAnswer, ExampleContext, ExpectedOutcome, SlotKeypadExample, SlotTypes, BirthdateOptions, BirthdatePartial, ChoiceOptions, ChoiceOption, DateOptions, DateWindowPartial, DigitsOptions, NameOptions, RecordOptions, TextOptions, TextPartDef, TextParts, QuestionParts,
+  BuildSlotOptions, BuildSlotResult, SlotSource, SlotType, SlotTypes, LibrarySlotSpec,
+  BirthdateOptions, ChoiceOptions, ChoiceOption, DateOptions, DigitsOptions, NameOptions, RecordOptions, TextOptions,
 } from './slots/index';
 
 // The channel model: what the engine hears (events), what it does (actions), what a channel can do (caps).
@@ -97,13 +98,12 @@ export { handoffPromptId } from './prompts/render';
 export {
   MONTHS, WEEKDAYS, DATE_MODES, RELATIVE_DAYS, WINDOWS, QUALIFIERS,
   parseIso, toIso, addDays, weekdayIndex, snapWeekdayOnOrAfter, resolveDate,
-  describeDay, describeWindow, describeDob, normalizeYear, ordinal, MONTHS_ES, WEEKDAYS_ES,
+  describeDay, describeWindow, describeDob, normalizeYear, ordinal,
 } from './core/extract/date';
 export type { ComponentPick, DateComponents, DateWindow, DateResolution } from './core/extract/date';
 export { spokenToDigits, tokenize } from './core/extract/spokenNumber';
-// The words of a language that values are read out of (en, and es for es and es-*): number words, fillers, name particles, months.
-export { lexiconOf, isSpanish, ENGLISH, SPANISH, foldAccents } from './core/extract/lexicon';
-export type { Lexicon } from './core/extract/lexicon';
+// Whether a locale reads values out of Spanish words (es and es-*).
+export { isSpanish } from './core/extract/lexicon';
 export { numbersSaid } from './core/extract/numbersSaid';
 export type { NumbersSaidOptions } from './core/extract/numbersSaid';
 export { matchesMask } from './core/extract/mask';

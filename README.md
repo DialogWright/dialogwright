@@ -15,7 +15,7 @@ The package ships TypeScript source (run it with tsx or vitest) until a release 
 
 ## What's here
 
-- `packages/dialogwright`: the engine. Its testkit is the engine's own test fixture, not a starting point for an app. An app imports only from `'dialogwright'`, the package's supported API (`src/index.ts`, grouped and documented there); the per-file subpaths (`dialogwright/core/...`) are internals that may change between versions.
+- `packages/dialogwright`: the engine. Its testkit is the engine's own test fixture, not a starting point for an app. An app imports only from `'dialogwright'`, the package's supported API (`src/index.ts`, grouped and documented there), and from `'dialogwright/testing'` (for its tests) and `'dialogwright/slot-kit'` (to write a slot type); the per-file subpaths (`dialogwright/core/...`) are internals that may change between versions.
 - [docs/authoring-an-app.md](docs/authoring-an-app.md): how to build an app, for a developer or an AI coding assistant: the folder, each file with an example (including `slots.yaml`), what stays in TypeScript, how to write a slot, `pnpm check` and its messages, locales, configuration hashes.
 - [docs/slots](docs/slots/README.md): the slot types. Most slots are configuration: an app names a type (`digits`, `choice`, `date`, `birthdate`, `name`, `record`, `text`) in its `slots.yaml` with a few options, and the engine asks the model the right questions and checks the answers. One page per type, generated from its options.
 - [llms.txt](llms.txt): an index of these docs for AI assistants.

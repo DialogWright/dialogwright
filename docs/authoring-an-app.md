@@ -702,7 +702,8 @@ How a spoken value is confirmed. A keyed value never is.
 A slot you write for one app can be a `SlotSpec` in `code.slots`. A shape you will use more than once, or want others to use, is better as a slot type: a function from validated options to a `SlotSpec`, named in `slots.yaml` like the built-in ones. An app registers its own types with `code.slotTypes`:
 
 ```ts
-import { defineSlotType, registerSlotType } from 'dialogwright';
+import { registerSlotType } from 'dialogwright';
+import { defineSlotType } from 'dialogwright/slot-kit'; // the helpers a slot type is written with
 
 export const plateType = defineSlotType({
   type: 'plate',                 // what slots.yaml writes after "type:"

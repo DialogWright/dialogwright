@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  addDays, defineApp, defineSlot, describeDay, slotLocaleOf,
+  addDays, defineApp, defineSlot, describeDay, localeOf,
   type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotSpec, type ToolDef,
 } from '../../index';
 
@@ -140,7 +140,7 @@ function renew(c: CompletionContext): Completion {
   if (decision.verdict !== 'ALLOW') return c.refusal(decision);
   s.pendingHash = null;
   const { due } = value as { due: string };
-  return { kind: 'said', acks: [...acks, { promptId: 'renewed', vars: { book: displayOf(s, 'book'), due: describeDay(due, slotLocaleOf(s)) } }] };
+  return { kind: 'said', acks: [...acks, { promptId: 'renewed', vars: { book: displayOf(s, 'book'), due: describeDay(due, localeOf(s)) } }] };
 }
 
 function checkHold(c: CompletionContext): Completion {
@@ -164,7 +164,7 @@ function checkLoans(c: CompletionContext): Completion {
   if (!next) return { kind: 'said', acks: [...acks, { promptId: 'no_loans', vars: { card } }] };
   // The book and the day as the call's language says them: the book slot's display (its Spanish
   // wording in a Spanish call), the day in that language's words.
-  const locale = slotLocaleOf(s);
+  const locale = localeOf(s);
   return { kind: 'said', acks: [...acks, { promptId: 'next_due', vars: { card, book: libraryApp.slots.book!.display(next.book, locale), due: describeDay(next.due, locale) } }] };
 }
 
