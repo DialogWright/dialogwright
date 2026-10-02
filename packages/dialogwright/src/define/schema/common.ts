@@ -28,7 +28,7 @@ export const identifier = () =>
   matching(
     /^[A-Za-z][A-Za-z0-9_]*$/,
     'is not a valid id: it must start with a letter and use only letters, digits and underscores',
-    'rename it using only letters, digits and underscores, starting with a letter (for example "ask_name" or "memberId")',
+    'rename it using only letters, digits and underscores, starting with a letter (for example "ask_name" or "patientId")',
   );
 
 /** A name that is only ever a label or a code (a purpose, a role, a rule, a handoff reason, an audit row type): hyphens and dots are allowed too. */

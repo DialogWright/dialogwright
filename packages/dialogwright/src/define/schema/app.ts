@@ -88,7 +88,7 @@ const consoleConfig = z
       .length(3, { error: 'must have exactly three entries, one each for levels 0, 1 and 2' })
       .optional()
       .describe('The level badge\'s words for levels 0, 1 and 2, for example ["anonymous", "ID + DOB", "+ code"].'),
-    handoffReasons: textMap().optional().describe('Handoff reasons the app adds, in words (for example staff-filing: "a staff member filed it").'),
+    handoffReasons: textMap().optional().describe('Handoff reasons the app adds, in words (for example staff-filing: "a person on staff filed it").'),
     facts: z.array(consoleFact).optional().describe("The key fact of a task, read off its turn's audit rows, as the NOW panel says it. In order; a row matches the first that fits."),
     goodAuditTypes: z.array(name()).optional().describe('Audit row types the audit list shows as good news, beside a passed identity check (for example report_created, kb_answer).'),
     serviceNote: z

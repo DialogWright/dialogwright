@@ -9,7 +9,7 @@ intents:
     label: cancel your appointment
     kind: form
   billing:
-    criteria: Asks about a bill, charge, payment, or insurance coverage
+    criteria: Asks about a bill, charge, payment, or a payment plan
     label: talk to billing
     kind: form
   agent:

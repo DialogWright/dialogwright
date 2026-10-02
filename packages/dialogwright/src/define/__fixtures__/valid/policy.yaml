@@ -3,7 +3,7 @@ toolLevel:
   findAppointment: 0
   bookAppointment: 0
   cancelAppointment: 0
-  verifyMember: 0
+  verifyPatient: 0
   sendCode: 1
   verifyCode: 1
 
@@ -14,13 +14,13 @@ rulesFor:
   findAppointment: [R1, R2]
   bookAppointment: [R1, R3, no-double-booking]
   cancelAppointment: [R1, R3]
-  verifyMember: [R1, R6]
+  verifyPatient: [R1, R6]
   sendCode: [R1]
   verifyCode: [R1, R6]
 
 subjects:
   findAppointment: { param: bookingId, via: record }
-  cancelAppointment: { param: memberId }
+  cancelAppointment: { param: patientId }
 
 confirmedFields: [name, dob, provider, date, time]
 
@@ -38,12 +38,12 @@ rolePersonReason: staff-cancel
 wording:
   scope:
     subject:
-      record: The booking belongs to this member
-      param: The member is the caller
+      record: The booking belongs to this patient
+      param: The patient is the caller
     delegate:
-      record: The booking belongs to a member of this clinic
+      record: The booking belongs to a patient of this clinic
   recordOwner: booking owner
-  subject: member
+  subject: patient
   role:
     allow: "{role} may use {tool}"
     refuse: "{role} may not use {tool}"

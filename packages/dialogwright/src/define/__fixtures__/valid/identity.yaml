@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=../../../../schemas/identity.schema.json
-subjectKind: member
+subjectKind: patient
 delegateKind: staff
-factorSlots: [memberId, dob]
-verifyTool: verifyMember
+factorSlots: [patientId, dob]
+verifyTool: verifyPatient
 codeTool: verifyCode
 sendCodeTool: sendCode
 failedPromptId: identity_failed

@@ -9,6 +9,6 @@ forms:
     summaryPromptId: confirm_cancel
     hooks: [confirmedParams, complete]
   billing:
-    slots: [memberId]
+    slots: [patientId]
     summaryPromptId: null
     hooks: [complete]

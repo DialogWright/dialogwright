@@ -107,7 +107,7 @@
           }
         },
         "handoffReasons": {
-          "description": "Handoff reasons the app adds, in words (for example staff-filing: \"a staff member filed it\").",
+          "description": "Handoff reasons the app adds, in words (for example staff-filing: \"a person on staff filed it\").",
           "type": "object",
           "propertyNames": {
             "type": "string",

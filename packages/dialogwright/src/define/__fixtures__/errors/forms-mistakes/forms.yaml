@@ -7,6 +7,6 @@ forms:
     slots: [name, dob, provider]
     summaryPromptId: confirm_cancel
   billing:
-    slots: [memberId]
+    slots: [patientId]
     summaryPromptId: null
     hooks: [onSumaryRead, complete]

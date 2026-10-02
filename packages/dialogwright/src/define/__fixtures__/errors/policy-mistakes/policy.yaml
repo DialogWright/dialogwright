@@ -5,7 +5,7 @@ rulesFor:
   bookAppointment: [R1, R3, R3]
   cancelAppointment: [R1]
 subjects:
-  cancelAppointment: { param: memberId, vai: record }
+  cancelAppointment: { param: patientId, vai: record }
 confirmedFields: [name, dob]
 maxAttempts: 0
 roles:

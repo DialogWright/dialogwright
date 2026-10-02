@@ -61,7 +61,7 @@ describe('mistakes get a precise error', () => {
   });
 
   it('a missing required field names the field', () => {
-    expect(issuesOf('identity', 'subjectKind: member\nfactorSlots: [memberId]\nverifyTool: verifyMember\ncodeTool: verifyCode\n')).toEqual([
+    expect(issuesOf('identity', 'subjectKind: patient\nfactorSlots: [patientId]\nverifyTool: verifyPatient\ncodeTool: verifyCode\n')).toEqual([
       { path: 'sendCodeTool', code: 'invalid_type', message: 'Invalid input: expected string, received undefined' },
     ]);
     expect(issuesOf('app', 'locale: en-US\n')).toEqual([{ path: 'id', code: 'invalid_type', message: 'Invalid input: expected string, received undefined' }]);

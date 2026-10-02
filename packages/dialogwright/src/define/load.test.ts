@@ -47,7 +47,7 @@ describe('loadAppFolder: a valid folder', () => {
     expect(config.forms.forms.schedule_new).toEqual({ slots: ['name', 'dob', 'provider', 'date'], summaryPromptId: 'confirm_schedule', hooks: ['confirmedParams', 'complete', 'onSummaryRead'] });
     expect(config.policy.maxAttempts).toBe(3);
     expect(config.policy.purposeLevel).toEqual({ appointment: 0 });
-    expect(config.identity?.verifyTool).toBe('verifyMember');
+    expect(config.identity?.verifyTool).toBe('verifyPatient');
   });
 
   it('keys prompts by locale: prompts.yaml is the default locale, locale/<tag>/prompts.yaml the others', () => {
@@ -269,7 +269,7 @@ describe('loadAppFolder: problems', () => {
         column: 3,
         path: 'forms["cancel it"]',
         message: 'the key "cancel it" is not a valid id: it must start with a letter and use only letters, digits and underscores',
-        fix: 'rename it using only letters, digits and underscores, starting with a letter (for example "ask_name" or "memberId")'
+        fix: 'rename it using only letters, digits and underscores, starting with a letter (for example "ask_name" or "patientId")'
       },
       {
         file: 'forms.yaml',
@@ -371,7 +371,7 @@ describe('loadAppFolder: problems', () => {
         column: 3,
         path: 'prompts["ask name"]',
         message: 'the key "ask name" is not a valid id: it must start with a letter and use only letters, digits and underscores',
-        fix: 'rename it using only letters, digits and underscores, starting with a letter (for example "ask_name" or "memberId")'
+        fix: 'rename it using only letters, digits and underscores, starting with a letter (for example "ask_name" or "patientId")'
       }
     ]);
   });
@@ -399,7 +399,7 @@ describe('loadAppFolder: problems', () => {
       {
         file: 'policy.yaml',
         line: 8,
-        column: 46,
+        column: 47,
         path: 'subjects.cancelAppointment.vai',
         message: 'unknown key "vai" under subjects.cancelAppointment',
         fix: 'rename "vai" to "via"'
@@ -511,16 +511,16 @@ describe('loadAppFolder: problems', () => {
         line: 1,
         column: 14,
         path: 'subjectKind',
-        message: '"Member" is not a valid kind: it must be a lowercase word (letters, digits, underscores)',
-        fix: 'write a lowercase word such as "customer" or "member"'
+        message: '"Patient" is not a valid kind: it must be a lowercase word (letters, digits, underscores)',
+        fix: 'write a lowercase word such as "customer" or "patient"'
       },
       {
         file: 'identity.yaml',
         line: 2,
-        column: 25,
+        column: 26,
         path: 'factorSlots[1]',
-        message: 'factor slot "memberId" is listed twice',
-        fix: 'delete one of the two "memberId" entries'
+        message: 'factor slot "patientId" is listed twice',
+        fix: 'delete one of the two "patientId" entries'
       },
       {
         file: 'identity.yaml',
