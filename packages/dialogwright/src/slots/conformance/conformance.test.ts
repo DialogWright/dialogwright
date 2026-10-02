@@ -4,6 +4,7 @@ import type { SlotOutcome } from '../../core/slots/types';
 import { atLeast } from '../../core/thresholds';
 import { isNoul, noulValue, type NoulAnswer } from '../../jev/types';
 import { meetsThreshold } from '../parts/thresholds';
+import { choiceType } from '../choice/index';
 import { digitsType } from '../digits/index';
 import { textType } from '../text/index';
 import type { BuiltSlotSpec, SlotExample, SlotType } from '../types';
@@ -93,6 +94,7 @@ describe('the correct toy, and the built-in types', () => {
     expect(failing(toy('toy'), { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(textType, { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(digitsType, { locales: ['en-US', 'es'] })).toEqual([]);
+    expect(failing(choiceType, { locales: ['en-US', 'es'] })).toEqual([]);
   });
 });
 

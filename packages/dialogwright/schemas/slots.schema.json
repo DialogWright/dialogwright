@@ -13,6 +13,114 @@
         "properties": {
           "type": {
             "type": "string",
+            "const": "choice",
+            "description": "The slot type."
+          },
+          "options": {
+            "description": "The options the caller can choose, in order, as `key: Say` or `key: { say, means }`. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "say": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                      "description": "The display: how a line, the summary and the model's turn state say the option (\"an express delivery\")."
+                    },
+                    "means": {
+                      "description": "What the model is told this option is: the text of its criterion, sent exactly as written. Default: the slot's `means` template.",
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                    }
+                  },
+                  "required": [
+                    "say"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "means": {
+            "default": "The caller names {say}",
+            "description": "The criterion the model is given for each option that has no `means` of its own, as a template over `{say}` and `{key}`.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "none": {
+            "default": "Names none of these",
+            "description": "The criterion of the \"none\" label, which the model chooses when the caller names no option.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "instructions": {
+            "default": "Read asr.text. Which of these does the caller name?",
+            "description": "The question, sent to the model exactly as written.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          },
+          "keypad": {
+            "default": false,
+            "description": "Whether the caller can key the option, by its position (1 for the first), after spoken answers missed. At most 9 options. Needs an ask_<slot>_dtmf line.",
+            "type": "boolean"
+          },
+          "fillAt": {
+            "default": "SLOT_CHOICE_FILL",
+            "description": "The threshold the model's probability for the option must reach for the slot to fill; below it the slot stays empty.",
+            "type": "string",
+            "enum": [
+              "SLOT_CHOICE_FILL",
+              "SLOT_CHOICE_CONFIRM"
+            ]
+          },
+          "confirm": {
+            "default": "summary",
+            "description": "\"summary\": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it.",
+            "type": "string",
+            "enum": [
+              "summary"
+            ]
+          },
+          "ids": {
+            "description": "Question ids in place of the default: `ids.choice` is the question's id (default: the slot's own id), to keep the id an existing slot used.",
+            "type": "object",
+            "properties": {
+              "choice": {
+                "description": "The id of the question that asks which of the options the caller names.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "options"
+        ],
+        "additionalProperties": false,
+        "description": "One of a fixed list of options: a delivery speed, a branch, a colour."
+      },
+      {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
             "const": "digits",
             "description": "The slot type."
           },
