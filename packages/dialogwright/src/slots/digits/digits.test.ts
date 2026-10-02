@@ -348,3 +348,31 @@ describe('the docs', () => {
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
   });
 });
+
+describe('a digits slot in Spanish (es, es-*)', () => {
+  const card = defineSlot('card', { type: 'digits', noun: 'library card', length: 8, keypad: true, group: [4, 4] });
+  const answered = (span: string) => ({ cardGiven: noul(0.95), cardSpan: choice({ [span]: 0.9, none: 0.1 }), cardComplete: noul(0.9) });
+
+  it('offers the Spanish spans and reads them as Spanish numbers; the questions stay in English', () => {
+    const said = 'mi tarjeta es cincuenta y cinco cincuenta y dos, cero cuatro diecisiete';
+    const es = testSlotContext(said, { locale: 'es' });
+    const q = card.questions(es);
+    const span = q.cardSpan!;
+    expect(span.type === 'choice' && Object.keys(span.criteria)).toContain('cincuenta y cinco cincuenta y dos cero cuatro diecisiete');
+    expect(q.cardGiven!.instructions).toBe(card.questions(testSlotContext(said)).cardGiven!.instructions);
+    expect(card.fill(answered('cincuenta y cinco cincuenta y dos cero cuatro diecisiete'), es)).toMatchObject({ kind: 'filled', value: '55520417', display: '5552 0417' });
+    expect(card.fill(answered('cinco cinco cinco dos cero cuatro uno siete'), testSlotContext('cinco cinco cinco dos cero cuatro uno siete', { locale: 'es-MX' }))).toMatchObject({ kind: 'filled', value: '55520417' });
+  });
+
+  it('reads no Spanish words in English, and no English words in Spanish', () => {
+    expect(card.fill(answered('cinco cinco cinco dos cero cuatro uno siete'), testSlotContext('cinco cinco cinco dos cero cuatro uno siete', { locale: 'en-US' }))).toEqual({ kind: 'invalid', reason: 'length', raw: '' });
+    expect(card.fill(answered('five five five two zero four one seven'), testSlotContext('five five five two zero four one seven', { locale: 'es' }))).toEqual({ kind: 'invalid', reason: 'length', raw: '' });
+    // digits as written are digits in either
+    expect(card.fill(answered('5552 0417'), testSlotContext('5552 0417', { locale: 'es' }))).toMatchObject({ kind: 'filled', value: '55520417' });
+  });
+
+  it('keys and says the number the same in every locale', () => {
+    expect(card.dtmf!.parse('55520417', testSlotContext('', { locale: 'es' }))).toEqual({ value: '55520417', display: '5552 0417' });
+    expect(card.display('55520417', 'es')).toBe(card.display('55520417'));
+  });
+});

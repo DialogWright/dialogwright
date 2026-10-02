@@ -103,3 +103,55 @@ describe('candidateWordSpans', () => {
     expect(rambling).toContain('alex rivera');
   });
 });
+
+describe('candidate spans in Spanish (es, es-*)', () => {
+  it('offers spans of Spanish number words, accents kept as said, and none of English ones', () => {
+    const spans = candidateSpans('mi tarjeta es cincuenta y cinco veintidós', 'es');
+    expect(spans).toContain('cincuenta');
+    expect(spans).toContain('veintidós');
+    expect(spans).toContain('cincuenta y cinco veintidós');
+    expect(spans).not.toContain('mi');
+    expect(candidateSpans('five five five', 'es')).toEqual([]);
+    expect(candidateSpans('cinco cinco cinco')).toEqual([]);
+    expect(candidateSpans('cinco cinco cinco', 'en-US')).toEqual([]);
+  });
+
+  it('does not let "mil", "cien" or an article qualify a span on its own', () => {
+    expect(candidateSpans('estoy cien por ciento seguro', 'es')).toEqual([]);
+    expect(candidateSpans('un momento por favor', 'es')).toEqual([]);
+    expect(candidateSpans('mil gracias', 'es')).toEqual([]);
+    expect(candidateSpans('un cinco', 'es')).toEqual(['cinco', 'un cinco']);
+  });
+
+  it('is the English reading, unchanged, for no locale and en-US', () => {
+    const text = 'my account is forty four, a hundred percent';
+    expect(candidateSpans(text, 'en-US')).toEqual(candidateSpans(text));
+    expect(candidateWordSpans("hi it's mary kate o'neil", 'en-US')).toEqual(candidateWordSpans("hi it's mary kate o'neil"));
+  });
+});
+
+describe('candidate word spans in Spanish (es, es-*)', () => {
+  it('keeps accents, drops Spanish fillers at either end, and drops number words', () => {
+    const spans = candidateWordSpans('hola, me llamo María José, sí', 'es');
+    expect(spans).toContain('maría');
+    expect(spans).toContain('maría josé');
+    for (const filler of ['hola', 'me', 'llamo', 'sí', 'me llamo', 'llamo maría']) expect(spans).not.toContain(filler);
+    expect(candidateWordSpans('soy Ana cinco', 'es')).toEqual(['ana']);
+  });
+
+  it('allows particles inside a name, never at its ends, beyond the four words', () => {
+    const spans = candidateWordSpans('me llamo María José Muñoz de la Cruz', 'es');
+    expect(spans).toContain('maría josé muñoz de la cruz');
+    expect(spans).toContain('muñoz de la cruz');
+    expect(spans).not.toContain('muñoz de la');
+    expect(spans).not.toContain('de la cruz');
+    // four words and three particles at most
+    expect(candidateWordSpans('ana de la y cruz', 'es')).toContain('ana de la y cruz');
+    expect(candidateWordSpans('ana de la de y cruz', 'es')).not.toContain('ana de la de y cruz');
+  });
+
+  it('reads English words in English only: Spanish fillers are names in English, and the reverse', () => {
+    expect(candidateWordSpans('soy ana', 'en-US')).toContain('soy ana');
+    expect(candidateWordSpans('my name is ana', 'es')).toContain('my name is ana');
+  });
+});

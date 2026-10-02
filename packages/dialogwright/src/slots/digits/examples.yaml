@@ -19,6 +19,27 @@
         accountSpan: { choice: { five five five zero seven seven eight eight: 0.9, none: 0.1 } }
         accountComplete: { noul: 0.9 }
       expect: { kind: filled, value: "55507788", display: 5550 7788, confirm: implicit }
+    - text: mi cuenta es cinco cinco cinco cero siete siete ocho ocho
+      context: { locale: es }
+      answers:
+        accountGiven: { noul: 0.95 }
+        accountSpan: { choice: { cinco cinco cinco cero siete siete ocho ocho: 0.9, none: 0.1 } }
+        accountComplete: { noul: 0.9 }
+      expect: { kind: filled, value: "55507788", display: 5550 7788, confirm: implicit }
+    - text: es el cincuenta y cinco cincuenta, setenta y siete ochenta y ocho
+      context: { locale: es }
+      answers:
+        accountGiven: { noul: 0.95 }
+        accountSpan: { choice: { cincuenta y cinco cincuenta setenta y siete ochenta y ocho: 0.9, none: 0.1 } }
+        accountComplete: { noul: 0.9 }
+      expect: { kind: filled, value: "55507788", display: 5550 7788, confirm: implicit }
+    - text: cinco cinco cinco cero
+      context: { locale: es }
+      answers:
+        accountGiven: { noul: 0.9 }
+        accountSpan: { choice: { cinco cinco cinco cero: 0.9, none: 0.1 } }
+        accountComplete: { noul: 0.9 }
+      expect: { kind: invalid, reason: length, raw: "5550" }
     - text: I want to change my address
       answers:
         accountGiven: { noul: 0.05 }

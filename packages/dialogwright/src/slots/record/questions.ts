@@ -37,7 +37,7 @@ function keyOfRecord(record: unknown, field: string): string | null {
  * that many digits the caller says that no record has, in the order said. A key is offered once,
  * and only when it matches `keyPattern`.
  */
-export function recordCandidates(o: RecordOptions, ctx: Pick<SlotContext, 'text' | 'records' | 'sources'>): RecordCandidate[] {
+export function recordCandidates(o: RecordOptions, ctx: Pick<SlotContext, 'text' | 'records' | 'sources' | 'locale'>): RecordCandidate[] {
   const valid = keyMatcher(o);
   const seen = new Set<string>();
   const out: RecordCandidate[] = [];
@@ -48,7 +48,8 @@ export function recordCandidates(o: RecordOptions, ctx: Pick<SlotContext, 'text'
     out.push({ key, criterion: renderLabel(o.label, key, record as Record<string, unknown>) });
   }
   if (o.spoken) {
-    for (const key of numbersSaid(ctx.text, { digits: o.spoken.digits, skipYearAfterMonth: o.spoken.skipYearAfterMonth })) {
+    // The numbers said, in the session's language (Spanish number words for es).
+    for (const key of numbersSaid(ctx.text, { digits: o.spoken.digits, skipYearAfterMonth: o.spoken.skipYearAfterMonth, locale: ctx.locale })) {
       if (!valid.test(key) || seen.has(key)) continue;
       seen.add(key);
       out.push({ key, criterion: renderLabel(o.spoken.label, key, {}) });

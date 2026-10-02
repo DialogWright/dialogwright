@@ -385,3 +385,16 @@ describe('the docs', () => {
     for (const option of [...options, 'digits', 'skipYearAfterMonth', 'instructions', 'none', 'choice']) expect(readme, option).toContain(`\`${option}\``);
   });
 });
+
+describe('a record slot in Spanish (es, es-*)', () => {
+  const parcel = defineSlot('parcel', { type: 'record', key: 'number', keyPattern: '\\d{4}', labelPrefix: 'parcel_', spoken: { digits: 4, skipYearAfterMonth: true } });
+
+  it('offers a number said in Spanish words, the "y" inside it, and not a year said after a month', () => {
+    const offered = (text: string, locale?: string): string[] => Object.keys((parcel.questions(testSlotContext(text, { locale })).parcelChoice as ChoiceQuestion | undefined)?.criteria ?? {});
+    expect(offered('el paquete cuarenta y cuatro doce', 'es')).toEqual(['parcel_4412', 'none']);
+    expect(offered('el paquete cuatro cuatro uno dos', 'es-US')).toEqual(['parcel_4412', 'none']);
+    expect(offered('llegó en marzo de dos mil veinticinco', 'es')).toEqual([]);
+    expect(offered('el paquete cuarenta y cuatro doce')).toEqual([]);
+    expect(offered('parcel four four one two', 'es')).toEqual([]);
+  });
+});

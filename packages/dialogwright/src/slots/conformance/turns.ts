@@ -14,12 +14,13 @@ import type { ExampleAnswer, ExampleContext } from '../types';
 /** Today, in every context the kit builds (the same day the engine's unit tests use). */
 export const KIT_TODAY = '2026-09-18';
 
-/** A slot context for `text`, as the engine would build one for a fresh turn, with `over` applied. */
+/** A slot context for `text`, as the engine would build one for a fresh turn in `locale` (else the example's own), with `over` applied. */
 export function kitContext(text: string, over: ExampleContext = {}, locale?: string): SlotContext {
+  const lang = locale ?? over.locale;
   const ctx: SlotContext = {
     text,
-    candidateSpans: candidateSpans(text),
-    candidateWordSpans: candidateWordSpans(text),
+    candidateSpans: candidateSpans(text, lang),
+    candidateWordSpans: candidateWordSpans(text, lang),
     todayIso: over.todayIso ?? KIT_TODAY,
     thresholds: { ...DEFAULT_THRESHOLDS },
     window: over.window ?? null,
@@ -28,7 +29,6 @@ export function kitContext(text: string, over: ExampleContext = {}, locale?: str
     prompted: over.prompted ?? false,
   };
   if (over.sources !== undefined) ctx.sources = over.sources;
-  const lang = locale ?? over.locale;
   if (lang !== undefined) ctx.locale = lang;
   return ctx;
 }

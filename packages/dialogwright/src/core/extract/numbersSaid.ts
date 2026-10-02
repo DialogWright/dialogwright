@@ -1,5 +1,5 @@
-import { MONTHS } from './date';
-import { NUMBER_WORDS, spokenToDigits, tokenize } from './spokenNumber';
+import { ENGLISH, lexiconOf, type Lexicon } from './lexicon';
+import { spokenToDigits } from './spokenNumber';
 
 /**
  * Numbers of a fixed length the caller says, spoken ("four seven one one") or written ("4711"), for a
@@ -11,12 +11,17 @@ export interface NumbersSaidOptions {
   digits: number;
   /** Drop a run that reads as a year (19xx or 20xx) said right after a month name ("march twenty twenty five"): a date, not a number. */
   skipYearAfterMonth?: boolean;
+  /**
+   * The locale the words are in (core/extract/lexicon.ts): Spanish number words ("cuarenta y siete",
+   * the "y" inside a run) and month names ("marzo de dos mil veinticinco") for es and es-*; English
+   * for any other locale and for none.
+   */
+  locale?: string;
 }
 
-const MONTH_WORDS: ReadonlySet<string> = new Set(MONTHS);
 const YEAR_LIKE = /^(19|20)\d{2}$/;
 
-const isNumberish = (token: string): boolean => NUMBER_WORDS.has(token) || /^\d+$/.test(token);
+const isNumberish = (lex: Lexicon, token: string): boolean => lex.numberWords.has(lex.fold(token)) || /^\d+$/.test(token);
 
 /** A maximal run of consecutive number words or digit tokens, as digits, and whether a month name comes right before it. */
 interface NumberRun {
@@ -29,18 +34,25 @@ interface NumberRun {
  * start of the text) ends one run and, when a number follows, starts the next; punctuation is never
  * a token of its own (tokenize drops it), so it breaks nothing on its own.
  */
-function numberRuns(text: string): NumberRun[] {
-  const words = tokenize(text);
+function numberRuns(text: string, locale: string | undefined): NumberRun[] {
+  const lex = lexiconOf(locale);
+  const words = lex.tokenize(text);
+  const months: ReadonlySet<string> = new Set(lex.months);
+  const month = (at: number): boolean => at >= 0 && months.has(lex.fold(words[at]!));
+  // In Spanish a "y" between two number words is inside the number ("cuarenta y siete").
+  const joins = (at: number): boolean => lex.joinsTens && lex.fold(words[at]!) === lex.joiner && at + 1 < words.length && isNumberish(lex, words[at + 1]!);
   const runs: NumberRun[] = [];
   let i = 0;
   while (i < words.length) {
-    if (!isNumberish(words[i]!)) {
+    if (!isNumberish(lex, words[i]!)) {
       i++;
       continue;
     }
     let j = i;
-    while (j < words.length && isNumberish(words[j]!)) j++;
-    runs.push({ digits: spokenToDigits(words.slice(i, j).join(' ')), afterMonth: i > 0 && MONTH_WORDS.has(words[i - 1]!) });
+    while (j < words.length && (isNumberish(lex, words[j]!) || (j > i && joins(j)))) j++;
+    // A month just before the run, or (Spanish) a month and "de" ("marzo de dos mil veinticinco").
+    const afterMonth = lex === ENGLISH ? month(i - 1) : month(i - 1) || (i > 1 && lex.fold(words[i - 1]!) === 'de' && month(i - 2));
+    runs.push({ digits: spokenToDigits(words.slice(i, j).join(' '), locale), afterMonth });
     i = j;
   }
   return runs;
@@ -54,11 +66,11 @@ function numberRuns(text: string): NumberRun[] {
  * written as digits is still a number written on its own.
  */
 export function numbersSaid(text: string, options: NumbersSaidOptions): string[] {
-  const { digits, skipYearAfterMonth = false } = options;
+  const { digits, skipYearAfterMonth = false, locale } = options;
   if (!Number.isInteger(digits) || digits < 1) throw new Error(`numbersSaid: digits must be a whole number, at least 1 (got ${digits})`);
   const exact = new RegExp(`^\\d{${digits}}$`);
   const out = new Set<string>();
-  for (const run of numberRuns(text)) {
+  for (const run of numberRuns(text, locale)) {
     if (!exact.test(run.digits)) continue;
     if (skipYearAfterMonth && run.afterMonth && YEAR_LIKE.test(run.digits)) continue;
     out.add(run.digits);

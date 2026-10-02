@@ -98,4 +98,5 @@ with the app's facts giving `forSlots: (f) => ({ sources: { orders: ordersOf(f) 
 - The list is the app's, read on every turn: before the tool that lists the records has run (before identity, say), there is nothing to offer unless the caller says a number.
 - Keep labels short and distinct: what the model reads to tell one record from another is the label. A record's day, its contents or its status are good; a field the caller would never say is noise.
 - A spoken number is found in the caller's words by the engine (`numbersSaid`: runs of number words or digits that read as exactly `digits` digits, then numbers written as digits on their own), never by the model.
+- In a Spanish session (`es`, `es-*`) a spoken number is read in Spanish ("cuarenta y cuatro doce" is 4412, the "y" inside the number), and a year after a Spanish month ("marzo de dos mil veinticinco") is skipped. Labels are criteria the model reads, so they are not worded per locale, and `{field|day}` stays English there.
 - Run its checks with `pnpm --filter dialogwright test slots/record`.

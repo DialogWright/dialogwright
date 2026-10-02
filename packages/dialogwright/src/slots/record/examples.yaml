@@ -43,6 +43,14 @@
         records:
           - { number: "7101", item: a box of books, day: "2026-09-14" }
       expect: { kind: filled, value: "4412", display: "4412" }
+    - text: el paquete cuarenta y cuatro doce
+      answers:
+        parcelChoice: { choice: { parcel_4412: 0.9, parcel_7101: 0.04, none: 0.06 } }
+      context:
+        locale: es
+        records:
+          - { number: "7101", item: a box of books, day: "2026-09-14" }
+      expect: { kind: filled, value: "4412", display: "4412" }
     - text: I am not sure which
       answers:
         parcelChoice: { choice: { none: 0.9, parcel_7101: 0.1 } }

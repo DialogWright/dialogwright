@@ -172,10 +172,12 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
   // What the app's slot specs read of its facts (e.g. the customer's parcels, once listParcels has
   // passed the gate; none before identity): one list, and lists by name for slots that name theirs.
   const given = appOf(session).facts?.forSlots?.(session.facts);
+  // The spans are read in the session's language (none for an app without locales: English, as always).
+  const locale = slotLocaleOf(session);
   return {
     text,
-    candidateSpans: candidateSpans(text),
-    candidateWordSpans: candidateWordSpans(text),
+    candidateSpans: candidateSpans(text, locale),
+    candidateWordSpans: candidateWordSpans(text, locale),
     todayIso: tc.todayIso,
     thresholds: tc.thresholds,
     records: given?.records ?? [],
@@ -190,7 +192,7 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
     prompted: false,
     // The session's language, only for an app that declares locales: any other app's slots see the
     // context they always have.
-    ...withLocale(slotLocaleOf(session)),
+    ...withLocale(locale),
   };
 }
 

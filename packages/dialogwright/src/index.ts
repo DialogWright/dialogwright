@@ -100,6 +100,9 @@ export {
 } from './core/extract/date';
 export type { ComponentPick, DateComponents, DateWindow, DateResolution } from './core/extract/date';
 export { spokenToDigits, tokenize } from './core/extract/spokenNumber';
+// The words of a language that values are read out of (en, and es for es and es-*): number words, fillers, name particles, months.
+export { lexiconOf, isSpanish, ENGLISH, SPANISH, foldAccents } from './core/extract/lexicon';
+export type { Lexicon } from './core/extract/lexicon';
 export { numbersSaid } from './core/extract/numbersSaid';
 export type { NumbersSaidOptions } from './core/extract/numbersSaid';
 export { matchesMask } from './core/extract/mask';

@@ -33,7 +33,8 @@ export function digitsFill(
     if (!isChoice(span) || typeof span.choice !== 'string' || span.choice === 'none') return { kind: 'invalid', reason: 'no_span', raw: '' };
     const p = span.probabilities?.[span.choice] ?? span.confidence;
     if (o.minConfidence !== 'none' && !meetsThreshold(t, o.minConfidence, p)) return { kind: 'invalid', reason: 'low_confidence', raw: '' };
-    const digits = spokenToDigits(span.choice);
+    // Read in the session's language: "cinco cinco cinco" is 555 in Spanish, as "five five five" is in English.
+    const digits = spokenToDigits(span.choice, ctx.locale);
     if (!matchesMask(digits, mask)) return { kind: 'invalid', reason, raw: digits, ...retry };
     const confirm = o.readBack === 'none' || (o.readBack === 'below-fill' && meetsThreshold(t, 'SLOT_CHOICE_FILL', p)) ? 'none' : 'implicit';
     return { kind: 'filled', value: digits, display: display(digits, ctx.locale), confidence: p, confirm };

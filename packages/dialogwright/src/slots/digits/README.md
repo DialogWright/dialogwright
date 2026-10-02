@@ -72,4 +72,5 @@ account:
 - Every slot listens on every turn, so the three questions are asked even while the form is on another slot, and "what do I have out on card 5552 0417" can fill the card on the opening turn.
 - A keyed number counts as confirmed: it is not acknowledged or read back, whatever `confirm` says.
 - The value is masked by its last four digits by default, in the trace and in a transfer's handoff. Turn that off (`redact: none`, `handoff: display`) only for a number that is no one's secret, such as a tracking number.
+- In a Spanish session (`es`, `es-*`) the spans offered are Spanish number words, and a span is read as Spanish: "cinco cinco cinco dos cero cuatro uno siete" and "cincuenta y cinco cincuenta y dos cero cuatro diecisiete" are both 55520417. The questions and the display are the same in every locale.
 - Run its checks with `pnpm --filter dialogwright test slots/digits`.

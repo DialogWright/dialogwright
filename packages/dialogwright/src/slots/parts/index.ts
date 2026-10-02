@@ -12,6 +12,7 @@ export { atLeast, THRESHOLD_EPSILON } from '../../core/thresholds';
 export { isChoice, isNoul, isScore, noulValue, rankProbabilities, topMargin } from '../../jev/types';
 export { candidateSpans, candidateWordSpans, FILLER_WORDS } from '../../core/spans';
 export { spokenToDigits, tokenize } from '../../core/extract/spokenNumber';
+export { lexiconOf, isSpanish } from '../../core/extract/lexicon';
 export { numbersSaid } from '../../core/extract/numbersSaid';
 export type { NumbersSaidOptions } from '../../core/extract/numbersSaid';
 export { matchesMask } from '../../core/extract/mask';
