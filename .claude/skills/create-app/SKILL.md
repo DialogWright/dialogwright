@@ -57,6 +57,7 @@ Add the mapping to the worksheet:
 - **Delegates to principals and roles**: each kind of delegate under `principals.delegates` with its roles, and a `role` rule on each action whose answer differs by role. Delegates reach the app signed in on a chat, not by phone: see [patterns.md](patterns.md#delegates).
 - **Each confirmed write to its `confirmed` fields.** An app has one list of confirmed fields, shared by every action with a `confirmed` rule: see [patterns.md](patterns.md#confirmed-writes).
 - **Each form to its hooks**: `complete` always; `entry` (and `onEntry`) when the form needs a verified caller; `principalEntry` when delegates use it; `confirmedParams` for a confirmed write; `onSummaryRead` when the read-back names a value no slot holds.
+- **Each form to the actions it calls** (`calls` in `forms.yaml`): its entry call and the calls its hooks make through the gate, `calls: []` for one that calls none. The engine never reads it; the app map draws each form to its actions with it, and `pnpm check` reports an action no form reaches. Declare it for every form or for none.
 
 Decide now whether the app needs `--identity`: it does if any action is above level 0.
 
@@ -75,7 +76,7 @@ Replace the example one piece at a time, running `pnpm check` after each change:
 1. `app.yaml`: the brand, `console.formLabels` and `slotLabels`, `voice.hints`, `wording.addressee`.
 2. `intents.yaml`: your intents (form, informational); keep `agent` and `repeat_prompt` (required) and the other control intents; the keypad menu.
 3. `slots.yaml`: your slots, from the mapping. Keep `accountId` and `dob` if your factors are an account number and a date of birth.
-4. `forms.yaml`: your forms, their slots, their summary prompts and their hooks.
+4. `forms.yaml`: your forms, their slots, their summary prompts, their hooks and the actions they call (`calls`).
 5. `policy.yaml` and `identity.yaml`: from the mapping.
 6. `src/data.ts` and `src/app.ts`: the fixture data, the tools, the form hooks, and what the code declares for the gate (`systems`, `lookups`, `customRules`, `principals`, `portal`, `identity.sendCodeParams`, `blockPromptId`). See step 4 and [patterns.md](patterns.md).
 7. `prompts.yaml`: every line `pnpm check` asks for, and your forms' own lines.
@@ -108,9 +109,9 @@ Scripted calls in `fixtures/scenarios/*.json`, each with the outcome it expects.
 - the step-up: an anonymous caller asking for an action above level 0, verifying, and being served;
 - failed verification three times (a person takes the call);
 - each refusal: out of scope, each bound (`limit`, `dateInRange`, each custom rule), each refused role;
-- each handoff: on request (at the start and inside a form), by role, by a rule;
+- each handoff: on request from every place a caller can be (at the start, on the keypad menu with its key for a person, inside a form, while verifying, at the code prompt, at each summary), by role, by a rule;
 - keypad entry for each slot with a keypad, and for the one-time code;
-- each informational answer.
+- each informational answer, spoken and, if it is on the keypad menu, by its key (the key plays the line and offers the menu again, so the call ends at `nomatch_dtmf_menu` with the line in its words).
 
 ## Step 6: Iterate until green, then make the baseline once
 
@@ -148,25 +149,27 @@ pnpm --filter @dialogwright/example-<name> regress --update
 
 and read `fixtures/expected/corpus.json` and `scenarios.json` entry by entry against the worksheet. For each entry: is `promptId` the next thing the caller should hear (the next slot's `ask_`, the summary, `anything_else`, `ask_intent` after an informational answer)? Is `gate` the action you expect, with the verdict the worksheet's who-may-do-what says? Are `slots` the values the line gives? A `STEP_UP` or `ask_otp` on a line spoken inside a form usually means the seeded caller's level is lower than the form needs ([corpus.md](corpus.md#lines-spoken-inside-a-form)).
 
-Never run `--update` again. When the review finds a wrong outcome, fix the app or the line; the regression then shows `~` lines for the entries that changed. Check they are exactly the ones you meant to change, edit those values in `fixtures/expected/*.json` by hand, and note each edit and its reason in the worksheet. From then on a changed output is a finding to explain, never noise to overwrite.
+Never run `--update` again. When the review finds a wrong outcome, fix the app or the line; the regression then shows `~` lines for the entries that changed. Check they are exactly the ones you meant to change, edit those values in `fixtures/expected/*.json` by hand, and note each edit and its reason in the worksheet. A corpus line or scripted call added later shows as `+ corpus <id>: new` or `+ scenario <id>: new`: read its transcript (`--corpus <id>`, `--scenario <id>`), then add its entry to the baseline by hand in the shape of its neighbours (the regression compares it field by field, so it says `no changes` only when the entry is exact), and list it in the worksheet. From then on a changed output is a finding to explain, never noise to overwrite.
 
 Add the app's regression to CI: `- run: pnpm --filter @dialogwright/example-<name> regress` in `.github/workflows/ci.yml`, after the clinic's. Commit `pnpm-lock.yaml` with the app: CI installs from it, frozen.
 
 ## Step 7: Read the policy back
 
-Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write. Add `testing.policyMatrix` and the policy tests in [patterns.md](patterns.md#testing-the-policy), then write the policy matrix:
+Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write. Add `testing.policyMatrix` and the policy tests in [patterns.md](patterns.md#testing-the-policy), then write the policy matrix, the policy card and the app map:
 
 ```sh
-pnpm policy:matrix apps/<name>
+pnpm policy:matrix apps/<name>     # policy.matrix: the gate's verdict for every action and kind of caller
+pnpm policy:card apps/<name>       # POLICY.md: the policy and the identity ladder in words
+pnpm app:diagram apps/<name>       # APP-MAP.md: the intents, the keypad menu, each form to its slots, actions and rules
 ```
 
-`apps/<name>/policy.matrix` lists, under each action, what the gate decides for each kind of caller (anonymous, the subject at each level, each delegate role, a role the policy does not name, ...) and why, then each custom rule's examples. Read it beside the worksheet's "Who may do what", cell by cell: every allowed, refused and to-a-person cell should be there, decided by the rule you expect. Then check each bound at its edges with the per-action test. If the repository also has a policy card or diagram command by the time you read this (look for `policy:card` in `package.json` and `CLAUDE.md`), read its output the same way.
+`apps/<name>/policy.matrix` lists, under each action, what the gate decides for each kind of caller (anonymous, the subject at each level, each delegate role, a role the policy does not name, ...) and why, then each custom rule's examples. Read it beside the worksheet's "Who may do what", cell by cell: every allowed, refused and to-a-person cell should be there, decided by the rule you expect. Then check each bound at its edges with the per-action test. Read `POLICY.md` against the paragraph itself, sentence by sentence: each thing the paragraph says a caller may or may not do should be a line of the card (the level, the factors, each rule in words, what each role gets), and each line of the card should come from the paragraph or from a choice in the worksheet. Read `APP-MAP.md` for what the policy does not hold: every intent reaches a form or a line, every key on the menu goes where you meant, every form reaches its actions, and nothing is listed under "Dangling references". Write what the reading found in the worksheet.
 
-Fix every mismatch in the YAML (or in the worksheet, if you misread the paragraph), write the matrix again, read its diff, and run step 6's commands again. Once it is right, the matrix is a golden like the baseline: rewrite it only for a policy change you meant.
+Fix every mismatch in the YAML (or in the worksheet, if you misread the paragraph), write the three pages again, read their diffs, and run step 6's commands again. Once they are right, they are goldens like the baseline (the tests compare them with what the app generates): rewrite them only for a change you meant.
 
 ## Step 8: The final checklist
 
-Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#final-checklist)), in the worksheet itself. In short: every intent has corpus lines and a scenario; every action has a policy entry, a row in `policy.matrix` you have read, and its bounds tested at their edges; identity matches the paragraph; nothing private or real; `pnpm check`, `pnpm verify` and every app's regression green; the README describes the app and keeps the recording steps the scaffold wrote; the gaps are written up. Then commit, with the worksheet.
+Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#final-checklist)), in the worksheet itself. In short: every intent has corpus lines and a scenario; every action has a policy entry, a row in `policy.matrix` and a line in `POLICY.md` you have read, and its bounds tested at their edges; identity matches the paragraph; nothing private or real; `pnpm check`, `pnpm verify` and every app's regression green; the README describes the app and keeps the recording steps the scaffold wrote; the gaps are written up. Then commit, with the worksheet.
 
 ## When something doesn't fit
 

@@ -88,7 +88,7 @@ What the paragraph asks that the framework does not do, or does differently; wha
 
 ## Baseline edits
 
-Every hand edit to `fixtures/expected/*.json` after the first `regress --update`: the entry, the field, and why the new value is right.
+Every hand edit to `fixtures/expected/*.json` after the first `regress --update`: the entry, the field, and why the new value is right. A new corpus line or scripted call is an edit too: list the new entries and what you read to accept them.
 
 | Entry | Field | Before -> after | Why |
 |---|---|---|---|
@@ -100,9 +100,9 @@ Every hand edit to `fixtures/expected/*.json` after the first `regress --update`
 - [ ] Every intent has at least eight corpus lines (terse ones, and for forms, over-answering ones and a correction) and at least one scripted call.
 - [ ] Every slot has at least five answers in the corpus, every summary at least four.
 - [ ] Every action has a policy entry; `policy.matrix` is written with `pnpm policy:matrix`, read, and tested (`expectPolicyMatrix`, `policyInvariants`); each bound is tested at its edges; every custom rule is a `defineRule` with examples the tests run.
-- [ ] Scripted calls cover each form, each principal (anonymous, each level, each delegate role), the step-up, failed verification, each refusal, each handoff, keypad entry and each informational answer.
+- [ ] Scripted calls cover each form, each principal (anonymous, each level, each delegate role), the step-up, failed verification, each refusal, each handoff (a person on request from each place a caller can be: the start, the keypad menu, inside a form, while verifying, at the code prompt, at each summary), keypad entry and each informational answer (spoken, and its key if it has one).
 - [ ] `identity.yaml` matches the paragraph: who must verify, with what, the code only where a level 2 action needs it, the tries.
-- [ ] The policy read back (`policy.matrix`, and the policy card if there is one) matches "Who may do what" above, cell by cell.
+- [ ] The policy read back (`policy.matrix`, the policy card `POLICY.md` and the app map `APP-MAP.md`) matches "Who may do what" above, cell by cell, and the card matches the paragraph line by line; each is tested (`expectPolicyMatrix`, `expectPolicyCard`, `expectAppMap`).
 - [ ] No tool decides who may do what; every line a caller hears is in `prompts.yaml`.
 - [ ] Nothing private or real: invented names and streets, 555 numbers, `example.com` addresses.
 - [ ] `pnpm check` ok; `pnpm verify` green; this app's `regress` says `no changes`; the clinic's and the testkit's regressions say `no changes`.

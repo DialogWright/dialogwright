@@ -171,6 +171,7 @@ With `portal`, `pnpm check` asks for the chat's sign-in lines (see "Phone and ch
     slots: [account]
     summaryPromptId: null
     hooks: [entry, onEntry, principalEntry, complete]
+    calls: [findAccount, readAmount]
 ```
 
 ```ts
@@ -289,7 +290,7 @@ export const code: AppCode = {
       - dateInRange: { field: firstDate, notBefore: today, notAfter: today+30 }
 ```
 
-**A bound no built-in rule holds** is a custom rule. The utility example still holds its thirty days with one, written before `today+N` existed; it shows the shape, reading the call's day from the gate's facts, never the clock:
+**A bound no built-in rule holds** is a custom rule. The shape below is the thirty days written as one, as the utility example first had it before `today+N` existed (it now uses `notAfter: today+30`, and so should you for that bound); it shows how a rule reads the call's day from the gate's facts, never the clock:
 
 ```yaml
       - dateInRange: { field: firstDate, notBefore: today }
@@ -335,6 +336,7 @@ A summary can name a value the code works out (a total from the record, a fee): 
     slots: [count, firstDate]
     summaryPromptId: confirm_set_up_plan     # "That's {total} in {count}, the first on {firstDate}. Shall I set that up?"
     hooks: [entry, principalEntry, onSummaryRead, confirmedParams, complete]
+    calls: [findAccount, setUpPlan]
 ```
 
 ```ts
@@ -458,7 +460,7 @@ pnpm policy:matrix apps/<name>     # writes apps/<name>/policy.matrix; read it, 
 A part of it reads:
 
 ```text
-setUpPlan · level 2 · identity, role(manager person), scope(accountId), confirmed(...), limit(total), dateInRange(firstDate), custom first-date-within-30-days
+setUpPlan · level 2 · identity, role(manager person), scope(accountId), confirmed(...), limit(total), dateInRange(firstDate)
   anonymous         STEP_UP to 2
   subject@1         as anonymous
   subject@2         subject own, fields exact, confirmed match          ALLOW
@@ -467,7 +469,23 @@ setUpPlan · level 2 · identity, role(manager person), scope(accountId), confir
   unlisted-role     BLOCK role
 ```
 
-Like the baseline, write it once the policy is right, read it whole, and from then on a change to it is a policy change to explain: rewrite it only for a policy change you meant, and read the diff.
+Like the baseline, write it once the policy is right, read it whole, and from then on a change to it is a policy change to explain: rewrite it only for a policy change you meant, and read the diff. With no custom rule, `runRuleExamples(app)` is `[]`; test that instead of the list above.
+
+**The policy card and the app map** are the same policy and the app's structure in words and diagrams, generated beside `policy.yaml` as `POLICY.md` and `APP-MAP.md`. Declare `calls` on every form first (the actions its hooks call through the gate), or the map stops at each form. Write them with `pnpm policy:card apps/<name>` and `pnpm app:diagram apps/<name>`, read them (step 7), and test them like the matrix:
+
+```ts
+import { danglingReferences, expectAppMap, expectPolicyCard } from 'dialogwright/testing';
+
+it('POLICY.md is the policy card the app generates', () => {
+  expectPolicyCard(app, fileURLToPath(new URL('../POLICY.md', import.meta.url)), 'pnpm policy:card apps/<name>');
+});
+it('APP-MAP.md is the app map the app generates', () => {
+  expectAppMap(app, fileURLToPath(new URL('../APP-MAP.md', import.meta.url)), 'pnpm app:diagram apps/<name>');
+});
+it('has no dangling reference', () => expect(danglingReferences(app)).toEqual([]));
+```
+
+The card names a slot by its `noun`, else its console label (`console.slotLabels` in `app.yaml`), else its id: give the identity factors labels (`dob: Date of birth`), or the card says "dob".
 
 **The bounds, at their edges.** The matrix does not try each bound's values. Ask the gate directly, for the last value that passes and the first that fails, with the caller having said yes to exactly the params:
 
@@ -518,4 +536,4 @@ Found so far, with the workaround each time. Log the ones you meet in the worksh
 - **Delegates only on a signed-in chat**: no phone path for a delegate; scripted calls use `as`, and a corpus line with `as` must be `no_form`. A delegate's answer inside a form comes from a corpus line without `as` that has the same words.
 - **A factor slot does not fill from a delegate's words**: give delegates their own slot for the subject they name (above).
 - **`pnpm check` does not check the corpus** beyond every intent having examples, nor the lines named only in code (`blockPromptId`, `handoff(...)`, a completion's line, a summary variable from `onSummaryRead`). The regression finds them, one at a time.
-- **No policy card or diagrams yet** (unless `policy:card` exists by now): read the policy back from `policy.matrix` (above).
+- **The policy card lists a redaction once per slot**: two slots with the same noun (a factor `accountId` and a delegate's `account`, both `account`) read "account by its last four; account by its last four". Harmless; note it when you read the card.
