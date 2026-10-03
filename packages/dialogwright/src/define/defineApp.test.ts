@@ -353,11 +353,46 @@ describe('defineApp: a folder that does not load', () => {
 });
 
 describe('defineApp: identity and policy wording', () => {
-  const IDENTITY = 'subjectKind: patron\nfactorSlots: [card]\nverifyTool: verifyCard\ncodeTool: checkCode\nsendCodeTool: sendCode\nfailedPromptId: card_failed\n';
-  const policy = (extra = '') =>
-    'toolLevel:\n  renewLoan: 1\n  findHold: 0\n  listLoans: 0\n  verifyCard: 0\n  checkCode: 0\n  sendCode: 0\n' +
-    'rulesFor:\n  renewLoan: [R1, R3]\n  findHold: [R1, known-branch]\n  listLoans: [R1]\n  verifyCard: [R6]\n  checkCode: [R6]\n  sendCode: [R1]\n' +
-    `confirmedFields: [book]\nmaxAttempts: 3\n${extra}`;
+  const IDENTITY = [
+    'principals:',
+    '  subject: patron',
+    '  delegates:',
+    '    staff: { roles: [clerk, volunteer] }',
+    'levels:',
+    '  1: { name: verified, factors: [card], verify: verifyCard, failedPrompt: card_failed }',
+    '  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: sendCode, verify: checkCode }',
+    'attempts: 3',
+    '',
+  ].join('\n');
+  /** policy.yaml for the identity above: `role` is a rule added to findHold, `extra` more top-level sections. */
+  const policy = (role = '', extra = '') =>
+    [
+      'actions:',
+      '  renewLoan:',
+      '    level: 1',
+      '    rules:',
+      '      - identity',
+      '      - confirmed: [book]',
+      '  findHold:',
+      '    level: 0',
+      '    rules:',
+      '      - identity',
+      '      - custom: known-branch',
+      ...(role ? [`      - role: { ${role} }`] : []),
+      '  listLoans:',
+      '    level: 0',
+      '    rules: [identity]',
+      '  verifyCard:',
+      '    level: 0',
+      '    rules: [attempts]',
+      '  checkCode:',
+      '    level: 0',
+      '    rules: [attempts]',
+      '  sendCode:',
+      '    level: 0',
+      '    rules: [identity]',
+      extra,
+    ].join('\n');
   const prompts = () => `${readFileSync(join(LIBRARY_DIR, 'prompts.yaml'), 'utf8')}  card_failed:\n    text: That card number did not match.\n    interruptible: true\n`;
   const run = () => ({ value: null, summary: 'ok' });
   const code: AppCode = {
@@ -368,8 +403,8 @@ describe('defineApp: identity and policy wording', () => {
 
   it('builds identity from identity.yaml with the code\'s sendCodeParams, in the contract\'s order', () => {
     const app = defineApp(folder({ 'identity.yaml': IDENTITY, 'policy.yaml': policy(), 'prompts.yaml': prompts() }), code);
-    expect(Object.keys(app.identity!)).toEqual(['subjectKind', 'factorSlots', 'verifyTool', 'codeTool', 'sendCodeTool', 'sendCodeParams', 'failedPromptId']);
-    expect(app.identity).toMatchObject({ subjectKind: 'patron', factorSlots: ['card'], verifyTool: 'verifyCard', codeTool: 'checkCode', sendCodeTool: 'sendCode', failedPromptId: 'card_failed' });
+    expect(Object.keys(app.identity!)).toEqual(['subjectKind', 'delegateKind', 'factorSlots', 'verifyTool', 'codeTool', 'sendCodeTool', 'sendCodeParams', 'failedPromptId']);
+    expect(app.identity).toMatchObject({ subjectKind: 'patron', delegateKind: 'staff', factorSlots: ['card'], verifyTool: 'verifyCard', codeTool: 'checkCode', sendCodeTool: 'sendCode', failedPromptId: 'card_failed' });
     expect(app.identity!.sendCodeParams).toBe(code.identity!.sendCodeParams);
     expect(Object.keys(app).indexOf('identity')).toBe(Object.keys(app).indexOf('slots') + 1);
   });
@@ -381,10 +416,9 @@ describe('defineApp: identity and policy wording', () => {
     expect(problems({ ...code, slots, tools }, dir)).toEqual([
       // the library's check_loans form asks for the card too
       'forms.yaml:12:13  forms.check_loans.slots[0]  slot "card" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.card)',
-      'policy.yaml:7:13  toolLevel.sendCode  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode), or delete this row',
-      'policy.yaml:14:3  rulesFor.sendCode  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode), or delete this row',
-      'identity.yaml:2:15  factorSlots[0]  slot "card" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.card)',
-      'identity.yaml:5:15  sendCodeTool  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode)',
+      'policy.yaml:21:3  actions.sendCode  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode), or delete this action',
+      'identity.yaml:6:34  levels["1"].factors[0]  slot "card" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.card)',
+      'identity.yaml:7:74  levels["2"].send  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode)',
     ]);
     // A subject kind the audit reserves is validateApp's to refuse; defineApp reports it in the same format.
     const reserved = folder({ 'identity.yaml': IDENTITY.replace('patron', 'principal'), 'policy.yaml': policy(), 'prompts.yaml': prompts() });
@@ -394,12 +428,14 @@ describe('defineApp: identity and policy wording', () => {
   });
 
   it('fills policy.yaml\'s role templates with {role} and {tool} only, and never runs them', () => {
-    const wording = 'roles:\n  findHold:\n    clerk: allow\n    volunteer: person\nwording:\n  recordOwner: card holder\n  role:\n    allow: "{role} staff may use {tool}"\n    person: "{role} needs a person for {tool}: $(whoami) {other}"\n';
-    expect(problems(code, folder({ 'identity.yaml': IDENTITY, 'policy.yaml': policy(wording), 'prompts.yaml': prompts() }))).toEqual([
-      'policy.yaml:25:13  wording.role.person  the template names {other}; only {role} and {tool} are filled in  ->  write {role} or {tool} in its place, or plain words',
+    const wording = 'wording:\n  recordOwner: card holder\n  role:\n    allow: "{role} staff may use {tool}"\n    person: "{role} needs a person for {tool}: $(whoami) {other}"\n';
+    const roles = 'clerk: allow, volunteer: person';
+    expect(problems(code, folder({ 'identity.yaml': IDENTITY, 'policy.yaml': policy(roles, wording), 'prompts.yaml': prompts() }))).toEqual([
+      'policy.yaml:29:13  wording.role.person  the template names {other}; only {role} and {tool} are filled in  ->  write {role} or {tool} in its place, or plain words',
     ]);
-    const app: App = defineApp(folder({ 'identity.yaml': IDENTITY, 'policy.yaml': policy(wording.replace(' {other}', '')), 'prompts.yaml': prompts() }), code);
+    const app: App = defineApp(folder({ 'identity.yaml': IDENTITY, 'policy.yaml': policy(roles, wording.replace(' {other}', '')), 'prompts.yaml': prompts() }), code);
     expect(app.policy.roles).toEqual({ findHold: { clerk: 'allow', volunteer: 'person' } });
+    expect(app.policy.rolePersonReason).toBeUndefined();
     expect(app.policy.wording?.recordOwner).toBe('card holder');
     const role = app.policy.wording!.role!;
     expect(role('clerk', 'findHold', 'allow')).toBe('clerk staff may use findHold');

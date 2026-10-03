@@ -212,7 +212,7 @@ channels:
 
 ### Policy
 
-Policy is a file compliance owns. Today `policy.yaml` holds the gate's tables (`toolLevel`, `rulesFor` with the built-in rule ids R1 to R7 and any custom rule by name, `confirmedFields`, `subjects`, `roles`, `serviceFields`, `maxAttempts`, and the words the rules use in the audit). The planned shape (Phase 4) is named, parameterized rules:
+Policy is a file compliance owns. `policy.yaml` is one entry per action: the level it needs and the named, parameterized rules the gate runs before it (`identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `custom`), with the purposes' levels and the words the rules use in the audit; `identity.yaml` holds the ladder, the principals and the attempts. Every app, the framework's testkit included, runs from these files, and a file written in the gate's old table shape (`toolLevel`, `rulesFor`, ...) is converted with `dialogwright policy:convert`. The shape this phase is building towards (the rules `dateInRange` and `limit`, `redact`, the plain-English card) looks like this:
 
 ```yaml
 # policy.yaml

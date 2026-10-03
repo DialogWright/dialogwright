@@ -65,7 +65,7 @@ function cli(): { io: Io; out: string[]; err: string[] } {
 describe('checkApp: the example app', () => {
   it('has no problems, with its code given or imported from its app.ts', async () => {
     expect(await checkApp(LIBRARY_DIR, { code: libraryCode })).toEqual([]);
-    expect(await checkAppFully(LIBRARY_DIR)).toEqual({ problems: [], warnings: [], codeChecked: true });
+    expect(await checkAppFully(LIBRARY_DIR)).toEqual({ problems: [], codeChecked: true });
   });
 
   it('reports what the loader finds, and nothing else when the folder does not load', async () => {
@@ -353,7 +353,7 @@ describe('checkApp: the app module', () => {
 
   it('takes a default export too', async () => {
     const dir = folder({ 'app.mjs': 'import { code } from ' + JSON.stringify(fixtureModule) + '; export default code;\n' });
-    expect(await checkAppFully(dir)).toEqual({ problems: [], warnings: [], codeChecked: true });
+    expect(await checkAppFully(dir)).toEqual({ problems: [], codeChecked: true });
   });
 
   it('a module that does not load is a problem, not a crash', async () => {
@@ -420,11 +420,11 @@ describe('checkApp: the app module', () => {
 
   it('prefers the folder\'s own app module to one in src/', async () => {
     const dir = folder({ 'app.mjs': `export { code } from ${JSON.stringify(fixtureModule)};\n`, 'src/app.mjs': 'throw new Error("not this one");\n' });
-    expect(await checkAppFully(dir)).toEqual({ problems: [], warnings: [], codeChecked: true });
+    expect(await checkAppFully(dir)).toEqual({ problems: [], codeChecked: true });
   });
 
   it('a folder with no app module is checked as YAML only, and says so', async () => {
-    expect(await checkAppFully(folder())).toEqual({ problems: [], warnings: [], codeChecked: false });
+    expect(await checkAppFully(folder())).toEqual({ problems: [], codeChecked: false });
   });
 });
 

@@ -318,9 +318,12 @@ describe('the checks', () => {
     ]);
   });
 
-  it('a file in the old shape is refused outside an app folder (until the old shape is gone)', () => {
+  it('a file in the old shape is refused, with the command that converts it', () => {
     expect(problemsOf(() => definePolicy({ toolLevel: {}, rulesFor: {}, confirmedFields: [], maxAttempts: 3 }))).toEqual([
-      '(file): policy.yaml has the old shape (toolLevel, rulesFor, ...), which only an app folder reads, until every app is converted -> write it in the new shape: it starts with "actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"',
+      '(file): policy.yaml is in the old shape (toolLevel, rulesFor, ...), which is not read any more -> convert it with "dialogwright policy:convert <app folder>" (or "--from-tables <module>" for tables written in TypeScript), which keeps its decisions and its comments, then check the result: it starts with "actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"',
+    ]);
+    expect(problemsOf(() => defineIdentity({ subjectKind: 'patient', factorSlots: ['a'], verifyTool: 'v', codeTool: 'c', sendCodeTool: 's' }))).toEqual([
+      '(file): identity.yaml is in the old shape (subjectKind, factorSlots, ...), which is not read any more -> convert it with "dialogwright policy:convert <app folder>" (or "--from-tables <module>" for tables written in TypeScript), which keeps its decisions and its comments, then check the result: it starts with "principals:", "levels:" and "attempts:"',
     ]);
   });
 });

@@ -7,22 +7,21 @@ import type { z } from 'zod';
 import { appSchema } from './app';
 import { FILE_KINDS, type FileKind } from './common';
 import { formsSchema } from './forms';
-import { identitySchema, legacyIdentitySchema } from './identity';
+import { identitySchema } from './identity';
 import { intentsSchema } from './intents';
-import { legacyPolicySchema, policySchema } from './policy';
+import { policySchema } from './policy';
 import { promptsSchema } from './prompts';
 import { localeSlotsSchema, SLOTS_FILE, slotsSchema } from './slots';
 
-export { appSchema, formsSchema, identitySchema, intentsSchema, localeSlotsSchema, policySchema, promptsSchema, slotsSchema, legacyIdentitySchema, legacyPolicySchema };
+export { appSchema, formsSchema, identitySchema, intentsSchema, localeSlotsSchema, policySchema, promptsSchema, slotsSchema };
 export { FILE_KINDS, fixForPattern, type FileKind } from './common';
 export type { AppYaml, ConsoleFactYaml } from './app';
 export type { FormHook, FormYaml, FormsYaml } from './forms';
 export { FORM_HOOKS } from './forms';
-export type { IdentityYaml, LegacyIdentityYaml } from './identity';
-export { isLegacyIdentityContent, LEGACY_IDENTITY_KEYS } from './identity';
+export type { IdentityYaml } from './identity';
 export type { IntentYaml, IntentsYaml } from './intents';
-export type { ActionYaml, BareRule, LegacyPolicyYaml, ParamRule, PolicyYaml, RuleEntryYaml, RuleName } from './policy';
-export { BARE_RULES, isLegacyPolicyContent, LEGACY_POLICY_KEYS, PARAM_RULES, RULE_NAMES, ruleKey } from './policy';
+export type { ActionYaml, BareRule, ParamRule, PolicyYaml, RuleEntryYaml, RuleName } from './policy';
+export { BARE_RULES, PARAM_RULES, RULE_NAMES, ruleKey } from './policy';
 export type { PromptYaml, PromptsYaml } from './prompts';
 export { SLOTS_FILE, CODE_SLOT_TYPE } from './slots';
 export type { LocaleSlotsYaml, SlotsYaml } from './slots';
@@ -36,13 +35,6 @@ export const SCHEMAS = {
   policy: policySchema,
   identity: identitySchema,
 } as const satisfies Record<FileKind, z.ZodType>;
-
-/**
- * The old shape of the files that have one, read until every app is converted: the loader reads a
- * file in its old shape when it has an old key and none of the new ones (isLegacyPolicyContent,
- * isLegacyIdentityContent), and `check` warns about it.
- */
-export const LEGACY_SCHEMAS = { policy: legacyPolicySchema, identity: legacyIdentitySchema } as const;
 
 /** The file each kind is read from, in the app folder. */
 export const FILE_NAMES: Readonly<Record<FileKind, string>> = Object.fromEntries(FILE_KINDS.map((kind) => [kind, `${kind}.yaml`])) as Record<FileKind, string>;

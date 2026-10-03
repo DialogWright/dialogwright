@@ -1,6 +1,4 @@
-toolLevel:
-  bookAppointment: !!js/function "function () { return 0 }"
-rulesFor:
-  bookAppointment: [R1]
-confirmedFields: [name]
-maxAttempts: 3
+actions:
+  bookAppointment:
+    level: !!js/function "function () { return 0 }"
+    rules: [identity]

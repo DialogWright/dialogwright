@@ -1,4 +1,6 @@
-subjectKind: Patient
-factorSlots: [patientId, patientId]
-verifyTool: verifyPatient
-codeTool: 7
+principals:
+  subject: Patient
+levels:
+  1: { name: verified, factors: [patientId, patientId], verify: verifyPatient }
+  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], verify: 7 }
+attempts: 0

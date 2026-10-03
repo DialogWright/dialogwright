@@ -173,43 +173,49 @@ prompts:
 - Variables in braces are filled by the engine (`{intentLabel}`) or by the app's code (`{book}`, `{due}`).
 - `interruptible: false` for a line that must be heard whole (a keypad instruction, a statement).
 - `mode` can only be `fixed` (the default). A model chooses among these lines; it never writes one. Generated wording is a later phase.
-- The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. Some lines depend on the slot's spec in the code: `ask_<slot>_dtmf` for a slot with a keypad rung (`dtmf`), `confirm_<slot>` and `ask_<slot>_dtmf` for a slot whose every spoken value is read back (`spokenConfirm: 'always'`), `ack_<slot>` for one acknowledged by confidence (`spokenConfirm: 'by-confidence'`), and the slot's `partialPromptId`. A role whose access to a tool is `person` needs the handoff line for policy.yaml's `rolePersonReason` (`handoff_role_person` by default). `pnpm check` lists any that are missing and says when the engine says each (section 6). It cannot see the lines a slot's `fill` names (`disambiguate_<slot>`, a `retryPromptId`, a help prompt) unless the slot declares them in its `prompts` (section 4).
+- The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. Some lines depend on the slot's spec in the code: `ask_<slot>_dtmf` for a slot with a keypad rung (`dtmf`), `confirm_<slot>` and `ask_<slot>_dtmf` for a slot whose every spoken value is read back (`spokenConfirm: 'always'`), `ack_<slot>` for one acknowledged by confidence (`spokenConfirm: 'by-confidence'`), and the slot's `partialPromptId`. A role whose access to a tool is `person` needs the handoff line for its role rule's `reason` (`handoff_role_person` by default). `pnpm check` lists any that are missing and says when the engine says each (section 6). It cannot see the lines a slot's `fill` names (`disambiguate_<slot>`, a `retryPromptId`, a help prompt) unless the slot declares them in its `prompts` (section 4).
 
 ### policy.yaml
 
-The gate's tables: the whole of what the app's agent may do. Policy is data here, and never lives in a tool.
+What the app's agent may do, action by action: the whole of it. Policy is data here, and never lives in a tool. Each action is a tool, with the identity level it needs and the rules the gate runs before it, in the order written; the first rule that fails decides.
 
 ```yaml
-toolLevel:
-  renewLoan: 0
-  findHold: 0
-rulesFor:
-  renewLoan: [R1, R3]
-  findHold: [R1, known-branch]
-confirmedFields: [book]
-maxAttempts: 3
+actions:
+  renewLoan:
+    level: 0
+    rules:
+      - identity
+      - confirmed: [book]
+  findHold:
+    level: 0
+    rules:
+      - identity
+      - custom: known-branch
 ```
 
-- `toolLevel` is the identity level each tool needs (0 anonymous, 1 the factors matched, 2 the factors and a one-time code). A tool with no level needs the highest.
-- `rulesFor` lists, per tool, the rules the gate runs before it. `R1` is the level, `R2` scope (whose record), `R3` confirmation (the write matches exactly what the caller said yes to), `R5` role, `R6` attempts and `R7` the fields sent on to a downstream service. A name that is not built in is a custom rule, written in the code (`known-branch` above). Every tool in the code needs a row here; a tool with no row cannot be called.
-- `confirmedFields` are the fields a confirmed write carries, in the order the confirmation hash is taken over. `maxAttempts` is the limit at each identity check.
-- Other tables: `purposeLevel`, `subjects` (R2: which param names the subject), `serviceFields` (R7), `roles` (R5), and `wording` (the words the rules use in the audit and the console).
+- `level` is the identity level the action needs (0 anonymous, 1 the factors matched, 2 the factors and a one-time code; `identity.yaml` names them). An action with no level needs the highest, so one left without fails closed. An action may also have a `say`, what it does in plain words.
+- `rules` is a list: a rule with no parameters is its bare name, and a rule with parameters is a one-key map. `identity` is the level, `attempts` the failed tries at the identity checks, `scope: { param: accountId }` (or `record: recordId`, a record the gate resolves to its owner) whose record it is, `role: { viewer: refuse, clerk: person, reason: staff-filing }` what each role may do (`allow`, `refuse`, or `person`, a person takes the call, for the reason named, `role-person` by default), `confirmed: [book]` the fields a confirmed write carries, in the order the confirmation hash is taken over (the write matches exactly what the caller said yes to), `fields: [note, date]` the fields sent on to a downstream service, and `custom: known-branch` a rule of the app's own, written in the code. Every tool in the code needs an action here; a tool with no action cannot be called.
+- `purposes` (`purposes: { renew: { level: 1 } }`) is the level a purpose needs when it is more than its first action's.
+- `wording` holds the words the rules use in the audit and the console.
+
+A file written before this shape (`toolLevel`, `rulesFor`, ...) is converted with `dialogwright policy:convert <folder>`, which keeps its decisions and its comments, and says which rows it dropped because no rule read them.
 
 ### identity.yaml (optional)
 
-How a caller proves who they are. The clinic has none. The engine's valid-folder test fixture is:
+How a caller proves who they are, and who the app serves. The clinic has none. The engine's valid-folder test fixture is:
 
 ```yaml
-subjectKind: patient
-delegateKind: staff
-factorSlots: [patientId, dob]
-verifyTool: verifyPatient
-codeTool: verifyCode
-sendCodeTool: sendCode
-failedPromptId: identity_failed
+principals:
+  subject: patient
+  delegates:
+    staff: { roles: [viewer, clerk] }
+levels:
+  1: { name: verified, factors: [patientId, dob], verify: verifyPatient, failedPrompt: identity_failed }
+  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: sendCode, verify: verifyCode }
+attempts: 3
 ```
 
-`factorSlots` are slots the code defines, asked on voice for a step-up; each slot id is also the name of the verify tool's param that carries its value. The three tools are tools in the code, with rows in policy.yaml. The one function in this part, the params of the one-time code call, stays in code as `code.identity.sendCodeParams`. With an identity.yaml, the engine also says the identity lines (`identity_verified`, `ask_otp`, `otp_failed` and others), and `check` requires them in every locale.
+`principals` is the kind of principal the app serves (the subject) and the parties who act for subjects, each kind with its roles (the ones a `role` rule names). `levels` is the ladder above anonymous: level 1's `factors` are slots the code defines, asked on voice for a step-up (each slot id is also the name of the verify tool's param that carries its value), and level 2 adds the one-time code. `verify` and `send` are tools in the code, with actions in policy.yaml. `attempts` is the failed tries allowed at each check. The one function in this part, the params of the one-time code call, stays in code as `code.identity.sendCodeParams`. With an identity.yaml, the engine also says the identity lines (`identity_verified`, `ask_otp`, `otp_failed` and others), and `check` requires them in every locale.
 
 ### slots.yaml (optional)
 
@@ -278,7 +284,7 @@ The test for what is data: could a person who does not write code review it, and
 | `tools` | A `ToolDef` per tool: `run(call, sys, ctx)` does the work and returns `{ value, summary }` | It calls the app's systems. It never decides whether it may run: the gate does, from policy.yaml. |
 | `systems` | A factory for a fresh copy of the app's systems for each call, and the gate's lookups over them (`ownerOf`, `scopeOf`) | State and connections. |
 | `forms` | The hooks of each form, by form id (section 5) | They run during the dialog. |
-| `customRules` | The app's own policy rules, by the id `rulesFor` names them by | A rule compares values and decides. |
+| `customRules` | The app's own policy rules, by the id `custom:` names them by | A rule compares values and decides. |
 | `principals`, `portal`, `services` | Signed-in callers, the app's own portal settings (never read by the engine), downstream service clients | Integration. |
 | `facts`, `questions`, `callerState`, `blockPromptId`, `onServiceResult` | What the app keeps on the session, its own model questions, and small decisions the engine asks the app to make | They are functions of the session. |
 | `testing` | The hooks the regression harness and the stubs use | Test support. |
@@ -467,7 +473,7 @@ The library's `check_loans` form asks for a library card number and says which b
 
 - `intents.yaml`: the `check_loans` intent, `kind: form`.
 - `forms.yaml`: `check_loans` with `slots: [card]`, `summaryPromptId: null` and `hooks: [complete]`.
-- `policy.yaml`: `listLoans: 0` under `toolLevel` and `listLoans: [R1]` under `rulesFor`.
+- `policy.yaml`: a `listLoans` action with `level: 0` and `rules: [identity]`.
 - `prompts.yaml` and `locale/es/prompts.yaml`: `ask_card`, `ask_card_retry`, `ask_card_dtmf` (the keypad rung), `ack_card` (`by-confidence`), `ask_card_length` (the `retryPromptId`), and the form's `next_due`, `no_loans` and `no_card`.
 - `app.ts`: the slot, the `listLoans` tool and the form's `complete`.
 
@@ -781,7 +787,7 @@ A library type's own tests (the conformance kit and its unit tests) cover its pa
 | `entry` | A call made before the form's own slots are asked (it may step identity up). |
 | `onEntry` | Applies a successful entry call's result to the session. |
 | `principalEntry` | In place of `entry`, for someone acting for subjects (a delegate). |
-| `confirmedParams` | The values a confirmed write sends, read from the session, for the gate's R3. |
+| `confirmedParams` | The values a confirmed write sends, read from the session, for the gate's `confirmed` rule. |
 | `complete` | The form is full (and confirmed, where it has a summary): does the work, usually by calling a tool through the gate. |
 | `onAnswers` | The form heard a spoken turn: lets it keep a volunteered preference. |
 | `onSummaryAnswer` | At the summary, an answer that was neither a yes nor a change: the form's own move along what the summary offers. |
@@ -805,8 +811,8 @@ At the repository root, `pnpm check` finds every folder under `apps/` that has a
 It checks, in one pass:
 
 1. **Each file against its schema.** Unknown keys, wrong types, a missing required file, a YAML syntax error. A misspelt name offers the near match.
-2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has a policy row; every custom rule the code defines is named in `rulesFor`; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; a tool that runs R3 has `confirmedFields` and a form with `confirmedParams` to confirm it; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
-3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for R5's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`.
+2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
+3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for a role rule's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`.
 4. **Each locale against prompts.yaml**: a translated line uses only the variables the prompts.yaml line has (the code fills those and no others, so another would fail when it is said), and a locale has no line that prompts.yaml does not (it would never be said).
 5. **The corpus**: every intent has at least one labelled example in `corpus.jsonl`, when app.yaml names a fixtures directory. The corpus must be inside the package (a link that leads out is refused) and at most 16 MB.
 
@@ -814,11 +820,11 @@ The format is one line per problem, `file:line:column  path  message  ->  fix`, 
 
 When a schema problem is found, the cross-checks against the code do not run until it is fixed, because a file that does not parse cannot be linked. Fix the schema problems first, then run it again.
 
-These are real messages. The folder was a copy of the library fixture, with these edits: an unknown key `colour: blue` in app.yaml, `maxAttempts: three` in policy.yaml. The first run:
+These are real messages. The folder was a copy of the library fixture, with these edits: an unknown key `colour: blue` in app.yaml, `level: three` for `renewLoan` in policy.yaml. The first run:
 
 ```
 app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, fixtures, prompts
-policy.yaml:11:14  maxAttempts  "maxAttempts" must be a number, but is text ("three")  ->  write a number without quotes
+policy.yaml:4:12  actions.renewLoan.level  "level" is "three", which is not allowed here; it must be one of 0, 1, 2  ->  use one of 0, 1, 2
 2 problems in broken-library
 ```
 
@@ -831,8 +837,8 @@ forms.yaml:8:19  forms.check_hold.slots[1]  slot "branche" is not defined  ->  r
 prompts.yaml:2:1  prompts  prompt "goodbye" is missing from prompts.yaml; the engine says it when a call ends  ->  add "goodbye:" with its text and interruptible to prompts.yaml
 prompts.yaml:2:1  prompts  prompt "ask_branche" is missing from prompts.yaml; the engine says it when it asks for the slot "branche"  ->  rename "ask_branch" to "ask_branche" if that is the line, or add "ask_branche:" with its text and interruptible to prompts.yaml
 prompts.yaml:2:1  prompts  prompt "ask_branche_retry" is missing from prompts.yaml; the engine says it when it asks for the slot "branche" again after an answer that missed  ->  rename "ask_branch_retry" to "ask_branche_retry" if that is the line, or add "ask_branche_retry:" with its text and interruptible to prompts.yaml
-policy.yaml:6:1  rulesFor  custom rule "known-branch" (code.customRules["known-branch"]) is not named under rulesFor, so it never runs  ->  add "known-branch" to the rules of the tool it guards, or delete the rule from app.ts (code.customRules["known-branch"])
-policy.yaml:8:18  rulesFor.findHold[1]  rule "known_branch" is not a built-in rule (R1, R2, R3, R5, R6, R7) and the code defines no custom rule by that name  ->  rename it to "known-branch", or add it to app.ts (code.customRules.known_branch), or name a built-in rule instead
+policy.yaml:2:1  actions  custom rule "known-branch" (code.customRules["known-branch"]) is not named by any action's rules, so it never runs  ->  add "- custom: known-branch" to the rules of the action it guards, or delete the rule from app.ts (code.customRules["known-branch"])
+policy.yaml:12:17  actions.findHold.rules[1].custom  custom rule "known_branch" is not defined in the code  ->  rename it to "known-branch", or add it to app.ts (code.customRules.known_branch), or delete this rule
 locale/es/prompts.yaml:3:1  prompts  prompt "opening_hours" is missing from the es prompts; intents.yaml:19 (intents.hours.promptId) says it  ->  add "opening_hours:" with its text and interruptible to locale/es/prompts.yaml
 locale/es/prompts.yaml:3:1  prompts  prompt "anything_else" is missing from the es prompts; the engine says it when a form is done and it asks whether there is more  ->  add "anything_else:" with its text and interruptible to locale/es/prompts.yaml
 locale/es/prompts.yaml:3:1  prompts  prompt "ask_branche" is missing from the es prompts; the engine says it when it asks for the slot "branche"  ->  rename "ask_branch" to "ask_branche" if that is the line, or add "ask_branche:" with its text and interruptible to locale/es/prompts.yaml
@@ -968,10 +974,10 @@ For a form that collects slots and acts, such as renewing a loan:
 ### Add a tool
 
 1. `app.ts`: add the tool to `code.tools` with `run`. It does the work and returns `{ value, summary }`. Put no permission logic in it.
-2. `policy.yaml`: add a row under `toolLevel` (the level it needs) and under `rulesFor` (the rules the gate runs before it). Use `R1` for the level, add `R3` for a write the caller must confirm, and name `confirmedFields` for it.
+2. `policy.yaml`: add an action under `actions` with the `level` it needs and the `rules` the gate runs before it. Use `identity` for the level, and add `confirmed: [<the fields>]` for a write the caller must confirm.
 3. If the tool is a confirmed write, give the form `confirmedParams`, and make the form's `complete` set `s.confirmedHash = s.pendingHash` before the call, as the library's `renew` does.
-4. If the tool needs a rule of its own, write it in `code.customRules` and name its id under `rulesFor`.
-5. `pnpm check` says if the tool and its policy row do not match: a tool with no row, a row with no tool, a rule that is never named.
+4. If the tool needs a rule of its own, write it in `code.customRules` and name its id with a `custom:` rule in the action.
+5. `pnpm check` says if the tool and its action do not match: a tool with no action, an action with no tool, a rule that is never named.
 
 ### Where to start
 

@@ -16,9 +16,7 @@ import { formatProblem, type Problem } from './problems';
  *
  * `check` checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
  * per problem, then a summary line per folder (`N problems in <dir>`, or `<dir>: ok`). Exit code 1
- * when there is any problem, 0 when there is none, 2 for a command that is not understood. A warning
- * (a file in a shape read only until every app is converted) goes to stderr as `<dir>: warning: ...`
- * and does not change the exit code. With no
+ * when there is any problem, 0 when there is none, 2 for a command that is not understood. With no
  * folder, it checks the working directory when that is an app folder, otherwise every app folder
  * under apps/ of the workspace it is in (a folder above with pnpm-workspace.yaml), and says so when
  * there is none. With --json it prints the problems as JSON and nothing else: the array of
@@ -101,11 +99,10 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
 
   const results: Record<string, Problem[]> = {};
   for (const { label, path } of dirs) {
-    const { problems, warnings, codeChecked } = await checkAppFully(path);
+    const { problems, codeChecked } = await checkAppFully(path);
     results[label] = problems;
     if (json) continue;
     for (const problem of problems) io.out(formatProblem(problem));
-    for (const warning of warnings) io.err(`${label}: warning: ${formatProblem(warning)}`);
     io.out(problems.length === 0 ? `${label}: ok` : `${problems.length} problem${problems.length === 1 ? '' : 's'} in ${label}`);
     if (!codeChecked && problems.length === 0) io.err(`${label}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`);
   }

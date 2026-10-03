@@ -21,8 +21,9 @@ import { identifier, matching, name, text, unique } from './common';
  * level 0, which is anonymous. Levels stay numbers everywhere the engine records them; a level's name
  * is a label. The one-time code's call params (`sendCodeParams`) are a function, and stay in code.
  *
- * Until every app is converted, the loader also reads the old shape (subjectKind, factorSlots, ...;
- * legacyIdentitySchema below) and `check` warns about it.
+ * An app written before this shape (subjectKind, factorSlots, ... : the lifecycle's identity
+ * configuration as it is) is converted with `dialogwright policy:convert`; nothing reads that shape
+ * any more.
  */
 
 const KIND = /^[a-z][a-z0-9_]*$/;
@@ -104,31 +105,3 @@ export const identitySchema = z
   .describe('identity.yaml: who the app serves and how a caller proves who they are. Leave the file out for an app that verifies no one.');
 
 export type IdentityYaml = z.infer<typeof identitySchema>;
-
-// ---------------------------------------------------------------------------------------------
-// The old shape, read until every app is converted
-// ---------------------------------------------------------------------------------------------
-
-/** The keys only the old shape has: a file with any of them and neither `principals:` nor `levels:` is read as the old shape. */
-export const LEGACY_IDENTITY_KEYS = ['subjectKind', 'delegateKind', 'factorSlots', 'verifyTool', 'codeTool', 'sendCodeTool', 'failedPromptId'] as const;
-
-/** The old identity.yaml: IdentityConfig as it is. Read until every app is converted to identitySchema. */
-export const legacyIdentitySchema = z
-  .strictObject({
-    subjectKind: kind().describe('The principal kind the app serves and verifies (for example "customer"). Any other kind but anonymous acts for subjects. A lowercase word, since it is also an audit detail key.'),
-    delegateKind: identifier().optional().describe('The app\'s word for a party who acts for subjects (for example "agent"), as the harness\'s errors name one. Default "delegate".'),
-    factorSlots: unique(identifier(), 'factor slot').describe('The slots collected on voice for a step-up (for example accountId, dob), asked in this order. Each slot id is also the name of the verify tool\'s param that carries its value.'),
-    verifyTool: identifier().describe('The tool that verifies the factors (for example verifyCustomer).'),
-    codeTool: identifier().describe('The tool that checks the one-time code (for example verifyCode).'),
-    sendCodeTool: identifier().describe('The tool that texts the one-time code.'),
-    failedPromptId: identifier().optional().describe('The prompt (an id in prompts.yaml) said before the factors are asked again after a failed match. Default "identity_failed".'),
-  })
-  .describe('identity.yaml in its old shape: how a caller proves who they are. Leave the file out for an app that verifies no one.');
-
-export type LegacyIdentityYaml = z.infer<typeof legacyIdentitySchema>;
-
-/** Whether parsed identity.yaml content is the old shape: a map with an old key and neither `principals:` nor `levels:`. */
-export function isLegacyIdentityContent(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  return !Object.hasOwn(value, 'principals') && !Object.hasOwn(value, 'levels') && LEGACY_IDENTITY_KEYS.some((k) => Object.hasOwn(value, k));
-}

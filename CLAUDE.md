@@ -32,6 +32,7 @@ pnpm check         # every app folder under apps/: YAML, schemas, cross-links to
 pnpm --filter dialogwright regress:testkit
 pnpm --filter @dialogwright/example-clinic regress
 pnpm --filter dialogwright schemas   # regenerate the JSON Schemas after a schema change
+pnpm --filter dialogwright exec tsx src/define/cli.ts policy:convert <absolute folder>   # policy.yaml and identity.yaml from the old table shape to the current one (also: --from-tables <module>)
 pnpm --filter dialogwright slot-docs   # regenerate docs/slots/*.md after a slot type's options, README or examples change
 pnpm --filter dialogwright test slots/<type>   # a slot type's tests, including the conformance kit
 ```
@@ -47,7 +48,7 @@ pnpm --filter dialogwright test slots/<type>   # a slot type's tests, including 
 - No real personal data anywhere: use the 555 phone range and invented names.
 - Run `pnpm check`, `pnpm verify` (the type check and the tests) and both regressions (the testkit's and the clinic's) before committing. `pnpm check` is the one that catches an app folder and its code disagreeing.
 - Every YAML file of an app starts with `# yaml-language-server: $schema=<relative path>/packages/dialogwright/schemas/<kind>.schema.json`, so an editor completes and checks it. Keep the line when you add a file.
-- A form's `hooks:` list in forms.yaml must name exactly the hooks the code writes for it, and every tool has a row in policy.yaml. Policy lives in policy.yaml and the gate, never in a tool.
+- A form's `hooks:` list in forms.yaml must name exactly the hooks the code writes for it, and every tool has an action in policy.yaml. Policy lives in policy.yaml and the gate, never in a tool.
 - Most slots are configuration: an app names a library type in `slots.yaml` (see `docs/slots/README.md`). Write a slot in code only when no type fits. When you add or change a slot type, follow "Adding a slot type" in CONTRIBUTING.md: run its conformance kit (`pnpm --filter dialogwright test slots/<type>`), regenerate the schemas (`pnpm --filter dialogwright schemas`) and the pages (`pnpm --filter dialogwright slot-docs`), and commit the results; tests fail when they are stale. Edit a type's `README.md`, never the generated page.
 - Keep `packages/dialogwright` free of any one industry's vocabulary: its code, comments, tests and fixtures use neutral words (caller, subject, record, request, appointment, loan). Words that belong to one app's domain stay in that app. The same goes for names, dates of birth and numbers: invented, 555 range.
 - Never regenerate a regression baseline or snapshot to make a test pass. A changed output is a finding to explain, not noise to overwrite.

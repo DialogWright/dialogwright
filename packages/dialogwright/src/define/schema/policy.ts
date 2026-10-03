@@ -29,8 +29,8 @@ import { closest } from '../problems';
  * A rule with no parameters is its bare name (`identity`, `attempts`); a rule with parameters is a
  * map of its name to them, one rule per list entry, so each rule is one line to read and to diff.
  *
- * Until every app is converted, the loader also reads the old shape (toolLevel, rulesFor, ...;
- * legacyPolicySchema below) and `check` warns about it.
+ * An app written before this shape (toolLevel, rulesFor, ... : the gate's tables as they are) is
+ * converted with `dialogwright policy:convert`; nothing reads that shape any more.
  */
 
 const roleAccess = z.enum(['allow', 'refuse', 'person']);
@@ -40,7 +40,7 @@ const wordingFor = z.strictObject({
   param: text().optional().describe('The scope rule\'s description when the action names its subject by the subject\'s own id.'),
 });
 
-/** The words the built-in rules' lines use: the same in both shapes. */
+/** The words the built-in rules' lines use. */
 export const policyWording = z
   .strictObject({
     scope: z
@@ -264,59 +264,3 @@ export const policySchema = z
 
 export type PolicyYaml = z.infer<typeof policySchema>;
 export type ActionYaml = PolicyYaml['actions'][string];
-
-// ---------------------------------------------------------------------------------------------
-// The old shape, read until every app is converted
-// ---------------------------------------------------------------------------------------------
-
-const subjectParam = z
-  .strictObject({
-    param: identifier().describe('The tool param that names the subject the call acts on.'),
-    via: z.literal('record').optional().describe('"record" when the param is a record id the gate resolves to its owner; leave out when it is the subject\'s own id.'),
-  })
-  .describe("R2's subject for one tool.");
-
-/** The keys only the old shape has: a file with any of them and no `actions:` is read as the old shape. */
-export const LEGACY_POLICY_KEYS = ['toolLevel', 'purposeLevel', 'rulesFor', 'subjects', 'confirmedFields', 'serviceFields', 'maxAttempts', 'roles', 'rolePersonReason'] as const;
-
-/**
- * The old policy.yaml: the gate's tables as they are (PolicyTables), rules by id (R1, R2, R3, R5,
- * R6, R7 and the app's own). Read until every app is converted to policySchema.
- */
-export const legacyPolicySchema = z
-  .strictObject({
-    toolLevel: z
-      .record(identifier(), level(), { error: 'must be a map from tool name to identity level (0, 1 or 2)' })
-      .describe('The identity level each tool needs: 0 anonymous, 1 the factors matched, 2 the factors and the one-time code. A tool without one needs the highest (fails closed). Every tool in rulesFor needs a row.'),
-    purposeLevel: z
-      .record(name(), level())
-      .default({})
-      .describe('The identity level each purpose needs (what a caller wants done before any tool is called). Default: none.'),
-    rulesFor: z
-      .record(identifier(), unique(name(), 'rule'))
-      .describe('Per tool, the rules the gate runs before it, by id: the built-ins (R1 level, R2 scope, R3 confirmation, R5 role, R6 attempts, R7 service fields) or a custom rule the app\'s code registers. Every tool of the app needs a row; a tool without one cannot be called.'),
-    subjects: z
-      .record(identifier(), subjectParam)
-      .default({})
-      .describe('R2: per tool, the param that names the subject. A tool that runs R2 needs a row. Default: none.'),
-    confirmedFields: unique(identifier(), 'confirmed field').describe('R3: the fields a confirmed write carries, in the order the hash is taken over (for example name, dob, provider, date, time).'),
-    serviceFields: z
-      .record(identifier(), unique(identifier(), 'field'))
-      .default({})
-      .describe('R7: per tool, the fields it may send on to a downstream service. A tool with no row sends none. Default: none.'),
-    maxAttempts: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).describe('R6: failed attempts allowed at each identity check (the factors, the one-time code).'),
-    roles: z
-      .record(identifier(), z.record(name(), roleAccess))
-      .optional()
-      .describe('R5: per tool, what each role of a principal that has one (for example depot staff) may do with it: allow, refuse, or person (a person takes the call). A tool or a role with no row is refused. Without the table, every role is refused.'),
-    rolePersonReason: name().optional().describe('R5\'s NEEDS_HUMAN reason when a role\'s access is "person" (for example "staff-filing"). Default "role-person".'),
-    wording: policyWording.optional(),
-  })
-  .describe('policy.yaml in its old shape: the gate\'s tables. Custom rule functions stay in code; this file only names them.');
-
-export type LegacyPolicyYaml = z.infer<typeof legacyPolicySchema>;
-
-/** Whether parsed policy.yaml content is the old shape: a map with an old key and no `actions:`. */
-export function isLegacyPolicyContent(value: unknown): boolean {
-  return isMap(value) && !Object.hasOwn(value, 'actions') && LEGACY_POLICY_KEYS.some((k) => Object.hasOwn(value, k));
-}

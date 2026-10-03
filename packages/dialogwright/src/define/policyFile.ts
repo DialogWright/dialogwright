@@ -2,7 +2,7 @@ import type { IdentityConfig, PolicyTables, PolicyWording, RoleAccess, SubjectPa
 import { isRuleId } from '../gate/policy';
 import type { Level } from '../gate/types';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
-import type { IdentityYaml, LegacyPolicyYaml, PolicyYaml, RuleEntryYaml, RuleName } from './schema/index';
+import type { IdentityYaml, PolicyYaml, RuleEntryYaml, RuleName } from './schema/index';
 
 /**
  * policy.yaml and identity.yaml in their new shape (./schema/policy.ts, ./schema/identity.ts),
@@ -175,23 +175,17 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
 }
 
 // ---------------------------------------------------------------------------------------------
-// Reading either shape (until every app is converted)
+// Reading the file
 // ---------------------------------------------------------------------------------------------
 
-/** The custom rule ids the policy names, in either shape: a code rule no action names never runs. */
-export function customRulesNamed(policy: PolicyYaml | LegacyPolicyYaml): Set<string> {
-  if (!Object.hasOwn(policy, 'actions')) return new Set(Object.values((policy as LegacyPolicyYaml).rulesFor).flat());
-  return new Set(Object.values((policy as PolicyYaml).actions).flatMap((a) => a.rules.map(readRule)).flatMap((r) => (r.rule === 'custom' ? [r.id] : [])));
+/** The custom rule ids the policy names: a code rule no action names never runs. */
+export function customRulesNamed(policy: PolicyYaml): Set<string> {
+  return new Set(Object.values(policy.actions).flatMap((a) => a.rules.map(readRule)).flatMap((r) => (r.rule === 'custom' ? [r.id] : [])));
 }
 
-/** The reasons a role hands a call to a person for, in either shape: one per role rule that has a `person`. */
-export function personReasons(policy: PolicyYaml | LegacyPolicyYaml): string[] {
-  if (!Object.hasOwn(policy, 'actions')) {
-    const legacy = policy as LegacyPolicyYaml;
-    const person = Object.values(legacy.roles ?? {}).some((byRole) => Object.values(byRole).includes('person'));
-    return person ? [legacy.rolePersonReason ?? DEFAULT_ROLE_PERSON_REASON] : [];
-  }
-  return Object.values((policy as PolicyYaml).actions)
+/** The reasons a role hands a call to a person for: one per role rule that has a `person`. */
+export function personReasons(policy: PolicyYaml): string[] {
+  return Object.values(policy.actions)
     .flatMap((a) => a.rules.map(readRule))
     .flatMap((r) => (r.rule === 'role' && Object.values(r.access).includes('person') ? [r.reason ?? DEFAULT_ROLE_PERSON_REASON] : []));
 }

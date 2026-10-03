@@ -1,10 +1,11 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { LineCounter, Document as YamlDocument, isMap, isScalar, isSeq, parseDocument, type Document, type Node } from 'yaml';
+import { isOldIdentityContent, isOldPolicyContent } from './convert/legacyShape';
 import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from './problems';
 import {
-  FILE_NAMES, FOLDER_FILES, LEGACY_SCHEMAS, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, isLegacyIdentityContent, isLegacyPolicyContent, localeSlotsSchema, slotsSchema,
-  type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type LegacyIdentityYaml, type LegacyPolicyYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
+  FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeSlotsSchema, slotsSchema,
+  type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
   type PromptsYaml, type SlotsYaml,
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
@@ -39,14 +40,10 @@ export interface LoadedConfig {
   app: AppYaml;
   intents: IntentsYaml;
   forms: FormsYaml;
-  /**
-   * policy.yaml: the actions and their rules (PolicyYaml), or, until every app is converted, the old
-   * shape (LegacyPolicyYaml: toolLevel, rulesFor, ...; tell them apart with isLegacyPolicy). The two
-   * files are in the same shape: a folder that mixes them does not load.
-   */
-  policy: PolicyYaml | LegacyPolicyYaml;
-  /** Null when the folder has no identity.yaml: the app verifies no one. The old shape until every app is converted (isLegacyIdentity). */
-  identity: IdentityYaml | LegacyIdentityYaml | null;
+  /** policy.yaml: the actions and their rules. */
+  policy: PolicyYaml;
+  /** Null when the folder has no identity.yaml: the app verifies no one. */
+  identity: IdentityYaml | null;
   /**
    * slots.yaml as parsed: each slot's `type` and options, in the file's order (the order of
    * `App.slots`). Null when the folder has no slots.yaml: every slot is the code's. Only the outer
@@ -127,23 +124,6 @@ const STARTS_WITH: Record<FileKind | 'slots' | 'localeSlots', string> = {
 /** A kind of file the loader checks: the six, the optional slots.yaml, and a locale's optional slots.yaml. */
 type Kind = FileKind | 'slots' | 'localeSlots';
 const SCHEMAS_OF: Record<Kind, z.ZodType> = { ...SCHEMAS, slots: slotsSchema, localeSlots: localeSlotsSchema };
-
-/** Whether loaded policy.yaml is in the old shape (toolLevel, rulesFor, ...), read until every app is converted. */
-export function isLegacyPolicy(policy: PolicyYaml | LegacyPolicyYaml): policy is LegacyPolicyYaml {
-  return !Object.hasOwn(policy, 'actions');
-}
-
-/** Whether loaded identity.yaml is in the old shape (subjectKind, factorSlots, ...), read until every app is converted. */
-export function isLegacyIdentity(identity: IdentityYaml | LegacyIdentityYaml): identity is LegacyIdentityYaml {
-  return !Object.hasOwn(identity, 'principals');
-}
-
-/** The schema a file's content is checked against: its kind's, or the old shape's for a policy or identity file written the old way. */
-function schemaOf(kind: Kind, value: unknown): { schema: z.ZodType; legacy: 'policy' | 'identity' | null } {
-  if (kind === 'policy' && isLegacyPolicyContent(value)) return { schema: LEGACY_SCHEMAS.policy, legacy: 'policy' };
-  if (kind === 'identity' && isLegacyIdentityContent(value)) return { schema: LEGACY_SCHEMAS.identity, legacy: 'identity' };
-  return { schema: SCHEMAS_OF[kind], legacy: null };
-}
 
 /** What to do about each kind of YAML syntax error (the codes are the `yaml` library's). */
 const SYNTAX_FIXES: Record<string, string> = {
@@ -256,16 +236,6 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     if (wording !== undefined) localeSlots[tag] = wording as LocaleSlotsYaml;
   }
 
-  if (valid.policy && valid.identity && isLegacyPolicy(valid.policy) !== isLegacyIdentity(valid.identity)) {
-    const [old, fresh] = isLegacyPolicy(valid.policy) ? ['policy.yaml', 'identity.yaml'] : ['identity.yaml', 'policy.yaml'];
-    problems.push(problemAt(
-      old,
-      WHOLE_FILE,
-      `${old} has the old shape and ${fresh} the new one, and the two are read together (the roles and levels the policy names are the identity file's)`,
-      `write ${old} in the new shape too: ${old === 'policy.yaml' ? '"actions:", each tool with its level and rules' : '"principals:", "levels:" and "attempts:"'} (schemas/${old.replace('.yaml', '.schema.json')})`,
-    ));
-    return null;
-  }
   if (!valid.app || !valid.intents || !valid.forms || !valid.policy || !valid.prompts) return null;
   return {
     app: valid.app,
@@ -463,18 +433,30 @@ function listLocales(root: string, problems: Problem[]): { tag: string; dirName:
 
 /** JSON Schemas are generated once per kind: the problem messages read keys and descriptions from them. */
 const jsonSchemas = new Map<string, JsonSchema>();
-function jsonSchemaOf(kind: Kind, legacy: 'policy' | 'identity' | null = null): JsonSchema {
-  const key = legacy ? `legacy-${legacy}` : kind;
-  let schema = jsonSchemas.get(key);
+function jsonSchemaOf(kind: Kind): JsonSchema {
+  let schema = jsonSchemas.get(kind);
   if (!schema) {
     // slots.yaml's published schema is the full union over the types (and a locale's, over their wording); the loader checks the outer shape, whose schema is this.
-    // An old-shape file's messages read the old shape's schema, which is published nowhere.
-    schema = legacy
-      ? (z.toJSONSchema(LEGACY_SCHEMAS[legacy], { io: 'input', target: 'draft-7' }) as JsonSchema)
-      : kind === 'slots' || kind === 'localeSlots' ? (z.toJSONSchema(SCHEMAS_OF[kind], { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
-    jsonSchemas.set(key, schema);
+    schema = kind === 'slots' || kind === 'localeSlots' ? (z.toJSONSchema(SCHEMAS_OF[kind], { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
+    jsonSchemas.set(kind, schema);
   }
   return schema;
+}
+
+/** Whether parsed content is policy.yaml or identity.yaml in the shape before the actions and levels (the tables as they are). */
+function isOldShape(kind: Kind, value: unknown): boolean {
+  return (kind === 'policy' && isOldPolicyContent(value)) || (kind === 'identity' && isOldIdentityContent(value));
+}
+
+/** The one problem an old-shape file is: what it is, and the command that converts it. */
+function oldShape(file: string, kind: Kind): Problem {
+  const keys = kind === 'policy' ? 'toolLevel, rulesFor, ...' : 'subjectKind, factorSlots, ...';
+  return problemAt(
+    file,
+    WHOLE_FILE,
+    `${file} is in the old shape (${keys}), which is not read any more`,
+    `convert it with "dialogwright policy:convert <app folder>" (or "--from-tables <module>" for tables written in TypeScript), which keeps its decisions and its comments, then check the result: it starts with ${STARTS_WITH[kind]}`,
+  );
 }
 
 /**
@@ -549,15 +531,18 @@ function checkFile(
     return undefined;
   }
 
-  const { schema, legacy } = schemaOf(kind, value);
-  const result = schema.safeParse(value);
+  if (isOldShape(kind, value)) {
+    problems.push(oldShape(file, kind));
+    return undefined;
+  }
+  const result = SCHEMAS_OF[kind].safeParse(value);
   if (result.success) {
     if (reserved.length > 0) return undefined;
     // Hashed as parsed, before the schema reads it: the file's own content, whatever the schema makes of it.
     contents[file] = value;
     return result.data;
   }
-  problems.push(...problemsOfIssues(result.error.issues, { file, doc, lines, value, schema: jsonSchemaOf(kind, legacy) }));
+  problems.push(...problemsOfIssues(result.error.issues, { file, doc, lines, value, schema: jsonSchemaOf(kind) }));
   return undefined;
 }
 
@@ -661,21 +646,18 @@ export interface ConfigFile<T> {
  * Reads one policy.yaml or identity.yaml in the new shape, for an app that is not a folder
  * (definePolicy, defineIdentity): from a path, with the same safe reading and parsing as the
  * folder's files and problems at their lines; or from content already parsed, with problems that
- * name paths but no line. A file in the old shape is refused with one problem that says so: only an
- * app folder reads the old shape, and only until every app is converted.
+ * name paths but no line. A file in the old shape (toolLevel, rulesFor, ...) is refused with one
+ * problem that says how to convert it.
  */
 export function loadConfigFile(source: string | Record<string, unknown>, kind: 'policy'): ConfigFile<PolicyYaml>;
 export function loadConfigFile(source: string | Record<string, unknown>, kind: 'identity'): ConfigFile<IdentityYaml>;
 export function loadConfigFile(source: string | Record<string, unknown>, kind: 'policy' | 'identity'): ConfigFile<PolicyYaml | IdentityYaml> {
   const problems: Problem[] = [];
-  const isOld = kind === 'policy' ? isLegacyPolicyContent : isLegacyIdentityContent;
-  const oldShape = (file: string): Problem =>
-    problemAt(file, WHOLE_FILE, `${file} has the old shape (${kind === 'policy' ? 'toolLevel, rulesFor, ...' : 'subjectKind, factorSlots, ...'}), which only an app folder reads, until every app is converted`, `write it in the new shape: it starts with ${STARTS_WITH[kind]}`);
   if (typeof source !== 'string') {
     const file = FILE_NAMES[kind];
     const doc = new YamlDocument(source);
     const lines = new LineCounter();
-    if (isOld(source)) return { value: null, file, doc, lines, located: false, problems: [{ ...oldShape(file), line: 0, column: 0 }] };
+    if (isOldShape(kind, source)) return { value: null, file, doc, lines, located: false, problems: [{ ...oldShape(file, kind), line: 0, column: 0 }] };
     const parsed = SCHEMAS[kind].safeParse(source);
     if (parsed.success) return { value: parsed.data as PolicyYaml | IdentityYaml, file, doc, lines, located: false, problems };
     const found = problemsOfIssues(parsed.error.issues, { file, doc, lines, value: source, schema: jsonSchemaOf(kind) });
@@ -702,7 +684,6 @@ export function loadConfigFile(source: string | Record<string, unknown>, kind: '
   const documents = new Map<string, { doc: Document; lines: LineCounter }>();
   const checked = checkFile(file, kind, read.text, problems, documents, {});
   const parsed = documents.get(file)!;
-  const value = problems.length === 0 ? (checked as PolicyYaml | IdentityYaml | LegacyPolicyYaml | LegacyIdentityYaml) : null;
-  if (value !== null && isOld(value)) return { value: null, file, doc: parsed.doc, lines: parsed.lines, located: true, problems: [oldShape(file)] };
-  return { value: value as PolicyYaml | IdentityYaml | null, file, doc: parsed.doc, lines: parsed.lines, located: true, problems };
+  const value = problems.length === 0 ? (checked as PolicyYaml | IdentityYaml) : null;
+  return { value, file, doc: parsed.doc, lines: parsed.lines, located: true, problems };
 }
