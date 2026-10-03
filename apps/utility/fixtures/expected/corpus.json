@@ -269,7 +269,7 @@
     "verdict": "proceed",
     "form": "report_outage",
     "slots": {
-      "place": "200 Harbor Row",
+      "place": "200 Heron Row",
       "symptom": null,
       "account": null,
       "count": null,

@@ -22,8 +22,8 @@ export interface Account {
 
 export const ACCOUNTS: readonly Account[] = [
   { accountId: '55501234', dob: '1980-04-12', first: 'Avery', last: 'Quill', phoneLast4: '0142', address: '14 Birch Lane', balance: '240.00', due: '2026-10-05' },
-  { accountId: '55505678', dob: '1975-06-14', first: 'Morgan', last: 'Vale', phoneLast4: '0177', address: '200 Harbor Row, unit 3', balance: '312.00', due: '2026-10-09' },
-  { accountId: '55503456', dob: '1968-11-30', first: 'Casey', last: 'Rowe', phoneLast4: '0163', address: '200 Harbor Row, unit 7', balance: '180.00', due: '2026-10-12' },
+  { accountId: '55505678', dob: '1975-06-14', first: 'Morgan', last: 'Vale', phoneLast4: '0177', address: '200 Heron Row, unit 3', balance: '312.00', due: '2026-10-09' },
+  { accountId: '55503456', dob: '1968-11-30', first: 'Casey', last: 'Rowe', phoneLast4: '0163', address: '200 Heron Row, unit 7', balance: '180.00', due: '2026-10-12' },
   { accountId: '55509012', dob: '1990-01-01', first: 'Jordan', last: 'Pike', phoneLast4: '0119', address: '9 Fernhill Court', balance: '0.00', due: '2026-10-20' },
 ];
 

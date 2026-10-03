@@ -124,7 +124,7 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 
 | Entry | Field | Before -> after | Why |
 |---|---|---|---|
-| | | | |
+| corpus `pl-02` | `slots.place` | the old street name -> `200 Heron Row` | The invented street was renamed in the fixture data, the corpus line and two scripted calls; the read-back is the caller's words, so the baseline follows them. |
 
 ## Final checklist
 

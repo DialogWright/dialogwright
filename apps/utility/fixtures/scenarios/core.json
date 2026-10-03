@@ -47,7 +47,7 @@
         "say": "outage"
       },
       {
-        "say": "200 Harbor Row"
+        "say": "200 Heron Row"
       },
       {
         "dtmf": "3"
@@ -119,7 +119,7 @@
         "say": "report an outage at one of my buildings"
       },
       {
-        "say": "200 Harbor Row"
+        "say": "200 Heron Row"
       },
       {
         "say": "just the kitchen and one bedroom are out"
