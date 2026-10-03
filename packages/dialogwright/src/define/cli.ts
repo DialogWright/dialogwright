@@ -213,14 +213,17 @@ function createAppCommand(args: readonly string[], io: Io): number {
       if (!linked) io.err('pnpm install failed; run it yourself at the repository root before the commands below');
     }
     const filter = `--filter ${made.packageName}`;
+    // A bare `pnpm check` reads only the folders under apps/, and runs in the package's folder, so a
+    // folder elsewhere is named by its absolute path.
+    const check = made.inWorkspace ? 'pnpm check' : `pnpm check ${made.dir}`;
     const steps: string[][] = [];
     if (!made.inWorkspace) steps.push(['The folder is not directly under apps/, so the workspace does not find it: add its folder to pnpm-workspace.yaml, then run pnpm install at the repository root.']);
     else if (!linked) steps.push(['pnpm install    (at the repository root: it links the new app into the workspace)']);
     steps.push(
-      ['pnpm check    (every app folder, this one included: it passes as created)'],
+      [made.inWorkspace ? 'pnpm check    (every app folder, this one included: it passes as created)' : `${check}    (this folder: a bare pnpm check reads only the folders under apps/; it passes as created)`],
       [`pnpm ${filter} test`, `pnpm ${filter} typecheck`, `pnpm ${filter} regress    (the stub regression: "no changes")`],
       [
-        `Read ${join(shown, 'README.md')} and ${join(shown, 'CLAUDE.md')}, then replace the example intent, form, slot and tool with your own, running pnpm check after each change.`,
+        `Read ${join(shown, 'README.md')} and ${join(shown, 'CLAUDE.md')}, then replace the example intent, form, slot and tool with your own, running ${check} after each change.`,
         'The folder guide is docs/authoring-an-app.md; the slot types are in docs/slots/README.md.',
         'The scaffold ships the example\'s baseline (fixtures/expected). Make your own app\'s first baseline once, with regress --update, and review it; never regenerate it after that.',
       ],

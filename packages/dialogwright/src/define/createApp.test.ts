@@ -181,7 +181,9 @@ describe('dialogwright create-app', () => {
     const text = out.join('\n');
     expect(text).toContain('Next:');
     expect(text).toContain('not directly under apps/');
-    expect(text).toContain('pnpm check');
+    // A bare pnpm check reads only apps/, so the folder is named, by its absolute path.
+    expect(text).toContain(`2. pnpm check ${join(base, 'my', 'demo')}    (this folder`);
+    expect(text).toContain(`running pnpm check ${join(base, 'my', 'demo')} after each change`);
     expect(text).toContain('pnpm --filter @dialogwright/example-demo test');
     expect(text).toContain('pnpm --filter @dialogwright/example-demo typecheck');
     expect(text).toContain('pnpm --filter @dialogwright/example-demo regress');
@@ -246,6 +248,7 @@ describe('dialogwright create-app', () => {
     expect(await main(['create-app', 'two'], io)).toBe(0);
     expect(installed).toEqual([root]);
     expect(out.join('\n')).not.toContain('1. pnpm install');
-    expect(out.join('\n')).toContain('1. pnpm check');
+    expect(out.join('\n')).toContain('1. pnpm check    (every app folder');
+    expect(out.join('\n')).toContain('running pnpm check after each change');
   });
 });
