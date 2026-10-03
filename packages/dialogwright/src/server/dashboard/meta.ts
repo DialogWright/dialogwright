@@ -38,6 +38,16 @@ export interface ConsoleMeta {
 
 /** The console's words where the app gives none. */
 const NEUTRAL_LEVELS: [string, string, string] = ['anonymous', 'level 1', 'level 2'];
+
+/**
+ * The level badge's words where the app's console gives none: anonymous, then each level by the
+ * name identity.yaml gives it (IdentityConfig.levelNames), else the engine's neutral words. A label
+ * only: the badge is chosen by the principal's level, a number.
+ */
+function levelWords(app: App): [string, string, string] {
+  const names = app.identity?.levelNames;
+  return [NEUTRAL_LEVELS[0], names?.[1] ?? NEUTRAL_LEVELS[1], names?.[2] ?? NEUTRAL_LEVELS[2]];
+}
 const NEUTRAL_SERVICE_NOTE: ServiceNoteWording = { label: 'Downstream service', answered: 'answered', reasons: {} };
 
 /** The default slot order: the identity factors, then each form's slots in turn, each once. */
@@ -69,7 +79,7 @@ export function consoleMetaOf(app: App): ConsoleMeta {
     slotLabels: { ...c.slotLabels },
     questionPrefixes: Object.fromEntries(Object.entries(c.questionPrefixes ?? {}).map(([k, v]) => [k, [...v]])),
     detectQuestions: [...(c.detectQuestions ?? [])],
-    levels: c.levels ? [...c.levels] : [...NEUTRAL_LEVELS],
+    levels: c.levels ? [...c.levels] : levelWords(app),
     handoffReasons: { ...c.handoffReasons },
     facts: [...(c.facts ?? [])],
     goodAuditTypes: [...(c.goodAuditTypes ?? [])],

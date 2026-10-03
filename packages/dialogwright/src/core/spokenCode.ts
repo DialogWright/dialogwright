@@ -1,4 +1,5 @@
 import type { SessionEvent } from '../channel/events';
+import { DEFAULT_CODE_LENGTH } from './app/lookup';
 import type { Session } from './session';
 
 /**
@@ -12,41 +13,56 @@ import type { Session } from './session';
  */
 export const CODE_MASK = '[code]';
 
-/** The fewest digits that count as a code said aloud. A code is six; a caller may give up part way. */
+/** The fewest digits that count as a code said aloud, for a code of six or more; a caller may give up part way. */
 const MIN_DIGITS = 4;
 
 /**
+ * The fewest digits that count as a code of `length` said aloud: four, or one fewer than a shorter
+ * code has, so most of a four-digit code is masked too (six and more: four, as it always was).
+ */
+export function spokenCodeMinDigits(length: number = DEFAULT_CODE_LENGTH): number {
+  return Math.max(1, Math.min(MIN_DIGITS, length - 1));
+}
+
+/**
  * How many digits a spoken token stands for. "hundred" and "thousand" join a run but add none.
- * The recognizer's homophones count too ("for eight to won"): a run still needs four digits, so
- * "i want to talk to someone" is untouched, and at the code prompt over-masking is the safe side.
+ * The recognizer's homophones (SOUND_ALIKE) count too, where a run needs four digits or more ("for
+ * eight to won"): "i want to talk to someone" is untouched, and at the code prompt over-masking is
+ * the safe side. Where a shorter run counts (a code of four digits: three of them), they do not:
+ * "I got it for twenty" and "two to three minutes" are ordinary speech, not a code.
  */
 const WORD_DIGITS: Readonly<Record<string, number>> = {
   zero: 1, oh: 1, one: 1, two: 1, three: 1, four: 1, five: 1, six: 1, seven: 1, eight: 1, nine: 1,
-  won: 1, to: 1, too: 1, for: 1, ate: 1,
   ten: 2, eleven: 2, twelve: 2, thirteen: 2, fourteen: 2, fifteen: 2, sixteen: 2, seventeen: 2, eighteen: 2, nineteen: 2,
   twenty: 2, thirty: 2, forty: 2, fifty: 2, sixty: 2, seventy: 2, eighty: 2, ninety: 2,
   hundred: 0, thousand: 0,
 };
+
+/** The words a recognizer writes for a digit it heard ("to" for two, "for" for four): counted only in runs of MIN_DIGITS or more. */
+const SOUND_ALIKE: Readonly<Record<string, number>> = { won: 1, to: 1, too: 1, for: 1, ate: 1 };
 
 /** "double five", "triple two": the multiplier's extra digits, on top of the digit that follows. */
 const REPEAT: Readonly<Record<string, number>> = { double: 1, triple: 2 };
 
 const TOKEN = /\d+|[a-z]+/gi;
 
-function digitsOf(token: string): number | null {
+function digitsOf(token: string, soundAlike: boolean): number | null {
   if (/^\d+$/.test(token)) return token.length;
   const w = token.toLowerCase();
-  return WORD_DIGITS[w] ?? REPEAT[w] ?? null;
+  return (Object.hasOwn(WORD_DIGITS, w) ? WORD_DIGITS[w] : undefined) ?? (soundAlike && Object.hasOwn(SOUND_ALIKE, w) ? SOUND_ALIKE[w] : undefined) ?? (Object.hasOwn(REPEAT, w) ? REPEAT[w] : undefined) ?? null;
 }
 
 /**
- * `text` with every run of four or more spoken or written digits replaced by CODE_MASK, and whether
- * anything was. A run is number tokens separated by spaces, commas, periods or hyphens, and may
+ * `text` with every run of `minDigits` (four unless given) or more spoken or written digits replaced
+ * by CODE_MASK, and whether anything was. Under four, the recognizer's sound-alikes ("to", "for",
+ * "won", "ate", "too") are not counted as digits. A run is number tokens separated by spaces, commas, periods or hyphens, and may
  * carry "and" between two of them ("four hundred and fifty six"). Over-masking is the safe
  * direction: at the code prompt nothing numeric is asked for aloud.
  */
-export function maskSpokenCode(text: string): { text: string; masked: boolean } {
-  const tokens = [...text.matchAll(TOKEN)].map((m) => ({ s: m[0], start: m.index!, end: m.index! + m[0].length, n: digitsOf(m[0]) }));
+export function maskSpokenCode(text: string, minDigits: number = MIN_DIGITS): { text: string; masked: boolean } {
+  // A short run is ordinary speech too often ("for twenty", "ten to one") to count a sound-alike as a digit in it.
+  const soundAlike = minDigits >= MIN_DIGITS;
+  const tokens = [...text.matchAll(TOKEN)].map((m) => ({ s: m[0], start: m.index!, end: m.index! + m[0].length, n: digitsOf(m[0], soundAlike) }));
   const spans: Array<[number, number]> = [];
   let i = 0;
   while (i < tokens.length) {
@@ -68,7 +84,7 @@ export function maskSpokenCode(text: string): { text: string; masked: boolean } 
     // A trailing "and" is not part of the run.
     let last = j - 1;
     while (last > i && tokens[last]!.n === null) last--;
-    if (digits >= MIN_DIGITS) spans.push([tokens[i]!.start, tokens[last]!.end]);
+    if (digits >= minDigits) spans.push([tokens[i]!.start, tokens[last]!.end]);
     i = j;
   }
   if (!spans.length) return { text, masked: false };
@@ -80,16 +96,17 @@ export function maskSpokenCode(text: string): { text: string; masked: boolean } 
 
 /**
  * The event as it may be kept: at the code prompt, words (spoken or typed) with their digits
- * masked; any other event as it came. Masked where the event arrives (server/adapter.ts masks the
+ * masked (runs as long as spokenCodeMinDigits of the app's code length, `codeLength`, default 6);
+ * any other event as it came. Masked where the event arrives (server/adapter.ts masks the
  * wire frame, before the frame log) and again as the turn runs (run/turn.ts), which is a no-op on
  * an event already masked and covers every path that reaches the core without the adapter.
  */
-export function maskCodeEvent(promptedFor: Session['promptedFor'], e: SessionEvent): SessionEvent {
+export function maskCodeEvent(promptedFor: Session['promptedFor'], e: SessionEvent, codeLength: number = DEFAULT_CODE_LENGTH): SessionEvent {
   // Only words carry the caller's code. A `user.interrupt` event's `heard` is our own prompt, as
   // far as it had played when the caller cut in (Twilio's example: "Life is a complex set of"), so
   // at the code prompt it holds the prompt's text, never the code.
   if (promptedFor !== 'otp' || (e.type !== 'user.speech' && e.type !== 'user.text')) return e;
-  const m = maskSpokenCode(e.text);
+  const m = maskSpokenCode(e.text, spokenCodeMinDigits(codeLength));
   return m.masked ? { ...e, text: m.text } : e;
 }
 

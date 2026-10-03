@@ -60,8 +60,11 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
       for (const hook of written) expect(form[hook], `${id}.${hook}`).toBe((hooks as Record<string, unknown>)[hook]);
     }
     // The scheduling forms hear every turn and move the offer; the others only read their summary.
-    expect(Object.keys(clinicApp.forms.reschedule!)).toEqual(['slots', 'summaryPromptId', 'onSummaryRead', 'onAnswers', 'onSummaryAnswer', 'keepsSlot', 'confirmedParams', 'complete']);
-    expect(Object.keys(clinicApp.forms.billing!)).toEqual(['slots', 'summaryPromptId', 'complete']);
+    expect(Object.keys(clinicApp.forms.reschedule!)).toEqual(['slots', 'summaryPromptId', 'calls', 'onSummaryRead', 'onAnswers', 'onSummaryAnswer', 'keepsSlot', 'confirmedParams', 'complete']);
+    expect(Object.keys(clinicApp.forms.billing!)).toEqual(['slots', 'summaryPromptId', 'calls', 'complete']);
+    // Each form says which actions its hooks call, for the app map and the check for an action no form reaches.
+    expect(clinicApp.forms.billing!.calls).toEqual([]);
+    expect(clinicApp.forms.reschedule!.calls).toEqual(['findAppointment', 'listOpenings', 'moveAppointment']);
   });
 });
 
@@ -201,7 +204,7 @@ describe('the clinic folder: policy.yaml', () => {
     expect(clinicApp.policy.toolLevel).toEqual({ findAppointment: 0, listOpenings: 0, bookAppointment: 0, moveAppointment: 0, cancelAppointment: 0 });
   });
 
-  it('holds the three writes to what the caller confirmed (R3), over who, with whom and when', () => {
+  it('holds the three writes to what the caller confirmed, over who, with whom and when', () => {
     expect(clinicApp.policy.rulesFor).toEqual({
       findAppointment: ['R1'], listOpenings: ['R1'], bookAppointment: ['R1', 'R3'], moveAppointment: ['R1', 'R3'], cancelAppointment: ['R1', 'R3'],
     });

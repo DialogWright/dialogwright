@@ -3,7 +3,7 @@ import type { AnswerMap, QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotContext } from './slots/types';
-import { intentLabel, isFormIntent } from './app/intents';
+import { informationalPrompt, intentLabel, isFormIntent } from './app/intents';
 import { formOf, identityOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, Completion, FormId, SlotId, SummaryMove } from './app/types';
@@ -765,7 +765,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (pc.target === 'form') {
         const acks = enqueue(s, verdict.queue);
         // A yes that also changes a value ("yes, but it was Sunday") changes it. The write reads its
-        // values from the slots, so the gate (R3) refuses it against what the summary said, and the
+        // values from the slots, so the gate (the confirmed rule) refuses it against what the summary said, and the
         // summary is read again: what is filed is only ever what the caller heard and agreed to.
         const fill = correctingFill(s, answers, ctx, pc.form);
         if (fill.disambiguate) return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
@@ -934,6 +934,10 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     // A wrong key is a failed menu attempt, not dead air.
     if (!option) return { decision: failAttempt(s, 'intent', io), rows: [] };
     if (option.intent === 'agent') return { decision: handoff(s, 'live-agent'), rows: [] };
+    // An informational intent's key plays its line as the spoken intent does (the inform verdict):
+    // an ack in front of the question the caller was on, here the keypad menu, its rung intact.
+    const informs = informationalPrompt(io.app, option.intent);
+    if (informs !== undefined) return { decision: resume(s, io, [{ promptId: informs, vars: {} }]), rows: [] };
     if (!isFormIntent(io.app, option.intent)) return { decision: { kind: 'ignore' }, rows: [] };
     setForm(s, option.intent);
     return { decision: continueForm(s, io, [ackIntent(s, option.intent)], null), rows: [] };
@@ -1117,11 +1121,13 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     case 'auth.signed_in': {
       // Only the customer chat server makes this, after the portal's sign-in; the relay never produces
       // it off the wire. It raises an anonymous web chat and nothing else: a sign-in never replaces a
-      // verified customer or a delegate, and a phone call has no portal. The portal's sign-in is
-      // multi-factor, so it is level 2 or it is not one: a level 1 customer here would be walked into
-      // the keypad code, which a chat does not have.
+      // verified customer or a delegate, and a phone call has no portal. A sign-in proves the level the
+      // app's identity says it does (identity.yaml's `signIn`, the top of its ladder), or it is not
+      // one: a customer below the top here would be walked into the keypad code, which a chat does not
+      // have. An app that says nothing of a sign-in takes none.
       // The event's principal is checked, not trusted: a proven party (isParty), or the event is ignored.
-      if (!s.caps.signIn || !isAnonymous(s.principal) || !isParty(event.principal) || event.principal.kind !== identityOf(appOf(s)).subjectKind || event.principal.level !== 2) {
+      const signInLevel = identityOf(appOf(s)).signInLevel;
+      if (!s.caps.signIn || signInLevel === undefined || !isAnonymous(s.principal) || !isParty(event.principal) || event.principal.kind !== identityOf(appOf(s)).subjectKind || event.principal.level !== signInLevel) {
         return { ...base(), decision: { kind: 'ignore' }, actions: [] };
       }
       s.principal = event.principal;

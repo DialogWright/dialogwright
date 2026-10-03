@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { DEFAULT_ROLE_PERSON_REASON, ENGINE_PROMPTS, IDENTITY_PROMPTS, MAX_CORPUS_BYTES, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts } from './check';
+import { CODE_PROMPTS, DEFAULT_ROLE_PERSON_REASON, ENGINE_PROMPTS, IDENTITY_PROMPTS, MAX_CORPUS_BYTES, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts } from './check';
 import type { AppCode } from './defineApp';
 import { USAGE, findAppFolders, main, type Io } from './cli';
 import { libraryCode, LIBRARY_DIR } from './fixture/app';
@@ -44,11 +44,23 @@ async function lines(dir: string, options: Parameters<typeof checkApp>[1] = { co
 /** Removes one prompt (its three lines) from a prompts.yaml's text. */
 const without = (id: string) => (text: string): string => text.replace(new RegExp(`^  ${id}:\\n(    .*\\n)+`, 'm'), '');
 
+/** An identity.yaml for the library: three tools it has stand for the identity tools (the checks here do not read the tools). */
+const IDENTITY = [
+  'principals: { subject: patron }',
+  'levels:',
+  '  1: { name: verified, factors: [book], verify: findHold }',
+  '  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: findHold, verify: findHold }',
+  'attempts: 3',
+  '',
+].join('\n');
+
 function cli(): { io: Io; out: string[]; err: string[] } {
   const out: string[] = [];
   const err: string[] = [];
   return { io: { out: (l) => out.push(l), err: (l) => err.push(l), cwd: temp() }, out, err };
 }
+
+
 
 describe('checkApp: the example app', () => {
   it('has no problems, with its code given or imported from its app.ts', async () => {
@@ -132,7 +144,7 @@ describe('checkApp: the prompts every locale needs', () => {
 
   it('an app with identity needs the code and sign-in lines too; an app without a menu needs no keypad menu', () => {
     const dir = folder({
-      'identity.yaml': 'subjectKind: patron\nfactorSlots: [book]\nverifyTool: findHold\ncodeTool: findHold\nsendCodeTool: findHold\n',
+      'identity.yaml': IDENTITY,
       'intents.yaml': (t) => t.replace(/\nmenu:[\s\S]*$/, '\nmenu: []\n'),
     });
     const config = loadAppFolder(dir).config!;
@@ -143,9 +155,17 @@ describe('checkApp: the prompts every locale needs', () => {
     expect(enginePrompts(config, { ...libraryCode, portal: {} }).map((p) => p.id)).toEqual(expect.arrayContaining(['signin_required', 'greeting_chat_signed_in']));
   });
 
+  it('a ladder of one rung needs no code lines: nothing asks for a code', () => {
+    const config = loadAppFolder(folder({ 'identity.yaml': IDENTITY })).config!;
+    const { 2: _, ...one } = config.identity!.levels;
+    const ids = enginePrompts({ ...config, identity: { ...config.identity!, levels: one as NonNullable<typeof config.identity>['levels'] } }).map((p) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(['identity_failed', 'identity_verified', 'handoff_identity']));
+    for (const { id } of CODE_PROMPTS) expect(ids).not.toContain(id);
+  });
+
   it('an identity failedPromptId replaces identity_failed, and the opening lines app.yaml names replace greeting and greeting_chat', () => {
     const dir = folder({
-      'identity.yaml': 'subjectKind: patron\nfactorSlots: [book]\nverifyTool: findHold\ncodeTool: findHold\nsendCodeTool: findHold\nfailedPromptId: try_again\n',
+      'identity.yaml': IDENTITY.replace('verify: findHold }\n  2', 'verify: findHold, failedPrompt: try_again }\n  2'),
       'app.yaml': (t) => t.replace('prompts:\n  spokenVars: [due]', 'prompts:\n  spokenVars: [due]\n  greetings:\n    voice: hello\n    chat: hello_chat'),
     });
     const ids = enginePrompts(loadAppFolder(dir).config!).map((p) => p.id);
@@ -237,9 +257,9 @@ describe('checkApp: the lines the engine builds from the code', () => {
   });
 
   it('a role whose access is "person" needs the handoff line for R5\'s reason: role-person, or the policy\'s own', () => {
-    const roles = (extra: string) => folder({ 'policy.yaml': (t) => `${t}\nroles:\n  findHold:\n    clerk: person\n${extra}` });
-    expect(ids(libraryCode, roles(''))).toContain('handoff_role_person');
-    const own = ids(libraryCode, roles('rolePersonReason: staff-hold\n'));
+    const roles = (access: string) => folder({ 'policy.yaml': (t) => t.replace('- custom: known-branch', `- custom: known-branch\n      - role: { ${access} }`) });
+    expect(ids(libraryCode, roles('clerk: person'))).toContain('handoff_role_person');
+    const own = ids(libraryCode, roles('clerk: person, reason: staff-hold'));
     expect(own).toContain('handoff_staff_hold');
     expect(own).not.toContain('handoff_role_person');
     expect(ids(libraryCode)).not.toContain('handoff_role_person');
@@ -391,7 +411,7 @@ describe('checkApp: the app module', () => {
       'prompts.yaml': without('goodbye'),
     });
     const problems = await lines(dir, {});
-    expect(problems).toContain('policy.yaml:7:3  rulesFor.renewLoan  tool "renewLoan" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.renewLoan), or delete this row');
+    expect(problems).toContain('policy.yaml:3:3  actions.renewLoan  tool "renewLoan" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.renewLoan), or delete this action');
     expect(problems).toContain('prompts.yaml:2:1  prompts  prompt "goodbye" is missing from prompts.yaml; the engine says it when a call ends  ->  add "goodbye:" with its text and interruptible to prompts.yaml');
   });
 
@@ -451,13 +471,14 @@ describe('the engine prompt list', () => {
     expect([...families].sort()).toEqual(['ack_<x>', 'ask_<x>', 'ask_<x>_dtmf', 'ask_<x>_retry', 'confirm_<x>', 'disambiguate_<x>', 'handoff_<x>']);
   });
 
-  it('the role-person reason check names is the gate\'s', () => {
-    const policy = readFileSync(join(PACKAGE_DIR, 'src', 'gate', 'policy.ts'), 'utf8');
-    expect(policy).toContain(`const DEFAULT_ROLE_PERSON_REASON = '${DEFAULT_ROLE_PERSON_REASON}';`);
+  it('the role-person reason check names is the gate\'s', async () => {
+    const lines = readFileSync(join(PACKAGE_DIR, 'src', 'gate', 'lines.ts'), 'utf8');
+    expect(lines).toContain(`const DEFAULT_ROLE_PERSON_REASON = '${DEFAULT_ROLE_PERSON_REASON}';`);
+    expect(DEFAULT_ROLE_PERSON_REASON).toBe((await import('../gate/lines')).DEFAULT_ROLE_PERSON_REASON);
   });
 
   it('names every prompt id the engine says as a literal, or says why not', () => {
-    const named = new Set([...Object.keys(ENGINE_PROMPTS), 'greeting', 'greeting_chat', 'nomatch_dtmf_menu', ...IDENTITY_PROMPTS.map((p) => p.id), ...PORTAL_PROMPTS.map((p) => p.id)]);
+    const named = new Set([...Object.keys(ENGINE_PROMPTS), 'greeting', 'greeting_chat', 'nomatch_dtmf_menu', ...IDENTITY_PROMPTS.map((p) => p.id), ...CODE_PROMPTS.map((p) => p.id), ...PORTAL_PROMPTS.map((p) => p.id)]);
     // The ones an app writes or that depend on the app's own code, never the same in two apps.
     const elsewhere = new Set(['identity_failed', 'handoff_identity']);
     expect(literals().size).toBeGreaterThan(30);

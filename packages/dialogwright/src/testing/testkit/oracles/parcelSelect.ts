@@ -62,7 +62,7 @@ function numberOf(label: string): string | null {
 
 /**
  * Which parcel the caller means: one of their own, by number or by what is in it, or a number they
- * said that is not theirs. The gate, not this slot, decides whether they may hear about it (R2).
+ * said that is not theirs. The gate, not this slot, decides whether they may hear about it (the scope rule).
  */
 export const parcelSelectSlot: SlotSpec = {
   id: 'parcelSelect',

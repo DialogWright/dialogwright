@@ -7,7 +7,7 @@ It is the app to read first when learning to build on the engine. It is small, a
 ## What the example shows
 
 - **A line that verifies no one.** There is no `App.identity`: nobody steps up, every tool is at level 0, and `validateApp` refuses one that is not. The booking is looked up from the caller's name, date of birth and provider instead. **This example checks no caller's identity: anyone who gives a name, birth date and provider can hear that booking and change it.** A real clinic would add identity verification before reading or changing a booking; the engine supports it (`App.identity`, a step-up to a level each tool requires; see how the engine's testkit sets it up in `packages/dialogwright/src/testing/testkit/index.ts`).
-- **Reads and writes through the gate.** The directory is reached only through tools: `findAppointment` and `listOpenings` (reads), and `bookAppointment`, `moveAppointment` and `cancelAppointment` (writes). Each call is a gate event and an audit row. The writes run R3: they write only the values the caller just heard read back and said yes to. If the caller says "yes, but Thursday", R3 refuses the write and the summary is read again with Thursday.
+- **Reads and writes through the gate.** The directory is reached only through tools: `findAppointment` and `listOpenings` (reads), and `bookAppointment`, `moveAppointment` and `cancelAppointment` (writes). Each call is a gate event and an audit row. The writes run the confirmed rule: they write only the values the caller just heard read back and said yes to. If the caller says "yes, but Thursday", the confirmed rule refuses the write and the summary is read again with Thursday.
 - **Scheduling through the form hooks.** The offer is built, moved and read back by the app's own code. The engine only routes. See the table below.
 - **Carried slots.** The caller's name, date of birth and member ID outlast the task (`App.carrySlots`), so a second task on the call does not ask for them again.
 - **Its own thresholds.** `PROVIDER_UNSURE`, `TIME_OF_DAY` and `TIME_PREFERENCE` sit beside the engine's (`App.thresholds`, set in app.yaml), and a run overrides them the same way (`--threshold TIME_OF_DAY=0.7`).
@@ -24,7 +24,7 @@ app.yaml        who the app is and how it presents itself
 intents.yaml    what a caller can ask for, and the keypad menu
 forms.yaml      the five forms: their slots, their summaries, the hooks each one has
 prompts.yaml    every line a caller can hear
-policy.yaml     the gate's tables
+policy.yaml     what the agent may do, action by action: the level and the rules the gate runs before each
 slots.yaml      every slot, in the order the engine works through them (the caller's name is a library `name` slot, the birth date a library `birthdate` slot, the member ID a library `digits` slot, the provider a library `choice` slot whose options are the roster, and the appointment day a library `date` slot)
 src/app.ts      the code: defineApp(this folder, code)
 fixtures/       the corpus, the scripted calls, the baseline and the recorded cassette
@@ -36,7 +36,7 @@ Each YAML file starts with a `yaml-language-server` line that points at its sche
 - **intents.yaml.** The ten intents in the order the decision model is offered them, each with the criteria sent to the model and the label the line says ("I'd be happy to help you reschedule your appointment"). The five tasks are `form` intents, `capabilities` is `informational` (its line is said, and the caller goes back to where they were), and the rest are the engine's `control` intents. There is no `done`: a call ends at its completion. Then the keypad menu: 1 to 5 for the tasks, 0 for a person.
 - **forms.yaml.** Each form's slots in the order they are asked, the prompt that reads it back for a yes (`null` for billing, which has none), and the hooks it has. The hooks are functions in `src/domain/forms.ts` and `src/domain/scheduling.ts`; the list says which ones, and `defineApp` refuses a form whose code writes a hook the list leaves out, or leaves out one the list names.
 - **prompts.yaml.** All 68 lines, word for word, with whether a caller may talk over each. The agent says exactly these and never composes its own. Braces are filled in by the engine (`{intentLabel}`) or by the clinic's code (`{provider}`, `{when}`, `{existing}`).
-- **policy.yaml.** Every tool at level 0, since there is no `identity.yaml` (the clinic verifies no one, and `defineApp` refuses a higher level without one); R1 on every tool and R3 on the three writes, with the fields R3 holds a confirmed write to; and the attempt limit.
+- **policy.yaml.** One action per tool, every one at level 0, since there is no `identity.yaml` (the clinic verifies no one, and `defineApp` refuses a higher level without one); the `identity` rule on every action and the `confirmed` rule on the three writes, with the fields it holds a confirmed write to, in the order the hash is taken over.
 
 What stays in TypeScript is what runs, or what the YAML could only describe by copying code:
 

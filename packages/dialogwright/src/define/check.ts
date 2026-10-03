@@ -5,6 +5,7 @@ import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
 import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, type AppCode } from './defineApp';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
+import { DEFAULT_ROLE_PERSON_REASON, personReasons } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES } from './schema/index';
 
@@ -74,6 +75,9 @@ const MENU_PROMPT = { id: 'nomatch_dtmf_menu', why: 'it offers the keypad menu a
 export const IDENTITY_PROMPTS: readonly { id: string; why: string }[] = [
   { id: 'handoff_identity', why: 'a caller who could not be verified is handed to a person' },
   { id: 'identity_verified', why: 'the caller was verified' },
+];
+/** The one-time code's lines: only for a ladder with level 2 (a ladder of one rung has no code). */
+export const CODE_PROMPTS: readonly { id: string; why: string }[] = [
   { id: 'ask_otp', why: 'it asks for the one-time code' },
   { id: 'ask_otp_spoken', why: 'the caller said the code instead of keying it' },
   { id: 'otp_spoken_reissued', why: 'the caller said the code and a new one is sent' },
@@ -89,8 +93,16 @@ export const PORTAL_PROMPTS: readonly { id: string; why: string }[] = [
   { id: 'greeting_chat_delegate', why: 'a chat opens for someone acting for subjects' },
 ];
 
-/** R5's NEEDS_HUMAN reason when policy.yaml names none (gate/policy.ts DEFAULT_ROLE_PERSON_REASON; a test holds the two together). */
-export const DEFAULT_ROLE_PERSON_REASON = 'role-person';
+/** The role rule's NEEDS_HUMAN reason when policy.yaml names none: the gate's own (gate/lines.ts). */
+export { DEFAULT_ROLE_PERSON_REASON };
+
+/** The identity factors' slots, the line said after a failed match (with where it is named), and whether the ladder has the one-time code. */
+function identityParts(config: LoadedConfig): { factors: readonly string[]; failedPromptId?: string; failedPath: DataPath; code: boolean } | null {
+  const identity = config.identity;
+  if (!identity) return null;
+  const one = identity.levels[1];
+  return { factors: one.factors, ...(one.failedPrompt === undefined ? {} : { failedPromptId: one.failedPrompt }), failedPath: ['levels', '1', 'failedPrompt'], code: identity.levels[2] !== undefined };
+}
 
 /**
  * The prompt ids the engine says for this app, each with when it says it: the fixed list, and the
@@ -99,7 +111,7 @@ export const DEFAULT_ROLE_PERSON_REASON = 'role-person';
  * `ask_<slot>_dtmf` when the spec has a keypad rung (`dtmf`) or reads every spoken value back
  * (`spokenConfirm: always`, whose declined or unanswered read-back goes to the keypad),
  * `confirm_<slot>` for that read-back, `ack_<slot>` when a spoken value may be acknowledged
- * (`spokenConfirm: by-confidence`), and the spec's `partialPromptId`. And the handoff line for R5's
+ * (`spokenConfirm: by-confidence`), and the spec's `partialPromptId`. And the handoff line for the role rule's
  * reason, when a role's access to a tool is `person`. And every line a slot declares it can lead
  * the engine to say (SlotSpec.prompts: e.g. `disambiguate_<slot>`, a help prompt, a retryPromptId),
  * which only the code knows; a slot that declares none adds none.
@@ -127,14 +139,14 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
     if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
     for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)` });
   }
-  const roles = Object.values(config.policy.roles ?? {});
-  if (roles.some((byRole) => Object.values(byRole).includes('person'))) {
-    const reason = config.policy.rolePersonReason ?? DEFAULT_ROLE_PERSON_REASON;
-    needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (policy.yaml roles) and the call goes to a person for the reason "${reason}"` });
+  for (const reason of personReasons(config.policy)) {
+    needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (a role rule in policy.yaml) and the call goes to a person for the reason "${reason}"` });
   }
-  if (config.identity) {
+  const identity = identityParts(config);
+  if (identity) {
     needs.push(...IDENTITY_PROMPTS);
-    needs.push({ id: config.identity.failedPromptId ?? 'identity_failed', why: 'the identity factors did not match' });
+    if (identity.code) needs.push(...CODE_PROMPTS);
+    needs.push({ id: identity.failedPromptId ?? 'identity_failed', why: 'the identity factors did not match' });
   }
   if (code?.portal) needs.push(...PORTAL_PROMPTS);
   const seen = new Set<string>();
@@ -144,7 +156,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
 /** The slots a form or identity asks for, whose lines the engine says: each form's, then the identity factors. */
 function askedSlots(config: LoadedConfig): Set<string> {
   const slots = new Set<string>(Object.values(config.forms.forms).flatMap((form) => form.slots));
-  for (const slot of config.identity?.factorSlots ?? []) slots.add(slot);
+  for (const slot of identityParts(config)?.factors ?? []) slots.add(slot);
   return slots;
 }
 
@@ -268,7 +280,8 @@ function referencesOf(config: LoadedConfig): Reference[] {
   for (const [id, form] of Object.entries(config.forms.forms)) {
     if (form.summaryPromptId !== null) refs.push({ id: form.summaryPromptId, file: 'forms.yaml', path: ['forms', id, 'summaryPromptId'] });
   }
-  if (config.identity?.failedPromptId !== undefined) refs.push({ id: config.identity.failedPromptId, file: 'identity.yaml', path: ['failedPromptId'] });
+  const identity = identityParts(config);
+  if (identity?.failedPromptId !== undefined) refs.push({ id: identity.failedPromptId, file: 'identity.yaml', path: identity.failedPath });
   for (const [which, id] of Object.entries(config.app.prompts?.greetings ?? {})) {
     if (id !== undefined) refs.push({ id, file: 'app.yaml', path: ['prompts', 'greetings', which] });
   }

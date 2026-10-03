@@ -1,0 +1,7 @@
+subjectKind: patient
+delegateKind: staff
+factorSlots: [patientId, dob]
+verifyTool: verifyPatient
+codeTool: verifyCode
+sendCodeTool: sendCode
+failedPromptId: identity_failed

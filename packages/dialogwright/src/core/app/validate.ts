@@ -1,10 +1,15 @@
 import { isRuleId } from '../../gate/policy';
+import { isBuiltInRuleId, NAMED_RULE_IDS, sourceOf } from '../../gate/compiled';
+import { isDefinedRule, ruleDefinitionProblems } from '../../gate/defineRule';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../questionIds';
 import { askedQuestionIds, probeContexts } from './probeQuestions';
 import { unknownSlotThresholds, unknownThresholdMessage } from '../slotThresholds';
 import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
+import { CODE_LENGTHS, topLevelOf } from './lookup';
+import { principalProblems } from './principals';
 import type { App, ConfigHashes } from './types';
+import { AUDIT_MASKS } from '../recording';
 
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
 const RESERVED_KINDS: readonly string[] = ['anonymous', 'channel', 'principal', 'level', 'factor', 'pass', 'config', 'configFiles'];
@@ -97,12 +102,23 @@ export function validateApp(app: App): void {
   for (const id of REQUIRED_CONTROL_INTENTS) if (!Object.hasOwn(app.intents, id)) fail(`missing control intent "${id}"`);
   const { rulesFor, toolLevel, purposeLevel, roles, subjects, customRules } = app.policy;
   for (const [id, rule] of Object.entries(customRules ?? {})) {
-    if (isRuleId(id) || id === 'R0') fail(`policy's custom rule "${id}" has a built-in rule's id`);
+    if (isBuiltInRuleId(id)) fail(`policy's custom rule "${id}" has a built-in rule's id`);
     if (typeof rule !== 'function') fail(`policy's custom rule "${id}" is not a function`);
+    // A rule made with defineRule must say what it does: an example the gate allows and one it
+    // refuses. A plain function (an App built by hand) is still run as it is; `check` refuses one.
+    if (isDefinedRule(rule)) for (const { message } of ruleDefinitionProblems(id, rule, `the custom rule "${id}"`)) fail(`policy's ${message}`);
   }
+  // The range rules (dateInRange, limit) take parameters only a policy file gives: tables compiled
+  // from one carry the rules they were compiled from (sourceOf), and the rule must be one of them.
+  const source = sourceOf(app.policy);
   for (const [tool, ids] of Object.entries(rulesFor)) {
     if (!Object.hasOwn(app.tools, tool)) fail(`policy has rules for tool "${tool}", which is not a tool`);
+    const named = source && Object.hasOwn(source.actions, tool) ? source.actions[tool]!.rules.map((r) => r.rule as string) : [];
     for (const id of ids) {
+      if (NAMED_RULE_IDS.includes(id)) {
+        if (!named.includes(id)) fail(`policy for tool "${tool}" names the rule "${id}" without its parameters, which only policy.yaml gives`);
+        continue;
+      }
       if (!isRuleId(id) && !(customRules && Object.hasOwn(customRules, id))) fail(`policy for tool "${tool}" names unknown rule "${id}"`);
     }
     if (ids.includes('R2') && !Object.hasOwn(subjects, tool)) fail(`policy for tool "${tool}" runs R2 but names no subject`);
@@ -128,11 +144,43 @@ export function validateApp(app: App): void {
     const { subjectKind } = app.identity;
     if (typeof subjectKind !== 'string' || !SUBJECT_KIND.test(subjectKind)) fail(`identity subjectKind "${String(subjectKind)}" is not a lowercase word`);
     if (RESERVED_KINDS.includes(subjectKind)) fail(`identity subjectKind "${subjectKind}" is reserved`);
-    const { verifyTool, codeTool, sendCodeTool } = app.identity;
+    const identity = app.identity;
+    const { verifyTool, codeTool, sendCodeTool } = identity;
+    // Level 2's tools come together: the code is sent and checked, or there is no code (a ladder of one rung).
+    if ((codeTool === undefined) !== (sendCodeTool === undefined)) fail(`identity names ${codeTool === undefined ? 'a sendCodeTool but no codeTool' : 'a codeTool but no sendCodeTool'}; level 2 needs both, a ladder of one rung neither`);
     for (const [role, tool] of [['verifyTool', verifyTool], ['codeTool', codeTool], ['sendCodeTool', sendCodeTool]] as const) {
+      if (tool === undefined) continue;
       if (!Object.hasOwn(app.tools, tool)) fail(`identity ${role} "${tool}" is not a tool`);
       if (!Object.hasOwn(rulesFor, tool)) fail(`identity ${role} "${tool}" has no rules in the policy`);
     }
+    const top = topLevelOf(identity);
+    if (top === 1) {
+      // Fails closed, as for an app with no identity: a ladder without the code has no level 2, so no
+      // call may need it (a tool with no level needs the highest), and the lifecycle never sends a code.
+      for (const tool of Object.keys(rulesFor)) {
+        const level = Object.hasOwn(toolLevel, tool) ? toolLevel[tool] : undefined;
+        if (level === undefined || level > 1) fail(`tool "${tool}" needs identity level ${level ?? '2 (it has none)'}, and the identity's ladder stops at level 1 (it has no one-time code)`);
+      }
+      for (const [purpose, level] of Object.entries(purposeLevel)) {
+        if (level > 1) fail(`purpose "${purpose}" needs identity level ${level}, and the identity's ladder stops at level 1 (it has no one-time code)`);
+      }
+    }
+    const { codeLength, signInLevel, levelNames, maxAttempts } = identity;
+    if (codeLength !== undefined) {
+      if (top === 1) fail(`identity has a codeLength (${codeLength}) but no one-time code`);
+      if (!Number.isInteger(codeLength) || codeLength < CODE_LENGTHS.min || codeLength > CODE_LENGTHS.max) fail(`identity codeLength ${String(codeLength)} is not a whole number from ${CODE_LENGTHS.min} to ${CODE_LENGTHS.max}`);
+    }
+    // A sign-in proves the top of the ladder: below it, a chat would be walked into the keypad code it does not have.
+    if (signInLevel !== undefined && signInLevel !== top) fail(`identity signInLevel ${String(signInLevel)} is not the top of the ladder (${top})`);
+    if (levelNames !== undefined) {
+      const names = top === 2 ? [levelNames[1], levelNames[2]] : [levelNames[1]];
+      for (const [i, name] of names.entries()) if (typeof name !== 'string' || name.trim() === '') fail(`identity level ${i + 1} has no name`);
+      if (top === 1 && levelNames[2] !== undefined) fail(`identity names a level 2 ("${levelNames[2]}"), and the ladder stops at level 1`);
+      if (top === 2 && levelNames[1].trim().toLowerCase() === levelNames[2]!.trim().toLowerCase()) fail(`identity levels 1 and 2 are both called "${levelNames[1]}"`);
+    }
+    // identity.yaml's attempts are the attempts rule's: a policy compiled without them would hold the checks to another number.
+    if (maxAttempts !== undefined && app.policy.maxAttempts !== maxAttempts) fail(`policy's maxAttempts (${app.policy.maxAttempts}) is not identity.yaml's attempts (${maxAttempts}); compile the policy with the identity (definePolicy's identity option)`);
+    for (const problem of principalProblems(app)) fail(problem);
   }
   for (const tool of Object.keys(toolLevel)) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has a level for tool "${tool}", which has no rules`);
   const seenLinks = new Set<string>();
@@ -143,4 +191,44 @@ export function validateApp(app: App): void {
     seenLinks.add(id);
   }
   for (const tool of Object.keys(roles ?? {})) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has roles for tool "${tool}", which has no rules`);
+  for (const [tool, def] of Object.entries(app.tools)) {
+    const fields: unknown = def.fields;
+    if (fields === undefined) continue;
+    if (!Array.isArray(fields) || fields.some((f) => typeof f !== 'string' || f === '')) return fail(`tool "${tool}"'s fields is not a list of field names`);
+    if (new Set(fields).size !== fields.length) fail(`tool "${tool}" lists a field twice`);
+  }
+  // Redaction per principal (core/resultRedaction.ts) fails closed here, not mid-call: each row is
+  // for the app's delegate kind (or one of its roles), and withholds fields its tools declare.
+  for (const [who, byTool] of Object.entries(app.policy.redact ?? {})) {
+    const dot = who.indexOf('.');
+    const kind = dot < 0 ? who : who.slice(0, dot);
+    const role = dot < 0 ? undefined : who.slice(dot + 1);
+    const identity = app.identity;
+    if (!identity) fail(`policy redacts for "${who}", and the app has no identity`);
+    else if (kind === identity.subjectKind) fail(`policy redacts for "${who}", the subject kind: a subject acting for themselves is never redacted`);
+    else if (kind !== identity.delegateKind) fail(`policy redacts for "${who}", which is not the identity's delegate kind`);
+    else if (role !== undefined && !(identity.delegateRoles ?? []).includes(role)) fail(`policy redacts for "${who}": "${role}" is not a role of "${kind}"`);
+    for (const [tool, fields] of Object.entries(byTool)) {
+      if (!Object.hasOwn(app.tools, tool) || !Object.hasOwn(rulesFor, tool)) fail(`policy redacts the result of "${tool}" for "${who}", which is not a tool with rules`);
+      const declared = app.tools[tool]!.fields ?? [];
+      for (const field of fields) if (!declared.includes(field)) fail(`policy redacts "${field}" of "${tool}" for "${who}", which the tool does not declare (ToolDef.fields)`);
+    }
+  }
+  // What is recorded of a call's params (core/recording.ts): each declaration is one of the five, and
+  // a tool that lists its params (an App built in code may not) has each one declared, so nothing it
+  // lists is recorded as it is without the policy saying so (check requires the list of a folder's).
+  const audit = app.policy.audit ?? {};
+  for (const [param, how] of Object.entries(audit)) {
+    if (!(AUDIT_MASKS as readonly unknown[]).includes(how)) fail(`policy records "${param}" as "${String(how)}", which is not one of ${AUDIT_MASKS.join(', ')}`);
+  }
+  for (const [tool, def] of Object.entries(app.tools)) {
+    const params: unknown = def.params;
+    if (params === undefined) continue;
+    if (!Array.isArray(params) || params.some((p) => typeof p !== 'string' || p === '')) return fail(`tool "${tool}"'s params is not a list of param names`);
+    if (new Set(params).size !== params.length) fail(`tool "${tool}" lists a param twice`);
+    for (const param of params as string[]) {
+      const slot = Object.hasOwn(app.slots, param) ? app.slots[param]!.redact : undefined;
+      if (slot === undefined && !Object.hasOwn(audit, param)) fail(`tool "${tool}" sends "${param}", which is neither a slot with a redact setting nor declared in the policy's audit`);
+    }
+  }
 }

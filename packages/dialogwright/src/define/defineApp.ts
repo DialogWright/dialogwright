@@ -7,16 +7,19 @@ import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { askedQuestionIds, probeContexts } from '../core/app/probeQuestions';
 import { thresholdNamesOf, unknownSlotThresholds, unknownThresholdMessage } from '../core/slotThresholds';
+import { reachOf, unreachedActions } from '../core/app/reach';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
 import type { LibrarySlotSpec, SlotTypes } from '../slots/types';
 import { applySlotWording, isLibrarySlot, localeSlotsFile } from '../slots/wording';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
-import { RULE_IDS, isRuleId } from '../gate/policy';
+import { BUILT_IN_IDS_NOTE, BUILT_IN_RULES } from '../gate/compiled';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
+import { ruleDefinitionProblems } from '../gate/defineRule';
+import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotRedactOf, toolFieldProblems, toolParamProblems } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
-import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook, type PolicyYaml } from './schema/index';
+import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -45,7 +48,7 @@ import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook, type
 export type FormHooks = Pick<FormDef, FormHook>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 
@@ -67,6 +70,12 @@ export interface AppCode {
   services?: App['services'];
   /** The app's own policy rules, by the id rulesFor names them by (PolicyTables.customRules). */
   customRules?: PolicyTables['customRules'];
+  /**
+   * The lookups policy.yaml's range rules may call in their references (`max: orderTotal(orderId)`):
+   * names of functions on the gate's lookups (`systems().lookups`), each called with one param's
+   * value. A reference to any other is refused. Default: none.
+   */
+  lookups?: readonly string[];
   principals?: App['principals'];
   portal?: App['portal'];
   facts?: App['facts'];
@@ -347,51 +356,57 @@ export function crossLink(
     );
   }
 
-  // policy.yaml: every tool it names is in the code, and every tool in the code has rules
-  const toolExists = (path: DataPath, tool: string): boolean => {
-    if (has(code.tools, tool)) return true;
-    yaml('policy.yaml', path, `tool "${tool}" is not defined in the code`, `${renameHint(tool, tools)}add it to the app's tools in ${inCode('tools', tool)}, or delete this row`);
-    return false;
-  };
-  const tables: [keyof PolicyYaml, string][] = [['toolLevel', 'a level'], ['subjects', 'a subject'], ['serviceFields', 'service fields'], ['roles', 'roles']];
-  for (const [tool, rules] of Object.entries(policy.rulesFor)) {
-    if (!toolExists(['rulesFor', tool], tool)) continue;
-    if (!has(policy.toolLevel, tool)) yaml('policy.yaml', ['rulesFor', tool], `tool "${tool}" has rules but no level under toolLevel`, `add "${tool}: 0" under toolLevel (0 anonymous, 1 the factors matched, 2 the factors and the code)`);
-    rules.forEach((rule, i) => {
-      if (isRuleId(rule) || has(customRules, rule)) return;
-      yaml(
-        'policy.yaml',
-        ['rulesFor', tool, i],
-        `rule "${rule}" is not a built-in rule (${RULE_IDS.join(', ')}) and the code defines no custom rule by that name`,
-        `${renameHint(rule, [...RULE_IDS, ...Object.keys(customRules)])}add it to ${inCode('customRules', rule)}, or name a built-in rule instead`,
-      );
+  // forms.yaml's `calls`: the actions each form's hooks call. A form says so, or none does; each is a
+  // tool; and an action no form lists and the identity flow does not call is one nothing can reach.
+  const reach = reachOf(forms);
+  for (const [id, form] of Object.entries(forms)) {
+    form.calls?.forEach((tool, i) => {
+      if (!tools.includes(tool)) yaml('forms.yaml', ['forms', id, 'calls', i], `form "${id}" calls "${tool}", which is not a tool in the code`, `${renameHint(tool, tools)}add it to the app's tools in ${inCode('tools', tool)}, or delete it from this list`);
     });
-    if (rules.includes('R2') && !has(policy.subjects, tool)) yaml('policy.yaml', ['rulesFor', tool], `tool "${tool}" runs R2, but has no row under subjects`, `add "${tool}: { param: <the param that names the subject> }" under subjects`);
-  }
-  for (const [table, what] of tables) {
-    for (const tool of Object.keys((policy[table] as object | undefined) ?? {})) {
-      if (!toolExists([table, tool], tool)) continue;
-      if (!has(policy.rulesFor, tool)) yaml('policy.yaml', [table, tool], `tool "${tool}" has ${what} but no rules under rulesFor`, `add "${tool}: [R1]" under rulesFor, or delete this row`);
+    if (reach.undeclared.includes(id)) {
+      yaml('forms.yaml', ['forms', id], `form "${id}" does not say which actions it calls, though other forms do`, `add "calls: [<the tools its hooks call>]" to it ("calls: []" for none): every form says, or none does`, true);
     }
   }
+  const flow = config.identity ? { verifyTool: config.identity.levels[1].verify, ...(config.identity.levels[2] ? { codeTool: config.identity.levels[2].verify, sendCodeTool: config.identity.levels[2].send } : {}) } : undefined;
+  for (const tool of unreachedActions(Object.keys(policy.actions), forms, flow)) {
+    yaml('policy.yaml', ['actions', tool], `action "${tool}" is reached by no form: no form's calls list it, and the identity flow does not call it`, `add "${tool}" to the calls of the form whose hooks call it in forms.yaml, or delete the action from policy.yaml and the tool from ${inCode('tools', tool)}`, true);
+  }
+
+  // policy.yaml and identity.yaml: ./policyFile.ts checks them, against each other and the code.
+  const check = {
+    policy,
+    identity: config.identity,
+    files: { policy: 'policy.yaml', identity: 'identity.yaml' },
+    locate,
+    locateKey,
+    tools,
+    toolFields: Object.fromEntries(tools.map((tool) => [tool, declaredFields(code.tools?.[tool])])),
+    toolParams: Object.fromEntries(tools.map((tool) => [tool, declaredParams(code.tools?.[tool])])),
+    slotRedact: slotRedactOf(linked.slots),
+    slots: linked.known,
+    addSlot,
+    customRules: Object.keys(customRules),
+    lookups: Array.isArray(code.lookups) ? code.lookups.filter((x): x is string => typeof x === 'string') : [],
+    prompts: promptIds,
+    confirms: Object.values(forms).some((form) => form.hooks.includes('confirmedParams')),
+    inCode,
+    codePath,
+  };
+  problems.push(...policyProblems(check), ...identityProblems(check));
   for (const tool of tools) {
-    if (!has(policy.rulesFor, tool)) {
-      yaml('policy.yaml', ['rulesFor'], `tool "${tool}" (${codePath('tools', tool)}) has no row under rulesFor, so it can never be called`, `add "${tool}: [R1]" under rulesFor and its level under toolLevel, or delete the tool from ${inCode('tools', tool)}`);
-    }
+    for (const message of toolFieldProblems(code.tools?.[tool])) inTs(['tools', tool, 'fields'], `tool "${tool}": ${message}`, `make ${inCode('tools', tool, 'fields')} a list of the distinct fields of its result the policy may withhold`);
+    for (const message of toolParamProblems(code.tools?.[tool])) inTs(['tools', tool, 'params'], `tool "${tool}": ${message}`, `make ${inCode('tools', tool, 'params')} a list of the distinct params its calls carry`);
   }
-  const named = new Set(Object.values(policy.rulesFor).flat());
+  const named = customRulesNamed(policy);
   for (const [id, rule] of Object.entries(customRules)) {
-    if (isRuleId(id) || id === 'R0') inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's rulesFor; the built-in ids are R0, ${RULE_IDS.join(', ')}`);
+    if (isBuiltInRuleId(id)) inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's custom: rules; ${(BUILT_IN_RULES as readonly string[]).includes(id) ? `"${id}" is a built-in rule written by its name with its parameters` : BUILT_IN_IDS_NOTE}`);
     else if (typeof rule !== 'function') inTs(['customRules', id], `custom rule "${id}" is not a function`, `make ${inCode('customRules', id)} a function of the rule context`);
-    else if (!named.has(id)) yaml('policy.yaml', ['rulesFor'], `custom rule "${id}" (${codePath('customRules', id)}) is not named under rulesFor, so it never runs`, `add "${id}" to the rules of the tool it guards, or delete the rule from ${inCode('customRules', id)}`);
+    else if (!named.has(id)) yaml('policy.yaml', ['actions'], `custom rule "${id}" (${codePath('customRules', id)}) is not named by any action's rules, so it never runs`, `add "- custom: ${id}" to the rules of the action it guards, or delete the rule from ${inCode('customRules', id)}`);
+    else for (const { message, fix } of ruleDefinitionProblems(id, rule, inCode('customRules', id))) inTs(['customRules', id], message, fix);
   }
-  if (!config.identity) {
-    for (const [tool, level] of Object.entries(policy.toolLevel)) {
-      if (level !== 0) yaml('policy.yaml', ['toolLevel', tool], `tool "${tool}" needs identity level ${level}, but the app has no identity.yaml, so no caller can reach it`, 'set it to 0, or add identity.yaml so callers can verify');
-    }
-    for (const [purpose, level] of Object.entries(policy.purposeLevel)) {
-      if (level !== 0) yaml('policy.yaml', ['purposeLevel', purpose], `purpose "${purpose}" needs identity level ${level}, but the app has no identity.yaml`, 'set it to 0, or add identity.yaml so callers can verify');
-    }
+  if (code.lookups !== undefined && !Array.isArray(code.lookups)) inTs(['lookups'], 'lookups is not a list', `make ${inCode('lookups')} a list of the names of the gate's lookups the policy may call`);
+  for (const { index, message } of lookupDeclarationProblems(Array.isArray(code.lookups) ? code.lookups : [])) {
+    inTs(['lookups', String(index)], message, `name a function of the gate's lookups with a plain word of its own, in ${inCode('lookups')}`);
   }
   for (const [access, template] of Object.entries(policy.wording?.role ?? {})) {
     for (const [, name] of (template ?? '').matchAll(/\{([^}]*)\}/g)) {
@@ -399,20 +414,11 @@ export function crossLink(
     }
   }
 
-  // identity.yaml
-  const identity = config.identity;
-  if (identity) {
-    identity.factorSlots.forEach((slot, i) => slotExists('identity.yaml', ['factorSlots', i], slot));
-    for (const role of ['verifyTool', 'codeTool', 'sendCodeTool'] as const) {
-      const tool = identity[role];
-      if (!has(code.tools, tool)) yaml('identity.yaml', [role], `tool "${tool}" is not defined in the code`, `${renameHint(tool, tools)}add it to the app's tools in ${inCode('tools', tool)}`);
-      else if (!has(policy.rulesFor, tool)) yaml('identity.yaml', [role], `tool "${tool}" has no row under rulesFor in policy.yaml`, `add "${tool}: [R1, R6]" under rulesFor in policy.yaml, and its level under toolLevel`);
-    }
-    if (identity.failedPromptId !== undefined) promptExists('identity.yaml', ['failedPromptId'], identity.failedPromptId);
+  if (config.identity) {
     const send = code.identity?.sendCodeParams;
     if (send !== undefined && typeof send !== 'function') inTs(['identity', 'sendCodeParams'], 'sendCodeParams is not a function', `make ${inCode('identity', 'sendCodeParams')} a function of the session`);
   } else if (code.identity !== undefined) {
-    inTs(['identity'], 'the code has identity hooks, but the folder has no identity.yaml', `add identity.yaml (subjectKind, factorSlots and the identity tools), or delete it from ${inCode('identity')}`);
+    inTs(['identity'], 'the code has identity hooks, but the folder has no identity.yaml', `add identity.yaml (principals, levels and attempts, with the identity tools), or delete it from ${inCode('identity')}`);
   }
 
   // app.yaml
@@ -469,17 +475,6 @@ export function crossLink(
   for (const id of Object.keys(app.prompts?.tags ?? {})) {
     if (!clipIds.includes(id)) {
       yaml('app.yaml', ['prompts', 'tags', id], `the voice tag for "${id}" names no clip: the tags are keyed by the vocabulary's clip ids`, `${renameHint(id, clipIds)}delete it, or add "${id}" to prompts.vocabulary`, true);
-    }
-  }
-
-  // policy.yaml: R3 compares a write's params to confirmedFields and to the hash of what the caller said yes to
-  const confirmedWrites = Object.entries(policy.rulesFor).filter(([, rules]) => rules.includes('R3')).map(([tool]) => tool);
-  if (confirmedWrites.length > 0) {
-    if (policy.confirmedFields.length === 0) {
-      yaml('policy.yaml', ['confirmedFields'], `${quoteList(confirmedWrites)} run${confirmedWrites.length === 1 ? 's' : ''} R3, but confirmedFields is empty, so R3 blocks every call`, 'list the fields a confirmed write carries, in the order its confirmedParams hook returns them');
-    }
-    if (!Object.values(forms).some((form) => form.hooks.includes('confirmedParams'))) {
-      yaml('policy.yaml', ['rulesFor', confirmedWrites[0]!], `${quoteList(confirmedWrites)} run${confirmedWrites.length === 1 ? 's' : ''} R3, but no form has a confirmedParams hook, so nothing is ever confirmed and R3 blocks every call`, 'add "confirmedParams" to the hooks of the form that makes the write, and write it in the code');
     }
   }
 
@@ -579,9 +574,11 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
     forms: Object.fromEntries(Object.entries(config.forms.forms).map(([id, form]) => [id, formOf(form, code.forms[id]!)])),
     slots,
   };
-  if (config.identity) app.identity = identityOf(config.identity, code);
+  // identity.yaml's attempts are the policy's: what the attempts rule holds an identity check to.
+  const compiled = config.identity ? compileIdentity(config.identity, code.identity?.sendCodeParams ? { sendCodeParams: code.identity.sendCodeParams } : {}) : null;
+  if (compiled) app.identity = compiled.identity;
   app.tools = code.tools;
-  app.policy = policyOf(config.policy, code);
+  app.policy = compilePolicy(config.policy, { ...(compiled ? { maxAttempts: compiled.maxAttempts } : {}), ...(code.customRules !== undefined ? { customRules: code.customRules } : {}) });
   put(app, 'facts', code.facts);
   app.systems = code.systems;
   put(app, 'services', code.services);
@@ -616,55 +613,9 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
 /** A form: its slots and summary from forms.yaml, then its hooks from the code, in the order forms.yaml declares them. */
 function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks): FormDef {
   const def: Record<string, unknown> = { slots: form.slots, summaryPromptId: form.summaryPromptId };
+  if (form.calls !== undefined) def.calls = form.calls;
   for (const hook of form.hooks) def[hook] = hooks[hook];
   return def as unknown as FormDef;
-}
-
-function identityOf(identity: NonNullable<LoadedConfig['identity']>, code: AppCode): IdentityConfig {
-  const config = { subjectKind: identity.subjectKind } as IdentityConfig;
-  put(config, 'delegateKind', identity.delegateKind);
-  config.factorSlots = identity.factorSlots;
-  config.verifyTool = identity.verifyTool;
-  config.codeTool = identity.codeTool;
-  config.sendCodeTool = identity.sendCodeTool;
-  put(config, 'sendCodeParams', code.identity?.sendCodeParams);
-  put(config, 'failedPromptId', identity.failedPromptId);
-  return config;
-}
-
-/** The engine's words for R5's compared line (gate/policy.ts), where policy.yaml's wording.role leaves an access out. */
-const DEFAULT_ROLE_TEMPLATES: Readonly<Record<RoleAccess, string>> = {
-  allow: 'role {role} may {tool}: yes',
-  refuse: 'role {role} may {tool}: no',
-  person: 'role {role} may {tool}: with a person',
-};
-
-/** R5's compared line from policy.yaml's templates: {role} and {tool} filled in, nothing else read. */
-export function roleLine(templates: Partial<Record<RoleAccess, string>>): NonNullable<PolicyWording['role']> {
-  return (role, tool, access) =>
-    (templates[access] ?? DEFAULT_ROLE_TEMPLATES[access]).replace(/\{(role|tool)\}/g, (_, name: string) => (name === 'role' ? role : tool));
-}
-
-function policyOf(policy: PolicyYaml, code: AppCode): PolicyTables {
-  const tables: Partial<PolicyTables> = {
-    toolLevel: policy.toolLevel,
-    purposeLevel: policy.purposeLevel,
-    rulesFor: policy.rulesFor,
-    serviceFields: policy.serviceFields,
-    confirmedFields: policy.confirmedFields,
-    maxAttempts: policy.maxAttempts,
-  };
-  put(tables, 'roles', policy.roles);
-  put(tables, 'rolePersonReason', policy.rolePersonReason);
-  tables.subjects = policy.subjects;
-  put(tables, 'customRules', code.customRules);
-  if (policy.wording) {
-    const { role, ...words } = policy.wording;
-    const wording: PolicyWording = { ...words };
-    put(wording, 'role', role ? roleLine(role) : undefined);
-    tables.wording = wording;
-  }
-  return tables as PolicyTables;
 }
 
 function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {

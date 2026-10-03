@@ -1,13 +1,17 @@
-import { confirmationHash, evaluateCall } from '../gate/policy';
-import { maskId, raise } from '../gate/principal';
+import { confirmationHash } from '../gate/policy';
+import { raise } from '../gate/principal';
 import { isAnonymous, isParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
-import { formOf, identityOf, toolOf } from './app/lookup';
+import { codeLengthOf, formOf, gateOf, hasCode, identityOf, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { App, AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
+import type { AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
 import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
+import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
+import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
+
+export { redactCall };
 
 /**
  * The form lifecycle: every tool a turn reaches goes through `callTool`, and so through the gate.
@@ -51,34 +55,30 @@ export function newTurnOut(): TurnOut {
 /**
  * The gate's answer, and the tool's value when it was allowed to run (null otherwise). What the
  * value is, is the app's: the engine reads only its identity tools' (VerifyOutcome, a boolean).
+ * `redacted`: the fields of the value the policy withheld from the caller (each now null;
+ * core/resultRedaction.ts), present only when it withheld any.
  */
 export interface ToolOutcome {
   decision: GateDecision;
   value: unknown;
+  redacted?: readonly string[];
 }
+
+const IGNORE: Decision = { kind: 'ignore' };
 
 /**
- * A call as it may be shown and recorded: each param named as one of the app's slots is masked by
- * that slot's SlotSpec.redact (e.g. the account ID by its last four, the date of birth not at all,
- * the caller's free-text note only by its length). The gate itself evaluates the raw call; only
- * this copy leaves callTool.
+ * Whether the session's caller is a party who is not one of the app's subjects (one who acts for
+ * subjects, or any other kind): no identity check is theirs. An anonymous caller is not one: the
+ * gate decides what they may do.
  */
-export function redactCall(app: App, call: ToolCall): ToolCall {
-  const params: Record<string, string> = {};
-  for (const [k, v] of Object.entries(call.params)) {
-    const redact = Object.hasOwn(app.slots, k) ? app.slots[k]!.redact : undefined;
-    params[k] = redact === 'last4' && v ? maskId(v) : redact === 'mask' && v ? '•' : redact === 'length' ? `<${v.length} chars>` : v;
-  }
-  return { ...call, params };
+function isOtherParty(s: Session, subjectKind: string): boolean {
+  return !isAnonymous(s.principal) && s.principal.kind !== subjectKind;
 }
-
-const CODE_LENGTH = 6;
-const IGNORE: Decision = { kind: 'ignore' };
 
 /**
  * What the gate may know of the session for this call. The attempts are the ones the call's own
  * identity check has failed: the one-time code's for the app's code tool, the factors' for anything
- * else (R6 runs only for the identity tools the app's rulesFor gives it to).
+ * else (the attempts rule runs only for the identity tools the app's rulesFor gives it to).
  */
 function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
   const attempts = call.tool === identityOf(appOf(s)).codeTool ? s.identityAttempts.code : s.identityAttempts.factors;
@@ -87,7 +87,7 @@ function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
 
 /**
  * Runs a call the gate allowed: the app's tool, against the turn's systems. A tool the app does not
- * define never gets here (the gate's R0 blocks it), so one that does is a bug and throws.
+ * define never gets here (the gate's unlisted line blocks it), so one that does is a bug and throws.
  */
 function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code: string | undefined): { value: unknown; summary: string; ref?: string } {
   return toolOf(appOf(s), call.tool).run(call, tc.tools.sys, { s, tc, out, code });
@@ -95,25 +95,46 @@ function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code
 
 /**
  * Purposes that mark a call as a probe: the gate is asked what it would say, and the tool is never
- * run, whatever the answer. 'retry-check' asks before another identity attempt (R6); 'entry-check'
- * asks whether the principal's role may make a form's write at all (R5) before any of its questions.
+ * run, whatever the answer. 'retry-check' asks before another identity attempt (the attempts rule); 'entry-check'
+ * asks whether the principal's role may make a form's write at all (the role rule) before any of its questions.
  */
 const PROBES: ReadonlySet<string> = new Set(['retry-check', 'entry-check']);
 
 /**
- * The gate's decision as it may leave the lifecycle: the raw call is evaluated, and only its
- * redacted copy (redactCall) is carried on, into the event, the trace and the audit.
+ * The gate's decision as it may leave the lifecycle: the raw call is evaluated by the app's gate (its
+ * policy's named rules, gateOf), and only its redacted copy (redactCall) is carried on, into the
+ * event, the trace and the audit, with its rules' lines masked the same way (a raw value of a param
+ * recorded masked or never, replaced where a line repeats it; core/recording.ts). The scrub is kept
+ * beside the decision for the summary and the tool's own audit rows.
  */
 function evaluate(s: Session, call: ToolCall, tc: TurnContext): GateDecision {
   const app = appOf(s);
-  const evaluated = evaluateCall(call, s.principal, gateFacts(s, call, tc), tc.tools.lookups, app.policy, identityOf(app).subjectKind);
-  return { ...evaluated, call: redactCall(app, call) };
+  const evaluated = gateOf(app).evaluate(call, s.principal, gateFacts(s, call, tc), tc.tools.lookups);
+  const scrub = scrubberFor(app, call);
+  const decision = scrubbedDecision({ ...evaluated, call: redactCall(app, call) }, scrub);
+  if (scrub !== null) registerScrub(decision, scrub);
+  return decision;
 }
 
 /**
- * The only way a turn reaches a tool: evaluate the gate, and on ALLOW run the tool and record a
- * summary (no PHI). Every gate decision is recorded, allowed or not, with the call redacted. A
- * probe (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW.
+ * The reason a call the gate allowed is handed to a person when the tool's result cannot be withheld
+ * from as the policy says (redactResult throws): the call ran and is recorded, its result goes nowhere.
+ */
+export const RESULT_UNREDACTABLE = 'result-unredactable';
+
+/**
+ * The only way a turn reaches a tool: evaluate the gate, and on ALLOW run the tool, withhold from
+ * its result what the policy keeps from this caller (policy.yaml `redact:`), and record a summary
+ * (no PHI). Every gate decision is recorded, allowed or not, with the call redacted. A probe
+ * (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW.
+ *
+ * The summary and the record it names are masked as the call is (a raw value of a param recorded
+ * masked or never) and as the result was (every text a withheld field held), and so are the params
+ * of the side effects the tool queues as it runs, where they are recorded (the trace, the console),
+ * never where they are sent. A result that cannot be
+ * stripped as the policy says (a tool that declared fields its value does not have) never goes on:
+ * the call that ran is still recorded, with a summary that says so, and its outcome is NEEDS_HUMAN
+ * (RESULT_UNREDACTABLE), so the caller goes to a person.
  *
  * `code` is the keypad one-time code for verifyCode. It travels beside the call, never in its
  * params, so it reaches neither the gate event nor the trace.
@@ -125,14 +146,42 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
     out.gateEvents.push({ decision, summary: null });
     return { decision, value: null };
   }
-  const { value, summary, ref } = runTool(s, call, tc, out, code);
+  // The side effects the tool queues as it runs: recorded with the call's scrub (recordedEffect), sent as they are.
+  const effectsBefore = out.effects.length;
+  const ran = runTool(s, call, tc, out, code);
+  // Redaction per principal, the one place it happens: nothing past this line holds the whole
+  // result. The hooks, the facts and the lines get the stripped value; the event (so the trace, the
+  // console and the audit) gets the summary with what was withheld.
+  const fields = withheldFields(appOf(s), s.principal, call.tool);
+  let stripped: ReturnType<typeof redactResult>;
+  try {
+    stripped = redactResult(call.tool, ran.value, fields);
+  } catch {
+    // The tool ran: its call is recorded, though nothing of what it returned is.
+    scrubEffects(out, effectsBefore, scrubberOf(decision));
+    out.gateEvents.push({ decision, summary: `result not recorded: the fields withheld from this caller (${fields.join(', ')}) could not be stripped from it` });
+    return { decision: { ...decision, verdict: 'NEEDS_HUMAN', reason: RESULT_UNREDACTABLE }, value: null };
+  }
+  const { value, redacted, withheld } = stripped;
+  // The summary and the record it names are recorded beside the call, so they are masked as it is, and as the result was.
+  const scrub = bothScrubs(scrubberOf(decision), withheldScrubber(withheld));
+  scrubEffects(out, effectsBefore, scrub);
+  const said = scrub && typeof ran.summary === 'string' ? scrub(ran.summary) : ran.summary;
+  const summary = redacted ? redactedSummary(said, fields) : said;
+  const ref = scrub && typeof ran.ref === 'string' ? scrub(ran.ref) : ran.ref;
   out.gateEvents.push(ref === undefined ? { decision, summary } : { decision, summary, ref });
-  return { decision, value };
+  return redacted ? { decision, value, redacted: fields } : { decision, value };
+}
+
+/** Registers `scrub` for the side effects queued since `from`, for their params as recorded (core/recording.ts recordedEffect). */
+function scrubEffects(out: TurnOut, from: number, scrub: Scrub | null): void {
+  if (scrub === null) return;
+  for (const effect of out.effects.slice(from)) registerScrub(effect, scrub);
 }
 
 /**
  * Before asking the caller for another try at a factor, ask the gate whether that try would be
- * allowed (R6). A refusal is recorded, its call redacted like every other event's, so the console
+ * allowed (the attempts rule). A refusal is recorded, its call redacted like every other event's, so the console
  * shows why the call went to a person; its purpose 'retry-check' tells the audit this was a probe,
  * not an attempt the caller made.
  */
@@ -155,11 +204,18 @@ function identityCall<V>(s: Session, tool: string, params: Record<string, string
 /**
  * Level 2 needs the one-time code: text it to the phone on file, through the gate, then ask for it.
  * Once per call: asking again (after a silence, say) reminds the caller of the text already sent. A
- * `reissue` (the code was said aloud, so it is exposed) always texts a new one.
+ * `reissue` (the code was said aloud, so it is exposed) always texts a new one. A ladder of one rung
+ * has no code to send: nothing there needs level 2 (validateApp), so asking for one goes to a person.
  */
 export function sendCodeAndAsk(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[], reissue = false): Decision {
+  const identity = identityOf(appOf(s));
+  // Only one of the app's subjects is ever sent a code (the gate refuses any other party the identity
+  // tools, gate/compiled.ts subjectOnlyDecision); no flow asks for one for such a party, and should
+  // one, a person takes the call before anything is texted.
+  if (isOtherParty(s, identity.subjectKind)) return handoff(s, 'needs-human', acks);
+  if (!hasCode(identity)) return handoff(s, 'needs-human', acks);
   if (!s.codeSent || reissue) {
-    const { sendCodeTool, sendCodeParams } = identityOf(appOf(s));
+    const { sendCodeTool, sendCodeParams } = identity;
     const { decision, value } = identityCall<unknown>(s, sendCodeTool, sendCodeParams?.(s) ?? {}, tc, out);
     if (decision.verdict !== 'ALLOW' || value === null) return handoff(s, 'needs-human', acks);
     s.codeSent = true;
@@ -167,7 +223,7 @@ export function sendCodeAndAsk(s: Session, tc: TurnContext, out: TurnOut, acks: 
   return reissue ? prompt('otp_spoken_reissued', 'otp', {}, acks) : askCode(s, acks);
 }
 
-/** "I've texted a six-digit code to the phone ending in 4212." Only one of the app's subjects is ever asked for one. */
+/** "I've texted a six-digit code to the phone ending in 4212." (the app's line says the code's length). Only one of the app's subjects is ever asked for one. */
 export function askCode(s: Session, acks: Ack[]): PromptDecision {
   const phoneLast4 = isAnonymous(s.principal) ? '' : s.principal.contact?.phoneLast4 ?? '';
   return prompt('ask_otp', 'otp', { phoneLast4 }, acks);
@@ -185,10 +241,21 @@ export function blockAck(s: Session, reason: string | undefined): Ack | null {
 /**
  * A web chat customer proves who they are by signing in to the portal, never by typing their account
  * ID and birth date into a chat: while a request waits on identity, it waits for that sign-in
- * (the `signed_in` event). True for an anonymous chat session with a parked entry call.
+ * (the `signed_in` event). True for an anonymous chat session with a parked entry call, in an app
+ * that takes a sign-in (identity.yaml's `signIn`, IdentityConfig.signInLevel): an app without one
+ * ignores the event, so there is nothing to wait for (signInImpossible).
  */
 export function awaitingSignIn(s: Session): boolean {
-  return s.caps.signIn && isAnonymous(s.principal) && s.stepUp !== null;
+  return s.caps.signIn && identityOf(appOf(s)).signInLevel !== undefined && isAnonymous(s.principal) && s.stepUp !== null;
+}
+
+/**
+ * A chat caller who needs identity in an app that takes no sign-in: the factors are never asked on
+ * a channel that signs callers in, and the app ignores the sign-in, so no step-up can be finished
+ * here, and a person takes the call.
+ */
+function signInImpossible(s: Session): boolean {
+  return s.caps.signIn && identityOf(appOf(s)).signInLevel === undefined && isAnonymous(s.principal) && s.stepUp !== null;
 }
 
 /**
@@ -200,6 +267,7 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
     const again = s.lastPromptId === 'signin_required' || s.lastPromptId === 'signin_reminder';
     return prompt(again ? 'signin_reminder' : 'signin_required', 'intent', {}, acks);
   }
+  if (signInImpossible(s)) return handoff(s, 'needs-human', acks);
   if (isAnonymous(s.principal)) {
     const missing = identityOf(appOf(s)).factorSlots.find((id) => s.slots[id]!.value === null);
     if (missing) return askSlot(s, missing, s.slots[missing]!.window, acks);
@@ -297,7 +365,8 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
 }
 
 /**
- * A keypad digit while promptedFor === 'otp': buffer to six, then the app's code tool through the gate.
+ * A keypad digit while promptedFor === 'otp': buffer to the code's length (codeLengthOf, 6 unless
+ * identity.yaml says otherwise), then the app's code tool through the gate.
  * Returns `ignore` while collecting, null once the code is accepted (the caller is level 2 and the
  * entry call is retried; `otp_verified` is pushed into `acks`), or the Decision to speak.
  *
@@ -305,18 +374,26 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
  * in its params: it is in no gate event, trace, slot or model request.
  */
 export function handleCodeDigit(s: Session, digit: string, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | null {
+  const app = appOf(s);
+  // A code is only ever a subject's to key (as sendCodeAndAsk): anyone else goes to a person.
+  if (isOtherParty(s, identityOf(app).subjectKind)) {
+    s.dtmfBuffer = '';
+    return handoff(s, 'needs-human', acks);
+  }
   if (!/^\d$/.test(digit)) return IGNORE;
   s.dtmfBuffer += digit;
-  if (s.dtmfBuffer.length < CODE_LENGTH) return IGNORE;
+  if (s.dtmfBuffer.length < codeLengthOf(app)) return IGNORE;
   const code = s.dtmfBuffer;
   s.dtmfBuffer = '';
-  const { codeTool } = identityOf(appOf(s));
+  const identity = identityOf(app);
+  if (!hasCode(identity)) return handoff(s, 'needs-human', acks);
+  const { codeTool } = identity;
   const { decision, value } = identityCall<boolean>(s, codeTool, {}, tc, out, code);
   if (decision.verdict === 'NEEDS_HUMAN') return handoff(s, 'identity', acks);
   if (decision.verdict !== 'ALLOW') return handoff(s, 'needs-human', acks);
   if (value === true) {
     // The principal verified to level 1 is raised in place: no read of the subject's record outside the gate.
-    const raised = raise(s.principal, 2, identityOf(appOf(s)).subjectKind);
+    const raised = raise(s.principal, 2, identity.subjectKind);
     if (!raised) return handoff(s, 'needs-human', acks);
     s.principal = raised;
     s.stepUp = null;
@@ -338,7 +415,7 @@ function refusal(s: Session, decision: GateDecision, acks: Ack[]): Completion {
 
 /**
  * Called each time a form's summary is spoken: the hash of exactly what it read back, which the
- * caller's yes arms (R3). Only a form with confirmedParams (a confirmed write) holds one.
+ * caller's yes arms (the confirmed rule). Only a form with confirmedParams (a confirmed write) holds one.
  */
 export function takeSummaryHash(s: Session, form: FormId): void {
   const app = appOf(s);

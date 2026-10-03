@@ -209,12 +209,12 @@
   .reason { margin-top:.55em; color:var(--muted); font-size:.92em; }
   .reason b { color:var(--text); font-weight:600; }
   .rules { list-style:none; margin:.85em 0 0; padding:0; display:flex; flex-direction:column; gap:.5em; }
-  .rule { display:grid; grid-template-columns:1.6em 2.6em minmax(0,1fr); align-items:start; gap:.6em; padding:.55em .7em; border-radius:8px; background:var(--panel-2); border:1px solid var(--border); }
+  .rule { display:grid; grid-template-columns:1.6em 7.2em minmax(0,1fr); align-items:start; gap:.6em; padding:.55em .7em; border-radius:8px; background:var(--panel-2); border:1px solid var(--border); }
   .rule.bad { border-color:rgba(242,100,112,.5); background:rgba(242,100,112,.07); }
   .mark { width:1.45em; height:1.45em; border-radius:50%; display:grid; place-items:center; font-size:.85em; font-weight:700; margin-top:.05em; }
   .rule.ok .mark { background:var(--pass-bg); color:var(--pass); }
   .rule.bad .mark { background:var(--fail-bg); color:var(--fail); }
-  .rid { font-family:var(--mono); color:var(--muted); font-size:.95em; padding-top:.05em; }
+  .rid { font-family:var(--mono); color:var(--muted); font-size:.95em; padding-top:.05em; overflow-wrap:anywhere; }
   .desc { font-size:.98em; }
   .cmp { font-family:var(--mono); font-size:.86em; color:#c3cad8; margin-top:.15em; overflow-wrap:anywhere; }
   .rule.bad .cmp { color:#ffc2c7; }

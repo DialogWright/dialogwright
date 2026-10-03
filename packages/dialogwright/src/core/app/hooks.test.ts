@@ -41,7 +41,8 @@ const fake: App = {
     },
   },
   slots: { dob: testkitApp.slots.dob!, accountId: testkitApp.slots.accountId!, missingNote: testkitApp.slots.missingNote! },
-  identity: { subjectKind: 'customer', factorSlots: ['dob', 'accountId'], verifyTool: 'verifyCustomer', codeTool: 'verifyCode', sendCodeTool: 'sendCode' },
+  // The testkit's delegates too: its policy withholds a field from them (redact), by kind and role.
+  identity: { subjectKind: 'customer', delegateKind: 'agent', delegateRoles: ['viewer', 'clerk'], factorSlots: ['dob', 'accountId'], verifyTool: 'verifyCustomer', codeTool: 'verifyCode', sendCodeTool: 'sendCode' },
   tools: { ...testkitApp.tools, getAccount: { run: () => ({ value: null, summary: 'the fake app\'s account' }) } },
   policy: testkitApp.policy,
   systems: testkitApp.systems,
@@ -135,7 +136,7 @@ describe('app hooks left out', () => {
   });
 
   it('a refused entry call goes to a person when the app has no blockPromptId', () => {
-    // The fake entry call names no account, so a verified caller's call fails R2 (scope).
+    // The fake entry call names no account, so a verified caller's call fails the scope rule.
     const s = setForm(newSession('f', 0, VOICE_RELAY, customerPrincipal(CUSTOMERS[0]!, 2), 'fake'), 'look');
     const out = newTurnOut();
     const d = ensureEntry(s, tc(), out, []);
@@ -215,7 +216,7 @@ describe('identity checks fail closed', () => {
     s.identityAttempts = { factors: 0, code: 3 };
     const { decision } = callTool(s, { tool: 'checkPin', params: {} }, tc(), newTurnOut(), '123456');
     expect(decision).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'attempts' });
-    expect(decision.rules.at(-1)).toMatchObject({ id: 'R6', compared: 'attempts 3 < 3', pass: false });
+    expect(decision.rules.at(-1)).toMatchObject({ id: 'attempts', compared: 'attempts 3 < 3', pass: false });
     // The verify tool is capped by the factors' count, not the code's.
     expect(callTool(s, { tool: 'verifyCustomer', params: {} }, tc(), newTurnOut()).decision.verdict).toBe('ALLOW');
   });

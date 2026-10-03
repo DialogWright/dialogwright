@@ -1,11 +1,20 @@
 # yaml-language-server: $schema=../../../schemas/policy.schema.json
-toolLevel:
-  renewLoan: 0
-  findHold: 0
-  listLoans: 0
-rulesFor:
-  renewLoan: [R1, R3]
-  findHold: [R1, known-branch]
-  listLoans: [R1]
-confirmedFields: [book]
-maxAttempts: 3
+actions:
+  renewLoan:
+    level: 0
+    rules:
+      - identity
+      - confirmed: [book]
+  findHold:
+    level: 0
+    rules:
+      - identity
+      - custom: known-branch
+  listLoans:
+    level: 0
+    rules: [identity]
+# How each value an action is sent is recorded, where it is not a slot with a redact setting (the
+# card number is recorded by its last four, as its slot says).
+audit:
+  book: keep
+  branch: keep

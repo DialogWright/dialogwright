@@ -45,9 +45,10 @@ describe('loadAppFolder: a valid folder', () => {
     expect(config.app.id).toBe('fixture-clinic');
     expect(Object.keys(config.intents.intents)).toEqual(['schedule_new', 'cancel', 'billing', 'agent', 'repeat_prompt', 'capabilities']);
     expect(config.forms.forms.schedule_new).toEqual({ slots: ['name', 'dob', 'provider', 'date'], summaryPromptId: 'confirm_schedule', hooks: ['confirmedParams', 'complete', 'onSummaryRead'] });
-    expect(config.policy.maxAttempts).toBe(3);
-    expect(config.policy.purposeLevel).toEqual({ appointment: 0 });
-    expect(config.identity?.verifyTool).toBe('verifyPatient');
+    expect(config.policy.purposes).toEqual({ appointment: { level: 0 } });
+    expect(config.policy.actions.verifyPatient).toEqual({ level: 0, rules: ['identity', 'attempts'] });
+    expect(config.identity?.attempts).toBe(3);
+    expect(config.identity?.levels[1].verify).toBe('verifyPatient');
   });
 
   it('keys prompts by locale: prompts.yaml is the default locale, locale/<tag>/prompts.yaml the others', () => {
@@ -127,8 +128,8 @@ describe('loadAppFolder: problems', () => {
     expect(result.problems).toEqual([
       {
         file: 'policy.yaml',
-        line: 2,
-        column: 20,
+        line: 3,
+        column: 12,
         path: '(file)',
         message: 'Unresolved tag: tag:yaml.org,2002:js/function',
         fix: 'delete the "!tag": these files are plain data, with no custom tags'
@@ -166,6 +167,19 @@ describe('loadAppFolder: problems', () => {
     ]);
   });
 
+  it('policy.yaml and identity.yaml in the old shape are one problem each, which says how to convert them', () => {
+    const result = loadAppFolder(folder((dir) => {
+      writeFileSync(join(dir, 'policy.yaml'), 'toolLevel: { a: 0 }\nrulesFor: { a: [R1] }\nconfirmedFields: []\nmaxAttempts: 3\n');
+      writeFileSync(join(dir, 'identity.yaml'), 'subjectKind: patient\nfactorSlots: [patientId]\nverifyTool: v\ncodeTool: c\nsendCodeTool: s\n');
+    }));
+    expect(result.config).toBeNull();
+    expect(result.problems.map((p) => `${p.file}:${p.line}:${p.column} ${p.message}`)).toEqual([
+      'policy.yaml:1:1 policy.yaml is in the old shape (toolLevel, rulesFor, ...), which is not read any more',
+      'identity.yaml:1:1 identity.yaml is in the old shape (subjectKind, factorSlots, ...), which is not read any more',
+    ]);
+    expect(result.problems[0]!.fix).toBe('convert it with "dialogwright policy:convert <app folder>" (or "--from-tables <module>" for tables written in TypeScript), which keeps its decisions and its comments, then check the result: it starts with "actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"');
+  });
+
   it('an empty file is a problem that says what the file starts with', () => {
     const result = loadCase('empty-file');
     expect(result.config).toBeNull();
@@ -176,7 +190,7 @@ describe('loadAppFolder: problems', () => {
         column: 1,
         path: '(file)',
         message: 'policy.yaml is empty',
-        fix: 'add its content; the file starts with "toolLevel:", "rulesFor:", "confirmedFields:" and "maxAttempts:"'
+        fix: 'add its content; the file starts with "actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"'
       }
     ]);
   });
@@ -370,47 +384,39 @@ describe('loadAppFolder: problems', () => {
     ]);
   });
 
-  it('policy.yaml: a level out of range, a rule listed twice, a typo in a subject key, attempts of zero and an unknown role access', () => {
+  it('policy.yaml: a level out of range, a rule listed twice, a typo in a scope parameter and an unknown role access', () => {
     const result = loadCase('policy-mistakes');
     expect(result.config).toBeNull();
     expect(result.problems).toEqual([
       {
         file: 'policy.yaml',
-        line: 2,
-        column: 20,
-        path: 'toolLevel.bookAppointment',
-        message: '"bookAppointment" is 3, which is not allowed here; it must be one of 0, 1, 2',
+        line: 3,
+        column: 12,
+        path: 'actions.bookAppointment.level',
+        message: '"level" is 3, which is not allowed here; it must be one of 0, 1, 2',
         fix: 'use one of 0, 1, 2'
       },
       {
         file: 'policy.yaml',
-        line: 5,
-        column: 29,
-        path: 'rulesFor.bookAppointment[2]',
-        message: 'rule "R3" is listed twice',
-        fix: 'delete one of the two "R3" entries'
-      },
-      {
-        file: 'policy.yaml',
-        line: 8,
-        column: 42,
-        path: 'subjects.cancelAppointment.vai',
-        message: 'unknown key "vai" under subjects.cancelAppointment',
-        fix: 'rename "vai" to "via"'
-      },
-      {
-        file: 'policy.yaml',
-        line: 10,
-        column: 14,
-        path: 'maxAttempts',
-        message: '"maxAttempts" must be at least 1',
-        fix: 'use a value of at least 1'
+        line: 7,
+        column: 9,
+        path: 'actions.bookAppointment.rules[2]',
+        message: 'the rule "identity" is listed twice',
+        fix: 'delete one of the two: a rule runs once per action'
       },
       {
         file: 'policy.yaml',
         line: 12,
-        column: 31,
-        path: 'roles.cancelAppointment.clerk',
+        column: 37,
+        path: 'actions.cancelAppointment.rules[1].scope.parm',
+        message: 'unknown key "parm" under actions.cancelAppointment.rules[1].scope',
+        fix: 'rename "parm" to "param"'
+      },
+      {
+        file: 'policy.yaml',
+        line: 13,
+        column: 24,
+        path: 'actions.cancelAppointment.rules[2].role.clerk',
         message: '"clerk" is "allowed", which is not allowed here; it must be one of "allow", "refuse", "person"',
         fix: 'change it to "allow"'
       }
@@ -488,41 +494,49 @@ describe('loadAppFolder: problems', () => {
     ]);
   });
 
-  it('identity.yaml: a missing tool, a kind that is not a lowercase word, a repeated factor slot and a number where a tool name goes', () => {
+  it('identity.yaml: a missing tool, a kind that is not a lowercase word, a repeated factor slot, a number where a tool name goes and attempts of zero', () => {
     const result = loadCase('identity-mistakes');
     expect(result.config).toBeNull();
     expect(result.problems).toEqual([
       {
         file: 'identity.yaml',
-        line: 1,
-        column: 1,
-        path: 'sendCodeTool',
-        message: 'required key "sendCodeTool" is missing at the top of the file',
-        fix: 'add "sendCodeTool:" (text) at the top of the file. The tool that texts the one-time code.'
-      },
-      {
-        file: 'identity.yaml',
-        line: 1,
-        column: 14,
-        path: 'subjectKind',
+        line: 2,
+        column: 12,
+        path: 'principals.subject',
         message: '"Patient" is not a valid kind: it must be a lowercase word (letters, digits, underscores)',
         fix: 'write a lowercase word such as "customer" or "patient"'
       },
       {
         file: 'identity.yaml',
-        line: 2,
-        column: 26,
-        path: 'factorSlots[1]',
+        line: 4,
+        column: 45,
+        path: 'levels["1"].factors[1]',
         message: 'factor slot "patientId" is listed twice',
         fix: 'delete one of the two "patientId" entries'
       },
       {
         file: 'identity.yaml',
-        line: 4,
-        column: 11,
-        path: 'codeTool',
-        message: '"codeTool" must be text, but is a number (7)',
+        line: 5,
+        column: 3,
+        path: 'levels["2"].send',
+        message: 'required key "send" is missing under levels["2"]',
+        fix: 'add "send:" (text) under levels["2"]. The tool that sends the one-time code (for example sendCode).'
+      },
+      {
+        file: 'identity.yaml',
+        line: 5,
+        column: 76,
+        path: 'levels["2"].verify',
+        message: '"verify" must be text, but is a number (7)',
         fix: 'write it as text, in quotes: "7"'
+      },
+      {
+        file: 'identity.yaml',
+        line: 6,
+        column: 11,
+        path: 'attempts',
+        message: '"attempts" must be at least 1',
+        fix: 'use a value of at least 1'
       }
     ]);
   });
@@ -568,7 +582,7 @@ describe('loadAppFolder: problems', () => {
         column: 1,
         path: '(file)',
         message: 'policy.yaml is missing',
-        fix: 'create policy.yaml; it starts with "toolLevel:", "rulesFor:", "confirmedFields:" and "maxAttempts:". There is a "polcy.yaml" here: rename it to policy.yaml.'
+        fix: 'create policy.yaml; it starts with "actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }". There is a "polcy.yaml" here: rename it to policy.yaml.'
       },
       {
         file: 'polcy.yaml',
@@ -628,7 +642,7 @@ describe('loadAppFolder: files that are not there, or not safe to read', () => {
   it('refuses a file that is a link to somewhere outside the folder', () => {
     const outside = mkdtempSync(join(tmpdir(), 'dialogwright-outside-'));
     scratch.push(outside);
-    writeFileSync(join(outside, 'policy.yaml'), 'toolLevel: {}\nrulesFor: {}\nconfirmedFields: []\nmaxAttempts: 3\n');
+    writeFileSync(join(outside, 'policy.yaml'), 'actions: {}\n');
     const dir = folder((d) => {
       rmSync(join(d, 'policy.yaml'));
       symlinkSync(join(outside, 'policy.yaml'), join(d, 'policy.yaml'));

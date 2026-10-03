@@ -191,7 +191,7 @@ describe('bookings follow corrections', () => {
     expect(offerOf(moved)).toMatchObject({ provider: 'chen', date: '2026-09-24' });
   });
 
-  it('reads the summary again, not books, when the yes carries a new day (R3)', () => {
+  it('reads the summary again, not books, when the yes carries a new day (confirmed)', () => {
     const r = say(rescheduleAtSummary().session, 'yes, but Thursday', { ...YES, ...weekday('thursday') });
     expect(calls(r)).toEqual(['moveAppointment:BLOCK', 'findAppointment:ALLOW', 'listOpenings:ALLOW']);
     expect(r.gateEvents[0]!.decision).toMatchObject({ verdict: 'BLOCK', reason: 'confirmation' });

@@ -1,0 +1,745 @@
+# corpus sn-01
+# corpus sn-02
+# corpus sn-03
+# corpus sn-04
+# corpus sn-05
+# corpus sn-06
+# corpus sn-07
+# corpus sn-08
+# corpus sn-09
+# corpus sn-10
+1 listOpenings ALLOW {"provider":"okafor","date":"2026-09-25"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus rs-01
+# corpus rs-02
+# corpus rs-03
+# corpus rs-04
+# corpus rs-05
+# corpus rs-06
+# corpus rs-07
+# corpus rs-08
+# corpus rs-09
+# corpus rs-10
+# corpus rs-11
+# corpus rs-12
+# corpus cn-01
+# corpus cn-02
+# corpus cn-03
+# corpus cn-04
+# corpus cn-05
+# corpus cn-06
+# corpus cn-07
+# corpus cn-08
+# corpus cn-09
+# corpus cn-10
+# corpus cf-01
+# corpus cf-02
+# corpus cf-03
+# corpus cf-04
+# corpus cf-05
+# corpus cf-06
+# corpus cf-07
+# corpus cf-08
+# corpus bl-01
+# corpus bl-02
+# corpus bl-03
+# corpus bl-04
+# corpus bl-05
+# corpus bl-06
+# corpus bl-07
+# corpus bl-08
+# corpus ag-01
+# corpus ag-02
+# corpus ag-03
+# corpus ag-04
+# corpus ag-05
+# corpus ag-06
+# corpus ag-07
+# corpus ag-08
+# corpus rp-01
+# corpus rp-02
+# corpus rp-03
+# corpus rp-04
+# corpus ot-01
+# corpus ot-02
+# corpus ot-03
+# corpus ot-04
+# corpus ot-05
+# corpus ot-06
+# corpus ns-01
+# corpus ns-02
+# corpus ns-03
+# corpus ns-04
+# corpus ns-05
+# corpus ns-06
+# corpus ns-07
+# corpus ns-08
+# corpus lc-01
+# corpus lc-02
+# corpus lc-03
+# corpus lc-04
+# corpus lc-05
+# corpus lc-06
+# corpus lc-07
+# corpus lc-08
+# corpus lc-09
+# corpus lc-10
+# corpus lc-11
+# corpus lc-12
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"kim"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus fr-01
+# corpus fr-02
+# corpus fr-03
+# corpus fr-04
+# corpus fr-05
+# corpus fr-06
+# corpus mn-01
+# corpus mn-02
+# corpus mn-03
+# corpus mn-04
+# corpus mn-05
+# corpus cy-01
+# corpus cy-02
+# corpus cy-03
+# corpus cy-04
+# corpus cno-01
+# corpus cno-02
+# corpus cno-03
+# corpus mi-01
+# corpus mi-02
+# corpus mi-03
+# corpus mi-04
+# corpus mi-05
+# corpus mi-06
+# corpus mi-07
+# corpus mi-08
+# corpus mi-10
+# corpus mi-11
+# corpus mi-12
+# corpus pv-01
+# corpus pv-02
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus pv-03
+# corpus pv-04
+# corpus pv-05
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"okafor"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus pv-06
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"kim"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"kim","date":"2026-09-21"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus pv-07
+# corpus pv-08
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"alvarez"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-01
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-19"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-02
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-03
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-10-05"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-04
+1 listOpenings ALLOW {"provider":"patel","date":"2026-11-12"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-05
+# corpus dt-06
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-07
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-18"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-08
+# corpus dt-09
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-28"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-10
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-18"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-11
+# corpus dt-12
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-13
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-20"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-14
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2027-03-03"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-15
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-23"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-16
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-23"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-17
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-18
+# corpus sw-01
+# corpus sw-02
+# corpus sw-03
+# corpus sw-04
+# corpus sw-05
+# corpus sw-06
+# corpus sw-07
+# corpus sw-08
+# corpus dt-19
+# corpus dt-20
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-21"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus dt-21
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus rs-13
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus mi-13
+# corpus mi-14
+# corpus mi-15
+# corpus mi-16
+# corpus sw-09
+# corpus sw-10
+# corpus sw-11
+# corpus sw-12
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus pv-09
+# corpus pv-10
+# corpus lc-13
+# corpus fr-07
+# corpus fc-02
+1 cancelAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel","date":"2026-10-02","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# corpus fc-03
+1 bookAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel","date":"2026-09-22","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# corpus fc-06
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus fc-07
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"alvarez"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"alvarez","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus fc-08
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"cheng"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"cheng","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus fc-09
+# corpus fc-10
+# corpus fc-11
+# corpus fc-12
+# corpus fc-13
+1 findAppointment ALLOW {"name":"morgan elliot","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus fc-15
+1 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel","date":"2026-09-22","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# corpus fc-16
+# corpus fc-17
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"cheng"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"cheng","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus fc-18
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus fc-19
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"cheng"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"cheng","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus fc-20
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"cheng"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"cheng","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus si-01
+# corpus si-02
+# corpus si-03
+# corpus si-04
+# corpus dt-22
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-25"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus pv-11
+# corpus nm-01
+# corpus nm-02
+# corpus nm-03
+# corpus nm-04
+# corpus nm-05
+# corpus nm-06
+# corpus nm-07
+# corpus nm-08
+# corpus nm-09
+# corpus db-01
+# corpus db-02
+# corpus db-03
+# corpus db-04
+# corpus db-05
+# corpus db-06
+# corpus db-07
+# corpus db-08
+# corpus db-09
+# corpus db-10
+# corpus fc-21
+# corpus fc-22
+# corpus fc-23
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus fc-24
+# corpus db-11
+# corpus ft-01
+# corpus ft-02
+# corpus ft-03
+# corpus ft-04
+# corpus ft-05
+# corpus ft-06
+# corpus cp-01
+# corpus cp-02
+# corpus cp-03
+# corpus cp-04
+# corpus cp-05
+# corpus ph-01
+# corpus ph-02
+# corpus ph-03
+# corpus ph-04
+# corpus ph-05
+# corpus ph-06
+# corpus ph-07
+# corpus ts-01
+# corpus ts-02
+# corpus ts-03
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus ts-04
+# corpus ts-05
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus ts-06
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus ts-07
+# corpus ts-08
+# corpus ts-09
+# corpus ts-10
+# corpus ts-11
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"patel","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus ts-12
+1 bookAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel","date":"2026-09-22","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario reschedule-happy
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario schedule-dtmf-dob
+11 listOpenings ALLOW {"provider":"patel","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+12 bookAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel","date":"2026-09-22","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario cancel-happy
+3 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"okafor"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 cancelAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"okafor","date":"2026-09-22","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario confirm-happy
+3 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"okafor"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario billing-handoff
+# scenario over-answer-one-turn
+1 listOpenings ALLOW {"provider":"okafor","date":"2026-09-25"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+2 bookAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"okafor","date":"2026-09-25","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario intent-switch-mid-form
+# scenario window-then-day
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-23"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-23","time":"11:15 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario month-window-narrow
+# scenario intent-retry-to-agent
+# scenario name-retry-to-agent
+# scenario dtmf-menu
+# scenario spoken-menu-number
+# scenario explicit-confirm-yes
+# scenario explicit-confirm-no
+# scenario tentative-two-intents
+# scenario disambiguate-provider
+# scenario frustration-escalation
+# scenario frustration-offer-yes
+# scenario frustration-offer-silence
+# scenario frustration-content-at-offer
+# scenario wants-human-mid-form
+# scenario repeat-prompt
+# scenario client-failure-once
+# scenario client-failure-twice
+# scenario side-speech-ignored
+# scenario invalid-date-retry
+# scenario dtmf-provider-digit
+6 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"okafor"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+7 cancelAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"okafor","date":"2026-09-22","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario dtmf-date-mmdd
+10 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+10 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+11 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario confirm-unanswered-reask
+# scenario confirm-unanswered-to-agent
+# scenario switch-confirm-yes-mid-form
+# scenario switch-confirm-no-resumes-form
+# scenario month-window-constrains-weekday
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 listOpenings ALLOW {"provider":"chen","date":"2026-12-02"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-12-02","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario partial-frame-holds
+# scenario summary-reads-back-name-and-dob
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario weekday-outside-window
+# scenario weekday-in-window-one-turn
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+2 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario add-intent-chained
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario replace-intent-mid-form
+# scenario replace-intent-keeps-same-appointment
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 cancelAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-10-02","time":"4:15 PM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-yes
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 cancelAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel","date":"2026-10-02","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-no-asks-what-to-change
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario chunked-memberId
+# scenario digit-string-memberId
+# scenario hedged-provider-implicit
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"kim"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario hedged-two-providers-disambiguate
+# scenario tentative-carries-slots
+# scenario summary-reschedule-yes
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-no-then-day
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+7 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+7 listOpenings ALLOW {"provider":"chen","date":"2026-09-25"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+8 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-25","time":"9:15 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-no-names-doctor
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"kim"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 listOpenings ALLOW {"provider":"kim","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+7 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"kim","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-repeated-no-hands-off
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario summary-no-with-value
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 listOpenings ALLOW {"provider":"chen","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-24","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-no-two-values
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"alvarez"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 listOpenings ALLOW {"provider":"alvarez","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"alvarez","date":"2026-09-24","time":"1:00 PM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-no-window
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 listOpenings ALLOW {"provider":"chen","date":"2026-09-23"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+7 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-23","time":"11:15 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-unanswered-reask
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario summary-unanswered-keypad-1
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+7 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-unanswered-keypad-2
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+9 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"kim"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+9 listOpenings ALLOW {"provider":"kim","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+10 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"kim","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario summary-unanswered-agent
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario summary-yes-adds-billing
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario second-intent-first-utterance
+3 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"alvarez"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+3 listOpenings ALLOW {"provider":"alvarez","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"alvarez","date":"2026-09-24","time":"1:00 PM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario second-intent-tentative-ignored
+# scenario silence-greeting-reask
+# scenario silence-greeting-menu
+# scenario silence-greeting-agent
+# scenario silence-then-answer
+6 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario silence-summary-reask
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario silence-summary-agent
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario silence-confirm-dtmf-then-1
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+7 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario dob-year-followup
+# scenario dob-year-prompt
+# scenario dob-keypad
+# scenario dob-future-retry
+# scenario name-correction-at-summary
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan elliot","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 moveAppointment ALLOW {"name":"morgan elliot","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario billing-still-asks-memberId
+# scenario capabilities-open
+# scenario capabilities-midform
+# scenario capabilities-at-summary
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario provider-no-name
+# scenario provider-has-name
+# scenario provider-no-twice
+# scenario slot-daypart-opener
+3 listOpenings ALLOW {"provider":"chen","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario slot-later-then-yes
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"10:00 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# scenario slot-earlier-edge-then-day
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 listOpenings ALLOW {"provider":"chen","date":"2026-09-24"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario slot-found-on-confirm
+3 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario slot-found-on-cancel
+2 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario slot-different-to-edge
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+7 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario slot-nearest-opening
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario slot-daypart-remembered
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0

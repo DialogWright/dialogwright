@@ -1,39 +1,40 @@
 # yaml-language-server: $schema=../../../../schemas/policy.schema.json
-toolLevel:
-  findAppointment: 0
-  bookAppointment: 0
-  cancelAppointment: 0
-  verifyPatient: 0
-  sendCode: 1
-  verifyCode: 1
+# The valid fixture's policy, converted from the old shape (legacy/valid/policy.yaml). What the old
+# file says and no rule reads cannot be written here, so it was dropped: the subject and the service
+# fields of cancelAppointment (it runs neither the scope nor the fields rule), and the roles of
+# findAppointment and cancelAppointment with their reason (neither runs the role rule).
+actions:
+  findAppointment:
+    say: find an appointment
+    level: 0
+    rules:
+      - identity
+      - scope: { record: bookingId }
+  bookAppointment:
+    say: book an appointment
+    level: 0
+    rules:
+      - identity
+      - confirmed: [name, dob, provider, date, time]
+      - custom: no-double-booking
+  cancelAppointment:
+    say: cancel an appointment
+    level: 0
+    rules:
+      - identity
+      - confirmed: [name, dob, provider, date, time]
+  verifyPatient:
+    level: 0
+    rules: [identity, attempts]
+  sendCode:
+    level: 1
+    rules: [identity]
+  verifyCode:
+    level: 1
+    rules: [identity, attempts]
 
-purposeLevel:
-  appointment: 0
-
-rulesFor:
-  findAppointment: [R1, R2]
-  bookAppointment: [R1, R3, no-double-booking]
-  cancelAppointment: [R1, R3]
-  verifyPatient: [R1, R6]
-  sendCode: [R1]
-  verifyCode: [R1, R6]
-
-subjects:
-  findAppointment: { param: bookingId, via: record }
-  cancelAppointment: { param: patientId }
-
-confirmedFields: [name, dob, provider, date, time]
-
-serviceFields:
-  cancelAppointment: [provider, date]
-
-maxAttempts: 3
-
-roles:
-  findAppointment: { viewer: allow, clerk: allow }
-  cancelAppointment: { viewer: refuse, clerk: person }
-
-rolePersonReason: staff-cancel
+purposes:
+  appointment: { level: 0 }
 
 wording:
   scope:

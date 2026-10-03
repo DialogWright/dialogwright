@@ -1,0 +1,46 @@
+# call renew-confirmed
+2 renewLoan ALLOW {"book":"quiet_orchard"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# call hold-at-branch
+2 findHold ALLOW {"book":"river_atlas","branch":"north"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    known-branch pass  The hold is at one of the library's branches  |  branch north: known
+# call loans-on-card
+2 listLoans ALLOW {"card":"...0417"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# direct
+## hold at a branch the library does not have
+0 findHold BLOCK reason=branch {"book":"river_atlas","branch":"east"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    known-branch FAIL  The hold is at one of the library's branches  |  branch not known
+## renewal nobody confirmed
+0 renewLoan BLOCK reason=confirmation {"book":"quiet_orchard"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed FAIL  The caller confirmed exactly these values  |  no confirmation
+## renewal confirmed for another book
+0 renewLoan BLOCK reason=confirmation {"book":"quiet_orchard"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed FAIL  The caller confirmed exactly these values  |  confirmed hash != call hash
+## renewal with a field too many
+0 renewLoan BLOCK reason=confirmation {"book":"quiet_orchard","due":"2026-12-01"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed FAIL  The caller confirmed exactly these values  |  extra fields: due
+## renewal with its field missing
+0 renewLoan BLOCK reason=confirmation {}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed FAIL  The caller confirmed exactly these values  |  missing fields: book
+## renewal confirmed
+0 renewLoan ALLOW {"book":"quiet_orchard"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+## a card that is not on file
+0 listLoans ALLOW {"card":"...0000"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+## a tool the policy does not list
+0 cancelCard BLOCK reason=unknown-tool {"card":"...0417"}
+    unlisted FAIL  The action is on the approved list  |  tool cancelCard not in policy
+## an entry-check probe
+0 renewLoan (entry-check) BLOCK reason=confirmation {}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed FAIL  The caller confirmed exactly these values  |  missing fields: book

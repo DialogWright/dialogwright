@@ -10,8 +10,11 @@
  * builders, a turn driver, the stubs, the fixtures and the regression pieces). Importing it starts
  * nothing: no server, no registration, no I/O.
  *
- * Two more entries are supported: `dialogwright/testing` (an app's tests: the shadow harness, the
- * slot conformance kit) and `dialogwright/slot-kit` (the helpers a slot type is written with).
+ * Three more entries are supported: `dialogwright/testing` (an app's tests: the shadow harness, the
+ * slot conformance kit, the policy's goldens and the legacy evaluator they compare the gate with),
+ * `dialogwright/slot-kit` (the helpers a slot type is written with) and `dialogwright/policy` (the
+ * gate an app's calls go through, compiledPolicyOf, and policy.yaml and identity.yaml for an app
+ * that is not a folder: definePolicy, defineIdentity, and their compilers).
  *
  * The package also maps every source file to a subpath, `dialogwright/<dir>/<file>` (package.json
  * "exports" "./*": `src/<dir>/<file>.ts`). Those are the engine's internals: reachable, but not part
@@ -74,6 +77,7 @@ export type {
 } from './gate/types';
 export { isAnonymous, isParty } from './gate/types';
 export { ANONYMOUS, raise, maskId } from './gate/principal';
+export type { CompiledPolicy } from './gate/compiled';
 
 // A few engine types an app's launcher and tests name.
 export type { Session, SessionFacts } from './core/session';

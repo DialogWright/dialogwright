@@ -1,0 +1,510 @@
+# corpus tk-01
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus tk-02
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus tk-03
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus tk-04
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus tk-05
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus tk-06
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus tk-07
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus tk-08
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus tk-09
+# corpus tk-10
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus dw-01
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+# corpus dw-02
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+# corpus dw-03
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+# corpus dw-04
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+# corpus dw-05
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+# corpus dw-06
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+# corpus dw-07
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+# corpus rm-01
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus rm-02
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus rm-03
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus rm-04
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus rm-05
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus rm-06
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus ag-01
+# corpus ag-02
+# corpus ag-03
+# corpus cp-01
+# corpus cp-02
+# corpus rp-01
+# corpus rp-02
+# corpus dn-01
+# corpus ot-01
+# corpus ot-02
+# corpus ns-01
+# corpus ns-02
+# corpus ns-03
+# corpus ns-04
+# corpus ns-05
+# corpus fr-01
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus fr-02
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus fr-03
+# corpus fr-04
+# corpus mu-01
+# corpus mu-02
+# corpus mu-03
+# corpus st-01
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus st-02
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# corpus mp-01
+# corpus mp-02
+# corpus mp-03
+# corpus mp-04
+# corpus mp-05
+# corpus am-01
+# corpus am-02
+# corpus am-03
+# corpus sf-01
+1 getParcel ALLOW {"parcel":"7201"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...5678 · caller may see ...1234, ...5678
+# corpus sf-02
+1 getParcel BLOCK reason=scope {"parcel":"7301"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope FAIL  The record belongs to someone this caller may see  |  record owner ...9012 · caller may see ...1234, ...5678
+# corpus sf-03
+1 createReport (entry-check) BLOCK reason=role {}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role FAIL  The caller's role allows this action  |  role viewer may createReport: no
+# corpus sf-04
+1 createReport (entry-check) NEEDS_HUMAN reason=role-person {}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role FAIL  The caller's role allows this action  |  role clerk may createReport: with a person
+# corpus id-01
+# corpus id-02
+# corpus id-03
+# corpus id-04
+# corpus id-05
+# corpus id-06
+# corpus id-07
+# corpus id-08
+1 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+1 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# corpus id-09
+1 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+1 getAccount (delivery_window) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# corpus id-10
+# corpus id-11
+# corpus id-12
+1 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+# corpus id-13
+1 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+# corpus id-14
+# corpus ps-01
+1 getParcel ALLOW {"parcel":"7101"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+# corpus ps-02
+1 getParcel ALLOW {"parcel":"7101"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+# corpus ps-03
+1 getParcel ALLOW {"parcel":"7102"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+# corpus ps-04
+1 getParcel ALLOW {"parcel":"7102"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+# corpus ps-05
+1 getParcel BLOCK reason=scope {"parcel":"7201"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope FAIL  The record belongs to someone this caller may see  |  record owner ...5678 · caller may see ...1234 only
+# corpus ps-06
+# corpus ps-07
+# corpus ps-08
+1 getParcel ALLOW {"parcel":"7101"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+# corpus ps-09
+# corpus ps-10
+# corpus ps-11
+# corpus ps-12
+# corpus ps-13
+1 getAccount (report_missing) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# corpus dd-01
+# corpus dd-02
+# corpus dd-03
+# corpus dd-04
+# corpus dd-05
+# corpus dd-06
+1 getWindows ALLOW {"accountId":"...1234","deliveryDay":"2026-09-22","deliveryPart":"evening"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# corpus dp-01
+1 getWindows ALLOW {"accountId":"...1234","deliveryDay":"2026-09-21","deliveryPart":"morning"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# corpus dp-02
+1 getWindows ALLOW {"accountId":"...1234","deliveryDay":"2026-09-21","deliveryPart":"afternoon"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# corpus dp-03
+1 getWindows ALLOW {"accountId":"...1234","deliveryDay":"2026-09-21","deliveryPart":"evening"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# corpus dp-04
+# corpus nt-01
+# corpus nt-02
+# corpus nt-03
+# corpus nt-04
+# corpus nt-05
+# corpus ed-01
+# corpus ed-02
+# corpus ed-03
+# corpus ed-04
+# corpus ed-05
+# corpus ed-06
+# corpus ed-07
+# corpus cf-01
+1 createReport ALLOW {"accountId":"...1234","missingNote":"<39 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role pass  The caller's role allows this action  |  role customer
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+    R8 pass  No parcel of the customer's was delivered on the day it was due  |  due 2026-09-15: nothing delivered that day
+1 notifyDepot ALLOW {"report":"9001","missingNote":"<39 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+    fields pass  Only the fields this agent may receive  |  fields within [report, missingNote, expectedDate]
+# corpus cf-02
+1 createReport ALLOW {"accountId":"...1234","missingNote":"<39 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role pass  The caller's role allows this action  |  role customer
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+    R8 pass  No parcel of the customer's was delivered on the day it was due  |  due 2026-09-15: nothing delivered that day
+1 notifyDepot ALLOW {"report":"9001","missingNote":"<39 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+    fields pass  Only the fields this agent may receive  |  fields within [report, missingNote, expectedDate]
+# corpus cf-03
+1 createReport ALLOW {"accountId":"...1234","missingNote":"<39 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role pass  The caller's role allows this action  |  role customer
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+    R8 pass  No parcel of the customer's was delivered on the day it was due  |  due 2026-09-15: nothing delivered that day
+1 notifyDepot ALLOW {"report":"9001","missingNote":"<39 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+    fields pass  Only the fields this agent may receive  |  fields within [report, missingNote, expectedDate]
+# corpus cf-04
+# corpus cf-05
+# corpus cf-06
+# corpus cf-07
+# corpus cf-08
+# corpus cf-09
+# corpus of-01
+# corpus of-02
+# corpus of-03
+# corpus ae-01
+# corpus ae-02
+# corpus ae-03
+1 listParcels ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# corpus ae-04
+1 getAccount (report_missing) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# corpus ae-05
+# scenario inj-announced
+# scenario inj-twice-handoff
+# scenario track-happy
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+9 verifyCode ALLOW {}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+9 listParcels ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+10 getParcel ALLOW {"parcel":"7101"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+# scenario track-other-customers-parcel
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+9 verifyCode ALLOW {}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+9 listParcels ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+9 getParcel BLOCK reason=scope {"parcel":"7201"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope FAIL  The record belongs to someone this caller may see  |  record owner ...5678 · caller may see ...1234 only
+# scenario track-disambiguate
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+9 verifyCode ALLOW {}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+9 listParcels ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# scenario track-parcel-keypad
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+9 verifyCode ALLOW {}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+9 listParcels ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+15 getParcel ALLOW {"parcel":"7103"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+# scenario identity-three-fails
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+3 verifyCustomer ALLOW {"accountId":"...0000","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+5 verifyCustomer ALLOW {"accountId":"...0000","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 1 < 3
+7 verifyCustomer ALLOW {"accountId":"...0000","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 2 < 3
+7 verifyCustomer (retry-check) NEEDS_HUMAN reason=attempts {}
+    attempts FAIL  Identity attempts under the limit  |  attempts 3 < 3
+# scenario dob-year-followup
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+4 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+4 getAccount (delivery_window) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# scenario window-open
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 getAccount (delivery_window) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+4 getWindows ALLOW {"accountId":"...1234","deliveryDay":"2026-09-21","deliveryPart":"morning"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# scenario window-full-sunday
+1 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 getAccount (delivery_window) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+5 getWindows ALLOW {"accountId":"...1234","deliveryDay":"2026-09-20","deliveryPart":"afternoon"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# scenario report-happy
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+9 verifyCode ALLOW {}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+9 getAccount (report_missing) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+12 createReport ALLOW {"accountId":"...1234","missingNote":"<46 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role pass  The caller's role allows this action  |  role customer
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+    R8 pass  No parcel of the customer's was delivered on the day it was due  |  due 2026-09-15: nothing delivered that day
+12 notifyDepot ALLOW {"report":"9001","missingNote":"<46 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+    fields pass  Only the fields this agent may receive  |  fields within [report, missingNote, expectedDate]
+# scenario report-delivered-that-day
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+9 verifyCode ALLOW {}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+9 getAccount (report_missing) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+12 createReport NEEDS_HUMAN reason=delivered {"accountId":"...1234","missingNote":"<46 chars>","expectedDate":"2026-09-16"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role pass  The caller's role allows this action  |  role customer
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+    R8 FAIL  No parcel of the customer's was delivered on the day it was due  |  due 2026-09-16: a parcel delivered that day
+# scenario report-change-date
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+9 verifyCode ALLOW {}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+9 getAccount (report_missing) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# scenario report-agent-down
+1 getAccount (report_missing) STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+9 verifyCode ALLOW {}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+9 getAccount (report_missing) ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+12 createReport ALLOW {"accountId":"...1234","missingNote":"<46 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role pass  The caller's role allows this action  |  role customer
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+    R8 pass  No parcel of the customer's was delivered on the day it was due  |  due 2026-09-15: nothing delivered that day
+12 notifyDepot ALLOW {"report":"9001","missingNote":"<46 chars>","expectedDate":"2026-09-15"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only
+    fields pass  Only the fields this agent may receive  |  fields within [report, missingNote, expectedDate]
+# scenario intent-retry-to-agent
+# scenario menu-keypad
+3 getAccount (delivery_window) STEP_UP need=1 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 1
+# scenario silence-greeting-agent
+# scenario silence-code-ladder
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+3 verifyCustomer ALLOW {"accountId":"...1234","dob":"•"}
+    attempts pass  Identity attempts under the limit  |  attempts 0 < 3
+3 sendCode ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 1 >= 1
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+# scenario frustration-offer-yes
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# scenario frustration-offer-no
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# scenario side-speech-ignored
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+# scenario agent-opener
+# scenario staff-track-in-depot
+1 getParcel ALLOW {"parcel":"7201"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...5678 · caller may see ...1234, ...5678
+# scenario staff-track-outside-depot
+1 getParcel BLOCK reason=scope {"parcel":"7301"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope FAIL  The record belongs to someone this caller may see  |  record owner ...9012 · caller may see ...1234, ...5678
+# scenario staff-report-viewer
+1 createReport (entry-check) BLOCK reason=role {}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role FAIL  The caller's role allows this action  |  role viewer may createReport: no
+# scenario staff-report-clerk
+1 createReport (entry-check) NEEDS_HUMAN reason=role-person {}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    role FAIL  The caller's role allows this action  |  role clerk may createReport: with a person
+# scenario web-signin-track
+1 listParcels STEP_UP need=2 {"accountId":""}
+    identity FAIL  Identity strong enough for this action  |  identity.level 0 >= 2
+2 listParcels ALLOW {"accountId":"...1234"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  subject ...1234 · caller may see ...1234 only
+2 getParcel ALLOW {"parcel":"7102"}
+    identity pass  Identity strong enough for this action  |  identity.level 2 >= 2
+    scope pass  The record belongs to someone this caller may see  |  record owner ...1234 · caller may see ...1234 only

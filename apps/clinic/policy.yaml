@@ -1,24 +1,46 @@
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/policy.schema.json
-# The clinic's action policy. The clinic verifies no one (there is no identity.yaml), so every tool
-# is at level 0: the gate cannot step a caller up, and a higher level is refused. What the gate
-# still enforces: R1 (the level, trivially met), and R3 on the three writes: each writes only the
-# values the caller just heard read back and said yes to. A correction said with the yes ("yes, but
-# Thursday") changes a value, so R3 refuses the write and the summary is read again.
-toolLevel:
-  findAppointment: 0
-  listOpenings: 0
-  bookAppointment: 0
-  moveAppointment: 0
-  cancelAppointment: 0
+# The clinic's action policy. The clinic verifies no one (there is no identity.yaml), so every
+# action is at level 0: the gate cannot step a caller up, and a higher level is refused. What the
+# gate still enforces: the identity rule (the level, trivially met), and the confirmed rule on the
+# three writes: each writes only the values the caller just heard read back and said yes to. A
+# correction said with the yes ("yes, but Thursday") changes a value, so the confirmed rule refuses
+# the write and the summary is read again. Every action not listed here is refused.
+actions:
+  findAppointment:
+    say: find an appointment
+    level: 0
+    rules: [identity]
+  listOpenings:
+    say: list open times
+    level: 0
+    rules: [identity]
+  # What a confirmed write carries, in the order the hash is taken over: who, with whom, and when.
+  # Every confirmed rule of an app names the same fields in the same order.
+  bookAppointment:
+    say: book an appointment
+    level: 0
+    rules:
+      - identity
+      - confirmed: [name, dob, provider, date, time]
+  moveAppointment:
+    say: move an appointment
+    level: 0
+    rules:
+      - identity
+      - confirmed: [name, dob, provider, date, time]
+  cancelAppointment:
+    say: cancel an appointment
+    level: 0
+    rules:
+      - identity
+      - confirmed: [name, dob, provider, date, time]
 
-rulesFor:
-  findAppointment: [R1]
-  listOpenings: [R1]
-  bookAppointment: [R1, R3]
-  moveAppointment: [R1, R3]
-  cancelAppointment: [R1, R3]
-
-# R3: what a confirmed write carries, in the order the hash is taken over: who, with whom, and when.
-confirmedFields: [name, dob, provider, date, time]
-
-maxAttempts: 3
+# How each value an action is sent is recorded (the gate event, the trace, the console and the
+# audit), where it is not a slot with a redact setting: the date of birth is hidden, as its slot
+# says. Every other param the tools list (src/domain/tools.ts) is declared here; these are recorded
+# as they are. The time is no slot: the caller picks it from the openings read to them.
+audit:
+  name: keep
+  provider: keep
+  date: keep
+  time: keep

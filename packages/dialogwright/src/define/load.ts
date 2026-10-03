@@ -1,10 +1,12 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { LineCounter, Document as YamlDocument, isMap, isScalar, isSeq, parseDocument, type Document, type Node } from 'yaml';
+import { isOldIdentityContent, isOldPolicyContent } from './convert/legacyShape';
 import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from './problems';
 import {
   FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeSlotsSchema, slotsSchema,
-  type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml, type PromptsYaml, type SlotsYaml,
+  type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
+  type PromptsYaml, type SlotsYaml,
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
 import { z } from 'zod';
@@ -38,6 +40,7 @@ export interface LoadedConfig {
   app: AppYaml;
   intents: IntentsYaml;
   forms: FormsYaml;
+  /** policy.yaml: the actions and their rules. */
   policy: PolicyYaml;
   /** Null when the folder has no identity.yaml: the app verifies no one. */
   identity: IdentityYaml | null;
@@ -112,8 +115,8 @@ const STARTS_WITH: Record<FileKind | 'slots' | 'localeSlots', string> = {
   intents: 'the "intents:" map and the "menu:" list',
   forms: 'the "forms:" map',
   prompts: 'the "prompts:" map',
-  policy: '"toolLevel:", "rulesFor:", "confirmedFields:" and "maxAttempts:"',
-  identity: '"subjectKind:", "factorSlots:", "verifyTool:", "codeTool:" and "sendCodeTool:"',
+  policy: '"actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"',
+  identity: '"principals:", "levels:" and "attempts:"',
   slots: 'a slot id and its type, for example "note: { type: code }"',
   localeSlots: 'a slot id and what it says in this locale, for example "branch: { options: { north: Norte } }"',
 };
@@ -429,7 +432,7 @@ function listLocales(root: string, problems: Problem[]): { tag: string; dirName:
 // ---------------------------------------------------------------------------------------------
 
 /** JSON Schemas are generated once per kind: the problem messages read keys and descriptions from them. */
-const jsonSchemas = new Map<Kind, JsonSchema>();
+const jsonSchemas = new Map<string, JsonSchema>();
 function jsonSchemaOf(kind: Kind): JsonSchema {
   let schema = jsonSchemas.get(kind);
   if (!schema) {
@@ -438,6 +441,22 @@ function jsonSchemaOf(kind: Kind): JsonSchema {
     jsonSchemas.set(kind, schema);
   }
   return schema;
+}
+
+/** Whether parsed content is policy.yaml or identity.yaml in the shape before the actions and levels (the tables as they are). */
+function isOldShape(kind: Kind, value: unknown): boolean {
+  return (kind === 'policy' && isOldPolicyContent(value)) || (kind === 'identity' && isOldIdentityContent(value));
+}
+
+/** The one problem an old-shape file is: what it is, and the command that converts it. */
+function oldShape(file: string, kind: Kind): Problem {
+  const keys = kind === 'policy' ? 'toolLevel, rulesFor, ...' : 'subjectKind, factorSlots, ...';
+  return problemAt(
+    file,
+    WHOLE_FILE,
+    `${file} is in the old shape (${keys}), which is not read any more`,
+    `convert it with "dialogwright policy:convert <app folder>" (or "--from-tables <module>" for tables written in TypeScript), which keeps its decisions and its comments, then check the result: it starts with ${STARTS_WITH[kind]}`,
+  );
 }
 
 /**
@@ -512,6 +531,10 @@ function checkFile(
     return undefined;
   }
 
+  if (isOldShape(kind, value)) {
+    problems.push(oldShape(file, kind));
+    return undefined;
+  }
   const result = SCHEMAS_OF[kind].safeParse(value);
   if (result.success) {
     if (reserved.length > 0) return undefined;
@@ -604,4 +627,63 @@ export function loadSlotsFile(path: string): SlotsFile {
   const checked = checkFile(path, 'slots', read.text, problems, documents, {});
   const parsed = documents.get(path)!;
   return { slots: problems.length === 0 ? (checked as SlotsYaml) : null, doc: parsed.doc, lines: parsed.lines, problems };
+}
+
+/** What loadConfigFile found: the parsed file (null when there is a problem), the name its problems carry, and the document, to position later problems. */
+export interface ConfigFile<T> {
+  value: T | null;
+  /** The file the problems name: the path given, or `<kind>.yaml` for content given as an object. */
+  file: string;
+  doc: Document;
+  lines: LineCounter;
+  /** Whether problems can point at a line: false for content given as an object (its problems have line 0). */
+  located: boolean;
+  /** Every problem with reading and parsing the file; empty when it is valid. */
+  problems: Problem[];
+}
+
+/**
+ * Reads one policy.yaml or identity.yaml in the new shape, for an app that is not a folder
+ * (definePolicy, defineIdentity): from a path, with the same safe reading and parsing as the
+ * folder's files and problems at their lines; or from content already parsed, with problems that
+ * name paths but no line. A file in the old shape (toolLevel, rulesFor, ...) is refused with one
+ * problem that says how to convert it.
+ */
+export function loadConfigFile(source: string | Record<string, unknown>, kind: 'policy'): ConfigFile<PolicyYaml>;
+export function loadConfigFile(source: string | Record<string, unknown>, kind: 'identity'): ConfigFile<IdentityYaml>;
+export function loadConfigFile(source: string | Record<string, unknown>, kind: 'policy' | 'identity'): ConfigFile<PolicyYaml | IdentityYaml> {
+  const problems: Problem[] = [];
+  if (typeof source !== 'string') {
+    const file = FILE_NAMES[kind];
+    const doc = new YamlDocument(source);
+    const lines = new LineCounter();
+    if (isOldShape(kind, source)) return { value: null, file, doc, lines, located: false, problems: [{ ...oldShape(file, kind), line: 0, column: 0 }] };
+    const parsed = SCHEMAS[kind].safeParse(source);
+    if (parsed.success) return { value: parsed.data as PolicyYaml | IdentityYaml, file, doc, lines, located: false, problems };
+    const found = problemsOfIssues(parsed.error.issues, { file, doc, lines, value: source, schema: jsonSchemaOf(kind) });
+    return { value: null, file, doc, lines, located: false, problems: found.map((p) => ({ ...p, line: 0, column: 0 })) };
+  }
+  const file = source;
+  const none = (): ConfigFile<PolicyYaml | IdentityYaml> => ({ value: null, file, doc: new YamlDocument(), lines: new LineCounter(), located: true, problems });
+  let root: string;
+  try {
+    root = realpathSync(dirname(resolve(source)));
+  } catch {
+    problems.push(problemAt(file, WHOLE_FILE, `${file} cannot be read: its folder does not exist`, `pass the path of the ${FILE_NAMES[kind]} file`));
+    return none();
+  }
+  const read = readFile(root, basename(source));
+  if (read.kind === 'missing') {
+    problems.push(problemAt(file, WHOLE_FILE, `${file} does not exist`, `create it, or pass the content as an object; it starts with ${STARTS_WITH[kind]}`));
+    return none();
+  }
+  if (read.kind === 'problem') {
+    problems.push({ ...read.problem, file });
+    return none();
+  }
+  const documents = new Map<string, { doc: Document; lines: LineCounter }>();
+  const checked = checkFile(file, kind, read.text, problems, documents, {});
+  const parsed = documents.get(file)!;
+  const value = problems.length === 0 ? (checked as PolicyYaml | IdentityYaml) : null;
+  return { value, file, doc: parsed.doc, lines: parsed.lines, located: true, problems };
 }

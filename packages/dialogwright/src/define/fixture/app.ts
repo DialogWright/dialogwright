@@ -2,8 +2,9 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   addDays, defineApp, defineSlot, describeDay, localeOf,
-  type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotSpec, type ToolDef,
+  type AppCode, type Completion, type CompletionContext, type PolicyMatrix, type Session, type SlotSpec, type ToolDef,
 } from '../../index';
+import { defineRule } from '../policyEntry';
 
 /**
  * Example Town Library: a small, fictional library's phone line, written as an app folder. The YAML
@@ -13,7 +14,7 @@ import {
  * forms' hooks. It speaks English and Spanish: locale/es/ has the Spanish lines and how the books and
  * branches are said in Spanish (slots.yaml), and the lines its code says give each book and due day
  * in the call's language. A caller renews a book (a confirmed write, so the
- * gate's R3 holds it to the title read back), asks whether a hold is ready at a branch, or asks what
+ * gate's confirmed rule holds it to the title read back), asks whether a hold is ready at a branch, or asks what
  * is checked out on their card. The engine's tests build it with defineApp and run calls through it.
  */
 
@@ -91,6 +92,7 @@ export class LibrarySystems {
 
 export const LIBRARY_TOOLS: Record<string, ToolDef> = {
   renewLoan: {
+    params: ['book'],
     run(call, sys, { tc }) {
       const systems = sys as LibrarySystems;
       const ref = `R${101 + systems.renewals.length}`;
@@ -100,14 +102,17 @@ export const LIBRARY_TOOLS: Record<string, ToolDef> = {
     },
   },
   findHold: {
+    params: ['book', 'branch'],
     run(call, sys) {
       const status = (sys as LibrarySystems).holds[`${call.params.book}@${call.params.branch}`] ?? null;
       return { value: status, summary: status ? `hold ${status}` : 'no hold' };
     },
   },
   // The param is named after the slot it carries, so the gate event, the trace and the audit
-  // record it as the slot's redact says: by its last four.
+  // record it as the slot's redact says: by its last four. The others are declared in policy.yaml's
+  // audit (kept as they are).
   listLoans: {
+    params: ['card'],
     run(call, sys) {
       const { loans: onFile } = sys as LibrarySystems;
       const card = call.params.card ?? '';
@@ -117,18 +122,28 @@ export const LIBRARY_TOOLS: Record<string, ToolDef> = {
   },
 };
 
+/** A caller of the library line: it verifies no one, so every caller is anonymous to the gate. */
+const CALLER = { kind: 'anonymous', level: 0 } as const;
+
 /** The library's own rule: a hold is looked up only at a branch the library has. */
-function knownBranch(c: RuleContext): RuleOutcome {
-  const branch = c.call.params.branch ?? '';
-  const known = Object.hasOwn(BRANCHES, branch);
-  const result = { id: 'known-branch', description: 'The hold is at one of the library\'s branches', compared: known ? `branch ${branch}: known` : 'branch not known', pass: known };
-  return known ? { result } : { result, fail: { verdict: 'BLOCK', reason: 'branch' } };
-}
+export const knownBranch = defineRule({
+  id: 'known-branch',
+  description: 'The hold is at one of the library\'s branches',
+  run(c) {
+    const branch = c.call.params.branch ?? '';
+    return Object.hasOwn(BRANCHES, branch) ? { pass: true, compared: `branch ${branch}: known` } : { pass: false, compared: 'branch not known', verdict: 'BLOCK', reason: 'branch' };
+  },
+  examples: [
+    { name: 'a hold at a branch the library has', call: { params: { book: 'river_atlas', branch: 'north' } }, principal: CALLER, expect: { verdict: 'ALLOW' } },
+    { name: 'a hold at a branch it does not have', call: { params: { book: 'river_atlas', branch: 'east' } }, principal: CALLER, expect: { verdict: 'BLOCK', reason: 'branch' } },
+    { name: 'a hold at no branch', call: { params: { book: 'river_atlas', branch: '' } }, principal: CALLER, expect: { verdict: 'BLOCK', reason: 'branch' } },
+  ],
+});
 
 const valueOf = (s: Session, slot: string): string => s.slots[slot]?.value ?? '';
 const displayOf = (s: Session, slot: string): string => s.slots[slot]?.display ?? '';
 
-/** The renewal writes the book read back at the summary, once the caller said yes (R3). */
+/** The renewal writes the book read back at the summary, once the caller said yes (the confirmed rule). */
 const renewParams = (s: Session): Record<string, string> => ({ book: valueOf(s, 'book') });
 
 function renew(c: CompletionContext): Completion {
@@ -168,6 +183,36 @@ function checkLoans(c: CompletionContext): Completion {
   return { kind: 'said', acks: [...acks, { promptId: 'next_due', vars: { card, book: libraryApp.slots.book!.display(next.book, locale), due: describeDay(next.due, locale) } }] };
 }
 
+/**
+ * The library's principals and records for the gate grid (TestingHooks.policyMatrix). The library
+ * verifies no one, so none of them is one of its subjects to the gate, and it keeps no scope: the
+ * grid shows that every caller gets the same answers. A hold is tried at a branch the library has
+ * and at one it does not (its own rule, known-branch).
+ */
+export function libraryPolicyMatrix(): PolicyMatrix {
+  const patron = { kind: 'patron', id: '55520417', first: 'Avery' } as const;
+  return {
+    principals: {
+      subject1: { ...patron, level: 1 },
+      subject2: { ...patron, level: 2 },
+      delegates: {},
+      unlistedRole: { kind: 'librarian', level: 2, id: 'L-1', first: 'Quinn', role: 'desk' },
+      roleless: { kind: 'librarian', level: 2, id: 'L-2', first: 'Rowan' },
+      otherParty: { kind: 'visitor', level: 2, id: 'V-1', first: 'Robin' },
+    },
+    records: {
+      own: { subject: '55520417', record: 'R101' },
+      inScope: { subject: '55531290', record: 'R102' },
+      outOfScope: { subject: '55540000', record: 'R103' },
+      unknown: { subject: '55599999', record: 'R999' },
+    },
+    calls: {
+      findHold: { known: { book: 'river_atlas', branch: 'north' }, unknown: { book: 'river_atlas', branch: 'east' } },
+    },
+    values: { book: 'quiet_orchard' },
+  };
+}
+
 /** The library's code: everything the YAML names that runs. */
 export const libraryCode: AppCode = {
   slots: LIBRARY_SLOTS,
@@ -179,6 +224,7 @@ export const libraryCode: AppCode = {
     check_loans: { complete: checkLoans },
   },
   customRules: { 'known-branch': knownBranch },
+  testing: { policyMatrix: libraryPolicyMatrix },
 };
 
 /** The code parts under the name `dialogwright check` imports an app module's code by. */

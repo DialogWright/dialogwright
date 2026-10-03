@@ -79,6 +79,7 @@ describe('subpath imports', () => {
     expect(pkg.exports?.['./*']).toBe('./src/*.ts');
     expect(pkg.exports?.['./testing']).toBe('./src/testing/index.ts');
     expect(pkg.exports?.['./slot-kit']).toBe('./src/slots/kit.ts');
+    expect(pkg.exports?.['./policy']).toBe('./src/define/policyEntry.ts');
   });
 });
 
@@ -103,12 +104,39 @@ describe('the test-support entry', () => {
     const testing = await import('./testing/index');
     for (const name of [
       'shadowSlot', 'withShadowSlots', 'shadowFromEnv', 'createShadowReport', 'ShadowMismatchError', 'isCassetteMiss',
-      'runSlotConformance', 'slotConformanceChecks', 'ConformanceError',
+      'runSlotConformance', 'slotConformanceChecks', 'ConformanceError', 'withShadowGate', 'shadowGate', 'createGateShadowReport', 'GateShadowMismatchError', 'nameOfLegacyId', 'namedDecision',
     ]) {
       expect(typeof (testing as Record<string, unknown>)[name], name).toBe('function');
       expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
     }
     expect(testing.shadowSlot).toBe((await import('./testing/shadowSlot')).shadowSlot);
     expect(testing.runSlotConformance).toBe((await import('./slots/conformance/run')).runSlotConformance);
+  });
+});
+
+describe('the policy entry', () => {
+  it('"dialogwright/policy" has the policy and identity files\' API and the gate, which the root entry leaves out', async () => {
+    const policy = await import('./define/policyEntry');
+    for (const name of ['definePolicy', 'defineIdentity', 'compilePolicy', 'compileIdentity', 'compiledPolicyOf', 'compileGate', 'programFromTables', 'identityToolsOf', 'subjectOnlyDecision', 'confirmationHash', 'roleLine', 'isRuleId', 'isBuiltInRuleId', 'passed']) {
+      expect(typeof (policy as Record<string, unknown>)[name], name).toBe('function');
+      expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
+    }
+    // The legacy evaluator is test support (the shadow gate's reference), and the compilers' own helpers are internals.
+    for (const name of ['evaluateCall', 'readRule', 'ruleIdOf', 'RULE_ID_OF']) expect((policy as Record<string, unknown>)[name], name).toBeUndefined();
+    const testing = await import('./testing/index');
+    expect(testing.evaluateCall).toBe((await import('./gate/policy')).evaluateCall);
+    expect(policy.compiledPolicyOf).toBe((await import('./gate/compiled')).compiledPolicyOf);
+    expect(policy.definePolicy).toBe((await import('./define/definePolicy')).definePolicy);
+    expect(policy.LEGACY_RULE_ID).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' });
+    expect([...policy.RULE_IDS]).toEqual(['R1', 'R2', 'R3', 'R5', 'R6', 'R7']);
+    // the names decisions and audit lines record, and the ids tables still list
+    expect(policy.RULE_ID).toEqual({ identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: 'dateInRange', limit: 'limit' });
+    expect(policy.TABLE_RULE_ID).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7', dateInRange: 'dateInRange', limit: 'limit' });
+    expect(policy.UNLISTED_RULE_ID).toBe('unlisted');
+    expect(policy.passed).toBe((await import('./gate/types')).passed);
+    // the gate's types, for an app's own rules and its gate tests
+    const rule = (c: import('./define/policyEntry').RuleContext): import('./define/policyEntry').RuleOutcome => ({ result: { id: 'x', description: c.call.tool, compared: '', pass: true } });
+    const tables: Pick<import('./define/policyEntry').PolicyTables, 'customRules'> = { customRules: { x: rule } };
+    expect(typeof tables.customRules?.x).toBe('function');
   });
 });

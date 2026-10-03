@@ -1,7 +1,8 @@
 import { maskId } from '../gate/principal';
 import type { SlotState } from '../core/session';
 import type { SlotSpec } from '../core/slots/types';
-import type { App } from '../core/app/types';
+import type { App, AuditMask } from '../core/app/types';
+import { recordedValue } from '../core/recording';
 import { defaultAppOrNull } from '../core/app/registry';
 import { IDENTITY_UNVERIFIED, IDENTITY_VERIFIED } from '../core/decision';
 import type { TraceRecord } from './types';
@@ -26,8 +27,8 @@ import type { TraceRecord } from './types';
  */
 export type StatementMode = 'length' | 'keep';
 
-/** The app whose slots say what is masked. */
-type Slots = Pick<App, 'slots'> | null;
+/** The app whose slots (and, for a side effect's params, policy.yaml's `audit:`) say what is masked. */
+type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'> }) | null;
 
 function ruleOf(app: Slots, slot: string): SlotSpec['redact'] {
   return app !== null && Object.hasOwn(app.slots, slot) ? app.slots[slot]!.redact : undefined;
@@ -149,16 +150,32 @@ export function redactHandoffData(data: string, mode: StatementMode, app: Slots 
   }
 }
 
+/** How policy.yaml's `audit:` records a param that is no redacted slot; undefined where it says nothing. */
+function auditOf(app: Slots, param: string): AuditMask | undefined {
+  const audit = app?.policy?.audit;
+  return audit !== undefined && Object.hasOwn(audit, param) ? audit[param] : undefined;
+}
+
 /**
  * The runner's side effects: a downstream service's params may carry the caller's statement verbatim
- * (e.g. a depot call's `missingNote`), so each param is masked as the slot of the same name would be.
+ * (e.g. a depot call's `missingNote`), so each param is masked as the slot of the same name would be,
+ * and a param that is no redacted slot as policy.yaml's `audit:` declares it, on the live console
+ * too (a secret one left out): only a slot's statement keeps its words there.
  */
 function redactEffects(app: Slots, effects: TraceRecord['effects'], mode: StatementMode): TraceRecord['effects'] {
   if (!Array.isArray(effects)) return effects;
   return effects.map((e) => {
     if (!isObject(e) || !isObject(e.params)) return e;
     const params: Record<string, string> = {};
-    for (const [k, v] of Object.entries(e.params)) params[k] = typeof v === 'string' ? maskValue(app, k, v, mode) ?? v : v;
+    for (const [k, v] of Object.entries(e.params)) {
+      const declared = ruleOf(app, k) === undefined ? auditOf(app, k) : undefined;
+      if (typeof v !== 'string' || declared === undefined) params[k] = typeof v === 'string' ? maskValue(app, k, v, mode) ?? v : v;
+      else if (declared === 'length') params[k] = maskStatement(v);
+      else {
+        const shown = recordedValue(declared, v);
+        if (shown !== null) params[k] = shown;
+      }
+    }
     return { ...e, params };
   });
 }

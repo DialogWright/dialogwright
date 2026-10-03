@@ -41,6 +41,8 @@ export interface Parcel {
   readonly status: ParcelStatus;
   /** ISO: the day it is due, or the day it was delivered. */
   readonly day: string;
+  /** Where the customer asked for it to be left when no one is in; null for nowhere. Withheld from a depot viewer (policy.yaml redact). */
+  readonly safePlace: string | null;
 }
 
 export const CUSTOMERS: readonly Customer[] = [
@@ -55,11 +57,11 @@ export const STAFF: readonly Staff[] = [
 ];
 
 export const PARCELS: readonly Parcel[] = [
-  { number: '7101', owner: '55501234', item: 'a box of books', status: 'in_transit', day: '2026-09-21' },
-  { number: '7102', owner: '55501234', item: 'a pair of boots', status: 'delivered', day: '2026-09-16' },
-  { number: '7103', owner: '55501234', item: 'a desk lamp', status: 'out_for_delivery', day: '2026-09-18' },
-  { number: '7201', owner: '55505678', item: 'a coffee grinder', status: 'in_transit', day: '2026-09-22' },
-  { number: '7301', owner: '55509012', item: 'a rain jacket', status: 'held', day: '2026-09-17' },
+  { number: '7101', owner: '55501234', item: 'a box of books', status: 'in_transit', day: '2026-09-21', safePlace: 'behind the side gate' },
+  { number: '7102', owner: '55501234', item: 'a pair of boots', status: 'delivered', day: '2026-09-16', safePlace: 'with the neighbour at number 12' },
+  { number: '7103', owner: '55501234', item: 'a desk lamp', status: 'out_for_delivery', day: '2026-09-18', safePlace: null },
+  { number: '7201', owner: '55505678', item: 'a coffee grinder', status: 'in_transit', day: '2026-09-22', safePlace: 'in the porch' },
+  { number: '7301', owner: '55509012', item: 'a rain jacket', status: 'held', day: '2026-09-17', safePlace: null },
 ];
 
 export function customerById(id: string): Customer | undefined {

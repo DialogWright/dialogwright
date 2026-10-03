@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# Example Parcels' action policy: what the testkit's agent may do, action by action (domain/policy.ts
+# loads it with definePolicy). Every action not listed is refused, and the rules of an action run in
+# the order written, the first failure deciding. The one rule of the app's own, R8, is code (named
+# here by `custom:`); everything else is in this file.
+actions:
+  verifyCustomer:
+    say: check the account ID and date of birth
+    level: 0
+    rules: [attempts]
+  verifyCode:
+    say: check the one-time code
+    level: 1
+    rules: [identity, attempts]
+  sendCode:
+    say: text a one-time code
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  getAccount:
+    say: read the customer's account
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  getWindows:
+    say: read the delivery windows
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  listParcels:
+    say: list the customer's parcels
+    level: 2
+    rules:
+      - identity
+      - scope: { param: accountId }
+  getParcel:
+    say: read a parcel
+    level: 2
+    rules:
+      - identity
+      - scope: { record: parcel }
+  # A viewer may not file a report; a clerk may, with a person. A report is only filed when none of
+  # the customer's parcels shows as delivered on the day the missing one was due (R8, in code).
+  createReport:
+    say: report a missing parcel
+    level: 2
+    rules:
+      - identity
+      - role: { viewer: refuse, clerk: person }
+      - scope: { param: accountId }
+      - confirmed: [accountId, missingNote, expectedDate]
+      - custom: R8
+  # What the depot agent may receive.
+  notifyDepot:
+    say: tell the depot about a report
+    level: 2
+    rules:
+      - identity
+      - scope: { record: report }
+      - fields: [report, missingNote, expectedDate]
+
+# Reporting a parcel missing needs the code from the start, though its entry call needs only level 1.
+purposes:
+  report_missing: { level: 2 }
+
+# What a depot agent does not see of a parcel: where the customer asked for it to be left. A clerk,
+# who follows up the reports of missing parcels, does. The tools return the whole parcel and
+# declare the fields that may be withheld; the engine strips them.
+redact:
+  agent:
+    getParcel: [safePlace]
+    listParcels: [safePlace]
+  agent.clerk:
+    getParcel: []
+    listParcels: []
+
+# How each value an action is sent is recorded (the gate event, the trace, the console and the
+# audit), where it is not a slot with a redact setting: the account ID is recorded by its last four,
+# the date of birth hidden and the description by its length, as their slots say. Every other param
+# the tools list (tools.ts) is declared here; these are recorded as they are.
+audit:
+  parcel: keep
+  report: keep
+  deliveryDay: keep
+  deliveryPart: keep
+  expectedDate: keep

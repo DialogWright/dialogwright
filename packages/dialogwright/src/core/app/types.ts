@@ -9,6 +9,7 @@ import type { AnswerMap, QuestionMap } from '../../jev/types';
 import type { ServiceResult } from '../../channel/events';
 import type { AuditDraft } from '../../audit/types';
 import type { GateDecision, GateLookups, Level, Party, Principal, RuleContext, RuleOutcome, ToolCall } from '../../gate/types';
+import type { CompiledPolicy } from '../../gate/compiled';
 
 /** Engine id types: plain strings. An app defines which values exist; the engine never hard-codes them. */
 export type SlotId = string;
@@ -33,6 +34,14 @@ export interface FormDef {
   /** The manifest prompt confirming the filled form, or null. */
   summaryPromptId: string | null;
   /**
+   * The actions (tools) the form's hooks call through the gate: its entry call and the calls its
+   * completion and summary hooks make. Declared by every form of an app or by none; the app map
+   * (dialogwright/testing appMapText) draws a form to them, and `check` reports an action no form
+   * reaches (core/app/reach.ts). Never read by the engine at run time. Without it, the app does not
+   * say where its calls are made.
+   */
+  calls?: readonly ToolName[];
+  /**
    * The call made before the form's own slots are asked (it may step identity up). Without it the
    * form is entered as it starts: no call, nothing to step up, and neither onEntry nor
    * principalEntry is called.
@@ -49,7 +58,7 @@ export interface FormDef {
    */
   principalEntry?(ctx: EntryContext): Decision | Refused | null;
   /**
-   * For a form whose completion is a confirmed write (gate R3): the values it will write, read from
+   * For a form whose completion is a confirmed write (the gate's confirmed rule): the values it will write, read from
    * the session. Each time the summary is spoken their hash is taken, for the caller's yes to arm. A
    * form without one holds no confirmation.
    */
@@ -129,8 +138,12 @@ export interface AppContext {
   tc: TurnContext;
   /** The turn's output: a hook may record a KB source or queue an effect on it. */
   out: TurnOut;
-  /** A call through the gate, recorded like every other; `value` is null unless the gate allowed it. */
-  callTool(call: ToolCall): { decision: GateDecision; value: unknown };
+  /**
+   * A call through the gate, recorded like every other; `value` is null unless the gate allowed it.
+   * `redacted` names the fields of the value the policy withheld from the caller (policy.yaml
+   * `redact:`, each now null), present only when it withheld any.
+   */
+  callTool(call: ToolCall): { decision: GateDecision; value: unknown; redacted?: readonly string[] };
 }
 
 /** A form's entry hook: an AppContext with the turn's acks so far. */
@@ -163,7 +176,7 @@ export interface Refused {
  *   on instead: the line is said, then the next request is bridged into, as after `said`.
  * - `refused`: the form ends without its answer (the gate refused the call, or there was none to
  *   give and no transfer to offer); its line is said and the call carries on, the form uncounted.
- * - `reconfirm`: the gate refused the write and the form loop asks again. On R3 (the values changed
+ * - `reconfirm`: the gate refused the write and the form loop asks again. On the confirmed rule (the values changed
  *   after the summary was read) that reads the summary again; where an app's own rule refused a value
  *   and the completion cleared that slot (e.g. a delivery date in the future), it asks for it again.
  * - `decision`: the completion takes the turn (report_filed, a transfer offer, a handoff) and the
@@ -192,10 +205,17 @@ export interface IdentityConfig {
    * slot id is also the name of the verify tool's param that carries its value.
    */
   factorSlots: SlotId[];
-  /** The tool that verifies the factors (e.g. verifyCustomer) and the one that checks the code (verifyCode). */
+  /** The tool that verifies the factors (e.g. verifyCustomer). */
   verifyTool: ToolName;
-  codeTool: ToolName;
-  sendCodeTool: ToolName;
+  /**
+   * Level 2's tools: the one that checks the one-time code (e.g. verifyCode) and the one that sends
+   * it (sendCode). Both, or neither: a ladder of one rung (identity.yaml with no level 2) has no
+   * code, so nothing may need level 2 (validateApp) and the lifecycle never sends one.
+   */
+  codeTool?: ToolName;
+  sendCodeTool?: ToolName;
+  /** How many digits the one-time code has, keyed on the keypad: 4 to 8. Without it, 6 (identity.yaml's `otp: { length }`). */
+  codeLength?: number;
   /**
    * The params of the call that texts the one-time code (sendCodeTool), read from the session (e.g.
    * the verified customer's account ID). Without it the call carries none.
@@ -203,6 +223,29 @@ export interface IdentityConfig {
   sendCodeParams?(s: Session): Record<string, string>;
   /** The line said before the factors are asked again after a failed match. Without it, 'identity_failed'. */
   failedPromptId?: string;
+  /**
+   * What each level of the ladder is called (identity.yaml's `name`, e.g. 1: "verified"): labels for
+   * the console and the policy card. The engine records and decides on the numbers; a name never
+   * reaches the session, the model, an outcome or an audit row.
+   */
+  levelNames?: Readonly<{ 1: string; 2?: string }>;
+  /**
+   * The level a sign-in proves (identity.yaml's `signIn`), on a channel that can sign a caller in
+   * (ChannelCaps.signIn): always the top of the ladder. Without it the app takes no sign-in, and an
+   * `auth.signed_in` event is ignored.
+   */
+  signInLevel?: 1 | 2;
+  /**
+   * The roles a party of the delegate kind may have, as identity.yaml declares them. With it, every
+   * delegate the app's portal and principals produce is checked against it (validateApp, and the
+   * harness as it signs one in). Without it (an identity written in code), roles are not checked.
+   */
+  delegateRoles?: readonly string[];
+  /**
+   * The failed tries allowed at each identity check (identity.yaml's `attempts`): the policy's
+   * maxAttempts must be the same number (validateApp). Without it, the policy's is not checked.
+   */
+  maxAttempts?: number;
 }
 
 /**
@@ -217,25 +260,46 @@ export interface ToolDef {
    * turn context (the systems, today's date) and `out` the turn's output, where a tool may queue an
    * effect (e.g. a missing-parcel report's depot notice) so resolve stays pure.
    *
-   * What the call carries to the console, the trace and the audit is redactCall's copy, which masks
-   * only the params that are named as slots (by SlotSpec.redact): a param whose name is not a slot id
-   * is passed through RAW. A tool whose call carries a sensitive value under another name (say a
-   * record id with no slot) must either name it as a slot or accept that it is recorded.
+   * What the call carries to the console, the trace and the audit is redactCall's copy: each param
+   * that is a slot with a redact setting masked as the slot says (SlotSpec.redact), each other param
+   * as policy.yaml's `audit:` declares it (PolicyTables.audit). `check` refuses a param the tool
+   * lists (its params, below) that neither covers.
    */
   run(call: ToolCall, sys: unknown, ctx: { s: Session; tc: TurnContext; out: TurnOut; code?: string }): { value: unknown; summary: string; ref?: string };
   /**
    * The audit rows for a call the gate let run, after its gate row (core/audit.ts). Without it, one
    * `tool_result` row with the tool's name and summary. Rows carry no PHI: the call is the redacted
-   * copy, and the summary is the tool's own one line. The hook is the app's own code and what it
-   * returns is recorded as is: it must never put a raw slot value in a row, and `after` (below) is
-   * the whole session, raw slots included, so read from it only what a row may carry.
+   * copy, and the summary is the tool's own one line. The hook is the app's own code: it must never
+   * put a raw slot value in a row, and `after` (below) is the whole session, raw slots included, so
+   * read from it only what a row may carry. The engine holds it to that for the call's own params:
+   * wherever a row's text repeats the raw value of a param that is recorded masked or never, the
+   * value is masked there too (core/recording.ts).
    */
   audit?(t: ToolAuditInput): AuditDraft[];
+  /**
+   * The fields of what the tool returns that the policy may withhold from a party acting for
+   * subjects (policy.yaml `redact:`): of the value when it is an object, of each item when it is a
+   * list. Only a field named here may be named there. The tool returns the whole record; the engine
+   * sets each withheld field to null after the tool runs (core/resultRedaction.ts), before anything
+   * else sees the value, and adds `redacted: <fields>` to the summary. The summary itself is the
+   * tool's, written from the whole record: it must never carry one of these fields.
+   */
+  fields?: readonly string[];
+  /**
+   * The params the tool's calls carry, by name (`params: []` for none): what `check` holds to being
+   * recorded as declared, each a slot with a redact setting or a param policy.yaml's `audit:` names.
+   * The calls are built in code (a form's hooks, the identity flow), so the tool, which reads them,
+   * is where they are listed. `check` requires it of every tool, and holds it to the params the
+   * action's rules name; the gate-event goldens list any param an app's own calls carry that its
+   * tool does not (dialogwright/testing gateEventGolden). The engine records the calls as declared
+   * either way: a param no slot's redact or `audit:` declaration covers is recorded as it is.
+   */
+  params?: readonly string[];
 }
 
 /** What a tool's audit hook (ToolDef.audit) is given about a call the gate let run. */
 export interface ToolAuditInput {
-  /** The call as recorded (redactCall): each param that names a slot masked as the slot says. */
+  /** The call as recorded (redactCall): each param masked as its slot or policy.yaml's `audit:` says, a secret one left out. */
   call: ToolCall;
   /** The tool's one-line summary of what it returned. */
   summary: string;
@@ -280,53 +344,74 @@ export interface ServiceResolveOptions {
 }
 
 /**
- * What R5 lets a role do with a tool: make the call, be refused it (BLOCK 'role'), or have a person
+ * What the role rule (R5 in the tables) lets a role do with a tool: make the call, be refused it (BLOCK 'role'), or have a person
  * take it (NEEDS_HUMAN, PolicyTables.rolePersonReason).
  */
 export type RoleAccess = 'allow' | 'refuse' | 'person';
 
-/** The gate's tables (src/gate/policy.ts evaluateCall): the whole of what the app's agent may do. */
+/** The gate's tables (src/gate/policy.ts evaluateCall): the whole of what the app's agent may do. Their `rulesFor` lists the built-in rules by their table ids (R1 identity, R2 scope, R3 confirmed, R5 role, R6 attempts, R7 fields); the gate records them under their names. */
 export interface PolicyTables {
   /** The identity level each tool needs; a tool without one needs the highest (fails closed). */
   toolLevel: Readonly<Record<ToolName, Level>>;
   purposeLevel: Readonly<Record<string, Level>>;
   rulesFor: Readonly<Record<ToolName, readonly string[]>>;
-  /** R7: the fields each tool may send on to a downstream service; a tool with no row sends none. */
+  /** R7 (fields): the fields each tool may send on to a downstream service; a tool with no row sends none. */
   serviceFields: Readonly<Partial<Record<ToolName, readonly string[]>>>;
   confirmedFields: readonly string[];
-  /** R6: failed attempts allowed at each identity check (the factors, the one-time code). */
+  /** R6 (attempts): failed attempts allowed at each identity check (the factors, the one-time code). */
   maxAttempts: number;
   /**
-   * R5: per tool, what each role of a principal that has one (e.g. depot staff) may do with it. A
+   * R5 (role): per tool, what each role of a principal that has one (e.g. depot staff) may do with it. A
    * tool or a role with no row is refused. Without the table, every role is refused.
    */
   roles?: Readonly<Record<ToolName, Readonly<Record<string, RoleAccess>>>>;
-  /** R5's NEEDS_HUMAN reason when a role's access is 'person' (e.g. 'staff-filing'). Default 'role-person'. */
+  /** The role rule's NEEDS_HUMAN reason when a role's access is 'person' (e.g. 'staff-filing'). Default 'role-person'. */
   rolePersonReason?: string;
   /**
-   * R2: per tool, the param that names the subject the call acts on, and whether its value is a
+   * R2 (scope): per tool, the param that names the subject the call acts on, and whether its value is a
    * record id the gate resolves to its owner (GateLookups.ownerOf) or the subject's own id. A tool
-   * that runs R2 without a row is BLOCKed (fails closed); validateApp refuses an app with one.
+   * that runs scope (R2) without a row is BLOCKed (fails closed); validateApp refuses an app with one.
    */
   subjects: Readonly<Record<ToolName, SubjectParam>>;
   /**
    * Rules the app adds beside the gate's built-in ones (src/gate/policy.ts RULE_IDS), named in
    * rulesFor like them; an id must not be a built-in's (validateApp checks). An app's own rule
-   * (e.g. no report for a parcel already delivered) is one. A custom rule is the app's own code, and
-   * its RuleResult.compared reaches the audit and the console as is: it must never carry a raw param.
+   * (e.g. no report for a parcel already delivered) is one. A custom rule is the app's own code: its
+   * RuleResult.compared reaches the audit and the console, with every raw value of a param of the
+   * call that is recorded masked or never masked there too (core/recording.ts).
    */
   customRules?: Readonly<Record<string, (c: RuleContext) => RuleOutcome>>;
   /** The words the built-in rules' lines use, so the console and the audit read in the app's terms. Without it, neutral words. */
   wording?: PolicyWording;
+  /**
+   * The fields of a tool's result withheld from a party acting for subjects (policy.yaml `redact:`),
+   * by who asks: a delegate kind (`agent`), or a kind and one of its roles (`agent.clerk`), whose
+   * row for a tool replaces the kind's. Each tool's list names fields the tool declares
+   * (ToolDef.fields). A subject acting for themselves is never redacted. Without it, nothing is.
+   */
+  redact?: Readonly<Record<string, Readonly<Record<ToolName, readonly string[]>>>>;
+  /**
+   * How each param that is not a slot with a redact setting is recorded (policy.yaml `audit:`), by
+   * param name, in every call that carries it: the gate event, the trace, the console and the audit
+   * (core/recording.ts). Without it, such a param is recorded as it is.
+   */
+  audit?: Readonly<Record<string, AuditMask>>;
 }
 
-/** R2: the param naming a call's subject; `via: 'record'` when it is a record id to resolve to its owner. */
+/**
+ * How a param is recorded (policy.yaml `audit:`): `last4` by its last four characters ("...1234"),
+ * `mask` hidden ("•"), `length` by its length ("<38 chars>"), `secret` never (left out of the call
+ * as recorded, and "•" wherever else its value would appear), `keep` as it is.
+ */
+export type AuditMask = 'last4' | 'mask' | 'length' | 'secret' | 'keep';
+
+/** Scope (R2): the param naming a call's subject; `via: 'record'` when it is a record id to resolve to its owner. */
 export interface SubjectParam {
   readonly param: string;
   readonly via?: 'record';
 }
 
-/** Who is asking, as R2 words it: one of the app's subjects, or a party acting for subjects. */
+/** Who is asking, as the scope rule words it: one of the app's subjects, or a party acting for subjects. */
 export type ScopeAsker = 'subject' | 'delegate';
 
 /**
@@ -335,15 +420,15 @@ export type ScopeAsker = 'subject' | 'delegate';
  */
 export interface PolicyWording {
   /**
-   * R2's description, by who asks and how the tool names its subject (a record, or the subject's id
+   * The scope rule's description, by who asks and how the tool names its subject (a record, or the subject's id
    * as a param). Default: "The record belongs to someone this caller may see".
    */
   scope?: Readonly<Partial<Record<ScopeAsker, Readonly<Partial<Record<'record' | 'param', string>>>>>>;
-  /** R2's compared line names the owner of a record as this (default "record owner"), and a subject named by id as this (default "subject"). */
+  /** The scope rule's compared line names the owner of a record as this (default "record owner"), and a subject named by id as this (default "subject"). */
   recordOwner?: string;
   subject?: string;
   /**
-   * R5's compared line for a role and what the roles table gives it for the tool. Default:
+   * The role rule's compared line for a role and what the roles table gives it for the tool. Default:
    * "role <role> may <tool>: yes", "...: no", "...: with a person".
    */
   role?(role: string, tool: ToolName, access: RoleAccess): string;
@@ -563,6 +648,14 @@ export interface App {
   tools: Record<ToolName, ToolDef>;
   policy: PolicyTables;
   /**
+   * The gate the app's calls go through (core/app/lookup.ts gateOf). Without it, the policy's named
+   * rules: the ones its tables were compiled from (compilePolicy, definePolicy, defineApp), or, for
+   * tables written by hand, the tables read as rules (gate/compiled.ts programFromTables). An app sets
+   * it only to put another gate in front of its calls, as the shadow gate does
+   * (dialogwright/testing withShadowGate).
+   */
+  gate?: CompiledPolicy;
+  /**
    * The app's session facts. Without it a session's facts start empty, are copied whole
    * (structuredClone) with the session, stay when a form closes, and give the slot specs no records.
    * Facts are plain structured-cloneable data (no functions or class instances): sessions are plain,
@@ -763,7 +856,7 @@ export interface AppFixtures {
  * harness refuses it.
  */
 export interface PrincipalDirectory {
-  /** The principal a subject signs in as, at `level` (e.g. a customer by account ID). Read for a scenario's `signIn` step, at level 2. */
+  /** The principal a subject signs in as, at `level` (e.g. a customer by account ID). Read for a scenario's `signIn` step, at the level a sign-in proves (IdentityConfig.signInLevel). */
   subjectPrincipal?(id: string, level: 1 | 2): Party | null;
   /** The principal a delegate signs in as (e.g. depot staff by id). Read for a scenario's or corpus entry's `as`. */
   delegatePrincipal?(id: string): Party | null;
@@ -906,4 +999,57 @@ export interface TestingHooks {
   serviceAnswers?: Readonly<Record<string, (params: Readonly<Record<string, string>>) => unknown>>;
   /** Caller turns each form takes on the keypad menu, which the metrics compare a completion against. Without it, 0. */
   dtmfBaseline?: Readonly<Record<FormId, number>>;
+  /**
+   * The principals and records the gate grid crosses with every tool (dialogwright/testing
+   * gateGridInput): the policy's safety net, run by the app's own tests. Never read by a call.
+   * Without it, the app has no grid.
+   */
+  policyMatrix?(): PolicyMatrix;
+}
+
+/**
+ * The people and records an app's gate grid crosses with every tool, probe and purpose
+ * (TestingHooks.policyMatrix). The grid adds an anonymous caller and an empty subject itself.
+ */
+export interface PolicyMatrix {
+  readonly principals: {
+    /** One of the app's subjects proven to level 1, and the same subject at level 2. */
+    readonly subject1: Party;
+    readonly subject2: Party;
+    /** Someone acting for subjects, one per role the app's tables name (PolicyTables.roles), by role. Empty when the app has none. */
+    readonly delegates: Readonly<Record<string, Party>>;
+    /** A delegate whose role no table names. */
+    readonly unlistedRole: Party;
+    /** A delegate with no role. */
+    readonly roleless: Party;
+    /** A party who is neither one of the app's subjects nor of any delegate's kind. */
+    readonly otherParty: Party;
+  };
+  /**
+   * The subjects a call names, each as a subject id (for a tool whose PolicyTables.subjects row names
+   * the subject) and as one of their records (for a row `via: 'record'`): the subject's own, another
+   * subject the delegates act for, one no principal of the matrix may see, and one that does not exist.
+   */
+  readonly records: Readonly<Record<'own' | 'inScope' | 'outOfScope' | 'unknown', PolicyMatrixSubject>>;
+  /**
+   * The params of a call, per tool, as named sets (e.g. a date an app's own rule passes and one it
+   * fails); the grid sets the subject param. A tool without sets gets one, built from its subject
+   * param, the confirmed fields (if it runs the confirmed rule) and its service fields, each valued from `values`.
+   */
+  readonly calls?: Readonly<Record<ToolName, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
+  /** A value per param name for the calls the grid builds; any other param is 'x'. */
+  readonly values?: Readonly<Record<string, string>>;
+  /** The day the grid's facts carry (GateFacts.todayIso). Default 2026-09-18, the regression's day. */
+  readonly todayIso?: string;
+  /**
+   * The lookups the grid evaluates against. Default: a fresh copy of the app's (App.systems). An app
+   * whose seed data has no record outside every principal's scope may add one here, over its own.
+   */
+  lookups?(): GateLookups;
+}
+
+/** A subject a grid call names: their id, and the id of one of their records. */
+export interface PolicyMatrixSubject {
+  readonly subject: string;
+  readonly record: string;
 }

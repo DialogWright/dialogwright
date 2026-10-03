@@ -9,6 +9,7 @@ import { demoTools, type Tools } from '../core/tools';
 import type { TurnState } from '../core/state';
 import type { Thresholds } from '../core/thresholds';
 import { DEFAULT_SCREEN_MODE, inlineScreenQuestions, screenQuestions, screenResult, screenState, splitInlineAnswers, withInlineScreen, type ScreenMode, type ScreenResult } from '../core/screen';
+import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
 import { JevClientError, type JevClient, type JevResponse, type JsonValue, type QuestionMap } from '../jev/types';
 import type { RenderContext } from '../prompts/render';
@@ -152,7 +153,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // perception, the core and the trace all get the masked words. This is the same masking the voice
   // adapter applies to the wire frame (maskCodeFrame) before its frame log, so there it is already
   // masked and this is a no-op; this covers every other way in.
-  const event = maskCodeEvent(session.promptedFor, heard);
+  const event = maskCodeEvent(session.promptedFor, heard, codeLengthOf(appOf(session)));
   const words = wordsOf(event);
   const now = nowOf(opts);
   const digit = arrivalContext(session, event, arrival);

@@ -1,6 +1,7 @@
 import { serviceResultEvent, type ServiceResult } from '../channel/events';
 import type { Effect } from '../core/lifecycle';
 import type { App } from '../core/app/types';
+import { carryScrub } from '../core/recording';
 
 /**
  * Where each of the app's downstream services (App.services) is reached, by name, as the launcher that
@@ -26,6 +27,13 @@ const CEILING_GRACE_MS = 250;
  * blocks. `timeoutMs` shortens the service's own budget (tests).
  */
 export async function resolveService(app: App, effect: Effect, urls: ServiceUrls | undefined, timeoutMs?: number): Promise<ServiceResult> {
+  const answer = await askService(app, effect, urls, timeoutMs);
+  // The answer's audit row (ServiceDef.audit) is masked as the effect's params were recorded.
+  carryScrub(effect, answer);
+  return answer;
+}
+
+async function askService(app: App, effect: Effect, urls: ServiceUrls | undefined, timeoutMs?: number): Promise<ServiceResult> {
   const service = app.services?.[effect.service];
   if (!service) return serviceResultEvent(effect.service, null);
   const noAnswer = (reason: 'service-error' | 'timeout'): ServiceResult => serviceResultEvent(effect.service, null, { outcome: 'no-answer', reason });

@@ -10,6 +10,7 @@ import { dayNearMonth, digitSpanLabel, dobParts, saysExplicitYear } from '../../
 import { CUSTOMERS } from './data';
 import { depotSearch } from './agent';
 import { customerPrincipal } from './principals';
+import { testkitPolicyMatrix } from './policyMatrix';
 import { ACCOUNT_ID_DIGITS, AHEAD_MODES, AHEAD_RELATIVE, DAYS } from './slots/shared';
 import { parcelSelectRecordSlot } from './slots/parcelSelectRecord';
 import { DAY_PARTS } from './systems';
@@ -223,4 +224,5 @@ export const TESTKIT_TESTING: TestingHooks = {
   replay: { identityKeys: { accountId: '55501234', dob: '04121985' }, codeDigit: '2' },
   serviceAnswers: { depot: depotSearch },
   dtmfBaseline: { track_parcel: 5, delivery_window: 5, report_missing: 6 },
+  policyMatrix: testkitPolicyMatrix,
 };

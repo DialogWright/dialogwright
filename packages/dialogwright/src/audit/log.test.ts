@@ -46,6 +46,20 @@ describe('AuditLog', () => {
     expect(log.append('CA2', 'voice', { type: 'call_started', detail: {} })).toMatchObject({ seq: 2, prevHash: early.hash });
   });
 
+  it('verifies a day written with the rules\' legacy ids and the day after it written with their names: the chain does not read a rule line', () => {
+    let t = Date.UTC(2026, 9, 2, 12, 0, 0);
+    const log = new AuditLog(dir, () => t);
+    const before = log.append('CA1', 'voice', { type: 'gate', detail: { tool: 'getParcel', verdict: 'BLOCK', rules: ['R1 pass: identity.level 2 >= 2', 'R2 fail: record owner ...5678 · caller may see ...1234 only'] } });
+    const firstDay = log.path;
+    t = Date.UTC(2026, 9, 3, 12, 0, 0);
+    const after = log.append('CA2', 'voice', { type: 'gate', detail: { tool: 'getParcel', verdict: 'BLOCK', rules: ['identity pass: identity.level 2 >= 2', 'scope fail: record owner ...5678 · caller may see ...1234 only'] } });
+    expect(log.path).not.toBe(firstDay);
+    expect(before.detail.rules).toEqual(['R1 pass: identity.level 2 >= 2', 'R2 fail: record owner ...5678 · caller may see ...1234 only']);
+    expect(after.detail.rules).toEqual(['identity pass: identity.level 2 >= 2', 'scope fail: record owner ...5678 · caller may see ...1234 only']);
+    expect(verifyChain(firstDay)).toEqual({ ok: true, entries: 1 });
+    expect(verifyChain(log.path)).toEqual({ ok: true, entries: 1 });
+  });
+
   it('finds the first tampered line', () => {
     const log = new AuditLog(dir, () => Date.UTC(2026, 9, 1));
     log.append('CA1', 'voice', { type: 'call_started', detail: {} });

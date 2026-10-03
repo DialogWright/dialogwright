@@ -22,10 +22,22 @@ describe('consoleMetaOf', () => {
     // From each slot spec: an ID redacted to its last four, a verified factor, words redacted to their length.
     expect(m.chipStyle).toEqual({ accountId: 'last4', dob: 'verified', missingNote: 'recorded' });
     expect(m).toMatchObject({
-      formLabels: {}, slotLabels: {}, questionPrefixes: {}, detectQuestions: [], levels: ['anonymous', 'level 1', 'level 2'],
+      formLabels: {}, slotLabels: {}, questionPrefixes: {}, detectQuestions: [], levels: ['anonymous', 'verified', 'confirmed by code'],
       handoffReasons: {}, facts: [], goodAuditTypes: [], serviceNote: { label: 'Downstream service', answered: 'answered' },
       signIn: { marker: 'signed in · portal', role: null }, chatPrefixes: [], heardBy: 'the caller', links: [],
     });
+  });
+});
+
+describe('consoleMetaOf: the level badge', () => {
+  it('names each level as identity.yaml does where the console gives no words, and neutrally where neither does', () => {
+    // The testkit's identity.yaml calls level 1 "verified" and level 2 "confirmed by code" (bare above).
+    expect(consoleMetaOf(bare).levels).toEqual(['anonymous', 'verified', 'confirmed by code']);
+    expect(consoleMetaOf({ ...bare, identity: { ...bare.identity!, levelNames: { 1: 'matched' } } }).levels).toEqual(['anonymous', 'matched', 'level 2']);
+    const { identity: _, ...noIdentity } = bare;
+    expect(consoleMetaOf(noIdentity as App).levels).toEqual(['anonymous', 'level 1', 'level 2']);
+    // The console's own words win: the testkit's app.yaml-style words.
+    expect(consoleMetaOf(testkitApp).levels).toEqual(['anonymous', 'ID + DOB', '+ code']);
   });
 });
 

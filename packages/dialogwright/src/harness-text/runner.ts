@@ -9,11 +9,13 @@ import { promptText } from '../prompts/render';
 import { prompt } from '../core/decision';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { formOf, identityOf } from '../core/app/lookup';
+import { delegateProblem, subjectProblem } from '../core/app/principals';
 import type { App, SlotId } from '../core/app/types';
 import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, type SessionEvent } from '../channel/events';
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
+import { carryScrub } from '../core/recording';
 export { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { demoTools } from '../core/tools';
@@ -155,7 +157,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     const read = renderSummary(session, prompt(promptId, 'confirm', summaryVars(session), [], ['yes', 'no']), tc, newTurnOut());
     session.lastPromptId = read.promptId;
     session.lastPromptText = promptText(app, read.promptId, read.vars, session.locale);
-    // The summary has been spoken, so its values are what a yes arms (gate R3): renderSummary took
+    // The summary has been spoken, so its values are what a yes arms (the gate's confirmed rule): renderSummary took
     // their hash as it read them.
     session.lastPromptOptions = ['yes', 'no'];
     return session;
@@ -181,16 +183,30 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
 /** `as` for a scenario that is the subjects' web chat, anonymous until a `signIn` step. */
 export const WEB_VISITOR = 'web';
 
-/** The delegate `as` names, signed in through the app's portal; null when the app has no such delegate. */
+/**
+ * The delegate `as` names, signed in through the app's portal; null when the app has no such
+ * delegate. One the app's identity does not declare (its kind, its role) is the app's error.
+ */
 function signedInDelegate(as: string): Principal | null {
-  return getApp(defaultAppId()).principals?.delegatePrincipal?.(as) ?? null;
+  const app = getApp(defaultAppId());
+  const p = app.principals?.delegatePrincipal?.(as) ?? null;
+  const problem = p && app.identity ? delegateProblem(app.identity, p) : null;
+  if (problem) throw new Error(`as "${as}" ${problem}`);
+  return p;
 }
 
-/** The subject `id` names, signed in through the app's portal at level 2 (as a subject's web chat does). */
+/**
+ * The subject `id` names, signed in through the app's portal at the level a sign-in proves
+ * (identity.yaml's `signIn`; a subject's web chat). An app that takes no sign-in has none to give.
+ */
 function signedInSubject(scenarioId: string, id: string): Principal {
   const app = getApp(defaultAppId());
-  const p = app.principals?.subjectPrincipal?.(id, 2) ?? null;
+  const level = identityOf(app).signInLevel;
+  if (level === undefined) throw new Error(`${scenarioId}: signIn "${id}", but the app takes no sign-in (identity.yaml has no signIn)`);
+  const p = app.principals?.subjectPrincipal?.(id, level) ?? null;
   if (!p) throw new Error(`${scenarioId}: signIn "${id}" is not a ${identityOf(app).subjectKind}`);
+  const problem = subjectProblem(identityOf(app), p, level);
+  if (problem) throw new Error(`${scenarioId}: signIn "${id}" ${problem}`);
   return p;
 }
 
@@ -251,7 +267,7 @@ export async function runCorpusEntry(entry: CorpusEntry, opts: RunOptions): Prom
 /**
  * `serviceDown` is not a turn: it makes the next service effect answer as though the service did not
  * (serviceResultEvent(service, null)), as a timeout or an error would. `signIn` (a subject's id) is the web
- * visitor signing in through the portal: the server's `auth.signed_in` event, at level 2.
+ * visitor signing in through the portal: the server's `auth.signed_in` event, at the level a sign-in proves (identity.yaml's `signIn`).
  */
 export type ScenarioStep = { say: string; fail?: boolean; partial?: boolean } | { dtmf: string } | { silence: true } | { serviceDown: true } | { signIn: string };
 
@@ -304,7 +320,10 @@ export async function followEffects(run: TurnRun, opts: RunOptions, down = false
   for (const effect of run.result.effects) {
     if (effect.kind !== 'service') continue;
     const answer = appOf(session).testing?.serviceAnswers?.[effect.service];
-    const next = await runTurn(session, serviceResultEvent(effect.service, down || !answer ? null : answer(effect.params)), opts);
+    const event = serviceResultEvent(effect.service, down || !answer ? null : answer(effect.params));
+    // The answer's audit row is masked as the effect's params were recorded, as the server does (server/services.ts).
+    carryScrub(effect, event);
+    const next = await runTurn(session, event, opts);
     runs.push(next);
     session = next.result.session;
   }

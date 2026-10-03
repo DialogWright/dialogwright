@@ -4,7 +4,7 @@ import { handoff, prompt, type Decision } from '../../../core/decision';
 import { describeDay } from '../../../core/extract/date';
 import type { Ack } from '../../../core/fia';
 import type { Session } from '../../../core/session';
-import type { GateDecision, Principal, ToolCall } from '../../../gate/types';
+import { passed, type GateDecision, type Principal, type ToolCall } from '../../../gate/types';
 import { reportFact, setAccountFact, setParcelsFact, setReportFact } from './facts';
 import type { TestkitForm } from './intents';
 import { dayPartDisplay } from './slots/shared';
@@ -16,7 +16,7 @@ function call<T extends TestkitTool>(c: AppContext, toolCall: ToolCall & { tool:
   return c.callTool(toolCall) as { decision: GateDecision; value: TestkitToolValues[T] | null };
 }
 
-/** The verified customer's account ID; '' for anyone else, which the gate never lets past R1 or R2. */
+/** The verified customer's account ID; '' for anyone else, which the gate never lets past the identity or scope rule. */
 export function accountIdOf(s: Session): string {
   return s.principal.kind === 'customer' ? s.principal.id : '';
 }
@@ -28,7 +28,7 @@ export function blockPromptId(reason: string | undefined, p: Principal): string 
   return null;
 }
 
-/** The values a report is filed with: exactly R3's fields. */
+/** The values a report is filed with: exactly the confirmed rule's fields. */
 export function reportParams(s: Session): { accountId: string; missingNote: string; expectedDate: string } {
   return { accountId: accountIdOf(s), missingNote: s.slots.missingNote!.value ?? '', expectedDate: s.slots.expectedDate!.value ?? '' };
 }
@@ -40,7 +40,7 @@ export function reportParams(s: Session): { accountId: string; missingNote: stri
 function staffReportCheck(c: EntryContext): Decision | Refused | null {
   const { s } = c;
   const { decision } = call(c, { tool: 'createReport', params: {}, purpose: 'entry-check' });
-  if (decision.rules.some((r) => r.id === 'R5' && r.pass)) return null;
+  if (passed(decision, 'role')) return null;
   const acks = c.acks.filter((a) => a.promptId !== 'ack_intent');
   if (decision.verdict === 'BLOCK') {
     const ack = blockAck(s, decision.reason);
@@ -50,7 +50,7 @@ function staffReportCheck(c: EntryContext): Decision | Refused | null {
   return handoff(s, 'needs-human', acks);
 }
 
-/** Tracking: the parcel looked up by the gate. Someone else's, or none, is refused alike (R2). */
+/** Tracking: the parcel looked up by the gate. Someone else's, or none, is refused alike (scope). */
 function trackParcel(c: CompletionContext): Completion {
   const { s, acks } = c;
   const { decision, value } = call(c, { tool: 'getParcel', params: { parcel: s.slots.parcelSelect!.value ?? '' } });
@@ -72,7 +72,7 @@ function deliveryWindow(c: CompletionContext): Completion {
 
 /**
  * The summary's yes: the confirmation armed, the values read again, the report filed through the
- * gate. Changed since the summary: R3 refuses and the summary is read again. A parcel delivered that
+ * gate. Changed since the summary: the confirmed rule refuses and the summary is read again. A parcel delivered that
  * day: a person checks first (R8). Filed: the depot agent is asked after the turn.
  */
 function reportMissing(c: CompletionContext): Completion {
@@ -129,10 +129,12 @@ function onEntryFor(form: TestkitForm): NonNullable<FormDef['onEntry']> {
   };
 }
 
+/** The three forms; `calls` lists the actions each one's entry call and hooks make, for the app map. */
 export const FORMS: Record<TestkitForm, FormDef> = {
   track_parcel: {
     slots: ['parcelSelect'],
     summaryPromptId: null,
+    calls: ['listParcels', 'getParcel'],
     entry: entryFor('track_parcel'),
     onEntry: onEntryFor('track_parcel'),
     // Staff name a parcel by number: there is no list of their own to read first.
@@ -142,6 +144,7 @@ export const FORMS: Record<TestkitForm, FormDef> = {
   delivery_window: {
     slots: ['deliveryDay', 'deliveryPart'],
     summaryPromptId: null,
+    calls: ['getAccount', 'getWindows'],
     entry: entryFor('delivery_window'),
     onEntry: onEntryFor('delivery_window'),
     // Booking for a customer is not something staff do on this line.
@@ -151,6 +154,7 @@ export const FORMS: Record<TestkitForm, FormDef> = {
   report_missing: {
     slots: ['missingNote', 'expectedDate'],
     summaryPromptId: 'confirm_report',
+    calls: ['getAccount', 'createReport', 'notifyDepot'],
     entry: entryFor('report_missing'),
     onEntry: onEntryFor('report_missing'),
     principalEntry: staffReportCheck,

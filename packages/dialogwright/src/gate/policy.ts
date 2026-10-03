@@ -1,44 +1,30 @@
-import { createHash } from 'node:crypto';
-import type { PolicyTables, RoleAccess, ScopeAsker, ToolName } from '../core/app/types';
+import type { PolicyTables } from '../core/app/types';
+import { askerOf, checkOutcome, confirmationHash, DEFAULT_RECORD_OWNER, DEFAULT_ROLE_PERSON_REASON, DEFAULT_SCOPE, DEFAULT_SUBJECT, DEFAULT_TOOL_LEVEL, defaultRoleLine, scopeShown, threwLine, unknownRuleLine, unlistedLine } from './lines';
 import { maskId } from './principal';
-import { isAnonymous, type GateDecision, type GateFacts, type GateLookups, type GateVerdict, type Level, type Principal, type RuleContext, type RuleOutcome, type RuleResult, type ToolCall } from './types';
+import { isAnonymous, type GateDecision, type GateFacts, type GateLookups, type Level, type Principal, type RuleContext, type RuleOutcome, type RuleResult, type ToolCall } from './types';
 
 /**
- * The action gate's rules. What a tool needs, which rules it runs and in what order, what each rule
- * compares against and the words its lines use are the app's tables (App.policy, PolicyTables);
- * the built-in rules are here, each with a test in policy.test.ts, and an app may add its own
- * (PolicyTables.customRules). Rules run in the order listed for a tool and stop at the first
- * failure. Rules fail closed: a missing param, an unknown record, or a tool not in the app's
- * rulesFor all resolve to BLOCK rather than ALLOW.
+ * The legacy evaluator: the gate's rules over the app's flattened tables (App.policy, PolicyTables).
+ * The gate a call goes through reads the policy's named rules instead (./compiled.ts, CompiledPolicy);
+ * this one stays, unchanged in what it decides and in the ids it records (R1..R7, R0), as the
+ * reference the shadow gate compares that one with (dialogwright/testing withShadowGate,
+ * legacyGateEvaluator, which maps these ids to the rules' names).
+ *
+ * What a tool needs, which rules it runs and in what order, what each rule compares against and the
+ * words its lines use are the app's tables; the built-in rules are here, each with a test in
+ * policy.test.ts, and an app may add its own (PolicyTables.customRules). Rules run in the order
+ * listed for a tool and stop at the first failure. Rules fail closed: a missing param, an unknown
+ * record, or a tool not in the app's rulesFor all resolve to BLOCK rather than ALLOW.
  */
+
+export { confirmationHash };
 
 /** The gate's built-in rules; an app's rulesFor names these or its own customRules (validateApp checks). */
 export const RULE_IDS = ['R1', 'R2', 'R3', 'R5', 'R6', 'R7'] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
-/** A tool the app gave no level: the highest, so it fails closed. */
-const DEFAULT_TOOL_LEVEL: Level = 2;
-
-/** The engine's own words for the built-in rules' lines, where the app gives none (PolicyTables.wording). */
-const DEFAULT_SCOPE = 'The record belongs to someone this caller may see';
-const DEFAULT_RECORD_OWNER = 'record owner';
-const DEFAULT_SUBJECT = 'subject';
-const DEFAULT_ROLE_PERSON_REASON = 'role-person';
-
-function defaultRoleLine(role: string, tool: ToolName, access: RoleAccess): string {
-  return `role ${role} may ${tool}: ${access === 'allow' ? 'yes' : access === 'person' ? 'with a person' : 'no'}`;
-}
-
 export function isRuleId(id: string): id is RuleId {
   return (RULE_IDS as readonly string[]).includes(id);
-}
-
-/**
- * The hash R3 compares: the exact values a write will send, over the app's confirmed fields
- * (PolicyTables.confirmedFields) in their fixed order.
- */
-export function confirmationHash(params: Readonly<Record<string, string>>, fields: readonly string[]): string {
-  return createHash('sha256').update(JSON.stringify(fields.map((k) => [k, params[k] ?? ''])), 'utf8').digest('hex');
 }
 
 function needLevel(call: ToolCall, policy: PolicyTables): Level {
@@ -46,19 +32,6 @@ function needLevel(call: ToolCall, policy: PolicyTables): Level {
   // Not reached without a level for an app whose every tool in rulesFor has one.
   // Were one missing, it would fail closed, at the highest level.
   return Math.max(policy.toolLevel[call.tool] ?? DEFAULT_TOOL_LEVEL, purpose) as Level;
-}
-
-/** Who asks, as R2 words it; null for an anonymous caller (R1 steps one up before R2 runs). */
-function askerOf(p: Principal, subjectKind: string): ScopeAsker | null {
-  if (isAnonymous(p)) return null;
-  return p.kind === subjectKind ? 'subject' : 'delegate';
-}
-
-/** Who the caller may see, masked: "...1234 only" for one, a list for several, "no one" for none. */
-function scopeShown(scope: readonly string[]): string {
-  if (scope.length === 0) return 'no one';
-  if (scope.length === 1) return `${maskId(scope[0]!)} only`;
-  return scope.map(maskId).join(', ');
 }
 
 const RULE: Record<RuleId, (c: RuleContext) => RuleOutcome> = {
@@ -155,8 +128,7 @@ const RULE: Record<RuleId, (c: RuleContext) => RuleOutcome> = {
 export function evaluateCall(call: ToolCall, p: Principal, facts: GateFacts, lk: GateLookups, policy: PolicyTables, subjectKind: string): GateDecision {
   const ids = Object.hasOwn(policy.rulesFor, call.tool) ? policy.rulesFor[call.tool] : undefined;
   if (!ids) {
-    const rule: RuleResult = { id: 'R0', description: 'The action is on the approved list', compared: `tool ${call.tool} not in policy`, pass: false };
-    return { call, rules: [rule], verdict: 'BLOCK', reason: 'unknown-tool' };
+    return { call, rules: [unlistedLine(call.tool, 'R0')], verdict: 'BLOCK', reason: 'unknown-tool' };
   }
   const ctx: RuleContext = { call, p, facts, lk, policy, subjectKind };
   const rules: RuleResult[] = [];
@@ -164,7 +136,7 @@ export function evaluateCall(call: ToolCall, p: Principal, facts: GateFacts, lk:
     const custom = policy.customRules && Object.hasOwn(policy.customRules, id) ? policy.customRules[id] : undefined;
     const rule = isRuleId(id) ? RULE[id] : custom;
     if (!rule) {
-      rules.push({ id, description: 'A rule the gate knows', compared: `rule ${id} unknown`, pass: false });
+      rules.push(unknownRuleLine(id));
       return { call, rules, verdict: 'BLOCK', reason: 'unknown-rule' };
     }
     // A rule that throws (an app's own, or the app's lookups under a built-in) BLOCKs: the error never
@@ -173,7 +145,7 @@ export function evaluateCall(call: ToolCall, p: Principal, facts: GateFacts, lk:
     try {
       o = rule(ctx);
     } catch {
-      rules.push({ id, description: 'A rule the gate could run', compared: `rule ${id} threw`, pass: false });
+      rules.push(threwLine(id));
       return { call, rules, verdict: 'BLOCK', reason: 'rule-error' };
     }
     const checked = checkOutcome(id, o);
@@ -181,33 +153,4 @@ export function evaluateCall(call: ToolCall, p: Principal, facts: GateFacts, lk:
     if (checked.fail) return { call, rules, ...checked.fail };
   }
   return { call, rules, verdict: 'ALLOW' };
-}
-
-const FAIL_VERDICTS: ReadonlySet<GateVerdict> = new Set(['BLOCK', 'STEP_UP', 'NEEDS_HUMAN']);
-
-/**
- * A rule's outcome as the gate takes it. The line is stamped with the rule's own id, so no rule can
- * speak as another. An outcome that does not hold together (a failed line with nothing to stop at, a
- * stop that is not a failing verdict, or a malformed line) BLOCKs: an app's rule cannot ALLOW a call
- * past the rules after it, or leave the gate without a verdict.
- */
-function checkOutcome(id: string, o: RuleOutcome): RuleOutcome {
-  const r = (o as Partial<RuleOutcome> | null | undefined)?.result;
-  const fail = (o as Partial<RuleOutcome> | null | undefined)?.fail;
-  const lineOk = typeof r === 'object' && r !== null && typeof r.pass === 'boolean'
-    && typeof r.description === 'string' && typeof r.compared === 'string';
-  const failOk = fail === undefined || (typeof fail === 'object' && fail !== null && FAIL_VERDICTS.has(fail.verdict)
-    && (fail.reason === undefined || typeof fail.reason === 'string')
-    && (fail.needLevel === undefined || fail.needLevel === 1 || fail.needLevel === 2));
-  // A passing line goes on; a failing one stops, at a failing verdict.
-  if (!lineOk || !failOk || r.pass !== (fail === undefined)) {
-    return { result: { id, description: 'A rule that answers as the gate needs', compared: `rule ${id} answered invalidly`, pass: false }, fail: { verdict: 'BLOCK', reason: 'rule-invalid' } };
-  }
-  const result: RuleResult = { id, description: r.description, compared: r.compared, pass: r.pass };
-  if (fail === undefined) return { result };
-  // Only the decision's own fields are taken: a rule cannot replace the call or the lines before it.
-  return {
-    result,
-    fail: { verdict: fail.verdict, ...(fail.reason === undefined ? {} : { reason: fail.reason }), ...(fail.needLevel === undefined ? {} : { needLevel: fail.needLevel }) },
-  };
 }

@@ -129,7 +129,7 @@ export interface Session {
   stepUp: StepUp | null;
   /** The form whose entry call has passed the gate. */
   entered: FormId | null;
-  /** Failed verifications, of the identity factors together and of the one-time code, which the gate's R6 caps. */
+  /** Failed verifications, of the identity factors together and of the one-time code, which the gate's attempts rule caps. */
   identityAttempts: { factors: number; code: number };
   /** The one-time code has been texted on this call (sendCode); asking for it again does not text another, a reissue does. */
   codeSent: boolean;
@@ -140,7 +140,7 @@ export interface Session {
    * arms it as confirmedHash; closing the form or filing the report clears it.
    */
   pendingHash: string | null;
-  /** Hash of the values the caller confirmed at the summary, which the gate's R3 compares a write against. Spent by the write. */
+  /** Hash of the values the caller confirmed at the summary, which the gate's confirmed rule compares a write against. Spent by the write. */
   confirmedHash: string | null;
   /**
    * The downstream service (App.services) whose answer is awaited, or null: a completion handed it work

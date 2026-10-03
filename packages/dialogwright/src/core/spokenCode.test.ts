@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { keyEvents, speechEvent } from '../channel/events';
-import { CODE_MASK, maskCodeEvent, maskSpokenCode, saidCode } from './spokenCode';
+import { CODE_MASK, maskCodeEvent, maskSpokenCode, saidCode, spokenCodeMinDigits } from './spokenCode';
 
 describe('maskSpokenCode', () => {
   it.each([
@@ -54,6 +54,29 @@ describe('maskCodeEvent', () => {
     expect(maskCodeEvent('otp', frame)).toMatchObject({ type: 'user.speech', text: CODE_MASK });
     expect(maskCodeEvent('accountId', frame)).toBe(frame);
     expect(maskCodeEvent(null, frame)).toBe(frame);
+  });
+
+  it('masks by the app\'s code length: three digits of a four-digit code, four of a longer one', () => {
+    expect([4, 5, 6, 8].map((n) => spokenCodeMinDigits(n))).toEqual([3, 4, 4, 4]);
+    expect(spokenCodeMinDigits()).toBe(4);
+    const three = speechEvent('it is two four six');
+    expect(maskCodeEvent('otp', three, 4)).toMatchObject({ text: `it is ${CODE_MASK}` });
+    expect(maskCodeEvent('otp', three)).toBe(three);
+    expect(maskCodeEvent('otp', three, 8)).toBe(three);
+    expect(maskCodeEvent('otp', speechEvent('one three five seven two four six eight'), 8)).toMatchObject({ text: CODE_MASK });
+    expect(maskSpokenCode('two four six', 3)).toEqual({ text: CODE_MASK, masked: true });
+  });
+
+  it('a short code: ordinary speech with a sound-alike is not a code, and a real one still is', () => {
+    for (const said of ['I got it for twenty', 'two to three minutes', 'ten to one', 'yes, for two', 'too late for one']) {
+      expect(maskSpokenCode(said, 3), said).toEqual({ text: said, masked: false });
+      expect(maskCodeEvent('otp', speechEvent(said), 4), said).toMatchObject({ text: said });
+    }
+    expect(maskSpokenCode('one two three', 3)).toEqual({ text: CODE_MASK, masked: true });
+    expect(maskCodeEvent('otp', speechEvent('it is four two nine one'), 4)).toMatchObject({ text: `it is ${CODE_MASK}` });
+    expect(maskCodeEvent('otp', speechEvent('the code is 4291'), 4)).toMatchObject({ text: `the code is ${CODE_MASK}` });
+    // A code of six (runs of four): the sound-alikes still count, the safe side.
+    expect(maskSpokenCode('for eight to won')).toEqual({ text: CODE_MASK, masked: true });
   });
 
   it('leaves a keyed digit alone: the keypad has its own masking', () => {

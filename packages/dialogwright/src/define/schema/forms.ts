@@ -31,7 +31,7 @@ const form = z
       .describe(
         'The code hooks this form uses, written in the app\'s TypeScript; "complete" is required. ' +
           'entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), ' +
-          'confirmedParams (the values a confirmed write sends, for the gate\'s R3), complete (runs when the form is full and confirmed), ' +
+          'confirmedParams (the values a confirmed write sends, for the gate\'s confirmed rule), complete (runs when the form is full and confirmed), ' +
           'onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), ' +
           'onSummaryRead (looks at what the summary is about to name).',
       )
@@ -46,8 +46,15 @@ const form = z
           });
         }
       })),
+    calls: unique(identifier(), 'action')
+      .optional()
+      .describe(
+        'The actions (tools) this form\'s hooks call through the gate: its entry call and the calls its completion makes. ' +
+          'Declare it for every form or for none (an empty list for a form that calls nothing): the app map draws each form to its actions, ' +
+          'and `check` reports an action that no form reaches and the identity flow does not call.',
+      ),
   })
-  .describe('One form: the slots it collects, the summary it reads back, and the code hooks it uses.');
+  .describe('One form: the slots it collects, the summary it reads back, the code hooks it uses, and the actions it calls.');
 
 export const formsSchema = z
   .strictObject({

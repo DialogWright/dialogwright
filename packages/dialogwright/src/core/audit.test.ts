@@ -111,7 +111,7 @@ describe('audit emission and private values', () => {
     ]);
     const filed = audit.find((e) => e.type === 'gate' && e.detail.tool === 'createReport' && e.detail.verdict === 'ALLOW')!;
     expect(filed.detail.call).toMatch(/^createReport\(accountId=\.\.\.1234, missingNote=<\d+ chars>, expectedDate=2026-09-15\)$/);
-    expect(filed.detail.rules).toEqual(expect.arrayContaining(['R3 pass: confirmed hash = call hash', 'R8 pass: due 2026-09-15: nothing delivered that day']));
+    expect(filed.detail.rules).toEqual(expect.arrayContaining(['confirmed pass: confirmed hash = call hash', 'R8 pass: due 2026-09-15: nothing delivered that day']));
     expect(audit.find((e) => e.type === 'report_created')!.detail).toMatchObject({ customer: '...1234', report: expect.stringMatching(/^\d{4}$/) });
     expect(audit.filter((e) => e.type === 'a2a').map((e) => e.detail)).toEqual([
       { agent: 'depot', phase: 'sent', fieldsSent: ['report', 'missingNote', 'expectedDate'] },
@@ -123,7 +123,7 @@ describe('audit emission and private values', () => {
     const { audit } = await observed('track-other-customers-parcel');
     const blocked = audit.find((e) => e.type === 'gate' && e.detail.tool === 'getParcel')!;
     expect(blocked.detail).toMatchObject({ call: 'getParcel(parcel=7201)', verdict: 'BLOCK', reason: 'scope' });
-    expect(blocked.detail.rules).toEqual(expect.arrayContaining(['R2 fail: record owner ...5678 · caller may see ...1234 only']));
+    expect(blocked.detail.rules).toEqual(expect.arrayContaining(['scope fail: record owner ...5678 · caller may see ...1234 only']));
     // The refused call ran nothing, so nothing about the parcel was recorded.
     expect(audit.some((e) => e.type === 'tool_result' && e.detail.tool === 'getParcel')).toBe(false);
   });

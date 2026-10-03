@@ -14,7 +14,7 @@ export interface Anonymous {
 /**
  * Someone proven by a verifier or a sign-in. `kind` is the app's word for them; the engine compares
  * it only with the app's subject kind (App.identity.subjectKind): a party of that kind is one of the
- * app's subjects, any other acts for subjects. `id` is their record key. `role` (if any) is what R5
+ * app's subjects, any other acts for subjects. `id` is their record key. `role` (if any) is what the role rule
  * reads; `contact` is where a one-time code may be sent; `attrs` is the app's own, never read by the
  * engine.
  */
@@ -47,7 +47,7 @@ export function isParty(p: unknown): p is Party {
   return typeof kind === 'string' && kind !== 'anonymous' && (level === 1 || level === 2) && typeof id === 'string' && id !== '';
 }
 
-/** A tool's name: a plain string. The app defines which tools exist; the gate blocks any other (R0). */
+/** A tool's name: a plain string. The app defines which tools exist; the gate blocks any other (unlisted). */
 export type { ToolName };
 
 export interface ToolCall {
@@ -60,12 +60,16 @@ export interface ToolCall {
 export type GateVerdict = 'ALLOW' | 'BLOCK' | 'STEP_UP' | 'NEEDS_HUMAN';
 
 export interface RuleResult {
-  readonly id: string;          // R0..R7 (R0: the tool itself is not on the approved list)
+  /** The rule's name (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`), an app's own rule's id, or `unlisted` (the tool itself is not on the approved list). */
+  readonly id: string;
   readonly description: string; // plain English, for the console and the audit log
   /**
-   * The values compared, e.g. "record owner ...5520 · caller may see ...1234 only". It goes to the
-   * console and the audit as it is, unredacted: a rule (an app's custom rule included) must never
-   * put a raw param or slot value in it, only masked ids and words.
+   * The values compared, e.g. "record owner ...5520 · caller may see ...1234 only". A rule writes
+   * masked ids and words. On its way to the gate event, the console and the audit, the lifecycle
+   * masks in it every raw value of a param of the call that is recorded masked or never (a slot's
+   * redact, policy.yaml's `audit:`; core/recording.ts), so a rule (an app's custom rule included)
+   * that repeats one does not leak it; a value it reshapes (reformatted, split, partly quoted) is
+   * not recognised, so a rule still writes only what may be recorded.
    */
   readonly compared: string;
   readonly pass: boolean;
@@ -95,7 +99,7 @@ export interface GateLookups {
 /** Session facts the gate reads. Written by tool results and the confirmation step only. */
 export interface GateFacts {
   /**
-   * Failed attempts at the identity check this call makes, which R6 caps: the one-time code's for the
+   * Failed attempts at the identity check this call makes, which the attempts rule caps: the one-time code's for the
    * app's code tool, the identity factors' for its verify tool.
    */
   readonly attempts: number;
@@ -103,6 +107,14 @@ export interface GateFacts {
   readonly confirmedHash: string | null;
   /** Today's date, ISO yyyy-mm-dd, as the call session knows it. A rule that checks a date compares it against this, never the wall clock. */
   readonly todayIso: string;
+}
+
+/**
+ * Whether a decision ran the rule of that name and it passed: `passed(decision, 'role')`. A rule the
+ * action does not list, or that was not reached (an earlier rule stopped the call), has not passed.
+ */
+export function passed(decision: GateDecision, rule: string): boolean {
+  return decision.rules.some((r) => r.id === rule && r.pass);
 }
 
 /** What a rule reads: the call, who asks, the session's gate facts, the lookups and the app's tables. */
