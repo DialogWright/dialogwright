@@ -2,57 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
-    "toolLevel": {
-      "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-      },
-      "additionalProperties": {
-        "type": "number",
-        "enum": [
-          0,
-          1,
-          2
-        ]
-      },
-      "description": "The identity level each tool needs: 0 anonymous, 1 the factors matched, 2 the factors and the one-time code. A tool without one needs the highest (fails closed). Every tool in rulesFor needs a row."
-    },
-    "purposeLevel": {
-      "default": {},
-      "description": "The identity level each purpose needs (what a caller wants done before any tool is called). Default: none.",
-      "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
-      },
-      "additionalProperties": {
-        "type": "number",
-        "enum": [
-          0,
-          1,
-          2
-        ]
-      }
-    },
-    "rulesFor": {
-      "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-      },
-      "additionalProperties": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
-        }
-      },
-      "description": "Per tool, the rules the gate runs before it, by id: the built-ins (R1 level, R2 scope, R3 confirmation, R5 role, R6 attempts, R7 service fields) or a custom rule the app's code registers. Every tool of the app needs a row; a tool without one cannot be called."
-    },
-    "subjects": {
-      "default": {},
-      "description": "R2: per tool, the param that names the subject. A tool that runs R2 needs a row. Default: none.",
+    "actions": {
       "type": "object",
       "propertyNames": {
         "type": "string",
@@ -61,100 +11,200 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
-          "param": {
+          "say": {
+            "description": "What the action does, in plain words, as the policy card says it (for example \"file a request\").",
             "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-            "description": "The tool param that names the subject the call acts on."
+            "minLength": 1
           },
-          "via": {
-            "description": "\"record\" when the param is a record id the gate resolves to its owner; leave out when it is the subject's own id.",
-            "type": "string",
-            "const": "record"
+          "level": {
+            "description": "The identity level the action needs: 0 anonymous, 1 the factors matched, 2 the factors and the one-time code (identity.yaml names them). Default 2, the highest, so an action left without one fails closed.",
+            "type": "number",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "identity",
+                    "attempts"
+                  ],
+                  "description": "A rule with no parameters: identity (R1, the caller's identity level is at least the action's) or attempts (R6, the identity check has failed fewer times than identity.yaml's attempts)."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "type": "object",
+                      "properties": {
+                        "param": {
+                          "description": "The action's param that is the subject's own id (for example accountId).",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                        },
+                        "record": {
+                          "description": "The action's param that is a record id the gate resolves to its owner (for example recordId).",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "scope (R2): the subject the action acts on must be one the caller may see. Exactly one of \"param\" (the param is the subject's own id) or \"record\" (the param is a record id, resolved to its owner)."
+                    }
+                  },
+                  "required": [
+                    "scope"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The scope rule with its parameters, for example \"scope: { param: accountId }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "object",
+                      "properties": {
+                        "reason": {
+                          "description": "The reason a \"person\" role hands the call over for (its handoff line is handoff_<reason>). Default \"role-person\".",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "allow",
+                          "refuse",
+                          "person"
+                        ]
+                      },
+                      "description": "role (R5): what each role may do with the action: allow, refuse, or person (a person takes the call). A role not listed is refused, and so is a party who acts for subjects with no role; one of the app's subjects passes. The roles are those identity.yaml declares under principals."
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The role rule with its parameters, for example \"role: { viewer: refuse, clerk: person }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "confirmed": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "description": "confirmed (R3): the action sends exactly these fields, and the caller confirmed exactly these values at the read-back, in the order the hash is taken over."
+                    }
+                  },
+                  "required": [
+                    "confirmed"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The confirmed rule with its parameters, for example \"confirmed: [accountId, note]\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "description": "fields (R7): the only fields the action may send on (to a downstream service). An empty list sends none."
+                    }
+                  },
+                  "required": [
+                    "fields"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The fields rule with its parameters, for example \"fields: [note, date]\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "custom": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+                      "description": "custom: one of the app's own rules, by the id its code registers it under (code.customRules)."
+                    }
+                  },
+                  "required": [
+                    "custom"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The custom rule with its parameters, for example \"custom: <the rule's id in code.customRules>\"."
+                }
+              ],
+              "description": "One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, custom)."
+            },
+            "description": "The rules the gate runs before the action, in this order; the first that fails decides. An empty list runs none."
           }
         },
         "required": [
-          "param"
+          "rules"
         ],
         "additionalProperties": false,
-        "description": "R2's subject for one tool."
-      }
-    },
-    "confirmedFields": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        "description": "One action: what it is, the identity level it needs and the rules the gate runs before it."
       },
-      "description": "R3: the fields a confirmed write carries, in the order the hash is taken over (for example name, dob, provider, date, time)."
+      "description": "Every action the agent may take, by tool name, with the level it needs and the rules the gate runs before it. Every tool of the app needs an entry; anything not listed is refused."
     },
-    "serviceFields": {
+    "purposes": {
       "default": {},
-      "description": "R7: per tool, the fields it may send on to a downstream service. A tool with no row sends none. Default: none.",
+      "description": "The identity level each purpose needs (what a caller wants done, a form id, before any tool is called), when it is more than its first action's. Default: none.",
       "type": "object",
       "propertyNames": {
         "type": "string",
-        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-      },
-      "additionalProperties": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-        }
-      }
-    },
-    "maxAttempts": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991,
-      "description": "R6: failed attempts allowed at each identity check (the factors, the one-time code)."
-    },
-    "roles": {
-      "description": "R5: per tool, what each role of a principal that has one (for example depot staff) may do with it: allow, refuse, or person (a person takes the call). A tool or a role with no row is refused. Without the table, every role is refused.",
-      "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
       },
       "additionalProperties": {
         "type": "object",
-        "propertyNames": {
-          "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+        "properties": {
+          "level": {
+            "type": "number",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "The identity level the purpose needs."
+          }
         },
-        "additionalProperties": {
-          "type": "string",
-          "enum": [
-            "allow",
-            "refuse",
-            "person"
-          ]
-        }
+        "required": [
+          "level"
+        ],
+        "additionalProperties": false,
+        "description": "One purpose and the level it needs."
       }
-    },
-    "rolePersonReason": {
-      "description": "R5's NEEDS_HUMAN reason when a role's access is \"person\" (for example \"staff-filing\"). Default \"role-person\".",
-      "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
     },
     "wording": {
       "type": "object",
       "properties": {
         "scope": {
-          "description": "R2's description, by who asks and how the tool names its subject. Default: \"The record belongs to someone this caller may see\".",
+          "description": "The scope rule's (R2) description, by who asks and how the action names its subject. Default: \"The record belongs to someone this caller may see\".",
           "type": "object",
           "properties": {
             "subject": {
-              "description": "R2's description when one of the app's subjects asks.",
+              "description": "The scope rule's description when one of the app's subjects asks.",
               "type": "object",
               "properties": {
                 "record": {
-                  "description": "R2's description when the tool names its subject by a record id the gate resolves to its owner.",
+                  "description": "The scope rule's description when the action names its subject by a record id the gate resolves to its owner.",
                   "type": "string",
                   "minLength": 1
                 },
                 "param": {
-                  "description": "R2's description when the tool names its subject by the subject's own id.",
+                  "description": "The scope rule's description when the action names its subject by the subject's own id.",
                   "type": "string",
                   "minLength": 1
                 }
@@ -162,16 +212,16 @@
               "additionalProperties": false
             },
             "delegate": {
-              "description": "R2's description when a party acting for subjects asks.",
+              "description": "The scope rule's description when a party acting for subjects asks.",
               "type": "object",
               "properties": {
                 "record": {
-                  "description": "R2's description when the tool names its subject by a record id the gate resolves to its owner.",
+                  "description": "The scope rule's description when the action names its subject by a record id the gate resolves to its owner.",
                   "type": "string",
                   "minLength": 1
                 },
                 "param": {
-                  "description": "R2's description when the tool names its subject by the subject's own id.",
+                  "description": "The scope rule's description when the action names its subject by the subject's own id.",
                   "type": "string",
                   "minLength": 1
                 }
@@ -182,31 +232,31 @@
           "additionalProperties": false
         },
         "recordOwner": {
-          "description": "What R2's compared line calls the owner of a record. Default \"record owner\".",
+          "description": "What the scope rule's compared line calls the owner of a record. Default \"record owner\".",
           "type": "string",
           "minLength": 1
         },
         "subject": {
-          "description": "What R2's compared line calls a subject named by id. Default \"subject\".",
+          "description": "What the scope rule's compared line calls a subject named by id. Default \"subject\".",
           "type": "string",
           "minLength": 1
         },
         "role": {
-          "description": "R5's compared line for a role, by what the roles table gives it for the tool, as a template with {role} and {tool}.",
+          "description": "The role rule's (R5) compared line, by what the rule gives the role, as a template with {role} and {tool}.",
           "type": "object",
           "properties": {
             "allow": {
-              "description": "R5's compared line when the role may use the tool. Write {role} and {tool} where they go. Default \"role {role} may {tool}: yes\".",
+              "description": "The role rule's compared line when the role may take the action. Write {role} and {tool} where they go. Default \"role {role} may {tool}: yes\".",
               "type": "string",
               "minLength": 1
             },
             "refuse": {
-              "description": "R5's compared line when the role is refused the tool. Default \"role {role} may {tool}: no\".",
+              "description": "The role rule's compared line when the role is refused the action. Default \"role {role} may {tool}: no\".",
               "type": "string",
               "minLength": 1
             },
             "person": {
-              "description": "R5's compared line when a person takes the call. Default \"role {role} may {tool}: with a person\".",
+              "description": "The role rule's compared line when a person takes the call. Default \"role {role} may {tool}: with a person\".",
               "type": "string",
               "minLength": 1
             }
@@ -219,12 +269,9 @@
     }
   },
   "required": [
-    "toolLevel",
-    "rulesFor",
-    "confirmedFields",
-    "maxAttempts"
+    "actions"
   ],
   "additionalProperties": false,
-  "description": "policy.yaml: the gate's tables. Custom rule functions stay in code; this file only names them.",
+  "description": "policy.yaml: what the agent may do, action by action. Custom rule functions stay in code; this file names them.",
   "title": "DialogWright policy.yaml"
 }

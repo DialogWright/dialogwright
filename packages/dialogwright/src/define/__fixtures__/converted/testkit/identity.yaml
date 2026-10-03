@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../../../../schemas/identity.schema.json
+# Example Parcels' identity (the testkit's App.identity), written in the new shape.
+principals:
+  subject: customer
+  delegates:
+    agent: { roles: [viewer, clerk] }
+levels:
+  1: { name: verified, factors: [accountId, dob], verify: verifyCustomer, failedPrompt: identity_failed }
+  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: sendCode, verify: verifyCode }
+attempts: 3

@@ -4,7 +4,8 @@ import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
 import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, type AppCode } from './defineApp';
-import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
+import { isLegacyIdentity, isLegacyPolicy, loadAppFolder, type LoadedConfig, type LoadResult } from './load';
+import { DEFAULT_ROLE_PERSON_REASON, personReasons } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES } from './schema/index';
 
@@ -90,7 +91,16 @@ export const PORTAL_PROMPTS: readonly { id: string; why: string }[] = [
 ];
 
 /** R5's NEEDS_HUMAN reason when policy.yaml names none (gate/policy.ts DEFAULT_ROLE_PERSON_REASON; a test holds the two together). */
-export const DEFAULT_ROLE_PERSON_REASON = 'role-person';
+export { DEFAULT_ROLE_PERSON_REASON };
+
+/** The identity factors' slots and the line said after a failed match, in either shape of identity.yaml, with where the line is named. */
+function identityParts(config: LoadedConfig): { factors: readonly string[]; failedPromptId?: string; failedPath: DataPath } | null {
+  const identity = config.identity;
+  if (!identity) return null;
+  if (isLegacyIdentity(identity)) return { factors: identity.factorSlots, ...(identity.failedPromptId === undefined ? {} : { failedPromptId: identity.failedPromptId }), failedPath: ['failedPromptId'] };
+  const one = identity.levels[1];
+  return { factors: one.factors, ...(one.failedPrompt === undefined ? {} : { failedPromptId: one.failedPrompt }), failedPath: ['levels', '1', 'failedPrompt'] };
+}
 
 /**
  * The prompt ids the engine says for this app, each with when it says it: the fixed list, and the
@@ -127,14 +137,14 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
     if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
     for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)` });
   }
-  const roles = Object.values(config.policy.roles ?? {});
-  if (roles.some((byRole) => Object.values(byRole).includes('person'))) {
-    const reason = config.policy.rolePersonReason ?? DEFAULT_ROLE_PERSON_REASON;
-    needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (policy.yaml roles) and the call goes to a person for the reason "${reason}"` });
+  for (const reason of personReasons(config.policy)) {
+    const where = isLegacyPolicy(config.policy) ? 'policy.yaml roles' : 'a role rule in policy.yaml';
+    needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (${where}) and the call goes to a person for the reason "${reason}"` });
   }
-  if (config.identity) {
+  const identity = identityParts(config);
+  if (identity) {
     needs.push(...IDENTITY_PROMPTS);
-    needs.push({ id: config.identity.failedPromptId ?? 'identity_failed', why: 'the identity factors did not match' });
+    needs.push({ id: identity.failedPromptId ?? 'identity_failed', why: 'the identity factors did not match' });
   }
   if (code?.portal) needs.push(...PORTAL_PROMPTS);
   const seen = new Set<string>();
@@ -144,7 +154,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
 /** The slots a form or identity asks for, whose lines the engine says: each form's, then the identity factors. */
 function askedSlots(config: LoadedConfig): Set<string> {
   const slots = new Set<string>(Object.values(config.forms.forms).flatMap((form) => form.slots));
-  for (const slot of config.identity?.factorSlots ?? []) slots.add(slot);
+  for (const slot of identityParts(config)?.factors ?? []) slots.add(slot);
   return slots;
 }
 
@@ -163,6 +173,11 @@ export interface CheckOptions {
 
 export interface CheckResult {
   problems: Problem[];
+  /**
+   * What is not wrong yet but will be: a policy.yaml or identity.yaml in the old shape, read until
+   * every app is converted. A warning does not fail the check.
+   */
+  warnings: Problem[];
   /** Whether the folder was checked against the app's code: false when there was none to check. */
   codeChecked: boolean;
 }
@@ -175,8 +190,9 @@ export async function checkApp(dir: string, options: CheckOptions = {}): Promise
 /** checkApp, and whether the app's code was part of it. */
 export async function checkAppFully(dir: string, options: CheckOptions = {}): Promise<CheckResult> {
   const loaded = loadAppFolder(dir);
-  if (!loaded.config) return { problems: loaded.problems, codeChecked: false };
+  if (!loaded.config) return { problems: loaded.problems, warnings: [], codeChecked: false };
   const { config, locate } = loaded;
+  const warnings = oldShapes(config);
 
   const found = options.code ? { code: options.code } : await loadCode(dir);
   const codeFile = ('file' in found ? found.file : undefined) ?? CODE_FILE;
@@ -194,7 +210,27 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   }
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
-  return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
+  return { problems: sortProblems(problems, codeFile), warnings, codeChecked: code !== undefined || linked };
+}
+
+/** A warning for each file in the old shape: read until every app is converted, then refused. */
+function oldShapes(config: LoadedConfig): Problem[] {
+  const out: Problem[] = [];
+  if (isLegacyPolicy(config.policy)) {
+    out.push({
+      file: FILE_NAMES.policy, line: 1, column: 1, path: WHOLE_FILE,
+      message: 'policy.yaml has the old shape (toolLevel, rulesFor, ...), which is read only until every app is converted',
+      fix: 'write it as "actions:", each tool with its level and rules (schemas/policy.schema.json)',
+    });
+  }
+  if (config.identity && isLegacyIdentity(config.identity)) {
+    out.push({
+      file: FILE_NAMES.identity, line: 1, column: 1, path: WHOLE_FILE,
+      message: 'identity.yaml has the old shape (subjectKind, factorSlots, ...), which is read only until every app is converted',
+      fix: 'write it as "principals:", "levels:" and "attempts:" (schemas/identity.schema.json)',
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -268,7 +304,8 @@ function referencesOf(config: LoadedConfig): Reference[] {
   for (const [id, form] of Object.entries(config.forms.forms)) {
     if (form.summaryPromptId !== null) refs.push({ id: form.summaryPromptId, file: 'forms.yaml', path: ['forms', id, 'summaryPromptId'] });
   }
-  if (config.identity?.failedPromptId !== undefined) refs.push({ id: config.identity.failedPromptId, file: 'identity.yaml', path: ['failedPromptId'] });
+  const identity = identityParts(config);
+  if (identity?.failedPromptId !== undefined) refs.push({ id: identity.failedPromptId, file: 'identity.yaml', path: identity.failedPath });
   for (const [which, id] of Object.entries(config.app.prompts?.greetings ?? {})) {
     if (id !== undefined) refs.push({ id, file: 'app.yaml', path: ['prompts', 'greetings', which] });
   }

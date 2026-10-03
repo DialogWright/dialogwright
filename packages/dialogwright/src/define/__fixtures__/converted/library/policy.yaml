@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../../../../schemas/policy.schema.json
+# The library fixture's policy (../../fixture/policy.yaml), written in the new shape. The library
+# verifies no one, so every action is level 0.
+actions:
+  renewLoan:
+    level: 0
+    rules:
+      - identity
+      - confirmed: [book]
+  findHold:
+    level: 0
+    rules:
+      - identity
+      - custom: known-branch
+  listLoans:
+    level: 0
+    rules: [identity]

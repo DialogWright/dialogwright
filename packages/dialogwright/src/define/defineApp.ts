@@ -14,9 +14,10 @@ import type { LibrarySlotSpec, SlotTypes } from '../slots/types';
 import { applySlotWording, isLibrarySlot, localeSlotsFile } from '../slots/wording';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { RULE_IDS, isRuleId } from '../gate/policy';
-import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
+import { isLegacyIdentity, isLegacyPolicy, loadAppFolder, type LoadedConfig, type LoadResult } from './load';
+import { compileIdentity, compilePolicy, customRulesNamed, identityProblems, policyProblems, roleLine } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
-import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook, type PolicyYaml } from './schema/index';
+import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook, type LegacyIdentityYaml, type LegacyPolicyYaml } from './schema/index';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -347,14 +348,35 @@ export function crossLink(
     );
   }
 
-  // policy.yaml: every tool it names is in the code, and every tool in the code has rules
+  // policy.yaml and identity.yaml in the new shape: ./policyFile.ts checks them, against each other and the code.
+  const legacy = isLegacyPolicy(policy);
+  if (!legacy) {
+    const check = {
+      policy,
+      identity: config.identity && !isLegacyIdentity(config.identity) ? config.identity : null,
+      files: { policy: 'policy.yaml', identity: 'identity.yaml' },
+      locate,
+      locateKey,
+      tools,
+      slots: linked.known,
+      addSlot,
+      customRules: Object.keys(customRules),
+      prompts: promptIds,
+      confirms: Object.values(forms).some((form) => form.hooks.includes('confirmedParams')),
+      inCode,
+      codePath,
+    };
+    problems.push(...policyProblems(check), ...identityProblems(check));
+  }
+
+  // policy.yaml in the old shape: every tool it names is in the code, and every tool in the code has rules
   const toolExists = (path: DataPath, tool: string): boolean => {
     if (has(code.tools, tool)) return true;
     yaml('policy.yaml', path, `tool "${tool}" is not defined in the code`, `${renameHint(tool, tools)}add it to the app's tools in ${inCode('tools', tool)}, or delete this row`);
     return false;
   };
-  const tables: [keyof PolicyYaml, string][] = [['toolLevel', 'a level'], ['subjects', 'a subject'], ['serviceFields', 'service fields'], ['roles', 'roles']];
-  for (const [tool, rules] of Object.entries(policy.rulesFor)) {
+  const tables: [keyof LegacyPolicyYaml, string][] = [['toolLevel', 'a level'], ['subjects', 'a subject'], ['serviceFields', 'service fields'], ['roles', 'roles']];
+  if (legacy) for (const [tool, rules] of Object.entries(policy.rulesFor)) {
     if (!toolExists(['rulesFor', tool], tool)) continue;
     if (!has(policy.toolLevel, tool)) yaml('policy.yaml', ['rulesFor', tool], `tool "${tool}" has rules but no level under toolLevel`, `add "${tool}: 0" under toolLevel (0 anonymous, 1 the factors matched, 2 the factors and the code)`);
     rules.forEach((rule, i) => {
@@ -368,24 +390,25 @@ export function crossLink(
     });
     if (rules.includes('R2') && !has(policy.subjects, tool)) yaml('policy.yaml', ['rulesFor', tool], `tool "${tool}" runs R2, but has no row under subjects`, `add "${tool}: { param: <the param that names the subject> }" under subjects`);
   }
-  for (const [table, what] of tables) {
+  if (legacy) for (const [table, what] of tables) {
     for (const tool of Object.keys((policy[table] as object | undefined) ?? {})) {
       if (!toolExists([table, tool], tool)) continue;
       if (!has(policy.rulesFor, tool)) yaml('policy.yaml', [table, tool], `tool "${tool}" has ${what} but no rules under rulesFor`, `add "${tool}: [R1]" under rulesFor, or delete this row`);
     }
   }
-  for (const tool of tools) {
+  if (legacy) for (const tool of tools) {
     if (!has(policy.rulesFor, tool)) {
       yaml('policy.yaml', ['rulesFor'], `tool "${tool}" (${codePath('tools', tool)}) has no row under rulesFor, so it can never be called`, `add "${tool}: [R1]" under rulesFor and its level under toolLevel, or delete the tool from ${inCode('tools', tool)}`);
     }
   }
-  const named = new Set(Object.values(policy.rulesFor).flat());
+  const named = customRulesNamed(policy);
   for (const [id, rule] of Object.entries(customRules)) {
-    if (isRuleId(id) || id === 'R0') inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's rulesFor; the built-in ids are R0, ${RULE_IDS.join(', ')}`);
+    if (isRuleId(id) || id === 'R0') inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's ${legacy ? 'rulesFor' : 'custom: rules'}; the built-in ids are R0, ${RULE_IDS.join(', ')}`);
     else if (typeof rule !== 'function') inTs(['customRules', id], `custom rule "${id}" is not a function`, `make ${inCode('customRules', id)} a function of the rule context`);
-    else if (!named.has(id)) yaml('policy.yaml', ['rulesFor'], `custom rule "${id}" (${codePath('customRules', id)}) is not named under rulesFor, so it never runs`, `add "${id}" to the rules of the tool it guards, or delete the rule from ${inCode('customRules', id)}`);
+    else if (!named.has(id) && legacy) yaml('policy.yaml', ['rulesFor'], `custom rule "${id}" (${codePath('customRules', id)}) is not named under rulesFor, so it never runs`, `add "${id}" to the rules of the tool it guards, or delete the rule from ${inCode('customRules', id)}`);
+    else if (!named.has(id)) yaml('policy.yaml', ['actions'], `custom rule "${id}" (${codePath('customRules', id)}) is not named by any action's rules, so it never runs`, `add "- custom: ${id}" to the rules of the action it guards, or delete the rule from ${inCode('customRules', id)}`);
   }
-  if (!config.identity) {
+  if (legacy && !config.identity) {
     for (const [tool, level] of Object.entries(policy.toolLevel)) {
       if (level !== 0) yaml('policy.yaml', ['toolLevel', tool], `tool "${tool}" needs identity level ${level}, but the app has no identity.yaml, so no caller can reach it`, 'set it to 0, or add identity.yaml so callers can verify');
     }
@@ -399,9 +422,9 @@ export function crossLink(
     }
   }
 
-  // identity.yaml
-  const identity = config.identity;
-  if (identity) {
+  // identity.yaml in the old shape (a folder's two files are in the same shape: the loader refuses a mix)
+  const identity = config.identity && isLegacyIdentity(config.identity) ? config.identity : null;
+  if (identity && isLegacyPolicy(policy)) {
     identity.factorSlots.forEach((slot, i) => slotExists('identity.yaml', ['factorSlots', i], slot));
     for (const role of ['verifyTool', 'codeTool', 'sendCodeTool'] as const) {
       const tool = identity[role];
@@ -409,6 +432,8 @@ export function crossLink(
       else if (!has(policy.rulesFor, tool)) yaml('identity.yaml', [role], `tool "${tool}" has no row under rulesFor in policy.yaml`, `add "${tool}: [R1, R6]" under rulesFor in policy.yaml, and its level under toolLevel`);
     }
     if (identity.failedPromptId !== undefined) promptExists('identity.yaml', ['failedPromptId'], identity.failedPromptId);
+  }
+  if (config.identity) {
     const send = code.identity?.sendCodeParams;
     if (send !== undefined && typeof send !== 'function') inTs(['identity', 'sendCodeParams'], 'sendCodeParams is not a function', `make ${inCode('identity', 'sendCodeParams')} a function of the session`);
   } else if (code.identity !== undefined) {
@@ -472,10 +497,10 @@ export function crossLink(
     }
   }
 
-  // policy.yaml: R3 compares a write's params to confirmedFields and to the hash of what the caller said yes to
-  const confirmedWrites = Object.entries(policy.rulesFor).filter(([, rules]) => rules.includes('R3')).map(([tool]) => tool);
+  // policy.yaml in the old shape: R3 compares a write's params to confirmedFields and to the hash of what the caller said yes to
+  const confirmedWrites = !legacy ? [] : Object.entries(policy.rulesFor).filter(([, rules]) => rules.includes('R3')).map(([tool]) => tool);
   if (confirmedWrites.length > 0) {
-    if (policy.confirmedFields.length === 0) {
+    if (legacy && policy.confirmedFields.length === 0) {
       yaml('policy.yaml', ['confirmedFields'], `${quoteList(confirmedWrites)} run${confirmedWrites.length === 1 ? 's' : ''} R3, but confirmedFields is empty, so R3 blocks every call`, 'list the fields a confirmed write carries, in the order its confirmedParams hook returns them');
     }
     if (!Object.values(forms).some((form) => form.hooks.includes('confirmedParams'))) {
@@ -579,9 +604,13 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
     forms: Object.fromEntries(Object.entries(config.forms.forms).map(([id, form]) => [id, formOf(form, code.forms[id]!)])),
     slots,
   };
-  if (config.identity) app.identity = identityOf(config.identity, code);
+  // identity.yaml's attempts are the policy's: what the attempts rule (R6) holds an identity check to.
+  const compiled = config.identity && !isLegacyIdentity(config.identity) ? compileIdentity(config.identity, code.identity?.sendCodeParams ? { sendCodeParams: code.identity.sendCodeParams } : {}) : null;
+  if (config.identity) app.identity = compiled ? compiled.identity : identityOf(config.identity as LegacyIdentityYaml, code);
   app.tools = code.tools;
-  app.policy = policyOf(config.policy, code);
+  app.policy = isLegacyPolicy(config.policy)
+    ? policyOf(config.policy, code)
+    : compilePolicy(config.policy, { ...(compiled ? { maxAttempts: compiled.maxAttempts } : {}), ...(code.customRules !== undefined ? { customRules: code.customRules } : {}) });
   put(app, 'facts', code.facts);
   app.systems = code.systems;
   put(app, 'services', code.services);
@@ -620,7 +649,8 @@ function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks):
   return def as unknown as FormDef;
 }
 
-function identityOf(identity: NonNullable<LoadedConfig['identity']>, code: AppCode): IdentityConfig {
+/** identity.yaml in the old shape, as the lifecycle reads it. */
+function identityOf(identity: LegacyIdentityYaml, code: AppCode): IdentityConfig {
   const config = { subjectKind: identity.subjectKind } as IdentityConfig;
   put(config, 'delegateKind', identity.delegateKind);
   config.factorSlots = identity.factorSlots;
@@ -632,20 +662,11 @@ function identityOf(identity: NonNullable<LoadedConfig['identity']>, code: AppCo
   return config;
 }
 
-/** The engine's words for R5's compared line (gate/policy.ts), where policy.yaml's wording.role leaves an access out. */
-const DEFAULT_ROLE_TEMPLATES: Readonly<Record<RoleAccess, string>> = {
-  allow: 'role {role} may {tool}: yes',
-  refuse: 'role {role} may {tool}: no',
-  person: 'role {role} may {tool}: with a person',
-};
+/** R5's compared line from policy.yaml's templates (./policyFile.ts). */
+export { roleLine };
 
-/** R5's compared line from policy.yaml's templates: {role} and {tool} filled in, nothing else read. */
-export function roleLine(templates: Partial<Record<RoleAccess, string>>): NonNullable<PolicyWording['role']> {
-  return (role, tool, access) =>
-    (templates[access] ?? DEFAULT_ROLE_TEMPLATES[access]).replace(/\{(role|tool)\}/g, (_, name: string) => (name === 'role' ? role : tool));
-}
-
-function policyOf(policy: PolicyYaml, code: AppCode): PolicyTables {
+/** policy.yaml in the old shape, as the gate reads it. */
+function policyOf(policy: LegacyPolicyYaml, code: AppCode): PolicyTables {
   const tables: Partial<PolicyTables> = {
     toolLevel: policy.toolLevel,
     purposeLevel: policy.purposeLevel,
@@ -694,3 +715,9 @@ function promptsOf(config: LoadedConfig, a: AppYaml): App['prompts'] {
   put(prompts, 'greetings', settings?.greetings);
   return prompts;
 }
+
+/**
+ * The old shape's tables and identity, as defineApp builds them from a folder written the old way:
+ * what the new shape's compilers are proved against (policyFile.test.ts). Gone with the old shape.
+ */
+export { policyOf as legacyPolicyTables, identityOf as legacyIdentityConfig };

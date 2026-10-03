@@ -50,10 +50,19 @@ function cli(): { io: Io; out: string[]; err: string[] } {
   return { io: { out: (l) => out.push(l), err: (l) => err.push(l), cwd: temp() }, out, err };
 }
 
+
+/** The warning a folder whose policy.yaml is in the old shape gets, until the library fixture is converted. */
+const OLD_POLICY = [{
+  file: 'policy.yaml', line: 1, column: 1, path: '(file)',
+  message: 'policy.yaml has the old shape (toolLevel, rulesFor, ...), which is read only until every app is converted',
+  fix: 'write it as "actions:", each tool with its level and rules (schemas/policy.schema.json)',
+}];
+const OLD_POLICY_LINE = (dir: string): string => `${dir}: warning: ${formatProblem(OLD_POLICY[0]!)}`;
+
 describe('checkApp: the example app', () => {
   it('has no problems, with its code given or imported from its app.ts', async () => {
     expect(await checkApp(LIBRARY_DIR, { code: libraryCode })).toEqual([]);
-    expect(await checkAppFully(LIBRARY_DIR)).toEqual({ problems: [], codeChecked: true });
+    expect(await checkAppFully(LIBRARY_DIR)).toEqual({ problems: [], warnings: OLD_POLICY, codeChecked: true });
   });
 
   it('reports what the loader finds, and nothing else when the folder does not load', async () => {
@@ -341,7 +350,7 @@ describe('checkApp: the app module', () => {
 
   it('takes a default export too', async () => {
     const dir = folder({ 'app.mjs': 'import { code } from ' + JSON.stringify(fixtureModule) + '; export default code;\n' });
-    expect(await checkAppFully(dir)).toEqual({ problems: [], codeChecked: true });
+    expect(await checkAppFully(dir)).toEqual({ problems: [], warnings: OLD_POLICY, codeChecked: true });
   });
 
   it('a module that does not load is a problem, not a crash', async () => {
@@ -408,11 +417,11 @@ describe('checkApp: the app module', () => {
 
   it('prefers the folder\'s own app module to one in src/', async () => {
     const dir = folder({ 'app.mjs': `export { code } from ${JSON.stringify(fixtureModule)};\n`, 'src/app.mjs': 'throw new Error("not this one");\n' });
-    expect(await checkAppFully(dir)).toEqual({ problems: [], codeChecked: true });
+    expect(await checkAppFully(dir)).toEqual({ problems: [], warnings: OLD_POLICY, codeChecked: true });
   });
 
   it('a folder with no app module is checked as YAML only, and says so', async () => {
-    expect(await checkAppFully(folder())).toEqual({ problems: [], codeChecked: false });
+    expect(await checkAppFully(folder())).toEqual({ problems: [], warnings: OLD_POLICY, codeChecked: false });
   });
 });
 
@@ -471,7 +480,7 @@ describe('dialogwright check', () => {
     const { io, out, err } = cli();
     expect(await main(['check', LIBRARY_DIR], io)).toBe(0);
     expect(out).toEqual([`${LIBRARY_DIR}: ok`]);
-    expect(err).toEqual([]);
+    expect(err).toEqual([OLD_POLICY_LINE(LIBRARY_DIR)]);
   });
 
   it('a bad folder: one line per problem, then the count, exit 1', async () => {
@@ -505,7 +514,7 @@ describe('dialogwright check', () => {
     const { io, out, err } = cli();
     expect(await main(['check', dir], io)).toBe(0);
     expect(out).toEqual([`${dir}: ok`]);
-    expect(err).toEqual([`${dir}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`]);
+    expect(err).toEqual([OLD_POLICY_LINE(dir), `${dir}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`]);
   });
 
   it('--json prints the Problem[] and nothing else', async () => {

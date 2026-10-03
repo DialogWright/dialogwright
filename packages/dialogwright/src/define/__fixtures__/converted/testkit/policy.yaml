@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schemas/policy.schema.json
+# Example Parcels' action policy (the testkit's TESTKIT_POLICY), written in the new shape: the
+# compilers are proved against it (../../../policyFile.test.ts). Every tool not listed is refused.
+actions:
+  verifyCustomer:
+    say: check the account ID and date of birth
+    level: 0
+    rules: [attempts]
+  verifyCode:
+    say: check the one-time code
+    level: 1
+    rules: [identity, attempts]
+  sendCode:
+    say: text a one-time code
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  getAccount:
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  getWindows:
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  listParcels:
+    level: 2
+    rules:
+      - identity
+      - scope: { param: accountId }
+  getParcel:
+    level: 2
+    rules:
+      - identity
+      - scope: { record: parcel }
+  # A viewer may not file a report; a clerk may, with a person.
+  createReport:
+    say: report a missing parcel
+    level: 2
+    rules:
+      - identity
+      - role: { viewer: refuse, clerk: person }
+      - scope: { param: accountId }
+      - confirmed: [accountId, missingNote, expectedDate]
+      - custom: R8
+  # What the depot agent may receive.
+  notifyDepot:
+    level: 2
+    rules:
+      - identity
+      - scope: { record: report }
+      - fields: [report, missingNote, expectedDate]
+
+# Reporting a parcel missing needs the code from the start, though its entry call needs only level 1.
+purposes:
+  report_missing: { level: 2 }

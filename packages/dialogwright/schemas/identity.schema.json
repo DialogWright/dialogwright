@@ -2,53 +2,178 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
-    "subjectKind": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*$",
-      "description": "The principal kind the app serves and verifies (for example \"customer\"). Any other kind but anonymous acts for subjects. A lowercase word, since it is also an audit detail key."
-    },
-    "delegateKind": {
-      "description": "The app's word for a party who acts for subjects (for example \"agent\"), as the harness's errors name one. Default \"delegate\".",
-      "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-    },
-    "factorSlots": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    "principals": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "The kind of principal the app serves and verifies (for example \"customer\"). A lowercase word, since it is also an audit detail key. Any other kind but anonymous acts for subjects."
+        },
+        "delegates": {
+          "description": "The kinds of party who act for subjects (sign in through a portal, say), by their word (for example agent), each with its roles. One kind for now.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "roles": {
+                "description": "The roles a party of this kind may have, as the policy's role rules name them (for example viewer, clerk). A party with no role, or a role not listed in a rule, is refused what the rule governs.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "description": "One kind of party who acts for the app's subjects (for example agent), and the roles one may have."
+          }
+        }
       },
-      "description": "The slots collected on voice for a step-up (for example accountId, dob), asked in this order. Each slot id is also the name of the verify tool's param that carries its value."
+      "required": [
+        "subject"
+      ],
+      "additionalProperties": false,
+      "description": "Who the app serves: its subjects, and the parties who act for them with their roles."
     },
-    "verifyTool": {
-      "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-      "description": "The tool that verifies the factors (for example verifyCustomer)."
+    "levels": {
+      "type": "object",
+      "properties": {
+        "1": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "What the level is called, as the policy card says it (for example \"verified\"). A label: the engine records the number."
+            },
+            "factors": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "description": "The slots asked for a step-up to this level (for example accountId, dob), in this order. Each slot id is also the name of the verify tool's param that carries its value."
+            },
+            "verify": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+              "description": "The tool that checks the factors (for example verifyCustomer). Its action in policy.yaml runs only the attempts rule."
+            },
+            "failedPrompt": {
+              "description": "The prompt said before the factors are asked again after a failed match. Default \"identity_failed\".",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            }
+          },
+          "required": [
+            "name",
+            "factors",
+            "verify"
+          ],
+          "additionalProperties": false,
+          "description": "Level 1: the factors matched."
+        },
+        "2": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "What the level is called, as the policy card says it (for example \"confirmed by code\"). A label: the engine records the number."
+            },
+            "factors": {
+              "minItems": 1,
+              "maxItems": 1,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "otp": {
+                    "type": "object",
+                    "properties": {
+                      "length": {
+                        "description": "How many digits the code has. Default 6.",
+                        "type": "integer",
+                        "minimum": 4,
+                        "maximum": 10
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "A one-time code sent to the contact on file and keyed on the keypad: masked, never traced, never a slot."
+                  }
+                },
+                "required": [
+                  "otp"
+                ],
+                "additionalProperties": false,
+                "description": "The one-time code factor."
+              },
+              "description": "The factors this level adds to level 1: the one-time code, \"[{ otp: { length: 6 } }]\"."
+            },
+            "send": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+              "description": "The tool that sends the one-time code (for example sendCode)."
+            },
+            "verify": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+              "description": "The tool that checks the code (for example verifyCode)."
+            }
+          },
+          "required": [
+            "name",
+            "factors",
+            "send",
+            "verify"
+          ],
+          "additionalProperties": false,
+          "description": "Level 2: level 1 and a one-time code."
+        }
+      },
+      "required": [
+        "1"
+      ],
+      "additionalProperties": false,
+      "description": "The identity ladder above level 0 (anonymous), each level with its factors and the tools that check them. Cumulative: level 2 is level 1 and its own factors."
     },
-    "codeTool": {
-      "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-      "description": "The tool that checks the one-time code (for example verifyCode)."
+    "attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "description": "Failed tries allowed at each identity check (the factors, the code) before a person takes the call: what the attempts rule (R6) holds an action to."
     },
-    "sendCodeTool": {
-      "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-      "description": "The tool that texts the one-time code."
-    },
-    "failedPromptId": {
-      "description": "The prompt (an id in prompts.yaml) said before the factors are asked again after a failed match. Default \"identity_failed\".",
-      "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    "signIn": {
+      "description": "What a sign-in proves, for a channel that can sign a caller in (a web portal): the core checks the capability, never the channel's name.",
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "number",
+          "enum": [
+            1,
+            2
+          ],
+          "description": "The level a sign-in proves. It must be the top level of the ladder."
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
-    "subjectKind",
-    "factorSlots",
-    "verifyTool",
-    "codeTool",
-    "sendCodeTool"
+    "principals",
+    "levels",
+    "attempts"
   ],
   "additionalProperties": false,
-  "description": "identity.yaml: how a caller proves who they are. Leave the file out for an app that verifies no one.",
+  "description": "identity.yaml: who the app serves and how a caller proves who they are. Leave the file out for an app that verifies no one.",
   "title": "DialogWright identity.yaml"
 }

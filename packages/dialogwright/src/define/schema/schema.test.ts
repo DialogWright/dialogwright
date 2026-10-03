@@ -3,16 +3,19 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import type { ZodType } from 'zod';
-import { SCHEMAS, FILE_KINDS, FILE_NAMES, type FileKind } from './index';
+import { LEGACY_SCHEMAS, SCHEMAS, FILE_KINDS, FILE_NAMES, type FileKind } from './index';
 import { SCHEMAS_DIR } from './generate';
 import { jsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
 import { slotsSchema } from './slots';
 
 const FIXTURE = join(__dirname, '..', '__fixtures__', 'valid');
+/** The new-shape policy.yaml and identity.yaml of each app, written to prove the compilers (../policyFile.test.ts). */
+const CONVERTED = join(__dirname, '..', '__fixtures__', 'converted');
 
-/** What a schema says is wrong with `source` (YAML text), as `path: message` lines, with the issue codes beside. */
-function issuesOf(kind: FileKind, source: string): { path: string; code: string; message: string }[] {
-  const result = (SCHEMAS[kind] as ZodType).safeParse(parse(source));
+/** What a schema says is wrong with `source` (YAML text), as `path: message` lines, with the issue codes beside. `legacy` checks a policy or identity file in the old shape. */
+function issuesOf(kind: FileKind, source: string, legacy = false): { path: string; code: string; message: string }[] {
+  const schema = legacy && (kind === 'policy' || kind === 'identity') ? LEGACY_SCHEMAS[kind] : SCHEMAS[kind];
+  const result = (schema as ZodType).safeParse(parse(source));
   if (result.success) return [];
   return result.error.issues.map((i) => ({ path: i.path.join('.'), code: i.code, message: i.message }));
 }
@@ -20,9 +23,25 @@ function issuesOf(kind: FileKind, source: string): { path: string; code: string;
 describe('a valid example of each kind parses', () => {
   for (const kind of FILE_KINDS) {
     it(`${FILE_NAMES[kind]}`, () => {
-      const result = (SCHEMAS[kind] as ZodType).safeParse(parse(readFileSync(join(FIXTURE, FILE_NAMES[kind]), 'utf8')));
+      // The valid fixture's policy.yaml and identity.yaml are in the old shape until it is converted.
+      const schema = kind === 'policy' || kind === 'identity' ? LEGACY_SCHEMAS[kind] : SCHEMAS[kind];
+      const result = (schema as ZodType).safeParse(parse(readFileSync(join(FIXTURE, FILE_NAMES[kind]), 'utf8')));
       expect(result.error?.issues ?? []).toEqual([]);
     });
+  }
+
+  for (const app of ['valid', 'library', 'testkit']) {
+    for (const kind of ['policy', 'identity'] as const) {
+      it(`${app}'s ${FILE_NAMES[kind]} in the new shape`, () => {
+        let text: string;
+        try {
+          text = readFileSync(join(CONVERTED, app, FILE_NAMES[kind]), 'utf8');
+        } catch {
+          return; // an app that verifies no one has no identity.yaml
+        }
+        expect(SCHEMAS[kind].safeParse(parse(text)).error?.issues ?? []).toEqual([]);
+      });
+    }
   }
 
   it('keeps the order intents, forms and prompts are written in (the decision model is offered intents in order)', () => {
@@ -34,8 +53,9 @@ describe('a valid example of each kind parses', () => {
   it('fills in what is left out: a prompt is fixed, and a policy has no purposes, subjects or service fields', () => {
     const prompts = SCHEMAS.prompts.parse({ prompts: { hello: { text: 'Hi', interruptible: true } } });
     expect(prompts.prompts.hello!.mode).toBe('fixed');
-    const policy = SCHEMAS.policy.parse({ toolLevel: {}, rulesFor: {}, confirmedFields: [], maxAttempts: 3 });
-    expect(policy).toMatchObject({ purposeLevel: {}, subjects: {}, serviceFields: {} });
+    const legacy = LEGACY_SCHEMAS.policy.parse({ toolLevel: {}, rulesFor: {}, confirmedFields: [], maxAttempts: 3 });
+    expect(legacy).toMatchObject({ purposeLevel: {}, subjects: {}, serviceFields: {} });
+    expect(SCHEMAS.policy.parse({ actions: { a: { rules: [] } } })).toEqual({ actions: { a: { rules: [] } }, purposes: {} });
   });
 
   it('reads the keys true and false (YAML booleans) as the words the model criteria are filed under', () => {
@@ -53,8 +73,11 @@ describe('mistakes get a precise error', () => {
   });
 
   it('a value of the wrong type names the expected and received types', () => {
-    expect(issuesOf('policy', 'toolLevel: {}\nrulesFor: {}\nconfirmedFields: []\nmaxAttempts: three\n')).toEqual([
+    expect(issuesOf('policy', 'toolLevel: {}\nrulesFor: {}\nconfirmedFields: []\nmaxAttempts: three\n', true)).toEqual([
       { path: 'maxAttempts', code: 'invalid_type', message: 'must be a number' },
+    ]);
+    expect(issuesOf('identity', 'principals: { subject: patient }\nlevels: { 1: { name: verified, factors: [patientId], verify: verifyPatient } }\nattempts: three\n')).toEqual([
+      { path: 'attempts', code: 'invalid_type', message: 'must be a number' },
     ]);
     expect(issuesOf('prompts', 'prompts:\n  hello:\n    text: Hi\n    interruptible: "yes"\n')).toEqual([
       { path: 'prompts.hello.interruptible', code: 'invalid_type', message: 'must be true or false' },
@@ -62,8 +85,14 @@ describe('mistakes get a precise error', () => {
   });
 
   it('a missing required field names the field', () => {
-    expect(issuesOf('identity', 'subjectKind: patient\nfactorSlots: [patientId]\nverifyTool: verifyPatient\ncodeTool: verifyCode\n')).toEqual([
+    expect(issuesOf('identity', 'subjectKind: patient\nfactorSlots: [patientId]\nverifyTool: verifyPatient\ncodeTool: verifyCode\n', true)).toEqual([
       { path: 'sendCodeTool', code: 'invalid_type', message: 'Invalid input: expected string, received undefined' },
+    ]);
+    expect(issuesOf('identity', 'principals: { subject: patient }\nattempts: 3\n')).toEqual([
+      { path: 'levels', code: 'invalid_type', message: 'Invalid input: expected object, received undefined' },
+    ]);
+    expect(issuesOf('policy', 'actions: { a: { level: 1 } }\n')).toEqual([
+      { path: 'actions.a.rules', code: 'invalid_type', message: 'Invalid input: expected array, received undefined' },
     ]);
     expect(issuesOf('app', 'locale: en-US\n')).toEqual([{ path: 'id', code: 'invalid_type', message: 'Invalid input: expected string, received undefined' }]);
   });
@@ -121,8 +150,12 @@ describe('mistakes get a precise error', () => {
   });
 
   it('policy levels, attempts and role access are bounded', () => {
-    const issues = issuesOf('policy', 'toolLevel: { a: 3 }\nrulesFor: {}\nconfirmedFields: []\nmaxAttempts: 0\nroles: { a: { clerk: allowed } }\n');
+    const issues = issuesOf('policy', 'toolLevel: { a: 3 }\nrulesFor: {}\nconfirmedFields: []\nmaxAttempts: 0\nroles: { a: { clerk: allowed } }\n', true);
     expect(issues.map((i) => `${i.path} ${i.code}`)).toEqual(['toolLevel.a invalid_value', 'maxAttempts too_small', 'roles.a.clerk invalid_value']);
+    const fresh = issuesOf('policy', 'actions:\n  a:\n    level: 3\n    rules:\n      - role: { clerk: allowed }\n');
+    expect(fresh.map((i) => `${i.path} ${i.code}`)).toEqual(['actions.a.level invalid_value', 'actions.a.rules.0.role.clerk invalid_value']);
+    const identity = issuesOf('identity', 'principals: { subject: patient }\nlevels:\n  1: { name: a, factors: [x], verify: v }\n  2: { name: b, factors: [{ otp: { length: 2 } }], send: s, verify: c }\nattempts: 0\nsignIn: { level: 3 }\n');
+    expect(identity.map((i) => `${i.path} ${i.code}`)).toEqual(['levels.2.factors.0.otp.length too_small', 'attempts too_small', 'signIn.level invalid_value']);
   });
 
   it('a spoken-digits pattern must compile, and a lead rule needs two capture groups', () => {
@@ -145,9 +178,12 @@ describe('mistakes get a precise error', () => {
   });
 
   it('a __proto__ key is an unknown key, not a way to change what a file means', () => {
-    const issues = issuesOf('policy', 'toolLevel: {}\nrulesFor: {}\nconfirmedFields: []\nmaxAttempts: 3\n__proto__: { polluted: true }\n');
+    const issues = issuesOf('policy', 'toolLevel: {}\nrulesFor: {}\nconfirmedFields: []\nmaxAttempts: 3\n__proto__: { polluted: true }\n', true);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({ code: 'unrecognized_keys' });
+    const fresh = issuesOf('policy', 'actions: {}\n__proto__: { polluted: true }\n');
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]).toMatchObject({ code: 'unrecognized_keys' });
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });
@@ -204,6 +240,8 @@ describe('the JSON Schemas', () => {
 
   it('mark what an author may leave out as optional: defaults are not required', () => {
     const policy = generated.policy as { required: string[] };
-    expect(policy.required).toEqual(['toolLevel', 'rulesFor', 'confirmedFields', 'maxAttempts']);
+    expect(policy.required).toEqual(['actions']);
+    const identity = generated.identity as { required: string[] };
+    expect(identity.required).toEqual(['principals', 'levels', 'attempts']);
   });
 });

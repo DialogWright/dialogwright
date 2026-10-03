@@ -2,7 +2,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync
 import { tmpdir } from 'node:os';
 import { join, relative as relativePath } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { caseTwins, loadAppFolder, type LoadResult } from './load';
+import { caseTwins, isLegacyIdentity, isLegacyPolicy, loadAppFolder, type LoadResult } from './load';
 
 const FIXTURES = join(__dirname, '__fixtures__');
 const VALID = join(FIXTURES, 'valid');
@@ -45,9 +45,10 @@ describe('loadAppFolder: a valid folder', () => {
     expect(config.app.id).toBe('fixture-clinic');
     expect(Object.keys(config.intents.intents)).toEqual(['schedule_new', 'cancel', 'billing', 'agent', 'repeat_prompt', 'capabilities']);
     expect(config.forms.forms.schedule_new).toEqual({ slots: ['name', 'dob', 'provider', 'date'], summaryPromptId: 'confirm_schedule', hooks: ['confirmedParams', 'complete', 'onSummaryRead'] });
-    expect(config.policy.maxAttempts).toBe(3);
-    expect(config.policy.purposeLevel).toEqual({ appointment: 0 });
-    expect(config.identity?.verifyTool).toBe('verifyPatient');
+    // The valid fixture is in the old shape until it is converted (isLegacyPolicy, isLegacyIdentity).
+    expect(isLegacyPolicy(config.policy) && config.policy.maxAttempts).toBe(3);
+    expect(isLegacyPolicy(config.policy) && config.policy.purposeLevel).toEqual({ appointment: 0 });
+    expect(config.identity && isLegacyIdentity(config.identity) && config.identity.verifyTool).toBe('verifyPatient');
   });
 
   it('keys prompts by locale: prompts.yaml is the default locale, locale/<tag>/prompts.yaml the others', () => {
@@ -176,7 +177,7 @@ describe('loadAppFolder: problems', () => {
         column: 1,
         path: '(file)',
         message: 'policy.yaml is empty',
-        fix: 'add its content; the file starts with "toolLevel:", "rulesFor:", "confirmedFields:" and "maxAttempts:"'
+        fix: 'add its content; the file starts with "actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"'
       }
     ]);
   });
@@ -568,7 +569,7 @@ describe('loadAppFolder: problems', () => {
         column: 1,
         path: '(file)',
         message: 'policy.yaml is missing',
-        fix: 'create policy.yaml; it starts with "toolLevel:", "rulesFor:", "confirmedFields:" and "maxAttempts:". There is a "polcy.yaml" here: rename it to policy.yaml.'
+        fix: 'create policy.yaml; it starts with "actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }". There is a "polcy.yaml" here: rename it to policy.yaml.'
       },
       {
         file: 'polcy.yaml',

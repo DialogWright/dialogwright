@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../../../../schemas/identity.schema.json
+# The valid fixture's identity (../../valid/identity.yaml), written in the new shape.
+principals:
+  subject: patient
+  delegates:
+    staff: { roles: [viewer, clerk] }
+levels:
+  1: { name: verified, factors: [patientId, dob], verify: verifyPatient, failedPrompt: identity_failed }
+  2: { name: confirmed by code, factors: [{ otp: {} }], send: sendCode, verify: verifyCode }
+attempts: 3
