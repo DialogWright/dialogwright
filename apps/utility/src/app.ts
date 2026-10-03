@@ -1,16 +1,15 @@
 import { fileURLToPath } from 'node:url';
 import {
-  addDays, defineApp, describeDay, handoff, localeOf,
+  defineApp, describeDay, handoff, localeOf,
   type AppCode, type Completion, type CompletionContext, type Party, type Principal, type Session, type ToolDef, type VerifyOutcome,
 } from 'dialogwright';
-import { defineRule } from 'dialogwright/policy';
 import { ACCOUNTS, MANAGERS, accountOf, amountDue } from './data';
 
 /**
  * Example Power & Light, built from its folder. The YAML next to this src/ folder holds what is data:
  * what a caller can ask for, the forms' slots and summaries, every line the caller hears, the gate's
  * rules, and how a caller proves who they are. This file holds what runs: the tools, the hooks of
- * each form, the one custom rule, and the gate's lookups. Policy is never in a tool: the gate
+ * each form, and the gate's lookups. Policy is never in a tool: the gate
  * decides, from policy.yaml, whether a tool may run.
  */
 
@@ -201,27 +200,6 @@ export const PLAN_CALL: Readonly<Record<string, string>> = {
   accountId: '55501234', place: '', symptom: '', count: 'three', firstDate: '2026-09-25', total: '240.00',
 };
 
-/**
- * The first installment is no more than thirty days after the call's day. There is no "today plus N
- * days" bound in dateInRange, so the far end is this rule (the near end is dateInRange's
- * `notBefore: today`). It reads the call's day from the gate's facts, never the clock.
- */
-export const within30Days = defineRule({
-  id: 'first-date-within-30-days',
-  description: 'The first payment of an arrangement is no more than thirty days after today',
-  run(c) {
-    const latest = addDays(c.facts.todayIso, 30);
-    const day = c.call.params.firstDate ?? '';
-    return day !== '' && day <= latest
-      ? { pass: true, compared: `firstDate on or before ${latest}: yes` }
-      : { pass: false, compared: `firstDate on or before ${latest}: no`, verdict: 'BLOCK', reason: 'date-range' };
-  },
-  examples: [
-    { name: 'thirty days on', call: { params: { ...PLAN_CALL, firstDate: '2026-10-18' } }, principal: customerPrincipal('55501234', 2)!, expect: { verdict: 'ALLOW' } },
-    { name: 'thirty-one days on', call: { params: { ...PLAN_CALL, firstDate: '2026-10-19' } }, principal: customerPrincipal('55501234', 2)!, expect: { verdict: 'BLOCK', reason: 'date-range' } },
-  ],
-});
-
 /** The refusal line for each reason the gate blocks with; null sends the caller to a person. */
 export function blockPromptId(reason: string): string | null {
   switch (reason) {
@@ -239,7 +217,6 @@ export const code: AppCode = {
   tools: TOOLS,
   lookups: ['amountDue'],
   systems: () => ({ sys: new Systems(), lookups: { ownerOf: () => null, scopeOf, amountDue: (id: string) => amountDue(id) } }),
-  customRules: { 'first-date-within-30-days': within30Days },
   blockPromptId,
   identity: { sendCodeParams: (s) => ({ accountId: accountIdOf(s) }) },
   principals: { subjectPrincipal: customerPrincipal, delegatePrincipal: managerPrincipal },

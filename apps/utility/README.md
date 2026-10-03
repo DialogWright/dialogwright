@@ -6,7 +6,7 @@ What a caller can do:
 
 - **Report an outage** (`report_outage`): anyone, with no verification. The caller gives the address and says what they see (no power, part of the building, flickering, a line down); the line reads both back, and a yes files the report (a confirmed write, `reportOutage`).
 - **Hear their balance and due date** (`check_balance`): the caller verifies with their account number and date of birth (level 1), by voice or keypad, and hears the balance on their own account (`readBalance`).
-- **Set up a payment arrangement** (`set_up_plan`): the balance split into two, three, four or six payments. It needs a one-time code texted to the phone on the account (level 2), asked before the form's questions. The gate holds the total to what is owed (`limit` against the `amountDue` lookup) and the first payment to between today and thirty days on (`dateInRange` and the custom rule `first-date-within-30-days`).
+- **Set up a payment arrangement** (`set_up_plan`): the balance split into two, three, four or six payments. It needs a one-time code texted to the phone on the account (level 2), asked before the form's questions. The gate holds the total to what is owed (`limit` against the `amountDue` lookup) and the first payment to between today and thirty days on (`dateInRange` with `notBefore: today` and `notAfter: today+30`).
 - **Ask for the outage map or the office hours**: fixed lines (`outage_map`, `office_hours`).
 - **Ask for a person** at any time (`agent`).
 
@@ -25,7 +25,7 @@ policy.yaml     what the agent may do, action by action: the level and the rules
 policy.matrix   the policy read back: the gate's verdict for every action and kind of caller (written by pnpm policy:matrix)
 identity.yaml   how a caller proves who they are: the factors, the one-time code, the delegates, the chat sign-in
 slots.yaml      every slot, in the order the engine works through them
-src/app.ts      the code: the tools, the form hooks, the custom rule and the gate's lookups, joined to the folder by defineApp
+src/app.ts      the code: the tools, the form hooks and the gate's lookups, joined to the folder by defineApp
 src/data.ts     the fixture accounts and property managers behind the stub tools
 fixtures/       the corpus, the scripted calls and the stub baseline
 DESIGN.md       the design worksheet: the paragraph, every choice it left open, and the gaps

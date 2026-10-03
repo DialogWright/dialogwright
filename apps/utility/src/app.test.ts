@@ -53,11 +53,9 @@ describe('the arrangement', () => {
 describe('the policy against its file', () => {
   it('holds to the policy invariants on the gate grid', () => expect(policyInvariants(app).violations).toEqual([]));
 
-  it('runs every custom rule example as written', () => {
-    expect(runRuleExamples(app).map((r) => `${r.tool} ${r.example}: ${r.expected}`)).toEqual([
-      'setUpPlan thirty days on: ALLOW',
-      'setUpPlan thirty-one days on: BLOCK date-range',
-    ]);
+  it('has no custom rule: the thirty days are dateInRange\'s today+30', () => {
+    expect(code.customRules ?? {}).toEqual({});
+    expect(runRuleExamples(app)).toEqual([]);
   });
 
   it('policy.matrix is what the gate decides', () => {

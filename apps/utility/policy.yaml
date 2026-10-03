@@ -65,8 +65,7 @@ actions:
       - scope: { param: accountId }
       - confirmed: [accountId, place, symptom, count, firstDate, total]
       - limit: { field: total, min: 0.01, max: amountDue(accountId) }
-      - dateInRange: { field: firstDate, notBefore: today }
-      - custom: first-date-within-30-days
+      - dateInRange: { field: firstDate, notBefore: today, notAfter: today+30 }
 
 # The arrangement form asks for the one-time code before its own questions.
 purposes:

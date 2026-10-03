@@ -36,7 +36,7 @@
 | `reportOutage` | nothing | an outage ticket | the confirmed list: `accountId` (''), `place`, `symptom`, `count` (''), `firstDate` (''), `total` ('') | 0 | `identity`, `role(manager allow)`, `confirmed` |
 | `readBalance` | the account | nothing | `accountId` | 1 | `identity`, `role(manager allow)`, `scope(accountId)` |
 | `findAccount` | the account | nothing | `accountId` | 1 (the plan's entry call has the purpose `set_up_plan`, level 2) | `identity`, `scope(accountId)` |
-| `setUpPlan` | the account | a payment arrangement | the confirmed list, `place` and `symptom` '' | 2 | `identity`, `role(manager person)`, `scope(accountId)`, `confirmed`, `limit(total 0.01..amountDue(accountId))`, `dateInRange(firstDate notBefore today)`, `custom first-date-within-30-days` |
+| `setUpPlan` | the account | a payment arrangement | the confirmed list, `place` and `symptom` '' | 2 | `identity`, `role(manager person)`, `scope(accountId)`, `confirmed`, `limit(total 0.01..amountDue(accountId))`, `dateInRange(firstDate today..today+30)` |
 | `verifyCustomer` | accounts | nothing | `accountId`, `dob` | 0 | `attempts` |
 | `sendCode` | the account's phone | texts a code | `accountId` | 1 | `identity`, `role(manager refuse)`, `scope(accountId)` |
 | `verifyCode` | the code | nothing | (the code) | 1 | `identity`, `attempts` |
@@ -73,8 +73,7 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 | Action | Field | Bound | Where it comes from | Rule | Verdict and reason |
 |---|---|---|---|---|---|
 | `setUpPlan` | `total` | at least 0.01, at most the amount due | `amountDue(accountId)` lookup over the account | `limit` | BLOCK, `limit` |
-| `setUpPlan` | `firstDate` | not before today | the call's day | `dateInRange` | BLOCK, `date-range` |
-| `setUpPlan` | `firstDate` | no later than 30 days after today | the call's day (gate facts) | `custom: first-date-within-30-days` | BLOCK, `date-range` |
+| `setUpPlan` | `firstDate` | not before today, and no later than 30 days after today | the call's day (`notBefore: today`, `notAfter: today+30`) | `dateInRange` | BLOCK, `date-range` |
 
 ## Informational answers
 
@@ -110,7 +109,7 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 | What | The framework | What I did | Cost |
 |---|---|---|---|
 | An address | no address slot type | `text` with `say: null`; the read-back quotes the caller's words | none (pattern known) |
-| First payment within 30 days | `dateInRange` has no "today plus N" bound | `notBefore: today` and a custom rule | small |
+| First payment within 30 days | `dateInRange` had no "today plus N" bound when the app was built | first a custom rule (`first-date-within-30-days`); now `notAfter: today+30`, and the custom rule is gone (Task 6) | small; closed |
 | One confirmed list per app | outage and plan share one list | union of fields, '' for the ones a write lacks | small |
 | Delegates on the phone | delegates only on a signed-in chat | property managers use the chat | none |
 | The address read back | `pnpm check` refuses `say: null` with the default `redact: length`; patterns.md does not mention it | `redact: none` on `place`: the address is in the trace and the audit as said | a few minutes |
@@ -126,12 +125,14 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 |---|---|---|---|
 | corpus `pl-02` | `slots.place` | the old street name -> `200 Heron Row` | The invented street was renamed in the fixture data, the corpus line and two scripted calls; the read-back is the caller's words, so the baseline follows them. |
 
+Changes that needed no edit: the thirty-day bound moved from the custom rule `first-date-within-30-days` to `dateInRange` (`notAfter: today+30`). The rule that decides `plan-first-date-too-late` is now `dateInRange` (its line reads `firstDate after today+30 2026-10-18`), with the same verdict, reason (`date-range`) and line (`plan_date_outside`); the baseline records the outcome, not the deciding rule, so it did not change. `policy.matrix` was written again for it: the rule list of `setUpPlan` and the custom rules section changed, and no verdict did.
+
 ## Final checklist
 
 - [x] Every sentence of the paragraph is a row above, and every row is built.
 - [x] Every intent has at least eight corpus lines (terse ones, and for forms, over-answering ones and a correction) and at least one scripted call.
 - [x] Every slot has at least five answers in the corpus, every summary at least four.
-- [x] Every action has a policy entry; `policy.matrix` is written with `pnpm policy:matrix`, read, and tested (`expectPolicyMatrix`, `policyInvariants`); each bound is tested at its edges; every custom rule is a `defineRule` with examples the tests run.
+- [x] Every action has a policy entry; `policy.matrix` is written with `pnpm policy:matrix`, read, and tested (`expectPolicyMatrix`, `policyInvariants`); each bound is tested at its edges; every custom rule is a `defineRule` with examples the tests run (the app has none now: the thirty days are `dateInRange`'s `today+30`).
 - [x] Scripted calls cover each form, each principal (anonymous, each level, each delegate role), the step-up, failed verification, each refusal, each handoff, keypad entry and each informational answer.
 - [x] `identity.yaml` matches the paragraph: who must verify, with what, the code only where a level 2 action needs it, the tries.
 - [x] The policy read back (`policy.matrix`, and the policy card if there is one) matches "Who may do what" above, cell by cell.

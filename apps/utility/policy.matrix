@@ -106,7 +106,7 @@ readBalance · level 1 · identity, role(manager allow), scope(accountId)
   roleless          as unlisted-role
   other-party       as unlisted-role
 
-setUpPlan · level 2 · identity, role(manager person), scope(accountId), confirmed(accountId, place, symptom, count, firstDate, total), limit(total), dateInRange(firstDate), custom first-date-within-30-days
+setUpPlan · level 2 · identity, role(manager person), scope(accountId), confirmed(accountId, place, symptom, count, firstDate, total), limit(total), dateInRange(firstDate)
   anonymous         STEP_UP to 2
   subject@1         as anonymous
   subject@2         subject own, fields exact, confirmed none|mismatch  BLOCK confirmation
@@ -120,8 +120,3 @@ setUpPlan · level 2 · identity, role(manager person), scope(accountId), confir
 
 (unlisted) · not in the policy
   every caller      BLOCK unknown-tool
-
-custom rules, and their examples as the gate decides them in each action that names the rule
-  first-date-within-30-days: The first payment of an arrangement is no more than thirty days after today
-    setUpPlan  thirty days on      ALLOW
-    setUpPlan  thirty-one days on  BLOCK date-range
