@@ -16,6 +16,14 @@ import { readBaseline, REGRESS_TODAY, writeExpected } from './baseline';
 import { emptyRunAll, runAll } from './runAll';
 import { parseScreenMode } from '../core/screen';
 
+/**
+ * Whether a run on this client refuses a spoken step whose words no corpus line has: only the
+ * stubs, which answer without a model (the fixture stub from the corpus, and the heuristic one).
+ */
+export function refusesUnanswerableSteps(kind: string): boolean {
+  return kind === 'stub' || kind === 'heuristic';
+}
+
 /** Corpus entries between progress lines on a run that talks to a model. */
 const PROGRESS_EVERY = 25;
 
@@ -45,9 +53,10 @@ async function run(): Promise<void> {
   const screen = parseScreenMode(args.screen, '--screen');
   const corpus = loadCorpus(defaultCorpusFile());
   const scenarioDefs = loadScenarios(scenariosDir());
-  // Refused, as a duplicate corpus text is: a spoken step the corpus has no line for is a turn the
-  // stub cannot answer, and the call would pass or fail on a miss nobody wrote.
-  const unanswerable = unanswerableSteps(corpus, scenarioDefs);
+  // Refused on the stubs, as a duplicate corpus text is: a spoken step the corpus has no line for
+  // is a turn the stub cannot answer, and the call would pass or fail on a miss nobody wrote. A
+  // model (live, recording or replayed) answers any words, so a run against one is not held to it.
+  const unanswerable = refusesUnanswerableSteps(kind) ? unanswerableSteps(corpus, scenarioDefs) : [];
   if (unanswerable.length > 0) {
     throw new Error([
       `${unanswerable.length} spoken ${unanswerable.length === 1 ? 'step is' : 'steps are'} not a corpus line's text, so the stub cannot answer ${unanswerable.length === 1 ? 'it' : 'them'}:`,

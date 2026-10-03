@@ -8,6 +8,8 @@ import {
   type Outcome, type Scenario, type ScenarioStep,
 } from './runner';
 import { summarize } from './metrics';
+import { refusesUnanswerableSteps } from './regress';
+import { CLIENT_KINDS } from '../run/client';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import { loadCorpus, parseCorpus, type CorpusEntry } from '../jev/corpus';
@@ -484,6 +486,10 @@ describe('unanswerableSteps', () => {
       { id: 'off', steps: [{ say: 'what is my balance' }, { say: 'yes' }, { say: 'five five five' }], expect: { decision: 'prompt' } },
     ];
     expect(unanswerableSteps(corpus, scenarios)).toEqual(['off: what is my balance', 'off: five five five']);
+  });
+
+  it('are refused only on the stubs: a model, live, recording or replayed, answers any words', () => {
+    expect(CLIENT_KINDS.filter(refusesUnanswerableSteps)).toEqual(['stub', 'heuristic']);
   });
 });
 
