@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { checkApp, formatProblem, type GateFacts, type Principal, type ToolCall } from 'dialogwright';
 import { confirmationHash } from 'dialogwright/policy';
-import { expectPolicyMatrix, gateEvaluator, policyInvariants, runRuleExamples } from 'dialogwright/testing';
+import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, gateEvaluator, policyInvariants, runRuleExamples } from 'dialogwright/testing';
 import { describe, expect, it } from 'vitest';
 import { APP_DIR, PLAN_CALL, Systems, TOOLS, app, code, customerPrincipal, managerPrincipal, splitInto } from './app';
 
@@ -60,6 +60,20 @@ describe('the policy against its file', () => {
 
   it('policy.matrix is what the gate decides', () => {
     expectPolicyMatrix(app, fileURLToPath(new URL('../policy.matrix', import.meta.url)), 'pnpm policy:matrix apps/utility');
+  });
+
+  it('POLICY.md is the policy card the app generates', () => {
+    expectPolicyCard(app, fileURLToPath(new URL('../POLICY.md', import.meta.url)), 'pnpm policy:card apps/utility');
+  });
+});
+
+describe('the app map', () => {
+  it('APP-MAP.md is the app map the app generates', () => {
+    expectAppMap(app, fileURLToPath(new URL('../APP-MAP.md', import.meta.url)), 'pnpm app:diagram apps/utility');
+  });
+
+  it('has no dangling reference: every form is started by an intent and every action is reached', () => {
+    expect(danglingReferences(app)).toEqual([]);
   });
 });
 

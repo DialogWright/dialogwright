@@ -14,7 +14,7 @@ On the keypad menu, 1 to 3 start the three tasks, 4 and 5 play the outage map an
 
 On the chat, a customer signs in through the portal instead of saying the factors (`signIn` at level 2). A **property manager** (delegate `property_manager`, role `manager`) signs in on the chat and may report outages and check the balances of the accounts they manage (the `scope` rule over `scopeOf`); a payment arrangement for a tenant's account goes to a person (`role: { manager: person }`), before any question is asked.
 
-The policy, read back, is [policy.matrix](policy.matrix): what the gate decides for every action and every kind of caller.
+The policy, read back, is [POLICY.md](POLICY.md) (the policy card, in words), [policy.matrix](policy.matrix) (what the gate decides for every action and every kind of caller) and [APP-MAP.md](APP-MAP.md) (the app's structure). Each is generated, tested against the app, and written again only for a change you meant.
 
 ## The folder
 
@@ -25,6 +25,8 @@ forms.yaml      each form's slots, its summary prompt and the hooks it has
 prompts.yaml    every line a caller can hear
 policy.yaml     what the agent may do, action by action: the level and the rules the gate runs before each
 policy.matrix   the policy read back: the gate's verdict for every action and kind of caller (written by pnpm policy:matrix)
+POLICY.md       the policy card: the policy and the identity ladder in words (written by pnpm policy:card)
+APP-MAP.md      the app map: the intents, the keypad menu, and each form to its slots, actions and rules (pnpm app:diagram)
 identity.yaml   how a caller proves who they are: the factors, the one-time code, the delegates, the chat sign-in
 slots.yaml      every slot, in the order the engine works through them
 src/app.ts      the code: the tools, the form hooks and the gate's lookups, joined to the folder by defineApp
@@ -47,6 +49,8 @@ pnpm --filter @dialogwright/example-utility regress   # the stub regression: pri
 pnpm --filter @dialogwright/example-utility regress --scenario <id>  # one scripted call, turn by turn (--corpus <id>: one corpus line)
 pnpm --filter @dialogwright/example-utility cli --client heuristic   # a text console, with no keys
 pnpm policy:matrix apps/utility                       # rewrite policy.matrix after a policy change you meant; read the diff
+pnpm policy:card apps/utility                         # rewrite POLICY.md, the same way
+pnpm app:diagram apps/utility                         # rewrite APP-MAP.md after a change to the intents or the forms
 ```
 
 Nothing here needs an API key. The engine's stub clients stand in for the decision model, answering from the labels in `fixtures/corpus.jsonl`.

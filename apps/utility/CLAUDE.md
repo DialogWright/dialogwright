@@ -5,7 +5,7 @@ Example Power & Light is a DialogWright app: a voice and chat agent whose dialog
 ## The folder
 
 - `app.yaml`, `intents.yaml`, `forms.yaml`, `prompts.yaml`, `slots.yaml`: what the app says, hears and collects. Slots are library types named in `slots.yaml` (see `../../docs/slots/`); write a slot in code only when none fits.
-- `policy.yaml`: what the agent may do, action by action (the level and the rules the gate runs before each). Every tool in `src/app.ts` needs an action, and an action not listed is refused. `policy.matrix` is the policy read back; rewrite it with `pnpm policy:matrix apps/utility` only for a policy change you meant, and read the diff.
+- `policy.yaml`: what the agent may do, action by action (the level and the rules the gate runs before each). Every tool in `src/app.ts` needs an action, and an action not listed is refused. `policy.matrix` and `POLICY.md` are the policy read back, and `APP-MAP.md` the app's structure; rewrite them (`pnpm policy:matrix apps/utility`, `pnpm policy:card apps/utility`, `pnpm app:diagram apps/utility`) only for a change you meant, and read the diff. The tests fail when they and the app disagree.
 - `identity.yaml`: how a caller proves who they are (the factors, the one-time code, the property manager delegates, the chat sign-in, the number of tries).
 - `src/app.ts`: the tools and the form hooks, joined to the folder by `defineApp`. `src/data.ts`: the fixture accounts and property managers behind the stub tools.
 - `fixtures/`: `corpus.jsonl` (labelled utterances, every intent has some), `scenarios/` (scripted calls) and `expected/` (the stub baseline).

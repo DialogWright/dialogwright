@@ -24,6 +24,8 @@ console:
     account: Account
     count: Installments
     firstDate: First payment
+    accountId: Account number
+    dob: Date of birth
 
 # The phone line's speech settings: words a caller says first, which the recognizer should expect.
 voice:

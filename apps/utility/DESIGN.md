@@ -119,6 +119,27 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 | A delegate's answers inside a form | corpus lines inside a form cannot carry `as`, so they are seeded with a customer | the `account` answers run as a customer in the corpus; the manager's path is covered by scripted calls with `as` | none |
 | The framework's own test of policy.matrix folders | `packages/dialogwright/src/define/matrixCommand.test.ts` lists the workspace's matrix folders exactly, so a new app's `policy.matrix` fails it | left failing (the framework is out of bounds); recorded in docs/trials/2026-10-03-utility.md | `pnpm -r test` is red until the framework test is changed |
 
+## The policy card read back
+
+`POLICY.md` (`pnpm policy:card apps/utility`) and `APP-MAP.md` (`pnpm app:diagram apps/utility`), read line by line against the paragraph (Task 6). No line of the policy needed a change; what the reading found:
+
+| Sentence of the paragraph | What the card or the map says | Finding |
+|---|---|---|
+| Report an outage, no verification, confirm the address and what they see | `reportOutage`: level 0, anonymous; the caller confirms "account, address, what they see, installments, first payment and total" | Matches. The confirmed list names the arrangement's fields too, since the app has one list (Gaps); an outage sends them empty, so the caller confirms only the address and what they see. |
+| Balance and due date, after the account number and date of birth | Level 1 "their account and date of birth", checked by `verifyCustomer`; `readBalance` at level 1, own account | Matches. The card first said "dob": the factor slots now have console labels (`Account number`, `Date of birth`), which the card uses. |
+| An arrangement needs a one-time code sent to their phone | Level 2 "a 6-digit one-time code sent to the contact on file"; `set_up_plan` needs it before any action | Matches; `sendCode` texts the phone on the account (the card's wording is the framework's). |
+| The first payment within 30 days | "on or after today and no later than 30 days from today" | Matches (`dateInRange`, `today+30`). |
+| Not more than what they owe | "at least 0.01 and at most what `amountDue(accountId)` gives" | Matches. |
+| Property managers check balances for their buildings | manager: "read the balance and due date" goes ahead; "the account must be the caller's own, or one they act for" | Matches. |
+| ...and report outages for them | manager: "file an outage report" goes ahead | Matches. An outage report names an address, not an account, so there is no scope rule: a manager may report any address, as an anonymous caller may. |
+| A tenant's arrangement goes to a person | manager: "set up a payment arrangement" goes to a person (role-person), rule 2, before scope | Matches. The role rule runs before scope, so the request goes to a person before the manager names an account (the form asks nothing first). |
+| (not in the paragraph) | manager: "text a one-time code" refused | The choice under "Choices the paragraph left open". |
+| The outage map and office hours | the app map: two informational intents, keys 4 and 5 | Matches; the card has no policy for them (they call no action). |
+| A person at any time | the app map: `agent` and key 0 | Matches; covered by the scripted calls `asks-for-a-person*`, `person-*` and `manager-asks-for-a-person`. |
+| | Defaults: "account by its last four; account by its last four" | Two slots are account numbers (the factor `accountId` and the manager's `account`), each with the noun `account`, so the card lists the redaction twice. Not a policy mismatch; the card could merge identical entries (a framework change, noted for later). |
+
+The forms now declare `calls`, so the app map draws each form to its actions and their rules, and its "Dangling references" checks every action is reached.
+
 ## Baseline edits
 
 | Entry | Field | Before -> after | Why |
@@ -136,7 +157,7 @@ Changes that needed no edit: the thirty-day bound moved from the custom rule `fi
 - [x] Every action has a policy entry; `policy.matrix` is written with `pnpm policy:matrix`, read, and tested (`expectPolicyMatrix`, `policyInvariants`); each bound is tested at its edges; every custom rule is a `defineRule` with examples the tests run (the app has none now: the thirty days are `dateInRange`'s `today+30`).
 - [x] Scripted calls cover each form, each principal (anonymous, each level, each delegate role), the step-up, failed verification, each refusal, each handoff, keypad entry and each informational answer.
 - [x] `identity.yaml` matches the paragraph: who must verify, with what, the code only where a level 2 action needs it, the tries.
-- [x] The policy read back (`policy.matrix`, and the policy card if there is one) matches "Who may do what" above, cell by cell.
+- [x] The policy read back (`policy.matrix`, `POLICY.md` and `APP-MAP.md`) matches "Who may do what" above, cell by cell ("The policy card read back").
 - [x] No tool decides who may do what; every line a caller hears is in `prompts.yaml`.
 - [x] Nothing private or real: invented names and streets, 555 numbers, `example.com` addresses.
 - [x] `pnpm check` ok; this app's, the clinic's and the testkit's regressions match their baselines. `pnpm verify` is not green: one framework test (`matrixCommand.test.ts`) lists the workspace's matrix folders and fails with this app's `policy.matrix` (see Gaps). The app's own tests and type check are green.
