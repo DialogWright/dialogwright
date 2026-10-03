@@ -113,7 +113,7 @@ describe('testkit app', () => {
 
   it('carries only neutral, fictional words', () => {
     const walk = (dir: string): string[] => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)) : [join(dir, f)]));
-    const banned = new RegExp(['har' + 'bor', 'ins' + 'ur', 'cla' + 'im', 'cover' + 'age', 'policy' + 'holder', 'bro' + 'ker', '\\bmem' + 'ber', 'ja' + 'son', 'sti' + 'les'].join('|'), 'i');
+    const banned = new RegExp(['har' + 'bor', 'gene' + 'sys', 'ins' + 'ur', 'cla' + 'im', 'cover' + 'age', 'policy' + 'holder', 'bro' + 'ker', '\\bmem' + 'ber', 'ja' + 'son', 'sti' + 'les'].join('|'), 'i');
     const offenders = walk('src/testing/testkit').filter((f) => banned.test(readFileSync(f, 'utf8')));
     expect(offenders).toEqual([]);
   });

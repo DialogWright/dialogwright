@@ -62,7 +62,7 @@ describe('the create-app skill', () => {
 
   it('keeps the vocabulary neutral and has no em dash', () => {
     // One industry's words, written in pieces so that this file keeps to the rule it checks.
-    const words = ['cla' + 'ims?', 'cover' + 'age', 'insur' + 'ance', 'insur' + 'er', 'bro' + 'ker', 'mem' + 'ber', 'policy' + 'holder', 'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent', 'har' + 'bor'];
+    const words = ['cla' + 'ims?', 'cover' + 'age', 'insur' + 'ance', 'insur' + 'er', 'bro' + 'ker', 'mem' + 'ber', 'policy' + 'holder', 'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent', 'gene' + 'sys'];
     const banned = new RegExp(`\\b(${words.join('|')})\\b`, 'i');
     for (const file of skillFiles()) {
       const text = read(file);

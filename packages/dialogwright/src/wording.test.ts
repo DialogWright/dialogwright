@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
  * The repository's vocabulary rule, over what people and assistants read and copy: the example apps,
  * the docs, the scaffold's templates, the create-app skill, the CI and the root's own pages. An
  * example app keeps to neutral words and invented names, as the engine does, so the banned words of
- * one industry and one private app's name are refused everywhere here, with a short allow-list for
+ * one industry and the one name this repository never carries are refused everywhere here, with a short allow-list for
  * the places a word is that app's own. The words are written in pieces so that this file keeps to the
  * rule it checks (as createApp.test.ts and createAppSkill.test.ts do for the templates and the skill).
  */
@@ -17,7 +17,7 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 /** One industry's words, and the private app's name. */
 const WORDS = [
   'cla' + 'ims?', 'cover' + 'age', 'insur' + 'ance', 'insur' + 'er', 'bro' + 'ker', 'mem' + 'ber', 'policy' + 'holder',
-  'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent', 'har' + 'bor',
+  'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent', 'gene' + 'sys',
 ];
 const BANNED = new RegExp(`\\b(${WORDS.join('|')})\\b`, 'gi');
 
