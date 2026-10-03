@@ -2,103 +2,74 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
-import type { PolicyMatrix, PolicyTables, RoleAccess } from '../core/app/types';
+import type { PolicyMatrix, PolicyTables } from '../core/app/types';
 import type { GateLookups, Principal, RuleContext, RuleOutcome } from '../gate/types';
 import { compareGateGrid, formatGateGridMismatches, gateGridInput, legacyGateEvaluator, type GateGridInput } from '../testing/gateGrid';
 import { testkitApp } from '../testing/testkit/index';
-import { TESTKIT_POLICY } from '../testing/testkit/domain/policy';
-import { TESTKIT_TOOLS } from '../testing/testkit/domain/tools';
-import { SLOTS as TESTKIT_SLOTS } from '../testing/testkit/domain/slots/index';
+import { TESTKIT_CUSTOM_RULES, TESTKIT_IDENTITY, TESTKIT_POLICY } from '../testing/testkit/domain/policy';
 import { checkAppFully } from './check';
-import { AppDefinitionError, defineApp, legacyIdentityConfig, legacyPolicyTables, type AppCode } from './defineApp';
+import { AppDefinitionError, defineApp } from './defineApp';
 import { defineIdentity, definePolicy } from './definePolicy';
-import { LIBRARY_DIR, LIBRARY_SLOTS, LIBRARY_TOOLS, libraryApp, libraryCode } from './fixture/app';
-import { isLegacyIdentity, isLegacyPolicy, loadAppFolder } from './load';
-import { compileIdentity, compilePolicy, DEFAULT_MAX_ATTEMPTS } from './policyFile';
+import { LIBRARY_DIR, libraryApp, libraryCode } from './fixture/app';
+import { loadAppFolder } from './load';
+import { compileIdentity, compilePolicy } from './policyFile';
 import type { Problem } from './problems';
 import { policySchema, identitySchema } from './schema/index';
+import { comparable } from './__fixtures__/frozen/comparable';
+import { FROZEN_LIBRARY_POLICY } from './__fixtures__/frozen/library';
+import { FROZEN_TESTKIT_IDENTITY, FROZEN_TESTKIT_POLICY } from './__fixtures__/frozen/testkit';
+import { FROZEN_VALID_IDENTITY, FROZEN_VALID_POLICY } from './__fixtures__/frozen/valid';
 
 /**
- * The new policy.yaml and identity.yaml compile to exactly the tables each app runs today: the
- * testkit's (written in TypeScript), the library fixture's and the valid fixture's (old-shape YAML).
- * Each app's files in the new shape are under __fixtures__/converted (the clinic's are in its own
- * package, with its own proof). Functions are compared by what they return: the role wording over
- * every role, tool and access, the custom rules by identity. Then the gate grid runs the legacy
- * evaluator over the compiled tables against the legacy tables: not one decision may differ.
+ * Compile equality: each app's policy.yaml and identity.yaml (the testkit's, the library's and the
+ * valid fixture's, here; the clinic's and a private app's in their own packages) compile to exactly the
+ * tables the app ran before it had them in this shape. Those tables are frozen as test data
+ * (__fixtures__/frozen), with the old files they came from (__fixtures__/legacy), so the proof
+ * stands without the old shape: policyFile.test.ts compiles the files and compares, convert.test.ts
+ * converts the old files and compares. Functions are compared by what they return: the role wording
+ * over every role, tool and access, the custom rules by identity. Then the gate grid runs the
+ * evaluator over the frozen tables against the same over the compiled ones: not one decision may
+ * differ.
  */
 
-const CONVERTED = join(__dirname, '__fixtures__', 'converted');
 const VALID = join(__dirname, '__fixtures__', 'valid');
-const converted = (app: string, file: 'policy' | 'identity'): string => join(CONVERTED, app, `${file}.yaml`);
-const read = (app: string, file: 'policy' | 'identity'): Record<string, unknown> => parse(readFileSync(converted(app, file), 'utf8')) as Record<string, unknown>;
 
-const ACCESS: readonly RoleAccess[] = ['allow', 'refuse', 'person'];
-
-/** The tables with the role wording as its lines over every role and tool the tables name (and one they do not): comparable with toEqual. */
-function comparable(tables: PolicyTables, alsoRoles: readonly string[] = []): unknown {
-  const { wording, ...rest } = tables;
-  if (!wording) return rest;
-  const { role, ...words } = wording;
-  if (!role) return { ...rest, wording: words };
-  const roles = [...new Set([...Object.values(tables.roles ?? {}).flatMap((r) => Object.keys(r)), ...alsoRoles, 'someone'])];
-  const tools = [...Object.keys(tables.rulesFor), 'someTool'];
-  const lines = roles.flatMap((r) => tools.flatMap((t) => ACCESS.map((a) => `${r} ${t} ${a}: ${role(r, t, a)}`)));
-  return { ...rest, wording: { ...words, role: lines } };
-}
-
-/** The grid of the app's matrix, the legacy evaluator over `compiled` against the same over the legacy tables. */
+/** The grid of the app's matrix, the evaluator over the frozen tables against the same over `compiled`. */
 function gridMismatches(input: GateGridInput, compiled: PolicyTables): string[] {
   const mismatches = compareGateGrid(input, legacyGateEvaluator({ policy: compiled, subjectKind: input.subjectKind }));
   return mismatches.length === 0 ? [] : [formatGateGridMismatches(mismatches)];
 }
 
 describe('compile equality: the testkit', () => {
-  const policy = compilePolicy(policySchema.parse(read('testkit', 'policy')), {
-    maxAttempts: compileIdentity(identitySchema.parse(read('testkit', 'identity'))).maxAttempts,
-    customRules: TESTKIT_POLICY.customRules!,
-  });
+  const frozen: PolicyTables = { ...FROZEN_TESTKIT_POLICY, customRules: TESTKIT_CUSTOM_RULES };
 
-  it('policy.yaml compiles to TESTKIT_POLICY, its custom rule the same function', () => {
-    expect(comparable(policy)).toEqual(comparable(TESTKIT_POLICY));
-    expect(policy.customRules!.R8).toBe(TESTKIT_POLICY.customRules!.R8);
+  it('policy.yaml compiles to the tables the testkit wrote by hand, its custom rule the testkit\'s own function', () => {
+    expect(comparable(TESTKIT_POLICY)).toEqual(comparable(frozen));
+    expect(TESTKIT_POLICY.customRules!.R8).toBe(TESTKIT_CUSTOM_RULES.R8);
+    expect(testkitApp.policy).toBe(TESTKIT_POLICY);
   });
 
   it('identity.yaml compiles to the testkit\'s identity, its sendCodeParams the code\'s', () => {
-    const { identity, maxAttempts } = compileIdentity(identitySchema.parse(read('testkit', 'identity')), { sendCodeParams: testkitApp.identity!.sendCodeParams! });
-    expect(identity).toEqual(testkitApp.identity);
-    expect(identity.sendCodeParams).toBe(testkitApp.identity!.sendCodeParams);
-    expect(maxAttempts).toBe(TESTKIT_POLICY.maxAttempts);
+    const { sendCodeParams, ...rest } = TESTKIT_IDENTITY;
+    expect(rest).toEqual(FROZEN_TESTKIT_IDENTITY);
+    expect(typeof sendCodeParams).toBe('function');
+    expect(testkitApp.identity).toBe(TESTKIT_IDENTITY);
+    expect(TESTKIT_POLICY.maxAttempts).toBe(3);
   });
 
-  it('definePolicy and defineIdentity, from the paths and checked against the code, give the same', () => {
-    const tables = definePolicy(converted('testkit', 'policy'), { identity: converted('testkit', 'identity'), tools: TESTKIT_TOOLS, slots: TESTKIT_SLOTS, customRules: TESTKIT_POLICY.customRules! });
-    expect(comparable(tables)).toEqual(comparable(TESTKIT_POLICY));
-    const identity = defineIdentity(converted('testkit', 'identity'), { policy: converted('testkit', 'policy'), tools: TESTKIT_TOOLS, slots: TESTKIT_SLOTS, prompts: ['identity_failed'], sendCodeParams: testkitApp.identity!.sendCodeParams! });
-    expect(identity).toEqual(testkitApp.identity);
-  });
-
-  it('gate grid: the compiled tables decide every case as the legacy ones, whole decision for whole decision', () => {
-    expect(gridMismatches(gateGridInput(testkitApp), policy)).toEqual([]);
+  it('gate grid: the compiled tables decide every case as the frozen ones, whole decision for whole decision', () => {
+    expect(gridMismatches({ ...gateGridInput(testkitApp), policy: frozen }, TESTKIT_POLICY)).toEqual([]);
   });
 });
 
 describe('compile equality: the library fixture', () => {
-  const policy = compilePolicy(policySchema.parse(read('library', 'policy')), { customRules: libraryCode.customRules! });
-
-  it('policy.yaml compiles to the tables defineApp builds from the old-shape file', () => {
-    expect(comparable(policy)).toEqual(comparable(libraryApp.policy));
-    expect(policy.maxAttempts).toBe(DEFAULT_MAX_ATTEMPTS);
-    expect(definePolicy(converted('library', 'policy'), { tools: LIBRARY_TOOLS, slots: LIBRARY_SLOTS, customRules: libraryCode.customRules! })).toEqual(policy);
+  it('policy.yaml compiles to the tables the old file gave', () => {
+    expect(comparable(libraryApp.policy)).toEqual(comparable({ ...FROZEN_LIBRARY_POLICY, customRules: libraryCode.customRules! }));
+    expect(definePolicy(join(LIBRARY_DIR, 'policy.yaml'), { tools: libraryCode.tools, slots: libraryApp.slots, customRules: libraryCode.customRules! })).toEqual(libraryApp.policy);
   });
 
   it('gate grid: no case decided otherwise', () => {
-    expect(gridMismatches(gateGridInput(libraryApp), policy)).toEqual([]);
-  });
-
-  it('as the folder\'s own policy.yaml, defineApp builds the same app', () => {
-    const dir = scratchCopy(LIBRARY_DIR, { 'policy.yaml': readFileSync(converted('library', 'policy'), 'utf8').replace('../../../../../schemas/', '../../../schemas/') });
-    expect(comparable(defineApp(dir, libraryCode).policy)).toEqual(comparable(libraryApp.policy));
+    expect(gridMismatches({ ...gateGridInput(libraryApp), policy: { ...FROZEN_LIBRARY_POLICY, customRules: libraryCode.customRules! } }, libraryApp.policy)).toEqual([]);
   });
 });
 
@@ -110,23 +81,20 @@ const noDoubleBooking = (c: RuleContext): RuleOutcome => {
 };
 
 describe('compile equality: the valid fixture', () => {
-  const loaded = loadAppFolder(VALID).config!;
-  const legacyPolicy = loaded.policy;
-  const legacyIdentity = loaded.identity!;
-  if (!isLegacyPolicy(legacyPolicy) || !isLegacyIdentity(legacyIdentity)) throw new Error('the valid fixture is no longer in the old shape: delete this proof');
-  const legacy = legacyPolicyTables(legacyPolicy, { customRules: { 'no-double-booking': noDoubleBooking } } as unknown as AppCode);
-  const { identity, maxAttempts } = compileIdentity(identitySchema.parse(read('valid', 'identity')));
-  const policy = compilePolicy(policySchema.parse(read('valid', 'policy')), { maxAttempts, customRules: { 'no-double-booking': noDoubleBooking } });
+  const read = (file: 'policy' | 'identity'): Record<string, unknown> => loadAppFolder(VALID).config![file] as unknown as Record<string, unknown>;
+  const { identity, maxAttempts } = compileIdentity(identitySchema.parse(read('identity')));
+  const policy = compilePolicy(policySchema.parse(read('policy')), { maxAttempts, customRules: { 'no-double-booking': noDoubleBooking } });
+  const frozen: PolicyTables = { ...FROZEN_VALID_POLICY, customRules: { 'no-double-booking': noDoubleBooking } };
 
   it('identity.yaml compiles to the old file\'s identity', () => {
-    expect(identity).toEqual(legacyIdentityConfig(legacyIdentity, {} as AppCode));
-    expect(maxAttempts).toBe(legacyPolicy.maxAttempts);
+    expect(identity).toEqual(FROZEN_VALID_IDENTITY);
+    expect(maxAttempts).toBe(FROZEN_VALID_POLICY.maxAttempts);
   });
 
   it('policy.yaml compiles to the old tables, less the rows no rule reads (which the new shape cannot say)', () => {
-    const { subjects, serviceFields, roles, rolePersonReason, ...kept } = legacy;
-    // What is dropped: cancelAppointment's subject and service fields (it runs neither R2 nor R7) and
-    // the roles of two tools that do not run R5, with their reason.
+    const { subjects, serviceFields, roles, rolePersonReason, ...kept } = frozen;
+    // What is dropped: cancelAppointment's subject and service fields (it runs neither the scope nor
+    // the fields rule) and the roles of two tools that do not run the role rule, with their reason.
     expect({ subjects, serviceFields, roles, rolePersonReason }).toEqual({
       subjects: { findAppointment: { param: 'bookingId', via: 'record' }, cancelAppointment: { param: 'patientId' } },
       serviceFields: { cancelAppointment: ['provider', 'date'] },
@@ -134,11 +102,9 @@ describe('compile equality: the valid fixture', () => {
       rolePersonReason: 'staff-cancel',
     });
     // Each dropped row belongs to a tool whose rules never read it.
-    expect(legacy.rulesFor.cancelAppointment).toEqual(['R1', 'R3']);
-    expect(legacy.rulesFor.findAppointment).toEqual(['R1', 'R2']);
-    expect(comparable(policy)).toEqual(comparable({ ...kept, subjects: { findAppointment: subjects.findAppointment! }, serviceFields: {} } as PolicyTables));
-    // The role wording stays (it is wording, not a row): the same lines as the old file's, for the roles the old file named.
-    expect(comparable(policy, ['viewer', 'clerk'])).toMatchObject({ wording: (comparable(legacy) as { wording: object }).wording });
+    expect(frozen.rulesFor.cancelAppointment).toEqual(['R1', 'R3']);
+    expect(frozen.rulesFor.findAppointment).toEqual(['R1', 'R2']);
+    expect(comparable(policy, ['viewer', 'clerk'])).toEqual(comparable({ ...kept, subjects: { findAppointment: subjects.findAppointment! }, serviceFields: {} } as PolicyTables, ['viewer', 'clerk']));
   });
 
   it('gate grid: the dropped rows decide nothing, so no case is decided otherwise', () => {
@@ -166,7 +132,7 @@ describe('compile equality: the valid fixture', () => {
       },
       calls: { bookAppointment: { free: { name: 'Avery Lane', dob: '1985-04-12', provider: 'lee', date: '2026-10-05', time: '09:00' }, taken: { name: 'Avery Lane', dob: '1985-04-12', provider: 'lee', date: 'taken', time: '09:00' } } },
     };
-    const input: GateGridInput = { policy: legacy, subjectKind: identity.subjectKind, lookups, matrix, tools: ['verifyPatient', 'sendCode', 'verifyCode'] };
+    const input: GateGridInput = { policy: frozen, subjectKind: identity.subjectKind, lookups, matrix, tools: ['verifyPatient', 'sendCode', 'verifyCode'] };
     expect(gridMismatches(input, policy)).toEqual([]);
   });
 });
@@ -352,59 +318,37 @@ describe('the checks', () => {
     ]);
   });
 
-  it('a file in the old shape is refused outside an app folder', () => {
+  it('a file in the old shape is refused outside an app folder (until the old shape is gone)', () => {
     expect(problemsOf(() => definePolicy({ toolLevel: {}, rulesFor: {}, confirmedFields: [], maxAttempts: 3 }))).toEqual([
       '(file): policy.yaml has the old shape (toolLevel, rulesFor, ...), which only an app folder reads, until every app is converted -> write it in the new shape: it starts with "actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"',
     ]);
   });
 });
 
-describe('the checks in an app folder: located, and the old shape warned of', () => {
-  const POLICY_YAML = readFileSync(converted('library', 'policy'), 'utf8').replace('../../../../../schemas/', '../../../schemas/');
+describe('the checks in an app folder: located', () => {
+  const POLICY_YAML = readFileSync(join(LIBRARY_DIR, 'policy.yaml'), 'utf8');
 
-  it('the library with its policy.yaml in the new shape: no problems and no warning; in the old one, a warning', async () => {
-    const dir = scratchCopy(LIBRARY_DIR, { 'policy.yaml': POLICY_YAML });
-    expect(await checkAppFully(dir, { code: libraryCode })).toEqual({ problems: [], warnings: [], codeChecked: true });
-    const old = await checkAppFully(LIBRARY_DIR, { code: libraryCode });
-    expect(old.warnings.map((w) => `${w.file}: ${w.message}`)).toEqual(['policy.yaml: policy.yaml has the old shape (toolLevel, rulesFor, ...), which is read only until every app is converted']);
+  it('the library: no problems', async () => {
+    const { problems, codeChecked } = await checkAppFully(LIBRARY_DIR, { code: libraryCode });
+    expect({ problems, codeChecked }).toEqual({ problems: [], codeChecked: true });
   });
 
   it('a problem points at its line', async () => {
     const dir = scratchCopy(LIBRARY_DIR, { 'policy.yaml': POLICY_YAML.replace('custom: known-branch', 'custom: known-branches').replace('level: 0', 'level: 1') });
     const { problems } = await checkAppFully(dir, { code: libraryCode });
     expect(problems.map((p) => `${p.file}:${p.line}:${p.column} ${p.path} ${p.message}`)).toEqual([
-      'policy.yaml:4:1 actions custom rule "known-branch" (code.customRules["known-branch"]) is not named by any action\'s rules, so it never runs',
-      'policy.yaml:6:12 actions.renewLoan.level action "renewLoan" needs identity level 1, but the app has no identity.yaml, so no caller can reach it',
-      'policy.yaml:14:17 actions.findHold.rules[1].custom custom rule "known-branches" is not defined in the code',
+      'policy.yaml:2:1 actions custom rule "known-branch" (code.customRules["known-branch"]) is not named by any action\'s rules, so it never runs',
+      'policy.yaml:4:12 actions.renewLoan.level action "renewLoan" needs identity level 1, but the app has no identity.yaml, so no caller can reach it',
+      'policy.yaml:12:17 actions.findHold.rules[1].custom custom rule "known-branches" is not defined in the code',
     ]);
   });
 
-  it('the valid fixture with both files in the new shape: its YAML checks as the old files do, without the warnings; a failed line it lacks is found where identity.yaml names it', async () => {
-    const files = { 'policy.yaml': readFileSync(converted('valid', 'policy'), 'utf8'), 'identity.yaml': readFileSync(converted('valid', 'identity'), 'utf8') };
-    const old = await checkAppFully(scratchCopy(VALID, {}));
-    const fresh = await checkAppFully(scratchCopy(VALID, files));
-    expect(old.warnings.map((w) => w.file)).toEqual(['policy.yaml', 'identity.yaml']);
-    expect(fresh.warnings).toEqual([]);
-    // The same problems, but where identity.yaml names its failed line, and the handoff line for the
-    // old file's role reason, which no rule of the new file reads (a dropped row).
-    const moved = old.problems
-      .filter((p) => !p.message.includes('handoff_staff_cancel'))
-      .map((p) => ({ ...p, message: p.message.replace('(failedPromptId)', '(levels["1"].failedPrompt)') }));
-    expect(old.problems.length - moved.length).toBe(2); // prompts.yaml's and the fr locale's
-    expect(fresh.problems).toEqual(moved);
-    const config = loadAppFolder(scratchCopy(VALID, files)).config!;
-    expect(isLegacyPolicy(config.policy) || isLegacyIdentity(config.identity!)).toBe(false);
-    const renamed = await checkAppFully(scratchCopy(VALID, { ...files, 'identity.yaml': files['identity.yaml'].replace('failedPrompt: identity_failed', 'failedPrompt: identity_missed') }));
-    expect(renamed.problems.filter((p) => p.message.includes('identity_missed')).map((p) => `${p.file}:${p.line} ${p.message}`)).toEqual([
-      'prompts.yaml:2 prompt "identity_missed" is missing from prompts.yaml; identity.yaml:8 (levels["1"].failedPrompt) says it',
-      'locale/fr/prompts.yaml:1 prompt "identity_missed" is missing from the fr prompts; identity.yaml:8 (levels["1"].failedPrompt) says it',
-    ]);
-  });
-
-  it('a folder whose policy.yaml and identity.yaml are in different shapes does not load', () => {
-    const dir = scratchCopy(VALID, { 'identity.yaml': readFileSync(converted('valid', 'identity'), 'utf8') });
-    expect(loadAppFolder(dir).problems.map((p) => `${p.file} ${p.message}`)).toEqual([
-      'policy.yaml policy.yaml has the old shape and identity.yaml the new one, and the two are read together (the roles and levels the policy names are the identity file\'s)',
+  it('the valid fixture: a failed line it lacks is found where identity.yaml names it', async () => {
+    const identity = readFileSync(join(VALID, 'identity.yaml'), 'utf8');
+    const lacking = await checkAppFully(scratchCopy(VALID, { 'identity.yaml': identity.replace('failedPrompt: identity_failed', 'failedPrompt: identity_missed') }));
+    expect(lacking.problems.filter((p) => p.message.includes('identity_missed')).map((p) => `${p.file}:${p.line} ${p.message}`)).toEqual([
+      'prompts.yaml:2 prompt "identity_missed" is missing from prompts.yaml; identity.yaml:7 (levels["1"].failedPrompt) says it',
+      'locale/fr/prompts.yaml:1 prompt "identity_missed" is missing from the fr prompts; identity.yaml:7 (levels["1"].failedPrompt) says it',
     ]);
   });
 });

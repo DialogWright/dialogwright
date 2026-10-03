@@ -44,6 +44,16 @@ async function lines(dir: string, options: Parameters<typeof checkApp>[1] = { co
 /** Removes one prompt (its three lines) from a prompts.yaml's text. */
 const without = (id: string) => (text: string): string => text.replace(new RegExp(`^  ${id}:\\n(    .*\\n)+`, 'm'), '');
 
+/** An identity.yaml for the library: three tools it has stand for the identity tools (the checks here do not read the tools). */
+const IDENTITY = [
+  'principals: { subject: patron }',
+  'levels:',
+  '  1: { name: verified, factors: [book], verify: findHold }',
+  '  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: findHold, verify: findHold }',
+  'attempts: 3',
+  '',
+].join('\n');
+
 function cli(): { io: Io; out: string[]; err: string[] } {
   const out: string[] = [];
   const err: string[] = [];
@@ -51,18 +61,11 @@ function cli(): { io: Io; out: string[]; err: string[] } {
 }
 
 
-/** The warning a folder whose policy.yaml is in the old shape gets, until the library fixture is converted. */
-const OLD_POLICY = [{
-  file: 'policy.yaml', line: 1, column: 1, path: '(file)',
-  message: 'policy.yaml has the old shape (toolLevel, rulesFor, ...), which is read only until every app is converted',
-  fix: 'write it as "actions:", each tool with its level and rules (schemas/policy.schema.json)',
-}];
-const OLD_POLICY_LINE = (dir: string): string => `${dir}: warning: ${formatProblem(OLD_POLICY[0]!)}`;
 
 describe('checkApp: the example app', () => {
   it('has no problems, with its code given or imported from its app.ts', async () => {
     expect(await checkApp(LIBRARY_DIR, { code: libraryCode })).toEqual([]);
-    expect(await checkAppFully(LIBRARY_DIR)).toEqual({ problems: [], warnings: OLD_POLICY, codeChecked: true });
+    expect(await checkAppFully(LIBRARY_DIR)).toEqual({ problems: [], warnings: [], codeChecked: true });
   });
 
   it('reports what the loader finds, and nothing else when the folder does not load', async () => {
@@ -141,7 +144,7 @@ describe('checkApp: the prompts every locale needs', () => {
 
   it('an app with identity needs the code and sign-in lines too; an app without a menu needs no keypad menu', () => {
     const dir = folder({
-      'identity.yaml': 'subjectKind: patron\nfactorSlots: [book]\nverifyTool: findHold\ncodeTool: findHold\nsendCodeTool: findHold\n',
+      'identity.yaml': IDENTITY,
       'intents.yaml': (t) => t.replace(/\nmenu:[\s\S]*$/, '\nmenu: []\n'),
     });
     const config = loadAppFolder(dir).config!;
@@ -154,7 +157,7 @@ describe('checkApp: the prompts every locale needs', () => {
 
   it('an identity failedPromptId replaces identity_failed, and the opening lines app.yaml names replace greeting and greeting_chat', () => {
     const dir = folder({
-      'identity.yaml': 'subjectKind: patron\nfactorSlots: [book]\nverifyTool: findHold\ncodeTool: findHold\nsendCodeTool: findHold\nfailedPromptId: try_again\n',
+      'identity.yaml': IDENTITY.replace('verify: findHold }\n  2', 'verify: findHold, failedPrompt: try_again }\n  2'),
       'app.yaml': (t) => t.replace('prompts:\n  spokenVars: [due]', 'prompts:\n  spokenVars: [due]\n  greetings:\n    voice: hello\n    chat: hello_chat'),
     });
     const ids = enginePrompts(loadAppFolder(dir).config!).map((p) => p.id);
@@ -246,9 +249,9 @@ describe('checkApp: the lines the engine builds from the code', () => {
   });
 
   it('a role whose access is "person" needs the handoff line for R5\'s reason: role-person, or the policy\'s own', () => {
-    const roles = (extra: string) => folder({ 'policy.yaml': (t) => `${t}\nroles:\n  findHold:\n    clerk: person\n${extra}` });
-    expect(ids(libraryCode, roles(''))).toContain('handoff_role_person');
-    const own = ids(libraryCode, roles('rolePersonReason: staff-hold\n'));
+    const roles = (access: string) => folder({ 'policy.yaml': (t) => t.replace('- custom: known-branch', `- custom: known-branch\n      - role: { ${access} }`) });
+    expect(ids(libraryCode, roles('clerk: person'))).toContain('handoff_role_person');
+    const own = ids(libraryCode, roles('clerk: person, reason: staff-hold'));
     expect(own).toContain('handoff_staff_hold');
     expect(own).not.toContain('handoff_role_person');
     expect(ids(libraryCode)).not.toContain('handoff_role_person');
@@ -350,7 +353,7 @@ describe('checkApp: the app module', () => {
 
   it('takes a default export too', async () => {
     const dir = folder({ 'app.mjs': 'import { code } from ' + JSON.stringify(fixtureModule) + '; export default code;\n' });
-    expect(await checkAppFully(dir)).toEqual({ problems: [], warnings: OLD_POLICY, codeChecked: true });
+    expect(await checkAppFully(dir)).toEqual({ problems: [], warnings: [], codeChecked: true });
   });
 
   it('a module that does not load is a problem, not a crash', async () => {
@@ -400,7 +403,7 @@ describe('checkApp: the app module', () => {
       'prompts.yaml': without('goodbye'),
     });
     const problems = await lines(dir, {});
-    expect(problems).toContain('policy.yaml:7:3  rulesFor.renewLoan  tool "renewLoan" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.renewLoan), or delete this row');
+    expect(problems).toContain('policy.yaml:3:3  actions.renewLoan  tool "renewLoan" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.renewLoan), or delete this action');
     expect(problems).toContain('prompts.yaml:2:1  prompts  prompt "goodbye" is missing from prompts.yaml; the engine says it when a call ends  ->  add "goodbye:" with its text and interruptible to prompts.yaml');
   });
 
@@ -417,11 +420,11 @@ describe('checkApp: the app module', () => {
 
   it('prefers the folder\'s own app module to one in src/', async () => {
     const dir = folder({ 'app.mjs': `export { code } from ${JSON.stringify(fixtureModule)};\n`, 'src/app.mjs': 'throw new Error("not this one");\n' });
-    expect(await checkAppFully(dir)).toEqual({ problems: [], warnings: OLD_POLICY, codeChecked: true });
+    expect(await checkAppFully(dir)).toEqual({ problems: [], warnings: [], codeChecked: true });
   });
 
   it('a folder with no app module is checked as YAML only, and says so', async () => {
-    expect(await checkAppFully(folder())).toEqual({ problems: [], warnings: OLD_POLICY, codeChecked: false });
+    expect(await checkAppFully(folder())).toEqual({ problems: [], warnings: [], codeChecked: false });
   });
 });
 
@@ -480,7 +483,7 @@ describe('dialogwright check', () => {
     const { io, out, err } = cli();
     expect(await main(['check', LIBRARY_DIR], io)).toBe(0);
     expect(out).toEqual([`${LIBRARY_DIR}: ok`]);
-    expect(err).toEqual([OLD_POLICY_LINE(LIBRARY_DIR)]);
+    expect(err).toEqual([]);
   });
 
   it('a bad folder: one line per problem, then the count, exit 1', async () => {
@@ -514,7 +517,7 @@ describe('dialogwright check', () => {
     const { io, out, err } = cli();
     expect(await main(['check', dir], io)).toBe(0);
     expect(out).toEqual([`${dir}: ok`]);
-    expect(err).toEqual([OLD_POLICY_LINE(dir), `${dir}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`]);
+    expect(err).toEqual([`${dir}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`]);
   });
 
   it('--json prints the Problem[] and nothing else', async () => {

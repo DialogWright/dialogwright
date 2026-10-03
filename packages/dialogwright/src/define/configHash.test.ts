@@ -103,9 +103,9 @@ describe('configuration hashes: the loader', () => {
   it('does not change for comments, whitespace, flow or block style or quoting style', () => {
     const hand = hashesOf(folder({
       'policy.yaml': (t) => `# the library's policy\n\n${t
-        .replace('maxAttempts: 3', 'maxAttempts:    3   # three tries')
-        .replace('confirmedFields: [book]', 'confirmedFields: [ "book" ]   ')
-        .replace('renewLoan: [R1, R3]', "renewLoan:\n    - 'R1'\n    - R3")}\n\n# end\n`,
+        .replace('level: 0', 'level:    0   # open to anyone')
+        .replace('confirmed: [book]', 'confirmed: [ "book" ]   ')
+        .replace('rules: [identity]', "rules:\n      - 'identity'")}\n\n# end\n`,
     }));
     expect(hand).toEqual(base);
     // The same content written out again in another style altogether: flow collections, every
@@ -125,7 +125,7 @@ describe('configuration hashes: the loader', () => {
   });
 
   it('changes the file\'s hash and the whole\'s, and no other file\'s, when a value changes', () => {
-    const changed = hashesOf(folder({ 'policy.yaml': (t) => t.replace('maxAttempts: 3', 'maxAttempts: 4') }));
+    const changed = hashesOf(folder({ 'policy.yaml': (t) => t.replace('confirmed: [book]', 'confirmed: [book, due]') }));
     expect(changed.files['policy.yaml']).not.toBe(base.files['policy.yaml']);
     expect(changed.app).not.toBe(base.app);
     for (const file of LIBRARY_FILES.filter((f) => f !== 'policy.yaml')) expect(changed.files[file], file).toBe(base.files[file]);

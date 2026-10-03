@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../../schemas/identity.schema.json
+# Example Parcels' identity: customers verify with an account ID and a date of birth, then a code
+# texted to the phone on file; depot agents act for customers, with a role (domain/policy.ts loads
+# this with defineIdentity, and gives it the one part that is code: the code call's params).
+principals:
+  subject: customer
+  delegates:
+    agent: { roles: [viewer, clerk] }
+levels:
+  1: { name: verified, factors: [accountId, dob], verify: verifyCustomer, failedPrompt: identity_failed }
+  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: sendCode, verify: verifyCode }
+# Three failed tries at the account ID and date of birth, or at the code, and a person takes the call.
+attempts: 3

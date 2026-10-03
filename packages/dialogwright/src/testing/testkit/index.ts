@@ -3,9 +3,9 @@ import type { App } from '../../core/app/types';
 import manifest from './prompts/manifest.json';
 import { DEPOT_AGENT } from './domain/agent';
 import { TESTKIT_FACTS } from './domain/facts';
-import { accountIdOf, blockPromptId, depotAnswer, FORMS } from './domain/forms';
+import { blockPromptId, depotAnswer, FORMS } from './domain/forms';
 import { FORM_INTENTS, INTENTS, MENU } from './domain/intents';
-import { TESTKIT_POLICY } from './domain/policy';
+import { TESTKIT_IDENTITY, TESTKIT_POLICY } from './domain/policy';
 import { TESTKIT_BRAND, TESTKIT_CONSOLE, TESTKIT_HANDOFF, TESTKIT_VOICE, TESTKIT_WORDING } from './domain/present';
 import { TESTKIT_PRINCIPALS } from './domain/principals';
 import { SLOTS } from './domain/slots';
@@ -26,16 +26,7 @@ export const testkitApp: App = {
   menu: MENU,
   forms: FORMS,
   slots: SLOTS,
-  identity: {
-    subjectKind: 'customer',
-    delegateKind: 'agent',
-    factorSlots: ['accountId', 'dob'],
-    verifyTool: 'verifyCustomer',
-    codeTool: 'verifyCode',
-    sendCodeTool: 'sendCode',
-    sendCodeParams: (s) => ({ accountId: accountIdOf(s) }),
-    failedPromptId: 'identity_failed',
-  },
+  identity: TESTKIT_IDENTITY,
   tools: TESTKIT_TOOLS,
   policy: TESTKIT_POLICY,
   facts: TESTKIT_FACTS,

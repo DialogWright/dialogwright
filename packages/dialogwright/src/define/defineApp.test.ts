@@ -207,8 +207,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
   it('a tool policy.yaml names that the code does not define', () => {
     const { findHold: _, ...tools } = libraryCode.tools;
     expect(problems({ ...libraryCode, tools })).toEqual([
-      'policy.yaml:4:13  toolLevel.findHold  tool "findHold" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.findHold), or delete this row',
-      'policy.yaml:8:3  rulesFor.findHold  tool "findHold" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.findHold), or delete this row',
+      'policy.yaml:8:3  actions.findHold  tool "findHold" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.findHold), or delete this action',
     ]);
   });
 
@@ -222,9 +221,9 @@ describe('defineApp: the folder and the code must name the same things', () => {
     ]);
   });
 
-  it('a custom rule rulesFor names that the code does not define', () => {
+  it('a custom rule policy.yaml names that the code does not define', () => {
     expect(problems({ ...libraryCode, customRules: undefined })).toEqual([
-      'policy.yaml:8:18  rulesFor.findHold[1]  rule "known-branch" is not a built-in rule (R1, R2, R3, R5, R6, R7) and the code defines no custom rule by that name  ->  add it to app.ts (code.customRules["known-branch"]), or name a built-in rule instead',
+      'policy.yaml:12:17  actions.findHold.rules[1].custom  custom rule "known-branch" is not defined in the code  ->  add it to app.ts (code.customRules["known-branch"]), or delete this rule',
     ]);
   });
 
@@ -238,22 +237,22 @@ describe('defineApp: the folder and the code must name the same things', () => {
     };
     expect(problems(code)).toEqual([
       'forms.yaml:2:1  forms  the code has hooks for the form "renew_lone" (code.forms.renew_lone), but forms.yaml has no form "renew_lone"  ->  rename it to "renew_loan" in app.ts (code.forms.renew_lone), or add "renew_lone:" under forms in forms.yaml, or delete the hooks from app.ts (code.forms.renew_lone)',
-      'policy.yaml:6:1  rulesFor  tool "payFine" (code.tools.payFine) has no row under rulesFor, so it can never be called  ->  add "payFine: [R1]" under rulesFor and its level under toolLevel, or delete the tool from app.ts (code.tools.payFine)',
-      'policy.yaml:6:1  rulesFor  custom rule "late-fee" (code.customRules["late-fee"]) is not named under rulesFor, so it never runs  ->  add "late-fee" to the rules of the tool it guards, or delete the rule from app.ts (code.customRules["late-fee"])',
+      'policy.yaml:2:1  actions  tool "payFine" (code.tools.payFine) has no entry under actions, so it can never be called  ->  add "payFine:" under actions with its level and rules, or delete the tool from app.ts (code.tools.payFine)',
+      'policy.yaml:2:1  actions  custom rule "late-fee" (code.customRules["late-fee"]) is not named by any action\'s rules, so it never runs  ->  add "- custom: late-fee" to the rules of the action it guards, or delete the rule from app.ts (code.customRules["late-fee"])',
       'app.ts  code.forms.check_hold.onSumaryRead  "onSumaryRead" is not a form hook; the hooks are entry, onEntry, principalEntry, confirmedParams, complete, onAnswers, onSummaryAnswer, keepsSlot, onSummaryRead  ->  rename it to "onSummaryRead", or delete it from app.ts (code.forms.check_hold.onSumaryRead)',
-      'app.ts  code.customRules.R2  custom rule "R2" has a built-in rule\'s id  ->  rename it in app.ts (code.customRules.R2) and in policy.yaml\'s rulesFor; the built-in ids are R0, R1, R2, R3, R5, R6, R7',
-      'app.ts  code.identity  the code has identity hooks, but the folder has no identity.yaml  ->  add identity.yaml (subjectKind, factorSlots and the identity tools), or delete it from app.ts (code.identity)',
+      'app.ts  code.customRules.R2  custom rule "R2" has a built-in rule\'s id  ->  rename it in app.ts (code.customRules.R2) and in policy.yaml\'s custom: rules; the built-in ids are R0, R1, R2, R3, R5, R6, R7',
+      'app.ts  code.identity  the code has identity hooks, but the folder has no identity.yaml  ->  add identity.yaml (principals, levels and attempts, with the identity tools), or delete it from app.ts (code.identity)',
     ]);
   });
 
   it('what the YAML files name of each other: an unknown menu intent, a missing prompt, a level no one can reach', () => {
     const intents = readFileSync(join(LIBRARY_DIR, 'intents.yaml'), 'utf8').replace('intent: check_hold', 'intent: check_holds');
     const forms = readFileSync(join(LIBRARY_DIR, 'forms.yaml'), 'utf8').replace('confirm_renew', 'confirm_renewal');
-    const policy = readFileSync(join(LIBRARY_DIR, 'policy.yaml'), 'utf8').replace('findHold: 0', 'findHold: 1');
+    const policy = readFileSync(join(LIBRARY_DIR, 'policy.yaml'), 'utf8').replace('  findHold:\n    level: 0', '  findHold:\n    level: 1');
     expect(problems(libraryCode, folder({ 'intents.yaml': intents, 'forms.yaml': forms, 'policy.yaml': policy }))).toEqual([
       'intents.yaml:45:13  menu[1].intent  menu digit "2" names the intent "check_holds", which is not under intents  ->  rename it to "check_hold", or add "check_holds:" under intents',
       'forms.yaml:5:22  forms.renew_loan.summaryPromptId  prompt "confirm_renewal" is not in prompts.yaml  ->  rename it to "confirm_renew", or add "confirm_renewal:" to prompts.yaml with its text and interruptible',
-      'policy.yaml:4:13  toolLevel.findHold  tool "findHold" needs identity level 1, but the app has no identity.yaml, so no caller can reach it  ->  set it to 0, or add identity.yaml so callers can verify',
+      'policy.yaml:9:12  actions.findHold.level  action "findHold" needs identity level 1, but the app has no identity.yaml, so no caller can reach it  ->  set it to 0, or add identity.yaml so callers can verify',
     ]);
   });
 
@@ -269,7 +268,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
     const lines = (error as Error).message.split('\n');
     expect(lines[0]).toBe(`the app in ${LIBRARY_DIR} is not valid (5 problems):`);
     expect(lines.slice(1)).toEqual((error as AppDefinitionError).problems.map((p) => `  ${formatProblem(p)}`));
-    expect(lines.slice(1).map((l) => l.trim().split('  ')[0])).toEqual(['app.yaml:16:5', 'app.yaml:27:14', 'forms.yaml:8:19', 'policy.yaml:8:18', 'locale/es/slots.yaml:10:1']);
+    expect(lines.slice(1).map((l) => l.trim().split('  ')[0])).toEqual(['app.yaml:16:5', 'app.yaml:27:14', 'forms.yaml:8:19', 'policy.yaml:12:17', 'locale/es/slots.yaml:10:1']);
   });
 });
 
@@ -305,13 +304,11 @@ describe('defineApp: what app.yaml shows and the clips name, and what R3 needs',
     ]);
   });
 
-  it('a tool that runs R3 needs confirmedFields and a form with confirmedParams, or R3 blocks every call', () => {
-    const policy = readFileSync(join(LIBRARY_DIR, 'policy.yaml'), 'utf8').replace('confirmedFields: [book]', 'confirmedFields: []');
+  it('a tool that runs the confirmed rule needs a form with confirmedParams, or the rule blocks every call', () => {
     const forms = readFileSync(join(LIBRARY_DIR, 'forms.yaml'), 'utf8').replace('hooks: [confirmedParams, complete]', 'hooks: [complete]');
     const { confirmedParams: _, ...renew } = libraryCode.forms.renew_loan!;
-    expect(problems({ ...libraryCode, forms: { ...libraryCode.forms, renew_loan: renew } }, folder({ 'policy.yaml': policy, 'forms.yaml': forms }))).toEqual([
-      'policy.yaml:7:3  rulesFor.renewLoan  "renewLoan" runs R3, but no form has a confirmedParams hook, so nothing is ever confirmed and R3 blocks every call  ->  add "confirmedParams" to the hooks of the form that makes the write, and write it in the code',
-      'policy.yaml:10:1  confirmedFields  "renewLoan" runs R3, but confirmedFields is empty, so R3 blocks every call  ->  list the fields a confirmed write carries, in the order its confirmedParams hook returns them',
+    expect(problems({ ...libraryCode, forms: { ...libraryCode.forms, renew_loan: renew } }, folder({ 'forms.yaml': forms }))).toEqual([
+      'policy.yaml:7:9  actions.renewLoan.rules[1]  "renewLoan" runs the confirmed rule, but no form has a confirmedParams hook, so nothing is ever confirmed and the rule blocks every call  ->  add "confirmedParams" to the hooks of the form that makes the write, and write it in the code',
     ]);
   });
 });

@@ -437,7 +437,7 @@ export function crossLink(
     const send = code.identity?.sendCodeParams;
     if (send !== undefined && typeof send !== 'function') inTs(['identity', 'sendCodeParams'], 'sendCodeParams is not a function', `make ${inCode('identity', 'sendCodeParams')} a function of the session`);
   } else if (code.identity !== undefined) {
-    inTs(['identity'], 'the code has identity hooks, but the folder has no identity.yaml', `add identity.yaml (subjectKind, factorSlots and the identity tools), or delete it from ${inCode('identity')}`);
+    inTs(['identity'], 'the code has identity hooks, but the folder has no identity.yaml', `add identity.yaml (principals, levels and attempts, with the identity tools), or delete it from ${inCode('identity')}`);
   }
 
   // app.yaml

@@ -20,14 +20,18 @@ import { ConvertError, convertFolder, convertTables, toText } from './convertPol
 /**
  * `dialogwright policy:convert`: each app the repository has, converted from its old files (or, for
  * the testkit, from its tables), gives the files that app now runs from, less what is said in
- * words (an action's `say`); what it writes compiles to the tables the app ran before; and what
+ * words (an action's `say`) and the comments; what it writes compiles to the tables the app ran before; and what
  * it cannot say, it reports.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(here, '..', '__fixtures__');
 const LEGACY = join(FIXTURES, 'legacy');
-const PROVEN = join(FIXTURES, 'converted');
+const COMMITTED = {
+  library: join(here, '..', 'fixture'),
+  valid: join(FIXTURES, 'valid'),
+  testkit: join(here, '..', '..', 'testing', 'testkit'),
+} as const;
 
 const scratch: string[] = [];
 afterAll(() => {
@@ -45,13 +49,14 @@ function dataOf(text: string): Record<string, any> {
   for (const action of Object.values<Record<string, unknown>>(data.actions ?? {})) delete action.say;
   return data;
 }
-const proven = (app: string, file: 'policy' | 'identity'): string => readFileSync(join(PROVEN, app, `${file}.yaml`), 'utf8');
+/** The file an app runs from today, which the converter's output must be (less the words an author adds). */
+const committed = (app: keyof typeof COMMITTED, file: 'policy' | 'identity'): string => readFileSync(join(COMMITTED[app], `${file}.yaml`), 'utf8');
 
 describe('each app converts to the files it runs from', () => {
   it('the library fixture, from its old policy.yaml: nothing dropped', () => {
     const converted = convertFolder(join(LEGACY, 'library'));
     expect(Object.keys(converted.files)).toEqual(['policy.yaml']);
-    expect(dataOf(converted.files['policy.yaml']!)).toEqual(dataOf(proven('library', 'policy')));
+    expect(dataOf(converted.files['policy.yaml']!)).toEqual(dataOf(committed('library', 'policy')));
     expect(converted.dropped).toEqual([]);
     expect(converted.unplaced).toEqual([]);
     const policy = compilePolicy(policySchema.parse(parse(converted.files['policy.yaml']!)), { customRules: libraryCode.customRules! });
@@ -61,7 +66,7 @@ describe('each app converts to the files it runs from', () => {
   it('the valid fixture: its old rows that no rule reads are dropped, and each is reported', () => {
     const converted = convertFolder(join(LEGACY, 'valid'));
     expect(Object.keys(converted.files)).toEqual(['policy.yaml', 'identity.yaml']);
-    expect(dataOf(converted.files['policy.yaml']!)).toEqual(dataOf(proven('valid', 'policy')));
+    expect(dataOf(converted.files['policy.yaml']!)).toEqual(dataOf(committed('valid', 'policy')));
     expect(converted.dropped).toEqual([
       'subjects.cancelAppointment (patientId): "cancelAppointment" runs no scope rule (R2), so nothing reads it',
       'serviceFields.cancelAppointment (provider, date): "cancelAppointment" runs no fields rule (R7), so nothing reads it',
@@ -69,9 +74,8 @@ describe('each app converts to the files it runs from', () => {
       'roles.cancelAppointment (viewer: refuse, clerk: person): "cancelAppointment" runs no role rule (R5), so nothing reads it',
       'rolePersonReason (staff-cancel): no role rule hands a call to a person, so no call goes to a person for that reason',
     ]);
-    // identity.yaml: the same, with the code's length written (the proven file left it to the default).
     const identity = parse(converted.files['identity.yaml']!);
-    expect({ ...identity, levels: { 1: identity.levels[1], 2: { ...identity.levels[2], factors: [{ otp: {} }] } } }).toEqual(parse(proven('valid', 'identity')));
+    expect(identity).toEqual(parse(committed('valid', 'identity')));
     const compiled = compileIdentity(identitySchema.parse(identity));
     expect(compiled.identity).toEqual(FROZEN_VALID_IDENTITY);
     expect(compiled.maxAttempts).toBe(FROZEN_VALID_POLICY.maxAttempts);
@@ -86,8 +90,8 @@ describe('each app converts to the files it runs from', () => {
 
   it('the testkit, from its TypeScript tables (no comments to keep): its custom rule is named, not carried', () => {
     const converted = convertTables(FROZEN_TESTKIT_POLICY as PolicyTables, { ...FROZEN_TESTKIT_IDENTITY, sendCodeParams: () => ({}) });
-    expect(dataOf(toText(converted.policy))).toEqual(dataOf(proven('testkit', 'policy')));
-    expect(parse(toText(converted.identity!))).toEqual(parse(proven('testkit', 'identity')));
+    expect(dataOf(toText(converted.policy))).toEqual(dataOf(committed('testkit', 'policy')));
+    expect(parse(toText(converted.identity!))).toEqual(parse(committed('testkit', 'identity')));
     expect(converted.dropped).toEqual([]);
     const compiled = compileIdentity(identitySchema.parse(parse(toText(converted.identity!))));
     expect(compiled.identity).toEqual(FROZEN_TESTKIT_IDENTITY);
@@ -338,7 +342,7 @@ describe('dialogwright policy:convert', () => {
     expect(out.slice(0, 2)).toEqual(['wrote policy.yaml', 'wrote identity.yaml']);
     expect(out.slice(2)).toHaveLength(5);
     expect(out.slice(2).every((l) => l.startsWith('dropped '))).toBe(true);
-    expect(dataOf(readFileSync(join(dir, 'policy.yaml'), 'utf8'))).toEqual(dataOf(proven('valid', 'policy')));
+    expect(dataOf(readFileSync(join(dir, 'policy.yaml'), 'utf8'))).toEqual(dataOf(committed('valid', 'policy')));
     // Converting again has nothing to do.
     const again = cli(dir);
     expect(await main(['policy:convert', '.'], again.io)).toBe(0);

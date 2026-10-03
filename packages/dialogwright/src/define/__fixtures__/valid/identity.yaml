@@ -1,8 +1,9 @@
 # yaml-language-server: $schema=../../../../schemas/identity.schema.json
-subjectKind: patient
-delegateKind: staff
-factorSlots: [patientId, dob]
-verifyTool: verifyPatient
-codeTool: verifyCode
-sendCodeTool: sendCode
-failedPromptId: identity_failed
+principals:
+  subject: patient
+  delegates:
+    staff: { roles: [viewer, clerk] }
+levels:
+  1: { name: verified, factors: [patientId, dob], verify: verifyPatient, failedPrompt: identity_failed }
+  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: sendCode, verify: verifyCode }
+attempts: 3

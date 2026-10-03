@@ -1,6 +1,8 @@
-# yaml-language-server: $schema=../../../../../schemas/policy.schema.json
-# Example Parcels' action policy (the testkit's TESTKIT_POLICY), written in the new shape: the
-# compilers are proved against it (../../../policyFile.test.ts). Every tool not listed is refused.
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# Example Parcels' action policy: what the testkit's agent may do, action by action (domain/policy.ts
+# loads it with definePolicy). Every action not listed is refused, and the rules of an action run in
+# the order written, the first failure deciding. The one rule of the app's own, R8, is code (named
+# here by `custom:`); everything else is in this file.
 actions:
   verifyCustomer:
     say: check the account ID and date of birth
@@ -17,26 +19,31 @@ actions:
       - identity
       - scope: { param: accountId }
   getAccount:
+    say: read the customer's account
     level: 1
     rules:
       - identity
       - scope: { param: accountId }
   getWindows:
+    say: read the delivery windows
     level: 1
     rules:
       - identity
       - scope: { param: accountId }
   listParcels:
+    say: list the customer's parcels
     level: 2
     rules:
       - identity
       - scope: { param: accountId }
   getParcel:
+    say: read a parcel
     level: 2
     rules:
       - identity
       - scope: { record: parcel }
-  # A viewer may not file a report; a clerk may, with a person.
+  # A viewer may not file a report; a clerk may, with a person. A report is only filed when none of
+  # the customer's parcels shows as delivered on the day the missing one was due (R8, in code).
   createReport:
     say: report a missing parcel
     level: 2
@@ -48,6 +55,7 @@ actions:
       - custom: R8
   # What the depot agent may receive.
   notifyDepot:
+    say: tell the depot about a report
     level: 2
     rules:
       - identity
