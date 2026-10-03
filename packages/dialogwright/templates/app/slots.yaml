@@ -1,0 +1,20 @@
+# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/slots.schema.json
+# Every slot the app has, in the order the engine works through them. Each is a library type
+# configured here (docs/slots/README.md lists the types and their options); `type: code` names a
+# slot the code writes in src/app.ts.
+service:
+  type: choice
+  # One of a short list: the key is the value the slot takes and the label the model chooses; `say`
+  # is how it is said aloud. The model never writes the value: it picks a key from this list.
+  options:
+    repair:
+      say: a repair
+      means: The caller wants a repair because something is broken or not working
+    inspection:
+      say: an inspection
+      means: The caller wants an inspection or a check-up
+    installation:
+      say: an installation
+      means: The caller wants something new installed
+  text:
+    instructions: Read asr.text. Which service does the caller want to book?

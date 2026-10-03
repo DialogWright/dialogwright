@@ -129,6 +129,8 @@ menu:
 - `kind: form` starts the form with the same id in forms.yaml. `kind: informational` plays its `promptId` and goes back to where the caller was; its key on the menu does the same, then gives the menu back. `kind: control` is the engine's own.
 - Two control intents are required, because the engine reads them by name: `agent` and `repeat_prompt`. The snippet above shows both. The other control intents (`done`, `other`, `none`) are optional; the library has all three, and the clinic leaves out `done`, since its calls end when a task completes.
 - Keypad digits are quoted strings.
+- A key on the menu starts a form, plays an informational intent's line, or (`agent`) goes to a person. A key for any other control intent does nothing on a call (the caller hears nothing), so `pnpm check` refuses one.
+- The menu listens only once it has been offered. On a call with a keypad (a phone call; a chat has none), the second missed answer to the intent question (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the keys of the next turn are menu keys; with `MAX_ATTEMPTS` at its default of 3, a third miss goes to a person. A key pressed before then, at the greeting for example, is ignored. After an informational key the menu is offered again, so it keeps listening. A scripted call that presses a menu key therefore misses twice first.
 
 ### forms.yaml
 
@@ -172,7 +174,7 @@ prompts:
     interruptible: false
 ```
 
-- Variables in braces are filled by the engine (`{intentLabel}`) or by the app's code (`{book}`, `{due}`).
+- Variables in braces are filled by the engine (`{intentLabel}`) or by the app's code (`{book}`, `{due}`). The engine's lines are given only a few: `{intentLabel}` (`ack_intent`, `ack_queued`, `bridge_next`, `confirm_intent_explicit`), `{a}` and `{b}` (`disambiguate_intent`, `ack_intent_then`), `{first}` (`identity_verified`, `signin_thanks`, `greeting_chat_signed_in`, `greeting_chat_delegate`), `{phoneLast4}` (`ask_otp`, empty when the caller has no phone on record), and the slot's own value (`confirm_<slot>`, `ack_<slot>`, as `{<slot>}`). The rest are given none. `pnpm check` names them when it asks for a missing line.
 - `interruptible: false` for a line that must be heard whole (a keypad instruction, a statement).
 - `mode` can only be `fixed` (the default). A model chooses among these lines; it never writes one. Generated wording, which lets a model choose the words of a line you flag, never its content, is an opt-in later phase ([design.md §5](design.md#5-generated-wording)).
 - The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. Some lines depend on the slot's spec in the code: `ask_<slot>_dtmf` for a slot with a keypad rung (`dtmf`), `confirm_<slot>` and `ask_<slot>_dtmf` for a slot whose every spoken value is read back (`spokenConfirm: 'always'`), `ack_<slot>` for one acknowledged by confidence (`spokenConfirm: 'by-confidence'`), and the slot's `partialPromptId`. A role whose access to a tool is `person` needs the handoff line for its role rule's `reason` (`handoff_role_person` by default). `pnpm check` lists any that are missing and says when the engine says each (section 7). It cannot see the lines a slot's `fill` names (`disambiguate_<slot>`, a `retryPromptId`, a help prompt) unless the slot declares them in its `prompts` (section 5).
@@ -1211,15 +1213,16 @@ At the repository root, `pnpm check` finds every folder under `apps/` that has a
 
 It checks, in one pass:
 
-1. **Each file against its schema.** Unknown keys, wrong types, a missing required file, a YAML syntax error. A misspelt name offers the near match.
+1. **Each file against its schema.** Unknown keys, wrong types, a missing required file, a YAML syntax error. A misspelt name offers the near match, and a top-level key that belongs in another file names that file (`purposes` in identity.yaml: `move "purposes" and what is under it to policy.yaml`).
 2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every form's `calls` names tools the code defines, and, when forms declare `calls`, every action is reached by a form or the identity flow; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
-3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for a role rule's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`.
-4. **Each locale against prompts.yaml**: a translated line uses only the variables the prompts.yaml line has (the code fills those and no others, so another would fail when it is said), and a locale has no line that prompts.yaml does not (it would never be said).
-5. **The corpus**: every intent has at least one labelled example in `corpus.jsonl`, when app.yaml names a fixtures directory. The corpus must be inside the package (a link that leads out is refused) and at most 16 MB.
+3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for a role rule's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`. A missing line's message says when the engine says it and, when it gives the line variables, which ones (`..., and gives it {first}  ->  add "signin_thanks:" with its text (it may use {first}) and interruptible to prompts.yaml`).
+4. **The keypad menu**: every key names a form intent, an informational intent or `agent`; a key for another control intent is refused, since the engine ignores it.
+5. **Each locale against prompts.yaml**: a translated line uses only the variables the prompts.yaml line has (the code fills those and no others, so another would fail when it is said), and a locale has no line that prompts.yaml does not (it would never be said).
+6. **The corpus**: every intent has at least one labelled example in `corpus.jsonl`, when app.yaml names a fixtures directory. The corpus must be inside the package (a link that leads out is refused) and at most 16 MB.
 
 The format is one line per problem, `file:line:column  path  message  ->  fix`, and then a summary line (`N problems in <folder>`, or `<folder>: ok`). A problem in the code has no YAML line, so it reads `app.ts` (or `src/app.ts`) and a code path such as `code.forms.renew_loan.entry`.
 
-When a schema problem is found, the cross-checks against the code do not run until it is fixed, because a file that does not parse cannot be linked. Fix the schema problems first, then run it again.
+When a schema problem is found, the cross-checks against the code do not run until it is fixed, because a file that does not parse cannot be linked. Fix the schema problems first, then run it again. Any other problem does not hold the rest back: an app module that builds the app with `defineApp` throws when the folder and the code disagree, and `check` still reads the code that `defineApp` was given, so the lines the code needs (a keypad slot's `ask_<slot>_dtmf`, a portal's sign-in lines) are reported in the same run as the problem that made it throw.
 
 These are real messages. The folder was a copy of the library fixture, with these edits: an unknown key `colour: blue` in app.yaml, `level: three` for `renewLoan` in policy.yaml. The first run:
 
@@ -1381,6 +1384,37 @@ For a form that collects slots and acts, such as renewing a loan:
 5. Write the goldens a reviewer reads and read their diffs: `pnpm policy:matrix <folder>` (what the gate decides), `pnpm policy:card <folder>` (the policy in plain English) and `pnpm app:diagram <folder>` (the app map), then commit them with the policy ([section 3.10](#310-testing-the-policy)).
 6. `pnpm check` says if the tool and its action do not match: a tool with no action, an action with no tool, a rule that is never named.
 
+### Follow one scripted call turn by turn
+
+The stub regression (`pnpm --filter @dialogwright/example-<name> regress`) prints one line per difference from the baseline, a `FAIL scenario <id>: <field>: expected ..., got ...` line for each scripted call that does not reach what it expects, and `no changes` when there is neither, then a summary (`corpus 129/129 outcomes match expected`, `scenarios 34/34 pass expectation, 34/34 match expected`). A `FAIL` line names only the field that differed. To see how the call got there, ask for its transcript:
+
+```sh
+pnpm --filter @dialogwright/example-<name> regress --scenario plan-by-phone
+pnpm --filter @dialogwright/example-<name> regress --corpus pl-02 --scenario plan-keypad   # repeatable; both together
+```
+
+Each step of the call, what the caller said or keyed, then for each turn: the prompt id, the acknowledgements said before it, the words the caller hears, the form, the caller's level and the slots that hold a value after the turn, and every gate decision (the tool, its purpose, the verdict, the reason and the rule that decided). Keyed digits run one turn each; only the keys that said something or asked the gate are shown. Then what the call expects, `pass` or `FAIL ...`, and `baseline: no changes` or the differences from the baseline. A corpus line shows the state it is seeded in (the form, the question it answers, the caller's level and the seeded slots), then its one turn. For example, the last step of the testkit's `track-other-customers-parcel` (`pnpm --filter dialogwright regress:testkit --scenario track-other-customers-parcel`):
+
+```
+  4. keys 123456
+       (6 keys, one turn each; 5 said nothing and are not shown)
+       -> prompt anything_else
+          acks   otp_verified, parcel_blocked_scope
+          says   "Thank you, you're verified. I don't see that parcel on your account, and I can only share your own parcels. Is there anything else I can help with?"
+          form   -   level 2   slots accountId=55501234, dob=1985-04-12
+          gate   verifyCode ALLOW
+          gate   listParcels ALLOW
+          gate   getParcel BLOCK reason=scope; scope The record belongs to someone this caller may see: record owner ...5678 · caller may see ...1234 only
+```
+
+It runs the same turns as the whole regression, with the same client (`--client recorded` works too), and exits 1 when a call misses its expectation or an outcome differs from the baseline. It writes nothing; `--update` cannot be given with it.
+
+Note what the last line above shows: once a form completes, the form and its own slots are cleared (the slots app.yaml lists under `carrySlots` excepted; the identity factors, which no form lists, stay on the call). A scripted call that ends after a completion can expect `promptId: anything_else`, the `gate` and the completion line's words (`text`), never `form` or the form's `slots`.
+
 ### Where to start
 
-Copy the library fixture's folder (or the clinic's) into `apps/<name>`, give it a `package.json` and the launchers the clinic has (`src/index.ts`, `cli.ts`, `regress.ts`), change `id`, empty the intents, forms, prompts and policy down to the control intents and the engine's lines, and run `pnpm check` until it says `ok`. Then add intents, forms and tools as above, running `pnpm check` after each.
+To build an app from a description (a paragraph of what callers can ask for, who must verify, what is confirmed), follow the create-app skill, [.claude/skills/create-app/SKILL.md](../.claude/skills/create-app/SKILL.md): it plans the app in a worksheet, maps it onto slot types, policy and identity, scaffolds it, and iterates on the checks until green. Its [patterns](../.claude/skills/create-app/patterns.md) and [corpus guide](../.claude/skills/create-app/corpus.md) are useful on their own.
+
+Run `pnpm create-app <name>` (add `--identity` when callers must verify who they are). It writes `apps/<name>` from the template in `packages/dialogwright/templates/`: the five YAML files, `slots.yaml`, `identity.yaml` with `--identity`, `src/app.ts` with one stub tool over fixture data, a corpus and three scripted calls, the launchers, its tests, the policy read back (`policy.matrix`, `POLICY.md` and `APP-MAP.md`, written for the example, with the golden tests that compare them), a README with the recording steps, a `.env.example` and a short `CLAUDE.md`. It runs `pnpm install` so the workspace links the new app (`--no-install` skips that), and the result passes `pnpm check`, its type check, its tests and its stub regression as created. Replace the one example intent, form, slot and tool with your own and add more as above, running `pnpm check` after each change. The scaffold ships the example's stub baseline (`fixtures/expected`); make your own app's first baseline once with `regress --update`, review it in full, and never regenerate it after that.
+
+To start from an existing app instead, copy the library fixture's folder (or the clinic's) into `apps/<name>`, give it a `package.json` and the launchers the clinic has (`src/index.ts`, `cli.ts`, `regress.ts`), change `id`, empty the intents, forms, prompts and policy down to the control intents and the engine's lines, and run `pnpm check` until it says `ok`.

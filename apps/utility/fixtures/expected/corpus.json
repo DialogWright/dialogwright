@@ -1,0 +1,3042 @@
+{
+  "ro-01": {
+    "id": "ro-01",
+    "decision": "prompt",
+    "promptId": "ask_place",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ro-02": {
+    "id": "ro-02",
+    "decision": "prompt",
+    "promptId": "ask_place",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ro-03": {
+    "id": "ro-03",
+    "decision": "prompt",
+    "promptId": "ask_place",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ro-04": {
+    "id": "ro-04",
+    "decision": "prompt",
+    "promptId": "ask_place",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ro-05": {
+    "id": "ro-05",
+    "decision": "prompt",
+    "promptId": "confirm_report_outage",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": "the power is out at 22 Alder Street and nothing works",
+      "symptom": "no_power",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ro-06": {
+    "id": "ro-06",
+    "decision": "prompt",
+    "promptId": "ask_place",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": "flicker",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ro-07": {
+    "id": "ro-07",
+    "decision": "prompt",
+    "promptId": "confirm_report_outage",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": "there's a wire down on Maple Avenue",
+      "symptom": "wire_down",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ro-08": {
+    "id": "ro-08",
+    "decision": "prompt",
+    "promptId": "confirm_intent_explicit",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ro-09": {
+    "id": "ro-09",
+    "decision": "prompt",
+    "promptId": "ask_place",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ro-10": {
+    "id": "ro-10",
+    "decision": "prompt",
+    "promptId": "ask_place",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": "partial",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "pl-01": {
+    "id": "pl-01",
+    "decision": "prompt",
+    "promptId": "ask_symptom",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "It's 14 Birch Lane",
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "pl-02": {
+    "id": "pl-02",
+    "decision": "prompt",
+    "promptId": "ask_symptom",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "200 Heron Row",
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "pl-03": {
+    "id": "pl-03",
+    "decision": "prompt",
+    "promptId": "ask_symptom",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "the corner of Elm and Third, by the school",
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "pl-04": {
+    "id": "pl-04",
+    "decision": "prompt",
+    "promptId": "ask_place_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "pl-05": {
+    "id": "pl-05",
+    "decision": "prompt",
+    "promptId": "ask_symptom",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "sorry, I meant 41 Birch Lane, not 14",
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "pl-06": {
+    "id": "pl-06",
+    "decision": "prompt",
+    "promptId": "ask_symptom",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "9 Fernhill Court",
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "sy-01": {
+    "id": "sy-01",
+    "decision": "prompt",
+    "promptId": "confirm_report_outage",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": "no_power",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "sy-02": {
+    "id": "sy-02",
+    "decision": "prompt",
+    "promptId": "confirm_report_outage",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": "no_power",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "sy-03": {
+    "id": "sy-03",
+    "decision": "prompt",
+    "promptId": "confirm_report_outage",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": "partial",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "sy-04": {
+    "id": "sy-04",
+    "decision": "prompt",
+    "promptId": "confirm_report_outage",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": "flicker",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "sy-05": {
+    "id": "sy-05",
+    "decision": "prompt",
+    "promptId": "ask_symptom_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "sy-06": {
+    "id": "sy-06",
+    "decision": "prompt",
+    "promptId": "confirm_report_outage",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": "flicker",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "sy-07": {
+    "id": "sy-07",
+    "decision": "prompt",
+    "promptId": "confirm_report_outage",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": "wire_down",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "co-01": {
+    "id": "co-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "outage_reported"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "reportOutage:ALLOW"
+  },
+  "co-02": {
+    "id": "co-02",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "outage_reported"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "reportOutage:ALLOW"
+  },
+  "co-03": {
+    "id": "co-03",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": "no_power",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "co-04": {
+    "id": "co-04",
+    "decision": "prompt",
+    "promptId": "ask_place",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": "no_power",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "co-05": {
+    "id": "co-05",
+    "decision": "prompt",
+    "promptId": "ask_symptom",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cb-01": {
+    "id": "cb-01",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "cb-02": {
+    "id": "cb-02",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "cb-03": {
+    "id": "cb-03",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "cb-04": {
+    "id": "cb-04",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "cb-05": {
+    "id": "cb-05",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "cb-06": {
+    "id": "cb-06",
+    "decision": "prompt",
+    "promptId": "confirm_intent_explicit",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cb-07": {
+    "id": "cb-07",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "cb-08": {
+    "id": "cb-08",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "balance_is"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "readBalance:ALLOW"
+  },
+  "cb-09": {
+    "id": "cb-09",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "account_not_yours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "readBalance:BLOCK"
+  },
+  "cb-10": {
+    "id": "cb-10",
+    "decision": "prompt",
+    "promptId": "ask_account",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ac-01": {
+    "id": "ac-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "balance_is"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "readBalance:ALLOW"
+  },
+  "ac-02": {
+    "id": "ac-02",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "balance_is"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "readBalance:ALLOW"
+  },
+  "ac-03": {
+    "id": "ac-03",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "balance_is"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "readBalance:ALLOW"
+  },
+  "ac-04": {
+    "id": "ac-04",
+    "decision": "prompt",
+    "promptId": "ask_account_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": "55501234",
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ac-05": {
+    "id": "ac-05",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "balance_is"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "readBalance:ALLOW"
+  },
+  "sp-01": {
+    "id": "sp-01",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "sp-02": {
+    "id": "sp-02",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "sp-03": {
+    "id": "sp-03",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "sp-04": {
+    "id": "sp-04",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "sp-05": {
+    "id": "sp-05",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "four",
+      "firstDate": "2026-09-19",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "sp-06": {
+    "id": "sp-06",
+    "decision": "prompt",
+    "promptId": "confirm_intent_explicit",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sp-07": {
+    "id": "sp-07",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "sp-08": {
+    "id": "sp-08",
+    "decision": "handoff",
+    "promptId": "handoff_role_person",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": "role-person",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "setUpPlan:NEEDS_HUMAN"
+  },
+  "sp-09": {
+    "id": "sp-09",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "ct-01": {
+    "id": "ct-01",
+    "decision": "prompt",
+    "promptId": "ask_firstDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ct-02": {
+    "id": "ct-02",
+    "decision": "prompt",
+    "promptId": "ask_firstDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "six",
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ct-03": {
+    "id": "ct-03",
+    "decision": "prompt",
+    "promptId": "ask_firstDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "two",
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ct-04": {
+    "id": "ct-04",
+    "decision": "prompt",
+    "promptId": "ask_count_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ct-05": {
+    "id": "ct-05",
+    "decision": "prompt",
+    "promptId": "ask_firstDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "four",
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "fd-01": {
+    "id": "fd-01",
+    "decision": "prompt",
+    "promptId": "confirm_set_up_plan",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-09-25",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "fd-02": {
+    "id": "fd-02",
+    "decision": "prompt",
+    "promptId": "confirm_set_up_plan",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-09-19",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "fd-03": {
+    "id": "fd-03",
+    "decision": "prompt",
+    "promptId": "confirm_set_up_plan",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-10-01",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "fd-04": {
+    "id": "fd-04",
+    "decision": "prompt",
+    "promptId": "ask_firstDate_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "fd-05": {
+    "id": "fd-05",
+    "decision": "prompt",
+    "promptId": "confirm_set_up_plan",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-10-12",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "fd-06": {
+    "id": "fd-06",
+    "decision": "prompt",
+    "promptId": "confirm_set_up_plan",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-11-20",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "fd-07": {
+    "id": "fd-07",
+    "decision": "prompt",
+    "promptId": "confirm_set_up_plan",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-10-18",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cp-01": {
+    "id": "cp-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "plan_set_up"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "setUpPlan:ALLOW"
+  },
+  "cp-02": {
+    "id": "cp-02",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "plan_set_up"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "setUpPlan:ALLOW"
+  },
+  "cp-03": {
+    "id": "cp-03",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-09-25",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cp-04": {
+    "id": "cp-04",
+    "decision": "prompt",
+    "promptId": "ask_firstDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "cp-05": {
+    "id": "cp-05",
+    "decision": "prompt",
+    "promptId": "ask_count",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": "2026-09-25",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "id-01": {
+    "id": "id-01",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-02": {
+    "id": "id-02",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55505678",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-03": {
+    "id": "id-03",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55509999",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-04": {
+    "id": "id-04",
+    "decision": "prompt",
+    "promptId": "ask_accountId_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-05": {
+    "id": "id-05",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55509012",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-06": {
+    "id": "id-06",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "balance_is"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "readBalance:ALLOW"
+  },
+  "id-07": {
+    "id": "id-07",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_failed"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyCustomer:ALLOW"
+  },
+  "id-08": {
+    "id": "id-08",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_failed"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyCustomer:ALLOW"
+  },
+  "id-09": {
+    "id": "id-09",
+    "decision": "prompt",
+    "promptId": "ask_dob_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-10": {
+    "id": "id-10",
+    "decision": "prompt",
+    "promptId": "ask_otp",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW"
+  },
+  "om-01": {
+    "id": "om-01",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "outage_map"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "om-02": {
+    "id": "om-02",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "outage_map"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "om-03": {
+    "id": "om-03",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "outage_map"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "om-04": {
+    "id": "om-04",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "outage_map"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "om-05": {
+    "id": "om-05",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "outage_map"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "om-06": {
+    "id": "om-06",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "outage_map"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "om-07": {
+    "id": "om-07",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "outage_map"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "om-08": {
+    "id": "om-08",
+    "decision": "prompt",
+    "promptId": "ask_place",
+    "acks": [
+      "outage_map"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "oh-01": {
+    "id": "oh-01",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "office_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "oh-02": {
+    "id": "oh-02",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "office_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "oh-03": {
+    "id": "oh-03",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "office_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "oh-04": {
+    "id": "oh-04",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "office_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "oh-05": {
+    "id": "oh-05",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "office_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "oh-06": {
+    "id": "oh-06",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "office_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "oh-07": {
+    "id": "oh-07",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "office_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "oh-08": {
+    "id": "oh-08",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "office_hours",
+      "balance_is"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "readBalance:ALLOW"
+  },
+  "ag-01": {
+    "id": "ag-01",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-02": {
+    "id": "ag-02",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-03": {
+    "id": "ag-03",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-04": {
+    "id": "ag-04",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-05": {
+    "id": "ag-05",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-06": {
+    "id": "ag-06",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-07": {
+    "id": "ag-07",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-08": {
+    "id": "ag-08",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": "55501234",
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-09": {
+    "id": "ag-09",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-10": {
+    "id": "ag-10",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": "no_power",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-11": {
+    "id": "ag-11",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-09-25",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-12": {
+    "id": "ag-12",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-13": {
+    "id": "ag-13",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-01": {
+    "id": "rp-01",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-02": {
+    "id": "rp-02",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "report_outage",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "rp-03": {
+    "id": "rp-03",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-04": {
+    "id": "rp-04",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "rp-05": {
+    "id": "rp-05",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-06": {
+    "id": "rp-06",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-07": {
+    "id": "rp-07",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": "55501234",
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "rp-08": {
+    "id": "rp-08",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-01": {
+    "id": "ot-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-02": {
+    "id": "ot-02",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-03": {
+    "id": "ot-03",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-04": {
+    "id": "ot-04",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-05": {
+    "id": "ot-05",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-06": {
+    "id": "ot-06",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-07": {
+    "id": "ot-07",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-08": {
+    "id": "ot-08",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-01": {
+    "id": "ns-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-02": {
+    "id": "ns-02",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-03": {
+    "id": "ns-03",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-04": {
+    "id": "ns-04",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-05": {
+    "id": "ns-05",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-06": {
+    "id": "ns-06",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-07": {
+    "id": "ns-07",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-08": {
+    "id": "ns-08",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ch-01": {
+    "id": "ch-01",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  }
+}

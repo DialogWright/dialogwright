@@ -1,0 +1,27 @@
+{
+  "name": "@dialogwright/example-{{name}}",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "{{display}}: a DialogWright app, scaffolded by `pnpm create-app`.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "regress": "tsx src/regress.ts",
+    "cli": "tsx src/cli.ts",
+    "serve": "tsx src/serve.ts"
+  },
+  "dependencies": {
+    "dialogwright": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

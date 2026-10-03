@@ -108,6 +108,15 @@ describe('the gate grid', () => {
     expect(matrixProblems(input)).toEqual([]);
   });
 
+  it('needs a record for each subject only when a scope rule names a record', () => {
+    const m = input.matrix;
+    const { record: _record, ...ownWithout } = m.records.own;
+    const bad: GateGridInput = { ...input, matrix: { ...m, records: { ...m.records, own: ownWithout } } };
+    expect(matrixProblems(bad)).toEqual(['records.own.record is missing: the policy has a scope rule on a record (scope: { record }), so each of the four needs one']);
+    const noRecordRule: GateGridInput = { ...bad, policy: { ...bad.policy, subjects: Object.fromEntries(Object.entries(bad.policy.subjects).filter(([, row]) => row.via !== 'record')) } };
+    expect(matrixProblems(noRecordRule)).toEqual([]);
+  });
+
   it('refuses a matrix whose delegates are not what identity.yaml declares: their kind, their roles', () => {
     const m = input.matrix;
     expect(input.identity?.delegateRoles).toEqual(['viewer', 'clerk']);

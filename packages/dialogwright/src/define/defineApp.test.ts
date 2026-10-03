@@ -271,6 +271,11 @@ describe('defineApp: the folder and the code must name the same things', () => {
     expect(lines[0]).toBe(`the app in ${LIBRARY_DIR} is not valid (5 problems):`);
     expect(lines.slice(1)).toEqual((error as AppDefinitionError).problems.map((p) => `  ${formatProblem(p)}`));
     expect(lines.slice(1).map((l) => l.trim().split('  ')[0])).toEqual(['app.yaml:16:5', 'app.yaml:27:14', 'forms.yaml:8:19', 'policy.yaml:12:17', 'locale/es/slots.yaml:10:1']);
+    // The code it was given rides along for check, out of sight of a log or JSON.stringify, and not as `code`.
+    expect((error as AppDefinitionError).appCode?.tools).toBe(libraryCode.tools);
+    expect(Object.keys(error as object)).not.toContain('appCode');
+    expect(JSON.parse(JSON.stringify(error))).not.toHaveProperty('appCode');
+    expect((error as { code?: unknown }).code).toBeUndefined();
   });
 });
 

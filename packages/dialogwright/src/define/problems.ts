@@ -248,6 +248,16 @@ export interface IssueSource {
   value: unknown;
   /** The file's JSON Schema, for descriptions and the keys a typo may have meant. */
   schema: JsonSchema;
+  /**
+   * The other files of the folder whose top level has a key, for a key this file does not know at
+   * its top level (`purposes` in identity.yaml belongs in policy.yaml). None for a file read alone.
+   */
+  homesOf?: (key: string) => readonly string[];
+}
+
+/** The other files a key unknown at a file's top level belongs in, by their names; none below the top level. */
+function homesOf(key: string, path: DataPath, src: IssueSource): readonly string[] {
+  return path.length === 0 && src.homesOf ? src.homesOf(key) : [];
 }
 
 /**
@@ -263,6 +273,8 @@ export function problemsOfIssues(issues: readonly ZodIssue[], src: IssueSource):
     const path = pathOf(issue);
     const known = knownKeys(src.schema, path, valueAt(src.value, path));
     for (const key of issue.keys) {
+      // A key that belongs in another file is moved there, not renamed to a near key of this one.
+      if (homesOf(key, path, src).length > 0) continue;
       const guess = closest(key, known);
       if (guess !== undefined) meant.add(JSON.stringify([...path, guess]));
     }
@@ -301,8 +313,16 @@ export function problemsOf(issue: ZodIssue, src: IssueSource): Problem[] {
     case 'unrecognized_keys': {
       const known = knownKeys(src.schema, path, valueAt(src.value, path));
       return issue.keys.map((key) => {
-        const guess = closest(key, known);
         const where = path.length === 0 ? 'in this file' : `under ${formatPath(path)}`;
+        const homes = homesOf(key, path, src);
+        if (homes.length > 0) {
+          const files = homes.join(' or ');
+          return {
+            ...make([...path, key], `unknown key "${key}" in this file; "${key}" is a key of ${files}`, `move "${key}" and what is under it to ${files}`),
+            ...keyPositionOf(src.doc, src.lines, [...path, key]),
+          };
+        }
+        const guess = closest(key, known);
         const fix = guess
           ? `rename "${key}" to "${guess}"`
           : `delete "${key}"${known.length > 0 ? `; the keys allowed ${where} are ${known.join(', ')}` : ''}`;

@@ -192,10 +192,13 @@ export function matrixProblems(input: GateGridInput): string[] {
   // Who owns each record and who may see each subject, where the tables ask the lookups at all.
   const rows = Object.values(policy.subjects ?? {});
   if (rows.some((row) => row.via === 'record')) {
+    const missing = (['own', 'inScope', 'outOfScope', 'unknown'] as const).filter((k) => r[k].record === undefined);
+    for (const k of missing) out.push(`records.${k}.record is missing: the policy has a scope rule on a record (scope: { record }), so each of the four needs one`);
     for (const k of ['own', 'inScope', 'outOfScope'] as const) {
-      if (lookups.ownerOf(r[k].record) !== r[k].subject) out.push(`records.${k}.record is owned by ${lookups.ownerOf(r[k].record) ?? 'no one'}, not ${r[k].subject}`);
+      const record = r[k].record;
+      if (record !== undefined && lookups.ownerOf(record) !== r[k].subject) out.push(`records.${k}.record is owned by ${lookups.ownerOf(record) ?? 'no one'}, not ${r[k].subject}`);
     }
-    if (lookups.ownerOf(r.unknown.record) !== null) out.push('records.unknown.record has an owner');
+    if (r.unknown.record !== undefined && lookups.ownerOf(r.unknown.record) !== null) out.push('records.unknown.record has an owner');
   }
   if (rows.length > 0) {
     const own = lookups.scopeOf(m.subject2);
@@ -263,7 +266,7 @@ export function gateGridCases(input: GateGridInput): GateGridCase[] {
       for (const [principal, p] of principals) {
         for (const [subject, value] of named) {
           for (const [paramsLabel, base] of paramSets(input, tool)) {
-            const params = row && value ? { ...base, [row.param]: row.via === 'record' ? value.record : value.subject } : base;
+            const params = row && value ? { ...base, [row.param]: row.via === 'record' ? value.record ?? '' : value.subject } : base;
             const variants = { exact: params, extra: { ...params, [EXTRA_FIELD]: 'x' }, missing: withoutOne(params, row?.param) } as const;
             for (const fields of ['exact', 'extra', 'missing'] as const) {
               const sent = variants[fields];

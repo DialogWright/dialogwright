@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/intents.schema.json
+# What a caller can ask for, in the order the decision model is offered them, and the keypad menu.
+# Each criteria line is sent to the model as written: a change re-keys the recorded cassette
+# (fixtures/recorded). Each label is said in acknowledgements ("Sure, I can help you {label}").
+intents:
+  report_outage:
+    criteria: Wants to report a power outage, lights or power out, flickering power, or a wire down at an address
+    label: report an outage
+    kind: form
+  check_balance:
+    criteria: Wants to hear the current balance on an electric account, what is owed, or when the bill is due
+    label: check a balance
+    kind: form
+  set_up_plan:
+    criteria: Wants a payment arrangement, to pay the balance in installments or split it into several payments
+    label: set up a payment arrangement
+    kind: form
+  outage_map:
+    criteria: Asks where to see outages online, the outage map, or the website for outages
+    label: hear where the outage map is
+    kind: informational
+    promptId: outage_map
+  office_hours:
+    criteria: Asks when the office is open, the office hours, or what time the office opens or closes
+    label: hear the office hours
+    kind: informational
+    promptId: office_hours
+
+  # The engine's own control intents. agent and repeat_prompt are required.
+  agent:
+    criteria: Asks to speak with a person, a representative, or an operator
+    label: speak with someone
+    kind: control
+  repeat_prompt:
+    criteria: Asks the system to repeat what it just said
+    label: hear that again
+    kind: control
+  other:
+    criteria: A request this line does not handle
+    label: something else
+    kind: control
+  none:
+    criteria: No request is expressed; the caller is only answering a question or saying something incidental
+    label: nothing
+    kind: control
+
+# The keypad menu: each task by digit, the two answers, and 0 for a person. A key for an answer
+# plays its line and offers the menu again.
+menu:
+  - digit: "1"
+    intent: report_outage
+  - digit: "2"
+    intent: check_balance
+  - digit: "3"
+    intent: set_up_plan
+  - digit: "4"
+    intent: outage_map
+  - digit: "5"
+    intent: office_hours
+  - digit: "0"
+    intent: agent

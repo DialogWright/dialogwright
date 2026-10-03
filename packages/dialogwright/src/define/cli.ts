@@ -1,8 +1,10 @@
 #!/usr/bin/env tsx
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkAppFully } from './check';
+import { createApp, CreateAppError, displayNameOf, REPO_ROOT } from './createApp';
 import { ConvertError, convertFolder, convertTables, toText, writeConversion } from './convert/convertPolicy';
 import type { IdentityConfig, PolicyTables } from '../core/app/types';
 import { matrixCommand } from './matrixCommand';
@@ -11,9 +13,10 @@ import { formatProblem, type Problem } from './problems';
 
 /**
  * The `dialogwright` command (the package's bin; run through tsx, which is how the repo runs its
- * TypeScript). Five commands:
+ * TypeScript). Six commands:
  *
  *   dialogwright check [--json] [dir...]
+ *   dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install]
  *   dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--no-sign-in]
  *   dialogwright policy:matrix [dir...]   (./matrixCommand.ts: writes each app's policy.matrix)
  *   dialogwright policy:card [dir...]     (./pageCommand.ts: writes each app's POLICY.md, the policy card)
@@ -26,11 +29,20 @@ import { formatProblem, type Problem } from './problems';
  * under apps/ of the workspace it is in (a folder above with pnpm-workspace.yaml), and says so when
  * there is none. With --json it prints the problems as JSON and nothing else: the array of
  * Problem for one folder named on the command line; otherwise an object from each folder to its array.
+ *
+ * `create-app` writes a new app folder from the template (./createApp.ts) and prints what to do next;
+ * it is `pnpm create-app` at the repository root. It exits 1 for a name it refuses or a folder that
+ * exists, and 2 for a command line it does not understand.
  */
 
 export const USAGE = [
   'usage: dialogwright check [--json] [dir...]',
   '  dir: an app folder (one with app.yaml); with none, the working directory, or the app folders under apps/ of the workspace',
+  '       dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install]',
+  '  name: lowercase letters, digits and hyphens; the new app is apps/<name> unless --dir says where',
+  '  --identity: add identity.yaml, so callers verify with two factors (an account number and a birth date) before the booking',
+  '  --display text: the name the greeting and the console use (default: the name in capitals, "water-utility" is "Water Utility")',
+  '  --no-install: do not run `pnpm install` afterwards, which links the new app into the workspace',
   '       dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--no-sign-in]',
   '  dir: an app folder whose policy.yaml (and identity.yaml) are in the old shape',
   '  --from-tables module: a module exporting `policy` (PolicyTables) and, for an app that verifies callers, `identity` (IdentityConfig)',
@@ -51,9 +63,22 @@ export interface Io {
   err(line: string): void;
   /** The working directory the command runs in. */
   cwd: string;
+  /** Where the user ran `pnpm <script>` from, which relative paths in a script's arguments are from (pnpm's INIT_CWD). Default: cwd. */
+  invokedFrom?: string;
+  /** The repository root create-app writes into and installs in. Default: the repository this package is in. */
+  root?: string;
+  /** Runs `pnpm install` in `root`; returns its exit code. Default: runs it, showing its output. */
+  install?(root: string): number;
 }
 
-const stdio = (): Io => ({ out: (line) => console.log(line), err: (line) => console.error(line), cwd: process.cwd() });
+const stdio = (): Io => ({
+  out: (line) => console.log(line),
+  err: (line) => console.error(line),
+  cwd: process.cwd(),
+  ...(process.env.INIT_CWD ? { invokedFrom: process.env.INIT_CWD } : {}),
+});
+
+const pnpmInstall = (root: string): number => spawnSync('pnpm', ['install'], { cwd: root, stdio: 'inherit' }).status ?? 1;
 
 /** The app folders a bare `dialogwright check` means: the working directory, or those under apps/ of the workspace, as paths from the directory it looked in. */
 export function findAppFolders(cwd: string): { root: string; dirs: string[] } {
@@ -97,6 +122,7 @@ const APP_DIAGRAM: PageCommand = {
 export async function main(argv: readonly string[], io: Io = stdio()): Promise<number> {
   const [command, ...rest] = argv;
   if (command === 'policy:convert') return convertCommand(rest, io);
+  if (command === 'create-app') return createAppCommand(rest, io);
   if (command === 'policy:matrix') return matrixCommand(rest, io);
   if (command === 'policy:card') return pageCommand(POLICY_CARD, rest, io);
   if (command === 'app:diagram') return pageCommand(APP_DIAGRAM, rest, io);
@@ -135,6 +161,83 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   }
   if (json) io.out(JSON.stringify(dirs.length === 1 && !discovered ? results[dirs[0]!.label] : results, null, 2));
   return Object.values(results).some((problems) => problems.length > 0) ? 1 : 0;
+}
+
+/**
+ * `dialogwright create-app`: a new app from the template (./createApp.ts), then `pnpm install` so the
+ * workspace links it, then what to run next. Exit code 0 when it wrote the app, 1 when it refused
+ * (a bad name, a folder that exists), 2 for a command line it does not understand.
+ */
+function createAppCommand(args: readonly string[], io: Io): number {
+  let name: string | undefined;
+  let dir: string | undefined;
+  let display: string | undefined;
+  let identity = false;
+  let install = true;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === '--identity') identity = true;
+    else if (arg === '--no-install') install = false;
+    else if (arg === '--dir' || arg === '--display') {
+      const value = args[i + 1];
+      if (value === undefined || value.startsWith('--')) {
+        io.err(`dialogwright create-app: ${arg} needs a value\n${USAGE}`);
+        return 2;
+      }
+      i += 1;
+      if (arg === '--dir') dir = value;
+      else display = value;
+    } else if (arg.startsWith('-')) {
+      io.err(`dialogwright create-app: ${arg} is not an option\n${USAGE}`);
+      return 2;
+    } else if (name === undefined) name = arg;
+    else {
+      io.err(`dialogwright create-app: one name at a time\n${USAGE}`);
+      return 2;
+    }
+  }
+  if (name === undefined) {
+    io.err(`dialogwright create-app: give the app a name\n${USAGE}`);
+    return 2;
+  }
+  const from = io.invokedFrom ?? io.cwd;
+  try {
+    const root = io.root ?? REPO_ROOT;
+    const made = createApp({ name, identity, root, ...(dir === undefined ? {} : { dir: resolve(from, dir) }), ...(display === undefined ? {} : { display }) });
+    const rel = relative(from, made.dir);
+    const shown = rel === '' ? '.' : rel.startsWith('..') ? made.dir : rel;
+    io.out(`created ${shown}: ${made.files.length} files, ${identity ? 'with' : 'without'} identity.yaml, for "${display ?? displayNameOf(name)}"`);
+    let linked = false;
+    if (made.inWorkspace && install) {
+      io.out('running pnpm install, so the workspace links the new app');
+      linked = (io.install ?? pnpmInstall)(root) === 0;
+      if (!linked) io.err('pnpm install failed; run it yourself at the repository root before the commands below');
+    }
+    const filter = `--filter ${made.packageName}`;
+    // A bare `pnpm check` reads only the folders under apps/, and runs in the package's folder, so a
+    // folder elsewhere is named by its absolute path.
+    const check = made.inWorkspace ? 'pnpm check' : `pnpm check ${made.dir}`;
+    const steps: string[][] = [];
+    if (!made.inWorkspace) steps.push(['The folder is not directly under apps/, so the workspace does not find it: add its folder to pnpm-workspace.yaml, then run pnpm install at the repository root.']);
+    else if (!linked) steps.push(['pnpm install    (at the repository root: it links the new app into the workspace)']);
+    steps.push(
+      [made.inWorkspace ? 'pnpm check    (every app folder, this one included: it passes as created)' : `${check}    (this folder: a bare pnpm check reads only the folders under apps/; it passes as created)`],
+      [`pnpm ${filter} test`, `pnpm ${filter} typecheck`, `pnpm ${filter} regress    (the stub regression: "no changes")`],
+      [
+        `Read ${join(shown, 'README.md')} and ${join(shown, 'CLAUDE.md')}, then replace the example intent, form, slot and tool with your own, running ${check} after each change.`,
+        'The folder guide is docs/authoring-an-app.md; the slot types are in docs/slots/README.md.',
+        'The scaffold ships the example\'s baseline (fixtures/expected). Make your own app\'s first baseline once, with regress --update, and review it; never regenerate it after that.',
+      ],
+    );
+    io.out('');
+    io.out('Next:');
+    steps.forEach((lines, i) => lines.forEach((line, j) => io.out(`  ${j === 0 ? `${i + 1}.` : '  '} ${line}`)));
+    return 0;
+  } catch (error) {
+    if (!(error instanceof CreateAppError)) throw error;
+    io.err(`dialogwright create-app: ${error.message}`);
+    return 1;
+  }
 }
 
 /**

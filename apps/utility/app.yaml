@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/app.schema.json
+# Example Power & Light: a small electric utility's phone and chat line. Callers report outages,
+# hear their balance and set up payment arrangements; property managers act for their buildings on
+# the chat. The dialog is in intents.yaml, forms.yaml, prompts.yaml and policy.yaml, and what runs is
+# in src/app.ts. See README.md and DESIGN.md.
+id: utility
+locale: en-US
+
+# The app as the operator console names it.
+brand:
+  name: Example Power & Light
+  mark: EP
+  key: utility
+
+# What the operator console shows: each form and slot in words.
+console:
+  formLabels:
+    report_outage: Report an outage
+    check_balance: Check a balance
+    set_up_plan: Set up a payment arrangement
+  slotLabels:
+    place: Address
+    symptom: What they see
+    account: Account
+    count: Installments
+    firstDate: First payment
+    accountId: Account number
+    dob: Date of birth
+
+# The phone line's speech settings: words a caller says first, which the recognizer should expect.
+voice:
+  hints: [outage, power, balance, bill, arrangement, installments, payment, map, hours, agent]
+
+# The engine's own model questions need to know whom the caller is addressing.
+wording:
+  addressee: the Example Power & Light line
+
+# The regression fixtures (corpus, scenarios, baseline, cassette), relative to this folder.
+fixtures:
+  dir: fixtures

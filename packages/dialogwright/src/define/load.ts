@@ -4,7 +4,7 @@ import { LineCounter, Document as YamlDocument, isMap, isScalar, isSeq, parseDoc
 import { isOldIdentityContent, isOldPolicyContent } from './convert/legacyShape';
 import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from './problems';
 import {
-  FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeSlotsSchema, slotsSchema,
+  FILE_KINDS, FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeSlotsSchema, slotsSchema,
   type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
   type PromptsYaml, type SlotsYaml,
 } from './schema/index';
@@ -431,6 +431,15 @@ function listLocales(root: string, problems: Problem[]): { tag: string; dirName:
 // One file: parse, then validate
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * The other app files (app.yaml, intents.yaml, ...) whose top level has `key`, for a key a file of
+ * `kind` does not know at its top level. Only the six kinds: slots.yaml's top-level keys are slot ids.
+ */
+function homesOf(kind: Kind, key: string): string[] {
+  if (kind === 'slots' || kind === 'localeSlots') return [];
+  return FILE_KINDS.filter((other) => other !== kind && Object.hasOwn((jsonSchemaOf(other).properties as object | undefined) ?? {}, key)).map((other) => FILE_NAMES[other]);
+}
+
 /** JSON Schemas are generated once per kind: the problem messages read keys and descriptions from them. */
 const jsonSchemas = new Map<string, JsonSchema>();
 function jsonSchemaOf(kind: Kind): JsonSchema {
@@ -542,7 +551,7 @@ function checkFile(
     contents[file] = value;
     return result.data;
   }
-  problems.push(...problemsOfIssues(result.error.issues, { file, doc, lines, value, schema: jsonSchemaOf(kind) }));
+  problems.push(...problemsOfIssues(result.error.issues, { file, doc, lines, value, schema: jsonSchemaOf(kind), homesOf: (key) => homesOf(kind, key) }));
   return undefined;
 }
 
@@ -660,7 +669,7 @@ export function loadConfigFile(source: string | Record<string, unknown>, kind: '
     if (isOldShape(kind, source)) return { value: null, file, doc, lines, located: false, problems: [{ ...oldShape(file, kind), line: 0, column: 0 }] };
     const parsed = SCHEMAS[kind].safeParse(source);
     if (parsed.success) return { value: parsed.data as PolicyYaml | IdentityYaml, file, doc, lines, located: false, problems };
-    const found = problemsOfIssues(parsed.error.issues, { file, doc, lines, value: source, schema: jsonSchemaOf(kind) });
+    const found = problemsOfIssues(parsed.error.issues, { file, doc, lines, value: source, schema: jsonSchemaOf(kind), homesOf: (key) => homesOf(kind, key) });
     return { value: null, file, doc, lines, located: false, problems: found.map((p) => ({ ...p, line: 0, column: 0 })) };
   }
   const file = source;

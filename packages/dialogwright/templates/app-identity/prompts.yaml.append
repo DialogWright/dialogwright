@@ -1,0 +1,26 @@
+
+  # The identity factors (identity.yaml): the slots' questions, and the engine's identity lines
+  ask_accountId:
+    text: What's your eight digit account number?
+    interruptible: true
+  ask_accountId_retry:
+    text: Sorry, what's your account number? Please say it one digit at a time.
+    interruptible: true
+  ask_dob:
+    text: And your date of birth?
+    interruptible: true
+  ask_dob_retry:
+    text: Sorry, what's your date of birth? For example, June fourteenth, nineteen seventy five.
+    interruptible: true
+  ask_dob_year:
+    text: And the year you were born?
+    interruptible: true
+  identity_verified:
+    text: Thank you, {first}. You're verified.
+    interruptible: false
+  identity_failed:
+    text: I couldn't match those details. Let's try again.
+    interruptible: false
+  handoff_identity:
+    text: I couldn't verify you, so let me connect you to someone who can help.
+    interruptible: false

@@ -1,0 +1,41 @@
+[
+  {
+    "id": "book-happy",
+    "steps": [
+      { "say": "I'd like to book a service" },
+      { "say": "An inspection" },
+      { "say": "Yes" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "service_booked",
+      "form": "book_service",
+      "slots": { "service": "inspection" },
+      "gate": "bookService:ALLOW"
+    }
+  },
+  {
+    "id": "book-service-in-the-opener",
+    "steps": [
+      { "say": "Can I book a repair" },
+      { "say": "Yes, go ahead" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "service_booked",
+      "form": "book_service",
+      "slots": { "service": "repair" },
+      "gate": "bookService:ALLOW"
+    }
+  },
+  {
+    "id": "asks-for-a-person",
+    "steps": [
+      { "say": "I want to talk to a person" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  }
+]

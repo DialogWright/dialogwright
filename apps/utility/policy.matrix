@@ -1,0 +1,145 @@
+# policy.matrix: what the gate of "utility" decides, for every action and every kind of caller.
+# Written by `pnpm policy:matrix` from the compiled policy (policy.yaml, identity.yaml) and the
+# app's policy matrix (TestingHooks.policyMatrix); a test fails when it differs. Never edit it by
+# hand: a difference here is a change in what the agent may do, to be reviewed as the policy is.
+#
+# Under each action (its level and its rules as the file writes them), a row per kind of caller.
+# A row with one verdict holds for every call that caller can make; otherwise its lines split it
+# by what the call carries, a|b meaning either value. "as <caller>" repeats that caller's verdicts.
+#
+# callers
+#   anonymous           no one proven (level 0)
+#   subject@1           customer, level 1 (one of the app's subjects)
+#   subject@2           customer, level 2 (one of the app's subjects)
+#   delegate:manager    property_manager, role manager, level 2
+#   delegate:manager@1  property_manager, role manager, level 1 (a delegate below level 2)
+#   unlisted-role       property_manager, role assistant, level 2 (a role the policy does not name)
+#   roleless            property_manager with no role, level 2
+#   other-party         visitor, level 2 (neither a subject nor of a delegate kind)
+# what a call carries
+#   purpose     none; entry-check, retry-check (the lifecycle's probes); a form's purpose
+#   subject     own; inScope (a subject the delegates act for); outOfScope; unknown; empty
+#   fields      exact; extra (one field more); missing (one field less: the subject's own when it is the only one)
+#   confirmed   none; match (the caller confirmed exactly these values); mismatch
+#   attempts    0; 3 (the maximum)
+#   params      the policy matrix's named sets of values for the action
+# verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>
+
+purposes: set_up_plan needs level 2
+
+verifyCustomer · level 0 · attempts(3)
+  anonymous           attempts 0  ALLOW
+                      attempts 3  NEEDS_HUMAN attempts
+  subject@1           as anonymous
+  subject@2           as anonymous
+  delegate:manager    BLOCK not-subject
+  delegate:manager@1  as delegate:manager
+  unlisted-role       as delegate:manager
+  roleless            as delegate:manager
+  other-party         as delegate:manager
+
+sendCode · level 1 · identity, scope(accountId)
+  anonymous           purpose none|entry-check|retry-check  STEP_UP to 1
+                      purpose set_up_plan                   STEP_UP to 2
+  subject@1           purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                      purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                      purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                      purpose set_up_plan                                                             STEP_UP to 2
+  subject@2           subject own, fields exact|extra           ALLOW
+                      subject own, fields missing               BLOCK scope
+                      subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:manager    BLOCK not-subject
+  delegate:manager@1  as delegate:manager
+  unlisted-role       as delegate:manager
+  roleless            as delegate:manager
+  other-party         as delegate:manager
+
+verifyCode · level 1 · identity, attempts(3)
+  anonymous           purpose none|entry-check|retry-check  STEP_UP to 1
+                      purpose set_up_plan                   STEP_UP to 2
+  subject@1           purpose none|entry-check|retry-check, attempts 0  ALLOW
+                      purpose none|entry-check|retry-check, attempts 3  NEEDS_HUMAN attempts
+                      purpose set_up_plan                               STEP_UP to 2
+  subject@2           attempts 0  ALLOW
+                      attempts 3  NEEDS_HUMAN attempts
+  delegate:manager    BLOCK not-subject
+  delegate:manager@1  as delegate:manager
+  unlisted-role       as delegate:manager
+  roleless            as delegate:manager
+  other-party         as delegate:manager
+
+reportOutage · level 0 · identity, role(manager allow), confirmed(accountId, place, symptom, count, firstDate, total)
+  anonymous           purpose none|entry-check|retry-check, fields exact, confirmed none|mismatch  BLOCK confirmation
+                      purpose none|entry-check|retry-check, fields exact, confirmed match          ALLOW
+                      purpose none|entry-check|retry-check, fields extra|missing                   BLOCK confirmation
+                      purpose set_up_plan                                                          STEP_UP to 2
+  subject@1           as anonymous
+  subject@2           fields exact, confirmed none|mismatch  BLOCK confirmation
+                      fields exact, confirmed match          ALLOW
+                      fields extra|missing                   BLOCK confirmation
+  delegate:manager    as subject@2
+  delegate:manager@1  purpose none|entry-check|retry-check, fields exact, confirmed none|mismatch  BLOCK confirmation
+                      purpose none|entry-check|retry-check, fields exact, confirmed match          ALLOW
+                      purpose none|entry-check|retry-check, fields extra|missing                   BLOCK confirmation
+                      purpose set_up_plan                                                          BLOCK identity
+  unlisted-role       BLOCK role
+  roleless            as unlisted-role
+  other-party         as unlisted-role
+
+findAccount · level 1 · identity, scope(accountId)
+  anonymous           purpose none|entry-check|retry-check  STEP_UP to 1
+                      purpose set_up_plan                   STEP_UP to 2
+  subject@1           purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                      purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                      purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                      purpose set_up_plan                                                             STEP_UP to 2
+  subject@2           subject own, fields exact|extra           ALLOW
+                      subject own, fields missing               BLOCK scope
+                      subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:manager    subject own|outOfScope|unknown|empty  BLOCK scope
+                      subject inScope, fields exact|extra   ALLOW
+                      subject inScope, fields missing       BLOCK scope
+  delegate:manager@1  purpose none|entry-check|retry-check, subject own|outOfScope|unknown|empty  BLOCK scope
+                      purpose none|entry-check|retry-check, subject inScope, fields exact|extra   ALLOW
+                      purpose none|entry-check|retry-check, subject inScope, fields missing       BLOCK scope
+                      purpose set_up_plan                                                         BLOCK identity
+  unlisted-role       BLOCK scope
+  roleless            as unlisted-role
+  other-party         as unlisted-role
+
+readBalance · level 1 · identity, role(manager allow), scope(accountId)
+  anonymous           purpose none|entry-check|retry-check  STEP_UP to 1
+                      purpose set_up_plan                   STEP_UP to 2
+  subject@1           purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                      purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                      purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                      purpose set_up_plan                                                             STEP_UP to 2
+  subject@2           subject own, fields exact|extra           ALLOW
+                      subject own, fields missing               BLOCK scope
+                      subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:manager    subject own|outOfScope|unknown|empty  BLOCK scope
+                      subject inScope, fields exact|extra   ALLOW
+                      subject inScope, fields missing       BLOCK scope
+  delegate:manager@1  purpose none|entry-check|retry-check, subject own|outOfScope|unknown|empty  BLOCK scope
+                      purpose none|entry-check|retry-check, subject inScope, fields exact|extra   ALLOW
+                      purpose none|entry-check|retry-check, subject inScope, fields missing       BLOCK scope
+                      purpose set_up_plan                                                         BLOCK identity
+  unlisted-role       BLOCK role
+  roleless            as unlisted-role
+  other-party         as unlisted-role
+
+setUpPlan · level 2 · identity, role(manager person), scope(accountId), confirmed(accountId, place, symptom, count, firstDate, total), limit(total), dateInRange(firstDate)
+  anonymous           STEP_UP to 2
+  subject@1           as anonymous
+  subject@2           subject own, fields exact, confirmed none|mismatch  BLOCK confirmation
+                      subject own, fields exact, confirmed match          ALLOW
+                      subject own, fields extra|missing                   BLOCK confirmation
+                      subject inScope|outOfScope|unknown|empty            BLOCK scope
+  delegate:manager    NEEDS_HUMAN role-person
+  delegate:manager@1  BLOCK identity
+  unlisted-role       BLOCK role
+  roleless            as unlisted-role
+  other-party         as unlisted-role
+
+(unlisted) · not in the policy
+  every caller        BLOCK unknown-tool

@@ -1,0 +1,26 @@
+# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/policy.schema.json
+# What the agent may do, action by action: the whole of it. Policy is data here and never lives in
+# a tool; the gate decides, before every call, from this file. Every tool in src/app.ts needs an
+# action here, and every action not listed is refused. Compliance owns this file.
+#
+# `level` is the identity level the action needs (0 anonymous). `rules` run in the order written and
+# the first that fails decides: `identity` is the level, `confirmed` is the fields a confirmed write
+# carries, in the order the confirmation hash is taken over (the write matches exactly what the
+# caller said yes to).
+actions:
+  bookService:
+    say: book a service
+    level: 0
+    rules:
+      - identity
+      - confirmed: [service]
+
+# How each value an action is sent is recorded (the gate event, the trace, the console and the
+# audit). A param named after a slot with a redact setting is masked as the slot says (an account
+# number by its last four, a date of birth hidden). Every other param the tools list (`params` in
+# src/app.ts) is declared here, by name, and the choice is a privacy one: an identifier is `last4`,
+# free text said in the caller's own words is `length`, a plain choice from a short list is `keep`
+# (`mask` hides it; `secret` leaves it out of the record altogether). The service is a choice from
+# the list in slots.yaml, so it is recorded as it is.
+audit:
+  service: keep

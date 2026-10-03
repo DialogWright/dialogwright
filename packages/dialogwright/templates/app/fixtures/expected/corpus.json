@@ -1,0 +1,382 @@
+{
+  "bs-01": {
+    "id": "bs-01",
+    "decision": "prompt",
+    "promptId": "ask_service",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_service",
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "bs-02": {
+    "id": "bs-02",
+    "decision": "prompt",
+    "promptId": "ask_service",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_service",
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "bs-03": {
+    "id": "bs-03",
+    "decision": "prompt",
+    "promptId": "confirm_book_service",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_service",
+    "slots": {
+      "service": "repair"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "bs-04": {
+    "id": "bs-04",
+    "decision": "prompt",
+    "promptId": "confirm_book_service",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_service",
+    "slots": {
+      "service": "inspection"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "bs-05": {
+    "id": "bs-05",
+    "decision": "prompt",
+    "promptId": "confirm_book_service",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_service",
+    "slots": {
+      "service": "installation"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "bs-06": {
+    "id": "bs-06",
+    "decision": "prompt",
+    "promptId": "ask_service",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_service",
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-01": {
+    "id": "ag-01",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-02": {
+    "id": "ag-02",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-03": {
+    "id": "ag-03",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "book_service",
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-01": {
+    "id": "rp-01",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-02": {
+    "id": "rp-02",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "book_service",
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-01": {
+    "id": "ot-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-02": {
+    "id": "ot-02",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-01": {
+    "id": "ns-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-02": {
+    "id": "ns-02",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": null,
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sv-01": {
+    "id": "sv-01",
+    "decision": "prompt",
+    "promptId": "confirm_book_service",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_service",
+    "slots": {
+      "service": "inspection"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sv-02": {
+    "id": "sv-02",
+    "decision": "prompt",
+    "promptId": "confirm_book_service",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_service",
+    "slots": {
+      "service": "repair"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sv-03": {
+    "id": "sv-03",
+    "decision": "prompt",
+    "promptId": "confirm_book_service",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_service",
+    "slots": {
+      "service": "installation"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sv-04": {
+    "id": "sv-04",
+    "decision": "prompt",
+    "promptId": "ask_service_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_service",
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cf-01": {
+    "id": "cf-01",
+    "decision": "complete",
+    "promptId": "service_booked",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "book_service",
+    "slots": {
+      "service": "repair"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "bookService:ALLOW"
+  },
+  "cf-02": {
+    "id": "cf-02",
+    "decision": "complete",
+    "promptId": "service_booked",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "book_service",
+    "slots": {
+      "service": "repair"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "bookService:ALLOW"
+  },
+  "cf-03": {
+    "id": "cf-03",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "book_service",
+    "slots": {
+      "service": "repair"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cf-04": {
+    "id": "cf-04",
+    "decision": "prompt",
+    "promptId": "ask_service",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "book_service",
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  }
+}

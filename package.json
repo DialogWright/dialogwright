@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "check": "pnpm --filter dialogwright check",
+    "create-app": "pnpm --filter dialogwright create-app",
     "verify": "pnpm typecheck && pnpm test",
     "policy:matrix": "pnpm --filter dialogwright policy:matrix",
     "policy:card": "pnpm --filter dialogwright policy:card",

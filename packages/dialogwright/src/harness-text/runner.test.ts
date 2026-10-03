@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parcelsFact } from '../testing/testkit/domain/facts';
 import {
-  runTurn, runCorpusEntry, runScenario, loadScenarios, checkExpectation, outcomeOf, spokenText, saidEvent, seedCorpusSession, followEffects, startSession,
+  runTurn, runCorpusEntry, runScenario, loadScenarios, unanswerableSteps, checkExpectation, outcomeOf, spokenText, saidEvent, seedCorpusSession, followEffects, startSession,
   type Outcome, type Scenario, type ScenarioStep,
 } from './runner';
 import { summarize } from './metrics';
+import { refusesUnanswerableSteps } from './regress';
+import { CLIENT_KINDS } from '../run/client';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import { loadCorpus, parseCorpus, type CorpusEntry } from '../jev/corpus';
@@ -470,6 +472,24 @@ describe('loadScenarios', () => {
     const dir = mkdtempSync(join(tmpdir(), 'scenarios-'));
     writeFileSync(join(dir, 'bad.json'), JSON.stringify({ id: 'not-an-array' }));
     expect(() => loadScenarios(dir)).toThrow(/expected an array/);
+  });
+});
+
+describe('unanswerableSteps', () => {
+  it('names each spoken step no corpus line has the words of, after normalization; keys, silences and sign-ins need none', () => {
+    const corpus = [
+      { id: 'a', text: "What's my balance?", intent: 'none', context: 'no_form' },
+      { id: 'b', text: 'yes', intent: 'none', context: 'no_form' },
+    ] as unknown as CorpusEntry[];
+    const scenarios: Scenario[] = [
+      { id: 'ok', steps: [{ say: 'what\'s my balance' }, { dtmf: '1234' }, { silence: true }, { say: 'Yes.' }], expect: { decision: 'prompt' } },
+      { id: 'off', steps: [{ say: 'what is my balance' }, { say: 'yes' }, { say: 'five five five' }], expect: { decision: 'prompt' } },
+    ];
+    expect(unanswerableSteps(corpus, scenarios)).toEqual(['off: what is my balance', 'off: five five five']);
+  });
+
+  it('are refused only on the stubs: a model, live, recording or replayed, answers any words', () => {
+    expect(CLIENT_KINDS.filter(refusesUnanswerableSteps)).toEqual(['stub', 'heuristic']);
   });
 });
 

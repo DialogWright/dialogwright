@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/forms.schema.json
+# Each form: its slots in the order they are asked, the prompt that reads them back for a yes
+# (`null` for a form with no summary), and the hooks it has. The hooks are TypeScript in
+# src/app.ts (code.forms.<id>); this list must name exactly the ones the code writes. `calls` lists the
+# actions the hooks call through the gate (the app map draws them, and check reports an action no
+# form reaches; the identity tools are the engine's own).
+forms:
+  # Anyone may report an outage (level 0). The summary reads back the address as said and what the
+  # caller is seeing, and a yes files the report (a confirmed write).
+  report_outage:
+    slots: [place, symptom]
+    summaryPromptId: confirm_report_outage
+    hooks: [confirmedParams, complete]
+    calls: [reportOutage]
+
+  # The balance and due date: the entry call needs level 1, so an anonymous caller verifies first.
+  # A customer's account is the one they verified as; a property manager names one (principalEntry).
+  check_balance:
+    slots: [account]
+    summaryPromptId: null
+    hooks: [entry, onEntry, principalEntry, complete]
+    calls: [findAccount, readBalance]
+
+  # A payment arrangement: needs level 2 (the one-time code), asked before the form's own slots
+  # (the entry call's purpose). A property manager is handed to a person before any question.
+  set_up_plan:
+    slots: [count, firstDate]
+    summaryPromptId: confirm_set_up_plan
+    hooks: [entry, principalEntry, onSummaryRead, confirmedParams, complete]
+    calls: [findAccount, setUpPlan]

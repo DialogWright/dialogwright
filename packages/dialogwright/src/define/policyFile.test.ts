@@ -386,6 +386,15 @@ describe('the checks', () => {
     ]);
   });
 
+  it('a key that belongs in another file says which one', () => {
+    expect(identityWith({ purposes: { set_up_plan: { level: 2 } } })).toEqual([
+      'purposes: unknown key "purposes" in this file; "purposes" is a key of policy.yaml -> move "purposes" and what is under it to policy.yaml',
+    ]);
+    expect(identityWith({ wording: {} })).toEqual([
+      'wording: unknown key "wording" in this file; "wording" is a key of app.yaml or policy.yaml -> move "wording" and what is under it to app.yaml or policy.yaml',
+    ]);
+  });
+
   it('a file in the old shape is refused, with the command that converts it', () => {
     expect(problemsOf(() => definePolicy({ toolLevel: {}, rulesFor: {}, confirmedFields: [], maxAttempts: 3 }))).toEqual([
       '(file): policy.yaml is in the old shape (toolLevel, rulesFor, ...), which is not read any more -> convert it with "dialogwright policy:convert <app folder>" (or "--from-tables <module>" for tables written in TypeScript), which keeps its decisions and its comments, then check the result: it starts with "actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"',

@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { withShortTmp } from '../testing/shortTmp';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -142,6 +143,21 @@ describe('checkApp: the prompts every locale needs', () => {
     ]);
   });
 
+  it('a key on the menu for a control intent other than agent is refused: the engine ignores it; an informational one plays its line', async () => {
+    const dir = folder({ 'intents.yaml': (t) => t.replace('  - digit: "0"\n    intent: agent', '  - digit: "4"\n    intent: hours\n  - digit: "5"\n    intent: repeat_prompt\n  - digit: "0"\n    intent: agent') });
+    expect(await lines(dir)).toEqual([
+      'intents.yaml:49:13  menu[3].intent  menu digit "5" names "repeat_prompt", a control intent: a key on the menu starts a form, plays an informational line or (agent) goes to a person, and any other key is ignored, so a caller who presses 5 hears nothing  ->  take digit "5" off the menu (and out of the nomatch_dtmf_menu line); a caller still asks for "repeat_prompt" in words',
+    ]);
+  });
+
+  it('a missing engine line names the variables the engine gives it', async () => {
+    const dir = folder({ 'identity.yaml': IDENTITY.replace(', 2: ', ''), 'prompts.yaml': without('ack_intent') });
+    const problems = await lines(dir);
+    expect(problems).toContain('prompts.yaml:2:1  prompts  prompt "ack_intent" is missing from prompts.yaml; the engine says it when it starts the form the caller asked for, and gives it {intentLabel}  ->  add "ack_intent:" with its text (it may use {intentLabel}) and interruptible to prompts.yaml');
+    expect(problems).toContain('prompts.yaml:2:1  prompts  prompt "identity_verified" is missing from prompts.yaml; the engine says it when the caller was verified, and gives it {first}  ->  add "identity_verified:" with its text (it may use {first}) and interruptible to prompts.yaml');
+    expect(problems).toContain('prompts.yaml:2:1  prompts  prompt "ask_otp" is missing from prompts.yaml; the engine says it when it asks for the one-time code, and gives it {phoneLast4}  ->  add "ask_otp:" with its text (it may use {phoneLast4}) and interruptible to prompts.yaml');
+  });
+
   it('an app with identity needs the code and sign-in lines too; an app without a menu needs no keypad menu', () => {
     const dir = folder({
       'identity.yaml': IDENTITY,
@@ -239,7 +255,7 @@ describe('checkApp: the lines the engine builds from the code', () => {
     expect(ids(code)).toContain('disambiguate_book');
     const dir = folder({ 'prompts.yaml': (t) => `${t}  disambiguate_book:\n    text: Is it {a}, or {b}?\n    interruptible: true\n`, 'locale/es/slots.yaml': unworded });
     expect(await lines(dir, { code })).toEqual([
-      'locale/es/prompts.yaml:3:1  prompts  prompt "disambiguate_book" is missing from the es prompts; the engine says it when the caller names two books (the slot "book" declares it in its prompts)  ->  add "disambiguate_book:" with its text and interruptible to locale/es/prompts.yaml',
+      'locale/es/prompts.yaml:3:1  prompts  prompt "disambiguate_book" is missing from the es prompts; the engine says it when the caller names two books (the slot "book" declares it in its prompts), and gives it {a}, {b}  ->  add "disambiguate_book:" with its text (it may use {a}, {b}) and interruptible to locale/es/prompts.yaml',
     ]);
   });
 
@@ -415,6 +431,24 @@ describe('checkApp: the app module', () => {
     expect(problems).toContain('prompts.yaml:2:1  prompts  prompt "goodbye" is missing from prompts.yaml; the engine says it when a call ends  ->  add "goodbye:" with its text and interruptible to prompts.yaml');
   });
 
+  it('a module whose defineApp throws: the lines its code needs are reported in the same run, each with the variables the engine gives it', async () => {
+    // The library's code with a portal (the chat's sign-in lines) and a keypad on the book slot
+    // (ask_book_dtmf), and a tool missing, so defineApp throws while the module is imported.
+    const code = `{ ...libraryCode, tools: {}, portal: {}, slots: { ...libraryCode.slots, book: { ...libraryCode.slots.book, dtmf: { length: 4, parse: () => null } } } }`;
+    const dir = folder({
+      'app.ts': `import { defineApp } from ${JSON.stringify(join(here, 'defineApp'))};\nimport { libraryCode } from ${JSON.stringify(fixtureModule)};\nexport const app = defineApp(import.meta.dirname, ${code});\n`,
+      'locale/es/slots.yaml': (t) => t.replace(/^book:\n(?: {2}.*\n)+/m, ''),
+    });
+    const problems = (await lines(dir, {})).filter((l) => l.startsWith('prompts.yaml') || l.startsWith('policy.yaml:3:3'));
+    expect(problems).toEqual(expect.arrayContaining([
+      'policy.yaml:3:3  actions.renewLoan  tool "renewLoan" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.renewLoan), or delete this action',
+      expect.stringContaining('prompt "ask_book_dtmf" is missing from prompts.yaml'),
+      expect.stringContaining('prompt "signin_required" is missing from prompts.yaml'),
+      'prompts.yaml:2:1  prompts  prompt "signin_thanks" is missing from prompts.yaml; the engine says it when a chat caller signed in, and gives it {first}  ->  add "signin_thanks:" with its text (it may use {first}) and interruptible to prompts.yaml',
+      expect.stringContaining('prompt "greeting_chat_delegate" is missing from prompts.yaml; the engine says it when a chat opens for someone acting for subjects, and gives it {first}'),
+    ]));
+  });
+
   it('looks in src/ when the folder has no app module of its own, and reports problems there by that path', async () => {
     const dir = folder({ 'src/app.ts': `export { code } from ${JSON.stringify(fixtureModule)};\n`, 'forms.yaml': (t) => t.replace('hooks: [complete]', 'hooks: [complete, entry]') });
     expect(await lines(dir, {})).toEqual([
@@ -457,6 +491,44 @@ describe('the engine prompt list', () => {
     }
     return ids;
   };
+
+  it('gives each line it names the variables the engine passes it, as its source passes them', () => {
+    /** The top-level keys of an object literal's body: `a: f(x, y), b` is a and b. */
+    const keysOf = (body: string): string[] => {
+      const keys: string[] = [];
+      let depth = 0;
+      let part = '';
+      for (const ch of `${body},`) {
+        if ('([{'.includes(ch)) depth += 1;
+        if (')]}'.includes(ch)) depth -= 1;
+        if (ch === ',' && depth === 0) {
+          const key = /^\s*([A-Za-z_$][\w$]*)/.exec(part)?.[1];
+          if (key) keys.push(key);
+          part = '';
+        } else part += ch;
+      }
+      return keys.sort();
+    };
+    const passed = new Map<string, Set<string>>();
+    const note = (id: string, body: string): void => {
+      passed.set(id, new Set([...(passed.get(id) ?? []), keysOf(body).join(',')]));
+    };
+    for (const text of sources()) {
+      for (const m of text.matchAll(/\bprompt\(\s*'([a-z_]+)', [^,]+, \{([^}]*)\}/g)) note(m[1]!, m[2]!);
+      for (const m of text.matchAll(/promptId: '([a-z_]+)', vars: \{([^}]*)\}/g)) note(m[1]!, m[2]!);
+    }
+    // The opening lines are named through app.yaml's greetings, so their call names no literal id.
+    for (const id of ['greeting_chat_signed_in', 'greeting_chat_delegate']) note(id, 'first: p.first');
+    const table = new Map([...Object.entries(ENGINE_PROMPTS).map(([id, line]) => [id, line.vars] as const), ...[...IDENTITY_PROMPTS, ...CODE_PROMPTS, ...PORTAL_PROMPTS].map((p) => [p.id, p.vars] as const)]);
+    const differ: string[] = [];
+    for (const [id, sets] of passed) {
+      if (!table.has(id)) continue;
+      const listed = [...(table.get(id) ?? [])].sort().join(',');
+      for (const keys of sets) if (keys !== listed) differ.push(`${id}: the engine passes {${keys}}, the table lists {${listed}}`);
+    }
+    expect(passed.size).toBeGreaterThan(20);
+    expect(differ).toEqual([]);
+  });
 
   it('names every family of prompt ids the engine builds from a slot or a reason', () => {
     const families = new Set<string>();
@@ -597,7 +669,7 @@ describe('dialogwright check', () => {
   });
 
   it('runs as the package bin does, through tsx: the exit code and the output of a real process', () => {
-    const run = (args: string[]) => spawnSync(join(PACKAGE_DIR, 'node_modules', '.bin', 'tsx'), [join(here, 'cli.ts'), ...args], { encoding: 'utf8' });
+    const run = (args: string[]) => spawnSync(join(PACKAGE_DIR, 'node_modules', '.bin', 'tsx'), [join(here, 'cli.ts'), ...args], { encoding: 'utf8', env: withShortTmp() });
     const good = run(['check', LIBRARY_DIR]);
     expect({ status: good.status, stdout: good.stdout }).toEqual({ status: 0, stdout: `${LIBRARY_DIR}: ok\n` });
     const bad = run(['check', folder({ 'prompts.yaml': without('goodbye') })]);

@@ -214,7 +214,9 @@ function defaults(app: App, source: PolicySource): string[] {
       mask: 'hidden (the trace keeps only its year, `••/••/1985`; a call as recorded, in the gate\'s decision, the console and the audit, shows `•`)',
       length: 'by its length',
     } as const;
-    const parts = recorded.map(({ id, how: h }) => `${slotNoun(app, id)} ${how[h]}`);
+    // Two slots that share a noun and a redaction (a factor and a delegate's slot for the same
+    // account) read as one entry, not the same words twice.
+    const parts = [...new Set(recorded.map(({ id, how: h }) => `${slotNoun(app, id)} ${how[h]}`))];
     out.push(`- In traces and the audit a caller's values are recorded as they are said, except: ${parts.join('; ')}.`);
   }
   return out;

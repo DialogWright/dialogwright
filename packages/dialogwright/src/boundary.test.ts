@@ -33,7 +33,7 @@ describe('engine/app boundary', () => {
 
   it('the files directly under src/ are the package entry and the cross-cutting tests', () => {
     const top = readdirSync('src').filter((f) => statSync(join('src', f)).isFile()).sort();
-    expect(top).toEqual(['boundary.test.ts', 'index.test.ts', 'index.ts', 'smoke.test.ts']);
+    expect(top).toEqual(['boundary.test.ts', 'index.test.ts', 'index.ts', 'smoke.test.ts', 'wording.test.ts']);
   });
 
   it('no file in an engine directory or src/testing, tests included, imports an app', () => {

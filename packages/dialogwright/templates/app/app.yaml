@@ -1,0 +1,30 @@
+# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/app.schema.json
+# {{display}}: who the app is and how it presents itself. The dialog is in intents.yaml, forms.yaml,
+# prompts.yaml and policy.yaml, and what runs is in src/app.ts. See README.md.
+id: {{name}}
+locale: en-US
+
+# The app as the operator console names it.
+brand:
+  name: {{display}}
+  mark: {{mark}}
+  key: {{name}}
+
+# What the operator console shows: each form and slot in words.
+console:
+  formLabels:
+    book_service: Book a service
+  slotLabels:
+    service: Service
+
+# The phone line's speech settings: words a caller says first, which the recognizer should expect.
+voice:
+  hints: [book, service, repair, inspection, installation, agent]
+
+# The engine's own model questions need to know whom the caller is addressing.
+wording:
+  addressee: the {{display}} line
+
+# The regression fixtures (corpus, scenarios, baseline, cassette), relative to this folder.
+fixtures:
+  dir: fixtures

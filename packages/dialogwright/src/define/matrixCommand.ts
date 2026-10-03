@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { App } from '../core/app/types';
@@ -35,7 +35,19 @@ export function workspaceRootOf(cwd: string): string {
   }
 }
 
-/** Every folder under `root` with a policy.matrix, skipping node_modules and hidden folders. */
+/**
+ * Whether the page `file` in `dir` is one of create-app's templates (templates/app, app-identity):
+ * it has the app's name or display name still to be put in, so no app is there to write it from.
+ */
+export function isTemplatePage(dir: string, file: string): boolean {
+  try {
+    return /\{\{(name|display)\}\}/.test(readFileSync(join(dir, file), 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+/** Every folder under `root` with a policy.matrix, skipping node_modules, hidden folders and create-app's templates. */
 export function findMatrixFolders(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -45,7 +57,7 @@ export function findMatrixFolders(root: string): string[] {
     } catch {
       return;
     }
-    if (entries.some((e) => e.isFile() && e.name === 'policy.matrix')) out.push(dir);
+    if (entries.some((e) => e.isFile() && e.name === 'policy.matrix') && !isTemplatePage(dir, 'policy.matrix')) out.push(dir);
     for (const e of entries) if (e.isDirectory() && e.name !== 'node_modules' && !e.name.startsWith('.')) walk(join(dir, e.name));
   };
   walk(root);

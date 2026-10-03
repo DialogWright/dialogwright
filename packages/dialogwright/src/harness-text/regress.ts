@@ -7,10 +7,22 @@ import { isCassetteMiss } from '../jev/cassette';
 import { diff, gapsNowMatching, knownGapsFor, REAL_MODEL_KINDS } from './regressDiff';
 import { formatRegressSummary } from './regressSummary';
 import type { TraceRecord } from '../trace/types';
-import { loadScenarios, type RunOptions } from './runner';
+import { loadScenarios, runCorpusEntry, runScenario, unanswerableSteps, type RunOptions, type Scenario } from './runner';
+import type { CorpusEntry } from '../jev/corpus';
+import { closest } from '../define/problems';
+import { corpusTranscript, scenarioTranscript } from './transcript';
+import type { ScenarioOutcome } from './baseline';
 import { readBaseline, REGRESS_TODAY, writeExpected } from './baseline';
 import { emptyRunAll, runAll } from './runAll';
 import { parseScreenMode } from '../core/screen';
+
+/**
+ * Whether a run on this client refuses a spoken step whose words no corpus line has: only the
+ * stubs, which answer without a model (the fixture stub from the corpus, and the heuristic one).
+ */
+export function refusesUnanswerableSteps(kind: string): boolean {
+  return kind === 'stub' || kind === 'heuristic';
+}
 
 /** Corpus entries between progress lines on a run that talks to a model. */
 const PROGRESS_EVERY = 25;
@@ -24,6 +36,10 @@ async function run(): Promise<void> {
       // Where the injection screen is asked (core/screen.ts ScreenMode): inline (default) or separate.
       // A cassette replays only in the mode it was recorded in.
       screen: { type: 'string' },
+      // A transcript of one scripted call or one corpus line, turn by turn, instead of the whole
+      // run's diff (transcript.ts). Repeatable; the two may be given together.
+      scenario: { type: 'string', multiple: true, default: [] },
+      corpus: { type: 'string', multiple: true, default: [] },
     },
   });
   const kind = args.client ?? 'stub';
@@ -37,6 +53,23 @@ async function run(): Promise<void> {
   const screen = parseScreenMode(args.screen, '--screen');
   const corpus = loadCorpus(defaultCorpusFile());
   const scenarioDefs = loadScenarios(scenariosDir());
+  // Refused on the stubs, as a duplicate corpus text is: a spoken step the corpus has no line for
+  // is a turn the stub cannot answer, and the call would pass or fail on a miss nobody wrote. A
+  // model (live, recording or replayed) answers any words, so a run against one is not held to it.
+  const unanswerable = refusesUnanswerableSteps(kind) ? unanswerableSteps(corpus, scenarioDefs) : [];
+  if (unanswerable.length > 0) {
+    throw new Error([
+      `${unanswerable.length} spoken ${unanswerable.length === 1 ? 'step is' : 'steps are'} not a corpus line's text, so the stub cannot answer ${unanswerable.length === 1 ? 'it' : 'them'}:`,
+      ...unanswerable.map((u) => `  ${u}`),
+      'add a line with those words to the corpus, labelled with what they mean, or change the step to the words of a line it has',
+    ].join('\n'));
+  }
+  const picked = { scenarios: args.scenario ?? [], corpus: args.corpus ?? [] };
+  if (args.update && picked.scenarios.length + picked.corpus.length > 0) {
+    console.error('--update records the whole baseline; it cannot be given with --scenario or --corpus');
+    process.exitCode = 1;
+    return;
+  }
   if (kind === 'record' || kind === 'recorded') {
     const path = cassettePath();
     console.log(`cassette ${path}${existsSync(path) ? '' : ' (not found; every turn will miss until recorded)'}  screen ${screen}`);
@@ -51,6 +84,10 @@ async function run(): Promise<void> {
   // A run that reaches a model is slow and can abort part way; it reports progress on stderr
   // (stdout is the diff artifact) and still gets a summary of what it paid for, from the finally.
   const live = kind === 'record' || kind === 'jev';
+  if (picked.scenarios.length + picked.corpus.length > 0) {
+    process.exitCode = await transcripts(picked, corpus, scenarioDefs, opts, readBaseline(), kind);
+    return;
+  }
 
   // Aborts a live run after 3 consecutive client-level failures (timeouts, auth) rather than
   // burning through the whole corpus one turn at a time; a cassette miss doesn't count; a
@@ -135,6 +172,62 @@ async function run(): Promise<void> {
       console.error(`summary unavailable: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+}
+
+/** The ids asked for, or the problem with one that is not there (with the nearest id). */
+function pick<T extends { id: string }>(what: string, ids: readonly string[], all: readonly T[]): T[] {
+  return ids.map((id) => {
+    const found = all.find((x) => x.id === id);
+    if (found) return found;
+    const near = closest(id, all.map((x) => x.id));
+    throw new Error(`no ${what} "${id}"${near ? `; did you mean "${near}"?` : ''}`);
+  });
+}
+
+/**
+ * `--scenario <id>` and `--corpus <id>`: each one's transcript, then whether its outcome is the
+ * baseline's. Exit 1 when a scripted call misses what it expects, or an outcome is not the baseline's.
+ */
+async function transcripts(
+  picked: { scenarios: readonly string[]; corpus: readonly string[] },
+  corpus: CorpusEntry[],
+  scenarios: Scenario[],
+  opts: RunOptions,
+  expected: ReturnType<typeof readBaseline>,
+  kind: string,
+): Promise<number> {
+  const entries = pick('corpus line', picked.corpus, corpus);
+  const calls = pick('scenario', picked.scenarios, scenarios);
+  const gaps = knownGapsFor(kind, corpus);
+  let failed = false;
+  /** The outcome against the baseline: its differences (a failure), the allowed ones, or none. */
+  const against = (what: string, had: boolean, d: { lines: string[]; allowed: string[] }): void => {
+    if (!had) {
+      console.log(`  baseline: none for this ${what} yet`);
+      return;
+    }
+    for (const l of [...d.lines, ...d.allowed]) console.log(`  ${l}`);
+    if (d.lines.length > 0) failed = true;
+    else console.log(d.allowed.length > 0 ? '  baseline: no changes beyond the allowed ones above' : '  baseline: no changes');
+  };
+  for (const entry of entries) {
+    const r = await runCorpusEntry(entry, opts);
+    for (const l of corpusTranscript(entry, r)) console.log(l);
+    const had = expected.corpus[entry.id];
+    against('line', had !== undefined, had ? diff('corpus', { [entry.id]: had }, { [entry.id]: r.outcome }, new Set(), gaps) : { lines: [], allowed: [] });
+    console.log('');
+  }
+  for (const scenario of calls) {
+    const r = await runScenario(scenario, opts);
+    for (const l of scenarioTranscript(scenario, r)) console.log(l);
+    if (!r.pass) failed = true;
+    const drift = new Set(REAL_MODEL_KINDS.has(kind) && scenario.cosmeticDrift === true ? [scenario.id] : []);
+    const actual: ScenarioOutcome = { ...r.outcome, pass: r.pass, mismatches: r.mismatches };
+    const had = expected.scenarios[scenario.id];
+    against('call', had !== undefined, had ? diff('scenario', { [scenario.id]: had }, { [scenario.id]: actual }, drift) : { lines: [], allowed: [] });
+    console.log('');
+  }
+  return failed ? 1 : 0;
 }
 
 /** The process entry point, run by an app's launcher after it has registered the app. */

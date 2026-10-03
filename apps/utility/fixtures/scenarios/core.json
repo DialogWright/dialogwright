@@ -1,0 +1,933 @@
+[
+  {
+    "id": "outage-anonymous",
+    "steps": [
+      {
+        "say": "I want to report a power outage"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "no power at all"
+      },
+      {
+        "say": "yes, file it"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 0,
+      "gate": "reportOutage:ALLOW",
+      "text": "Your outage report is filed"
+    }
+  },
+  {
+    "id": "outage-up-front",
+    "steps": [
+      {
+        "say": "the power is out at 22 Alder Street and nothing works"
+      },
+      {
+        "say": "that's right"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 0,
+      "gate": "reportOutage:ALLOW"
+    }
+  },
+  {
+    "id": "outage-symptom-keypad",
+    "steps": [
+      {
+        "say": "outage"
+      },
+      {
+        "say": "200 Heron Row"
+      },
+      {
+        "dtmf": "3"
+      },
+      {
+        "say": "yes, file it"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "reportOutage:ALLOW"
+    }
+  },
+  {
+    "id": "outage-change-address",
+    "steps": [
+      {
+        "say": "my power is out"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "no power at all"
+      },
+      {
+        "say": "no, the address is wrong"
+      },
+      {
+        "say": "sorry, I meant 41 Birch Lane, not 14"
+      },
+      {
+        "say": "yes, file it"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "reportOutage:ALLOW"
+    }
+  },
+  {
+    "id": "outage-declined",
+    "steps": [
+      {
+        "say": "no power"
+      },
+      {
+        "say": "9 Fernhill Court"
+      },
+      {
+        "say": "dark"
+      },
+      {
+        "say": "no"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_change"
+    }
+  },
+  {
+    "id": "outage-by-a-manager",
+    "as": "riley",
+    "steps": [
+      {
+        "say": "report an outage at one of my buildings"
+      },
+      {
+        "say": "200 Heron Row"
+      },
+      {
+        "say": "just the kitchen and one bedroom are out"
+      },
+      {
+        "say": "yes, file it"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "reportOutage:ALLOW"
+    }
+  },
+  {
+    "id": "balance-by-phone",
+    "steps": [
+      {
+        "say": "what's my balance"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "readBalance:ALLOW",
+      "text": "$240.00"
+    }
+  },
+  {
+    "id": "balance-account-up-front",
+    "steps": [
+      {
+        "say": "what's the balance on account five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "readBalance:ALLOW"
+    }
+  },
+  {
+    "id": "balance-keypad",
+    "steps": [
+      {
+        "say": "balance"
+      },
+      {
+        "dtmf": "55501234"
+      },
+      {
+        "dtmf": "04121980"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "readBalance:ALLOW"
+    }
+  },
+  {
+    "id": "balance-wrong-birth-date-three-times",
+    "steps": [
+      {
+        "say": "how much do I owe"
+      },
+      {
+        "say": "It's five five five zero five six seven eight"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "say": "It's five five five zero five six seven eight"
+      },
+      {
+        "say": "January first nineteen ninety"
+      },
+      {
+        "say": "It's five five five zero five six seven eight"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "identity",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "balance-chat-sign-in",
+    "as": "web",
+    "steps": [
+      {
+        "say": "what's my balance"
+      },
+      {
+        "signIn": "55501234"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "readBalance:ALLOW"
+    }
+  },
+  {
+    "id": "balance-chat-typed-account",
+    "as": "web",
+    "steps": [
+      {
+        "say": "what's my balance"
+      },
+      {
+        "say": "my account number is 55501234"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "signin_reminder"
+    }
+  },
+  {
+    "id": "balance-by-a-manager",
+    "as": "riley",
+    "steps": [
+      {
+        "say": "what's the balance for account five five five zero five six seven eight"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "readBalance:ALLOW",
+      "text": "$312.00"
+    }
+  },
+  {
+    "id": "balance-by-a-manager-asked",
+    "as": "riley",
+    "steps": [
+      {
+        "say": "check a balance for one of my buildings"
+      },
+      {
+        "say": "account five five five zero three four five six"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "readBalance:ALLOW",
+      "text": "$180.00"
+    }
+  },
+  {
+    "id": "balance-by-a-manager-keypad",
+    "as": "riley",
+    "steps": [
+      {
+        "say": "check a balance for one of my buildings"
+      },
+      {
+        "dtmf": "55505678"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "readBalance:ALLOW"
+    }
+  },
+  {
+    "id": "balance-by-a-manager-not-theirs",
+    "as": "riley",
+    "steps": [
+      {
+        "say": "balance for account five five five zero one two three four please"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "readBalance:BLOCK",
+      "text": "I can't give out details for that account"
+    }
+  },
+  {
+    "id": "plan-by-phone",
+    "steps": [
+      {
+        "say": "I'd like to set up a payment arrangement"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "three"
+      },
+      {
+        "say": "next Friday"
+      },
+      {
+        "say": "yes, set it up"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "setUpPlan:ALLOW",
+      "text": "three payments of about $80.00, the first on Friday, September 25"
+    }
+  },
+  {
+    "id": "plan-values-up-front",
+    "steps": [
+      {
+        "say": "can I pay it in four payments starting tomorrow"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "sounds good, go ahead"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "setUpPlan:ALLOW",
+      "text": "four payments of about $60.00, the first on Saturday, September 19"
+    }
+  },
+  {
+    "id": "plan-keypad",
+    "steps": [
+      {
+        "say": "payment plan"
+      },
+      {
+        "dtmf": "55501234"
+      },
+      {
+        "dtmf": "04121980"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "dtmf": "2"
+      },
+      {
+        "dtmf": "1001"
+      },
+      {
+        "say": "yes, set it up"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "setUpPlan:ALLOW",
+      "text": "three payments of about $80.00, the first on Thursday, October 1"
+    }
+  },
+  {
+    "id": "plan-thirty-days-on",
+    "steps": [
+      {
+        "say": "installments"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "three"
+      },
+      {
+        "say": "October eighteenth"
+      },
+      {
+        "say": "yes, set it up"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "setUpPlan:ALLOW",
+      "text": "the first on Sunday, October 18"
+    }
+  },
+  {
+    "id": "plan-first-date-too-late",
+    "steps": [
+      {
+        "say": "installments"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "three"
+      },
+      {
+        "say": "the twentieth of November"
+      },
+      {
+        "say": "yes, set it up"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "setUpPlan:BLOCK",
+      "text": "thirty days from today"
+    }
+  },
+  {
+    "id": "plan-nothing-owed",
+    "steps": [
+      {
+        "say": "arrangement"
+      },
+      {
+        "say": "Account number five five five zero nine zero one two"
+      },
+      {
+        "say": "January first nineteen ninety"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "three"
+      },
+      {
+        "say": "tomorrow"
+      },
+      {
+        "say": "yes, set it up"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "setUpPlan:BLOCK",
+      "text": "no more than the balance"
+    }
+  },
+  {
+    "id": "plan-change-date",
+    "steps": [
+      {
+        "say": "I need to pay the bill in installments"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "let's do six payments"
+      },
+      {
+        "say": "tomorrow"
+      },
+      {
+        "say": "no, the date is wrong"
+      },
+      {
+        "say": "the first of October"
+      },
+      {
+        "say": "yes, set it up"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "setUpPlan:ALLOW",
+      "text": "six payments of about $40.00, the first on Thursday, October 1"
+    }
+  },
+  {
+    "id": "plan-wrong-code-three-times",
+    "steps": [
+      {
+        "say": "payment plan"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "dtmf": "123457"
+      },
+      {
+        "dtmf": "123457"
+      },
+      {
+        "dtmf": "123457"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "identity",
+      "principalLevel": 1
+    }
+  },
+  {
+    "id": "plan-after-balance",
+    "steps": [
+      {
+        "say": "what's my balance"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "say": "I'd like to set up a payment arrangement"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "three"
+      },
+      {
+        "say": "tomorrow"
+      },
+      {
+        "say": "yes, set it up"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "setUpPlan:ALLOW"
+    }
+  },
+  {
+    "id": "plan-chat-sign-in",
+    "as": "web",
+    "steps": [
+      {
+        "say": "payment plan"
+      },
+      {
+        "signIn": "55501234"
+      },
+      {
+        "say": "three"
+      },
+      {
+        "say": "tomorrow"
+      },
+      {
+        "say": "yes, set it up"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "setUpPlan:ALLOW"
+    }
+  },
+  {
+    "id": "plan-by-a-manager",
+    "as": "riley",
+    "steps": [
+      {
+        "say": "set up a payment arrangement for my tenant"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "role-person",
+      "gate": "setUpPlan:NEEDS_HUMAN"
+    }
+  },
+  {
+    "id": "asks-for-a-person",
+    "steps": [
+      {
+        "say": "I want to talk to a person"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "asks-for-a-person-in-outage",
+    "steps": [
+      {
+        "say": "I want to report a power outage"
+      },
+      {
+        "say": "Can I speak to a representative"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "asks-for-a-person-in-plan",
+    "steps": [
+      {
+        "say": "payment plan"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "just get me a real person"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "manager-asks-for-a-person",
+    "as": "riley",
+    "steps": [
+      {
+        "say": "can I get a person on the chat"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "person-keypad-menu",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "okay"
+      },
+      {
+        "dtmf": "0"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "person-while-verifying",
+    "steps": [
+      {
+        "say": "what's my balance"
+      },
+      {
+        "say": "skip this, I want an operator"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "person-at-code-prompt",
+    "steps": [
+      {
+        "say": "payment plan"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "say": "I don't have my phone, can I talk to someone"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 1
+    }
+  },
+  {
+    "id": "person-at-outage-summary",
+    "steps": [
+      {
+        "say": "I want to report a power outage"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "no power at all"
+      },
+      {
+        "say": "actually, put me through to a person"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "person-at-plan-summary",
+    "steps": [
+      {
+        "say": "payment plan"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "three"
+      },
+      {
+        "say": "tomorrow"
+      },
+      {
+        "say": "before I say yes, I want to talk to someone"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 2
+    }
+  },
+  {
+    "id": "outage-map",
+    "steps": [
+      {
+        "say": "where is the outage map"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent",
+      "text": "example dot com slash outages"
+    }
+  },
+  {
+    "id": "office-hours",
+    "steps": [
+      {
+        "say": "hours"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent",
+      "text": "Monday through Friday"
+    }
+  },
+  {
+    "id": "keypad-menu-outage",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "okay"
+      },
+      {
+        "dtmf": "1"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "dtmf": "1"
+      },
+      {
+        "say": "yes, file it"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "reportOutage:ALLOW"
+    }
+  },
+  {
+    "id": "keypad-menu-outage-map",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "okay"
+      },
+      {
+        "dtmf": "4"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "nomatch_dtmf_menu",
+      "text": "example dot com slash outages"
+    }
+  },
+  {
+    "id": "keypad-menu-office-hours-then-balance",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "okay"
+      },
+      {
+        "dtmf": "5"
+      },
+      {
+        "dtmf": "2"
+      },
+      {
+        "dtmf": "55501234"
+      },
+      {
+        "dtmf": "04121980"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "readBalance:ALLOW",
+      "text": "$240.00"
+    }
+  }
+]

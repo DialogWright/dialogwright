@@ -7,10 +7,13 @@ Pre-release; APIs will change. The package ships TypeScript source. Requires Nod
 ## Start here
 
 - [CLAUDE.md](CLAUDE.md): the three roles, the layout, the commands and the rules.
+- [The create-app skill](.claude/skills/create-app/SKILL.md): building an app from a one-paragraph description, step by step, with a worksheet, verified patterns (identity, a one-time code, delegates, confirmed writes, range rules) and the corpus format. It starts from the scaffold, `pnpm create-app <name>` (add `--identity` for an app that verifies callers), which writes an app under `apps/<name>` that passes `pnpm check`, its tests and its regression as created, with a `CLAUDE.md` of its own.
 - [Authoring an app](docs/authoring-an-app.md): the folder, each YAML file with an example, policy and identity in full (section 3: the rules, the identity ladder, redaction, what is recorded, testing the policy, the policy card, CODEOWNERS), what stays in TypeScript, how to write a slot (library types first, code second), how `pnpm check` reports problems, locales, configuration hashes.
 - [Design](docs/design.md): the idea, the roles, how policy and identity work, testing, the numbered roadmap.
 - [Contributing](CONTRIBUTING.md): rules, pull requests, "Adding a slot type" and "Adding a built-in policy rule".
 - [apps/clinic](apps/clinic/README.md): the example app to learn from (a fictional clinic's appointment line; no keys needed).
+- [apps/utility](apps/utility/README.md): the second example app, a fictional electric utility's line built by an AI coding assistant from one paragraph: identity, a one-time code, delegates, confirmed writes, range rules and a policy card (no keys needed; no recording yet).
+- [Trials](docs/trials/README.md): two fresh assistants, given one paragraph each and the create-app skill, built a working app (about 15 and 11 minutes, by their own count); the logs say what each stumble was and what it changed.
 
 ## Slot types
 
@@ -37,6 +40,7 @@ A slot is one value a form collects. Most slots are configuration: name a type i
 
 - `pnpm install`
 - `pnpm check`: check every app folder under `apps/`: YAML against the schemas, cross-references to the code, prompts in every locale, the corpus. Prints one line per problem, `file:line:column  path  message  ->  fix`, and exits 1 on any. Act on the fix text.
+- `pnpm create-app <name> [--identity] [--dir <path>] [--display <text>]`: a new app under `apps/<name>` from the template (`packages/dialogwright/templates/`), linked into the workspace; it passes `pnpm check`, its tests and its stub regression as created.
 - `pnpm verify`: the type check and the tests together.
 - `pnpm --filter dialogwright regress:testkit` and `pnpm --filter @dialogwright/example-clinic regress`: the regressions. Never regenerate a baseline or snapshot to make a test pass; a changed output is a finding to explain.
 - `pnpm --filter dialogwright schemas`: regenerate the JSON Schemas after a schema change.

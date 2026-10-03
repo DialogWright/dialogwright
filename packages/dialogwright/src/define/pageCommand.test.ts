@@ -25,6 +25,7 @@ function io(cwd: string) {
   return { io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l), cwd }, out, err };
 }
 
+/** The framework's own folders with pages; an app built with the create-app skill adds its own, so these are contained, not equal. */
 const FOLDERS = ['apps/clinic', 'packages/dialogwright/src/define/fixture', 'packages/dialogwright/src/testing/testkit'];
 
 const copies: WorkspaceCopy[] = [];
@@ -41,8 +42,10 @@ function scratch(): { root: string; pkg: string } {
 
 describe('dialogwright policy:card and app:diagram', () => {
   it('finds every folder with a page, and the App a folder exports', async () => {
-    expect(findPageFolders(ROOT, 'POLICY.md').map((d) => relative(ROOT, d))).toEqual(FOLDERS);
-    expect(findPageFolders(ROOT, 'APP-MAP.md').map((d) => relative(ROOT, d))).toEqual(FOLDERS);
+    expect(findPageFolders(ROOT, 'POLICY.md').map((d) => relative(ROOT, d))).toEqual(expect.arrayContaining(FOLDERS));
+    expect(findPageFolders(ROOT, 'APP-MAP.md').map((d) => relative(ROOT, d))).toEqual(expect.arrayContaining(FOLDERS));
+    // create-app's templates ship both pages with the app's name still to be put in: no app is there.
+    for (const page of ['POLICY.md', 'APP-MAP.md']) expect(findPageFolders(ROOT, page).filter((d) => d.includes('templates'))).toEqual([]);
     expect(await loadFolderApp(LIBRARY_DIR)).toBe(libraryApp);
   });
 
@@ -60,7 +63,8 @@ describe('dialogwright policy:card and app:diagram', () => {
     const { root } = scratch();
     const run = io(root);
     expect(await main(['policy:card'], run.io)).toBe(0);
-    expect(run.out).toEqual(FOLDERS.map((d) => `${d}/POLICY.md: unchanged`));
+    expect(run.out).toEqual(expect.arrayContaining(FOLDERS.map((d) => `${d}/POLICY.md: unchanged`)));
+    expect(run.out.every((l) => l.endsWith('/POLICY.md: unchanged'))).toBe(true);
   });
 
   it('writes a page that changed, in the folder it was run on', async () => {
