@@ -79,6 +79,7 @@ describe('subpath imports', () => {
     expect(pkg.exports?.['./*']).toBe('./src/*.ts');
     expect(pkg.exports?.['./testing']).toBe('./src/testing/index.ts');
     expect(pkg.exports?.['./slot-kit']).toBe('./src/slots/kit.ts');
+    expect(pkg.exports?.['./policy']).toBe('./src/define/policyEntry.ts');
   });
 });
 
@@ -110,5 +111,23 @@ describe('the test-support entry', () => {
     }
     expect(testing.shadowSlot).toBe((await import('./testing/shadowSlot')).shadowSlot);
     expect(testing.runSlotConformance).toBe((await import('./slots/conformance/run')).runSlotConformance);
+  });
+});
+
+describe('the policy entry', () => {
+  it('"dialogwright/policy" has the policy and identity files\' API and the gate, which the root entry leaves out', async () => {
+    const policy = await import('./define/policyEntry');
+    for (const name of ['definePolicy', 'defineIdentity', 'compilePolicy', 'compileIdentity', 'evaluateCall', 'confirmationHash', 'readRule', 'ruleIdOf', 'roleLine', 'isRuleId']) {
+      expect(typeof (policy as Record<string, unknown>)[name], name).toBe('function');
+      expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
+    }
+    expect(policy.evaluateCall).toBe((await import('./gate/policy')).evaluateCall);
+    expect(policy.definePolicy).toBe((await import('./define/definePolicy')).definePolicy);
+    expect(policy.RULE_ID_OF).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' });
+    expect([...policy.RULE_IDS]).toEqual(['R1', 'R2', 'R3', 'R5', 'R6', 'R7']);
+    // the gate's types, for an app's own rules and its gate tests
+    const rule = (c: import('./define/policyEntry').RuleContext): import('./define/policyEntry').RuleOutcome => ({ result: { id: 'x', description: c.call.tool, compared: '', pass: true } });
+    const tables: Pick<import('./define/policyEntry').PolicyTables, 'customRules'> = { customRules: { x: rule } };
+    expect(typeof tables.customRules?.x).toBe('function');
   });
 });

@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../../../../packages/dialogwright/schemas/policy.schema.json
+# The clinic's policy (../../../policy.yaml), written in the new shape: the compilers are proved
+# against it (../../policyFile.test.ts). The clinic verifies no one, so every action is level 0.
+actions:
+  findAppointment:
+    say: find an appointment
+    level: 0
+    rules: [identity]
+  listOpenings:
+    say: list open times
+    level: 0
+    rules: [identity]
+  bookAppointment:
+    say: book an appointment
+    level: 0
+    rules:
+      - identity
+      - confirmed: [name, dob, provider, date, time]
+  moveAppointment:
+    say: move an appointment
+    level: 0
+    rules:
+      - identity
+      - confirmed: [name, dob, provider, date, time]
+  cancelAppointment:
+    say: cancel an appointment
+    level: 0
+    rules:
+      - identity
+      - confirmed: [name, dob, provider, date, time]

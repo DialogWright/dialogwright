@@ -100,10 +100,10 @@ describe('the engine API the clinic uses', () => {
     return statSync(p).isDirectory() ? files(p) : p.endsWith('.ts') ? [p] : [];
   });
 
-  it("imports only the package's supported entries (the root, and dialogwright/testing for test support), never an engine subpath", () => {
+  it("imports only the package's supported entries (the root, dialogwright/policy for its policy, and dialogwright/testing for test support), never an engine subpath", () => {
     const all = files('src');
     expect(all.length).toBeGreaterThan(20);
-    const reaching = all.filter((f) => /from 'dialogwright\/(?!testing')/.test(readFileSync(f, 'utf8')));
+    const reaching = all.filter((f) => /from 'dialogwright\/(?!testing'|policy')/.test(readFileSync(f, 'utf8')));
     expect(reaching).toEqual([]);
   });
 });
