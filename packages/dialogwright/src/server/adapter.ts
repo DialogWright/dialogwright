@@ -6,7 +6,7 @@ import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/
 import { playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, runTurn, type Arrival } from '../run/turn';
 import { digitAtRun, promptEpoch, sensitiveDigit, type ArrivalDigit } from '../core/turn';
-import { maskSpokenCode } from '../core/spokenCode';
+import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
 import type { Session } from '../core/session';
 import type { CallEntry, SessionStore, SocketLike } from './sessions';
@@ -15,6 +15,7 @@ import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactDeep, type DashboardEvent } from './dashboard/events';
 import { redactHandoffData } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
+import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
 import type { HandoffWording, SpokenDigitRule } from '../core/app/types';
 import type { Effect } from '../core/lifecycle';
@@ -581,7 +582,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // A one-time code said aloud (not keyed) is masked here, before the frame log or anything after
   // it sees the words: at the code prompt, a run of digits in what the caller said becomes `[code]`
   // (core/spokenCode.ts). The recognizer has heard it; nothing downstream of this line does.
-  const frame = maskCodeFrame(entry.session.promptedFor, parsed);
+  const frame = maskCodeFrame(entry.session.promptedFor, parsed, codeLengthOf(appOf(entry.session)));
   // The core's event for it: everything below that is not about the wire itself reads this.
   const event = frameToEvent(frame);
   // Logged before any decision to ignore it: the frame log is a record of the wire, not of the
@@ -659,10 +660,10 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
  * (core/spokenCode.ts); any other frame as it came. The core masks its event again as the turn
  * runs (run/turn.ts maskCodeEvent), a no-op on words already masked.
  */
-function maskCodeFrame(promptedFor: Session['promptedFor'], frame: InboundFrame): InboundFrame {
+function maskCodeFrame(promptedFor: Session['promptedFor'], frame: InboundFrame, codeLength: number): InboundFrame {
   // Only a spoken turn carries the caller's words; an `interrupt`'s utteranceUntilInterrupt is our own prompt.
   if (promptedFor !== 'otp' || frame.type !== 'prompt') return frame;
-  const m = maskSpokenCode(frame.voicePrompt);
+  const m = maskSpokenCode(frame.voicePrompt, spokenCodeMinDigits(codeLength));
   return m.masked ? { ...frame, voicePrompt: m.text } : frame;
 }
 

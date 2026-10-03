@@ -51,8 +51,8 @@ const otpFactor = z
   .strictObject({
     otp: z
       .strictObject({
-        length: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(4, { error: 'must be at least 4' }).max(10, { error: 'must be at most 10' }).optional()
-          .describe('How many digits the code has. Default 6.'),
+        length: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(4, { error: 'must be at least 4' }).max(8, { error: 'must be at most 8' }).optional()
+          .describe('How many digits the code has, 4 to 8. Default 6. The prompts that ask for it say the length in their own words.'),
       })
       .describe('A one-time code sent to the contact on file and keyed on the keypad: masked, never traced, never a slot.'),
   })

@@ -9,4 +9,12 @@ describe('mockCodeVerifier', () => {
     expect(mockCodeVerifier.check('12345')).toBe(false);
     expect(mockCodeVerifier.check('12345a')).toBe(false);
   });
+
+  it('accepts a code of four to eight digits, the lengths identity.yaml allows, and no other', () => {
+    expect(mockCodeVerifier.check('1234')).toBe(true);
+    expect(mockCodeVerifier.check('12345678')).toBe(true);
+    expect(mockCodeVerifier.check('1235')).toBe(false);
+    expect(mockCodeVerifier.check('124')).toBe(false);
+    expect(mockCodeVerifier.check('123456780')).toBe(false);
+  });
 });

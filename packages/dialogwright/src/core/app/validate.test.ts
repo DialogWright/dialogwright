@@ -142,6 +142,10 @@ describe('validateApp: the identity ladder', () => {
     expect(() => validateApp({ ...testkitApp, id: 'five', policy: { ...testkitApp.policy, maxAttempts: 5 } })).toThrow('app "five": policy\'s maxAttempts (5) is not identity.yaml\'s attempts (3)');
   });
 
+  it('refuses at registration a code length outside 4 to 8', () => {
+    for (const codeLength of [3, 9, 6.5]) expect(() => validateApp({ ...testkitApp, identity: { ...identity, codeLength } })).toThrow(`identity codeLength ${codeLength} is not a whole number from 4 to 8`);
+  });
+
   it('refuses at registration level names that are blank or the same', () => {
     expect(() => validateApp({ ...testkitApp, identity: { ...identity, levelNames: { 1: ' ', 2: 'confirmed by code' } } })).toThrow('identity level 1 has no name');
     expect(() => validateApp({ ...testkitApp, identity: { ...identity, levelNames: { 1: 'verified' } } })).toThrow('identity level 2 has no name');

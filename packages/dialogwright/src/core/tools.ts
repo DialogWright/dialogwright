@@ -5,11 +5,12 @@ import type { GateLookups } from '../gate/types';
 export interface CodeVerifier { check(code: string): boolean }
 
 /**
- * The mocked one-time code: no text is sent. Any six digits ending in an even digit pass, so a test
- * can fail on purpose. A real verifier (Twilio Verify, the app's own) implements the same interface.
+ * The mocked one-time code: no text is sent. Any code of four to eight digits (the lengths
+ * identity.yaml allows; the lifecycle keys exactly the app's) ending in an even digit passes, so a
+ * test can fail on purpose. A real verifier (Twilio Verify, the app's own) implements the same interface.
  */
 export const mockCodeVerifier: CodeVerifier = {
-  check: (code) => /^\d{6}$/.test(code) && Number(code[5]) % 2 === 0,
+  check: (code) => /^\d{4,8}$/.test(code) && Number(code[code.length - 1]) % 2 === 0,
 };
 
 /**

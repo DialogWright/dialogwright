@@ -70,8 +70,8 @@ describe('compile equality: the testkit', () => {
     const { sendCodeParams, ...compiled } = TESTKIT_IDENTITY;
     const { rest, ladder } = splitLadder(compiled);
     expect(rest).toEqual(FROZEN_TESTKIT_IDENTITY);
-    // What the old shape could not say: the levels' names, the attempts.
-    expect(ladder).toEqual({ levelNames: { 1: 'verified', 2: 'confirmed by code' }, maxAttempts: 3 });
+    // What the old shape could not say: the code's length, the levels' names, the attempts.
+    expect(ladder).toEqual({ codeLength: 6, levelNames: { 1: 'verified', 2: 'confirmed by code' }, maxAttempts: 3 });
     expect(typeof sendCodeParams).toBe('function');
     expect(testkitApp.identity).toBe(TESTKIT_IDENTITY);
     expect(TESTKIT_POLICY.maxAttempts).toBe(3);
@@ -109,7 +109,7 @@ describe('compile equality: the valid fixture', () => {
   it('identity.yaml compiles to the old file\'s identity', () => {
     const { rest, ladder } = splitLadder(identity);
     expect(rest).toEqual(FROZEN_VALID_IDENTITY);
-    expect(ladder).toEqual({ levelNames: { 1: 'verified', 2: 'confirmed by code' }, maxAttempts: 3 });
+    expect(ladder).toEqual({ codeLength: 6, levelNames: { 1: 'verified', 2: 'confirmed by code' }, maxAttempts: 3 });
     expect(maxAttempts).toBe(FROZEN_VALID_POLICY.maxAttempts);
   });
 
@@ -290,13 +290,12 @@ describe('the checks', () => {
     ]);
   });
 
-  it('a sign-in that does not prove the top level, a code of another length, level names blank or the same, two delegate kinds, attempts with no identity.yaml', () => {
+  it('a sign-in that does not prove the top level, level names blank or the same, two delegate kinds, attempts with no identity.yaml', () => {
     expect(identityWith({ signIn: { level: 1 } })).toEqual([
       'signIn.level: a sign-in proves level 1, but the top of the ladder is level 2; a sign-in proves the top level -> write "level: 2"',
     ]);
-    expect(identityWith({ levels: { ...IDENTITY.levels, 2: { ...IDENTITY.levels[2], factors: [{ otp: { length: 8 } }] } } })).toEqual([
-      'levels["2"].factors[0].otp.length: a one-time code of 8 digits is not supported yet: the engine reads 6 -> write 6, or leave length out',
-    ]);
+    // A code of any length the schema allows (4 to 8) is the engine's to key.
+    for (const length of [4, 8]) expect(identityWith({ levels: { ...IDENTITY.levels, 2: { ...IDENTITY.levels[2], factors: [{ otp: { length } }] } } })).toEqual([]);
     expect(identityWith({ levels: { 1: { ...IDENTITY.levels[1], name: '  ' }, 2: { ...IDENTITY.levels[2], name: 'Verified ' } } })).toEqual([
       'levels["1"].name: level 1\'s name is blank -> name the level, as the console and the policy card will show it (for example "verified")',
     ]);

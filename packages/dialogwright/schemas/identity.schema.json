@@ -98,10 +98,10 @@
                     "type": "object",
                     "properties": {
                       "length": {
-                        "description": "How many digits the code has. Default 6.",
+                        "description": "How many digits the code has, 4 to 8. Default 6. The prompts that ask for it say the length in their own words.",
                         "type": "integer",
                         "minimum": 4,
-                        "maximum": 10
+                        "maximum": 8
                       }
                     },
                     "additionalProperties": false,

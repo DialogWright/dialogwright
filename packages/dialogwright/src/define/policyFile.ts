@@ -1,3 +1,4 @@
+import { DEFAULT_CODE_LENGTH } from '../core/app/lookup';
 import type { IdentityConfig, PolicyTables, PolicyWording, RoleAccess, SubjectParam, ToolName } from '../core/app/types';
 import { attachSource, LEGACY_RULE_ID, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
@@ -38,8 +39,8 @@ export const DEFAULT_MAX_ATTEMPTS = 3;
 /** The reason a role rule hands a call to a person for when it names none: the gate's own (gate/lines.ts). */
 export { DEFAULT_ROLE_PERSON_REASON };
 
-/** The one-time code's length when identity.yaml gives none, and the only one the engine reads for now (core/lifecycle.ts CODE_LENGTH). */
-export const DEFAULT_CODE_LENGTH = 6;
+/** The one-time code's length when identity.yaml gives none (core/lifecycle.ts codeLengthOf). */
+export { DEFAULT_CODE_LENGTH };
 
 /** One rule as written, read: its name and its parameters (the gate's own type, gate/compiled.ts). */
 export type { Rule };
@@ -170,8 +171,9 @@ export interface CompiledIdentity {
 
 /**
  * identity.yaml (the new shape, already checked) as the lifecycle's identity configuration (with
- * the levels' names, labels for the console), and its attempts for the policy (compilePolicy's maxAttempts). Throws for a ladder with no level 2, which
- * `check` refuses: the engine's step-up always ends with the one-time code for now.
+ * the levels' names, labels for the console, and the code's length, default 6), and its attempts
+ * for the policy (compilePolicy's maxAttempts). Throws for a ladder with no level 2, which `check`
+ * refuses: the engine's step-up always ends with the one-time code for now.
  */
 export function compileIdentity(file: IdentityYaml, options: CompileIdentityOptions = {}): CompiledIdentity {
   const one = file.levels[1];
@@ -187,6 +189,7 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
   identity.sendCodeTool = two.send;
   if (options.sendCodeParams !== undefined) identity.sendCodeParams = options.sendCodeParams;
   if (one.failedPrompt !== undefined) identity.failedPromptId = one.failedPrompt;
+  identity.codeLength = two.factors[0]?.otp.length ?? DEFAULT_CODE_LENGTH;
   identity.levelNames = Object.freeze({ 1: one.name, 2: two.name });
   identity.maxAttempts = file.attempts;
   return { identity, maxAttempts: file.attempts };
@@ -360,7 +363,7 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
 /**
  * identity.yaml against policy.yaml and the code: the factors are slots, the identity tools are
  * tools with an action each, the failed line is a prompt, each level has a name of its own, the
- * ladder has what the engine runs (a level 2 with a six-digit code, for now), a sign-in proves the
+ * ladder has what the engine runs (a level 2 and its code, for now), a sign-in proves the
  * top level, and one delegate kind.
  */
 export function identityProblems(c: PolicyCheckInput): Problem[] {
@@ -397,11 +400,6 @@ export function identityProblems(c: PolicyCheckInput): Problem[] {
   }
   if (!two) {
     at(I, ['levels'], 'the ladder has no level 2; for now the engine\'s step-up always ends with the one-time code, so an app that verifies callers needs it', 'add "2: { name: <its name>, factors: [{ otp: { length: 6 } }], send: <the tool that sends the code>, verify: <the tool that checks it> }" under levels');
-  } else {
-    const length = two.factors[0]?.otp.length;
-    if (length !== undefined && length !== DEFAULT_CODE_LENGTH) {
-      at(I, ['levels', '2', 'factors', 0, 'otp', 'length'], `a one-time code of ${length} digits is not supported yet: the engine reads ${DEFAULT_CODE_LENGTH}`, `write ${DEFAULT_CODE_LENGTH}, or leave length out`);
-    }
   }
   const top = topLevel(identity);
   if (identity.signIn && identity.signIn.level !== top) {

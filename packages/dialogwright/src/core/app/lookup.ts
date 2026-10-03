@@ -39,6 +39,17 @@ export function identityOf(app: App): IdentityConfig {
   return app.identity ?? NO_IDENTITY;
 }
 
+/** How many digits a one-time code has where the identity gives none (IdentityConfig.codeLength). */
+export const DEFAULT_CODE_LENGTH = 6;
+
+/** The lengths a one-time code may have: long enough not to be guessed in a few tries, short enough to key. */
+export const CODE_LENGTHS = { min: 4, max: 8 } as const;
+
+/** How many digits the app's one-time code has: its identity's codeLength, or 6. */
+export function codeLengthOf(app: App): number {
+  return identityOf(app).codeLength ?? DEFAULT_CODE_LENGTH;
+}
+
 /**
  * The gate an app's calls go through: its own (App.gate), or the policy its tables were compiled
  * from, for its subject kind (gate/compiled.ts compiledPolicyOf), compiled once.

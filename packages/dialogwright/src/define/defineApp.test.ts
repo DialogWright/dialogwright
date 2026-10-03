@@ -403,7 +403,7 @@ describe('defineApp: identity and policy wording', () => {
 
   it('builds identity from identity.yaml with the code\'s sendCodeParams, in the contract\'s order', () => {
     const app = defineApp(folder({ 'identity.yaml': IDENTITY, 'policy.yaml': policy(), 'prompts.yaml': prompts() }), code);
-    expect(Object.keys(app.identity!)).toEqual(['subjectKind', 'delegateKind', 'factorSlots', 'verifyTool', 'codeTool', 'sendCodeTool', 'sendCodeParams', 'failedPromptId', 'levelNames', 'maxAttempts']);
+    expect(Object.keys(app.identity!)).toEqual(['subjectKind', 'delegateKind', 'factorSlots', 'verifyTool', 'codeTool', 'sendCodeTool', 'sendCodeParams', 'failedPromptId', 'codeLength', 'levelNames', 'maxAttempts']);
     expect(app.identity).toMatchObject({ subjectKind: 'patron', delegateKind: 'staff', factorSlots: ['card'], verifyTool: 'verifyCard', codeTool: 'checkCode', sendCodeTool: 'sendCode', failedPromptId: 'card_failed' });
     expect(app.identity!.sendCodeParams).toBe(code.identity!.sendCodeParams);
     expect(Object.keys(app).indexOf('identity')).toBe(Object.keys(app).indexOf('slots') + 1);

@@ -1,4 +1,5 @@
 import type { SessionEvent } from '../channel/events';
+import { DEFAULT_CODE_LENGTH } from './app/lookup';
 import type { Session } from './session';
 
 /**
@@ -12,8 +13,16 @@ import type { Session } from './session';
  */
 export const CODE_MASK = '[code]';
 
-/** The fewest digits that count as a code said aloud. A code is six; a caller may give up part way. */
+/** The fewest digits that count as a code said aloud, for a code of six or more; a caller may give up part way. */
 const MIN_DIGITS = 4;
+
+/**
+ * The fewest digits that count as a code of `length` said aloud: four, or one fewer than a shorter
+ * code has, so most of a four-digit code is masked too (six and more: four, as it always was).
+ */
+export function spokenCodeMinDigits(length: number = DEFAULT_CODE_LENGTH): number {
+  return Math.max(1, Math.min(MIN_DIGITS, length - 1));
+}
 
 /**
  * How many digits a spoken token stands for. "hundred" and "thousand" join a run but add none.
@@ -40,12 +49,12 @@ function digitsOf(token: string): number | null {
 }
 
 /**
- * `text` with every run of four or more spoken or written digits replaced by CODE_MASK, and whether
- * anything was. A run is number tokens separated by spaces, commas, periods or hyphens, and may
+ * `text` with every run of `minDigits` (four unless given) or more spoken or written digits replaced
+ * by CODE_MASK, and whether anything was. A run is number tokens separated by spaces, commas, periods or hyphens, and may
  * carry "and" between two of them ("four hundred and fifty six"). Over-masking is the safe
  * direction: at the code prompt nothing numeric is asked for aloud.
  */
-export function maskSpokenCode(text: string): { text: string; masked: boolean } {
+export function maskSpokenCode(text: string, minDigits: number = MIN_DIGITS): { text: string; masked: boolean } {
   const tokens = [...text.matchAll(TOKEN)].map((m) => ({ s: m[0], start: m.index!, end: m.index! + m[0].length, n: digitsOf(m[0]) }));
   const spans: Array<[number, number]> = [];
   let i = 0;
@@ -68,7 +77,7 @@ export function maskSpokenCode(text: string): { text: string; masked: boolean } 
     // A trailing "and" is not part of the run.
     let last = j - 1;
     while (last > i && tokens[last]!.n === null) last--;
-    if (digits >= MIN_DIGITS) spans.push([tokens[i]!.start, tokens[last]!.end]);
+    if (digits >= minDigits) spans.push([tokens[i]!.start, tokens[last]!.end]);
     i = j;
   }
   if (!spans.length) return { text, masked: false };
@@ -80,16 +89,17 @@ export function maskSpokenCode(text: string): { text: string; masked: boolean } 
 
 /**
  * The event as it may be kept: at the code prompt, words (spoken or typed) with their digits
- * masked; any other event as it came. Masked where the event arrives (server/adapter.ts masks the
+ * masked (runs as long as spokenCodeMinDigits of the app's code length, `codeLength`, default 6);
+ * any other event as it came. Masked where the event arrives (server/adapter.ts masks the
  * wire frame, before the frame log) and again as the turn runs (run/turn.ts), which is a no-op on
  * an event already masked and covers every path that reaches the core without the adapter.
  */
-export function maskCodeEvent(promptedFor: Session['promptedFor'], e: SessionEvent): SessionEvent {
+export function maskCodeEvent(promptedFor: Session['promptedFor'], e: SessionEvent, codeLength: number = DEFAULT_CODE_LENGTH): SessionEvent {
   // Only words carry the caller's code. A `user.interrupt` event's `heard` is our own prompt, as
   // far as it had played when the caller cut in (Twilio's example: "Life is a complex set of"), so
   // at the code prompt it holds the prompt's text, never the code.
   if (promptedFor !== 'otp' || (e.type !== 'user.speech' && e.type !== 'user.text')) return e;
-  const m = maskSpokenCode(e.text);
+  const m = maskSpokenCode(e.text, spokenCodeMinDigits(codeLength));
   return m.masked ? { ...e, text: m.text } : e;
 }
 

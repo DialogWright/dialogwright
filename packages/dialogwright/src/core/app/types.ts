@@ -197,6 +197,8 @@ export interface IdentityConfig {
   verifyTool: ToolName;
   codeTool: ToolName;
   sendCodeTool: ToolName;
+  /** How many digits the one-time code has, keyed on the keypad: 4 to 8. Without it, 6 (identity.yaml's `otp: { length }`). */
+  codeLength?: number;
   /**
    * The params of the call that texts the one-time code (sendCodeTool), read from the session (e.g.
    * the verified customer's account ID). Without it the call carries none.

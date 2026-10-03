@@ -4,6 +4,7 @@ import { askedQuestionIds, probeContexts } from './probeQuestions';
 import { unknownSlotThresholds, unknownThresholdMessage } from '../slotThresholds';
 import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
+import { CODE_LENGTHS } from './lookup';
 import type { App, ConfigHashes } from './types';
 
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
@@ -133,6 +134,8 @@ export function validateApp(app: App): void {
       if (!Object.hasOwn(app.tools, tool)) fail(`identity ${role} "${tool}" is not a tool`);
       if (!Object.hasOwn(rulesFor, tool)) fail(`identity ${role} "${tool}" has no rules in the policy`);
     }
+    const { codeLength } = app.identity;
+    if (codeLength !== undefined && (!Number.isInteger(codeLength) || codeLength < CODE_LENGTHS.min || codeLength > CODE_LENGTHS.max)) fail(`identity codeLength ${String(codeLength)} is not a whole number from ${CODE_LENGTHS.min} to ${CODE_LENGTHS.max}`);
     // A level's name is a label (the console, the policy card): it says something, and not what the other level says.
     const { levelNames } = app.identity;
     if (levelNames !== undefined) {

@@ -1,7 +1,7 @@
 import { confirmationHash } from '../gate/policy';
 import { maskId, raise } from '../gate/principal';
 import { isAnonymous, isParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
-import { formOf, gateOf, identityOf, toolOf } from './app/lookup';
+import { codeLengthOf, formOf, gateOf, identityOf, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
@@ -72,7 +72,6 @@ export function redactCall(app: App, call: ToolCall): ToolCall {
   return { ...call, params };
 }
 
-const CODE_LENGTH = 6;
 const IGNORE: Decision = { kind: 'ignore' };
 
 /**
@@ -168,7 +167,7 @@ export function sendCodeAndAsk(s: Session, tc: TurnContext, out: TurnOut, acks: 
   return reissue ? prompt('otp_spoken_reissued', 'otp', {}, acks) : askCode(s, acks);
 }
 
-/** "I've texted a six-digit code to the phone ending in 4212." Only one of the app's subjects is ever asked for one. */
+/** "I've texted a six-digit code to the phone ending in 4212." (the app's line says the code's length). Only one of the app's subjects is ever asked for one. */
 export function askCode(s: Session, acks: Ack[]): PromptDecision {
   const phoneLast4 = isAnonymous(s.principal) ? '' : s.principal.contact?.phoneLast4 ?? '';
   return prompt('ask_otp', 'otp', { phoneLast4 }, acks);
@@ -298,7 +297,8 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
 }
 
 /**
- * A keypad digit while promptedFor === 'otp': buffer to six, then the app's code tool through the gate.
+ * A keypad digit while promptedFor === 'otp': buffer to the code's length (codeLengthOf, 6 unless
+ * identity.yaml says otherwise), then the app's code tool through the gate.
  * Returns `ignore` while collecting, null once the code is accepted (the caller is level 2 and the
  * entry call is retried; `otp_verified` is pushed into `acks`), or the Decision to speak.
  *
@@ -308,16 +308,18 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
 export function handleCodeDigit(s: Session, digit: string, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | null {
   if (!/^\d$/.test(digit)) return IGNORE;
   s.dtmfBuffer += digit;
-  if (s.dtmfBuffer.length < CODE_LENGTH) return IGNORE;
+  const app = appOf(s);
+  if (s.dtmfBuffer.length < codeLengthOf(app)) return IGNORE;
   const code = s.dtmfBuffer;
   s.dtmfBuffer = '';
-  const { codeTool } = identityOf(appOf(s));
+  const identity = identityOf(app);
+  const { codeTool } = identity;
   const { decision, value } = identityCall<boolean>(s, codeTool, {}, tc, out, code);
   if (decision.verdict === 'NEEDS_HUMAN') return handoff(s, 'identity', acks);
   if (decision.verdict !== 'ALLOW') return handoff(s, 'needs-human', acks);
   if (value === true) {
     // The principal verified to level 1 is raised in place: no read of the subject's record outside the gate.
-    const raised = raise(s.principal, 2, identityOf(appOf(s)).subjectKind);
+    const raised = raise(s.principal, 2, identity.subjectKind);
     if (!raised) return handoff(s, 'needs-human', acks);
     s.principal = raised;
     s.stepUp = null;
