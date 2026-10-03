@@ -38,7 +38,7 @@
 | `findAccount` | the account | nothing | `accountId` | 1 (the plan's entry call has the purpose `set_up_plan`, level 2) | `identity`, `scope(accountId)` |
 | `setUpPlan` | the account | a payment arrangement | the confirmed list, `place` and `symptom` '' | 2 | `identity`, `role(manager person)`, `scope(accountId)`, `confirmed`, `limit(total 0.01..amountDue(accountId))`, `dateInRange(firstDate today..today+30)` |
 | `verifyCustomer` | accounts | nothing | `accountId`, `dob` | 0 | `attempts` |
-| `sendCode` | the account's phone | texts a code | `accountId` | 1 | `identity`, `role(manager refuse)`, `scope(accountId)` |
+| `sendCode` | the account's phone | texts a code | `accountId` | 1 | `identity`, `scope(accountId)` (the engine refuses any party who is not the customer first) |
 | `verifyCode` | the code | nothing | (the code) | 1 | `identity`, `attempts` |
 
 ## Who may do what
@@ -48,7 +48,7 @@
 | `reportOutage` | allowed | allowed | allowed | allowed |
 | `readBalance` | after verifying to level 1 | allowed, own account only | allowed, own account only | allowed for the accounts they manage; refused (scope) for others |
 | `setUpPlan` | after verifying to level 2 | after keying the code | allowed, own account, within bounds | a person (`handoff_role_person`) |
-| `sendCode` | after verifying to level 1 | own account only | own account only | refused (`role`): a manager never texts a code to a tenant |
+| `sendCode` | after verifying to level 1 | own account only | own account only | refused (`not-subject`, by the engine): a manager never texts a code to a tenant |
 
 ## Verification (identity.yaml)
 
@@ -100,7 +100,7 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 - Code length 6, three tries, the framework's defaults.
 - Accounts are eight digits (`5550 1234`), read in two groups of four; every slot that can be keyed has `keypad: true`.
 - The keypad menu offers the three forms (1, 2, 3), the outage map (4), the office hours (5) and a person (0). A key for an answer plays its line and offers the menu again. (The trial left 4 and 5 off while the engine ignored such a key; see Gaps.)
-- A property manager is refused `sendCode` (role rule): a manager never steps up, so a code to a tenant's phone has no use and could alarm the tenant. Found reading the policy matrix.
+- A property manager is refused `sendCode`: a manager never steps up, so a code to a tenant's phone has no use and could alarm the tenant. Found reading the policy matrix. The engine now refuses every identity tool to any party who is not the customer (`not-subject`), so the app writes no rule for it.
 - Over-answers: a caller may say the address and what they see in one breath, or the count and the first day; the forms skip what is filled.
 - A property manager's balance check names the account (`account` slot); the scope rule limits them to the accounts they manage.
 - What is recorded of each value a call carries is declared, not assumed. The account number is recorded by its last four and the date of birth hidden, as their slots say. The outage address is recorded as said (`redact: none` on `place`, and `place: keep` under `audit` in policy.yaml). The trade-off: the trace and the audit hold the address a caller spoke, so anyone who reads them learns where an outage was reported from, and a caller who volunteers more than an address (a name, a remark) has it kept too; the read-back needs the words as said, and the address is where the crew goes, so it was kept as it was. An app that holds addresses to be private would mask it (`length`, or `last4`) and read a confirmation back from the form's own state instead. The symptom, the count, the first date and the total are choices, a day and an amount, recorded as they are.
@@ -151,7 +151,7 @@ Every requirement of the paragraph, and the scripted calls in `fixtures/scenario
 | Property managers check balances for their buildings | manager: "read the balance and due date" goes ahead; "the account must be the caller's own, or one they act for" | Matches. |
 | ...and report outages for them | manager: "file an outage report" goes ahead | Matches. An outage report names an address, not an account, so there is no scope rule: a manager may report any address, as an anonymous caller may. |
 | A tenant's arrangement goes to a person | manager: "set up a payment arrangement" goes to a person (role-person), rule 2, before scope | Matches. The role rule runs before scope, so the request goes to a person before the manager names an account (the form asks nothing first). |
-| (not in the paragraph) | manager: "text a one-time code" refused | The choice under "Choices the paragraph left open". |
+| (not in the paragraph) | manager: "text a one-time code" refused (by the engine) | The choice under "Choices the paragraph left open". |
 | The outage map and office hours | the app map: two informational intents, keys 4 and 5 | Matches; the card has no policy for them (they call no action). |
 | A person at any time | the app map: `agent` and key 0 | Matches; covered by the scripted calls `asks-for-a-person*`, `person-*` and `manager-asks-for-a-person`. |
 | | Defaults: "account by its last four" | Two slots are account numbers (the factor `accountId` and the manager's `account`), each with the noun `account`. The card first listed the redaction twice; it now says an identical entry once. |

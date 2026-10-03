@@ -115,7 +115,7 @@ describe('the bounds, at their edges', () => {
     expect(decide('setUpPlan', plan({ accountId: '55505678', total: '312.00' }), manager)).toBe('NEEDS_HUMAN role-person');
     expect(decide('readBalance', { accountId: '55505678' }, manager)).toBe('ALLOW');
     expect(decide('readBalance', { accountId: '55501234' }, manager)).toBe('BLOCK scope');
-    expect(decide('sendCode', { accountId: '55505678' }, manager)).toBe('BLOCK role');
+    expect(decide('sendCode', { accountId: '55505678' }, manager)).toBe('BLOCK not-subject');
   });
 
   it('files an outage report for anyone who confirmed it', () => {

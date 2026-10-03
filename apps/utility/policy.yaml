@@ -11,14 +11,14 @@ actions:
     say: check the account number and date of birth
     level: 0
     rules: [attempts]
-  # Texts a one-time code to the phone on the caller's own account. Only the customer steps up to
-  # the code; a property manager never texts a code to a tenant's phone.
+  # Texts a one-time code to the phone on the caller's own account. The engine keeps this tool for
+  # the customer alone: a property manager is refused before these rules run, so never texts a code
+  # to a tenant's phone.
   sendCode:
     say: text a one-time code
     level: 1
     rules:
       - identity
-      - role: { manager: refuse }
       - scope: { param: accountId }
   # Checks the one-time code.
   verifyCode:

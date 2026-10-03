@@ -61,7 +61,7 @@ describe('the policy card: each rule in words', () => {
   it('says a redaction two slots share by their noun once, in the defaults', () => {
     const twin = { ...testkitApp, slots: { ...testkitApp.slots, account: testkitApp.slots.accountId! } } as App;
     const line = cardOf(twin).split('\n').find((l) => l.startsWith("- In traces and the audit a caller's values"));
-    expect(line).toBe("- In traces and the audit a caller's values are recorded as they are said, except: account ID by its last four; date of birth hidden (a year is kept); description by its length.");
+    expect(line).toBe("- In traces and the audit a caller's values are recorded as they are said, except: account ID by its last four; date of birth hidden (the trace keeps only its year, `••/••/1985`; a call as recorded, in the gate's decision, the console and the audit, shows `•`); description by its length.");
   });
 
   it('says the level by its name, and a level 0 action as open to any caller', () => {
