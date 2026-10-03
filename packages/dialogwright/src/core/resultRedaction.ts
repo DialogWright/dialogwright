@@ -19,7 +19,10 @@ import type { App, ToolName } from './app/types';
  * effect it queues, a write to the session), which the tool's code must keep to what the caller may
  * see, and an error the tool throws.
  *
- * A subject acting for themselves is never redacted, and neither is an anonymous caller.
+ * A subject acting for themselves is never redacted, and neither is an anonymous caller. A party who
+ * is neither, whose kind (and role) has no row in the table at all, has every field the tool
+ * declares (ToolDef.fields) withheld: the policy said nothing of them, so they see nothing it could
+ * have withheld (fail closed).
  */
 
 /** The key of a role's own row in the redact table: the delegate kind and the role, `agent.clerk`. */
@@ -29,18 +32,26 @@ export function redactKey(kind: string, role?: string): string {
 
 /**
  * The fields of `tool`'s result the policy withholds from `principal`: the row of their kind and
- * role (`<kind>.<role>`) where it has one for the tool, else their kind's; none for a subject, an
- * anonymous caller, or an app with no redact table.
+ * role (`<kind>.<role>`) where it has one for the tool, else their kind's; none for a subject or an
+ * anonymous caller. A party whose kind has no row for any tool (nor its role), the table missing
+ * altogether included, has every field the tool declares withheld (fail closed).
  */
 export function withheldFields(app: App, principal: Principal, tool: ToolName): readonly string[] {
-  const table = app.policy.redact;
-  if (!table || isAnonymous(principal)) return [];
+  if (isAnonymous(principal)) return [];
   if (app.identity && principal.kind === app.identity.subjectKind) return [];
+  const table = app.policy.redact ?? {};
+  const rowsOf = (key: string): Readonly<Record<string, readonly string[]>> | undefined => (Object.hasOwn(table, key) ? table[key] : undefined);
   const row = (key: string): readonly string[] | undefined => {
-    const byTool = Object.hasOwn(table, key) ? table[key] : undefined;
+    const byTool = rowsOf(key);
     return byTool && Object.hasOwn(byTool, tool) ? byTool[tool] : undefined;
   };
-  return (principal.role !== undefined ? row(redactKey(principal.kind, principal.role)) : undefined) ?? row(principal.kind) ?? [];
+  const roleKey = principal.role !== undefined ? redactKey(principal.kind, principal.role) : undefined;
+  if (rowsOf(principal.kind) === undefined && (roleKey === undefined || rowsOf(roleKey) === undefined)) {
+    // The policy says nothing of this kind of party: withhold all that it could have.
+    const declared = Object.hasOwn(app.tools, tool) ? app.tools[tool]!.fields : undefined;
+    return Array.isArray(declared) ? [...declared] : [];
+  }
+  return (roleKey !== undefined ? row(roleKey) : undefined) ?? row(principal.kind) ?? [];
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

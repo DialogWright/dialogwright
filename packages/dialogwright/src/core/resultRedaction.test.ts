@@ -85,8 +85,23 @@ describe('who has fields withheld', () => {
     expect(withheldFields(testkitApp, VIEWER, 'getAccount')).toEqual([]);
     expect(withheldFields(testkitApp, SAM, 'getParcel')).toEqual([]);
     expect(withheldFields(testkitApp, ANONYMOUS, 'getParcel')).toEqual([]);
-    // Another kind that is neither the subject nor the delegate has no row.
-    expect(withheldFields(testkitApp, { kind: 'visitor', level: 2, id: 'V-1', first: 'Robin' }, 'getParcel')).toEqual([]);
+  });
+
+  it('a party the policy has no row for at all sees none of the fields a tool declares (fail closed)', () => {
+    const visitor = { kind: 'visitor', level: 2 as const, id: 'V-1', first: 'Robin' };
+    // Another kind that is neither the subject nor the delegate: every field the tool declares.
+    expect(withheldFields(testkitApp, visitor, 'getParcel')).toEqual(['safePlace']);
+    expect(withheldFields(testkitApp, { ...visitor, role: 'guide' }, 'listParcels')).toEqual(['safePlace']);
+    // A tool that declares none has none to withhold.
+    expect(withheldFields(testkitApp, visitor, 'getAccount')).toEqual([]);
+    // An app with no redact table at all: a delegate sees none of the declared fields.
+    const { redact: _redact, ...policy } = testkitApp.policy;
+    const bare: App = { ...testkitApp, policy };
+    expect(withheldFields(bare, VIEWER, 'getParcel')).toEqual(['safePlace']);
+    expect(withheldFields(bare, SAM, 'getParcel')).toEqual([]);
+    expect(withheldFields(bare, ANONYMOUS, 'getParcel')).toEqual([]);
+    // A kind with a row for some tools has the policy's word for the others: nothing withheld there.
+    expect(withheldFields({ ...testkitApp, policy: { ...testkitApp.policy, redact: { agent: { getParcel: ['safePlace'] } } } }, VIEWER, 'listParcels')).toEqual([]);
   });
 });
 

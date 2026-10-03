@@ -58,7 +58,7 @@ What each role may do, in the actions that have a role rule (a role a rule does 
 
 ## What is withheld
 
-A party who acts for customers does not see every field of what some actions return: right after the action runs, the engine sets these fields to nothing wherever the result holds them, at any depth, before a line, the session, the trace, the console or the audit reads it. The record of the call says which fields were withheld, and where the action's summary repeats what one held, that is masked. What the action itself does with the whole record as it runs (a side effect it queues, what it writes to the session) and an error it raises are not covered: the action's code keeps those to what the caller may see. A row for a role replaces its kind's for that action. A customer acting for themselves sees the whole of their own record.
+A party who acts for customers does not see every field of what some actions return: right after the action runs, the engine sets these fields to nothing wherever the result holds them, at any depth, before a line, the session, the trace, the console or the audit reads it. The record of the call says which fields were withheld, and where the action's summary repeats what one held, that is masked. What the action itself does with the whole record as it runs (a side effect it queues, what it writes to the session) and an error it raises are not covered: the action's code keeps those to what the caller may see. A row for a role replaces its kind's for that action, and a party of a kind with no row here at all (nor its role) sees none of the fields an action declares it may withhold. A customer acting for themselves sees the whole of their own record.
 
 | Who | Action | Fields withheld |
 | --- | --- | --- |
