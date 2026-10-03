@@ -153,6 +153,11 @@
                           "description": "A reference to a lookup that gives a window, { start, end } (end null: open-ended), the value must be inside, ends inclusive. A lookup that gives null has no window: the value is outside it.",
                           "type": "string"
                         },
+                        "unscoped": {
+                          "description": "true: the lookups this rule's bounds call are not about the caller's own record (a price list, a calendar), so their params need no scope rule before this one. Without it, every param a reference reads must be held to the caller's own records by a scope rule earlier in the action.",
+                          "type": "boolean",
+                          "const": true
+                        },
                         "reasons": {
                           "description": "The reason the gate gives for each way the rule fails, for the app's refusal lines and handoffs.",
                           "type": "object",
@@ -236,6 +241,11 @@
                             "number",
                             "string"
                           ]
+                        },
+                        "unscoped": {
+                          "description": "true: the lookups this rule's bounds call are not about the caller's own record (a price list, a calendar), so their params need no scope rule before this one. Without it, every param a reference reads must be held to the caller's own records by a scope rule earlier in the action.",
+                          "type": "boolean",
+                          "const": true
                         },
                         "reasons": {
                           "description": "The reason the gate gives for each way the rule fails.",

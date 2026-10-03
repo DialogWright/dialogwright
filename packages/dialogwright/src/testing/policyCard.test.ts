@@ -53,6 +53,7 @@ describe('the policy card: each rule in words', () => {
       ],
     },
     noteOrder: { level: 1, rules: [{ fields: [] }, { scope: { param: 'accountId' } }, { dateInRange: { field: 'startDate', notBefore: '2026-01-31' } }] },
+    feeOrder: { level: 1, rules: [{ limit: { field: 'amount', unscoped: true, max: 'feeSchedule(orderId)' } }] },
     scheduleOrder: { level: 1, rules: [{ dateInRange: { field: 'startDate', notBefore: 'today-1', notAfter: 'today+30' } }, { dateInRange: { field: 'endDate', notBefore: 'today+1', notAfter: 'today+3660' } }, { dateInRange: { field: 'callbackDate', notAfter: 'today-7' } }] },
     openThing: { level: 0, rules: [] },
   }));
@@ -72,12 +73,14 @@ describe('the policy card: each rule in words', () => {
   });
 
   it('says the bounds of a limit and of a date, what a lookup gives, and the verdict outside them', () => {
-    expect(card).toContain('the amount must be at least 0.01 and at most what `orderTotal(orderId)` gives (a number outside it is refused; anything that is not a number is refused)');
-    expect(card).toContain('the return date must be on or before today and inside the window `returnWindow(orderId)` gives (a date out of bounds is refused; one outside the window goes to a person; anything that is not a date is refused)');
+    expect(card).toContain("the amount must be at least 0.01 and at most what `orderTotal(orderId)` gives (a number outside it is refused; anything that is not a number is refused); `orderTotal` reads the order ID the scope rule above holds to the caller's own records, or those they act for");
+    expect(card).toContain("the return date must be on or before today and inside the window `returnWindow(orderId)` gives (a date out of bounds is refused; one outside the window goes to a person; anything that is not a date is refused); `returnWindow` reads the order ID the scope rule above holds to the caller's own records, or those they act for");
     expect(card).toContain('the start date must be on or after 2026-01-31 (a date out of bounds is refused; anything that is not a date is refused)');
     expect(card).toContain('the start date must be no earlier than 1 day before today and no later than 30 days from today (a date out of bounds is refused; anything that is not a date is refused)');
     expect(card).toContain('the end date must be no earlier than 1 day from today and no later than 3660 days from today (a date out of bounds is refused; anything that is not a date is refused)');
     expect(card).toContain('the callback date must be no later than 7 days before today (a date out of bounds is refused; anything that is not a date is refused)');
+    // A rule whose lookup is about no caller's own record says so.
+    expect(card).toContain("the amount must be at most what `feeSchedule(orderId)` gives (a number outside it is refused; anything that is not a number is refused); `feeSchedule` is about no caller's own record, so every caller is held to the same bounds");
   });
 
   it('says a fields rule with no field sends none, and labels an action by its tool id when it has no say', () => {

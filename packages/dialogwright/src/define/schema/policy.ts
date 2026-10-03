@@ -165,6 +165,12 @@ const numberBound = () =>
     if ('problem' in read) ctx.addIssue({ code: 'custom', path: [], message: read.problem, params: { fix: `write a number such as 100 or 0.01, or ${REF_FIX.slice('write '.length)}` } });
   }));
 const rangeVerdict = () => z.enum(['BLOCK', 'NEEDS_HUMAN']);
+/** A range rule's opt-out from the scope a reference's param must have (policyProblems): its lookups are not about the caller's own record. */
+const unscopedFlag = () =>
+  z
+    .literal(true)
+    .optional()
+    .describe('true: the lookups this rule\'s bounds call are not about the caller\'s own record (a price list, a calendar), so their params need no scope rule before this one. Without it, every param a reference reads must be held to the caller\'s own records by a scope rule earlier in the action.');
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The problems of a range rule that no one field shows: no bound, literal bounds the wrong way round, a window's reason or verdict with no window. */
@@ -191,6 +197,7 @@ const dateInRangeRule = z
     notBefore: dateBound().optional().describe('The earliest date the value may be, inclusive: "today", today+N or today-N (N days from today, 1 to 3660), a date, or a reference to a lookup that gives one.'),
     notAfter: dateBound().optional().describe('The latest date the value may be, inclusive: "today", today+N or today-N (N days from today, 1 to 3660), a date, or a reference to a lookup that gives one.'),
     within: lookupRef().optional().describe('A reference to a lookup that gives a window, { start, end } (end null: open-ended), the value must be inside, ends inclusive. A lookup that gives null has no window: the value is outside it.'),
+    unscoped: unscopedFlag(),
     reasons: z
       .strictObject({
         invalid: name().optional().describe('The reason a value that is not a date is refused for. Default "not-a-date".'),
@@ -215,6 +222,7 @@ const limitRule = z
     field: identifier().describe('The action\'s param that holds the number: digits, an optional leading minus and an optional point with digits; no units, separators or spaces. Anything else BLOCKs.'),
     min: numberBound().optional().describe('The smallest the number may be, inclusive: a number, or a reference to a lookup that gives one.'),
     max: numberBound().optional().describe('The largest the number may be, inclusive: a number, or a reference to a lookup that gives one (for example orderTotal(orderId), or order(orderId).total).'),
+    unscoped: unscopedFlag(),
     reasons: z
       .strictObject({
         invalid: name().optional().describe('The reason a value that is not a number is refused for. Default "not-a-number".'),
@@ -246,6 +254,7 @@ const RULE_EXAMPLES: Record<ParamRule, string> = {
 /** The parameters of a dateInRange rule, as written. */
 export interface DateInRangeYaml {
   field: string;
+  unscoped?: true;
   notBefore?: string;
   notAfter?: string;
   within?: string;
@@ -256,6 +265,7 @@ export interface DateInRangeYaml {
 /** The parameters of a limit rule, as written. */
 export interface LimitYaml {
   field: string;
+  unscoped?: true;
   min?: number | string;
   max?: number | string;
   reasons?: { invalid?: string; outOfRange?: string };

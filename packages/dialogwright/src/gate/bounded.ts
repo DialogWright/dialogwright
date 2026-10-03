@@ -82,6 +82,8 @@ export interface LimitReasons {
 /** The parameters of a `dateInRange` rule, read. */
 export interface DateInRangeParams {
   readonly field: string;
+  /** The rule's lookups are not about the caller's own record, so their params need no scope rule before it (the gate does not read it; `check` and the card do). */
+  readonly unscoped?: true;
   readonly notBefore?: DateBound;
   readonly notAfter?: DateBound;
   readonly within?: LookupRef;
@@ -92,6 +94,8 @@ export interface DateInRangeParams {
 /** The parameters of a `limit` rule, read. */
 export interface LimitParams {
   readonly field: string;
+  /** As DateInRangeParams.unscoped. */
+  readonly unscoped?: true;
   readonly min?: NumberBound;
   readonly max?: NumberBound;
   readonly reasons?: LimitReasons;

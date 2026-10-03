@@ -63,10 +63,11 @@ export function readRule(entry: RuleEntryYaml): Rule {
   if ('confirmed' in entry) return { rule: 'confirmed', fields: entry.confirmed };
   if ('fields' in entry) return { rule: 'fields', fields: entry.fields };
   if ('dateInRange' in entry) {
-    const { field, notBefore, notAfter, within, reasons, verdicts } = entry.dateInRange;
+    const { field, unscoped, notBefore, notAfter, within, reasons, verdicts } = entry.dateInRange;
     return {
       rule: 'dateInRange',
       field,
+      ...(unscoped === true ? { unscoped } : {}),
       ...(notBefore !== undefined ? { notBefore: dateBoundOf(notBefore) } : {}),
       ...(notAfter !== undefined ? { notAfter: dateBoundOf(notAfter) } : {}),
       ...(within !== undefined ? { within: refOf(within) } : {}),
@@ -75,10 +76,11 @@ export function readRule(entry: RuleEntryYaml): Rule {
     };
   }
   if ('limit' in entry) {
-    const { field, min, max, reasons, verdicts } = entry.limit;
+    const { field, unscoped, min, max, reasons, verdicts } = entry.limit;
     return {
       rule: 'limit',
       field,
+      ...(unscoped === true ? { unscoped } : {}),
       ...(min !== undefined ? { min: numberBoundOf(min) } : {}),
       ...(max !== undefined ? { max: numberBoundOf(max) } : {}),
       ...(reasons !== undefined ? { reasons } : {}),
@@ -521,7 +523,16 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
           const lists = sent ? (sent.from === 'params' ? `its tool lists ${sent.params.join(', ') || 'none'}` : `its ${sent.from} rule lists ${sent.params.join(', ') || 'none'}`) : '';
           const addTo = (param: string): string => (sent?.from === 'params' ? `add "${param}" to ${c.inCode('tools', tool, 'params')}` : `add "${param}" to its ${sent?.from} rule`);
           if (sent && !sent.params.includes(rule.field)) at(P, [...rulePath, 'field'], `"${rule.field}" is not a param "${tool}" sends (${lists})`, `${renameHint(rule.field, sent.params)}name one of those, or ${addTo(rule.field)}`);
-          for (const { key, ref } of lookupRefsOf(rule)) {
+          // A bound read through a lookup is about the record its param names: that param is held to
+          // the caller's own records by a scope rule before this one, or the rule says its lookups are
+          // about no one's (unscoped), so a caller cannot read a limit off someone else's record.
+          const scopedBefore = new Set(action.rules.slice(0, i).map(readRule).flatMap((r) => (r.rule === 'scope' && r.subject !== null ? [r.subject.param] : [])));
+          const refs = lookupRefsOf(rule);
+          if (rule.unscoped === true && refs.length === 0) at(P, [...rulePath, 'unscoped'], `the ${rule.rule} rule of "${tool}" is unscoped, but none of its bounds is a reference, so there is no lookup to leave unscoped`, 'delete "unscoped: true"', true);
+          for (const { key, ref } of refs) {
+            if (rule.unscoped !== true && !scopedBefore.has(ref.param)) {
+              at(P, [...rulePath, key], `${refText(ref)} reads "${ref.param}", which no scope rule before this one holds to the caller's own records, so the bound could be read off anyone's`, `add "- scope: { param: ${ref.param} }" (or "{ record: ${ref.param} }" for a record id) before this rule, or write "unscoped: true" in it if the lookup is not about the caller's own record (a price list, a calendar)`);
+            }
             if (sent && !sent.params.includes(ref.param)) at(P, [...rulePath, key], `${refText(ref)} reads "${ref.param}", which is not a param "${tool}" sends (${lists})`, `${renameHint(ref.param, sent.params)}call the lookup with one of those, or ${addTo(ref.param)}`);
             if (c.lookups && !c.lookups.includes(ref.lookup)) at(P, [...rulePath, key], `${refText(ref)} calls the lookup "${ref.lookup}", which the code does not declare`, `${renameHint(ref.lookup, c.lookups)}add "${ref.lookup}" to ${c.inCode('lookups')} and a function of that name to the gate's lookups (code.systems), or correct the reference`);
           }

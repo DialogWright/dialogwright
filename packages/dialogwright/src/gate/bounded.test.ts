@@ -387,8 +387,9 @@ describe('through the gate', () => {
           refundOrder: {
             level: 0,
             rules: [
-              { limit: { field: 'amount', min: 0.01, max: 'orderTotal(orderId)' } },
-              { dateInRange: { field: 'returnDate', notAfter: 'today', within: 'returnWindow(orderId)', verdicts: { outsideWindow: 'NEEDS_HUMAN' } } },
+              // The orders here are no caller's own: an app with no identity reads them for anyone.
+              { limit: { field: 'amount', unscoped: true, min: 0.01, max: 'orderTotal(orderId)' } },
+              { dateInRange: { field: 'returnDate', unscoped: true, notAfter: 'today', within: 'returnWindow(orderId)', verdicts: { outsideWindow: 'NEEDS_HUMAN' } } },
             ],
           },
         },

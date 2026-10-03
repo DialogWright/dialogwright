@@ -2,6 +2,7 @@ import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, RoleAccess, ToolName } from '../core/app/types';
 import { recordingOf } from '../core/recording';
+import { lookupRefsOf } from '../define/policyFile';
 import { refText, todayText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
 import { identityToolsOf, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { isDefinedRule } from '../gate/defineRule';
@@ -78,6 +79,20 @@ function roleLine(rule: Extract<Rule, { rule: 'role' }>, subjectKind: string): s
   return `by role: ${parts.join('; ')}; ${rest}${own}`;
 }
 
+/**
+ * Whose records a range rule's lookups read, in words: the ones the scope rule before it holds the
+ * caller to (`check` requires one for every param a reference reads), or no one's (`unscoped`).
+ * Nothing for a rule whose bounds are all literals.
+ */
+function whoseLookups(app: App, rule: Extract<Rule, { rule: 'dateInRange' | 'limit' }>): string {
+  const refs = lookupRefsOf(rule);
+  if (refs.length === 0) return '';
+  const lookups = [...new Set(refs.map(({ ref }) => code(ref.lookup)))].join(', ');
+  if (rule.unscoped === true) return `; ${lookups} ${refs.length === 1 ? 'is' : 'are'} about no caller's own record, so every caller is held to the same bounds`;
+  const nouns = andList([...new Set(refs.map(({ ref }) => paramNoun(app, ref.param)))]);
+  return `; ${lookups} ${refs.length === 1 ? 'reads' : 'read'} the ${nouns} the scope rule above holds to the caller's own records, or those they act for`;
+}
+
 /** One rule of an action in plain English, with its parameters. */
 function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Rule): string {
   const subjectKind = identityOf(app).subjectKind;
@@ -107,11 +122,11 @@ function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Ru
         ...(rule.notBefore || rule.notAfter ? [`a date out of bounds ${failure(rule.verdicts?.outOfRange)}`] : []),
         ...(rule.within ? [`one outside the window ${failure(rule.verdicts?.outsideWindow)}`] : []),
       ];
-      return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (${outcomes.join('; ')}; anything that is not a date is refused)`;
+      return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (${outcomes.join('; ')}; anything that is not a date is refused)${whoseLookups(app, rule)}`;
     }
     case 'limit': {
       const bounds = [...(rule.min ? [`at least ${boundText(rule.min)}`] : []), ...(rule.max ? [`at most ${boundText(rule.max)}`] : [])];
-      return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (a number outside it ${failure(rule.verdicts?.outOfRange)}; anything that is not a number is refused)`;
+      return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (a number outside it ${failure(rule.verdicts?.outOfRange)}; anything that is not a number is refused)${whoseLookups(app, rule)}`;
     }
     case 'custom': {
       const defined = source.customRules?.[rule.id];
