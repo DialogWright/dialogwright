@@ -13,6 +13,7 @@ import { handoff } from './decision';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { framesOf } from '../testing/frames';
 import { useTestkit } from '../testing/apps';
+import { registerApp } from './app/registry';
 import { testkitApp } from '../testing/testkit';
 import { CUSTOMERS, STAFF } from '../testing/testkit/domain/data';
 import { parcelsFact, reportFact } from '../testing/testkit/domain/facts';
@@ -1104,6 +1105,48 @@ describe('capabilities', () => {
     expect(r.session.intentAttempts).toBe(2);
     const d = resolve(r.session, keyEvents('3')[0]!, null, tc);
     expect(d.session.form).toBe('report_missing');
+  });
+
+  describe('on a keypad menu with a key for it', () => {
+    /** The testkit with a key, 9, for its informational intent. */
+    const MENU_APP = 'testkit-menu-info';
+    registerApp({ ...testkitApp, id: MENU_APP, menu: [...testkitApp.menu, { digit: '9', intent: 'capabilities' }] });
+    const MISS = choice({ none: 0.7, other: 0.3 });
+    function atMenu(): Session {
+      let r = say(resolve(newSession('s', 0, VOICE_RELAY, undefined, MENU_APP), startEvent(), null, tc).session, 'uh', { intent: MISS });
+      r = say(r.session, 'uh', { intent: MISS });
+      expect(r.decision).toMatchObject({ promptId: 'nomatch_dtmf_menu', menu: true, options: ['1', '2', '3', '0', '9'] });
+      return r.session;
+    }
+
+    it('plays the intent\'s line and gives the menu back, rung intact, counting nothing', () => {
+      const r = keys(atMenu(), '9');
+      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_dtmf_menu', target: 'intent', menu: true, acks: [CAPABILITIES] });
+      expect(r.rows).toEqual([]);
+      expect(r.session.menuActive).toBe(true);
+      expect(r.session.intentAttempts).toBe(2);
+      expect(r.session.form).toBeNull();
+      expect(r.actions.length).toBeGreaterThan(0);
+      // The menu still works after it.
+      expect(keys(r.session, '3').session.form).toBe('report_missing');
+    });
+
+    it('decides what the spoken intent decides, and says the same', () => {
+      const keyed = keys(atMenu(), '9');
+      const spoken = say(atMenu(), 'what are my options', { intent: ASKS });
+      expect(keyed.decision).toEqual(spoken.decision);
+      expect(spokenText(testkitApp, keyed.decision)).toBe(spokenText(testkitApp, spoken.decision));
+      for (const key of ['menuActive', 'intentAttempts', 'form', 'promptedFor', 'lastPromptId', 'lastPromptText', 'pendingConfirmation'] as const) {
+        expect(keyed.session[key], key).toEqual(spoken.session[key]);
+      }
+    });
+
+    it('is a wrong key on a menu without it, as before', () => {
+      let r = say(started(), 'uh', { intent: MISS });
+      r = say(r.session, 'uh', { intent: MISS });
+      const nine = keys(r.session, '9');
+      expect(nine.decision).toMatchObject({ kind: 'handoff', reason: 'max-attempts' });
+    });
   });
 
   it('re-asks a pending explicit intent confirmation without counting', () => {
