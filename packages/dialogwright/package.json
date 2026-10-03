@@ -37,7 +37,8 @@
     "regress:testkit": "tsx src/testing/testkit/regress.ts",
     "schemas": "tsx src/define/schema/generate.ts",
     "slot-docs": "tsx scripts/slotDocs.ts",
-    "check": "tsx src/define/cli.ts check"
+    "check": "tsx src/define/cli.ts check",
+    "policy:matrix": "tsx src/define/cli.ts policy:matrix"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

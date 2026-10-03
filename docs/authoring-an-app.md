@@ -253,6 +253,23 @@ A bound comes only from the app's code and systems, never from the session's fac
 
 Each records itself under its name (`dateInRange`, `limit`) with lines like `amount at least 0.01, at most orderTotal(orderId ...1234) 120` and `returnDate outside returnWindow(orderId ...1234) 2026-09-20..2026-10-20`: the param's name and the bounds it was held to (today's date, a literal, what a lookup gave), with the id a lookup was called with masked to its last four. The call's own value is never in the line, since it may be a value the app redacts, and a line goes to the audit as it is.
 
+#### Testing the policy against the file
+
+Three tests hold the gate to what policy.yaml says, each from `'dialogwright/testing'` and each run over the gate grid (every action crossed with every kind of caller, subject and fact, from the app's `testing.policyMatrix()`):
+
+- `policyInvariants(app)` asserts what must hold whatever order the rules are written in: an action not listed is blocked for everyone; a caller below an action's level is never allowed; `scope`, `confirmed`, `role`, `fields` and `attempts` each refuse what they exist to refuse; an allowed call ran every rule its action lists, and each passed; raising the caller's level never turns an allow into a refusal; and the scope rule's answer does not move with the conversation. A failure names the invariant, the grid case and the rule.
+- `expectPolicyMatrix(app, file)` compares `policy.matrix`, beside policy.yaml, with what the gate decides today, and fails with a diff. The matrix is written for a reviewer: under each action, a row per kind of caller with the verdict and its reason, split by what the call carries only where the verdict depends on it, then each custom rule's examples:
+
+  ```text
+  findHold · level 0 · identity, custom known-branch
+    every caller   fields exact|extra, params known    ALLOW
+                   fields exact|extra, params unknown  BLOCK branch
+                   fields missing                      BLOCK branch
+  ```
+
+  A policy change is a diff of this file. Write it deliberately with `pnpm policy:matrix <folder>` (with no folder, every `policy.matrix` in the workspace), read the diff, and commit it; never in CI.
+- `runRuleExamples(app)` runs every custom rule's examples through the compiled gate, and fails on one the gate decides otherwise, or whose refusal is not the rule's own.
+
 ### identity.yaml (optional)
 
 How a caller proves who they are, and who the app serves. The clinic has none. The engine's valid-folder test fixture is:
@@ -377,16 +394,24 @@ export const LIBRARY_TOOLS: Record<string, ToolDef> = {
 };
 ```
 
-A custom rule returns what it compared and whether it passed, so the audit and the console can show it:
+A custom rule is written with `defineRule` (from `'dialogwright/policy'`): its id, a plain-English description, a `run` that says whether the call passes and what it compared (so the audit and the console can show it, masked: the line is recorded as it is), and examples of what it allows and refuses:
 
 ```ts
-function knownBranch(c: RuleContext): RuleOutcome {
-  const branch = c.call.params.branch ?? '';
-  const known = Object.hasOwn(BRANCHES, branch);
-  const result = { id: 'known-branch', description: 'The hold is at one of the library\'s branches', compared: known ? `branch ${branch}: known` : 'branch not known', pass: known };
-  return known ? { result } : { result, fail: { verdict: 'BLOCK', reason: 'branch' } };
-}
+export const knownBranch = defineRule({
+  id: 'known-branch',
+  description: 'The hold is at one of the library\'s branches',
+  run(c) {
+    const branch = c.call.params.branch ?? '';
+    return Object.hasOwn(BRANCHES, branch) ? { pass: true, compared: `branch ${branch}: known` } : { pass: false, compared: 'branch not known', verdict: 'BLOCK', reason: 'branch' };
+  },
+  examples: [
+    { name: 'a hold at a branch the library has', call: { params: { book: 'river_atlas', branch: 'north' } }, principal: CALLER, expect: { verdict: 'ALLOW' } },
+    { name: 'a hold at a branch it does not have', call: { params: { book: 'river_atlas', branch: 'east' } }, principal: CALLER, expect: { verdict: 'BLOCK', reason: 'branch' } },
+  ],
+});
 ```
+
+(`CALLER` is `{ kind: 'anonymous', level: 0 }`: the library verifies no one.) `check` refuses a custom rule that is a plain function, and one without at least one example the gate allows and one it refuses. Each example runs through the compiled gate in every action that names the rule (see "Testing the policy against the file" under policy.yaml), so it must pass the action's other rules too: an example's facts default to no failed attempts and the call's values confirmed, and `lookups` sets lookups of its own over the app's. An App built by hand may still carry a plain function; the gate runs it as before.
 
 An app outside the engine package imports only from `'dialogwright'` (the clinic's `src/app.ts` does), and the clinic's launchers (`src/index.ts`, `cli.ts`, `regress.ts`, `serve.ts`) show how an app is registered and run.
 
@@ -925,7 +950,7 @@ it('passes dialogwright check', async () => {
 
 `pnpm verify` is a different command: the type check and the unit tests (`pnpm typecheck && pnpm test`). Run both before committing an app change, then the regressions the root CLAUDE.md names.
 
-What `check` does not do yet: it cannot check generated wording (every prompt is `mode: fixed`, which the schema enforces), and it does not require a test for each custom rule. Both arrive with the phases that build them (see the roadmap in [design.md](design.md)).
+What `check` does not do yet: it cannot check generated wording (every prompt is `mode: fixed`, which the schema enforces); that arrives with the phase that builds it (see the roadmap in [design.md](design.md)). It does require each custom rule to be defined with examples (`defineRule`), which the policy matrix runs.
 
 ## 7. Locales
 
@@ -1030,7 +1055,7 @@ For a form that collects slots and acts, such as renewing a loan:
 1. `app.ts`: add the tool to `code.tools` with `run`. It does the work and returns `{ value, summary }`. Put no permission logic in it.
 2. `policy.yaml`: add an action under `actions` with the `level` it needs and the `rules` the gate runs before it. Use `identity` for the level, and add `confirmed: [<the fields>]` for a write the caller must confirm.
 3. If the tool is a confirmed write, give the form `confirmedParams`, and make the form's `complete` set `s.confirmedHash = s.pendingHash` before the call, as the library's `renew` does.
-4. If the tool needs a rule of its own, write it in `code.customRules` and name its id with a `custom:` rule in the action.
+4. If the tool needs a rule of its own, write it with `defineRule` (with an example the gate allows and one it refuses) in `code.customRules`, name its id with a `custom:` rule in the action, and write the new policy matrix with `pnpm policy:matrix <folder>`.
 5. `pnpm check` says if the tool and its action do not match: a tool with no action, an action with no tool, a rule that is never named.
 
 ### Where to start
