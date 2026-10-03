@@ -26,8 +26,13 @@
 purposes: none
 
 verifyCustomer · level 0 · attempts(3)
-  every caller   attempts 0  ALLOW
+  anonymous      attempts 0  ALLOW
                  attempts 3  NEEDS_HUMAN attempts
+  subject@1      as anonymous
+  subject@2      as anonymous
+  unlisted-role  BLOCK not-subject
+  roleless       as unlisted-role
+  other-party    as unlisted-role
 
 findAccount · level 1 · identity, scope(accountId)
   anonymous      STEP_UP to 1
