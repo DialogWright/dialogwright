@@ -34,6 +34,14 @@ export interface FormDef {
   /** The manifest prompt confirming the filled form, or null. */
   summaryPromptId: string | null;
   /**
+   * The actions (tools) the form's hooks call through the gate: its entry call and the calls its
+   * completion and summary hooks make. Declared by every form of an app or by none; the app map
+   * (dialogwright/testing appMapText) draws a form to them, and `check` reports an action no form
+   * reaches (core/app/reach.ts). Never read by the engine at run time. Without it, the app does not
+   * say where its calls are made.
+   */
+  calls?: readonly ToolName[];
+  /**
    * The call made before the form's own slots are asked (it may step identity up). Without it the
    * form is entered as it starts: no call, nothing to step up, and neither onEntry nor
    * principalEntry is called.

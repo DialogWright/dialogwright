@@ -60,8 +60,11 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
       for (const hook of written) expect(form[hook], `${id}.${hook}`).toBe((hooks as Record<string, unknown>)[hook]);
     }
     // The scheduling forms hear every turn and move the offer; the others only read their summary.
-    expect(Object.keys(clinicApp.forms.reschedule!)).toEqual(['slots', 'summaryPromptId', 'onSummaryRead', 'onAnswers', 'onSummaryAnswer', 'keepsSlot', 'confirmedParams', 'complete']);
-    expect(Object.keys(clinicApp.forms.billing!)).toEqual(['slots', 'summaryPromptId', 'complete']);
+    expect(Object.keys(clinicApp.forms.reschedule!)).toEqual(['slots', 'summaryPromptId', 'calls', 'onSummaryRead', 'onAnswers', 'onSummaryAnswer', 'keepsSlot', 'confirmedParams', 'complete']);
+    expect(Object.keys(clinicApp.forms.billing!)).toEqual(['slots', 'summaryPromptId', 'calls', 'complete']);
+    // Each form says which actions its hooks call, for the app map and the check for an action no form reaches.
+    expect(clinicApp.forms.billing!.calls).toEqual([]);
+    expect(clinicApp.forms.reschedule!.calls).toEqual(['findAppointment', 'listOpenings', 'moveAppointment']);
   });
 });
 

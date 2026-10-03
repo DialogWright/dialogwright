@@ -6,10 +6,10 @@ import { MATRIX_APP_MODULES, workspaceRootOf } from './matrixCommand';
 
 /**
  * The commands that write a page from an app's configuration beside its policy.yaml, as
- * `dialogwright policy:matrix` writes policy.matrix: `policy:card` (POLICY.md). Each is a deliberate
- * step: run it when a change is meant, read the diff, commit it; never in CI, where the app's test
- * compares the page with what the app generates (expectPolicyCard) and fails on any difference. The
- * page is written only when it changed.
+ * `dialogwright policy:matrix` writes policy.matrix: `policy:card` (POLICY.md) and `app:diagram`
+ * (APP-MAP.md). Each is a deliberate step: run it when a change is meant, read the diff, commit it;
+ * never in CI, where the app's test compares the page with what the app generates (expectPolicyCard,
+ * expectAppMap) and fails on any difference. The page is written only when it changed.
  *
  * Each `dir` is a folder with the app's policy.yaml and a module exporting the App: app.ts (or
  * src/app.ts) or index.ts (or src/index.ts). A folder is looked for from the working directory, then

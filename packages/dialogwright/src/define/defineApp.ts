@@ -7,6 +7,7 @@ import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { askedQuestionIds, probeContexts } from '../core/app/probeQuestions';
 import { thresholdNamesOf, unknownSlotThresholds, unknownThresholdMessage } from '../core/slotThresholds';
+import { reachOf, unreachedActions } from '../core/app/reach';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
@@ -48,7 +49,7 @@ import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } fro
 export type FormHooks = Pick<FormDef, FormHook>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 
@@ -356,6 +357,22 @@ export function crossLink(
     );
   }
 
+  // forms.yaml's `calls`: the actions each form's hooks call. A form says so, or none does; each is a
+  // tool; and an action no form lists and the identity flow does not call is one nothing can reach.
+  const reach = reachOf(forms);
+  for (const [id, form] of Object.entries(forms)) {
+    form.calls?.forEach((tool, i) => {
+      if (!tools.includes(tool)) yaml('forms.yaml', ['forms', id, 'calls', i], `form "${id}" calls "${tool}", which is not a tool in the code`, `${renameHint(tool, tools)}add it to the app's tools in ${inCode('tools', tool)}, or delete it from this list`);
+    });
+    if (reach.undeclared.includes(id)) {
+      yaml('forms.yaml', ['forms', id], `form "${id}" does not say which actions it calls, though other forms do`, `add "calls: [<the tools its hooks call>]" to it ("calls: []" for none): every form says, or none does`, true);
+    }
+  }
+  const flow = config.identity ? { verifyTool: config.identity.levels[1].verify, ...(config.identity.levels[2] ? { codeTool: config.identity.levels[2].verify, sendCodeTool: config.identity.levels[2].send } : {}) } : undefined;
+  for (const tool of unreachedActions(Object.keys(policy.actions), forms, flow)) {
+    yaml('policy.yaml', ['actions', tool], `action "${tool}" is reached by no form: no form's calls list it, and the identity flow does not call it`, `add "${tool}" to the calls of the form whose hooks call it in forms.yaml, or delete the action from policy.yaml and the tool from ${inCode('tools', tool)}`, true);
+  }
+
   // policy.yaml and identity.yaml: ./policyFile.ts checks them, against each other and the code.
   const check = {
     policy,
@@ -590,6 +607,7 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
 /** A form: its slots and summary from forms.yaml, then its hooks from the code, in the order forms.yaml declares them. */
 function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks): FormDef {
   const def: Record<string, unknown> = { slots: form.slots, summaryPromptId: form.summaryPromptId };
+  if (form.calls !== undefined) def.calls = form.calls;
   for (const hook of form.hooks) def[hook] = hooks[hook];
   return def as unknown as FormDef;
 }

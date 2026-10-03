@@ -129,10 +129,12 @@ function onEntryFor(form: TestkitForm): NonNullable<FormDef['onEntry']> {
   };
 }
 
+/** The three forms; `calls` lists the actions each one's entry call and hooks make, for the app map. */
 export const FORMS: Record<TestkitForm, FormDef> = {
   track_parcel: {
     slots: ['parcelSelect'],
     summaryPromptId: null,
+    calls: ['listParcels', 'getParcel'],
     entry: entryFor('track_parcel'),
     onEntry: onEntryFor('track_parcel'),
     // Staff name a parcel by number: there is no list of their own to read first.
@@ -142,6 +144,7 @@ export const FORMS: Record<TestkitForm, FormDef> = {
   delivery_window: {
     slots: ['deliveryDay', 'deliveryPart'],
     summaryPromptId: null,
+    calls: ['getAccount', 'getWindows'],
     entry: entryFor('delivery_window'),
     onEntry: onEntryFor('delivery_window'),
     // Booking for a customer is not something staff do on this line.
@@ -151,6 +154,7 @@ export const FORMS: Record<TestkitForm, FormDef> = {
   report_missing: {
     slots: ['missingNote', 'expectedDate'],
     summaryPromptId: 'confirm_report',
+    calls: ['getAccount', 'createReport', 'notifyDepot'],
     entry: entryFor('report_missing'),
     onEntry: onEntryFor('report_missing'),
     principalEntry: staffReportCheck,
