@@ -137,6 +137,11 @@ describe('validateApp', () => {
 describe('validateApp: the identity ladder', () => {
   const identity = testkitApp.identity!;
 
+  it('refuses at registration a policy whose attempts are not identity.yaml\'s', () => {
+    expect(identity.maxAttempts).toBe(3);
+    expect(() => validateApp({ ...testkitApp, id: 'five', policy: { ...testkitApp.policy, maxAttempts: 5 } })).toThrow('app "five": policy\'s maxAttempts (5) is not identity.yaml\'s attempts (3)');
+  });
+
   it('refuses at registration level names that are blank or the same', () => {
     expect(() => validateApp({ ...testkitApp, identity: { ...identity, levelNames: { 1: ' ', 2: 'confirmed by code' } } })).toThrow('identity level 1 has no name');
     expect(() => validateApp({ ...testkitApp, identity: { ...identity, levelNames: { 1: 'verified' } } })).toThrow('identity level 2 has no name');

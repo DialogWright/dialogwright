@@ -188,6 +188,7 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
   if (options.sendCodeParams !== undefined) identity.sendCodeParams = options.sendCodeParams;
   if (one.failedPrompt !== undefined) identity.failedPromptId = one.failedPrompt;
   identity.levelNames = Object.freeze({ 1: one.name, 2: two.name });
+  identity.maxAttempts = file.attempts;
   return { identity, maxAttempts: file.attempts };
 }
 

@@ -139,6 +139,9 @@ export function validateApp(app: App): void {
       for (const [i, name] of [levelNames[1], levelNames[2]].entries()) if (typeof name !== 'string' || name.trim() === '') fail(`identity level ${i + 1} has no name`);
       if (levelNames[1].trim().toLowerCase() === levelNames[2]!.trim().toLowerCase()) fail(`identity levels 1 and 2 are both called "${levelNames[1]}"`);
     }
+    // identity.yaml's attempts are the attempts rule's: a policy compiled without them would hold the checks to another number.
+    const { maxAttempts } = app.identity;
+    if (maxAttempts !== undefined && app.policy.maxAttempts !== maxAttempts) fail(`policy's maxAttempts (${app.policy.maxAttempts}) is not identity.yaml's attempts (${maxAttempts}); compile the policy with the identity (definePolicy's identity option)`);
   }
   for (const tool of Object.keys(toolLevel)) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has a level for tool "${tool}", which has no rules`);
   const seenLinks = new Set<string>();

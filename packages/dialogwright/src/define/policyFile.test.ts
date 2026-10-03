@@ -70,8 +70,8 @@ describe('compile equality: the testkit', () => {
     const { sendCodeParams, ...compiled } = TESTKIT_IDENTITY;
     const { rest, ladder } = splitLadder(compiled);
     expect(rest).toEqual(FROZEN_TESTKIT_IDENTITY);
-    // What the old shape could not say: the levels' names.
-    expect(ladder).toEqual({ levelNames: { 1: 'verified', 2: 'confirmed by code' } });
+    // What the old shape could not say: the levels' names, the attempts.
+    expect(ladder).toEqual({ levelNames: { 1: 'verified', 2: 'confirmed by code' }, maxAttempts: 3 });
     expect(typeof sendCodeParams).toBe('function');
     expect(testkitApp.identity).toBe(TESTKIT_IDENTITY);
     expect(TESTKIT_POLICY.maxAttempts).toBe(3);
@@ -109,7 +109,7 @@ describe('compile equality: the valid fixture', () => {
   it('identity.yaml compiles to the old file\'s identity', () => {
     const { rest, ladder } = splitLadder(identity);
     expect(rest).toEqual(FROZEN_VALID_IDENTITY);
-    expect(ladder).toEqual({ levelNames: { 1: 'verified', 2: 'confirmed by code' } });
+    expect(ladder).toEqual({ levelNames: { 1: 'verified', 2: 'confirmed by code' }, maxAttempts: 3 });
     expect(maxAttempts).toBe(FROZEN_VALID_POLICY.maxAttempts);
   });
 

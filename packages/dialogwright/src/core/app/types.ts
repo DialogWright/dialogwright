@@ -210,6 +210,11 @@ export interface IdentityConfig {
    * reaches the session, the model, an outcome or an audit row.
    */
   levelNames?: Readonly<{ 1: string; 2?: string }>;
+  /**
+   * The failed tries allowed at each identity check (identity.yaml's `attempts`): the policy's
+   * maxAttempts must be the same number (validateApp). Without it, the policy's is not checked.
+   */
+  maxAttempts?: number;
 }
 
 /**
