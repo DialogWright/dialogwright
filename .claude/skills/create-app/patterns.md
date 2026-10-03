@@ -417,7 +417,8 @@ A key on the keypad menu may name it: the key plays the line, then offers the me
 |---|---|---|
 | An amount the code can work out (what is owed, a fee) | Not a slot: compute it from the record, read it back with `onSummaryRead`, send it as a param and hold it with `limit`. | nothing |
 | A choice among a few amounts or counts | `choice`, keys that start with a letter (`two`, `three`), `say` for how each is spoken. | nothing |
-| An amount the caller names freely | No type yet. Offer choices instead, or write a slot in code (authoring guide, section 4, "When no type fits"). | a gap |
+| An amount the caller names freely, in whole units ("between 10 and 100 dollars") | No money type yet. A `digits` slot with `mask: '\d{1,3}'` and no `length`, `redact: none` and a `noun` ("dollar amount"), held to its bounds by `limit`. It reads "twenty five" and "one hundred fifty", but not "a hundred and fifty" (it parses numbers as identifiers), has no keypad (that needs `length`) and no cents. | a gap |
+| An amount the caller names freely, with cents | No type yet. Offer choices instead, or write a slot in code (authoring guide, section 4, "When no type fits"). | a gap |
 | A street address | `text` with `say: null` (the summary reads the caller's words) and `redact: none`, and a summary line that quotes them ("at: {place}"). The value is the whole turn's words, so the read-back is the caller's sentence. | a gap |
 | A code with letters | A slot in code. | a gap |
 
