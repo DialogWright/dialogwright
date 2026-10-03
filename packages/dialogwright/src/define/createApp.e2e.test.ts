@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { main } from './cli';
+import { SHORT_TMP, withShortTmp } from '../testing/shortTmp';
 
 /**
  * End to end: scaffold an app into a temporary folder (never under apps/), link it to this
@@ -31,7 +31,8 @@ function link(app: string): void {
 
 /** Runs a node script in `cwd`, outside this test run's own vitest, and returns what it printed. */
 function node(cwd: string, script: string, args: string[]): string {
-  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('VITEST') && key !== 'FORCE_COLOR')), NO_COLOR: '1' };
+  // TMPDIR short, since tsx opens a socket under it (../testing/shortTmp.ts).
+  const env = withShortTmp({ ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('VITEST') && key !== 'FORCE_COLOR')), NO_COLOR: '1' });
   try {
     // Without colour codes, which a CI run turns on whatever is asked, so the output can be read as text.
     return execFileSync(process.execPath, [script, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 }).replace(/\u001b\[[0-9;]*m/g, '');
@@ -46,7 +47,7 @@ describe('a scaffolded app, end to end', () => {
     { name: 'plain-demo', identity: false },
     { name: 'identity-demo', identity: true },
   ])('$name passes check, typecheck, its tests and its stub regression as created', async ({ name, identity }) => {
-    const base = mkdtempSync(join(tmpdir(), 'dialogwright-scaffold-'));
+    const base = mkdtempSync(join(SHORT_TMP, 'dialogwright-scaffold-'));
     scratch.push(base);
     const app = join(base, name);
     const out: string[] = [];

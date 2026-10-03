@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { withShortTmp } from '../testing/shortTmp';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -685,7 +686,7 @@ describe('dialogwright check', () => {
   });
 
   it('runs as the package bin does, through tsx: the exit code and the output of a real process', () => {
-    const run = (args: string[]) => spawnSync(join(PACKAGE_DIR, 'node_modules', '.bin', 'tsx'), [join(here, 'cli.ts'), ...args], { encoding: 'utf8' });
+    const run = (args: string[]) => spawnSync(join(PACKAGE_DIR, 'node_modules', '.bin', 'tsx'), [join(here, 'cli.ts'), ...args], { encoding: 'utf8', env: withShortTmp() });
     const good = run(['check', LIBRARY_DIR]);
     expect({ status: good.status, stdout: good.stdout }).toEqual({ status: 0, stdout: `${LIBRARY_DIR}: ok\n` });
     const bad = run(['check', folder({ 'prompts.yaml': without('goodbye') })]);
