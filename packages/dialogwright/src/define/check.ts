@@ -39,58 +39,72 @@ import { FILE_NAMES, FOLDER_FILES } from './schema/index';
  * a folder whose code you would not run.
  */
 
-/** A line the engine says by name in every app: its id, and when it says it (for the message). */
-export const ENGINE_PROMPTS: Readonly<Record<string, string>> = {
-  ask_intent: 'it asks what the caller wants',
-  nomatch_open: 'it did not understand the caller and asks again',
-  no_input: 'the caller said nothing',
-  ack_intent: 'it starts the form the caller asked for',
-  confirm_intent_explicit: 'it checks which request the caller meant',
-  disambiguate_intent: 'it asks which of two requests the caller meant',
-  ack_intent_then: 'the caller asked for two things and it starts the first',
-  ack_queued: 'the caller asked for a second thing mid-form and it is put in the queue',
-  bridge_next: 'it moves from one form to the next queued one',
-  ack_frustration: 'the caller is frustrated',
-  offer_transfer: 'it offers to connect the caller to a person',
-  ack_declined: 'the caller declined a read-back or the transfer offer',
-  system_slow_dtmf_hint: 'a system is slow on a call with a keypad',
-  system_slow_chat: 'a system is slow in a chat',
-  ask_change: 'it asks which detail of a read-back to change',
-  confirm_dtmf: 'it asks the caller to confirm on the keypad',
-  anything_else: 'a form is done and it asks whether there is more',
-  goodbye: 'a call ends',
-  goodbye_chat: 'a chat ends',
-  screen_reprompt: 'it declines something the caller said outside a form and steers back',
-  screen_reprompt_form: 'it declines something the caller said in a form and steers back',
-  handoff_live_agent: 'the caller asks for a person',
-  handoff_frustrated: 'the caller is frustrated and is handed to a person',
-  handoff_max_attempts: 'the caller was asked too many times and is handed to a person',
-  handoff_system_failure: 'a system failed and the caller is handed to a person',
-  handoff_needs_human: 'a request that needs a person is handed over',
-  handoff_security: 'a caller who tried to manipulate the agent is handed to a person',
+/**
+ * A line the engine says: when it says it (for the message), and the variables it gives the line,
+ * which are the only ones the line's text may use (read from where core/ says the line).
+ */
+export interface EngineLine {
+  why: string;
+  vars?: readonly string[];
+}
+
+/** A line the engine says by name in every app: its id, when it says it, and the variables it gives it. */
+export const ENGINE_PROMPTS: Readonly<Record<string, EngineLine>> = {
+  ask_intent: { why: 'it asks what the caller wants' },
+  nomatch_open: { why: 'it did not understand the caller and asks again' },
+  no_input: { why: 'the caller said nothing' },
+  ack_intent: { why: 'it starts the form the caller asked for', vars: ['intentLabel'] },
+  confirm_intent_explicit: { why: 'it checks which request the caller meant', vars: ['intentLabel'] },
+  disambiguate_intent: { why: 'it asks which of two requests the caller meant', vars: ['a', 'b'] },
+  ack_intent_then: { why: 'the caller asked for two things and it starts the first', vars: ['a', 'b'] },
+  ack_queued: { why: 'the caller asked for a second thing mid-form and it is put in the queue', vars: ['intentLabel'] },
+  bridge_next: { why: 'it moves from one form to the next queued one', vars: ['intentLabel'] },
+  ack_frustration: { why: 'the caller is frustrated' },
+  offer_transfer: { why: 'it offers to connect the caller to a person' },
+  ack_declined: { why: 'the caller declined a read-back or the transfer offer' },
+  system_slow_dtmf_hint: { why: 'a system is slow on a call with a keypad' },
+  system_slow_chat: { why: 'a system is slow in a chat' },
+  ask_change: { why: 'it asks which detail of a read-back to change' },
+  confirm_dtmf: { why: 'it asks the caller to confirm on the keypad' },
+  anything_else: { why: 'a form is done and it asks whether there is more' },
+  goodbye: { why: 'a call ends' },
+  goodbye_chat: { why: 'a chat ends' },
+  screen_reprompt: { why: 'it declines something the caller said outside a form and steers back' },
+  screen_reprompt_form: { why: 'it declines something the caller said in a form and steers back' },
+  handoff_live_agent: { why: 'the caller asks for a person' },
+  handoff_frustrated: { why: 'the caller is frustrated and is handed to a person' },
+  handoff_max_attempts: { why: 'the caller was asked too many times and is handed to a person' },
+  handoff_system_failure: { why: 'a system failed and the caller is handed to a person' },
+  handoff_needs_human: { why: 'a request that needs a person is handed over' },
+  handoff_security: { why: 'a caller who tried to manipulate the agent is handed to a person' },
 };
 
+/** A line the engine needs from this app: its id, when it says it, and the variables it gives it. */
+export interface EngineNeed extends EngineLine {
+  id: string;
+}
+
 /** What the engine says only when the app has the feature: the menu, identity, a portal. */
-const MENU_PROMPT = { id: 'nomatch_dtmf_menu', why: 'it offers the keypad menu after a caller was not understood' };
-export const IDENTITY_PROMPTS: readonly { id: string; why: string }[] = [
+const MENU_PROMPT: EngineNeed = { id: 'nomatch_dtmf_menu', why: 'it offers the keypad menu after a caller was not understood' };
+export const IDENTITY_PROMPTS: readonly EngineNeed[] = [
   { id: 'handoff_identity', why: 'a caller who could not be verified is handed to a person' },
-  { id: 'identity_verified', why: 'the caller was verified' },
+  { id: 'identity_verified', why: 'the caller was verified', vars: ['first'] },
 ];
 /** The one-time code's lines: only for a ladder with level 2 (a ladder of one rung has no code). */
-export const CODE_PROMPTS: readonly { id: string; why: string }[] = [
-  { id: 'ask_otp', why: 'it asks for the one-time code' },
+export const CODE_PROMPTS: readonly EngineNeed[] = [
+  { id: 'ask_otp', why: 'it asks for the one-time code', vars: ['phoneLast4'] },
   { id: 'ask_otp_spoken', why: 'the caller said the code instead of keying it' },
   { id: 'otp_spoken_reissued', why: 'the caller said the code and a new one is sent' },
   { id: 'otp_verified', why: 'the one-time code matched' },
   { id: 'otp_failed', why: 'the one-time code did not match' },
 ];
-export const PORTAL_PROMPTS: readonly { id: string; why: string }[] = [
+export const PORTAL_PROMPTS: readonly EngineNeed[] = [
   { id: 'signin_required', why: 'a chat caller must sign in to the portal' },
   { id: 'signin_reminder', why: 'a chat caller has not signed in yet' },
-  { id: 'signin_thanks', why: 'a chat caller signed in' },
+  { id: 'signin_thanks', why: 'a chat caller signed in', vars: ['first'] },
   { id: 'signin_ready', why: 'a chat caller signed in with nothing waiting' },
-  { id: 'greeting_chat_signed_in', why: 'a chat opens for a signed-in subject' },
-  { id: 'greeting_chat_delegate', why: 'a chat opens for someone acting for subjects' },
+  { id: 'greeting_chat_signed_in', why: 'a chat opens for a signed-in subject', vars: ['first'] },
+  { id: 'greeting_chat_delegate', why: 'a chat opens for someone acting for subjects', vars: ['first'] },
 ];
 
 /** R5's NEEDS_HUMAN reason when policy.yaml names none: the gate's own (gate/lines.ts). */
@@ -116,12 +130,12 @@ function identityParts(config: LoadedConfig): { factors: readonly string[]; fail
  * the engine to say (SlotSpec.prompts: e.g. `disambiguate_<slot>`, a help prompt, a retryPromptId),
  * which only the code knows; a slot that declares none adds none.
  */
-export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: string; why: string }[] {
+export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[] {
   const greetings = config.app.prompts?.greetings;
-  const needs: { id: string; why: string }[] = [
+  const needs: EngineNeed[] = [
     { id: greetings?.voice ?? 'greeting', why: 'a call opens' },
     { id: greetings?.chat ?? 'greeting_chat', why: 'a chat opens' },
-    ...Object.entries(ENGINE_PROMPTS).map(([id, why]) => ({ id, why })),
+    ...Object.entries(ENGINE_PROMPTS).map(([id, line]) => ({ id, ...line })),
   ];
   if (config.intents.menu.length > 0) needs.push(MENU_PROMPT);
   for (const slot of askedSlots(config)) {
@@ -134,10 +148,10 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
     } else if (spec.spokenConfirm === 'always') {
       needs.push({ id: `ask_${slot}_dtmf`, why: `a read-back of the slot "${slot}" was declined or not answered, and it asks on the keypad (its slot spec's spokenConfirm is "always")` });
     }
-    if (spec.spokenConfirm === 'always') needs.push({ id: `confirm_${slot}`, why: `it reads a spoken value of the slot "${slot}" back for a yes (its slot spec's spokenConfirm is "always")` });
-    if (spec.spokenConfirm === 'by-confidence') needs.push({ id: `ack_${slot}`, why: `it acknowledges a value it heard for the slot "${slot}" (its slot spec's spokenConfirm is "by-confidence")` });
+    if (spec.spokenConfirm === 'always') needs.push({ id: `confirm_${slot}`, why: `it reads a spoken value of the slot "${slot}" back for a yes (its slot spec's spokenConfirm is "always")`, vars: [slot] });
+    if (spec.spokenConfirm === 'by-confidence') needs.push({ id: `ack_${slot}`, why: `it acknowledges a value it heard for the slot "${slot}" (its slot spec's spokenConfirm is "by-confidence")`, vars: [slot] });
     if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
-    for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)` });
+    for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)`, ...(declared.vars && declared.vars.length > 0 ? { vars: declared.vars } : {}) });
   }
   for (const reason of personReasons(config.policy)) {
     needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (a role rule in policy.yaml) and the call goes to a person for the reason "${reason}"` });
@@ -198,6 +212,11 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   if ('problems' in found) {
     problems.push(...found.problems);
     linked = found.linked;
+    // The module threw while it built the app with defineApp, which still says what code it was
+    // given: the lines the engine needs because of that code are reported in this run too, not on
+    // the next one, once these problems are fixed. Slots that do not link add nothing here; their
+    // own problems are among the ones above.
+    if (found.code) code = codeWithLinkedSlots(config, found.code, loaded.document, codeFile);
   } else if (found.code) {
     problems.push(...crossLink(config, found.code, locate, codeFile, loaded.locateKey, loaded.document));
     // The checks below read the slots' specs: the folder's library slots count as the code's.
@@ -205,6 +224,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     linked = true;
   }
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
+  problems.push(...checkMenu(config, locate));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
   return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
 }
@@ -213,8 +233,20 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
 // The app's code
 // ---------------------------------------------------------------------------------------------
 
-/** What loadCode found: the code and the module's path from the app folder (none when there is no module), or the problems importing it raised. */
-type Found = { code?: AppCode; file?: string } | { problems: Problem[]; linked: boolean; file: string };
+/**
+ * What loadCode found: the code and the module's path from the app folder (none when there is no
+ * module), or the problems importing it raised (with the code defineApp was given, when it says).
+ */
+type Found = { code?: AppCode; file?: string } | { problems: Problem[]; linked: boolean; file: string; code?: AppCode };
+
+/** The code with the folder's library slots counted as its own, or the code as it is when they do not link. */
+function codeWithLinkedSlots(config: LoadedConfig, code: AppCode, document: LoadResult['document'], codeFile: string): AppCode {
+  try {
+    return { ...code, slots: linkSlots(config, code, document, codeFile).slots };
+  } catch {
+    return code;
+  }
+}
 
 /**
  * Imports the folder's app module and takes its `code` (or default) export. A module that throws
@@ -230,7 +262,8 @@ async function loadCode(dir: string): Promise<Found> {
   } catch (error) {
     // By its brand, not instanceof: the module may have reached defineApp through another copy of this one.
     if (isAppDefinitionError(error) && error.problems.length > 0 && error.problems.every(isProblem)) {
-      return { problems: [...error.problems], linked: true, file };
+      const code = typeof error.code === 'object' && error.code !== null ? (error.code as AppCode) : undefined;
+      return { problems: [...error.problems], linked: true, file, ...(code ? { code } : {}) };
     }
     // The whole message, on one line: an error that lists several things must keep every one of them.
     const message = typeof (error as { message?: unknown } | null)?.message === 'string' ? oneLine((error as { message: string }).message) : String(error);
@@ -260,6 +293,37 @@ function isProblem(p: unknown): p is Problem {
 
 /** A message of several lines as one: each line trimmed, joined with " / ". */
 const oneLine = (message: string): string => message.split('\n').map((l) => l.trim()).filter((l) => l !== '').join(' / ');
+
+// ---------------------------------------------------------------------------------------------
+// The keypad menu: every key does something
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A key of the keypad menu starts a form, or (`agent`) goes to a person: core/turn.ts takes no other
+ * key on the menu, so a key for an informational or control intent is ignored and the caller hears
+ * nothing. Refused here until the engine says such an intent's line on its key. A menu entry that
+ * names no intent at all is crossLink's to report.
+ */
+function checkMenu(config: LoadedConfig, locate: LoadResult['locate']): Problem[] {
+  const { intents, menu } = config.intents;
+  const problems: Problem[] = [];
+  menu.forEach(({ digit, intent }, i) => {
+    const def = Object.hasOwn(intents, intent) ? intents[intent] : undefined;
+    if (!def || def.kind === 'form' || intent === 'agent') return;
+    const path: DataPath = ['menu', i, 'intent'];
+    const at = locate('intents.yaml', path) ?? { line: 0, column: 0 };
+    const what = def.kind === 'informational' ? 'an informational intent' : `a ${def.kind} intent`;
+    problems.push({
+      file: 'intents.yaml',
+      line: at.line,
+      column: at.column,
+      path: formatPath(path),
+      message: `menu digit "${digit}" names "${intent}", ${what}: a key on the menu starts a form or (agent) goes to a person, and any other key is ignored, so a caller who presses ${digit} hears nothing`,
+      fix: `take digit "${digit}" off the menu (and out of the nomatch_dtmf_menu line); a caller still asks for "${intent}" in words`,
+    });
+  });
+  return problems;
+}
 
 // ---------------------------------------------------------------------------------------------
 // Prompts: every reference and every line the engine says, in every locale
@@ -306,15 +370,17 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
     // A rename is offered only from a line nothing else needs: renaming a needed one would lose it.
     const known = Object.keys(prompts).filter((id) => !needed.has(id));
     const where = locale === config.defaultLocale ? file : `the ${locale} prompts`;
-    const missing = (id: string, why: string, path: DataPath = ['prompts']): void => {
+    const missing = (id: string, why: string, vars: readonly string[] = []): void => {
       const near = closest(id, known);
+      // The variables the engine gives the line: the only ones its text may use.
+      const given = vars.map((v) => `{${v}}`).join(', ');
       problems.push({
         file,
         line: at.line,
         column: at.column,
-        path: formatPath(path),
-        message: `prompt "${id}" is missing from ${where}; ${why}`,
-        fix: `${near ? `rename "${near}" to "${id}" if that is the line, or ` : ''}add "${id}:" with its text and interruptible to ${file}`,
+        path: formatPath(['prompts']),
+        message: `prompt "${id}" is missing from ${where}; ${why}${given ? `, and gives it ${given}` : ''}`,
+        fix: `${near ? `rename "${near}" to "${id}" if that is the line, or ` : ''}add "${id}:" with its text${given ? ` (it may use ${given})` : ''} and interruptible to ${file}`,
       });
     };
     const reported = new Set<string>();
@@ -325,8 +391,8 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
       const line = locate(ref.file, ref.path)?.line;
       missing(ref.id, `${ref.file}${line ? `:${line}` : ''} (${formatPath(ref.path)}) says it`);
     }
-    for (const { id, why } of engine) {
-      if (!has(prompts, id) && !reported.has(id)) missing(id, `the engine says it when ${why}`);
+    for (const { id, why, vars } of engine) {
+      if (!has(prompts, id) && !reported.has(id)) missing(id, `the engine says it when ${why}`, vars);
     }
     problems.push(...checkSlotPromptVariables(config, locale, prompts, file, locate, code, codeFile));
     if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));

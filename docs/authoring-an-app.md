@@ -128,6 +128,7 @@ menu:
 - `kind: form` starts the form with the same id in forms.yaml. `kind: informational` plays its `promptId` and goes back to where the caller was. `kind: control` is the engine's own.
 - Two control intents are required, because the engine reads them by name: `agent` and `repeat_prompt`. The snippet above shows both. The other control intents (`done`, `other`, `none`) are optional; the library has all three, and the clinic leaves out `done`, since its calls end when a task completes.
 - Keypad digits are quoted strings.
+- A key on the menu starts a form, or (`agent`) goes to a person. A key for an informational or control intent does nothing on a call today (the caller hears nothing), so `pnpm check` refuses one: leave an informational intent off the menu, and out of the `nomatch_dtmf_menu` line. A caller still asks for it in words.
 
 ### forms.yaml
 
@@ -170,7 +171,7 @@ prompts:
     interruptible: false
 ```
 
-- Variables in braces are filled by the engine (`{intentLabel}`) or by the app's code (`{book}`, `{due}`).
+- Variables in braces are filled by the engine (`{intentLabel}`) or by the app's code (`{book}`, `{due}`). The engine's lines are given only a few: `{intentLabel}` (`ack_intent`, `ack_queued`, `bridge_next`, `confirm_intent_explicit`), `{a}` and `{b}` (`disambiguate_intent`, `ack_intent_then`), `{first}` (`identity_verified`, `signin_thanks`, `greeting_chat_signed_in`, `greeting_chat_delegate`), `{phoneLast4}` (`ask_otp`, empty when the caller has no phone on record), and the slot's own value (`confirm_<slot>`, `ack_<slot>`, as `{<slot>}`). The rest are given none. `pnpm check` names them when it asks for a missing line.
 - `interruptible: false` for a line that must be heard whole (a keypad instruction, a statement).
 - `mode` can only be `fixed` (the default). A model chooses among these lines; it never writes one. Generated wording is a later phase.
 - The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. Some lines depend on the slot's spec in the code: `ask_<slot>_dtmf` for a slot with a keypad rung (`dtmf`), `confirm_<slot>` and `ask_<slot>_dtmf` for a slot whose every spoken value is read back (`spokenConfirm: 'always'`), `ack_<slot>` for one acknowledged by confidence (`spokenConfirm: 'by-confidence'`), and the slot's `partialPromptId`. A role whose access to a tool is `person` needs the handoff line for its role rule's `reason` (`handoff_role_person` by default). `pnpm check` lists any that are missing and says when the engine says each (section 6). It cannot see the lines a slot's `fill` names (`disambiguate_<slot>`, a `retryPromptId`, a help prompt) unless the slot declares them in its `prompts` (section 4).
@@ -891,13 +892,14 @@ It checks, in one pass:
 
 1. **Each file against its schema.** Unknown keys, wrong types, a missing required file, a YAML syntax error. A misspelt name offers the near match.
 2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
-3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for a role rule's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`.
-4. **Each locale against prompts.yaml**: a translated line uses only the variables the prompts.yaml line has (the code fills those and no others, so another would fail when it is said), and a locale has no line that prompts.yaml does not (it would never be said).
-5. **The corpus**: every intent has at least one labelled example in `corpus.jsonl`, when app.yaml names a fixtures directory. The corpus must be inside the package (a link that leads out is refused) and at most 16 MB.
+3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for a role rule's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`. A missing line's message says when the engine says it and, when it gives the line variables, which ones (`..., and gives it {first}  ->  add "signin_thanks:" with its text (it may use {first}) and interruptible to prompts.yaml`).
+4. **The keypad menu**: every key names a form intent or `agent`; a key for an informational or control intent is refused, since the engine ignores it.
+5. **Each locale against prompts.yaml**: a translated line uses only the variables the prompts.yaml line has (the code fills those and no others, so another would fail when it is said), and a locale has no line that prompts.yaml does not (it would never be said).
+6. **The corpus**: every intent has at least one labelled example in `corpus.jsonl`, when app.yaml names a fixtures directory. The corpus must be inside the package (a link that leads out is refused) and at most 16 MB.
 
 The format is one line per problem, `file:line:column  path  message  ->  fix`, and then a summary line (`N problems in <folder>`, or `<folder>: ok`). A problem in the code has no YAML line, so it reads `app.ts` (or `src/app.ts`) and a code path such as `code.forms.renew_loan.entry`.
 
-When a schema problem is found, the cross-checks against the code do not run until it is fixed, because a file that does not parse cannot be linked. Fix the schema problems first, then run it again.
+When a schema problem is found, the cross-checks against the code do not run until it is fixed, because a file that does not parse cannot be linked. Fix the schema problems first, then run it again. Any other problem does not hold the rest back: an app module that builds the app with `defineApp` throws when the folder and the code disagree, and `check` still reads the code that `defineApp` was given, so the lines the code needs (a keypad slot's `ask_<slot>_dtmf`, a portal's sign-in lines) are reported in the same run as the problem that made it throw.
 
 These are real messages. The folder was a copy of the library fixture, with these edits: an unknown key `colour: blue` in app.yaml, `level: three` for `renewLoan` in policy.yaml. The first run:
 
@@ -1035,7 +1037,7 @@ For "what are your hours", an informational intent with no form and no code:
 
 1. `intents.yaml`: add `hours:` with `criteria`, `label`, `kind: informational` and `promptId: hours`.
 2. `prompts.yaml`: add `hours:` with its `text` and `interruptible`. Add it to every `locale/<tag>/prompts.yaml` too.
-3. Optionally, `menu:` in intents.yaml gets a key for it.
+3. Leave it off the keypad `menu:`: a key starts a form or goes to a person, and `pnpm check` refuses a key for an informational intent.
 4. If app.yaml names a fixtures directory, add labelled utterances to `corpus.jsonl` with `"intent":"hours"`.
 5. `pnpm check`.
 

@@ -99,13 +99,20 @@ export const APP_DEFINITION_ERROR = Symbol.for('dialogwright.AppDefinitionError'
 export class AppDefinitionError extends Error {
   readonly problems: readonly Problem[];
   readonly [APP_DEFINITION_ERROR] = true;
+  /**
+   * The code parts defineApp was given, when it was given any. `dialogwright check` reads them from
+   * an app module that threw while it was imported, so the lines the engine needs because of the
+   * code (a slot's keypad line, a portal's sign-in lines) are reported in the same run as these problems.
+   */
+  readonly code?: AppCode;
 
   /** `what` names the thing that is not valid when it is not an app folder ("the slots in src/slots.yaml"). */
-  constructor(dir: string, problems: readonly Problem[], what: string = `the app in ${dir}`) {
+  constructor(dir: string, problems: readonly Problem[], what: string = `the app in ${dir}`, code?: AppCode) {
     const count = `${problems.length} problem${problems.length === 1 ? '' : 's'}`;
     super(`${what} is not valid (${count}):\n${problems.map((p) => `  ${formatProblem(p)}`).join('\n')}`);
     this.name = 'AppDefinitionError';
     this.problems = problems;
+    if (code !== undefined) this.code = code;
   }
 }
 
@@ -113,7 +120,7 @@ export class AppDefinitionError extends Error {
  * Whether `error` is an AppDefinitionError from any copy of this module: it carries the brand, or
  * (from a copy older than the brand) the name, and in either case a list of problems.
  */
-export function isAppDefinitionError(error: unknown): error is { problems: readonly Problem[]; message: string } {
+export function isAppDefinitionError(error: unknown): error is { problems: readonly Problem[]; message: string; code?: unknown } {
   if (typeof error !== 'object' || error === null) return false;
   const e = error as { [APP_DEFINITION_ERROR]?: unknown; name?: unknown; problems?: unknown };
   return (e[APP_DEFINITION_ERROR] === true || e.name === 'AppDefinitionError') && Array.isArray(e.problems);
@@ -137,7 +144,7 @@ export function defineApp(dir: string, code: AppCode, options: DefineAppOptions 
   const loaded = loadAppFolder(dir);
   if (!loaded.config) throw new AppDefinitionError(dir, loaded.problems);
   const problems = crossLink(loaded.config, code, loaded.locate, codeFile, loaded.locateKey, loaded.document);
-  if (problems.length > 0) throw new AppDefinitionError(dir, problems);
+  if (problems.length > 0) throw new AppDefinitionError(dir, problems, undefined, code);
   const app = buildApp(loaded.config, code, linkSlots(loaded.config, code, loaded.document, codeFile).slots);
   try {
     validateApp(app);
@@ -146,7 +153,7 @@ export function defineApp(dir: string, code: AppCode, options: DefineAppOptions 
     const message = error instanceof Error ? error.message : String(error);
     throw new AppDefinitionError(dir, [
       { file: '.', line: 0, column: 0, path: WHOLE_FILE, message: `validateApp refused the app: ${message}`, fix: `correct the reference it names, in the YAML file or in ${codeFile}` },
-    ]);
+    ], undefined, code);
   }
   return app;
 }
