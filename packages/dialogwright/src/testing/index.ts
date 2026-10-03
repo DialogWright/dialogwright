@@ -28,7 +28,7 @@ export type { CheckId, ConformanceCheck, SlotConformanceOptions, TestRegistrar }
 export { gateEventGolden, gateEventLines } from './gateEvents';
 export type { GateEventGolden, GateEventGoldenOptions, GateGoldenClient } from './gateEvents';
 export {
-  gateGridInput, gateGridCases, runGateGrid, compareGateGrid, legacyGateEvaluator, matrixProblems, gridPrincipals, gridTools,
+  gateGridInput, gateGridCases, runGateGrid, compareGateGrid, legacyGateEvaluator, nameOfLegacyId, namedDecision, matrixProblems, gridPrincipals, gridTools,
   gridDecisionLine, formatGateGridMismatches, gridRuleCounts, gridUnexercised, gridVerdicts, UNLISTED_TOOL, GRID_PROBES, EXTRA_FIELD,
 } from './gateGrid';
 export type { GateGridInput, GateGridCase, GateGridPoint, GateGrid, GateGridMismatch, GateEvaluate } from './gateGrid';
