@@ -37,9 +37,11 @@ src/app.ts      the code: the tools, the form hooks and the gate's lookups, join
 src/data.ts     the fixture accounts and property managers behind the stub tools
 fixtures/       the corpus, the scripted calls and the stub baseline
 DESIGN.md       the design worksheet: the paragraph, every choice it left open, and the gaps
+CLAUDE.md       notes for an AI coding assistant changing this app
+.env.example    the keys and settings for recording and for serving (copy to .env)
 ```
 
-What is data is YAML, and what runs is TypeScript. Policy is never in a tool: the gate decides, from `policy.yaml`, whether a tool may run. The guide to every file is [docs/authoring-an-app.md](../../docs/authoring-an-app.md), and the slot types are in [docs/slots](../../docs/slots/README.md).
+What is data is YAML, and what runs is TypeScript. Policy is never in a tool: the gate decides, from `policy.yaml`, whether a tool may run. The guide to every file is [docs/authoring-an-app.md](../../docs/authoring-an-app.md) (its section 3 is policy and identity), and the slot types are in [docs/slots](../../docs/slots/README.md).
 
 ## Commands
 

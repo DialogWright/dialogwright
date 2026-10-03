@@ -22,7 +22,8 @@ The package ships TypeScript source (run it with tsx or vitest) until a release 
 - [llms.txt](llms.txt): an index of these docs for AI assistants.
 - `packages/dialogwright/schemas`: the JSON Schema of each YAML file in an app folder; every file names its schema on its first line, so an editor completes and checks it.
 - `apps/clinic`: Example Family Practice, a fictional clinic's appointment line, an app folder, and the first example app to read. A caller can schedule, reschedule, cancel or confirm an appointment with one of eight providers, or be put through to billing. It shows an app with no identity verification, all five of its slots configured in `slots.yaml` from the slot library, reads and gated writes through the directory tools, scheduling built from generic form hooks, and its own corpus (241 labelled utterances), scripted calls (89) and regression baseline. It needs no keys: `pnpm --filter @dialogwright/example-clinic cli --client heuristic` is a text console, and `pnpm --filter @dialogwright/example-clinic regress` replays its fixtures. See [apps/clinic/README.md](apps/clinic/README.md).
-- A utility company example is coming.
+- `apps/utility`: Example Power & Light, a fictional electric utility's phone and chat line, built by an AI coding assistant from a one-paragraph description, and the example to read for identity and policy. Callers can report an outage (confirmed before it is filed), hear a balance behind verification, and set up a payment arrangement behind a one-time code, with bounds on the first payment and the total; a property manager may check balances and report outages for their buildings, but an arrangement for a tenant's account goes to a person. It has its own policy card, policy matrix, app map, corpus (133 labelled utterances), scripted calls (41) and stub regression baseline. It has no recording against a decision model yet, so only its stub regression runs. See [apps/utility/README.md](apps/utility/README.md).
+- [`pnpm create-app`](docs/authoring-an-app.md#where-to-start) and the [create-app skill](.claude/skills/create-app/SKILL.md): the scaffold writes a small app that passes the checks as created, and the skill is the procedure an AI coding assistant follows to turn a paragraph into an app. The [trials](docs/trials/README.md) tried it with two fresh assistants and say what they found.
 
 ## Quick start
 
@@ -34,9 +35,10 @@ pnpm --filter dialogwright regress:testkit
 pnpm --filter @dialogwright/example-clinic regress
 pnpm --filter dialogwright slot-docs         # regenerate the slot type pages
 pnpm policy:card apps/clinic                 # write the policy card, POLICY.md (also: policy:matrix, app:diagram)
+pnpm create-app <name>                       # a new app under apps/<name> that passes the checks (--identity for one that verifies callers)
 ```
 
-`pnpm check` reads each app folder's YAML against its schemas and cross-checks it against the app's code, printing each problem with its file, line and fix; it prints `apps/clinic: ok` when there are none. To try an app with no keys, run the clinic's text console: `pnpm --filter @dialogwright/example-clinic cli --client heuristic`. To build your own, start with [docs/authoring-an-app.md](docs/authoring-an-app.md). A slot is a few lines in `slots.yaml`, for example `account: { type: digits, noun: account, length: 8, keypad: true }`; the [slot types](docs/slots/README.md) say which type to use and what each option does.
+`pnpm check` reads each app folder's YAML against its schemas and cross-checks it against the app's code, printing each problem with its file, line and fix; it prints `apps/clinic: ok` when there are none. To try an app with no keys, run the clinic's text console: `pnpm --filter @dialogwright/example-clinic cli --client heuristic`. To build your own, run `pnpm create-app <name>` and read [docs/authoring-an-app.md](docs/authoring-an-app.md), or give an AI coding assistant a paragraph describing the app and point it at the [create-app skill](.claude/skills/create-app/SKILL.md). A slot is a few lines in `slots.yaml`, for example `account: { type: digits, noun: account, length: 8, keypad: true }`; the [slot types](docs/slots/README.md) say which type to use and what each option does.
 
 Requires Node 22.19 or later and pnpm.
 

@@ -7,6 +7,8 @@ Two trials have been run, on different paragraphs, the second after the first on
 - [2026-10-03-utility.md](2026-10-03-utility.md): Example Power & Light, a small electric utility. The app is in [apps/utility](../../apps/utility).
 - [2026-10-03-transit.md](2026-10-03-transit.md): Example Metro Transit, a city bus and rail agency. The app was built in a scratch worktree and is not committed; the log is the evidence.
 
+The logs name sections of the authoring guide by the numbers it had when the trials ran; since then policy and identity became its section 3, and what was section 3 onward moved down by one.
+
 ## The paragraphs
 
 The utility:
