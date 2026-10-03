@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { appTurnContext, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
 import { callTool, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { confirmForm, contextForm, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
+import { confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
 import { JevClientError, type JevClient } from '../jev/types';
 import { promptText } from '../prompts/render';
 import { prompt } from '../core/decision';
@@ -425,4 +425,14 @@ export function loadScenarios(dir: string): Scenario[] {
     }
   }
   return out;
+}
+
+/**
+ * Every spoken step of the scripted calls whose words are no corpus line's text, as
+ * `<scenario id>: <the words>`. The stub answers only from the corpus, and answers words it has no
+ * line for with nothing (a missed turn), so such a step would run as a miss the call never meant.
+ */
+export function unanswerableSteps(corpus: readonly CorpusEntry[], scenarios: readonly Scenario[]): string[] {
+  const texts = new Set(corpus.map((e) => normalizeText(e.text)));
+  return scenarios.flatMap((s) => s.steps.flatMap((step) => ('say' in step && !texts.has(normalizeText(step.say)) ? [`${s.id}: ${step.say}`] : [])));
 }

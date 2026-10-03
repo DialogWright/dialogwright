@@ -139,7 +139,7 @@ A `FAIL scenario` line names only the field that differed. To see the call turn 
 pnpm --filter @dialogwright/example-<name> regress --scenario <id>     # repeatable; --corpus <id> too
 ```
 
-It ends with `pass` or `FAIL ...` and `baseline: no changes` or the differences. Read the transcript rather than writing a script over the harness. While you build, the baseline is still the example's, so your lines are `new`, the example's are `removed`, and the app's `fixtures.test.ts` fails on its baseline comparison. That is expected. What must be clean before you make the baseline: `pnpm check`, the type check, every other test, no `FAIL scenario` line, and no error loading the corpus (a duplicate text, a label a question cannot give, `as` outside `no_form`).
+It ends with `pass` or `FAIL ...` and `baseline: no changes` or the differences. Read the transcript rather than writing a script over the harness. While you build, the baseline is still the example's, so your lines are `new`, the example's are `removed`, and the app's `fixtures.test.ts` fails on its baseline comparison. That is expected. What must be clean before you make the baseline: `pnpm check`, the type check, every other test, no `FAIL scenario` line, and no error loading the corpus or the scripted calls (a duplicate text, a label a question cannot give, `as` outside `no_form`, a spoken step whose words no corpus line has).
 
 Then make the app's own first baseline, once:
 

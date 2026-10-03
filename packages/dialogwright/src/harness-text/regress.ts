@@ -7,7 +7,7 @@ import { isCassetteMiss } from '../jev/cassette';
 import { diff, gapsNowMatching, knownGapsFor, REAL_MODEL_KINDS } from './regressDiff';
 import { formatRegressSummary } from './regressSummary';
 import type { TraceRecord } from '../trace/types';
-import { loadScenarios, runCorpusEntry, runScenario, type RunOptions, type Scenario } from './runner';
+import { loadScenarios, runCorpusEntry, runScenario, unanswerableSteps, type RunOptions, type Scenario } from './runner';
 import type { CorpusEntry } from '../jev/corpus';
 import { closest } from '../define/problems';
 import { corpusTranscript, scenarioTranscript } from './transcript';
@@ -45,6 +45,16 @@ async function run(): Promise<void> {
   const screen = parseScreenMode(args.screen, '--screen');
   const corpus = loadCorpus(defaultCorpusFile());
   const scenarioDefs = loadScenarios(scenariosDir());
+  // Refused, as a duplicate corpus text is: a spoken step the corpus has no line for is a turn the
+  // stub cannot answer, and the call would pass or fail on a miss nobody wrote.
+  const unanswerable = unanswerableSteps(corpus, scenarioDefs);
+  if (unanswerable.length > 0) {
+    throw new Error([
+      `${unanswerable.length} spoken ${unanswerable.length === 1 ? 'step is' : 'steps are'} not a corpus line's text, so the stub cannot answer ${unanswerable.length === 1 ? 'it' : 'them'}:`,
+      ...unanswerable.map((u) => `  ${u}`),
+      'add a line with those words to the corpus, labelled with what they mean, or change the step to the words of a line it has',
+    ].join('\n'));
+  }
   const picked = { scenarios: args.scenario ?? [], corpus: args.corpus ?? [] };
   if (args.update && picked.scenarios.length + picked.corpus.length > 0) {
     console.error('--update records the whole baseline; it cannot be given with --scenario or --corpus');
