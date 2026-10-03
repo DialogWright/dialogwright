@@ -125,7 +125,7 @@ menu:
 ```
 
 - `criteria` is sent to the decision model as written, so changing it changes what the model sees (a recorded cassette then misses). `label` is how the line says the intent ("Sure, I can help you renew a book").
-- `kind: form` starts the form with the same id in forms.yaml. `kind: informational` plays its `promptId` and goes back to where the caller was. `kind: control` is the engine's own.
+- `kind: form` starts the form with the same id in forms.yaml. `kind: informational` plays its `promptId` and goes back to where the caller was; its key on the menu does the same, then gives the menu back. `kind: control` is the engine's own.
 - Two control intents are required, because the engine reads them by name: `agent` and `repeat_prompt`. The snippet above shows both. The other control intents (`done`, `other`, `none`) are optional; the library has all three, and the clinic leaves out `done`, since its calls end when a task completes.
 - Keypad digits are quoted strings.
 - A key on the menu starts a form, or (`agent`) goes to a person. A key for an informational or control intent does nothing on a call today (the caller hears nothing), so `pnpm check` refuses one: leave an informational intent off the menu, and out of the `nomatch_dtmf_menu` line. A caller still asks for it in words.
@@ -225,7 +225,8 @@ actions:
           verdicts: { outsideWindow: NEEDS_HUMAN }
 ```
 
-- `dateInRange: { field, notBefore?, notAfter?, within?, reasons?, verdicts? }`. `field` is the param holding the date, `yyyy-mm-dd` and a day the calendar has. `notBefore` and `notAfter` are `today` (the call session's date, never the clock), a date, or a reference to a lookup that gives one. `within` is a reference to a lookup that gives a window, `{ start, end }` with `end: null` for one with no end; a lookup that gives `null` has no window, and the date is outside it. At least one of the three.
+- `dateInRange: { field, notBefore?, notAfter?, within?, reasons?, verdicts? }`. `field` is the param holding the date, `yyyy-mm-dd` and a day the calendar has. `notBefore` and `notAfter` are `today` (the call session's date, never the clock), a number of days from today, a date, or a reference to a lookup that gives one. `within` is a reference to a lookup that gives a window, `{ start, end }` with `end: null` for one with no end; a lookup that gives `null` has no window, and the date is outside it. At least one of the three.
+- A number of days from today is `today+N` or `today-N`, N a whole number from 1 to 3660, with no spaces and no leading zero: `notAfter: today+30` holds a date to no later than 30 days from today, `notBefore: today-7` to no earlier than a week ago. The day is today's date with N calendar days added or taken away, counted in UTC days, so a month's end, a year's end and a leap day fall where the calendar has them. Any other spelling (`today+0`, `today + 30`, `today+030`, `today+30d`, `today+3661`) is a problem `check` reports. Two bounds that both count from today must be in order (`notBefore: today+30` with `notAfter: today+7` is a problem); a date and a number of days from today are not compared, since today moves. The policy card says it in words: "no later than 30 days from today", "no earlier than 7 days before today".
 - `limit: { field, min?, max?, reasons?, verdicts? }`. `field` is the param holding the number: an optional minus, digits, an optional point and digits (`12`, `0.50`, `-3`), and nothing else (no units, currency, thousands separators, exponents or spaces). `min` and `max` are numbers, or references to a lookup that gives one (a number, or a text in the same form). At least one of the two. Numbers are compared exactly, as decimals.
 - Every bound is inclusive: a value equal to a bound, or to either end of a window, passes.
 - `reasons` names the reason the gate gives for each way the rule fails, for the app's refusal lines (`blockPromptId`) and handoffs: `invalid` (not a date: `not-a-date`; not a number: `not-a-number`), `outOfRange` (`date-range`; `limit`), and for `dateInRange` `outsideWindow` (`date-window`). `verdicts` sets `outOfRange` and `outsideWindow` to `BLOCK` (the default) or `NEEDS_HUMAN`.
@@ -254,7 +255,7 @@ export const code: AppCode = {
 
 A bound comes only from the app's code and systems, never from the session's facts or the conversation. `check` refuses a reference to a lookup `code.lookups` does not name, a name every object has (`constructor`, `toString`, `prototype`, ...) as a lookup or a field, the gate's own `ownerOf` or `scopeOf`, and, where the action's `fields` or `confirmed` rule says which params it sends, a `field` or reference param outside them. A field is read only as a plain object's own value, never a getter or an inherited one. List `scope` before a range rule, so a lookup is only asked about a record the caller may see.
 
-Each records itself under its name (`dateInRange`, `limit`) with lines like `amount at least 0.01, at most orderTotal(orderId ...1234) 120` and `returnDate outside returnWindow(orderId ...1234) 2026-09-20..2026-10-20`: the param's name and the bounds it was held to (today's date, a literal, what a lookup gave), with the id a lookup was called with masked to its last four. The call's own value is never in the line, since it may be a value the app redacts, and a line goes to the audit as it is.
+Each records itself under its name (`dateInRange`, `limit`) with lines like `amount at least 0.01, at most orderTotal(orderId ...1234) 120` and `returnDate outside returnWindow(orderId ...1234) 2026-09-20..2026-10-20`: the param's name and the bounds it was held to (today's date, a number of days from today with the date it gave, `on or before today+30 2026-11-01`, a literal, what a lookup gave), with the id a lookup was called with masked to its last four. The call's own value is never in the line, since it may be a value the app redacts, and a line goes to the audit as it is.
 
 #### Redaction per principal: `redact`
 
@@ -1094,7 +1095,7 @@ For "what are your hours", an informational intent with no form and no code:
 
 1. `intents.yaml`: add `hours:` with `criteria`, `label`, `kind: informational` and `promptId: hours`.
 2. `prompts.yaml`: add `hours:` with its `text` and `interruptible`. Add it to every `locale/<tag>/prompts.yaml` too.
-3. Leave it off the keypad `menu:`: a key starts a form or goes to a person, and `pnpm check` refuses a key for an informational intent.
+3. Optionally, `menu:` in intents.yaml gets a key for it: the key plays the line, as asking does, and the menu is offered again.
 4. If app.yaml names a fixtures directory, add labelled utterances to `corpus.jsonl` with `"intent":"hours"`.
 5. `pnpm check`.
 

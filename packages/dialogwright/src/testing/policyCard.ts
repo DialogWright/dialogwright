@@ -1,7 +1,7 @@
 import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, RoleAccess, ToolName } from '../core/app/types';
-import { refText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
+import { refText, todayText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
 import type { PolicyAction, PolicySource, Rule } from '../gate/compiled';
 import { isDefinedRule } from '../gate/defineRule';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
@@ -38,11 +38,23 @@ function actionLabel(source: PolicySource, tool: ToolName): string {
 /** A date or number bound in words. */
 function boundText(bound: DateBound | NumberBound): string {
   switch (bound.kind) {
-    case 'today': return 'today';
+    case 'today': return todayText(bound);
     case 'date': return bound.date;
     case 'number': return bound.value;
     case 'lookup': return `what ${code(refText(bound.ref))} gives`;
   }
+}
+
+/**
+ * A dateInRange bound in words, with what it holds the date to: "on or after 2026-01-31", "on or
+ * before today", and for a number of days from today "no later than 30 days from today" (notAfter
+ * today+30) or "no earlier than 7 days before today" (notBefore today-7).
+ */
+function dateBoundWords(which: 'notBefore' | 'notAfter', bound: DateBound): string {
+  const days = bound.kind === 'today' ? bound.days ?? 0 : 0;
+  if (days === 0) return `${which === 'notBefore' ? 'on or after' : 'on or before'} ${boundText(bound)}`;
+  const n = Math.abs(days);
+  return `${which === 'notBefore' ? 'no earlier than' : 'no later than'} ${n} day${n === 1 ? '' : 's'} ${days > 0 ? 'from' : 'before'} today`;
 }
 
 const refWords = (ref: LookupRef): string => code(refText(ref));
@@ -86,8 +98,8 @@ function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Ru
     case 'fields': return `only these fields are sent: ${rule.fields.length === 0 ? 'none' : rule.fields.map(code).join(', ')}`;
     case 'dateInRange': {
       const bounds = [
-        ...(rule.notBefore ? [`on or after ${boundText(rule.notBefore)}`] : []),
-        ...(rule.notAfter ? [`on or before ${boundText(rule.notAfter)}`] : []),
+        ...(rule.notBefore ? [dateBoundWords('notBefore', rule.notBefore)] : []),
+        ...(rule.notAfter ? [dateBoundWords('notAfter', rule.notAfter)] : []),
         ...(rule.within ? [`inside the window ${refWords(rule.within)} gives`] : []),
       ];
       const outcomes = [

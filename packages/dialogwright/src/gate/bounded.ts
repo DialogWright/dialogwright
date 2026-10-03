@@ -19,6 +19,11 @@ import type { GateLookups, RuleContext, RuleOutcome, ToolCall } from './types';
  * field is read only as an own data property of a plain object the lookup returned (never a getter,
  * never an array's), so a reference reaches the one value it names and nothing else.
  *
+ * A date bound may also be a number of days from today, `today+N` or `today-N` (N a whole number
+ * from 1 to MAX_DAYS_FROM_TODAY, no spaces, no leading zero): today's date with N calendar days
+ * added or taken away, counted in UTC days, so a month's or a year's end and a leap day fall where
+ * the calendar has them.
+ *
  * A bound resolves only through the app's lookups (its code and systems), never through session
  * facts or the conversation; `today` is the session's date (GateFacts.todayIso), never the clock.
  *
@@ -30,8 +35,8 @@ import type { GateLookups, RuleContext, RuleOutcome, ToolCall } from './types';
  * bound is inclusive: `notBefore`, `notAfter`, `min`, `max` and the window's two ends all admit the
  * value equal to them.
  *
- * What the lines show: the field's name and the bounds (today's date, a literal, what a lookup
- * returned), with the param a lookup was called with masked to its last four (maskId). Never the
+ * What the lines show: the field's name and the bounds (today's date, or `today+N` and the date it
+ * gives, a literal, what a lookup returned), with the param a lookup was called with masked to its last four (maskId). Never the
  * call's own value: it may be a slot the app redacts, and a compared line reaches the audit as is.
  */
 
@@ -42,9 +47,9 @@ export interface LookupRef {
   readonly field?: string;
 }
 
-/** A date bound: today's date, a date, or a lookup that gives one. */
+/** A date bound: today's date (or a number of days from it, `days`, never 0), a date, or a lookup that gives one. */
 export type DateBound =
-  | { readonly kind: 'today' }
+  | { readonly kind: 'today'; readonly days?: number }
   | { readonly kind: 'date'; readonly date: string }
   | { readonly kind: 'lookup'; readonly ref: LookupRef };
 
@@ -158,13 +163,47 @@ export function isIsoDate(value: unknown): value is string {
   return d <= days;
 }
 
+/** The most days from today a bound may count, either way: ten years and the leap days in them. */
+export const MAX_DAYS_FROM_TODAY = 3660;
+
+const DAYS_FROM_TODAY = /^today([+-])([1-9][0-9]*)$/;
+/** What looks like a number of days from today, well written or not: `today`, then a sign. */
+const DAYS_FROM_TODAY_LIKE = /^today\s*[+-]/;
+
+/** A `today` bound as written: `today`, `today+30`, `today-7`. */
+export function todayText(bound: { readonly days?: number }): string {
+  const days = bound.days ?? 0;
+  return days === 0 ? 'today' : `today${days > 0 ? '+' : '-'}${Math.abs(days)}`;
+}
+
+/**
+ * The date `days` calendar days after (or, negative, before) the date `iso`, counted in UTC days;
+ * null when `iso` is not a date or the day falls outside the years 0001 to 9999.
+ */
+export function addDays(iso: string, days: number): string | null {
+  if (!isIsoDate(iso) || !Number.isSafeInteger(days)) return null;
+  const [y, m, d] = iso.split('-').map(Number) as [number, number, number];
+  const at = new Date(0);
+  at.setUTCFullYear(y, m - 1, d + days);
+  const year = at.getUTCFullYear();
+  if (Number.isNaN(year) || year < 1 || year > 9999) return null;
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${String(year).padStart(4, '0')}-${two(at.getUTCMonth() + 1)}-${two(at.getUTCDate())}`;
+}
+
 /** A date bound as written, read; or what is wrong with it. */
 export function parseDateBound(value: unknown): { bound: DateBound } | { problem: string } {
-  if (typeof value !== 'string') return { problem: 'a date bound is "today", a date (yyyy-mm-dd) or a reference, <lookup>(<param>)' };
+  if (typeof value !== 'string') return { problem: 'a date bound is "today", today+N or today-N (N days from today), a date (yyyy-mm-dd) or a reference, <lookup>(<param>)' };
   if (value === 'today') return { bound: { kind: 'today' } };
+  if (DAYS_FROM_TODAY_LIKE.test(value)) {
+    const m = DAYS_FROM_TODAY.exec(value);
+    const n = m ? Number(m[2]) : Number.NaN;
+    if (!m || n > MAX_DAYS_FROM_TODAY) return { problem: `"${value}" is not a number of days from today: write today+N or today-N, N a whole number from 1 to ${MAX_DAYS_FROM_TODAY}, with no spaces and no leading zero` };
+    return { bound: { kind: 'today', days: m[1] === '+' ? n : -n } };
+  }
   if (DATE.test(value)) return isIsoDate(value) ? { bound: { kind: 'date', date: value } } : { problem: `"${value}" is not a day the calendar has` };
   const ref = parseLookupRef(value);
-  return 'ref' in ref ? { bound: { kind: 'lookup', ref: ref.ref } } : { problem: `${ref.problem}; a date bound is "today", a date (yyyy-mm-dd) or a reference` };
+  return 'ref' in ref ? { bound: { kind: 'lookup', ref: ref.ref } } : { problem: `${ref.problem}; a date bound is "today", today+N or today-N, a date (yyyy-mm-dd) or a reference` };
 }
 
 const DECIMAL = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
@@ -217,9 +256,13 @@ export function parseNumberBound(value: unknown): { bound: NumberBound } | { pro
   return 'ref' in ref ? { bound: { kind: 'lookup', ref: ref.ref } } : { problem: `${ref.problem}; a number bound is a number or a reference` };
 }
 
-/** The two literal bounds of a rule in order, where both are literals: whether low <= high. Null where either is a reference or today. */
+/**
+ * The two literal bounds of a rule in order, where both are literals or both count from today:
+ * whether low <= high. Null where either is a reference, or one is a date and the other counts from today.
+ */
 export function literalOrder(low: DateBound | NumberBound | undefined, high: DateBound | NumberBound | undefined): boolean | null {
   if (low?.kind === 'date' && high?.kind === 'date') return low.date <= high.date;
+  if (low?.kind === 'today' && high?.kind === 'today') return (low.days ?? 0) <= (high.days ?? 0);
   if (low?.kind === 'number' && high?.kind === 'number') return compareDecimal(readDecimal(low.value)!, readDecimal(high.value)!) <= 0;
   return null;
 }
@@ -278,8 +321,10 @@ interface Bound<T> {
 
 function dateBound(b: DateBound, c: RuleContext): Bound<string> | null {
   switch (b.kind) {
-    case 'today':
-      return isIsoDate(c.facts.todayIso) ? { value: c.facts.todayIso, shown: `today ${c.facts.todayIso}` } : null;
+    case 'today': {
+      const day = addDays(c.facts.todayIso, b.days ?? 0);
+      return day === null ? null : { value: day, shown: `${todayText(b)} ${day}` };
+    }
     case 'date':
       return isIsoDate(b.date) ? { value: b.date, shown: b.date } : null;
     case 'lookup': {
@@ -328,7 +373,7 @@ export function dateInRangeRule(params: DateInRangeParams): (c: RuleContext) => 
     for (const [which, b] of [['notBefore', params.notBefore], ['notAfter', params.notAfter]] as const) {
       if (b === undefined) continue;
       const bound = dateBound(b, c);
-      if (!bound) return failed(`${field}: ${which} ${b.kind === 'lookup' ? refShown(b.ref, c.call) : b.kind} gave no date`, 'BLOCK', BOUND_UNKNOWN);
+      if (!bound) return failed(`${field}: ${which} ${b.kind === 'lookup' ? refShown(b.ref, c.call) : b.kind === 'today' ? todayText(b) : b.kind} gave no date`, 'BLOCK', BOUND_UNKNOWN);
       if (which === 'notBefore' && value < bound.value) return failed(`${field} before ${bound.shown}`, verdict.outOfRange, reason.outOfRange);
       if (which === 'notAfter' && value > bound.value) return failed(`${field} after ${bound.shown}`, verdict.outOfRange, reason.outOfRange);
       held.push(`${which === 'notBefore' ? 'on or after' : 'on or before'} ${bound.shown}`);

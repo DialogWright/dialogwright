@@ -41,8 +41,9 @@ import { literalOrder, parseDateBound, parseLookupRef, parseNumberBound } from '
  *
  * A rule with no parameters is its bare name (`identity`, `attempts`); a rule with parameters is a
  * map of its name to them, one rule per list entry, so each rule is one line to read and to diff.
- * The range rules' bounds (dateInRange, limit) are literals or references to the app's lookups,
- * `<lookup>(<param>)` or `<lookup>(<param>).<field>` (../../gate/bounded.ts), read here, never run.
+ * The range rules' bounds (dateInRange, limit) are literals (for a date, also `today`, `today+N` or
+ * `today-N`) or references to the app's lookups, `<lookup>(<param>)` or `<lookup>(<param>).<field>`
+ * (../../gate/bounded.ts), read here, never run.
  *
  * `redact:` names, by who asks (a delegate kind, or `<kind>.<role>` for one role's own list), the
  * fields of an action's result withheld from a party who acts for subjects; the tool declares the
@@ -146,7 +147,7 @@ const parsedString = (parse: (v: string) => { problem: string } | object, fix: s
   }));
 
 const lookupRef = () => parsedString(parseLookupRef, REF_FIX);
-const dateBound = () => parsedString(parseDateBound, `write "today", a date such as 2026-01-31, or ${REF_FIX.slice('write '.length)}`);
+const dateBound = () => parsedString(parseDateBound, `write "today", a number of days from today such as today+30 or today-7, a date such as 2026-01-31, or ${REF_FIX.slice('write '.length)}`);
 const numberBound = () =>
   z.union([z.number(), z.string()]).check(checkAlways((value, ctx) => {
     if (typeof value !== 'number' && typeof value !== 'string') return;
@@ -177,8 +178,8 @@ function rangeProblems(bounds: readonly string[], low: string, high: string, par
 const dateInRangeRule = z
   .strictObject({
     field: identifier().describe('The action\'s param that holds the date (yyyy-mm-dd). A value that is not a date BLOCKs.'),
-    notBefore: dateBound().optional().describe('The earliest date the value may be, inclusive: "today", a date, or a reference to a lookup that gives one.'),
-    notAfter: dateBound().optional().describe('The latest date the value may be, inclusive: "today", a date, or a reference to a lookup that gives one.'),
+    notBefore: dateBound().optional().describe('The earliest date the value may be, inclusive: "today", today+N or today-N (N days from today, 1 to 3660), a date, or a reference to a lookup that gives one.'),
+    notAfter: dateBound().optional().describe('The latest date the value may be, inclusive: "today", today+N or today-N (N days from today, 1 to 3660), a date, or a reference to a lookup that gives one.'),
     within: lookupRef().optional().describe('A reference to a lookup that gives a window, { start, end } (end null: open-ended), the value must be inside, ends inclusive. A lookup that gives null has no window: the value is outside it.'),
     reasons: z
       .strictObject({

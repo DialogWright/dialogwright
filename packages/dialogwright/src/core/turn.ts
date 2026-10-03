@@ -3,7 +3,7 @@ import type { AnswerMap, QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotContext } from './slots/types';
-import { intentLabel, isFormIntent } from './app/intents';
+import { informationalPrompt, intentLabel, isFormIntent } from './app/intents';
 import { formOf, identityOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, Completion, FormId, SlotId, SummaryMove } from './app/types';
@@ -934,6 +934,10 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     // A wrong key is a failed menu attempt, not dead air.
     if (!option) return { decision: failAttempt(s, 'intent', io), rows: [] };
     if (option.intent === 'agent') return { decision: handoff(s, 'live-agent'), rows: [] };
+    // An informational intent's key plays its line as the spoken intent does (the inform verdict):
+    // an ack in front of the question the caller was on, here the keypad menu, its rung intact.
+    const informs = informationalPrompt(io.app, option.intent);
+    if (informs !== undefined) return { decision: resume(s, io, [{ promptId: informs, vars: {} }]), rows: [] };
     if (!isFormIntent(io.app, option.intent)) return { decision: { kind: 'ignore' }, rows: [] };
     setForm(s, option.intent);
     return { decision: continueForm(s, io, [ackIntent(s, option.intent)], null), rows: [] };

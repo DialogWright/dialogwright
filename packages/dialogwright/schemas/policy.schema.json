@@ -142,11 +142,11 @@
                           "description": "The action's param that holds the date (yyyy-mm-dd). A value that is not a date BLOCKs."
                         },
                         "notBefore": {
-                          "description": "The earliest date the value may be, inclusive: \"today\", a date, or a reference to a lookup that gives one.",
+                          "description": "The earliest date the value may be, inclusive: \"today\", today+N or today-N (N days from today, 1 to 3660), a date, or a reference to a lookup that gives one.",
                           "type": "string"
                         },
                         "notAfter": {
-                          "description": "The latest date the value may be, inclusive: \"today\", a date, or a reference to a lookup that gives one.",
+                          "description": "The latest date the value may be, inclusive: \"today\", today+N or today-N (N days from today, 1 to 3660), a date, or a reference to a lookup that gives one.",
                           "type": "string"
                         },
                         "within": {
