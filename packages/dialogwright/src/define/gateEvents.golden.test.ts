@@ -11,10 +11,15 @@ import { resolve, type TurnContext, type TurnResult } from '../core/turn';
 import { mockCodeVerifier } from '../core/tools';
 import { choice, noul, score } from '../testing/answers';
 import { gateEventLines } from '../testing/gateEvents';
-import { gateGridInput, gridUnexercised, runGateGrid, compareGateGrid, legacyGateEvaluator } from '../testing/gateGrid';
+import { gateGridInput, gridUnexercised, runGateGrid, compareGateGrid, legacyGateEvaluator, formatGateGridMismatches } from '../testing/gateGrid';
+import { createGateShadowReport, formatGateShadowReport, gateEvaluator, gateShadowUnexercised, legacyGateOf, shadowGate, withShadowGate } from '../testing/shadowGate';
+import { useTestkit } from '../testing/apps';
+import { resetAppsForTest } from '../core/app/registry';
+import type { PolicyTables } from '../core/app/types';
+import { FROZEN_LIBRARY_POLICY } from './__fixtures__/frozen/library';
 import type { AnswerMap } from '../jev/types';
 import type { ToolCall } from '../gate/types';
-import { libraryApp } from './fixture/app';
+import { libraryApp, libraryCode } from './fixture/app';
 
 /**
  * The library fixture has no regression fixtures of its own, so its gate-event golden is taken from
@@ -114,5 +119,44 @@ describe('the library fixture', () => {
     expect(grid.points.length).toBe(3 * 6 * 18 * (1 + 2 + 1 + 1));
     expect(compareGateGrid(input, legacyGateEvaluator(input))).toEqual([]);
     expect(gridUnexercised(input, grid)).toEqual(['renewLoan R1 never fails', 'findHold R1 never fails', 'listLoans R1 never fails']);
+  });
+});
+
+/**
+ * The shadow gate on the library fixture: its gate (the named rules of its policy.yaml) beside the
+ * legacy evaluator over the tables its old policy.yaml gave (frozen test data), on every case of the
+ * grid and on every call of the golden's scripted and direct calls. Not one decision may differ, and
+ * the golden's lines are the same with the shadow in front.
+ */
+describe('the shadow gate on the library fixture', () => {
+  const FROZEN: PolicyTables = { ...FROZEN_LIBRARY_POLICY, customRules: libraryCode.customRules! };
+  const input = { ...gateGridInput(libraryApp), policy: FROZEN };
+
+  it('grid: every case decided as the legacy evaluator over the frozen tables decides it', () => {
+    const mismatches = compareGateGrid(input, gateEvaluator(libraryApp));
+    expect(mismatches.length === 0 ? [] : [formatGateGridMismatches(mismatches)]).toEqual([]);
+    const report = createGateShadowReport();
+    runGateGrid(input, shadowGate(gateEvaluator(libraryApp), legacyGateEvaluator(input), { mode: 'report', report }));
+    expect(report.mismatches, formatGateShadowReport(report)).toEqual([]);
+    expect(report.compared).toBe(3 * 6 * 18 * (1 + 2 + 1 + 1));
+    expect(gateShadowUnexercised(report, FROZEN.rulesFor, true)).toEqual(['renewLoan R1 never fails', 'findHold R1 never fails', 'listLoans R1 never fails']);
+  });
+
+  it('the scripted and direct calls: every decision the same, and the golden\'s lines unchanged', () => {
+    const plain = [...Object.entries(CALLS).map(([id, script]) => scripted(id, script)), direct()].flatMap((p) => p.lines);
+    const report = createGateShadowReport();
+    resetAppsForTest();
+    try {
+      useTestkit();
+      registerApp(withShadowGate(libraryApp, legacyGateOf(libraryApp, FROZEN), { mode: 'report', report }));
+      const shadowed = [...Object.entries(CALLS).map(([id, script]) => scripted(id, script)), direct()].flatMap((p) => p.lines);
+      expect(shadowed).toEqual(plain);
+    } finally {
+      useTestkit();
+      registerApp(libraryApp);
+    }
+    expect(report.mismatches, formatGateShadowReport(report)).toEqual([]);
+    expect(report.compared).toBeGreaterThan(10);
+    expect(gateShadowUnexercised(report)).toEqual(['R1 never fails']);
   });
 });

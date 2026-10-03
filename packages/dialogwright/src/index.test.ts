@@ -104,7 +104,7 @@ describe('the test-support entry', () => {
     const testing = await import('./testing/index');
     for (const name of [
       'shadowSlot', 'withShadowSlots', 'shadowFromEnv', 'createShadowReport', 'ShadowMismatchError', 'isCassetteMiss',
-      'runSlotConformance', 'slotConformanceChecks', 'ConformanceError',
+      'runSlotConformance', 'slotConformanceChecks', 'ConformanceError', 'withShadowGate', 'shadowGate', 'createGateShadowReport', 'GateShadowMismatchError',
     ]) {
       expect(typeof (testing as Record<string, unknown>)[name], name).toBe('function');
       expect((entry as Record<string, unknown>)[name], name).toBeUndefined();

@@ -6,7 +6,9 @@
  * cassette had no answer for; the slot conformance kit runs the checks any slot type must pass over
  * its examples (src/slots/conformance). The policy's safety net: gate-event goldens write every
  * gate decision of a regression run (gateEvents.ts), and the gate grid crosses every tool with every
- * kind of principal, subject and fact, the legacy evaluator as its reference (gateGrid.ts).
+ * kind of principal, subject and fact, the legacy evaluator as its reference (gateGrid.ts); the
+ * shadow gate runs an app's gate beside that reference on every call of a grid or a whole run and
+ * fails on any difference (shadowGate.ts).
  */
 export {
   shadowSlot, withShadowSlots, shadowFromEnv, shadowModeOf, createShadowReport, formatShadowReport, formatShadowMismatch,
@@ -25,3 +27,8 @@ export {
   gridDecisionLine, formatGateGridMismatches, gridRuleCounts, gridUnexercised, gridVerdicts, UNLISTED_TOOL, GRID_PROBES, EXTRA_FIELD,
 } from './gateGrid';
 export type { GateGridInput, GateGridCase, GateGridPoint, GateGrid, GateGridMismatch, GateEvaluate } from './gateGrid';
+export {
+  withShadowGate, shadowGate, gateEvaluator, legacyGateOf, createGateShadowReport, gateShadowUnexercised, formatGateShadowReport,
+  formatGateShadowMismatch, GateShadowMismatchError,
+} from './shadowGate';
+export type { GateShadowReport, GateShadowMismatch, GateShadowOptions, GateShadowCounts } from './shadowGate';
