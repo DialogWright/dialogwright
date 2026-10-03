@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-DialogWright is an open-source TypeScript framework for voice and chat agents that act safely. A fast decision model reads what the caller said and answers typed questions (judgments, not generated text). Deterministic code decides what happens next. Every action goes through a policy gate that enforces identity levels, scope, confirmation and attempt limits, and every decision is recorded in a hash-chained audit log. An app is a folder: YAML for what is data (intents, forms, prompts, policy, identity, locales) and TypeScript for what runs (slots, tools, hooks), joined by `defineApp`, so the same engine can run a clinic, a utility company or anything else.
+DialogWright is an open-source TypeScript framework for voice and chat agents that understand people and act safely. Callers talk naturally, and the system maps what they mean to the right action: a fast decision model reads what was said and answers typed questions (judgments, never generated text), so understanding is flexible. What the agent says and does is predictable: the lines are fixed, deterministic code decides what happens next, and every action goes through a policy gate that enforces identity levels, scope, confirmation and attempt limits, with every decision recorded in a hash-chained audit log. Replies are fast, because a decision is a short typed question and not a composed answer. An app is a folder: YAML for what is data (intents, forms, prompts, policy, identity, locales) and TypeScript for what runs (slots, tools, hooks, custom rules), joined by `defineApp`, so the same engine can run a clinic, a utility company or anything else.
 
 ## Status
 

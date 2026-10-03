@@ -1,6 +1,6 @@
 # DialogWright: notes for AI coding assistants
 
-DialogWright is a TypeScript framework for voice and chat agents that act safely. Read this before changing anything.
+DialogWright is a TypeScript framework for voice and chat agents that understand people and act safely: understanding is flexible (a decision model perceives through typed questions, so a caller talks naturally), while what is said and done is predictable (fixed lines, code that decides, a policy gate) and replies are fast. Read this before changing anything.
 
 ## The three roles
 

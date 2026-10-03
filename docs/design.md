@@ -22,6 +22,8 @@ The project is pre-release. Where this document describes something not yet buil
 
 ## 1. The idea
 
+People who ask for a smarter IVR or chat assistant are not asking for varied wording, or for summaries of knowledge articles. Their complaint is understanding. They want to talk the way they would to a person, and have the system map what they mean to the right action, instead of listening to a menu or guessing the phrase it expects. Generative agents invert this. Their understanding is weak where it matters, since a model composing a reply will answer a question it misheard; their output is slow and varies from one call to the next; and then a great deal of effort goes into forcing the consistency back, with longer prompts, filters and retries. DialogWright splits the problem the other way. Understanding is flexible: the model perceives through typed questions, so a caller can say it in their own words, give three answers at once or change their mind. Saying and doing are predictable: the words are fixed lines, code decides what happens, and a policy gate checks every action. And replies are fast, because a decision is a short typed question, never a composed answer.
+
 Conversations that change something real (booking an appointment, reading a balance, setting up a payment plan) need more than a fluent reply. They need the right identity check before the right action, exact confirmation of what will be written, a refusal that cannot be talked around, and a record an auditor can follow. Free-form generation, where a large language model reads the conversation and decides what to say and do, is good at fluency and poor at all four.
 
 DialogWright splits the work differently:
@@ -47,7 +49,7 @@ Every turn has three steps: perception (what did they mean), the decision (what 
 2. **The core.** Deterministic code runs the fill-and-ask loop: intents start forms, forms collect slots, filled forms are read back and confirmed, and silence, repetition, frustration and handoff are handled in one place. The core never imports an app; it reads everything app-specific through the `App` contract.
 3. **The gate.** Every tool call goes through the gate, which returns one of four verdicts: `ALLOW`, `BLOCK`, `STEP_UP` (verify identity further, then try again) or `NEEDS_HUMAN`. Every verdict, with each rule's comparison, goes to the audit log.
 
-**The renderer** turns the core's structured decision into words. Its default is approved templates; a generated-wording option (§5) can phrase some lines, inside checks, but never chooses what is said.
+**The renderer** turns the core's structured decision into words. Its default is approved templates; an opt-in generated-wording option (§5) can phrase a line an author flags, inside checks, but never chooses what is said.
 
 | Role | Default | Model option |
 |---|---|---|
@@ -170,23 +172,25 @@ A first-class goal: a developer points an AI coding assistant such as Claude Cod
 
 ## 5. Generated wording
 
-The core ends each turn with a structured decision; the renderer turns it into words. Generated wording changes how something is said, never what is decided. **The model chooses the words, never the content.**
+Generated wording is an option, not the point of the framework. Everything above works with fixed lines, and an app that never turns it on never meets it. It is kept so it can be tried and measured: a team that wants a warmer acknowledgement on one line can have it, and a run says what it costs in latency and in consistency.
 
-- **`TemplateRenderer`** is the default. **`LlmRenderer`** wraps it and renders only prompts marked `mode: generative`, using a fast LLM (Claude Haiku in the first adapter). A turn can mix the two: a generated acknowledgement, then a fixed answer passed through verbatim.
+It is opt-in per prompt (or per state of a form). The author flags a prompt as generated, tells it the line's intent and the data items the line must carry, and keeps the fixed line as the fallback. The core ends each turn with a structured decision and the renderer turns it into words; generated wording changes how something is said, never what is decided. **The model chooses the words, never the content.**
+
+- **`TemplateRenderer`** is the default. **`LlmRenderer`** wraps it and renders only prompts marked `mode: generative`, using a small, fast model. A turn can mix the two: a generated acknowledgement, then a fixed answer passed through verbatim.
 
 ```yaml
 ask_outageStart:
   mode: generative
-  template: "When did the power go out?"     # the fallback, and the meaning
+  template: "When did the power go out?"     # the fixed fallback, and the meaning
   goal: "Ask when the outage started; briefly acknowledge what they just said."
 balance_answer:
   mode: fixed
   template: "Your balance is {amount}, due {dueDate}."
 ```
 
-- **The model receives a speech act, not the conversation**: the act (ask, read back, acknowledge, re-ask with its reason, offer a person, hand off), the facts it may use (display values only, never identifiers), the caller's last utterance quoted as data, their frustration level, the channel, and `style.yaml` (persona, tone, word budget per channel, one question per turn, phrases to avoid).
-- **Every generated line is checked before anyone hears it.** Any failure falls back to the template, and the audit records `render_fallback`. The checks: (1) every required fact is present; (2) no other numbers, dates, amounts or names appear, except from the facts or the caller's own words; (3) the line is within its word budget, and an ask ends in exactly one question; (4) a decision-model yes or no check, "does this text do anything other than the act's goal?", which catches drift. A turn the injection screen flagged is never generated.
-- **Latency**: one fast model call per generated line, checked before it is spoken (no streaming into synthesis), capped by a per-turn timeout (about 700 ms on voice) after which the template is used.
+- **The model receives a speech act, not the conversation**: the act (ask, read back, acknowledge, re-ask with its reason, offer a person, hand off) with the line's intent, the data items it must include (display values only, never identifiers), the caller's last utterance quoted as data, their frustration level, the channel, and `style.yaml` (persona, tone, word budget per channel, one question per turn, phrases to avoid).
+- **Every generated line is checked before anyone hears it.** Any failure falls back to the fixed line, and the audit records `render_fallback`. The checks: (1) every required data item is present; (2) no other numbers, dates, amounts or names appear, except from those items or the caller's own words; (3) the line is within its word budget, and an ask ends in exactly one question; (4) a decision-model yes or no check, "does this text do anything other than the act's goal?", which catches drift. A turn the injection screen flagged is never generated.
+- **Latency**: one fast model call per generated line, checked before it is spoken (no streaming into synthesis), capped by a per-turn timeout (about 700 ms on voice) after which the fixed line is used.
 - **Determinism**: the trace records the act, the text, the check results and any fallback; cassettes record generations keyed by act and context; regression re-runs the checks on every recorded line and reports the fallback rate; the console shows each line's mode.
 
 ## 6. Identity and policy
@@ -276,7 +280,7 @@ Around those:
 - **Policy tests** hold the gate to what the file says, over a grid of every action crossed with every kind of caller, subject and fact (the app supplies its principals and records through one test hook). Three things run over it. **Invariants** say what must hold whatever order the rules are written in: an action not listed is blocked for everyone; a caller below an action's level is never allowed; `scope`, `confirmed`, `role`, `fields` and `attempts` each refuse what they exist to refuse; an allowed call ran every rule its action lists, and each passed; raising the level never turns an allow into a refusal; and the scope answer does not move with the conversation. They are derived from the policy as written, not from the gate's own lines, so a gate that is wrong in a way its lines agree with is still caught, and the tests of the invariants break a small correct gate one way at a time to show each is caught. The **matrix golden** (`policy.matrix`, beside the policy) is the verdict and reason for every action and kind of caller, reviewed and written deliberately, so a policy change is a diff compliance reads. **Rule examples** run each custom rule's examples through the compiled gate in every action that names it. The policy card and the app map are goldens of the same kind.
 - **The shadow gate** is the pattern for changing the gate itself without changing a decision, as the shadow harness is for slots. The old evaluator is frozen as a reference, a second gate (here, the one that reads the policy's named rules) runs beside it over the whole grid and inside every replay of a recorded call, and the run fails on any decision that differs, with a count of how often each rule passed and failed so a rule no call exercised is visible. When both agree everywhere and the recorded calls replay with zero misses, the reference stays as a test and the new gate runs the apps. The engine moved every app from the old tables to the policy files this way.
 - **The threshold sweep** varies each decision threshold across the recorded calls and picks values from the middle of the range where outcomes are stable.
-- **Generated wording** joins the cassette; regression re-checks every line and reports the fallback rate.
+- **Generated wording**, for an app that opts in, joins the cassette; regression re-checks every line and reports the fallback rate.
 - **A shared adversarial suite** that every app inherits, filled in with its own intents and records: announced injections (including at identity and code prompts), callers asserting a relationship they have not proven, off-scope requests, spoken codes, and hostile replies from downstream services.
 - **Channel conformance tests** from captured real frames per provider.
 - **Store contract tests**: one suite run against every implementation of each store (§8).
@@ -388,26 +392,26 @@ Each of these is a field, an interface or a few lines of configuration, so later
 
 Each phase ends with green tests and a working app.
 
-| Phase | Delivers | Proves | Status |
-|---|---|---|---|
-| Engine/app seam | The `App` contract and registry; sessions carry an app id; the engine reads intents, forms, slots, identity, tools, policy and prompts from the app; a boundary test forbids engine-to-app imports | Behavior identical: every recorded regression output unchanged | Done |
-| Channel event model | Our own events, actions and capabilities; the Twilio format moved into an adapter | Behavior identical | Done |
-| App-agnostic engine | No app names, data or assumptions left in the engine; a test fixture app (`testkit`) proves it builds and passes alone | The engine stands on its own | Done |
-| The repository | This workspace, the `dialogwright` package, community files, this document, CI | The engine is public-ready | Done |
-| Example apps | The clinic on the `App` contract (`apps/clinic`): its own corpus, scripted calls and stub baseline, built on the engine's generic hooks; recorded against a decision model through the adapter | A real app on the public engine | Clinic done (recording to come) |
-| App definition | `defineApp`, JSON Schemas, the loader, `pnpm check`; the clinic as a folder; locales; configuration hashes; [authoring-an-app.md](authoring-an-app.md) | An app is a folder | Done |
-| Slot library | `slots.yaml` and seven built-in types (`digits`, `choice`, `date`, `birthdate`, `name`, `record`, `text`), each with an options schema, a generated docs page and starter examples; the conformance kit and the shadow harness; Spanish number words, names and dates; the clinic's slots all on the library with its cassette replaying with zero misses | Most slots are configuration, and slot types are something people can contribute | Done |
-| Policy and identity | Named rules, `identity.yaml`, delegates, redaction, matrix tests, `policy:card`, `CODEOWNERS` | Compliance-owned policy, tested against the file | Planned |
-| The utility app, built by an AI coding assistant | The create-app skill, `create-app`, `CLAUDE.md` files; the utility app built through that path from a paragraph, then recorded | The assistant goal, by doing it | Planned |
-| Knowledge base | Passages, staleness, hybrid retrieval with a local embedding model, `kb:index`, `kb:draft`, `kb:approve`, `kb:gaps` | Knowledge that scales without generated answers | Planned |
-| Channels | The relay with Twilio and Telnyx adapters and conformance tests; the CDN widget with token sign-in; a session's locale carried to the carrier (its language attributes, `set_language`) and requested from chat | Same app, two carriers, plus web | Planned |
-| Production | Store interfaces with production implementations; resume across instances; idempotent writes; readiness and drain; a `docker compose` stack; a reference deployment; console access control | A deploy never drops a call (the kill-an-instance test) | Planned |
-| Generated wording | Renderer interface, the LLM adapter, `style.yaml`, checks, fallback, cassette, console display | The model chooses the words, never the content | Planned |
-| Open source polish | An adopter's README, adversarial suite inheritance (`llms.txt`, the slot pages and the slot contribution notes came with the slot library) | Someone else can adopt it | Planned |
+| Phase | Name | Delivers | Proves | Status |
+|---|---|---|---|---|
+| 1 | Groundwork | The `App` contract and registry, with sessions that carry an app id and a boundary test that forbids engine-to-app imports (the seam); our own channel events, actions and capabilities, with the carrier format moved into an adapter (the channel model); an engine with no app names, data or assumptions left, proved by a test fixture app (`testkit`); this workspace, the `dialogwright` package, community files, this document and CI (the repository); and the clinic on the `App` contract (`apps/clinic`), with its own corpus, scripted calls, stub baseline and a recording against a decision model, replayed offline | Behavior identical across each move; the engine stands on its own, in the open, with a real app on it | Done |
+| 2 | App definition | `defineApp`, JSON Schemas, the loader, `pnpm check`; the clinic as a folder; locales; configuration hashes; [authoring-an-app.md](authoring-an-app.md) | An app is a folder | Done |
+| 3 | Slot library | `slots.yaml` and seven built-in types (`digits`, `choice`, `date`, `birthdate`, `name`, `record`, `text`), each with an options schema, a generated docs page and starter examples; the conformance kit and the shadow harness; Spanish number words, names and dates; the clinic's slots all on the library with its cassette replaying with zero misses | Most slots are configuration, and slot types are something people can contribute | Done |
+| 4 | Policy and identity | `policy.yaml` of named rules (including `dateInRange` and `limit`) and `identity.yaml` with named levels, a one-time code, sign-in by capability and delegates, every app running from them; redaction per principal and declared audit minimization; policy tested against the file (invariants, the matrix golden, required rule examples); the policy card, the app map and `CODEOWNERS` | Compliance-owned policy, tested against the file, with the gate's decisions unchanged by the move | Done |
+| 5 | The utility app, built by an AI coding assistant | The create-app skill, `create-app`, `CLAUDE.md` files; the utility app built through that path from a paragraph, then recorded | The assistant goal, by doing it | In progress (PR) |
+| 6 | Knowledge base | Passages, staleness, hybrid retrieval with a local embedding model, `kb:index`, `kb:draft`, `kb:approve`, `kb:gaps` | Knowledge that scales without generated answers | Planned |
+| 7 | Channels | The relay with Twilio and Telnyx adapters and conformance tests; the CDN widget with token sign-in; a session's locale carried to the carrier (its language attributes, `set_language`) and requested from chat | Same app, two carriers, plus web | Planned |
+| 8 | Production | Store interfaces with production implementations; resume across instances; idempotent writes; readiness and drain; a `docker compose` stack; a reference deployment; console access control | A deploy never drops a call (the kill-an-instance test) | Planned |
+| 9 | Generated wording (opt-in) | Renderer interface, the LLM adapter, `style.yaml`, checks, fallback, cassette, console display; a prompt is flagged as generated, and the fixed line is its fallback | The model chooses the words, never the content, and the difference is measured | Planned |
+| 10 | Open source polish | An adopter's README, adversarial suite inheritance (`llms.txt`, the slot pages and the slot contribution notes came with the slot library) | Someone else can adopt it | Planned |
 
 The foundations (§11) land in the phase that owns their area.
 
-Phases are counted from App definition as Phase 2, and the slot library is Phase 3. What the slot library left for later: `otp` (Phase 4, with identity), `topic` (Phase 6, with the knowledge base), `time-slot` (later, with a re-record, since it would re-key every recorded request), and a per-slot `listen:` option that narrows which turns a slot's questions are asked on (later, with a re-record, for the same reason; every slot listens on every turn today). What the App definition phase left for later phases: named policy rules and the policy matrix tests (Phase 4), the knowledge base folder `kb/` (Phase 6), `style.yaml` and generated wording (Phase 9), and a locale carried end to end on the channels (Phase 7: the TwiML's `locale` parameter and language attributes, the `set_language` action, a chat request for a locale, and the outbound text frames' language tag).
+What each phase left for later:
+
+- **Slot library (Phase 3):** `topic` (Phase 6, with the knowledge base); `time-slot` (later, with a re-record, since it would re-key every recorded request); and a per-slot `listen:` option that narrows which turns a slot's questions are asked on (later, with a re-record, for the same reason; every slot listens on every turn today). The one-time code never became a slot type: it is a factor of `identity.yaml` (§6).
+- **App definition (Phase 2):** the knowledge base folder `kb/` (Phase 6); `style.yaml` and generated wording (Phase 9); and a locale carried end to end on the channels (Phase 7: the TwiML's `locale` parameter and language attributes, the `set_language` action, a chat request for a locale, and the outbound text frames' language tag).
+- **Policy and identity (Phase 4):** the shared adversarial suite, which every app inherits (Phase 10); a link from a form to the action it writes, which would let each `confirmed` rule name its own fields (until then every `confirmed` rule of an app names the same fields in the same order, since a read-back's hash is taken once); and the config hashes on each gate decision (§11).
 
 ## 13. Open source and licensing
 
