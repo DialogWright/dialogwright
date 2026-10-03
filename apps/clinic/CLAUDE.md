@@ -1,6 +1,6 @@
 # Example Family Practice (the clinic): notes for AI coding assistants
 
-The clinic is the example app to learn from: the appointment line of a small, fictional clinic. A caller schedules, reschedules, cancels or confirms an appointment with one of eight providers, or is put through to billing with their member ID. It verifies no one (there is no `identity.yaml`, every action is at level 0). Read the repository's root `CLAUDE.md` first for the rules, and `README.md` here for how the app is built. Every name, date and number in it is made up.
+The clinic is the example app to learn from: the appointment line of a small, fictional clinic. A caller schedules, reschedules, cancels or confirms an appointment with one of eight providers, or is put through to billing. It verifies no one (there is no `identity.yaml`, every action is at level 0). Read the repository's root `CLAUDE.md` first for the rules, and `README.md` here for how the app is built. Every name, date and number in it is made up.
 
 ## The folder
 
