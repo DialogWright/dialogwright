@@ -425,17 +425,19 @@ testing: {
       roleless: { kind: 'manager', level: 2, id: 'rowan', first: 'Rowan' },
       otherParty: { kind: 'visitor', level: 2, id: 'V-1', first: 'Robin' },
     },
-    records: {                                   // subject ids (and a record id of theirs, for a `scope: { record }` rule)
-      own: { subject: '55501234', record: 'R-1' },        // subject1's own
-      inScope: { subject: '55505678', record: 'R-2' },    // another subject the delegates act for
-      outOfScope: { subject: '55507777', record: 'R-3' }, // one no caller here may see
-      unknown: { subject: '55500000', record: 'R-9' },    // one that does not exist
+    records: {                                   // four subject ids; `record` only with a `scope: { record }` rule (below)
+      own: { subject: '55501234' },              // subject1's own
+      inScope: { subject: '55505678' },          // another subject the delegates act for
+      outOfScope: { subject: '55507777' },       // one no caller here may see
+      unknown: { subject: '55500000' },          // one that does not exist
     },
     values: PLAN_CALL,                           // a value per param, inside every bound, so an allowed call can be seen
   }),
   // ...
 },
 ```
+
+`record` (one of the subject's records, `{ subject: '55501234', record: 'R-1' }`) is needed only when a rule scopes by a record (`scope: { record: <param> }`); the grid then says which of the four lacks one. With `scope: { param }` rules only, leave it out.
 
 With an app with no delegates, the `unlistedRole`, `roleless` and `otherParty` callers are still given (of a kind the app does not serve), as the clinic's are. Then the test, and the first matrix written deliberately:
 

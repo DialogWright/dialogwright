@@ -1025,5 +1025,6 @@ export interface PolicyMatrix {
 /** A subject a grid call names: their id, and the id of one of their records. */
 export interface PolicyMatrixSubject {
   readonly subject: string;
-  readonly record: string;
+  /** One of the subject's records: needed only by a policy with a scope rule on a record (`scope: { record }`). */
+  readonly record?: string;
 }

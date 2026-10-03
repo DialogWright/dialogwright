@@ -247,7 +247,7 @@ export function checkPolicyInvariants(app: App, options: PolicyInvariantOptions 
       // The same call with conversation state beside the facts (the session's slots naming a subject
       // the caller may see, what the caller said, another day): none of it is the gate's to read.
       const ownSubject = lk.scopeOf(c.p)[0] ?? input.matrix.records.own.subject;
-      const slots = Object.fromEntries(scopeRules.flatMap((r) => (r.subject === null ? [] : [[r.subject.param, r.subject.via === 'record' ? input.matrix.records.own.record : ownSubject]])));
+      const slots = Object.fromEntries(scopeRules.flatMap((r) => (r.subject === null ? [] : [[r.subject.param, r.subject.via === 'record' ? input.matrix.records.own.record ?? '' : ownSubject]])));
       const state = { ...c.facts, todayIso: CONVERSATION_STATE_DAY, slots, subject: ownSubject, said: 'it is my own record' } as GateFacts;
       const moved = scopeLines(evaluate(c.call, c.p, state, lk));
       if (moved.length > 0) {
