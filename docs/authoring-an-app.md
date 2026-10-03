@@ -270,6 +270,14 @@ Three tests hold the gate to what policy.yaml says, each from `'dialogwright/tes
   A policy change is a diff of this file. Write it deliberately with `pnpm policy:matrix <folder>` (with no folder, every `policy.matrix` in the workspace), read the diff, and commit it; never in CI.
 - `runRuleExamples(app)` runs every custom rule's examples through the compiled gate, and fails on one the gate decides otherwise, or whose refusal is not the rule's own.
 
+#### The policy card
+
+`POLICY.md`, beside policy.yaml, is the policy in plain English for someone who will not read YAML: a table with one row per action, written from the compiled app (the gate's own rules, so it cannot say what the gate does not do). Write it with `pnpm policy:card <folder>` (with no folder, every `POLICY.md` in the workspace) and commit it; GitHub renders it, diagrams included.
+
+It has the files' config hashes (policy.yaml and identity.yaml, as every call's audit record carries them); the defaults ("anything not listed is refused", identifiers by their last four, the attempts, what is recorded masked); the identity ladder (each level by its name, what the caller gives in the words of the slots' nouns, the tools that check it, the code, the sign-in) with a Mermaid diagram of it; who the app serves and who acts for them, with what each role gets; one row per action, with its label (`say:` in policy.yaml, else the tool id), its level by name and each rule in words with its parameters (the scope rule's param as a noun, the confirmed values, the fields sent, a range rule's bounds, a custom rule's static `description`); and a second diagram of the actions grouped by level with their rules and the roles that are refused or handed to a person. Write `say:` for every action, and a `description` for every custom rule, in the words a reviewer would use. A role is shown by its id spelt out (`office_admin` as "office admin").
+
+`expectPolicyCard(app, file)` (from `'dialogwright/testing'`) fails a test on any difference between the page and what the app generates, with a line diff and the command that writes it; put it beside the policy matrix's test. The card is a golden: a policy change is a diff of two files a reviewer reads, and only the command writes it, never CI.
+
 ### identity.yaml (optional)
 
 How a caller proves who they are, and who the app serves. The clinic has none. The engine's valid-folder test fixture is:

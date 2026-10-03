@@ -6,15 +6,17 @@ import { checkAppFully } from './check';
 import { ConvertError, convertFolder, convertTables, toText, writeConversion } from './convert/convertPolicy';
 import type { IdentityConfig, PolicyTables } from '../core/app/types';
 import { matrixCommand } from './matrixCommand';
+import { pageCommand, type PageCommand } from './pageCommand';
 import { formatProblem, type Problem } from './problems';
 
 /**
  * The `dialogwright` command (the package's bin; run through tsx, which is how the repo runs its
- * TypeScript). Three commands:
+ * TypeScript). Four commands:
  *
  *   dialogwright check [--json] [dir...]
  *   dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--sign-in]
  *   dialogwright policy:matrix [dir...]   (./matrixCommand.ts: writes each app's policy.matrix)
+ *   dialogwright policy:card [dir...]     (./pageCommand.ts: writes each app's POLICY.md, the policy card)
  *
  * `check` checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
  * per problem, then a summary line per folder (`N problems in <dir>`, or `<dir>: ok`). Exit code 1
@@ -36,6 +38,8 @@ export const USAGE = [
   '  --sign-in: write `signIn: { level: 2 }`, for an app whose channel can sign a caller in',
   '       dialogwright policy:matrix [dir...]',
   '  dir: a folder with the app\'s policy.yaml and a module exporting the app; with none, every folder with a policy.matrix',
+  '       dialogwright policy:card [dir...]',
+  '  dir: the same; writes POLICY.md, the policy in plain English with its diagrams; with none, every folder with a POLICY.md',
 ].join('\n');
 
 export interface Io {
@@ -73,11 +77,19 @@ export function findAppFolders(cwd: string): { root: string; dirs: string[] } {
   return { root, dirs };
 }
 
+/** The page `policy:card` writes beside policy.yaml. Its module is loaded only when it runs: the other commands do not need it. */
+const POLICY_CARD: PageCommand = {
+  name: 'policy:card',
+  file: 'POLICY.md',
+  write: async (app, file) => (await import('../testing/policyCard')).writePolicyCard(app, file),
+};
+
 /** Runs the command with `argv` (what follows `dialogwright`); returns the exit code. */
 export async function main(argv: readonly string[], io: Io = stdio()): Promise<number> {
   const [command, ...rest] = argv;
   if (command === 'policy:convert') return convertCommand(rest, io);
   if (command === 'policy:matrix') return matrixCommand(rest, io);
+  if (command === 'policy:card') return pageCommand(POLICY_CARD, rest, io);
   if (command !== 'check') {
     io.err(command === undefined ? USAGE : `dialogwright: "${command}" is not a command\n${USAGE}`);
     return 2;

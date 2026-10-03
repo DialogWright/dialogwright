@@ -10,7 +10,9 @@
  * shadow gate runs an app's gate beside that reference on every call of a grid or a whole run and
  * fails on any difference (shadowGate.ts). The policy's invariants hold an app's gate to what its
  * policy file says on the whole grid (policyInvariants.ts), and the policy matrix is the reviewed
- * golden of what it decides, with every custom rule's examples run through it (policyMatrix.ts).
+ * golden of what it decides, with every custom rule's examples run through it (policyMatrix.ts). One
+ * page is written from the compiled app and kept as a golden: the policy card, the policy in
+ * plain English with its diagrams (policyCard.ts).
  */
 export {
   shadowSlot, withShadowSlots, shadowFromEnv, shadowModeOf, createShadowReport, formatShadowReport, formatShadowMismatch,
@@ -43,3 +45,4 @@ export {
   policyMatrixText, expectPolicyMatrix, writePolicyMatrix, lineDiff, verdictText, ruleExampleResults, runRuleExamples, RuleExampleError,
 } from './policyMatrix';
 export type { RuleExampleResult, RuleExampleRun } from './policyMatrix';
+export { policyCardText, expectPolicyCard, writePolicyCard, ruleName, POLICY_CARD_FILE } from './policyCard';

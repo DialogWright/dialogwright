@@ -175,7 +175,7 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
     const rules = Object.freeze(action.rules.map((entry) => Object.freeze(readRule(entry))));
     toolLevel[tool] = level;
     rulesFor[tool] = Object.freeze(rules.map(ruleIdOf));
-    actions[tool] = Object.freeze({ level, rules });
+    actions[tool] = Object.freeze(action.say === undefined ? { level, rules } : { say: action.say, level, rules });
     for (const rule of rules) {
       if (rule.rule === 'scope' && rule.subject !== null) subjects[tool] = rule.subject;
       else if (rule.rule === 'fields') serviceFields[tool] = rule.fields;
