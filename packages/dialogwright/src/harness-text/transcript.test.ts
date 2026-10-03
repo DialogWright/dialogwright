@@ -24,13 +24,13 @@ describe('the regression transcript', () => {
     expect(lines).toContain('  1. say "where is parcel 7201"');
     expect(lines).toContain('       -> prompt ask_accountId');
     expect(lines).toContain('          acks   ack_intent');
-    expect(lines).toContain('          gate   listParcels STEP_UP to level 2; R1 Identity strong enough for this action: identity.level 0 >= 2');
+    expect(lines).toContain('          gate   listParcels STEP_UP to level 2; identity Identity strong enough for this action: identity.level 0 >= 2');
     expect(lines).toContain('          form   track_parcel   level 0   slots accountId=55501234, parcelSelect=7201');
     // The code is keyed one turn per key; the keys that said nothing are counted, not shown.
     expect(lines).toContain('  4. keys 123456');
     expect(lines).toContain('       (6 keys, one turn each; 5 said nothing and are not shown)');
     expect(lines).toContain('          acks   otp_verified, parcel_blocked_scope');
-    expect(lines.filter((l) => l.includes('gate   getParcel BLOCK reason=scope; R2 '))).toHaveLength(1);
+    expect(lines.filter((l) => l.includes('gate   getParcel BLOCK reason=scope; scope '))).toHaveLength(1);
     expect(lines.some((l) => l.startsWith('          says   "Thank you, you\'re verified.'))).toBe(true);
     expect(lines.at(-1)).toBe('  pass');
     expect(lines.at(-2)).toMatch(/^ {2}expect decision=prompt, promptId=anything_else, /);

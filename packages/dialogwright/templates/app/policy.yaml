@@ -14,3 +14,13 @@ actions:
     rules:
       - identity
       - confirmed: [service]
+
+# How each value an action is sent is recorded (the gate event, the trace, the console and the
+# audit). A param named after a slot with a redact setting is masked as the slot says (an account
+# number by its last four, a date of birth hidden). Every other param the tools list (`params` in
+# src/app.ts) is declared here, by name, and the choice is a privacy one: an identifier is `last4`,
+# free text said in the caller's own words is `length`, a plain choice from a short list is `keep`
+# (`mask` hides it; `secret` leaves it out of the record altogether). The service is a choice from
+# the list in slots.yaml, so it is recorded as it is.
+audit:
+  service: keep

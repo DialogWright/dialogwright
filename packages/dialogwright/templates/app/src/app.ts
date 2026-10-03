@@ -40,6 +40,8 @@ export const TOOLS: Record<string, ToolDef> = {
   // A write: books the first opening for the service. The gate has already checked the level and
   // that the caller said yes to exactly this service (the `confirmed` rule in policy.yaml).
   bookService: {
+    // The params its calls carry: the policy's `audit` says how each is recorded (policy.yaml).
+    params: ['service'],
     run(call, sys, { tc }) {
       const systems = sys as Systems;
       const service = call.params.service ?? '';

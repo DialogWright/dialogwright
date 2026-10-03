@@ -56,6 +56,8 @@ export const TOOLS: Record<string, ToolDef> = {
   // Checks the factors (identity.yaml): the account number and the date of birth, as the factor slots
   // carry them. A match is the principal they prove, at level 1.
   verifyCustomer: {
+    // The params its calls carry (each is recorded as policy.yaml says: a slot's redact setting, or `audit`).
+    params: ['accountId', 'dob'],
     run(call) {
       const account = ACCOUNTS.find((a) => a.accountId === call.params.accountId && a.dob === call.params.dob);
       const value: VerifyOutcome = account
@@ -66,6 +68,7 @@ export const TOOLS: Record<string, ToolDef> = {
   },
   // The form's entry call: a read that needs level 1, which is what asks an unverified caller for the factors.
   findAccount: {
+    params: ['accountId'],
     run(call) {
       const account = ACCOUNTS.find((a) => a.accountId === call.params.accountId);
       return { value: account ? { first: account.first } : null, summary: account ? 'account found' : 'no account' };
@@ -74,6 +77,7 @@ export const TOOLS: Record<string, ToolDef> = {
   // A write: books the first opening for the service. The gate has already checked the level and
   // that the caller said yes to exactly this service (the `confirmed` rule in policy.yaml).
   bookService: {
+    params: ['accountId', 'service'],
     run(call, sys, { tc }) {
       const systems = sys as Systems;
       const service = call.params.service ?? '';
