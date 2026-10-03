@@ -21,10 +21,10 @@ import type { App, AuditMask } from './app/types';
  * own rule writes its compared line as it likes), the tool's summary and the record it names, and
  * the tool's own audit rows (ToolDef.audit). Wherever one of them repeats the raw value of a param
  * that is recorded masked or never, the value is replaced by what the call records for it ("•" for a
- * secret). That holds for the value as it is (in any case); a rule or a tool that reshapes a value
- * (reformats a date, spaces out digits, quotes a part of it) is not recognised, so code still writes
- * only what may be recorded. Over-masking is the failure it allows: a short masked value also
- * matches inside other words, which then read masked too.
+ * secret). That holds for the value as it is (in any case, as a whole token: not inside a longer run
+ * of letters or digits) and for values of SCRUB_MIN_LENGTH characters or more; a rule or a tool that
+ * reshapes a value (reformats a date, spaces out digits, quotes a part of it) is not recognised, so
+ * code still writes only what may be recorded.
  *
  * Only the call's own params are known here: a value the code reads from elsewhere (the session, its
  * systems) and writes into a line is the code's to mask.
@@ -77,22 +77,53 @@ export type Scrub = (text: string) => string;
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * The scrub for the free text recorded beside `call`: each non-empty raw value of a param that is
- * recorded masked or never, replaced (matched in any case, the longest first) by its recorded form,
- * "•" for a secret. Null when the call has no such value, so nothing need change.
+ * The fewest characters a value has for the scrub to look for it in free text. A shorter value (a
+ * one-letter answer, a two-digit number) cannot be told from the line's own words and numbers
+ * ("level 1", "a caller"), so it is not looked for: the call as recorded still masks it, and the
+ * gate's own lines never print a param's raw value.
+ */
+export const SCRUB_MIN_LENGTH = 3;
+
+/**
+ * The scrub that replaces each raw value (matched in any case, as a whole token: not inside a longer
+ * run of letters or digits, the longest first) by its shown form. Values shorter than
+ * SCRUB_MIN_LENGTH are not looked for. Null when there is nothing to look for.
+ */
+export function scrubberOfValues(pairs: Iterable<readonly [raw: string, shown: string]>): Scrub | null {
+  const shownFor = new Map<string, string>();
+  for (const [raw, shown] of pairs) {
+    if (raw.length < SCRUB_MIN_LENGTH) continue;
+    const key = raw.toLowerCase();
+    // Two values the same: the first shown form is used for both.
+    if (!shownFor.has(key)) shownFor.set(key, shown);
+  }
+  if (shownFor.size === 0) return null;
+  const alternatives = [...shownFor.keys()].sort((a, b) => b.length - a.length).map(escape).join('|');
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives})(?![\\p{L}\\p{N}])`, 'giu');
+  return (text) => text.replace(pattern, (m) => shownFor.get(m.toLowerCase()) ?? '•');
+}
+
+/** Two scrubs as one (the first, then the second); either may be null. */
+export function bothScrubs(a: Scrub | null, b: Scrub | null): Scrub | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return (text) => b(a(text));
+}
+
+/**
+ * The scrub for the free text recorded beside `call`: each raw value of a param that is recorded
+ * masked or never, replaced by its recorded form, "•" for a secret (scrubberOfValues: whole tokens,
+ * any case, SCRUB_MIN_LENGTH characters or more). Null when the call has no such value, so nothing
+ * need change.
  */
 export function scrubberFor(app: RecordingApp, call: ToolCall): Scrub | null {
-  const shownFor = new Map<string, string>();
+  const pairs: [string, string][] = [];
   for (const [k, v] of Object.entries(call.params)) {
     const how = recordingOf(app, k);
     if (how === 'keep' || v === '') continue;
-    const key = v.toLowerCase();
-    // Two params with the same value: the first masked form is used for both.
-    if (!shownFor.has(key)) shownFor.set(key, recordedValue(how, v) ?? '•');
+    pairs.push([v, recordedValue(how, v) ?? '•']);
   }
-  if (shownFor.size === 0) return null;
-  const pattern = new RegExp([...shownFor.keys()].sort((a, b) => b.length - a.length).map(escape).join('|'), 'gi');
-  return (text) => text.replace(pattern, (m) => shownFor.get(m.toLowerCase()) ?? '•');
+  return scrubberOfValues(pairs);
 }
 
 /** The scrub each recorded decision was made with (registered by the lifecycle), for the rows recorded after it. */
