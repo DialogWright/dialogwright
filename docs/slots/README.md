@@ -23,7 +23,7 @@ note:
   say: your note
 ```
 
-Each type has a page with every option, its default, the default question text, the outcomes it can give, the lines it needs in `prompts.yaml`, and starter examples. The pages are generated from the types themselves, so they cannot drift from the options. For how slots fit into an app, read section 4 of the [authoring guide](../authoring-an-app.md#4-writing-a-slot).
+Each type has a page with every option, its default, the default question text, the outcomes it can give, the lines it needs in `prompts.yaml`, and starter examples. The pages are generated from the types themselves, so they cannot drift from the options. For how slots fit into an app, read section 5 of the [authoring guide](../authoring-an-app.md#5-writing-a-slot).
 
 ## The types
 

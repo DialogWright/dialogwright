@@ -3,8 +3,8 @@
 #
 # What an agent may do, and how a caller proves who they are, is a policy a compliance reviewer owns,
 # not the code beside it. A name without a slash matches in every folder, so this covers each app
-# under apps/*/ and the engine's own example apps and fixtures. docs/authoring-an-app.md ("Who reviews
-# the policy") says how an app's repository does the same with its compliance reviewers.
+# under apps/*/ and the engine's own example apps and fixtures. docs/authoring-an-app.md (section 3.12,
+# "Who reviews it: CODEOWNERS") says how an app's repository does the same with its compliance reviewers.
 
 # The files that say it
 policy.yaml     @stilesja

@@ -78,6 +78,34 @@ The kit checks en-US and es unless it is given `locales`. The kit proves the con
 
 Before you open the pull request: `pnpm verify`, `pnpm check`, and both regressions, as above. The CLA (below) covers a new type like any other contribution.
 
+## Adding a built-in policy rule
+
+The built-in rules (`identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `dateInRange`, `limit`) are what an app's `policy.yaml` names, and the gate runs them. A new one is a change to what compliance reads and what an auditor sees, so it is held to more than a function: it needs a shape in the file, a place in the gate, tests, an invariant if it refuses something it exists to refuse, wording on the policy card, and a page in the docs. Read [authoring-an-app.md](docs/authoring-an-app.md#3-policy-and-identity) first: it says what each existing rule does, and `packages/dialogwright/src/gate/bounded.ts` (the range rules) is the model to copy.
+
+**Where it goes.**
+
+| Part | Where |
+|---|---|
+| The rule: a pure function of its parameters that returns `(c: RuleContext) => RuleOutcome` | `packages/dialogwright/src/gate/`, in a file of its own (as `bounded.ts` is) |
+| Its place in the gate: the `Rule` union, `BUILT_IN_RULES` (so no app's own rule can take its name), `RULE_ID` and the `case` that compiles it | `gate/compiled.ts` |
+| Its shape in the file: the name in `PARAM_RULES` and `RULE_NAMES`, a strict object with a `.describe(...)` on every option, `RULE_EXAMPLES`, the `RuleEntryYaml` type | `define/schema/policy.ts` |
+| Reading the file: turning the entry into the `Rule`, and the cross-checks that name what exists (params a tool carries, lookups the code declares, roles identity.yaml has) | `define/policyFile.ts` |
+| Its words: the policy card's sentence, the matrix's and the app map's label | `testing/policyCard.ts` (`ruleText`, `ruleName`), `testing/policyMatrix.ts` |
+
+**The rule itself.**
+
+- It fails closed. A param that is missing, a record that does not exist, a value of the wrong shape or a lookup that throws is a refusal, never a pass. The gate turns a throw into a `BLOCK` (`rule-error`), but write the rule so it does not throw.
+- It is a function of the call, the caller, the gate's facts and the app's lookups. It reads nothing from the conversation, and it never runs anything the file says: a parameter written in the file is data, read when the app is built.
+- It records a line under its name, with what it compared, and that line reaches the console and the audit as it is. Write the param's name and the bounds, masked where they are identifiers, and never the call's own value, which may be a value the app redacts.
+- Give each way it can fail a reason and a verdict, and let the file change them only where that is safe (a limit may go to a person; a value that is not a number never does). Reasons are short machine words (`not-a-number`, `date-range`).
+- Neutral words in the engine package, as everywhere in it.
+
+**Tests.** Beside the rule, a test of every outcome: each way it fails, the boundaries (are they inclusive?), every malformed input, a lookup that throws. Beside the schema, tests of each problem `check` reports, with its fix. A compile test shows the entry becomes the rule. Then the policy tests: the gate grid (`testing/gateGrid.ts`) runs every rule an action lists; the legacy evaluator the shadow gate compares with does not know a rule that only the file has, so `define/rangeRules.test.ts` shows how a stable, fail-closed run of the grid stands in. If the rule refuses something it exists to refuse, add an invariant (`INVARIANTS`, `INVARIANT_ABOUT` and its check in `testing/policyInvariants.ts`) and a test that a gate with that one bug trips it: an invariant is derived from the file, never from the gate's own lines, so a gate that is wrong in a way its lines agree with is still caught.
+
+**The card.** Write the rule's sentence on the policy card in the words a reviewer who does not read YAML would use, with its parameters: "no later than 30 days from today", not `notAfter: today+30`. A reviewer reads this and nothing else. Add the rule to an app's test policy where it can be seen, and look at the diff of its `POLICY.md`, `policy.matrix` and `APP-MAP.md` (`pnpm policy:card`, `pnpm policy:matrix`, `pnpm app:diagram`): the diff is part of the review.
+
+**Docs and the rest.** Regenerate the schemas (`pnpm --filter dialogwright schemas`); add the rule to the table in section 3.3 of the authoring guide with an example (a YAML block there is built by `define/docPolicyBlocks.test.ts`, so it cannot drift), to design.md §6, to the rule lists in CLAUDE.md, llms.txt and the README, and to `BUILT_IN_RULES`. The rule's name is recorded in the audit: never reuse one of the old ids `R0` to `R7`. Before you open the pull request: `pnpm verify`, `pnpm check` and both regressions, as above, with no decision of an existing app changed.
+
 ## Pull requests
 
 On your first pull request, CLA Assistant will ask you to sign the [Individual Contributor License Agreement](docs/CLA.md) with your GitHub account; it takes a minute and covers all your future contributions. The agreement lets the project keep offering your work under Apache-2.0 and under other terms in the future, while you keep your copyright. If you contribute for a company, open an issue about a corporate agreement first.

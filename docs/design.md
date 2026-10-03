@@ -135,12 +135,11 @@ Not built yet:
 
 | Type | Why it waits |
 |---|---|
-| `otp` | A one-time code: keypad only, a spoken code masked and reissued, never traced. Identity owns the code path, so it comes with identity and policy (Phase 4). |
 | `topic` | A knowledge-base question, selected from retrieval candidates (§9). It needs the knowledge base's retrieval contract (Phase 6). |
 | `time-slot` | An appointment time, with windows and disambiguation. Apps that have one ask it from form state today; making it a slot would re-key every recorded request, so it waits for a deliberate re-record. |
 | Name spelling | A different set of questions; left until an app needs it. |
 
-Yes or no confirmation is built into the core. A slot a type does not fit is written in code (`{ type: code }`), or becomes a type: contributors add types, and the conformance kit (§7) is how a type proves it keeps the engine's contract.
+The one-time code is not a slot type: it is a factor of `identity.yaml`'s level 2 (§6), keypad only, masked and never traced, so it never joins the slots a request carries. Yes or no confirmation is built into the core. A slot a type does not fit is written in code (`{ type: code }`), or becomes a type: contributors add types, and the conformance kit (§7) is how a type proves it keeps the engine's contract.
 
 ### Tools versus policy
 
@@ -192,54 +191,81 @@ balance_answer:
 
 ## 6. Identity and policy
 
+Policy is a file compliance owns, and identity is a file next to it. `policy.yaml` says what the agent may do, action by action; `identity.yaml` says who the app serves and how a caller proves who they are. Both are plain, reviewable YAML that compile to what the gate runs, every app (the framework's testkit included) runs from them, and [authoring-an-app.md](authoring-an-app.md#3-policy-and-identity) is the guide to writing them.
+
 ### Identity
 
-Identity is a ladder of levels. Today an app's optional `identity.yaml` declares the principal kind it serves, the factor slots asked on voice, and the tools that verify factors and send and check a one-time code (an app without the file verifies no one, and every tool must be level 0). The ladder below, with named levels, per-channel step-up and attempts in one file, is planned (Phase 4):
+Identity is a ladder of named levels above anonymous. Each level has the factors a caller gives (slots, asked on voice) and the tools that check them; level 2 adds a one-time code, a factor of its own kind that is keyed on the keypad, masked, never traced and never held as a slot. The ladder is cumulative and has one or two rungs; a ladder of one has no code, and then nothing may need level 2. Levels stay numbers everywhere the engine records them, and a level's name is a label for the console and the policy card.
 
 ```yaml
 # identity.yaml
+principals:
+  subject: customer
+  delegates:
+    agent: { roles: [viewer, clerk] }
 levels:
   1: { name: account verified, factors: [accountNumber, serviceZip], verify: verifyAccount }
-  2: { name: code verified, factors: [otp], send: sendCode, verify: verifyCode }
+  2: { name: code verified, factors: [{ otp: { length: 6 } }], send: sendCode, verify: verifyCode }
 attempts: 3
-channels:
-  chat: { signIn: portal, level: 2 }
+signIn: { level: 2 }
 ```
 
-**Step-up**: when the gate answers `STEP_UP`, the request is parked, the channel satisfies it (spoken or keyed factors on voice, sign-in on chat), and the request goes back through the gate. Factors are ordinary slots, never offered on a channel where the user signs in instead.
-
-**Principals**: anonymous, the verified subject (whatever the app calls its customer or patient), and delegates acting for others (a caregiver, a property manager), each with a role and an organization.
+- **Step-up**: when the gate answers `STEP_UP`, the request is parked, the channel satisfies it (spoken or keyed factors on voice, sign-in on a channel that can sign a caller in), and the request goes back through the gate. Factors are ordinary slots, never asked on a channel where the caller signs in instead.
+- **Sign-in is keyed by capability, not by channel name** (`signIn: { level }`), as §10 has it: the core checks what a channel can do. The level a sign-in proves is always the top of the ladder.
+- **Principals**: anonymous, the verified subject (whatever the app calls its customer or patient), and delegates acting for subjects (a caregiver, a depot agent), each kind with its roles. Every party an app's portal lists must fit what `identity.yaml` declares, and `defineApp` refuses one that does not.
+- **Attempts**: one number, the failed tries allowed at each check, before a person takes the call.
 
 ### Policy
 
-Policy is a file compliance owns. `policy.yaml` is one entry per action: the level it needs and the named, parameterized rules the gate runs before it (`identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `custom`), with the purposes' levels and the words the rules use in the audit; `identity.yaml` holds the ladder, the principals and the attempts. Every app, the framework's testkit included, runs from these files, and a file written in the gate's old table shape (`toolLevel`, `rulesFor`, ...) is converted with `dialogwright policy:convert`. The shape this phase is building towards (the rules `dateInRange` and `limit`, `redact`, the plain-English card) looks like this:
-
 ```yaml
 # policy.yaml
-getBalance:         { level: 1, rules: [identity, scope] }
-reportOutage:       { level: 0, rules: [confirmed: [address, outageType]] }
-paymentArrangement:
-  level: 2
-  rules:
-    - identity
-    - scope
-    - role: { delegate: person }
-    - confirmed: [amount, firstPaymentDate]
-    - limit: { field: amount, max: account.balance }
-    - custom: noArrangementInLast12Months
+actions:
+  getBalance:
+    say: read the balance
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  paymentArrangement:
+    say: set up a payment plan
+    level: 2
+    rules:
+      - identity
+      - scope: { param: accountId }
+      - role: { viewer: refuse, clerk: person }
+      - confirmed: [accountId, amount, firstPaymentDate]
+      - limit: { field: amount, max: accountBalance(accountId) }
+      - dateInRange: { field: firstPaymentDate, notBefore: today, notAfter: today+30 }
+      - custom: no-arrangement-in-last-12-months
 redact:
-  delegate: { getBalance: [paymentHistory] }
+  agent: { getBalance: [paymentHistory] }
+audit:
+  accountId: last4
+  amount: keep
+  firstPaymentDate: keep
 ```
 
-- **Built-in rules**: `identity` (level strong enough), `scope` (the record is the caller's own, or one a relationship table the app supplies allows), `role` (allow, refuse, or a person, per role), `confirmed` (a hash of exactly what the caller confirmed matches what the write sends), `dateInRange`, `limit`, `attempts`, and `fields` (the minimum data sent to downstream services). An action not listed is blocked. Scope never comes from the conversation. Today's gate already enforces identity, scope, exact confirmation, role, attempts and fields, and blocks any tool not on the approved list.
-- **Custom rules** are TypeScript referenced by name. They return the same shape as built-ins (a description, what was compared, pass or fail, the verdict) and must ship with a test.
-- **Ownership**: compliance edits `policy.yaml` and `identity.yaml` (with required reviewers through `CODEOWNERS`); the framework owns how built-in rules are checked; app engineers own custom rules. `pnpm policy:card` renders the files as a one-page table in plain English, so compliance reviews a card that cannot drift from what is enforced. The YAML stays plain: named rules, comments, simple references only.
-- **The audit log** is built in, with one stable schema and minimization declared per field: identifiers masked to the last four characters, secrets never logged, free text recorded by length only.
+- **Built-in rules** (each is a name with parameters, listed in the order the gate runs them; the first that fails decides): `identity` (the level is strong enough), `scope` (the subject the call names is one the caller may see; never from the conversation), `role` (allow, refuse, or a person, per role), `confirmed` (a hash of exactly what the caller confirmed matches what the write sends), `attempts`, `fields` (the minimum data sent to downstream services), `dateInRange` (a date inside bounds, written as `today`, a number of days from today, a date, or a lookup the app supplies) and `limit` (a number inside limits). An action not listed is blocked. Bounds come only from the app's code and systems, through a small reference grammar that is read when the app is built and never run, and every range rule fails closed.
+- **Custom rules** are TypeScript referenced by name, written with `defineRule`. They return the same shape as built-ins (a description, what was compared, pass or fail, the verdict) and must ship with examples: one call the gate allows and one it refuses, which the matrix runner runs. `check` refuses a rule without them.
+- **Purposes** raise the level a purpose needs above its first action's, and **wording** puts the rules' lines in the app's own terms.
+- **Redaction per principal** (`redact`): the tool returns the whole record; the policy names, by delegate kind or kind and role, the fields of a result withheld from a party acting for subjects. The engine strips them in one place, right after the tool runs, so no hook, line, trace, console or audit ever sees the whole value.
+- **What is recorded** (`audit`): every param that is not a slot with a redact setting is declared `last4`, `mask`, `length`, `secret` or `keep`, and `check` refuses one that is undeclared. The same masks reach the free text recorded beside a call. The gate always decides on the raw call.
+- **The audit log** is built in, with one stable schema and minimization declared per field: identifiers masked to the last four characters, secrets never logged, free text recorded by length only. Each rule is recorded under its name (`scope fail: ...`, not an opaque id), so an auditor reads what failed.
+
+### Ownership and review
+
+Compliance edits `policy.yaml` and `identity.yaml`, with required reviewers through `CODEOWNERS`; the framework owns how built-in rules are checked; app engineers own custom rules. Three generated files make a change readable by someone who does not write code, each written deliberately by a command and compared by a test, never written by CI:
+
+- `POLICY.md`, the policy card (`pnpm policy:card`): a plain-English table from the same compiled object the gate runs, so it cannot say what the gate does not do. It carries the files' config hashes, the defaults, the identity ladder, who acts for whom and what each role gets, what is withheld, what is recorded, one row per action with each rule in words, and Mermaid diagrams of the ladder and of the actions by level.
+- `policy.matrix` (`pnpm policy:matrix`): for every action and every kind of caller, the verdict and its reason, so a policy change is a diff of what the gate decides.
+- `APP-MAP.md` (`pnpm app:diagram`): the app's intents, keypad menu, forms, slots, actions and rules as diagrams, with dangling references (an intent with no form, an action no form reaches) drawn marked. It is structure, not a call script, since the dialog is mixed-initiative.
+
+A change to the rules lands as a diff of the policy, the card and the matrix together. A file written in the gate's old table shape is converted with `dialogwright policy:convert`.
 
 ## 7. Testing
 
 1. **Framework tests.** Each slot type and built-in rule ships its own suite. A slot type's suite starts with the conformance kit (below).
-2. **App tests.** A labelled corpus (drafted by the skill, grown with real phrasings); multi-turn scenarios with expected outcomes (delegates, sign-in steps, keypad input); **policy matrix tests generated from `policy.yaml`** (every action against every principal, the gate checked against the file); the required tests for custom rules.
+2. **App tests.** A labelled corpus (drafted by the skill, grown with real phrasings); multi-turn scenarios with expected outcomes (delegates, sign-in steps, keypad input); **policy tests read from `policy.yaml`**: the invariants, the matrix golden and the custom rules' examples (below), and the policy card and app map goldens.
 3. **The model loop.** Stub runs need no keys: the stub perceiver answers from the corpus labels. Record against a decision model once (per provider, for benchmarking), replay offline from the recorded cassette, regress with allowed cosmetic drift, sweep thresholds to the center of their plateaus, and trim the cassette.
 
 Around those:
@@ -247,6 +273,8 @@ Around those:
 - **Regression** compares every run's outputs with a baseline. A changed output is a finding to explain, never noise to overwrite. Two allowances exist, both only for runs that reach a model's answers (recorded, live): a scenario marked `cosmeticDrift` may differ in which gate decided and its verdict, and a corpus entry carrying `knownGap` (a one-line reason and the outcome fields the model is known to produce) may show exactly that known outcome, printed as allowed with its reason and counted in the summary; any other difference on the entry still fails. A documented model gap is tolerated there and nowhere else: stub runs (fixture and heuristic) stay exact, so `knownGap` never hides a change in the stub baseline.
 - **The slot conformance kit** (`dialogwright/testing`) runs over every example configuration of a slot type, with no model and no keys, and proves the type keeps the contract the engine relies on: it builds and declares its question ids and prompts; it refuses unknown options; its question ids are its own and never the engine's; it gives no value for no answers, for answers that hear nothing, or for malformed answers; it reads thresholds by name (scaling every probability and threshold by one factor changes nothing, so no number is written into the type); its display is the same in the fill, the keypad and every locale; every line it can lead to is declared; and each example utterance gives the outcome it expects. A contributed type must pass it. The kit's own tests break a small correct type one way at a time and show the check meant for that fault catches it.
 - **Oracles and grids** are the pattern for moving a slot onto a library type without changing what a caller hears. The hand-written slot is frozen as a test-only oracle, and a shadow harness runs the library slot beside it over a large grid of answers around every threshold, comparing the questions as the model's request keys them, the fill outcomes, the keypad results and the displays. The same harness runs inside the regression and the recorded replay, so branches no recorded call reaches are compared too. When the grids and every recorded call agree, the oracle stays as a test and the app runs the library slot; the recorded cassette replays with zero misses because the model's requests are byte-identical. The clinic's slots moved this way.
+- **Policy tests** hold the gate to what the file says, over a grid of every action crossed with every kind of caller, subject and fact (the app supplies its principals and records through one test hook). Three things run over it. **Invariants** say what must hold whatever order the rules are written in: an action not listed is blocked for everyone; a caller below an action's level is never allowed; `scope`, `confirmed`, `role`, `fields` and `attempts` each refuse what they exist to refuse; an allowed call ran every rule its action lists, and each passed; raising the level never turns an allow into a refusal; and the scope answer does not move with the conversation. They are derived from the policy as written, not from the gate's own lines, so a gate that is wrong in a way its lines agree with is still caught, and the tests of the invariants break a small correct gate one way at a time to show each is caught. The **matrix golden** (`policy.matrix`, beside the policy) is the verdict and reason for every action and kind of caller, reviewed and written deliberately, so a policy change is a diff compliance reads. **Rule examples** run each custom rule's examples through the compiled gate in every action that names it. The policy card and the app map are goldens of the same kind.
+- **The shadow gate** is the pattern for changing the gate itself without changing a decision, as the shadow harness is for slots. The old evaluator is frozen as a reference, a second gate (here, the one that reads the policy's named rules) runs beside it over the whole grid and inside every replay of a recorded call, and the run fails on any decision that differs, with a count of how often each rule passed and failed so a rule no call exercised is visible. When both agree everywhere and the recorded calls replay with zero misses, the reference stays as a test and the new gate runs the apps. The engine moved every app from the old tables to the policy files this way.
 - **The threshold sweep** varies each decision threshold across the recorded calls and picks values from the middle of the range where outcomes are stable.
 - **Generated wording** joins the cassette; regression re-checks every line and reports the fallback rate.
 - **A shared adversarial suite** that every app inherits, filled in with its own intents and records: announced injections (including at identity and code prompts), callers asserting a relationship they have not proven, off-scope requests, spoken codes, and hostile replies from downstream services.
