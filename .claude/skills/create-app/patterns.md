@@ -260,20 +260,35 @@ export const code: AppCode = {
       - custom: first-date-within-30-days
 ```
 
+A custom rule is made with `defineRule` (from `'dialogwright/policy'`): its id, what it holds in plain words, its `run`, and examples, at least one call the gate allows and one it refuses (`pnpm check` refuses a rule without them, and a plain function). Each example runs through the gate in every action that names the rule, so it must pass the action's other rules: a principal at the action's level, every param the action sends (its `confirmed` or `fields` list) with values inside the other bounds. The example's facts default to no failed attempts, its values confirmed, and the regression's day, 2026-09-18.
+
 ```ts
-function within30Days(c: RuleContext): RuleOutcome {
-  const latest = addDays(c.facts.todayIso, 30);
-  const day = c.call.params.firstDate ?? '';
-  const pass = day !== '' && day <= latest;
-  const result = { id: 'first-date-within-30-days', description: 'The first payment is within thirty days', compared: `firstDate on or before ${latest}: ${pass ? 'yes' : 'no'}`, pass };
-  return pass ? { result } : { result, fail: { verdict: 'BLOCK', reason: 'date-range' } };
-}
+import { defineRule } from 'dialogwright/policy';
+
+const PLAN_CALL = { accountId: '55501234', place: '', fault: '', count: 'three', firstDate: '2026-09-25', total: '240.00' };
+const SUBJECT_AT_2: Party = { kind: 'customer', level: 2, id: '55501234', first: 'Avery' };
+
+export const within30Days = defineRule({
+  id: 'first-date-within-30-days',
+  description: 'The first payment is within thirty days',
+  run(c) {
+    const latest = addDays(c.facts.todayIso, 30);
+    const day = c.call.params.firstDate ?? '';
+    return day !== '' && day <= latest
+      ? { pass: true, compared: `firstDate on or before ${latest}: yes` }
+      : { pass: false, compared: `firstDate on or before ${latest}: no`, verdict: 'BLOCK', reason: 'date-range' };
+  },
+  examples: [
+    { name: 'thirty days on', call: { params: { ...PLAN_CALL, firstDate: '2026-10-18' } }, principal: SUBJECT_AT_2, expect: { verdict: 'ALLOW' } },
+    { name: 'thirty-one days on', call: { params: { ...PLAN_CALL, firstDate: '2026-10-19' } }, principal: SUBJECT_AT_2, expect: { verdict: 'BLOCK', reason: 'date-range' } },
+  ],
+});
 
 // in code:
 customRules: { 'first-date-within-30-days': within30Days },
 ```
 
-A custom rule's `compared` line goes to the audit as it is: never put a raw param value in it that the app masks (an identifier, a date of birth, free text). Log the custom rule as a gap in the worksheet.
+A custom rule's `compared` line goes to the audit as it is: never put a value in it that the app masks (an identifier, a date of birth, free text). Log the custom rule as a gap in the worksheet.
 
 ## A value no slot holds, in the read-back
 
@@ -338,18 +353,80 @@ and the line in `prompts.yaml`. After it the caller hears `ask_intent`, so a scr
 
 ## Testing the policy
 
-**Per action**: ask the gate directly, for each kind of principal and each bound, with the caller having said yes to exactly the params (`dialogwright/testing` gives the app's own gate; `dialogwright/policy` the confirmation hash):
+Three kinds of test, all from `'dialogwright/testing'`.
+
+**The policy matrix** is the reviewed record of what the gate decides: under each action, a row per kind of caller with the verdict and its reason, then each custom rule's examples. It lives beside `policy.yaml` as `policy.matrix`, and it is how you read the policy back (step 7). The gate grid behind it needs the app's callers and records, `testing.policyMatrix` in `src/app.ts`:
+
+```ts
+testing: {
+  policyMatrix: () => ({
+    principals: {
+      subject1: { kind: 'customer', level: 1, id: '55501234', first: 'Avery' },
+      subject2: { kind: 'customer', level: 2, id: '55501234', first: 'Avery' },
+      delegates: { manager: managerPrincipal('riley')! },           // one per role; {} with no delegates
+      unlistedRole: { kind: 'manager', level: 2, id: 'quinn', first: 'Quinn', role: 'assistant' },
+      roleless: { kind: 'manager', level: 2, id: 'rowan', first: 'Rowan' },
+      otherParty: { kind: 'visitor', level: 2, id: 'V-1', first: 'Robin' },
+    },
+    records: {                                   // subject ids (and a record id of theirs, for a `scope: { record }` rule)
+      own: { subject: '55501234', record: 'R-1' },        // subject1's own
+      inScope: { subject: '55505678', record: 'R-2' },    // another subject the delegates act for
+      outOfScope: { subject: '55507777', record: 'R-3' }, // one no caller here may see
+      unknown: { subject: '55500000', record: 'R-9' },    // one that does not exist
+    },
+    values: PLAN_CALL,                           // a value per param, inside every bound, so an allowed call can be seen
+  }),
+  // ...
+},
+```
+
+With an app with no delegates, the `unlistedRole`, `roleless` and `otherParty` callers are still given (of a kind the app does not serve), as the clinic's are. Then the test, and the first matrix written deliberately:
+
+```ts
+import { fileURLToPath } from 'node:url';
+import { expectPolicyMatrix, policyInvariants, runRuleExamples } from 'dialogwright/testing';
+
+describe('the policy against its file', () => {
+  it('holds to the policy invariants on the gate grid', () => expect(policyInvariants(app).violations).toEqual([]));
+  it('runs every custom rule example as written', () => {
+    expect(runRuleExamples(app).map((r) => `${r.tool} ${r.example}: ${r.expected}`)).toEqual([
+      'setUpPlan thirty days on: ALLOW',
+      'setUpPlan thirty-one days on: BLOCK date-range',
+    ]);
+  });
+  it('policy.matrix is what the gate decides', () => {
+    expectPolicyMatrix(app, fileURLToPath(new URL('../policy.matrix', import.meta.url)), 'pnpm policy:matrix apps/<name>');
+  });
+});
+```
+
+```sh
+pnpm policy:matrix apps/<name>     # writes apps/<name>/policy.matrix; read it, then commit it
+```
+
+A part of it reads:
+
+```text
+setUpPlan · level 2 · identity, role(manager person), scope(accountId), confirmed(...), limit(total), dateInRange(firstDate), custom first-date-within-30-days
+  anonymous         STEP_UP to 2
+  subject@1         as anonymous
+  subject@2         subject own, fields exact, confirmed match          ALLOW
+                    subject inScope|outOfScope|unknown|empty            BLOCK scope
+  delegate:manager  NEEDS_HUMAN role-person
+  unlisted-role     BLOCK role
+```
+
+Like the baseline, write it once the policy is right, read it whole, and from then on a change to it is a policy change to explain: rewrite it only for a policy change you meant, and read the diff.
+
+**The bounds, at their edges.** The matrix does not try each bound's values. Ask the gate directly, for the last value that passes and the first that fails, with the caller having said yes to exactly the params:
 
 ```ts
 import { ANONYMOUS, type GateFacts, type Party, type Principal, type ToolCall } from 'dialogwright';
 import { confirmationHash } from 'dialogwright/policy';
 import { gateEvaluator } from 'dialogwright/testing';
-import { describe, expect, it } from 'vitest';
-import { app } from './app';
 
 const gate = gateEvaluator(app);
 const subject = (level: 1 | 2): Party => ({ kind: 'customer', level, id: '55501234', first: 'Avery' });
-const manager: Party = { kind: 'manager', level: 2, id: 'riley', name: 'Riley Shaw', first: 'Riley', role: 'manager' };
 
 /** The verdict (and reason) for one call by one principal, on the regression's day. */
 function decide(tool: string, params: Record<string, string>, p: Principal, confirmed = true): string {
@@ -358,28 +435,17 @@ function decide(tool: string, params: Record<string, string>, p: Principal, conf
   return d.reason ? `${d.verdict} ${d.reason}` : d.verdict;
 }
 
-const plan = (over: Record<string, string> = {}) => ({ accountId: '55501234', place: '', fault: '', count: 'three', firstDate: '2026-09-25', total: '240.00', ...over });
+const plan = (over: Record<string, string> = {}) => ({ ...PLAN_CALL, ...over });
 
-describe('setUpPlan', () => {
-  it('needs the code', () => {
-    expect(decide('setUpPlan', plan(), ANONYMOUS)).toBe('STEP_UP');
-    expect(decide('setUpPlan', plan(), subject(1))).toBe('STEP_UP');
-    expect(decide('setUpPlan', plan(), subject(2))).toBe('ALLOW');
-  });
-  it('goes to a person for a manager', () => expect(decide('setUpPlan', plan(), manager)).toBe('NEEDS_HUMAN role-person'));
-  it('holds the total and the first day to their bounds', () => {
-    expect(decide('setUpPlan', plan({ total: '240.01' }), subject(2))).toBe('BLOCK limit');
-    expect(decide('setUpPlan', plan({ firstDate: '2026-09-17' }), subject(2))).toBe('BLOCK date-range');
-    expect(decide('setUpPlan', plan({ firstDate: '2026-10-18' }), subject(2))).toBe('ALLOW');
-    expect(decide('setUpPlan', plan({ firstDate: '2026-10-19' }), subject(2))).toBe('BLOCK date-range');
-  });
-  it('writes only what the caller said yes to', () => expect(decide('setUpPlan', plan(), subject(2), false)).toBe('BLOCK confirmation'));
+it('holds the total and the first day to their bounds', () => {
+  expect(decide('setUpPlan', plan({ total: '240.01' }), subject(2))).toBe('BLOCK limit');
+  expect(decide('setUpPlan', plan({ firstDate: '2026-09-17' }), subject(2))).toBe('BLOCK date-range');
+  expect(decide('setUpPlan', plan({ firstDate: '2026-10-18' }), subject(2))).toBe('ALLOW');
+  expect(decide('setUpPlan', plan({ firstDate: '2026-10-19' }), subject(2))).toBe('BLOCK date-range');
 });
 ```
 
-Test each bound at its edge (the last value that passes, the first that fails), and each custom rule by itself.
-
-**The gate-event golden**: every gate decision of the stub regression, each rule's line with it, as one text file. Its first run writes the file; read it once against the worksheet, then it holds every decision still.
+**The gate-event golden** (optional, useful while reviewing the baseline): every gate decision of the stub regression, each rule's line with it, as one text file, written on its first run.
 
 ```ts
 import { gateEventGolden } from 'dialogwright/testing';
@@ -390,7 +456,7 @@ it('gate-event golden', async () => {
 }, 60_000);
 ```
 
-A line of it reads `makePlan BLOCK reason=date-range {...}` followed by each rule and what it compared (`limit pass ... total at least 0.01, at most amountDue(accountId ...1234) 240.00`).
+A line of it reads `setUpPlan BLOCK reason=date-range {...}` followed by each rule and what it compared (`limit pass ... total at least 0.01, at most amountDue(accountId ...1234) 240.00`).
 
 ## Known gaps
 
@@ -402,4 +468,4 @@ Found so far, with the workaround each time. Log the ones you meet in the worksh
 - **Delegates only on a signed-in chat**: no phone path for a delegate; scripted calls use `as`, and a corpus line with `as` must be `no_form`. A delegate's answer inside a form comes from a corpus line without `as` that has the same words.
 - **A factor slot does not fill from a delegate's words**: give delegates their own slot for the subject they name (above).
 - **`pnpm check` does not check the corpus** beyond every intent having examples, nor the lines named only in code (`blockPromptId`, `handoff(...)`, a completion's line, a summary variable from `onSummaryRead`). The regression finds them, one at a time.
-- **No policy card or diagrams yet** (unless `policy:card` exists by now): read the policy back with the tests above.
+- **No policy card or diagrams yet** (unless `policy:card` exists by now): read the policy back from `policy.matrix` (above).

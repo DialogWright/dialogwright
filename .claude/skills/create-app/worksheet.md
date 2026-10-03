@@ -99,10 +99,10 @@ Every hand edit to `fixtures/expected/*.json` after the first `regress --update`
 - [ ] Every sentence of the paragraph is a row above, and every row is built.
 - [ ] Every intent has at least eight corpus lines (terse ones, and for forms, over-answering ones and a correction) and at least one scripted call.
 - [ ] Every slot has at least five answers in the corpus, every summary at least four.
-- [ ] Every action has a policy entry and a test that asks the gate about each kind of principal and each bound; every custom rule has a test of its own.
+- [ ] Every action has a policy entry; `policy.matrix` is written with `pnpm policy:matrix`, read, and tested (`expectPolicyMatrix`, `policyInvariants`); each bound is tested at its edges; every custom rule is a `defineRule` with examples the tests run.
 - [ ] Scripted calls cover each form, each principal (anonymous, each level, each delegate role), the step-up, failed verification, each refusal, each handoff, keypad entry and each informational answer.
 - [ ] `identity.yaml` matches the paragraph: who must verify, with what, the code only where a level 2 action needs it, the tries.
-- [ ] The policy read back (the card, or `policy.yaml` with the gate-event golden) matches "Who may do what" above, cell by cell.
+- [ ] The policy read back (`policy.matrix`, and the policy card if there is one) matches "Who may do what" above, cell by cell.
 - [ ] No tool decides who may do what; every line a caller hears is in `prompts.yaml`.
 - [ ] Nothing private or real: invented names and streets, 555 numbers, `example.com` addresses.
 - [ ] `pnpm check` ok; `pnpm verify` green; this app's `regress` says `no changes`; the clinic's and the testkit's regressions say `no changes`.

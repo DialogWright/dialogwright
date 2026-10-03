@@ -88,7 +88,7 @@ What `pnpm check` does not see: the corpus beyond "every intent has examples" (t
 ## Step 4: Tools as stubs over fixture data
 
 - Each tool's `run` reads or writes the in-memory `Systems` and the fixture data in `src/data.ts`, and returns `{ value, summary }`. Invented records only: names, 555 numbers, invented streets, amounts written as plain decimals (`240.00`). A real client replaces the stub later; keep the tests on the stub.
-- No `if` about who is calling, their level, a limit or a date inside a tool. If you find yourself writing one, it is a rule: put it in `policy.yaml`, or in `code.customRules` when no built-in rule fits (a custom rule needs its own test).
+- No `if` about who is calling, their level, a limit or a date inside a tool. If you find yourself writing one, it is a rule: put it in `policy.yaml`, or, when no built-in rule fits, write it with `defineRule` (with an example the gate allows and one it refuses) in `code.customRules` and name it with `custom:` ([patterns.md](patterns.md#bounds-limit-and-dateinrange)).
 - The gate's lookups are code: `systems()` returns `lookups.scopeOf` (the subject ids a principal may see: a subject their own id, a delegate the subjects they act for, an anonymous caller none), `lookups.ownerOf` (the subject a record belongs to, or null), and each lookup a range rule's bound names (also listed in `code.lookups`). The scaffold's `scopeOf: () => []` fails every `scope` rule: replace it when you add one.
 - A form's `complete` calls its tool through `c.callTool`, never the tool directly, and turns the gate's decision into a line: `ALLOW` to the form's own line, anything else through `c.refusal(decision)` (a `blockPromptId` line, or a person). [patterns.md](patterns.md#refusals-and-handoffs) has each case.
 
@@ -139,16 +139,19 @@ Add the app's regression to CI: `- run: pnpm --filter @dialogwright/example-<nam
 
 ## Step 7: Read the policy back
 
-Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write:
+Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write. Add `testing.policyMatrix` and the policy tests in [patterns.md](patterns.md#testing-the-policy), then write the policy matrix:
 
-- If the repository has a policy card or diagram command by the time you read this (look for `policy:card` in `package.json` and `CLAUDE.md`), run it and compare its table with the worksheet, row by row.
-- Either way, read `policy.yaml` and `identity.yaml` beside the worksheet, and add the two policy tests in [patterns.md](patterns.md#testing-the-policy): one per action that asks the gate about each kind of principal and each bound, and the gate-event golden, a snapshot of every gate decision of the regression with each rule's line. Read the golden once: every action, every principal and every refusal the worksheet lists should be in it, decided by the rule you expect.
+```sh
+pnpm policy:matrix apps/<name>
+```
 
-Fix every mismatch in the YAML (or in the worksheet, if you misread the paragraph), and run step 6's commands again.
+`apps/<name>/policy.matrix` lists, under each action, what the gate decides for each kind of caller (anonymous, the subject at each level, each delegate role, a role the policy does not name, ...) and why, then each custom rule's examples. Read it beside the worksheet's "Who may do what", cell by cell: every allowed, refused and to-a-person cell should be there, decided by the rule you expect. Then check each bound at its edges with the per-action test. If the repository also has a policy card or diagram command by the time you read this (look for `policy:card` in `package.json` and `CLAUDE.md`), read its output the same way.
+
+Fix every mismatch in the YAML (or in the worksheet, if you misread the paragraph), write the matrix again, read its diff, and run step 6's commands again. Once it is right, the matrix is a golden like the baseline: rewrite it only for a policy change you meant.
 
 ## Step 8: The final checklist
 
-Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#final-checklist)), in the worksheet itself. In short: every intent has corpus lines and a scenario; every action has a policy entry and a test; identity matches the paragraph; nothing private or real; `pnpm check`, `pnpm verify` and every app's regression green; the README describes the app and keeps the recording steps the scaffold wrote; the gaps are written up. Then commit, with the worksheet.
+Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#final-checklist)), in the worksheet itself. In short: every intent has corpus lines and a scenario; every action has a policy entry, a row in `policy.matrix` you have read, and its bounds tested at their edges; identity matches the paragraph; nothing private or real; `pnpm check`, `pnpm verify` and every app's regression green; the README describes the app and keeps the recording steps the scaffold wrote; the gaps are written up. Then commit, with the worksheet.
 
 ## When something doesn't fit
 
