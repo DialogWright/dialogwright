@@ -23,7 +23,10 @@ function io(cwd: string) {
 describe('dialogwright policy:matrix', () => {
   it('finds the workspace, every folder with a policy.matrix, and the App a folder exports', async () => {
     expect(workspaceRootOf(PACKAGE)).toBe(ROOT);
-    expect(findMatrixFolders(ROOT).map((d) => relative(ROOT, d))).toEqual(['apps/clinic', 'packages/dialogwright/src/define/fixture', 'packages/dialogwright/src/testing/testkit']);
+    // Contains, not equals: every app built with the create-app skill writes a policy.matrix of its own.
+    const found = findMatrixFolders(ROOT).map((d) => relative(ROOT, d));
+    expect(found).toEqual(expect.arrayContaining(['apps/clinic', 'packages/dialogwright/src/define/fixture', 'packages/dialogwright/src/testing/testkit']));
+    expect(found).toEqual([...found].sort());
     expect(await loadMatrixApp(LIBRARY_DIR)).toBe(libraryApp);
   });
 
