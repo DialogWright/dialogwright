@@ -173,8 +173,8 @@ export interface CompiledIdentity {
  * identity.yaml (the new shape, already checked) as the lifecycle's identity configuration, and its
  * attempts for the policy (compilePolicy's maxAttempts). Level 1 is the factors and their check;
  * level 2, where the ladder has it, is the one-time code (its tools and its length, default 6). The
- * levels' names and the attempts go on the configuration too, for the console and for validateApp:
- * the engine decides on the level numbers alone.
+ * levels' names, the sign-in's level and the attempts go on the configuration too, for the console,
+ * the turn and validateApp: the engine decides on the level numbers alone.
  */
 export function compileIdentity(file: IdentityYaml, options: CompileIdentityOptions = {}): CompiledIdentity {
   const one = file.levels[1];
@@ -193,6 +193,7 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
   if (one.failedPrompt !== undefined) identity.failedPromptId = one.failedPrompt;
   if (two) identity.codeLength = two.factors[0]?.otp.length ?? DEFAULT_CODE_LENGTH;
   identity.levelNames = Object.freeze(two ? { 1: one.name, 2: two.name } : { 1: one.name });
+  if (file.signIn) identity.signInLevel = file.signIn.level;
   identity.maxAttempts = file.attempts;
   return { identity, maxAttempts: file.attempts };
 }

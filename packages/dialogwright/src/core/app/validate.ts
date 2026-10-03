@@ -150,11 +150,13 @@ export function validateApp(app: App): void {
         if (level > 1) fail(`purpose "${purpose}" needs identity level ${level}, and the identity's ladder stops at level 1 (it has no one-time code)`);
       }
     }
-    const { codeLength, levelNames, maxAttempts } = identity;
+    const { codeLength, signInLevel, levelNames, maxAttempts } = identity;
     if (codeLength !== undefined) {
       if (top === 1) fail(`identity has a codeLength (${codeLength}) but no one-time code`);
       if (!Number.isInteger(codeLength) || codeLength < CODE_LENGTHS.min || codeLength > CODE_LENGTHS.max) fail(`identity codeLength ${String(codeLength)} is not a whole number from ${CODE_LENGTHS.min} to ${CODE_LENGTHS.max}`);
     }
+    // A sign-in proves the top of the ladder: below it, a chat would be walked into the keypad code it does not have.
+    if (signInLevel !== undefined && signInLevel !== top) fail(`identity signInLevel ${String(signInLevel)} is not the top of the ladder (${top})`);
     if (levelNames !== undefined) {
       const names = top === 2 ? [levelNames[1], levelNames[2]] : [levelNames[1]];
       for (const [i, name] of names.entries()) if (typeof name !== 'string' || name.trim() === '') fail(`identity level ${i + 1} has no name`);

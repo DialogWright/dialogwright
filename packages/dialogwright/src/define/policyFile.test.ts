@@ -70,8 +70,8 @@ describe('compile equality: the testkit', () => {
     const { sendCodeParams, ...compiled } = TESTKIT_IDENTITY;
     const { rest, ladder } = splitLadder(compiled);
     expect(rest).toEqual(FROZEN_TESTKIT_IDENTITY);
-    // What the old shape could not say: the code's length, the levels' names, the attempts.
-    expect(ladder).toEqual({ codeLength: 6, levelNames: { 1: 'verified', 2: 'confirmed by code' }, maxAttempts: 3 });
+    // What the old shape could not say: the code's length, the levels' names, the sign-in, the attempts.
+    expect(ladder).toEqual({ codeLength: 6, levelNames: { 1: 'verified', 2: 'confirmed by code' }, signInLevel: 2, maxAttempts: 3 });
     expect(typeof sendCodeParams).toBe('function');
     expect(testkitApp.identity).toBe(TESTKIT_IDENTITY);
     expect(TESTKIT_POLICY.maxAttempts).toBe(3);

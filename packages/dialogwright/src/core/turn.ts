@@ -1117,11 +1117,13 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     case 'auth.signed_in': {
       // Only the customer chat server makes this, after the portal's sign-in; the relay never produces
       // it off the wire. It raises an anonymous web chat and nothing else: a sign-in never replaces a
-      // verified customer or a delegate, and a phone call has no portal. The portal's sign-in is
-      // multi-factor, so it is level 2 or it is not one: a level 1 customer here would be walked into
-      // the keypad code, which a chat does not have.
+      // verified customer or a delegate, and a phone call has no portal. A sign-in proves the level the
+      // app's identity says it does (identity.yaml's `signIn`, the top of its ladder), or it is not
+      // one: a customer below the top here would be walked into the keypad code, which a chat does not
+      // have. An app that says nothing of a sign-in takes none.
       // The event's principal is checked, not trusted: a proven party (isParty), or the event is ignored.
-      if (!s.caps.signIn || !isAnonymous(s.principal) || !isParty(event.principal) || event.principal.kind !== identityOf(appOf(s)).subjectKind || event.principal.level !== 2) {
+      const signInLevel = identityOf(appOf(s)).signInLevel;
+      if (!s.caps.signIn || signInLevel === undefined || !isAnonymous(s.principal) || !isParty(event.principal) || event.principal.kind !== identityOf(appOf(s)).subjectKind || event.principal.level !== signInLevel) {
         return { ...base(), decision: { kind: 'ignore' }, actions: [] };
       }
       s.principal = event.principal;

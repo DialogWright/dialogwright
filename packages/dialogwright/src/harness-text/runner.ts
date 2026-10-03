@@ -186,10 +186,15 @@ function signedInDelegate(as: string): Principal | null {
   return getApp(defaultAppId()).principals?.delegatePrincipal?.(as) ?? null;
 }
 
-/** The subject `id` names, signed in through the app's portal at level 2 (as a subject's web chat does). */
+/**
+ * The subject `id` names, signed in through the app's portal at the level a sign-in proves
+ * (identity.yaml's `signIn`; a subject's web chat). An app that takes no sign-in has none to give.
+ */
 function signedInSubject(scenarioId: string, id: string): Principal {
   const app = getApp(defaultAppId());
-  const p = app.principals?.subjectPrincipal?.(id, 2) ?? null;
+  const level = identityOf(app).signInLevel;
+  if (level === undefined) throw new Error(`${scenarioId}: signIn "${id}", but the app takes no sign-in (identity.yaml has no signIn)`);
+  const p = app.principals?.subjectPrincipal?.(id, level) ?? null;
   if (!p) throw new Error(`${scenarioId}: signIn "${id}" is not a ${identityOf(app).subjectKind}`);
   return p;
 }
@@ -251,7 +256,7 @@ export async function runCorpusEntry(entry: CorpusEntry, opts: RunOptions): Prom
 /**
  * `serviceDown` is not a turn: it makes the next service effect answer as though the service did not
  * (serviceResultEvent(service, null)), as a timeout or an error would. `signIn` (a subject's id) is the web
- * visitor signing in through the portal: the server's `auth.signed_in` event, at level 2.
+ * visitor signing in through the portal: the server's `auth.signed_in` event, at the level a sign-in proves (identity.yaml's `signIn`).
  */
 export type ScenarioStep = { say: string; fail?: boolean; partial?: boolean } | { dtmf: string } | { silence: true } | { serviceDown: true } | { signIn: string };
 

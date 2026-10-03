@@ -2,15 +2,17 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { VOICE_RELAY } from '../channel/caps';
-import { keyEvents, speechEvent, startEvent } from '../channel/events';
+import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
+import { keyEvents, signedInEvent, speechEvent, startEvent } from '../channel/events';
 import { defineIdentity, definePolicy } from '../define/definePolicy';
 import type { AnswerMap } from '../jev/types';
 import { choice, noul, score } from '../testing/answers';
 import { useTestkit } from '../testing/apps';
 import { testkitApp } from '../testing/testkit';
+import { CUSTOMERS } from '../testing/testkit/domain/data';
 import { accountIdOf } from '../testing/testkit/domain/forms';
 import { TESTKIT_CUSTOM_RULES } from '../testing/testkit/domain/policy';
+import { customerPrincipal } from '../testing/testkit/domain/principals';
 import { SLOTS } from '../testing/testkit/domain/slots';
 import { TESTKIT_TOOLS } from '../testing/testkit/domain/tools';
 import manifest from '../testing/testkit/prompts/manifest.json';
@@ -168,6 +170,7 @@ describe('a ladder of one rung (identity.yaml with level 1 only)', () => {
     expect(hasCode(identity)).toBe(false);
     expect([identity.codeTool, identity.sendCodeTool, identity.codeLength]).toEqual([undefined, undefined, undefined]);
     expect(identity.levelNames).toEqual({ 1: 'verified' });
+    expect(identity.signInLevel).toBe(1);
   });
 
   it('a full verify ends at level 1, the request goes on, and no code is ever sent or asked for', () => {
@@ -180,11 +183,35 @@ describe('a ladder of one rung (identity.yaml with level 1 only)', () => {
     expect(r.session.stepUp).toBeNull();
   });
 
-  it('refuses at registration anything that needs level 2', () => {
+  it('refuses at registration anything that needs level 2, and a sign-in above level 1', () => {
     const listParcels2 = { ...ONE_RUNG, id: 'one-rung-2', policy: { ...ONE_RUNG.policy, toolLevel: { ...ONE_RUNG.policy.toolLevel, listParcels: 2 as const } } };
     expect(() => validateApp(listParcels2)).toThrow('app "one-rung-2": tool "listParcels" needs identity level 2, and the identity\'s ladder stops at level 1 (it has no one-time code)');
     const purpose2 = { ...ONE_RUNG, policy: { ...ONE_RUNG.policy, purposeLevel: { report_missing: 2 as const } } };
     expect(() => validateApp(purpose2)).toThrow('purpose "report_missing" needs identity level 2');
+    expect(() => validateApp({ ...ONE_RUNG, identity: { ...ONE_RUNG.identity!, signInLevel: 2 } })).toThrow('identity signInLevel 2 is not the top of the ladder (1)');
     expect(() => validateApp({ ...ONE_RUNG, identity: { ...ONE_RUNG.identity!, codeTool: 'verifyCustomer' } })).toThrow('identity names a codeTool but no sendCodeTool');
+  });
+
+  it('a web chat sign-in proves level 1, as identity.yaml says; one at level 2 is not one', () => {
+    const alex = CUSTOMERS[0]!;
+    const web = started(ONE_RUNG, WEB_CHAT);
+    expect(resolve(web, signedInEvent(customerPrincipal(alex, 2)), null, tc).decision).toEqual({ kind: 'ignore' });
+    const r = resolve(web, signedInEvent(customerPrincipal(alex, 1)), null, tc);
+    expect(r.session.principal).toMatchObject({ kind: 'customer', level: 1, id: alex.id });
+    expect(r.audit).toContainEqual({ type: 'identity', detail: { factor: 'portal_sign_in', pass: true, level: 1, customer: '...1234' } });
+  });
+});
+
+describe('sign-in by capability', () => {
+  it('an app whose identity.yaml has no signIn takes none; the testkit\'s says level 2', () => {
+    expect(testkitApp.identity!.signInLevel).toBe(2);
+    const NO_SIGN_IN = variant('testkit-no-signin', { identity: (file) => delete file.signIn });
+    expect(NO_SIGN_IN.identity!.signInLevel).toBeUndefined();
+    const alex = customerPrincipal(CUSTOMERS[0]!, 2);
+    const r = resolve(started(NO_SIGN_IN, WEB_CHAT), signedInEvent(alex), null, tc);
+    expect(r.decision).toEqual({ kind: 'ignore' });
+    expect(r.audit).toEqual([]);
+    // The same event on the testkit, whose file says a sign-in proves level 2.
+    expect(resolve(started(testkitApp, WEB_CHAT), signedInEvent(alex), null, tc).session.principal).toEqual(alex);
   });
 });

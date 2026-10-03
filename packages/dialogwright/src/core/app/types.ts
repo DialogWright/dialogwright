@@ -218,6 +218,12 @@ export interface IdentityConfig {
    */
   levelNames?: Readonly<{ 1: string; 2?: string }>;
   /**
+   * The level a sign-in proves (identity.yaml's `signIn`), on a channel that can sign a caller in
+   * (ChannelCaps.signIn): always the top of the ladder. Without it the app takes no sign-in, and an
+   * `auth.signed_in` event is ignored.
+   */
+  signInLevel?: 1 | 2;
+  /**
    * The failed tries allowed at each identity check (identity.yaml's `attempts`): the policy's
    * maxAttempts must be the same number (validateApp). Without it, the policy's is not checked.
    */
@@ -790,7 +796,7 @@ export interface AppFixtures {
  * harness refuses it.
  */
 export interface PrincipalDirectory {
-  /** The principal a subject signs in as, at `level` (e.g. a customer by account ID). Read for a scenario's `signIn` step, at level 2. */
+  /** The principal a subject signs in as, at `level` (e.g. a customer by account ID). Read for a scenario's `signIn` step, at the level a sign-in proves (IdentityConfig.signInLevel). */
   subjectPrincipal?(id: string, level: 1 | 2): Party | null;
   /** The principal a delegate signs in as (e.g. depot staff by id). Read for a scenario's or corpus entry's `as`. */
   delegatePrincipal?(id: string): Party | null;
