@@ -1,0 +1,167 @@
+# policy.matrix: what the gate of "testkit" decides, for every action and every kind of caller.
+# Written by `pnpm policy:matrix` from the compiled policy (policy.yaml, identity.yaml) and the
+# app's policy matrix (TestingHooks.policyMatrix); a test fails when it differs. Never edit it by
+# hand: a difference here is a change in what the agent may do, to be reviewed as the policy is.
+#
+# Under each action (its level and its rules as the file writes them), a row per kind of caller.
+# A row with one verdict holds for every call that caller can make; otherwise its lines split it
+# by what the call carries, a|b meaning either value. "as <caller>" repeats that caller's verdicts.
+#
+# callers
+#   anonymous        no one proven (level 0)
+#   subject@1        customer, level 1 (one of the app's subjects)
+#   subject@2        customer, level 2 (one of the app's subjects)
+#   delegate:viewer  agent, role viewer, level 2
+#   delegate:clerk   agent, role clerk, level 2
+#   unlisted-role    agent, role supervisor, level 2 (a role the policy does not name)
+#   roleless         agent with no role, level 2
+#   other-party      visitor, level 2 (neither a subject nor of a delegate kind)
+# what a call carries
+#   purpose     none; entry-check, retry-check (the lifecycle's probes); a form's purpose
+#   subject     own; inScope (a subject the delegates act for); outOfScope; unknown; empty
+#   fields      exact; extra (one field more); missing (one field less: the subject's own when it is the only one)
+#   confirmed   none; match (the caller confirmed exactly these values); mismatch
+#   attempts    0; 3 (the maximum)
+#   params      the policy matrix's named sets of values for the action
+# verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>
+
+purposes: report_missing needs level 2
+
+verifyCustomer · level 0 · attempts(3)
+  every caller     attempts 0  ALLOW
+                   attempts 3  NEEDS_HUMAN attempts
+
+verifyCode · level 1 · identity, attempts(3)
+  anonymous        purpose none|entry-check|retry-check  STEP_UP to 1
+                   purpose report_missing                STEP_UP to 2
+  subject@1        purpose none|entry-check|retry-check, attempts 0  ALLOW
+                   purpose none|entry-check|retry-check, attempts 3  NEEDS_HUMAN attempts
+                   purpose report_missing                            STEP_UP to 2
+  subject@2        attempts 0  ALLOW
+                   attempts 3  NEEDS_HUMAN attempts
+  delegate:viewer  as subject@2
+  delegate:clerk   as subject@2
+  unlisted-role    as subject@2
+  roleless         as subject@2
+  other-party      as subject@2
+
+sendCode · level 1 · identity, scope(accountId)
+  anonymous        purpose none|entry-check|retry-check  STEP_UP to 1
+                   purpose report_missing                STEP_UP to 2
+  subject@1        purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                   purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                   purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                   purpose report_missing                                                          STEP_UP to 2
+  subject@2        subject own, fields exact|extra           ALLOW
+                   subject own, fields missing               BLOCK scope
+                   subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:viewer  subject own|inScope, fields exact|extra  ALLOW
+                   subject own|inScope, fields missing      BLOCK scope
+                   subject outOfScope|unknown|empty         BLOCK scope
+  delegate:clerk   as delegate:viewer
+  unlisted-role    as delegate:viewer
+  roleless         as delegate:viewer
+  other-party      BLOCK scope
+
+getAccount · level 1 · identity, scope(accountId)
+  anonymous        purpose none|entry-check|retry-check  STEP_UP to 1
+                   purpose report_missing                STEP_UP to 2
+  subject@1        purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                   purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                   purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                   purpose report_missing                                                          STEP_UP to 2
+  subject@2        subject own, fields exact|extra           ALLOW
+                   subject own, fields missing               BLOCK scope
+                   subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:viewer  subject own|inScope, fields exact|extra  ALLOW
+                   subject own|inScope, fields missing      BLOCK scope
+                   subject outOfScope|unknown|empty         BLOCK scope
+  delegate:clerk   as delegate:viewer
+  unlisted-role    as delegate:viewer
+  roleless         as delegate:viewer
+  other-party      BLOCK scope
+
+getWindows · level 1 · identity, scope(accountId)
+  anonymous        purpose none|entry-check|retry-check  STEP_UP to 1
+                   purpose report_missing                STEP_UP to 2
+  subject@1        purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                   purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                   purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                   purpose report_missing                                                          STEP_UP to 2
+  subject@2        subject own, fields exact|extra           ALLOW
+                   subject own, fields missing               BLOCK scope
+                   subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:viewer  subject own|inScope, fields exact|extra  ALLOW
+                   subject own|inScope, fields missing      BLOCK scope
+                   subject outOfScope|unknown|empty         BLOCK scope
+  delegate:clerk   as delegate:viewer
+  unlisted-role    as delegate:viewer
+  roleless         as delegate:viewer
+  other-party      BLOCK scope
+
+listParcels · level 2 · identity, scope(accountId)
+  anonymous        STEP_UP to 2
+  subject@1        as anonymous
+  subject@2        subject own, fields exact|extra           ALLOW
+                   subject own, fields missing               BLOCK scope
+                   subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:viewer  subject own|inScope, fields exact|extra  ALLOW
+                   subject own|inScope, fields missing      BLOCK scope
+                   subject outOfScope|unknown|empty         BLOCK scope
+  delegate:clerk   as delegate:viewer
+  unlisted-role    as delegate:viewer
+  roleless         as delegate:viewer
+  other-party      BLOCK scope
+
+getParcel · level 2 · identity, scope(record parcel)
+  anonymous        STEP_UP to 2
+  subject@1        as anonymous
+  subject@2        subject own, fields exact|extra           ALLOW
+                   subject own, fields missing               BLOCK scope
+                   subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:viewer  subject own|inScope, fields exact|extra  ALLOW
+                   subject own|inScope, fields missing      BLOCK scope
+                   subject outOfScope|unknown|empty         BLOCK scope
+  delegate:clerk   as delegate:viewer
+  unlisted-role    as delegate:viewer
+  roleless         as delegate:viewer
+  other-party      BLOCK scope
+
+createReport · level 2 · identity, role(viewer refuse, clerk person), scope(accountId), confirmed(accountId, missingNote, expectedDate), custom R8
+  anonymous        STEP_UP to 2
+  subject@1        as anonymous
+  subject@2        subject own, fields exact, confirmed none|mismatch            BLOCK confirmation
+                   subject own, fields exact, confirmed match, params due        ALLOW
+                   subject own, fields exact, confirmed match, params delivered  NEEDS_HUMAN delivered
+                   subject own, fields exact, confirmed match, params undated    BLOCK unchecked
+                   subject own, fields extra|missing                             BLOCK confirmation
+                   subject inScope|outOfScope|unknown|empty                      BLOCK scope
+  delegate:viewer  BLOCK role
+  delegate:clerk   NEEDS_HUMAN role-person
+  unlisted-role    as delegate:viewer
+  roleless         as delegate:viewer
+  other-party      as delegate:viewer
+
+notifyDepot · level 2 · identity, scope(record report), fields(report, missingNote, expectedDate)
+  anonymous        STEP_UP to 2
+  subject@1        as anonymous
+  subject@2        subject own, fields exact|missing         ALLOW
+                   subject own, fields extra                 BLOCK minimization
+                   subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:viewer  subject own|inScope, fields exact|missing  ALLOW
+                   subject own|inScope, fields extra          BLOCK minimization
+                   subject outOfScope|unknown|empty           BLOCK scope
+  delegate:clerk   as delegate:viewer
+  unlisted-role    as delegate:viewer
+  roleless         as delegate:viewer
+  other-party      BLOCK scope
+
+(unlisted) · not in the policy
+  every caller     BLOCK unknown-tool
+
+custom rules, and their examples as the gate decides them in each action that names the rule
+  R8: No parcel of the customer's was delivered on the day it was due
+    createReport  due on a day nothing of theirs was delivered  ALLOW
+    createReport  due on the day their boots were delivered     NEEDS_HUMAN delivered
+    createReport  due on no date at all                         BLOCK unchecked
+    createReport  lookups that cannot say                       BLOCK unchecked

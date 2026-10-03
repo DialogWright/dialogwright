@@ -39,7 +39,8 @@
     "schemas": "tsx src/define/schema/generate.ts",
     "slot-docs": "tsx scripts/slotDocs.ts",
     "check": "tsx src/define/cli.ts check",
-    "create-app": "tsx src/define/cli.ts create-app"
+    "create-app": "tsx src/define/cli.ts create-app",
+    "policy:matrix": "tsx src/define/cli.ts policy:matrix"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

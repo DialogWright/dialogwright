@@ -1,5 +1,6 @@
 import { isRuleId } from '../../gate/policy';
 import { NAMED_RULE_IDS, sourceOf } from '../../gate/compiled';
+import { isDefinedRule, ruleDefinitionProblems } from '../../gate/defineRule';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../questionIds';
 import { askedQuestionIds, probeContexts } from './probeQuestions';
 import { unknownSlotThresholds, unknownThresholdMessage } from '../slotThresholds';
@@ -102,6 +103,9 @@ export function validateApp(app: App): void {
   for (const [id, rule] of Object.entries(customRules ?? {})) {
     if (isRuleId(id) || id === 'R0' || NAMED_RULE_IDS.includes(id)) fail(`policy's custom rule "${id}" has a built-in rule's id`);
     if (typeof rule !== 'function') fail(`policy's custom rule "${id}" is not a function`);
+    // A rule made with defineRule must say what it does: an example the gate allows and one it
+    // refuses. A plain function (an App built by hand) is still run as it is; `check` refuses one.
+    if (isDefinedRule(rule)) for (const { message } of ruleDefinitionProblems(id, rule, `the custom rule "${id}"`)) fail(`policy's ${message}`);
   }
   // The range rules (dateInRange, limit) take parameters only a policy file gives: tables compiled
   // from one carry the rules they were compiled from (sourceOf), and the rule must be one of them.

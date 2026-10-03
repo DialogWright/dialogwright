@@ -7,15 +7,17 @@ import { checkAppFully } from './check';
 import { createApp, CreateAppError, displayNameOf, REPO_ROOT } from './createApp';
 import { ConvertError, convertFolder, convertTables, toText, writeConversion } from './convert/convertPolicy';
 import type { IdentityConfig, PolicyTables } from '../core/app/types';
+import { matrixCommand } from './matrixCommand';
 import { formatProblem, type Problem } from './problems';
 
 /**
  * The `dialogwright` command (the package's bin; run through tsx, which is how the repo runs its
- * TypeScript). Three commands:
+ * TypeScript). Four commands:
  *
  *   dialogwright check [--json] [dir...]
  *   dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install]
  *   dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--sign-in]
+ *   dialogwright policy:matrix [dir...]   (./matrixCommand.ts: writes each app's policy.matrix)
  *
  * `check` checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
  * per problem, then a summary line per folder (`N problems in <dir>`, or `<dir>: ok`). Exit code 1
@@ -44,6 +46,8 @@ export const USAGE = [
   '  --out dir: where the new files are written (default: dir, in place; for --from-tables, the module\'s folder)',
   '  --dry-run: write nothing, only report',
   '  --sign-in: write `signIn: { level: 2 }`, for an app whose channel can sign a caller in',
+  '       dialogwright policy:matrix [dir...]',
+  '  dir: a folder with the app\'s policy.yaml and a module exporting the app; with none, every folder with a policy.matrix',
 ].join('\n');
 
 export interface Io {
@@ -99,6 +103,7 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   const [command, ...rest] = argv;
   if (command === 'policy:convert') return convertCommand(rest, io);
   if (command === 'create-app') return createAppCommand(rest, io);
+  if (command === 'policy:matrix') return matrixCommand(rest, io);
   if (command !== 'check') {
     io.err(command === undefined ? USAGE : `dialogwright: "${command}" is not a command\n${USAGE}`);
     return 2;
