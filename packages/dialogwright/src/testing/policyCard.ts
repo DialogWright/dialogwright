@@ -228,7 +228,7 @@ function identitySection(app: App, source: PolicySource): string[] {
   out.push(`- The identity checks (${identityToolsOf(identity).map((t) => `${actionLabel(source, t)}, ${code(t)}`).join('; ')}) are for ${identity.subjectKind}s only: a caller not yet verified may use them, and any other party (one who acts for ${identity.subjectKind}s, or anyone else) is refused them before their rules run.`);
   if (top === 2) out.push('- The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.');
   out.push(identity.signInLevel === undefined
-    ? '- The app takes no portal sign-in: every caller proves who they are on the call.'
+    ? '- The app takes no portal sign-in: every caller proves who they are on the call, and a caller on a channel that signs callers in (a web chat) whose request needs identity goes to a person.'
     : `- A sign-in through a portal proves level ${identity.signInLevel} ('${levelName(app, identity.signInLevel)}'), so a signed-in caller starts there.`);
   const purposes = Object.entries(source.purposes).filter(([, level]) => level > 0);
   if (purposes.length > 0) {

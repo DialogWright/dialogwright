@@ -119,7 +119,7 @@ describe('compile equality: the valid fixture', () => {
   it('identity.yaml compiles to the old file\'s identity', () => {
     const { rest, ladder } = splitLadder(identity);
     expect(rest).toEqual(FROZEN_VALID_IDENTITY);
-    expect(ladder).toEqual({ codeLength: 6, levelNames: { 1: 'verified', 2: 'confirmed by code' }, delegateRoles: ['viewer', 'clerk'], maxAttempts: 3 });
+    expect(ladder).toEqual({ codeLength: 6, levelNames: { 1: 'verified', 2: 'confirmed by code' }, signInLevel: 2, delegateRoles: ['viewer', 'clerk'], maxAttempts: 3 });
     expect(maxAttempts).toBe(FROZEN_VALID_POLICY.maxAttempts);
   });
 

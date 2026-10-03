@@ -45,7 +45,13 @@ export interface ConvertOptions {
    * them. Default: no such line, unless the old file had one, which is kept.
    */
   schemaDir?: string;
-  /** Write `signIn: { level: 2 }`, for an app whose channel can sign a caller in (the old shape cannot say it). */
+  /**
+   * Whether identity.yaml gets `signIn: { level: 2 }` where the old identity has a level 2 (its code
+   * tools). Default true: before identity.yaml, a sign-in on any channel that can sign a caller in
+   * proved level 2, so the converted app keeps taking one. False (`--no-sign-in`) leaves it out, for
+   * an app no channel signs a caller in to; such an app then ignores a sign-in, and a chat caller who
+   * needs identity goes to a person.
+   */
   signIn?: boolean;
 }
 
@@ -197,7 +203,7 @@ function convertData(old: { policy: OldPolicy; identity: OldIdentity | null }, o
         2: { name: 'confirmed by code', factors: [{ otp: { length: DEFAULT_CODE_LENGTH } }], send: identity.sendCodeTool, verify: identity.codeTool },
       },
       attempts: policy.maxAttempts,
-      ...(options.signIn ? { signIn: { level: 2 } } : {}),
+      ...(options.signIn !== false && identity.codeTool && identity.sendCodeTool ? { signIn: { level: 2 } } : {}),
     };
   }
 

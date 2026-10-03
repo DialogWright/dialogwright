@@ -209,10 +209,21 @@ export function blockAck(s: Session, reason: string | undefined): Ack | null {
 /**
  * A web chat customer proves who they are by signing in to the portal, never by typing their account
  * ID and birth date into a chat: while a request waits on identity, it waits for that sign-in
- * (the `signed_in` event). True for an anonymous chat session with a parked entry call.
+ * (the `signed_in` event). True for an anonymous chat session with a parked entry call, in an app
+ * that takes a sign-in (identity.yaml's `signIn`, IdentityConfig.signInLevel): an app without one
+ * ignores the event, so there is nothing to wait for (signInImpossible).
  */
 export function awaitingSignIn(s: Session): boolean {
-  return s.caps.signIn && isAnonymous(s.principal) && s.stepUp !== null;
+  return s.caps.signIn && identityOf(appOf(s)).signInLevel !== undefined && isAnonymous(s.principal) && s.stepUp !== null;
+}
+
+/**
+ * A chat caller who needs identity in an app that takes no sign-in: the factors are never asked on
+ * a channel that signs callers in, and the app ignores the sign-in, so no step-up can be finished
+ * here, and a person takes the call.
+ */
+function signInImpossible(s: Session): boolean {
+  return s.caps.signIn && identityOf(appOf(s)).signInLevel === undefined && isAnonymous(s.principal) && s.stepUp !== null;
 }
 
 /**
@@ -224,6 +235,7 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
     const again = s.lastPromptId === 'signin_required' || s.lastPromptId === 'signin_reminder';
     return prompt(again ? 'signin_reminder' : 'signin_required', 'intent', {}, acks);
   }
+  if (signInImpossible(s)) return handoff(s, 'needs-human', acks);
   if (isAnonymous(s.principal)) {
     const missing = identityOf(appOf(s)).factorSlots.find((id) => s.slots[id]!.value === null);
     if (missing) return askSlot(s, missing, s.slots[missing]!.window, acks);
