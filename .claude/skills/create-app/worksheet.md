@@ -25,9 +25,18 @@ Copy everything below the line into `apps/<name>/DESIGN.md` (draft it in your sc
 
 ## Actions
 
-| Tool | Reads | Writes | Params (exactly what it sends) | Level | Rules, in order |
+| Tool | Reads | Writes | Params (exactly what it sends: `params` in code) | Level | Rules, in order |
 |---|---|---|---|---|---|
 | `<tool>` | <records> | <nothing, or what> | `<a>, <b>` | <0, 1, 2> | `identity`, ... |
+
+## What is recorded
+
+One row per param any tool lists. A param named after a slot with a redact setting is recorded as the slot says; every other is declared under `audit:` in `policy.yaml` (`last4`, `mask`, `length`, `secret`, `keep`). Say why for any value kept as it is that a person said in their own words.
+
+| Param | Slot, with its redact setting (or "not a slot") | Recorded as (`audit`, or the slot's) | Why |
+|---|---|---|---|
+| `<a>` | `<slotId>`: `last4` | the slot's | an identifier |
+| `<b>` | not a slot | `keep` | <a choice from a short list> |
 
 ## Who may do what
 
@@ -103,6 +112,7 @@ Every hand edit to `fixtures/expected/*.json` after the first `regress --update`
 - [ ] Scripted calls cover each form, each principal (anonymous, each level, each delegate role), the step-up, failed verification, each refusal, each handoff (a person on request from each place a caller can be: the start, the keypad menu, inside a form, while verifying, at the code prompt, at each summary), keypad entry and each informational answer (spoken, and its key if it has one).
 - [ ] `identity.yaml` matches the paragraph: who must verify, with what, the code only where a level 2 action needs it, the tries.
 - [ ] The policy read back (`policy.matrix`, the policy card `POLICY.md` and the app map `APP-MAP.md`) matches "Who may do what" above, cell by cell, and the card matches the paragraph line by line; each is tested (`expectPolicyMatrix`, `expectPolicyCard`, `expectAppMap`).
+- [ ] Every tool lists its `params`, every param has a row under "What is recorded", and the card's "What is recorded" table says what the row does; nothing a person said in their own words is kept without a reason written there.
 - [ ] No tool decides who may do what; every line a caller hears is in `prompts.yaml`.
 - [ ] Nothing private or real: invented names and streets, 555 numbers, `example.com` addresses.
 - [ ] `pnpm check` ok; `pnpm verify` green; this app's `regress` says `no changes`; the clinic's and the testkit's regressions say `no changes`.

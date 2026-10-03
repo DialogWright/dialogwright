@@ -2,7 +2,7 @@
 
 The YAML and TypeScript for what a paragraph usually asks for. Each was built and run in an app scaffolded by `pnpm create-app --identity` (check, type check, tests and regression), with the scaffold's names (`accountId`, `dob`, `verifyCustomer`, `findAccount`, `Systems`, `ACCOUNTS`, `accountIdOf`); use your own. Imports are from `'dialogwright'` unless shown. The reference for every field is [docs/authoring-an-app.md](../../../docs/authoring-an-app.md); the engine's own test app, [the testkit](../../../packages/dialogwright/src/testing/testkit/README.md), uses every hook and is worth reading for a feature these patterns leave out (it is a test fixture, not a model of design).
 
-Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [Informational answers](#informational-answers) · [Keypad entry](#keypad-entry) · [Values with no slot type](#values-with-no-slot-type) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
+Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [Informational answers](#informational-answers) · [Keypad entry](#keypad-entry) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
 
 ## Verification (level 1)
 
@@ -411,6 +411,34 @@ A key on the keypad menu may name it: the key plays the line, then offers the me
 - A scripted call's keypad step is `{ "dtmf": "55501234" }`.
 - **The keypad menu** (`menu:` in intents.yaml) listens only once it has been offered: on a call with a keypad (a phone call, never the chat), the second missed answer to "what can I help you with" (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the next turn's keys are menu keys. A third miss goes to a person (`max-attempts`). A key pressed before that, at the greeting say, is ignored and the caller hears nothing. After an informational key the menu is offered again, so it keeps listening. A scripted call for a menu key misses twice first: `[{ "say": "um" }, { "say": "okay" }, { "dtmf": "4" }]`, with "um" and "okay" corpus lines at `no_form` whose intent is `none`.
 
+## What is recorded: `params` and `audit`
+
+Every call is recorded (the gate event, the trace, the console, the audit), so every value it carries must have a stated way of being recorded. Two parts say it: each tool lists its `params` in code, and `policy.yaml` declares `audit` for each of those that is not a slot with a redact setting.
+
+```ts
+// src/app.ts
+export const TOOLS: Record<string, ToolDef> = {
+  findAccount: { params: ['accountId'], run(call) { /* ... */ } },
+  bookService: { params: ['accountId', 'service'], run(call, sys, { tc }) { /* ... */ } },
+  verifyCode: { params: [], run(_call, _sys, { code }) { /* ... */ } },   // the one-time code is no param
+};
+```
+
+```yaml
+# policy.yaml, at the top level (beside actions:)
+audit:
+  service: keep    # a choice from a short list
+  note: length     # free words: only their length
+  pin: secret      # never recorded
+```
+
+- `accountId` is a `digits` slot (recorded by its last four) and `dob` a `birthdate` slot (hidden), so neither is declared. A slot whose `redact` is `none` (a `name`, a `choice`, a `date`, a `text` with `redact: none`) is not covered: declare its param.
+- Choose per param: an identifier `last4`; free words `length`, or `secret`; hidden but shown to have been given `mask`; a plain choice, a day or an amount `keep`.
+- The rule lines and the tool's summary are masked the same way. A custom rule still writes only what may be recorded.
+- A param no tool lists, or a listed param nothing declares, is a `pnpm check` problem whose fix names both ways out. A `confirmed` field is always a slot or declared. The confirmed list's fields that an action sends empty (the union list, above) are listed too.
+- The policy card has the "What is recorded" table: read it against the worksheet.
+- Write `passed(decision, 'role')` (from `'dialogwright/policy'`) to ask whether a rule passed, by its name; rule lines are recorded under names (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`, a custom rule's own id).
+
 ## Values with no slot type
 
 | Value | Do this | And log |
@@ -434,7 +462,7 @@ place:
   maxLength: 200
 ```
 
-`redact: none` is the trade-off: with `say: null` the display is the caller's words, and the default `redact: length` keeps those out of the trace, so `pnpm check` refuses the pair (`give "say" a stand-in such as "your note", or set redact: none`). A stand-in would read back "your note" instead of the address, which defeats the read-back, so an address takes `redact: none`, and the words are then in the trace and the audit as said. Note it in the worksheet's gaps.
+`redact: none` is the trade-off: with `say: null` the display is the caller's words, and the default `redact: length` keeps those out of the trace, so `pnpm check` refuses the pair (`give "say" a stand-in such as "your note", or set redact: none`). A stand-in would read back "your note" instead of the address, which defeats the read-back, so an address takes `redact: none`, and the words are then in the trace and the audit as said. Declare the param the same way (`place: keep` under `audit:` in policy.yaml), so what is recorded is stated, and note the trade-off in the worksheet's gaps: whatever the caller says with the address is kept too.
 
 ## Testing the policy
 
