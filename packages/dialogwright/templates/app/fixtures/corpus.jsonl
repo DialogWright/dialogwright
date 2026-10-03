@@ -1,0 +1,23 @@
+{"id":"bs-01","text":"I'd like to book a service","intent":"book_service","context":"no_form"}
+{"id":"bs-02","text":"I need to schedule a visit","intent":"book_service","context":"no_form"}
+{"id":"bs-03","text":"Can I book a repair","intent":"book_service","context":"no_form","labels":{"service":"repair"}}
+{"id":"bs-04","text":"Book an inspection please","intent":"book_service","context":"no_form","labels":{"service":"inspection"}}
+{"id":"bs-05","text":"I want something installed, can you book that","intent":"book_service","context":"no_form","labels":{"service":"installation"}}
+{"id":"bs-06","text":"booking","intent":"book_service","context":"no_form"}
+{"id":"ag-01","text":"I want to talk to a person","intent":"agent","context":"no_form"}
+{"id":"ag-02","text":"agent","intent":"agent","context":"no_form"}
+{"id":"ag-03","text":"Can I speak to a representative","intent":"agent","context":"book_service"}
+{"id":"rp-01","text":"Can you repeat that","intent":"repeat_prompt","context":"no_form"}
+{"id":"rp-02","text":"Say that again","intent":"repeat_prompt","context":"book_service"}
+{"id":"ot-01","text":"What are your opening hours","intent":"other","context":"no_form"}
+{"id":"ot-02","text":"Do you sell gift cards","intent":"other","context":"no_form"}
+{"id":"ns-01","text":"Hello","intent":"none","context":"no_form"}
+{"id":"ns-02","text":"Honey, where did you put the keys","intent":"none","context":"no_form","answers":{"addressedToSystem":{"noul":0.15}},"tags":["side_speech"]}
+{"id":"sv-01","text":"An inspection","intent":"none","context":"book_service","prompted":"service","labels":{"service":"inspection"}}
+{"id":"sv-02","text":"A repair please","intent":"none","context":"book_service","prompted":"service","labels":{"service":"repair"}}
+{"id":"sv-03","text":"The installation","intent":"none","context":"book_service","prompted":"service","labels":{"service":"installation"}}
+{"id":"sv-04","text":"Um, I'm not sure yet","intent":"none","context":"book_service","prompted":"service"}
+{"id":"cf-01","text":"Yes","intent":"none","context":"confirm_book_service","confirm":"yes"}
+{"id":"cf-02","text":"Yes, go ahead","intent":"none","context":"confirm_book_service","confirm":"yes"}
+{"id":"cf-03","text":"No","intent":"none","context":"confirm_book_service","confirm":"no"}
+{"id":"cf-04","text":"No, I want a different service","intent":"none","context":"confirm_book_service","confirm":"no","changeSlot":"service"}

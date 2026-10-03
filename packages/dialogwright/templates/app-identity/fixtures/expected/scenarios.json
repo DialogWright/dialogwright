@@ -1,0 +1,62 @@
+{
+  "book-happy": {
+    "id": "book-happy",
+    "decision": "complete",
+    "promptId": "service_booked",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "book_service",
+    "slots": {
+      "service": "inspection",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "bookService:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "wrong-birth-date-three-times": {
+    "id": "wrong-birth-date-three-times",
+    "decision": "handoff",
+    "promptId": "handoff_identity",
+    "acks": [],
+    "reason": "identity",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_service",
+    "slots": {
+      "service": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyCustomer:NEEDS_HUMAN",
+    "pass": true,
+    "mismatches": []
+  },
+  "asks-for-a-person": {
+    "id": "asks-for-a-person",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "service": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  }
+}

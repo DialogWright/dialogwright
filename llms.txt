@@ -33,6 +33,7 @@ A slot is one value a form collects. Most slots are configuration: name a type i
 
 - `pnpm install`
 - `pnpm check`: check every app folder under `apps/`: YAML against the schemas, cross-references to the code, prompts in every locale, the corpus. Prints one line per problem, `file:line:column  path  message  ->  fix`, and exits 1 on any. Act on the fix text.
+- `pnpm create-app <name> [--identity] [--dir <path>] [--display <text>]`: a new app under `apps/<name>` from the template (`packages/dialogwright/templates/`), linked into the workspace; it passes `pnpm check`, its tests and its stub regression as created.
 - `pnpm verify`: the type check and the tests together.
 - `pnpm --filter dialogwright regress:testkit` and `pnpm --filter @dialogwright/example-clinic regress`: the regressions. Never regenerate a baseline or snapshot to make a test pass; a changed output is a finding to explain.
 - `pnpm --filter dialogwright schemas`: regenerate the JSON Schemas after a schema change.

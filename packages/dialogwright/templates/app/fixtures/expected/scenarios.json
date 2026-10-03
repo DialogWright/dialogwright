@@ -1,0 +1,56 @@
+{
+  "book-happy": {
+    "id": "book-happy",
+    "decision": "complete",
+    "promptId": "service_booked",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "book_service",
+    "slots": {
+      "service": "inspection"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "bookService:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "book-service-in-the-opener": {
+    "id": "book-service-in-the-opener",
+    "decision": "complete",
+    "promptId": "service_booked",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "book_service",
+    "slots": {
+      "service": "repair"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "bookService:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "asks-for-a-person": {
+    "id": "asks-for-a-person",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "service": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  }
+}

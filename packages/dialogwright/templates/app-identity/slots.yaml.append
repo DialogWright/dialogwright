@@ -1,0 +1,9 @@
+
+# The identity factors (identity.yaml): an account number and a date of birth.
+accountId:
+  type: digits
+  noun: account
+  length: 8
+  group: [4, 4]
+dob:
+  type: birthdate

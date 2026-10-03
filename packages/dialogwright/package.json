@@ -29,7 +29,8 @@
   },
   "files": [
     "src",
-    "schemas"
+    "schemas",
+    "templates"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -37,7 +38,8 @@
     "regress:testkit": "tsx src/testing/testkit/regress.ts",
     "schemas": "tsx src/define/schema/generate.ts",
     "slot-docs": "tsx scripts/slotDocs.ts",
-    "check": "tsx src/define/cli.ts check"
+    "check": "tsx src/define/cli.ts check",
+    "create-app": "tsx src/define/cli.ts create-app"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

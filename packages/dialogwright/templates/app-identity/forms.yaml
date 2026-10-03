@@ -1,0 +1,12 @@
+# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/forms.schema.json
+# Each form: its slots in the order they are asked, the prompt that reads them back for a yes
+# (`null` for a form with no summary), and the hooks it has. The hooks are TypeScript in
+# src/app.ts (code.forms.<id>); this list must name exactly the ones the code writes.
+forms:
+  # Books a service for a verified caller: `entry` is the call made before the form's own slots,
+  # which asks the caller for the identity factors when they are not verified yet. The summary reads
+  # the service back, and a yes writes the booking (a confirmed write, see policy.yaml).
+  book_service:
+    slots: [service]
+    summaryPromptId: confirm_book_service
+    hooks: [entry, confirmedParams, complete]

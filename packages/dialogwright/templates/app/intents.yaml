@@ -1,0 +1,35 @@
+# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/intents.schema.json
+# What a caller can ask for, in the order the decision model is offered them, and the keypad menu.
+# Each criteria line is sent to the model as written: a change re-keys the recorded cassette
+# (fixtures/recorded). Each label is said in acknowledgements ("Sure, I can help you {label}").
+intents:
+  # The example task: one form (forms.yaml). Replace it with your own, and add more.
+  book_service:
+    criteria: Wants to book a service visit, such as a repair, an inspection or an installation
+    label: book a service
+    kind: form
+
+  # The engine's own control intents. agent and repeat_prompt are required.
+  agent:
+    criteria: Asks to speak with a person, a representative, or an operator
+    label: speak with someone
+    kind: control
+  repeat_prompt:
+    criteria: Asks the system to repeat what it just said
+    label: hear that again
+    kind: control
+  other:
+    criteria: A request this line does not handle
+    label: something else
+    kind: control
+  none:
+    criteria: No request is expressed; the caller is only answering a question or saying something incidental
+    label: nothing
+    kind: control
+
+# The keypad menu: each task by digit, and 0 for a person.
+menu:
+  - digit: "1"
+    intent: book_service
+  - digit: "0"
+    intent: agent

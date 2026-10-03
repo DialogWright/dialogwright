@@ -1,0 +1,4 @@
+{
+  "extends": "{{root}}/tsconfig.base.json",
+  "include": ["src/**/*.ts", "vitest.config.ts"]
+}

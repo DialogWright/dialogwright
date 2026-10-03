@@ -1,0 +1,15 @@
+# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/identity.schema.json
+# How a caller proves who they are, and who the app serves. Compliance owns this file.
+#
+# `subject` is the kind of person the app serves and verifies. Level 1 is the factors matched: the
+# slots named under `factors` are asked, in this order, when an action needs the level (a form's
+# entry call asks for it; see src/app.ts), and `verify` is the tool that checks them (each factor's
+# slot id is also the name of the tool's param that carries its value). A ladder of one rung has no
+# level 2; add one with a one-time code (see docs/authoring-an-app.md, identity.yaml) when an action
+# needs more than the factors.
+principals:
+  subject: customer
+levels:
+  1: { name: verified, factors: [accountId, dob], verify: verifyCustomer, failedPrompt: identity_failed }
+# Three failed tries at the factors, and a person takes the call.
+attempts: 3

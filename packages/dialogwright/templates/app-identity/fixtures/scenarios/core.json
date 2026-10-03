@@ -1,0 +1,47 @@
+[
+  {
+    "id": "book-happy",
+    "steps": [
+      { "say": "I'd like to book a service" },
+      { "say": "My account number is five five five zero one two three four" },
+      { "say": "April twelfth nineteen eighty" },
+      { "say": "An inspection" },
+      { "say": "Yes" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "service_booked",
+      "form": "book_service",
+      "slots": { "service": "inspection" },
+      "principalLevel": 1,
+      "gate": "bookService:ALLOW"
+    }
+  },
+  {
+    "id": "wrong-birth-date-three-times",
+    "steps": [
+      { "say": "I'd like to book a service" },
+      { "say": "It's five five five zero five six seven eight" },
+      { "say": "April twelfth nineteen eighty" },
+      { "say": "It's five five five zero five six seven eight" },
+      { "say": "January first nineteen ninety" },
+      { "say": "It's five five five zero five six seven eight" },
+      { "say": "April twelfth nineteen eighty" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "identity",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "asks-for-a-person",
+    "steps": [
+      { "say": "I want to talk to a person" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  }
+]
