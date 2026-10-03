@@ -194,7 +194,9 @@ function defaults(app: App, source: PolicySource): string[] {
   const recorded = Object.entries(app.slots).flatMap(([id, spec]) => (spec.redact ? [{ id, how: spec.redact }] : []));
   if (recorded.length > 0) {
     const how = { last4: 'by its last four', mask: 'hidden (a year is kept)', length: 'by its length' } as const;
-    const parts = recorded.map(({ id, how: h }) => `${slotNoun(app, id)} ${how[h]}`);
+    // Two slots that share a noun and a redaction (a factor and a delegate's slot for the same
+    // account) read as one entry, not the same words twice.
+    const parts = [...new Set(recorded.map(({ id, how: h }) => `${slotNoun(app, id)} ${how[h]}`))];
     out.push(`- In traces and the audit a caller's values are recorded as they are said, except: ${parts.join('; ')}.`);
   }
   return out;

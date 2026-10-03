@@ -15,7 +15,7 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 - The rules of an action run in the order shown, and the first one that fails decides.
 - Identifiers in decision lines appear by their last four characters (`...1234`), never in full.
 - A caller has 3 tries at each identity check (the account and date of birth, and the one-time code). After that a person takes the call.
-- In traces and the audit a caller's values are recorded as they are said, except: account by its last four; account by its last four; date of birth hidden (a year is kept).
+- In traces and the audit a caller's values are recorded as they are said, except: account by its last four; date of birth hidden (a year is kept).
 
 ## Identity
 

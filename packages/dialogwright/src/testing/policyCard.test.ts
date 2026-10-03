@@ -57,6 +57,12 @@ describe('the policy card: each rule in words', () => {
     openThing: { level: 0, rules: [] },
   }));
 
+  it('says a redaction two slots share by their noun once, in the defaults', () => {
+    const twin = { ...testkitApp, slots: { ...testkitApp.slots, account: testkitApp.slots.accountId! } } as App;
+    const line = cardOf(twin).split('\n').find((l) => l.startsWith("- In traces and the audit a caller's values"));
+    expect(line).toBe("- In traces and the audit a caller's values are recorded as they are said, except: account ID by its last four; date of birth hidden (a year is kept); description by its length.");
+  });
+
   it('says the level by its name, and a level 0 action as open to any caller', () => {
     expect(card).toContain("1. the caller must be at 'confirmed by code' or above");
     expect(card).toContain('| `openThing` | 0 anonymous | nothing: no rule runs |');

@@ -542,4 +542,3 @@ Found so far, with the workaround each time. Log the ones you meet in the worksh
 - **Delegates only on a signed-in chat**: no phone path for a delegate; scripted calls use `as`, and a corpus line with `as` must be `no_form`. A delegate's answer inside a form comes from a corpus line without `as` that has the same words.
 - **A factor slot does not fill from a delegate's words**: give delegates their own slot for the subject they name (above).
 - **`pnpm check` does not check the corpus** beyond every intent having examples, nor the lines named only in code (`blockPromptId`, `handoff(...)`, a completion's line, a summary variable from `onSummaryRead`). The regression finds them, one at a time.
-- **The policy card lists a redaction once per slot**: two slots with the same noun (a factor `accountId` and a delegate's `account`, both `account`) read "account by its last four; account by its last four". Harmless; note it when you read the card.
