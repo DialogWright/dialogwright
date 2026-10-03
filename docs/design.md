@@ -371,7 +371,7 @@ Planned additions: a `ui` action for buttons and quick replies (such as "Sign in
 | Web and app chat | None | The embeddable widget | First release |
 | Messaging | None, asynchronous | SMS, WhatsApp | Soon after |
 | Audio streaming | The framework (recognition, synthesis, end-of-speech, barge-in), likely through Pipecat or LiveKit Agents | Twilio Media Streams, Telnyx media streaming, SIP, WebRTC | Later |
-| Contact-center connectors | Varies | Genesys Audio Connector and Digital Connector, Amazon Connect, NICE CXone, Five9 | Later; audio connectors need the audio pipeline |
+| Contact-center connectors | Varies | Contact-center platforms' audio and digital connectors | Later; audio connectors need the audio pipeline |
 
 The web chat widget is a small bundle on a CDN that a site embeds. It opens a WebSocket to the chat endpoint (allowed origins checked) and signs in by passing the site's identity token, verified against the identity provider's published keys. The server does not host the site's pages.
 
