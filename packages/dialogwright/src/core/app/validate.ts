@@ -9,6 +9,7 @@ import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, topLevelOf } from './lookup';
 import { principalProblems } from './principals';
 import type { App, ConfigHashes } from './types';
+import { AUDIT_MASKS } from '../recording';
 
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
 const RESERVED_KINDS: readonly string[] = ['anonymous', 'channel', 'principal', 'level', 'factor', 'pass', 'config', 'configFiles'];
@@ -211,6 +212,23 @@ export function validateApp(app: App): void {
       if (!Object.hasOwn(app.tools, tool) || !Object.hasOwn(rulesFor, tool)) fail(`policy redacts the result of "${tool}" for "${who}", which is not a tool with rules`);
       const declared = app.tools[tool]!.fields ?? [];
       for (const field of fields) if (!declared.includes(field)) fail(`policy redacts "${field}" of "${tool}" for "${who}", which the tool does not declare (ToolDef.fields)`);
+    }
+  }
+  // What is recorded of a call's params (core/recording.ts): each declaration is one of the five, and
+  // a tool that lists its params (an App built in code may not) has each one declared, so nothing it
+  // lists is recorded as it is without the policy saying so (check requires the list of a folder's).
+  const audit = app.policy.audit ?? {};
+  for (const [param, how] of Object.entries(audit)) {
+    if (!(AUDIT_MASKS as readonly unknown[]).includes(how)) fail(`policy records "${param}" as "${String(how)}", which is not one of ${AUDIT_MASKS.join(', ')}`);
+  }
+  for (const [tool, def] of Object.entries(app.tools)) {
+    const params: unknown = def.params;
+    if (params === undefined) continue;
+    if (!Array.isArray(params) || params.some((p) => typeof p !== 'string' || p === '')) return fail(`tool "${tool}"'s params is not a list of param names`);
+    if (new Set(params).size !== params.length) fail(`tool "${tool}" lists a param twice`);
+    for (const param of params as string[]) {
+      const slot = Object.hasOwn(app.slots, param) ? app.slots[param]!.redact : undefined;
+      if (slot === undefined && !Object.hasOwn(audit, param)) fail(`tool "${tool}" sends "${param}", which is neither a slot with a redact setting nor declared in the policy's audit`);
     }
   }
 }

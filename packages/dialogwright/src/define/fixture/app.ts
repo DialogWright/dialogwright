@@ -92,6 +92,7 @@ export class LibrarySystems {
 
 export const LIBRARY_TOOLS: Record<string, ToolDef> = {
   renewLoan: {
+    params: ['book'],
     run(call, sys, { tc }) {
       const systems = sys as LibrarySystems;
       const ref = `R${101 + systems.renewals.length}`;
@@ -101,14 +102,17 @@ export const LIBRARY_TOOLS: Record<string, ToolDef> = {
     },
   },
   findHold: {
+    params: ['book', 'branch'],
     run(call, sys) {
       const status = (sys as LibrarySystems).holds[`${call.params.book}@${call.params.branch}`] ?? null;
       return { value: status, summary: status ? `hold ${status}` : 'no hold' };
     },
   },
   // The param is named after the slot it carries, so the gate event, the trace and the audit
-  // record it as the slot's redact says: by its last four.
+  // record it as the slot's redact says: by its last four. The others are declared in policy.yaml's
+  // audit (kept as they are).
   listLoans: {
+    params: ['card'],
     run(call, sys) {
       const { loans: onFile } = sys as LibrarySystems;
       const card = call.params.card ?? '';

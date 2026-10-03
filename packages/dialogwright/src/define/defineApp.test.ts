@@ -77,7 +77,7 @@ describe('defineApp: the library fixture', () => {
     expect(libraryApp.intents.hours).toEqual({ criteria: 'Asks when the library is open', label: 'hear the opening hours', kind: 'informational', promptId: 'hours' });
     expect(Object.keys(libraryApp.intents.renew_loan!)).toEqual(['criteria', 'label', 'kind']);
     expect(libraryApp.menu).toEqual([{ digit: '1', intent: 'renew_loan' }, { digit: '2', intent: 'check_hold' }, { digit: '0', intent: 'agent' }]);
-    expect(Object.keys(libraryApp.policy)).toEqual(['toolLevel', 'purposeLevel', 'rulesFor', 'serviceFields', 'confirmedFields', 'maxAttempts', 'subjects', 'customRules']);
+    expect(Object.keys(libraryApp.policy)).toEqual(['toolLevel', 'purposeLevel', 'rulesFor', 'serviceFields', 'confirmedFields', 'maxAttempts', 'subjects', 'customRules', 'audit']);
     expect(Object.keys(libraryApp.prompts)).toEqual(['manifest', 'tags', 'spokenVars']);
     expect(Object.keys(libraryApp.prompts.manifest).slice(0, 3)).toEqual(['greeting', 'greeting_chat', 'ask_intent']);
     expect(libraryApp.prompts.manifest.no_input).toEqual({ text: "I didn't hear anything.", interruptible: false });
@@ -208,6 +208,8 @@ describe('defineApp: the folder and the code must name the same things', () => {
     const { findHold: _, ...tools } = libraryCode.tools;
     expect(problems({ ...libraryCode, tools })).toEqual([
       'policy.yaml:8:3  actions.findHold  tool "findHold" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.findHold), or delete this action',
+      // Only findHold sends the branch, so its audit declaration is left with nothing to declare.
+      'policy.yaml:20:3  audit.branch  no tool lists "branch" in its params, so the declaration is never used  ->  delete it, or add "branch" to the params of the tool whose calls carry it',
     ]);
   });
 
@@ -392,12 +394,16 @@ describe('defineApp: identity and policy wording', () => {
       '    level: 0',
       '    rules: [identity]',
       extra,
+      'audit:',
+      '  book: keep',
+      '  branch: keep',
+      '',
     ].join('\n');
   const prompts = () => `${readFileSync(join(LIBRARY_DIR, 'prompts.yaml'), 'utf8')}  card_failed:\n    text: That card number did not match.\n    interruptible: true\n`;
   const run = () => ({ value: null, summary: 'ok' });
   const code: AppCode = {
     ...libraryCode,
-    tools: { ...libraryCode.tools, verifyCard: { run }, checkCode: { run }, sendCode: { run } },
+    tools: { ...libraryCode.tools, verifyCard: { run, params: ['card'] }, checkCode: { run, params: [] }, sendCode: { run, params: ['card'] } },
     identity: { sendCodeParams: (s) => ({ card: s.slots.card?.value ?? '' }) },
   };
 
@@ -416,6 +422,9 @@ describe('defineApp: identity and policy wording', () => {
     expect(problems({ ...code, slots, tools }, dir)).toEqual([
       // the library's check_loans form asks for the card too
       'forms.yaml:12:13  forms.check_loans.slots[0]  slot "card" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.card)',
+      // With no card slot, nothing says the card number is recorded by its last four any more.
+      'policy.yaml:12:3  actions.listLoans  the param "card" of "listLoans" (code.tools.listLoans.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said  ->  declare it under audit in policy.yaml ("card: keep" to record it as it is, or last4, mask, length or secret), or make "card" a slot with a redact setting',
+      'policy.yaml:15:3  actions.verifyCard  the param "card" of "verifyCard" (code.tools.verifyCard.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said  ->  declare it under audit in policy.yaml ("card: keep" to record it as it is, or last4, mask, length or secret), or make "card" a slot with a redact setting',
       'policy.yaml:21:3  actions.sendCode  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode), or delete this action',
       'identity.yaml:6:34  levels["1"].factors[0]  slot "card" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.card)',
       'identity.yaml:7:74  levels["2"].send  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode)',

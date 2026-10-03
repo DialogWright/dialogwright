@@ -1,14 +1,17 @@
 import { confirmationHash } from '../gate/policy';
-import { maskId, raise } from '../gate/principal';
+import { raise } from '../gate/principal';
 import { isAnonymous, isParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
 import { codeLengthOf, formOf, gateOf, hasCode, identityOf, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { App, AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
+import type { AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
 import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
+import { redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf } from './recording';
+
+export { redactCall };
 
 /**
  * The form lifecycle: every tool a turn reaches goes through `callTool`, and so through the gate.
@@ -61,21 +64,6 @@ export interface ToolOutcome {
   redacted?: readonly string[];
 }
 
-/**
- * A call as it may be shown and recorded: each param named as one of the app's slots is masked by
- * that slot's SlotSpec.redact (e.g. the account ID by its last four, the date of birth not at all,
- * the caller's free-text note only by its length). The gate itself evaluates the raw call; only
- * this copy leaves callTool.
- */
-export function redactCall(app: App, call: ToolCall): ToolCall {
-  const params: Record<string, string> = {};
-  for (const [k, v] of Object.entries(call.params)) {
-    const redact = Object.hasOwn(app.slots, k) ? app.slots[k]!.redact : undefined;
-    params[k] = redact === 'last4' && v ? maskId(v) : redact === 'mask' && v ? '•' : redact === 'length' ? `<${v.length} chars>` : v;
-  }
-  return { ...call, params };
-}
-
 const IGNORE: Decision = { kind: 'ignore' };
 
 /**
@@ -106,12 +94,17 @@ const PROBES: ReadonlySet<string> = new Set(['retry-check', 'entry-check']);
 /**
  * The gate's decision as it may leave the lifecycle: the raw call is evaluated by the app's gate (its
  * policy's named rules, gateOf), and only its redacted copy (redactCall) is carried on, into the
- * event, the trace and the audit.
+ * event, the trace and the audit, with its rules' lines masked the same way (a raw value of a param
+ * recorded masked or never, replaced where a line repeats it; core/recording.ts). The scrub is kept
+ * beside the decision for the summary and the tool's own audit rows.
  */
 function evaluate(s: Session, call: ToolCall, tc: TurnContext): GateDecision {
   const app = appOf(s);
   const evaluated = gateOf(app).evaluate(call, s.principal, gateFacts(s, call, tc), tc.tools.lookups);
-  return { ...evaluated, call: redactCall(app, call) };
+  const scrub = scrubberFor(app, call);
+  const decision = scrubbedDecision({ ...evaluated, call: redactCall(app, call) }, scrub);
+  if (scrub !== null) registerScrub(decision, scrub);
+  return decision;
 }
 
 /**
@@ -136,8 +129,12 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
   // console and the audit) gets the summary with what was withheld.
   const fields = withheldFields(appOf(s), s.principal, call.tool);
   const { value, redacted } = redactResult(call.tool, ran.value, fields);
-  const summary = redacted ? redactedSummary(ran.summary, fields) : ran.summary;
-  out.gateEvents.push(ran.ref === undefined ? { decision, summary } : { decision, summary, ref: ran.ref });
+  // The summary and the record it names are recorded beside the call, so they are masked as it is.
+  const scrub = scrubberOf(decision);
+  const said = scrub && typeof ran.summary === 'string' ? scrub(ran.summary) : ran.summary;
+  const summary = redacted ? redactedSummary(said, fields) : said;
+  const ref = scrub && typeof ran.ref === 'string' ? scrub(ran.ref) : ran.ref;
+  out.gateEvents.push(ref === undefined ? { decision, summary } : { decision, summary, ref });
   return redacted ? { decision, value, redacted: fields } : { decision, value };
 }
 

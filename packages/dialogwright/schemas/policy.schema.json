@@ -443,6 +443,25 @@
         "description": "The actions whose results are redacted for this party, each with the fields withheld."
       },
       "description": "What a party who acts for subjects does not get to see of what an action returns, by delegate kind (agent) or by kind and role (agent.clerk), whose list for an action replaces the kind's. The tool returns the whole record and the engine strips the fields before any hook, line, trace, console or audit sees it. A subject acting for themselves is never redacted. Default: nothing is withheld."
+    },
+    "audit": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "last4",
+          "mask",
+          "length",
+          "secret",
+          "keep"
+        ],
+        "description": "How the param is recorded: last4 (by its last four characters, \"...1234\"), mask (hidden, \"•\"), length (by its length, \"<38 chars>\"), secret (never: left out of the call as recorded), keep (as it is)."
+      },
+      "description": "How each param the actions are sent is recorded, where it is not a slot with a redact setting (whose redact says so), by param name, in every action that sends it: the gate event, the trace, the console and the audit, and wherever a rule's line, the action's summary or its own audit rows repeat the value. Every param a tool lists in its params (in code) is a slot with a redact setting or is named here, and so is every field a confirmed or fields rule names that is not a slot. Default: none, so check refuses an undeclared param."
     }
   },
   "required": [

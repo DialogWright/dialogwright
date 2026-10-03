@@ -1,6 +1,7 @@
 import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
-import type { App, RoleAccess, ToolName } from '../core/app/types';
+import type { App, AuditMask, RoleAccess, ToolName } from '../core/app/types';
+import { recordingOf } from '../core/recording';
 import { refText, todayText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
 import type { PolicyAction, PolicySource, Rule } from '../gate/compiled';
 import { isDefinedRule } from '../gate/defineRule';
@@ -13,8 +14,8 @@ import {
 /**
  * Test support: the policy card, a one-page plain-English account of what an app's agent may do,
  * written from the compiled app (the gate's named rules, gateOf; the identity configuration; what
- * the policy withholds from a party acting for subjects, PolicyTables.redact) and
- * kept as POLICY.md beside policy.yaml, so compliance reads a page and not a file of rules. A page,
+ * the policy withholds from a party acting for subjects, PolicyTables.redact; what is recorded of
+ * each value an action is sent, the slots' redact and PolicyTables.audit) and kept as POLICY.md beside policy.yaml, so compliance reads a page and not a file of rules. A page,
  * and two Mermaid diagrams GitHub renders: the identity ladder, and the actions grouped by level
  * with their rules and what each role gets.
  *
@@ -307,6 +308,38 @@ function redactionSection(app: App, source: PolicySource): string[] {
   return out;
 }
 
+/** How a value is recorded, in words (core/recording.ts). */
+const RECORDED: Readonly<Record<AuditMask, string>> = {
+  last4: 'by its last four characters',
+  mask: 'hidden',
+  length: 'by its length only',
+  secret: 'never',
+  keep: 'as it is',
+};
+
+/**
+ * What is recorded of each value an action is sent (the tools' params, ToolDef.params): as its slot's
+ * redact setting or policy.yaml's `audit:` says. None for an app whose tools list no params and whose
+ * policy declares nothing, so its card has no such section.
+ */
+function recordingSection(app: App, source: PolicySource): string[] {
+  const tools = Object.keys(source.actions);
+  const listed = (tool: string): readonly string[] | undefined => (Object.hasOwn(app.tools, tool) ? app.tools[tool]!.params : undefined);
+  if (app.policy.audit === undefined && !tools.some((tool) => listed(tool) !== undefined)) return [];
+  const out = ['## What is recorded', ''];
+  out.push('What the record of a call keeps of each value the action is sent: the gate\'s decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml\'s `audit` declares, and `check` refuses one that neither covers. Where a rule\'s line, the action\'s summary or its own audit rows repeat a value that is hidden, shortened or never recorded, it is masked there too.');
+  out.push('', '| Action | Value | Recorded |', '| --- | --- | --- |');
+  for (const tool of tools) {
+    const action = source.actions[tool]?.say;
+    const named = action === undefined ? code(tool) : `${cell(capitalize(action))} (${code(tool)})`;
+    const params = listed(tool);
+    if (params === undefined) out.push(`| ${named} | not listed (the tool lists no params) | |`);
+    else if (params.length === 0) out.push(`| ${named} | nothing | |`);
+    else for (const param of params) out.push(`| ${named} | ${cell(paramNoun(app, param))} (${code(param)}) | ${RECORDED[recordingOf(app, param)]} |`);
+  }
+  return out;
+}
+
 function actionsSection(app: App, source: PolicySource): string[] {
   const out = ['## Actions', '', 'One row per action the agent may take. Anything else is refused.', ''];
   out.push('| Action | Level | The gate checks, in order |', '| --- | --- | --- |');
@@ -368,6 +401,7 @@ export function policyCardText(app: App, dir: string): string {
     ...principalsSection(app, source),
     '',
     ...withGap(redactionSection(app, source)),
+    ...withGap(recordingSection(app, source)),
     ...actionsSection(app, source),
     '',
     '### Actions by level, with their rules and what each role gets',

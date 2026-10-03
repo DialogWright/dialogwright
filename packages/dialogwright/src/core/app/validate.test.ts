@@ -33,6 +33,24 @@ describe('validateApp', () => {
     expect(() => validateApp(app)).toThrow(/ghostFactor/);
   });
 
+  describe('what is recorded (policy audit, ToolDef.params)', () => {
+    const withAudit = (audit: Record<string, string> | undefined, tools: App['tools'] = testkitApp.tools): App => ({ ...copy(), id: 'audit-bad', tools, policy: { ...testkitApp.policy, audit: audit as never } });
+
+    it('accepts the testkit, and an app built in code whose tools list no params', () => {
+      expect(() => validateApp(withAudit(testkitApp.policy.audit))).not.toThrow();
+      const bare = Object.fromEntries(Object.entries(testkitApp.tools).map(([tool, { params: _params, ...def }]) => [tool, def]));
+      expect(() => validateApp(withAudit(undefined, bare))).not.toThrow();
+    });
+
+    it('a declaration that is not one of the five, a listed param no slot or declaration covers, params that are not a list', () => {
+      expect(() => validateApp(withAudit({ ...testkitApp.policy.audit, parcel: 'hidden' }))).toThrow('app "audit-bad": policy records "parcel" as "hidden", which is not one of last4, mask, length, secret, keep');
+      const { parcel: _parcel, ...rest } = testkitApp.policy.audit!;
+      expect(() => validateApp(withAudit(rest))).toThrow('app "audit-bad": tool "getParcel" sends "parcel", which is neither a slot with a redact setting nor declared in the policy\'s audit');
+      expect(() => validateApp(withAudit(testkitApp.policy.audit, { ...testkitApp.tools, getParcel: { ...testkitApp.tools.getParcel!, params: 'parcel' as never } }))).toThrow('app "audit-bad": tool "getParcel"\'s params is not a list of param names');
+      expect(() => validateApp(withAudit(testkitApp.policy.audit, { ...testkitApp.tools, getParcel: { ...testkitApp.tools.getParcel!, params: ['parcel', 'parcel'] } }))).toThrow('app "audit-bad": tool "getParcel" lists a param twice');
+    });
+  });
+
   describe('console links', () => {
     const link = (id: string) => ({ id, label: 'L', title: 'T', href: '/x', target: `t-${id}`, features: '' });
     const withLinks = (...ids: string[]): App => ({ ...copy(), console: { ...testkitApp.console, links: ids.map(link) } });

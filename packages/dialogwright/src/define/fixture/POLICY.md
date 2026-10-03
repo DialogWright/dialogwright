@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `783112d39bb5e84357354f5d5299af75f3a431f565c2b479e2df8eb74521b9a4` |
+| `policy.yaml` | `715109fb13ecf38604244c7ebbfb456d850223fb0ad158fb3670b4834d01e487` |
 | `identity.yaml` | none: this app verifies no one |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -28,6 +28,17 @@ flowchart LR
 ## Who is served and who acts for them
 
 No one is verified, so the app has no subjects and no one acts for them.
+
+## What is recorded
+
+What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary or its own audit rows repeat a value that is hidden, shortened or never recorded, it is masked there too.
+
+| Action | Value | Recorded |
+| --- | --- | --- |
+| `renewLoan` | book (`book`) | as it is |
+| `findHold` | book (`book`) | as it is |
+| `findHold` | branch (`branch`) | as it is |
+| `listLoans` | library card (`card`) | by its last four characters |
 
 ## Actions
 

@@ -13,6 +13,8 @@ describe('gate-event golden', () => {
     const golden = await gateEventGolden('stub');
     expect(golden.misses).toBe(0);
     expect(golden.events).toBeGreaterThan(0);
+    // Every param the testkit's own calls carry is one its tool lists, so check holds it to policy.yaml's audit.
+    expect(golden.unlistedParams).toEqual([]);
     await expect(golden.text).toMatchFileSnapshot('./__snapshots__/gate-events.stub.txt');
   }, 60_000);
 });

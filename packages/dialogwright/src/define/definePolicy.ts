@@ -4,7 +4,7 @@ import { ruleDefinitionProblems } from '../gate/defineRule';
 import { NAMED_RULE_IDS } from '../gate/compiled';
 import { AppDefinitionError, codePath } from './defineApp';
 import { loadConfigFile, type ConfigFile } from './load';
-import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, toolFieldProblems, type PolicyCheckInput } from './policyFile';
+import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotRedactOf, toolFieldProblems, toolParamProblems, type PolicyCheckInput } from './policyFile';
 import { keyPositionOf, positionOf, type Problem } from './problems';
 import type { IdentityYaml, PolicyYaml } from './schema/index';
 
@@ -32,9 +32,13 @@ export interface DefinePolicyOptions {
    * action must be level 0.
    */
   identity?: string | Record<string, unknown>;
-  /** The app's tools (App.tools): every tool needs an action, and every action must be a tool; the fields `redact:` withholds must be ones the tool declares (ToolDef.fields). */
+  /**
+   * The app's tools (App.tools): every tool needs an action, and every action must be a tool; the
+   * fields `redact:` withholds must be ones the tool declares (ToolDef.fields); each lists the params
+   * its calls carry (ToolDef.params), every one a slot with a redact setting or declared under `audit:`.
+   */
   tools?: Readonly<Record<ToolName, unknown>>;
-  /** The app's slots (App.slots). Not checked yet: the confirmed and fields rules name params, which need not be slots. */
+  /** The app's slots (App.slots): their redact settings say how a param of a slot's name is recorded, so `audit:` declares the rest. */
   slots?: Readonly<Record<SlotId, unknown>>;
   /** The app's own rules, by the id `custom:` names them by (PolicyTables.customRules). */
   customRules?: PolicyTables['customRules'];
@@ -86,8 +90,12 @@ function checkInput(policy: ConfigFile<PolicyYaml> | null, identity: ConfigFile<
   if (code.tools) {
     input.tools = Object.keys(code.tools);
     input.toolFields = Object.fromEntries(Object.entries(code.tools).map(([tool, def]) => [tool, declaredFields(def)]));
+    input.toolParams = Object.fromEntries(Object.entries(code.tools).map(([tool, def]) => [tool, declaredParams(def)]));
   }
-  if (code.slots) input.slots = new Set(Object.keys(code.slots));
+  if (code.slots) {
+    input.slots = new Set(Object.keys(code.slots));
+    input.slotRedact = slotRedactOf(code.slots as Readonly<Record<string, unknown>>);
+  }
   if (code.prompts) input.prompts = Array.isArray(code.prompts) ? code.prompts : Object.keys(code.prompts);
   return input;
 }
@@ -118,6 +126,7 @@ export function definePolicy(source: string | Record<string, unknown>, options: 
   }
   for (const [tool, def] of Object.entries(options.tools ?? {})) {
     for (const message of toolFieldProblems(def)) problems.push({ file: policy.file, line: 0, column: 0, path: codePath('tools', tool, 'fields'), message: `tool "${tool}": ${message}`, fix: `make ${codePath('tools', tool, 'fields')} a list of the distinct fields of its result the policy may withhold` });
+    for (const message of toolParamProblems(def)) problems.push({ file: policy.file, line: 0, column: 0, path: codePath('tools', tool, 'params'), message: `tool "${tool}": ${message}`, fix: `make ${codePath('tools', tool, 'params')} a list of the distinct params its calls carry` });
   }
   for (const { index, message } of lookupDeclarationProblems(Array.isArray(options.lookups) ? options.lookups : [])) {
     problems.push({ file: policy.file, line: 0, column: 0, path: `${codePath('lookups')}[${index}]`, message, fix: `name a function of the gate's lookups with a plain word of its own, in ${codePath('lookups')}` });

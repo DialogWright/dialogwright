@@ -34,3 +34,13 @@ actions:
     rules:
       - identity
       - confirmed: [name, dob, provider, date, time]
+
+# How each value an action is sent is recorded (the gate event, the trace, the console and the
+# audit), where it is not a slot with a redact setting: the date of birth is hidden, as its slot
+# says. Every other param the tools list (src/domain/tools.ts) is declared here; these are recorded
+# as they are. The time is no slot: the caller picks it from the openings read to them.
+audit:
+  name: keep
+  provider: keep
+  date: keep
+  time: keep

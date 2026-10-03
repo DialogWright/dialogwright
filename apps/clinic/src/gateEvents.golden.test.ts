@@ -13,12 +13,15 @@ describe('gate-event golden', () => {
   it('stub', async () => {
     const golden = await gateEventGolden('stub');
     expect(golden.misses).toBe(0);
+    // Every param the clinic's own calls carry is one its tool lists, so check holds it to policy.yaml's audit.
+    expect(golden.unlistedParams).toEqual([]);
     await expect(golden.text).toMatchFileSnapshot('./__snapshots__/gate-events.stub.txt');
   }, 60_000);
 
   it('recorded', async () => {
     const golden = await gateEventGolden('recorded');
     expect(golden.misses).toBe(0);
+    expect(golden.unlistedParams).toEqual([]);
     await expect(golden.text).toMatchFileSnapshot('./__snapshots__/gate-events.recorded.txt');
   }, 60_000);
 });

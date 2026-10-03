@@ -260,18 +260,20 @@ export interface ToolDef {
    * turn context (the systems, today's date) and `out` the turn's output, where a tool may queue an
    * effect (e.g. a missing-parcel report's depot notice) so resolve stays pure.
    *
-   * What the call carries to the console, the trace and the audit is redactCall's copy, which masks
-   * only the params that are named as slots (by SlotSpec.redact): a param whose name is not a slot id
-   * is passed through RAW. A tool whose call carries a sensitive value under another name (say a
-   * record id with no slot) must either name it as a slot or accept that it is recorded.
+   * What the call carries to the console, the trace and the audit is redactCall's copy: each param
+   * that is a slot with a redact setting masked as the slot says (SlotSpec.redact), each other param
+   * as policy.yaml's `audit:` declares it (PolicyTables.audit). `check` refuses a param the tool
+   * lists (its params, below) that neither covers.
    */
   run(call: ToolCall, sys: unknown, ctx: { s: Session; tc: TurnContext; out: TurnOut; code?: string }): { value: unknown; summary: string; ref?: string };
   /**
    * The audit rows for a call the gate let run, after its gate row (core/audit.ts). Without it, one
    * `tool_result` row with the tool's name and summary. Rows carry no PHI: the call is the redacted
-   * copy, and the summary is the tool's own one line. The hook is the app's own code and what it
-   * returns is recorded as is: it must never put a raw slot value in a row, and `after` (below) is
-   * the whole session, raw slots included, so read from it only what a row may carry.
+   * copy, and the summary is the tool's own one line. The hook is the app's own code: it must never
+   * put a raw slot value in a row, and `after` (below) is the whole session, raw slots included, so
+   * read from it only what a row may carry. The engine holds it to that for the call's own params:
+   * wherever a row's text repeats the raw value of a param that is recorded masked or never, the
+   * value is masked there too (core/recording.ts).
    */
   audit?(t: ToolAuditInput): AuditDraft[];
   /**
@@ -283,11 +285,21 @@ export interface ToolDef {
    * tool's, written from the whole record: it must never carry one of these fields.
    */
   fields?: readonly string[];
+  /**
+   * The params the tool's calls carry, by name (`params: []` for none): what `check` holds to being
+   * recorded as declared, each a slot with a redact setting or a param policy.yaml's `audit:` names.
+   * The calls are built in code (a form's hooks, the identity flow), so the tool, which reads them,
+   * is where they are listed. `check` requires it of every tool, and holds it to the params the
+   * action's rules name; the gate-event goldens list any param an app's own calls carry that its
+   * tool does not (dialogwright/testing gateEventGolden). The engine records the calls as declared
+   * either way: a param no slot's redact or `audit:` declaration covers is recorded as it is.
+   */
+  params?: readonly string[];
 }
 
 /** What a tool's audit hook (ToolDef.audit) is given about a call the gate let run. */
 export interface ToolAuditInput {
-  /** The call as recorded (redactCall): each param that names a slot masked as the slot says. */
+  /** The call as recorded (redactCall): each param masked as its slot or policy.yaml's `audit:` says, a secret one left out. */
   call: ToolCall;
   /** The tool's one-line summary of what it returned. */
   summary: string;
@@ -364,8 +376,9 @@ export interface PolicyTables {
   /**
    * Rules the app adds beside the gate's built-in ones (src/gate/policy.ts RULE_IDS), named in
    * rulesFor like them; an id must not be a built-in's (validateApp checks). An app's own rule
-   * (e.g. no report for a parcel already delivered) is one. A custom rule is the app's own code, and
-   * its RuleResult.compared reaches the audit and the console as is: it must never carry a raw param.
+   * (e.g. no report for a parcel already delivered) is one. A custom rule is the app's own code: its
+   * RuleResult.compared reaches the audit and the console, with every raw value of a param of the
+   * call that is recorded masked or never masked there too (core/recording.ts).
    */
   customRules?: Readonly<Record<string, (c: RuleContext) => RuleOutcome>>;
   /** The words the built-in rules' lines use, so the console and the audit read in the app's terms. Without it, neutral words. */
@@ -377,7 +390,20 @@ export interface PolicyTables {
    * (ToolDef.fields). A subject acting for themselves is never redacted. Without it, nothing is.
    */
   redact?: Readonly<Record<string, Readonly<Record<ToolName, readonly string[]>>>>;
+  /**
+   * How each param that is not a slot with a redact setting is recorded (policy.yaml `audit:`), by
+   * param name, in every call that carries it: the gate event, the trace, the console and the audit
+   * (core/recording.ts). Without it, such a param is recorded as it is.
+   */
+  audit?: Readonly<Record<string, AuditMask>>;
 }
+
+/**
+ * How a param is recorded (policy.yaml `audit:`): `last4` by its last four characters ("...1234"),
+ * `mask` hidden ("•"), `length` by its length ("<38 chars>"), `secret` never (left out of the call
+ * as recorded, and "•" wherever else its value would appear), `keep` as it is.
+ */
+export type AuditMask = 'last4' | 'mask' | 'length' | 'secret' | 'keep';
 
 /** R2: the param naming a call's subject; `via: 'record'` when it is a record id to resolve to its owner. */
 export interface SubjectParam {

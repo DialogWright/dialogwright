@@ -200,6 +200,7 @@ actions:
 - `purposes` (`purposes: { renew: { level: 1 } }`) is the level a purpose needs when it is more than its first action's.
 - `wording` holds the words the rules use in the audit and the console.
 - `redact` names the fields of an action's result withheld from a party who acts for subjects; [its own section](#redaction-per-principal-redact) has it.
+- `audit` says how each param that is not a slot with a redact setting is recorded; [its own section](#what-is-recorded-audit) has it.
 
 A file written before this shape (`toolLevel`, `rulesFor`, ...) is converted with `dialogwright policy:convert <folder>`, which keeps its decisions and its comments, and says which rows it dropped because no rule read them.
 
@@ -281,6 +282,35 @@ getParcel: { run: (call, sys) => { /* the whole parcel */ }, fields: ['safePlace
 - `check` refuses a key that is not a delegate kind or one of its roles (the subject kind included), an action the policy does not list, and a field the tool does not declare, each with the closest name. An app built in code (`validateApp`) refuses the same when it is registered. A tool with fields that returns anything but an object or a list of objects throws, so a value is never handed on whole.
 - The policy card has a section, "What is withheld", with a row per kind or role and action.
 
+#### What is recorded: `audit`
+
+Every call is recorded: the gate's decision carries a copy of it into the gate event, the trace, the console and the audit. A param named after a slot with a redact setting is masked as the slot says. Every other param is recorded as `audit` declares it, by param name, in every action that sends it:
+
+```yaml
+audit:
+  recordId: keep
+  branch: keep
+  pin: secret
+```
+
+```ts
+getRecord: { params: ['recordId'], run: (call, sys) => { /* ... */ } },
+```
+
+| `audit` | Recorded as |
+| --- | --- |
+| `last4` | its last four characters (`...1234`) |
+| `mask` | hidden (`•`) |
+| `length` | its length only (`<38 chars>`) |
+| `secret` | never: the param is left out of the call as recorded, and is `•` wherever else its value would appear |
+| `keep` | as it is |
+
+- Each tool lists the params its calls carry (`params` on the tool, in code; `params: []` for none). The calls are built in code (a form's hooks, the identity flow), so the tool, which reads them, is where they are listed. `check` requires the list of every tool, refuses a listed param that is neither a slot with a redact setting nor declared here (the fix names both ways out), refuses a param a `scope`, `confirmed` or `fields` rule names that the tool does not list, and refuses a declaration of a slot that has a redact setting or of a param no tool lists. A `confirmed` or `fields` entry is always a slot or declared. A range rule's field and the params its references read are held to the tool's list where no `confirmed` or `fields` rule closes the params. An app built in code (`validateApp`) refuses a listed param that nothing declares when it is registered.
+- The same masks reach the free text recorded beside the call: the rules' lines (a custom rule writes its `compared` line as it likes), the tool's summary and the record it names, its side effects' params in the trace and the console, and the tool's own audit rows (`audit` on the tool). Wherever one of them repeats the raw value of a param that is recorded masked or never, the value is replaced by its recorded form, in any case. A value a rule or a tool reshapes (a date reformatted, digits spaced out, a part of it quoted) is not recognised, so a custom rule still writes only what may be recorded; and a short masked value is also masked where it appears inside other words.
+- The gate decides on the raw call: what is recorded never changes a decision.
+- The gate-event goldens (`gateEventGolden` in `dialogwright/testing`) report any param an app's own calls carry that its tool does not list (`unlistedParams`); an app's golden test expects none.
+- The policy card has a section, "What is recorded", with a row per action and value.
+
 #### Testing the policy against the file
 
 Three tests hold the gate to what policy.yaml says, each from `'dialogwright/testing'` and each run over the gate grid (every action crossed with every kind of caller, subject and fact, from the app's `testing.policyMatrix()`):
@@ -302,7 +332,7 @@ Three tests hold the gate to what policy.yaml says, each from `'dialogwright/tes
 
 `POLICY.md`, beside policy.yaml, is the policy in plain English for someone who will not read YAML: a table with one row per action, written from the compiled app (the gate's own rules, so it cannot say what the gate does not do). Write it with `pnpm policy:card <folder>` (with no folder, every `POLICY.md` in the workspace) and commit it; GitHub renders it, diagrams included.
 
-It has the files' config hashes (policy.yaml and identity.yaml, as every call's audit record carries them); the defaults ("anything not listed is refused", identifiers by their last four, the attempts, what is recorded masked); the identity ladder (each level by its name, what the caller gives in the words of the slots' nouns, the tools that check it, the code, the sign-in) with a Mermaid diagram of it; who the app serves and who acts for them, with what each role gets; what is withheld from them (`redact`), where anything is; one row per action, with its label (`say:` in policy.yaml, else the tool id), its level by name and each rule in words with its parameters (the scope rule's param as a noun, the confirmed values, the fields sent, a range rule's bounds, a custom rule's static `description`); and a second diagram of the actions grouped by level with their rules and the roles that are refused or handed to a person. Write `say:` for every action, and a `description` for every custom rule, in the words a reviewer would use. A role is shown by its id spelt out (`office_admin` as "office admin").
+It has the files' config hashes (policy.yaml and identity.yaml, as every call's audit record carries them); the defaults ("anything not listed is refused", identifiers by their last four, the attempts, what is recorded masked); the identity ladder (each level by its name, what the caller gives in the words of the slots' nouns, the tools that check it, the code, the sign-in) with a Mermaid diagram of it; who the app serves and who acts for them, with what each role gets; what is withheld from them (`redact`), where anything is; what is recorded of each value an action is sent (a slot's redact setting, `audit`); one row per action, with its label (`say:` in policy.yaml, else the tool id), its level by name and each rule in words with its parameters (the scope rule's param as a noun, the confirmed values, the fields sent, a range rule's bounds, a custom rule's static `description`); and a second diagram of the actions grouped by level with their rules and the roles that are refused or handed to a person. Write `say:` for every action, and a `description` for every custom rule, in the words a reviewer would use. A role is shown by its id spelt out (`office_admin` as "office admin").
 
 `expectPolicyCard(app, file)` (from `'dialogwright/testing'`) fails a test on any difference between the page and what the app generates, with a line diff and the command that writes it; put it beside the policy matrix's test. The card is a golden: a policy change is a diff of two files a reviewer reads, and only the command writes it, never CI.
 
@@ -1110,8 +1140,8 @@ For a form that collects slots and acts, such as renewing a loan:
 
 ### Add a tool
 
-1. `app.ts`: add the tool to `code.tools` with `run`. It does the work and returns `{ value, summary }`. Put no permission logic in it.
-2. `policy.yaml`: add an action under `actions` with the `level` it needs and the `rules` the gate runs before it. Use `identity` for the level, and add `confirmed: [<the fields>]` for a write the caller must confirm.
+1. `app.ts`: add the tool to `code.tools` with `run` and the `params` its calls carry. It does the work and returns `{ value, summary }`. Put no permission logic in it.
+2. `policy.yaml`: add an action under `actions` with the `level` it needs and the `rules` the gate runs before it. Use `identity` for the level, and add `confirmed: [<the fields>]` for a write the caller must confirm. Declare under `audit` how each param that is not a slot with a redact setting is recorded.
 3. If the tool is a confirmed write, give the form `confirmedParams`, and make the form's `complete` set `s.confirmedHash = s.pendingHash` before the call, as the library's `renew` does.
 4. If the tool needs a rule of its own, write it with `defineRule` (with an example the gate allows and one it refuses) in `code.customRules`, name its id with a `custom:` rule in the action, and write the new policy matrix with `pnpm policy:matrix <folder>`.
 5. `pnpm check` says if the tool and its action do not match: a tool with no action, an action with no tool, a rule that is never named.

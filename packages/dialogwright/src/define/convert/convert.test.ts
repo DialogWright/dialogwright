@@ -63,7 +63,10 @@ describe('each app converts to the files it runs from', () => {
   it('the library fixture, from its old policy.yaml: nothing dropped', () => {
     const converted = convertFolder(join(LEGACY, 'library'));
     expect(Object.keys(converted.files)).toEqual(['policy.yaml']);
-    expect(dataOf(converted.files['policy.yaml']!)).toEqual(dataOf(committed('library', 'policy')));
+    // The old file said nothing of how the params are recorded, which the committed file declares (audit).
+    const { audit, ...file } = dataOf(committed('library', 'policy'));
+    expect(audit).toEqual({ book: 'keep', branch: 'keep' });
+    expect(dataOf(converted.files['policy.yaml']!)).toEqual(file);
     expect(converted.dropped).toEqual([]);
     expect(converted.unplaced).toEqual([]);
     const policy = compilePolicy(policySchema.parse(parse(converted.files['policy.yaml']!)), { customRules: libraryCode.customRules! });
@@ -97,9 +100,11 @@ describe('each app converts to the files it runs from', () => {
 
   it('the testkit, from its TypeScript tables (no comments to keep): its custom rule is named, not carried', () => {
     const converted = convertTables(FROZEN_TESTKIT_POLICY as PolicyTables, { ...FROZEN_TESTKIT_IDENTITY, sendCodeParams: () => ({}) }, { signIn: true });
-    // The tables have no redaction, which the committed file adds (what a depot agent does not see of a parcel).
-    const { redact, ...file } = dataOf(committed('testkit', 'policy'));
+    // The tables have no redaction, which the committed file adds (what a depot agent does not see of a
+    // parcel), and say nothing of how the params are recorded, which it declares (audit).
+    const { redact, audit, ...file } = dataOf(committed('testkit', 'policy'));
     expect(redact).toBeDefined();
+    expect(audit).toBeDefined();
     expect(dataOf(toText(converted.policy))).toEqual(file);
     expect(parse(toText(converted.identity!))).toEqual(parse(committed('testkit', 'identity')));
     expect(converted.dropped).toEqual([]);
@@ -117,8 +122,18 @@ describe('each app converts to the files it runs from', () => {
     expect(await main(['policy:convert', dir], io)).toBe(0);
     expect(out).toEqual(['wrote policy.yaml']);
     expect(readFileSync(join(dir, 'policy.yaml'), 'utf8')).toMatch(/^# yaml-language-server: \$schema=.*schemas\/policy\.schema\.json\nactions:\n/);
+    // The old shape says nothing of how the params that are no redacted slot are recorded, and the
+    // converter cannot know a tool's params: check asks for them, and the author declares them.
+    expect((await checkApp(dir, { code: libraryCode })).map((p) => `${p.path}: ${p.message}`)).toEqual([
+      'actions.renewLoan: the param "book" of "renewLoan" (code.tools.renewLoan.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said',
+      'actions.findHold: the param "book" of "findHold" (code.tools.findHold.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said',
+      'actions.findHold: the param "branch" of "findHold" (code.tools.findHold.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said',
+    ]);
+    writeFileSync(join(dir, 'policy.yaml'), `${readFileSync(join(dir, 'policy.yaml'), 'utf8')}audit:\n  book: keep\n  branch: keep\n`);
     expect(await checkApp(dir, { code: libraryCode })).toEqual([]);
-    expect(comparable(defineApp(dir, libraryCode).policy)).toEqual(comparable({ ...FROZEN_LIBRARY_POLICY, customRules: libraryCode.customRules! }));
+    const { audit, ...policy } = defineApp(dir, libraryCode).policy;
+    expect(audit).toEqual({ book: 'keep', branch: 'keep' });
+    expect(comparable(policy)).toEqual(comparable({ ...FROZEN_LIBRARY_POLICY, customRules: libraryCode.customRules! }));
   });
 });
 

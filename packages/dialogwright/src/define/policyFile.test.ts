@@ -62,10 +62,12 @@ describe('compile equality: the testkit', () => {
   const frozen: PolicyTables = { ...FROZEN_TESTKIT_POLICY, customRules: TESTKIT_CUSTOM_RULES };
 
   it('policy.yaml compiles to the tables the testkit wrote by hand, its custom rule the testkit\'s own function', () => {
-    // What the hand-written tables could not say: what a depot agent does not see of a parcel (redact).
-    const { redact, ...tables } = TESTKIT_POLICY;
+    // What the hand-written tables could not say: what a depot agent does not see of a parcel
+    // (redact), and how each param that is no redacted slot is recorded (audit: as it is, as it was).
+    const { redact, audit, ...tables } = TESTKIT_POLICY;
     expect(comparable(tables)).toEqual(comparable(frozen));
     expect(redact).toEqual({ agent: { getParcel: ['safePlace'], listParcels: ['safePlace'] }, 'agent.clerk': { getParcel: [], listParcels: [] } });
+    expect(audit).toEqual({ parcel: 'keep', report: 'keep', deliveryDay: 'keep', deliveryPart: 'keep', expectedDate: 'keep' });
     expect(TESTKIT_POLICY.customRules!.R8).toBe(TESTKIT_CUSTOM_RULES.R8);
     expect(testkitApp.policy).toBe(TESTKIT_POLICY);
   });
@@ -88,7 +90,10 @@ describe('compile equality: the testkit', () => {
 
 describe('compile equality: the library fixture', () => {
   it('policy.yaml compiles to the tables the old file gave', () => {
-    expect(comparable(libraryApp.policy)).toEqual(comparable({ ...FROZEN_LIBRARY_POLICY, customRules: libraryCode.customRules! }));
+    // What the old file could not say: how the params that are no redacted slot are recorded (as they were).
+    const { audit, ...tables } = libraryApp.policy;
+    expect(comparable(tables)).toEqual(comparable({ ...FROZEN_LIBRARY_POLICY, customRules: libraryCode.customRules! }));
+    expect(audit).toEqual({ book: 'keep', branch: 'keep' });
     expect(definePolicy(join(LIBRARY_DIR, 'policy.yaml'), { tools: libraryCode.tools, slots: libraryApp.slots, customRules: libraryCode.customRules! })).toEqual(libraryApp.policy);
   });
 
@@ -194,9 +199,9 @@ function problemsOf(build: () => unknown): string[] {
   return [];
 }
 
-/** A small app's code for the checks: three tools, two slots, one rule of its own. */
-const TOOLS = { getRecord: {}, fileRequest: {}, checkFactors: {}, sendCode: {}, checkCode: {} };
-const SLOTS = { accountId: {}, note: {}, dob: {} };
+/** A small app's code for the checks: five tools with the params their calls carry, three slots (each with a redact setting), one rule of its own. */
+const TOOLS = { getRecord: { params: ['recordId'] }, fileRequest: { params: ['accountId', 'note'] }, checkFactors: { params: ['accountId', 'dob'] }, sendCode: { params: ['accountId', 'note'] }, checkCode: { params: [] } };
+const SLOTS = { accountId: { redact: 'last4' }, note: { redact: 'length' }, dob: { redact: 'mask' } };
 /** The small app's own rule, with the examples check requires: a free slot passes, a taken one is refused. */
 const CUSTOMER = { kind: 'customer', level: 2, id: '55501234', first: 'Alex' } as const;
 const notTwice = defineRule({
@@ -225,14 +230,16 @@ const ACTIONS = {
   sendCode: { level: 1, rules: ['identity', { scope: { param: 'accountId' } }] },
   checkCode: { level: 1, rules: ['identity', 'attempts'] },
 };
-const POLICY = { actions: ACTIONS };
+/** The one param no slot covers, declared. */
+const AUDIT = { recordId: 'keep' };
+const POLICY = { actions: ACTIONS, audit: AUDIT };
 
 const policyWith = (over: Record<string, unknown>, identity: Record<string, unknown> | null = IDENTITY): string[] =>
   problemsOf(() => definePolicy({ ...POLICY, ...over }, { ...(identity ? { identity } : {}), tools: TOOLS, slots: SLOTS, customRules: RULES }));
 const actionsWith = (actions: Record<string, unknown>, identity: Record<string, unknown> | null = IDENTITY): string[] => policyWith({ actions: { ...ACTIONS, ...actions } }, identity);
 /** One action alone, for an app whose only tool it is. */
 const soloWith = (action: Record<string, unknown>, identity: Record<string, unknown> | null): string[] =>
-  problemsOf(() => definePolicy({ actions: { getRecord: action } }, { ...(identity ? { identity } : {}), tools: { getRecord: {} }, slots: SLOTS }));
+  problemsOf(() => definePolicy({ actions: { getRecord: action } }, { ...(identity ? { identity } : {}), tools: { getRecord: { params: [] } }, slots: SLOTS }));
 const identityWith = (over: Record<string, unknown>): string[] =>
   problemsOf(() => defineIdentity({ ...IDENTITY, ...over }, { policy: POLICY, tools: TOOLS, slots: SLOTS, prompts: ['identity_failed'] }));
 
@@ -254,9 +261,13 @@ describe('the checks', () => {
     ]);
   });
 
-  it('an identity factor that is not a slot; a confirmed or fields param need not be one (a picked time, a record id)', () => {
-    expect(actionsWith({ fileRequest: { ...ACTIONS.fileRequest, rules: [...ACTIONS.fileRequest.rules, { fields: ['report', 'note'] }] }, sendCode: { level: 1, rules: ['identity', { confirmed: ['accountId', 'note'] }] } })).toEqual([]);
-    expect(actionsWith({ fileRequest: { level: 2, rules: [{ confirmed: ['time'] }, { custom: 'not-twice' }] } })).toEqual([]);
+  it('an identity factor that is not a slot; a confirmed or fields param need not be one (a picked time, a record id), if the tool lists it and audit declares it', () => {
+    const fileRequest = { ...ACTIONS.fileRequest, rules: [...ACTIONS.fileRequest.rules, { fields: ['report', 'note'] }] };
+    const withReport = { ...TOOLS, fileRequest: { params: ['accountId', 'note', 'report'] } };
+    const checked = (actions: Record<string, unknown>, audit: Record<string, string>, tools: Record<string, unknown> = withReport): string[] =>
+      problemsOf(() => definePolicy({ actions: { ...ACTIONS, ...actions }, audit }, { identity: IDENTITY, tools, slots: SLOTS, customRules: RULES }));
+    expect(checked({ fileRequest, sendCode: { level: 1, rules: ['identity', { confirmed: ['accountId', 'note'] }] } }, { ...AUDIT, report: 'keep' })).toEqual([]);
+    expect(checked({ fileRequest: { level: 2, rules: [{ confirmed: ['time'] }, { custom: 'not-twice' }] } }, { ...AUDIT, time: 'keep' }, { ...TOOLS, fileRequest: { params: ['time'] } })).toEqual([]);
     expect(identityWith({ levels: { ...IDENTITY.levels, 1: { ...IDENTITY.levels[1], factors: ['acountId', 'dob'] } } })).toEqual([
       'levels["1"].factors[0]: slot "acountId" is not defined -> rename it to "accountId", or add it to the app\'s slots',
     ]);
@@ -378,7 +389,7 @@ describe('the checks', () => {
 
 describe('the checks: redaction (redact:)', () => {
   /** The small app with getRecord declaring the fields of its result the policy may withhold. */
-  const FIELDED = { ...TOOLS, getRecord: { fields: ['notes', 'reason'] } };
+  const FIELDED = { ...TOOLS, getRecord: { params: ['recordId'], fields: ['notes', 'reason'] } };
   const redactWith = (redact: unknown, identity: Record<string, unknown> | null = IDENTITY, tools: Record<string, unknown> = FIELDED): string[] =>
     problemsOf(() => definePolicy({ ...POLICY, redact }, { ...(identity ? { identity } : {}), tools, slots: SLOTS, customRules: RULES }));
 
@@ -418,10 +429,81 @@ describe('the checks: redaction (redact:)', () => {
   });
 
   it('the fields a tool declares must be a list of distinct names', () => {
-    expect(redactWith({}, IDENTITY, { ...TOOLS, getRecord: { fields: ['notes', 'notes', 'a b'] }, sendCode: { fields: 'phone' } })).toEqual([
+    expect(redactWith({}, IDENTITY, { ...TOOLS, getRecord: { params: ['recordId'], fields: ['notes', 'notes', 'a b'] }, sendCode: { params: ['accountId'], fields: 'phone' } })).toEqual([
       'code.tools.getRecord.fields: tool "getRecord": field "notes" is listed twice -> make code.tools.getRecord.fields a list of the distinct fields of its result the policy may withhold',
       'code.tools.getRecord.fields: tool "getRecord": fields[2] ("a b") is not a field name: it must start with a letter and use only letters, digits and underscores -> make code.tools.getRecord.fields a list of the distinct fields of its result the policy may withhold',
       'code.tools.sendCode.fields: tool "sendCode": fields is not a list of the fields of its result -> make code.tools.sendCode.fields a list of the distinct fields of its result the policy may withhold',
+    ]);
+  });
+});
+
+describe('the checks: what is recorded (audit:)', () => {
+  const recordWith = (over: { actions?: Record<string, unknown>; audit?: Record<string, unknown>; tools?: Record<string, unknown>; slots?: Record<string, unknown> }): string[] =>
+    problemsOf(() => definePolicy({ actions: { ...ACTIONS, ...over.actions }, audit: over.audit ?? AUDIT }, { identity: IDENTITY, tools: over.tools ?? TOOLS, slots: over.slots ?? SLOTS, customRules: RULES }));
+
+  it('compiles the declarations by param name; none when nothing is declared', () => {
+    const tables = definePolicy({ ...POLICY, audit: { recordId: 'last4' } }, { identity: IDENTITY, tools: TOOLS, slots: SLOTS, customRules: RULES });
+    expect(tables.audit).toEqual({ recordId: 'last4' });
+    const none = definePolicy({ actions: { checkFactors: ACTIONS.checkFactors, checkCode: ACTIONS.checkCode, sendCode: ACTIONS.sendCode } }, { identity: IDENTITY, tools: { checkFactors: TOOLS.checkFactors, checkCode: TOOLS.checkCode, sendCode: TOOLS.sendCode }, slots: SLOTS });
+    expect(none).not.toHaveProperty('audit');
+  });
+
+  it('a param a tool lists that is neither a slot with a redact setting nor declared, with both ways out', () => {
+    expect(recordWith({ audit: {} })).toEqual([
+      'actions.getRecord: the param "recordId" of "getRecord" (code.tools.getRecord.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said -> declare it under audit in policy.yaml ("recordId: keep" to record it as it is, or last4, mask, length or secret), or make "recordId" a slot with a redact setting',
+    ]);
+    // A slot with no redact setting is recorded as it is unless audit says otherwise: it is declared too.
+    expect(recordWith({ slots: { ...SLOTS, note: {} } })).toEqual([
+      'actions.fileRequest: the param "note" of "fileRequest" (code.tools.fileRequest.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said -> declare it under audit in policy.yaml ("note: keep" to record it as it is, or last4, mask, length or secret), or give the slot "note" a redact setting',
+      'actions.sendCode: the param "note" of "sendCode" (code.tools.sendCode.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said -> declare it under audit in policy.yaml ("note: keep" to record it as it is, or last4, mask, length or secret), or give the slot "note" a redact setting',
+    ]);
+    expect(recordWith({ slots: { ...SLOTS, note: {} }, audit: { ...AUDIT, note: 'mask' } })).toEqual([]);
+  });
+
+  it('a tool that does not list its params, and params that are not a list of distinct names', () => {
+    expect(recordWith({ tools: { ...TOOLS, sendCode: {} } })).toEqual([
+      'actions.sendCode: tool "sendCode" does not list the params its calls carry (code.tools.sendCode.params), so what is recorded of them cannot be checked -> add "params: [<each param its calls carry>]" to code.tools.sendCode ("params: []" for none)',
+    ]);
+    expect(recordWith({ tools: { ...TOOLS, getRecord: { params: ['recordId', 'recordId', 'a b'] }, sendCode: { params: 'accountId' } } })).toEqual([
+      'actions.getRecord: the param "a b" of "getRecord" (code.tools.getRecord.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said -> declare it under audit in policy.yaml ("a b: keep" to record it as it is, or last4, mask, length or secret), or make "a b" a slot with a redact setting',
+      'actions.sendCode: tool "sendCode" does not list the params its calls carry (code.tools.sendCode.params), so what is recorded of them cannot be checked -> add "params: [<each param its calls carry>]" to code.tools.sendCode ("params: []" for none)',
+      'code.tools.getRecord.params: tool "getRecord": param "recordId" is listed twice -> make code.tools.getRecord.params a list of the distinct params its calls carry',
+      'code.tools.getRecord.params: tool "getRecord": params[2] ("a b") is not a param name: it must start with a letter and use only letters, digits and underscores -> make code.tools.getRecord.params a list of the distinct params its calls carry',
+      'code.tools.sendCode.params: tool "sendCode": params is not a list of the params its calls carry -> make code.tools.sendCode.params a list of the distinct params its calls carry',
+    ]);
+  });
+
+  it('a param a scope, confirmed or fields rule names that the tool does not list', () => {
+    expect(recordWith({
+      actions: {
+        getRecord: { level: 1, rules: ['identity', { scope: { record: 'recordID' } }] },
+        fileRequest: { level: 2, rules: ['identity', { confirmed: ['accountId', 'note'] }, { fields: ['note', 'branch'] }, { custom: 'not-twice' }] },
+      },
+    })).toEqual([
+      'actions.getRecord.rules[1].scope.record: the scope rule of "getRecord" names "recordID", which the tool does not list in its params (recordId) -> rename it to "recordId", or add "recordID" to code.tools.getRecord.params, or correct the rule',
+      'actions.fileRequest.rules[2].fields[1]: the fields rule of "fileRequest" names "branch", which the tool does not list in its params (accountId, note) -> add "branch" to code.tools.fileRequest.params, or correct the rule',
+    ]);
+  });
+
+  it('a declaration of a redacted slot, and one no tool sends, with the closest', () => {
+    expect(recordWith({ audit: { ...AUDIT, accountId: 'keep', recordID: 'keep' } })).toEqual([
+      'audit.accountId: "accountId" is a slot recorded by its redact setting (last4), so audit does not declare it -> delete it here: the slot\'s redact setting says how it is recorded',
+      'audit.recordID: no tool lists "recordID" in its params, so the declaration is never used -> rename it to "recordId", or delete it, or add "recordID" to the params of the tool whose calls carry it',
+    ]);
+  });
+
+  it('with no tools to read params from: each confirmed or fields entry is a slot or declared', () => {
+    const fileRequest = { level: 2, rules: ['identity', { confirmed: ['accountId', 'time'] }, { fields: ['report', 'note'] }] };
+    expect(problemsOf(() => definePolicy({ actions: { fileRequest } }, { identity: IDENTITY, slots: SLOTS }))).toEqual([
+      'actions.fileRequest.rules[1].confirmed[1]: "time" is neither a slot nor a param declared under audit, so how it is recorded is not said -> declare it under audit ("time: keep" to record it as it is, or last4, mask, length or secret), or name a slot',
+      'actions.fileRequest.rules[2].fields[0]: "report" is neither a slot nor a param declared under audit, so how it is recorded is not said -> declare it under audit ("report: keep" to record it as it is, or last4, mask, length or secret), or name a slot',
+    ]);
+    expect(problemsOf(() => definePolicy({ actions: { fileRequest }, audit: { time: 'keep', report: 'keep' } }, { identity: IDENTITY, slots: SLOTS }))).toEqual([]);
+  });
+
+  it('a declaration that is not one of the five', () => {
+    expect(recordWith({ audit: { recordId: 'hide' } })).toEqual([
+      'audit.recordId: "recordId" is "hide", which is not allowed here; it must be one of "last4", "mask", "length", "secret", "keep" -> use one of "last4", "mask", "length", "secret", "keep"',
     ]);
   });
 });

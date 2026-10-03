@@ -44,7 +44,8 @@ const problemsOf = (build: () => unknown): string[] => {
   return [];
 };
 
-const TOOLS = { refundOrder: {}, returnItem: {} };
+/** The two tools, each with the params its calls may carry (ToolDef.params). */
+const TOOLS = { refundOrder: { params: ['orderId', 'amount', 'returnDate', 'pickupDate'] }, returnItem: { params: [] } };
 const LOOKUPS = ['orderTotal', 'returnWindow', 'order'];
 const refund = (rules: unknown[]) => ({ actions: { refundOrder: { level: 0, rules }, returnItem: { level: 0, rules: [] } } });
 const policyWith = (rules: unknown[], lookups: readonly string[] = LOOKUPS): string[] => problemsOf(() => definePolicy(refund(rules), { tools: TOOLS, lookups }));
@@ -153,8 +154,13 @@ describe('policy.yaml: the range rules checked', () => {
       'actions.refundOrder.rules[1].limit.field: "amont" is not a param "refundOrder" sends (its confirmed rule lists orderId, amount) -> rename it to "amount", or name one of those, or add "amont" to its confirmed rule',
       'actions.refundOrder.rules[1].limit.max: orderTotal(order) reads "order", which is not a param "refundOrder" sends (its confirmed rule lists orderId, amount) -> rename it to "orderId", or call the lookup with one of those, or add "order" to its confirmed rule',
     ]);
-    // With no fields or confirmed rule, the params an action sends are not known: nothing to check them against.
-    expect(policyWith([{ limit: { field: 'anything', max: 'orderTotal(whatever)' } }])).toEqual([]);
+    // With no fields or confirmed rule, the params an action sends are the ones its tool lists (ToolDef.params).
+    expect(policyWith([{ limit: { field: 'amonut', max: 'orderTotal(ordrId)' } }])).toEqual([
+      'actions.refundOrder.rules[0].limit.field: "amonut" is not a param "refundOrder" sends (its tool lists orderId, amount, returnDate, pickupDate) -> rename it to "amount", or name one of those, or add "amonut" to code.tools.refundOrder.params',
+      'actions.refundOrder.rules[0].limit.max: orderTotal(ordrId) reads "ordrId", which is not a param "refundOrder" sends (its tool lists orderId, amount, returnDate, pickupDate) -> rename it to "orderId", or call the lookup with one of those, or add "ordrId" to code.tools.refundOrder.params',
+    ]);
+    // And with neither, they are not known: nothing to check them against.
+    expect(problemsOf(() => definePolicy(refund([{ limit: { field: 'anything', max: 'orderTotal(whatever)' } }]), { lookups: LOOKUPS }))).toEqual([]);
   });
 
   it('the code\'s lookups are plain words of its own; an app\'s own rule may not take a range rule\'s name', () => {
@@ -233,6 +239,11 @@ actions:
   listLoans:
     level: 0
     rules: [identity]
+audit:
+  book: keep
+  branch: keep
+  due: keep
+  fee: keep
 `;
 
 const dirs: string[] = [];
@@ -254,6 +265,8 @@ function rangeApp(): App {
   const termsOf = (book: string) => (Object.hasOwn(TERMS, book) ? TERMS[book]! : null);
   return defineApp(dir, {
     ...libraryCode,
+    // A renewal carries its new due date and its fee beside the book.
+    tools: { ...libraryCode.tools, renewLoan: { ...libraryCode.tools.renewLoan!, params: ['book', 'due', 'fee'] } },
     lookups: ['renewWindow', 'renewTerms'],
     systems: () => ({
       sys: new LibrarySystems(),

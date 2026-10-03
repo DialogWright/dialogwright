@@ -13,15 +13,22 @@ import { clinicApp, code } from './index';
  * __fixtures__/legacy/policy.yaml, with the comments rewritten and an action's words added by
  * hand), and it compiles to exactly the tables the clinic ran before (__fixtures__/frozen.ts), so
  * the gate decides every case as it did. The clinic verifies no one, so it has no identity.yaml and
- * the attempts rule's number is the engine's default (no action runs the rule).
+ * the attempts rule's number is the engine's default (no action runs the rule). What the old file
+ * could not say, how each param that is no redacted slot is recorded (audit), is added by hand:
+ * each as it is, as it was recorded before.
  */
+
+/** How the clinic records the params no redacted slot covers: as they are, as before. */
+const AUDIT = { name: 'keep', provider: 'keep', date: 'keep', time: 'keep' };
 
 const POLICY = fileURLToPath(new URL('../policy.yaml', import.meta.url));
 const LEGACY = fileURLToPath(new URL('./__fixtures__/legacy', import.meta.url));
 
 describe('the clinic\'s policy.yaml', () => {
   it('compiles to the tables the old file gave', () => {
-    expect(clinicApp.policy).toEqual(FROZEN_CLINIC_POLICY);
+    const { audit, ...tables } = clinicApp.policy;
+    expect(tables).toEqual(FROZEN_CLINIC_POLICY);
+    expect(audit).toEqual(AUDIT);
     expect(clinicApp.policy.maxAttempts).toBe(DEFAULT_MAX_ATTEMPTS);
   });
 
@@ -31,7 +38,7 @@ describe('the clinic\'s policy.yaml', () => {
     expect(converted.unplaced).toEqual([]);
     const dir = mkdtempSync(join(tmpdir(), 'clinic-policy-'));
     try {
-      writeFileSync(join(dir, 'policy.yaml'), converted.files['policy.yaml']!);
+      writeFileSync(join(dir, 'policy.yaml'), `${converted.files['policy.yaml']!}audit:\n${Object.entries(AUDIT).map(([p, how]) => `  ${p}: ${how}\n`).join('')}`);
       expect(definePolicy(join(dir, 'policy.yaml'), { tools: code.tools, slots: clinicApp.slots })).toEqual(clinicApp.policy);
     } finally {
       rmSync(dir, { recursive: true, force: true });

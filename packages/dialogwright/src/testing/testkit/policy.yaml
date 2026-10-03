@@ -76,3 +76,14 @@ redact:
   agent.clerk:
     getParcel: []
     listParcels: []
+
+# How each value an action is sent is recorded (the gate event, the trace, the console and the
+# audit), where it is not a slot with a redact setting: the account ID is recorded by its last four,
+# the date of birth hidden and the description by its length, as their slots say. Every other param
+# the tools list (tools.ts) is declared here; these are recorded as they are.
+audit:
+  parcel: keep
+  report: keep
+  deliveryDay: keep
+  deliveryPart: keep
+  expectedDate: keep

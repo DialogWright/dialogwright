@@ -63,9 +63,12 @@ export interface RuleResult {
   readonly id: string;          // R0..R7 (R0: the tool itself is not on the approved list)
   readonly description: string; // plain English, for the console and the audit log
   /**
-   * The values compared, e.g. "record owner ...5520 · caller may see ...1234 only". It goes to the
-   * console and the audit as it is, unredacted: a rule (an app's custom rule included) must never
-   * put a raw param or slot value in it, only masked ids and words.
+   * The values compared, e.g. "record owner ...5520 · caller may see ...1234 only". A rule writes
+   * masked ids and words. On its way to the gate event, the console and the audit, the lifecycle
+   * masks in it every raw value of a param of the call that is recorded masked or never (a slot's
+   * redact, policy.yaml's `audit:`; core/recording.ts), so a rule (an app's custom rule included)
+   * that repeats one does not leak it; a value it reshapes (reformatted, split, partly quoted) is
+   * not recognised, so a rule still writes only what may be recorded.
    */
   readonly compared: string;
   readonly pass: boolean;

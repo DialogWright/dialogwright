@@ -51,8 +51,8 @@ const ACTIONS = {
   sendCode: { level: 1, rules: ['identity'] },
   checkCode: { level: 1, rules: ['identity', 'attempts'] },
 };
-const TOOLS = Object.fromEntries(Object.keys(ACTIONS).map((t) => [t, {}]));
-const tables = (): PolicyTables => definePolicy({ actions: ACTIONS }, { identity: IDENTITY, tools: TOOLS, slots: { patientId: {}, note: {} } });
+const TOOLS = { fileRequest: { params: ['patientId', 'note'] }, cancelVisit: { params: ['visit', 'patientId', 'note'] }, checkFactors: { params: ['patientId'] }, sendCode: { params: [] }, checkCode: { params: [] } };
+const tables = (): PolicyTables => definePolicy({ actions: ACTIONS, audit: { visit: 'keep' } }, { identity: IDENTITY, tools: TOOLS, slots: { patientId: { redact: 'last4' }, note: { redact: 'length' } } });
 
 describe('the compiled gate reads each rule\'s own parameters', () => {
   it('a role rule hands the call to a person for its own reason (Decision 4); the tables keep the first', () => {
@@ -129,7 +129,7 @@ describe('the compiled gate reads each rule\'s own parameters', () => {
         { name: 'a call it refuses', call: { params: { refuse: 'yes' } }, principal: patient, expect: { verdict: 'BLOCK', reason: 'refused' } },
       ],
     });
-    const policy = definePolicy({ actions: { act: { level: 0, rules: [{ custom: 'peek' }] } } }, { tools: { act: {} }, customRules: { peek } });
+    const policy = definePolicy({ actions: { act: { level: 0, rules: [{ custom: 'peek' }] } } }, { tools: { act: { params: [] } }, customRules: { peek } });
     expect(compiledPolicyOf(policy, '').evaluate({ tool: 'act', params: {} }, patient, facts, lookups).verdict).toBe('ALLOW');
     expect(seen).toBe(policy);
   });

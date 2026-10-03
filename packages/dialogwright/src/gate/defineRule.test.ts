@@ -127,7 +127,7 @@ describe('what check says about a custom rule', () => {
     const file = { actions: { act: { level: 0, rules: [{ custom: 'even' }] } } };
     const thrown = (customRules: Record<string, never>): string[] => {
       try {
-        definePolicy(file, { tools: { act: {} }, customRules });
+        definePolicy(file, { tools: { act: { params: [] } }, customRules });
       } catch (error) {
         if (error instanceof AppDefinitionError) return error.problems.map((p) => `${p.path}: ${p.message}`);
         throw error;

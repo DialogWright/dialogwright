@@ -49,13 +49,20 @@ export function callClinic<T extends ClinicTool>(c: AppContext, call: ToolCall &
 
 type Run<T extends ClinicTool> = (p: ToolCall['params'], sys: ClinicSystems, ctx: Parameters<ToolDef['run']>[2]) => { value: ClinicToolValues[T]; summary: string; ref?: string };
 
-function tool<T extends ClinicTool>(run: Run<T>): ToolDef {
-  return { run: (call, sys, ctx) => run(call.params, sys as ClinicSystems, ctx) };
+/**
+ * A tool and the params its calls carry (ToolDef.params): what `check` holds to being recorded as
+ * declared, each a slot with a redact setting or a param policy.yaml's `audit:` names.
+ */
+function tool<T extends ClinicTool>(params: readonly string[], run: Run<T>): ToolDef {
+  return { params, run: (call, sys, ctx) => run(call.params, sys as ClinicSystems, ctx) };
 }
+
+/** What every write carries, in the order the confirmed rule takes its hash over: who, with whom, and when. */
+const WRITE_PARAMS = ['name', 'dob', 'provider', 'date', 'time'] as const;
 
 /** A write: recorded as a change, with a reference the audit row carries. */
 function write(kind: ScheduleChange['kind'], done: string): ToolDef {
-  return tool((p, sys) => {
+  return tool(WRITE_PARAMS, (p, sys) => {
     const ref = sys.record({ kind, provider: p.provider ?? '', date: p.date ?? '', time: p.time ?? '' });
     return { value: { ref }, summary: `${done} ${ref}`, ref };
   });
@@ -67,11 +74,11 @@ function write(kind: ScheduleChange['kind'], done: string): ToolDef {
  * summary that named exactly what is written (R3).
  */
 export const CLINIC_TOOLS: { readonly [T in ClinicTool]: ToolDef } = {
-  findAppointment: tool<'findAppointment'>((p, sys, { tc }) => {
+  findAppointment: tool<'findAppointment'>(['name', 'dob', 'provider'], (p, sys, { tc }) => {
     const found = sys.directory(tc.todayIso).find(p.name ?? '', p.dob ?? '', p.provider ?? '');
     return { value: found, summary: found ? 'appointment found' : 'no appointment' };
   }),
-  listOpenings: tool<'listOpenings'>((p, sys, { tc }) => {
+  listOpenings: tool<'listOpenings'>(['provider', 'date'], (p, sys, { tc }) => {
     const times = sys.directory(tc.todayIso).openings(p.provider ?? '', p.date ?? '');
     return { value: times, summary: `${times.length} opening${times.length === 1 ? '' : 's'}` };
   }),

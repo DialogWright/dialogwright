@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { checkAlways, identifier, level, matching, name, text, unique } from './common';
 import { closest } from '../problems';
 import { literalOrder, parseDateBound, parseLookupRef, parseNumberBound } from '../../gate/bounded';
+import type { AuditMask } from '../../core/app/types';
 
 /**
  * policy.yaml: the whole of what the app's agent may do, one entry per action (a tool), each with
@@ -48,6 +49,15 @@ import { literalOrder, parseDateBound, parseLookupRef, parseNumberBound } from '
  * `redact:` names, by who asks (a delegate kind, or `<kind>.<role>` for one role's own list), the
  * fields of an action's result withheld from a party who acts for subjects; the tool declares the
  * fields it may lose (ToolDef.fields), and the engine strips them (core/resultRedaction.ts).
+ *
+ * `audit:` says, by param name, how each param that is not a slot with a redact setting is recorded
+ * wherever the call is (core/recording.ts): `last4`, `mask`, `length`, `secret` (never) or `keep`
+ * (as it is). Each tool lists the params its calls carry (ToolDef.params), and `check` refuses one
+ * that is neither a redacted slot nor declared here:
+ *
+ *   audit:
+ *     recordId: keep
+ *     pin: secret
  *
  * An app written before this shape (toolLevel, rulesFor, ... : the gate's tables as they are) is
  * converted with `dialogwright policy:convert`; nothing reads that shape any more.
@@ -408,6 +418,19 @@ export const policyRedact = z
   )
   .describe('What a party who acts for subjects does not get to see of what an action returns, by delegate kind (agent) or by kind and role (agent.clerk), whose list for an action replaces the kind\'s. The tool returns the whole record and the engine strips the fields before any hook, line, trace, console or audit sees it. A subject acting for themselves is never redacted. Default: nothing is withheld.');
 
+/** How a param may be recorded (policy.yaml `audit:`; core/recording.ts AUDIT_MASKS), in the order the docs list them. */
+const AUDIT_MASKS = ['last4', 'mask', 'length', 'secret', 'keep'] as const satisfies readonly AuditMask[];
+
+/** policy.yaml's audit section, as written: each param that is not a slot with a redact setting, and how it is recorded. */
+export const policyAudit = z
+  .record(
+    identifier(),
+    z
+      .enum(AUDIT_MASKS)
+      .describe('How the param is recorded: last4 (by its last four characters, "...1234"), mask (hidden, "•"), length (by its length, "<38 chars>"), secret (never: left out of the call as recorded), keep (as it is).'),
+  )
+  .describe('How each param the actions are sent is recorded, where it is not a slot with a redact setting (whose redact says so), by param name, in every action that sends it: the gate event, the trace, the console and the audit, and wherever a rule\'s line, the action\'s summary or its own audit rows repeat the value. Every param a tool lists in its params (in code) is a slot with a redact setting or is named here, and so is every field a confirmed or fields rule names that is not a slot. Default: none, so check refuses an undeclared param.');
+
 export const policySchema = z
   .strictObject({
     actions: z
@@ -419,6 +442,7 @@ export const policySchema = z
       .describe('The identity level each purpose needs (what a caller wants done, a form id, before any tool is called), when it is more than its first action\'s. Default: none.'),
     wording: policyWording.optional(),
     redact: policyRedact.optional(),
+    audit: policyAudit.optional(),
   })
   .describe('policy.yaml: what the agent may do, action by action. Custom rule functions stay in code; this file names them.');
 
