@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -9,8 +9,10 @@ import { SHORT_TMP, withShortTmp } from '../testing/shortTmp';
 /**
  * End to end: scaffold an app into a temporary folder (never under apps/), link it to this
  * repository's engine and tools the way `pnpm install` would, and run what the README tells the
- * developer to run: `dialogwright check`, the type check, the app's own tests and its stub
- * regression. Each must pass with nothing changed. Slow (it starts four processes per variant), so
+ * developer to run: `dialogwright check`, the type check, the app's own tests (its golden tests of
+ * the policy read back among them) and its stub regression, and the three commands that write the
+ * read back (policy:matrix, policy:card, app:diagram), which must find every page as it shipped.
+ * Each must pass with nothing changed. Slow (it starts seven processes per variant), so
  * it is two cases: the plain app and the one with identity.
  */
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -58,11 +60,21 @@ describe('a scaffolded app, end to end', () => {
 
     // `pnpm check` is this command, run for the one folder.
     expect(node(PACKAGE_DIR, tool('tsx', 'dist', 'cli.mjs'), ['src/define/cli.ts', 'check', app]).trim()).toBe(`${app}: ok`);
+    // The policy read back ships with the app: `pnpm policy:matrix`, `pnpm policy:card` and
+    // `pnpm app:diagram` find every page already what the app generates, and change no byte.
+    const pages = ['policy.matrix', 'POLICY.md', 'APP-MAP.md'];
+    const before = pages.map((page) => readFileSync(join(app, page), 'utf8'));
+    for (const [command, page] of [['policy:matrix', 'policy.matrix'], ['policy:card', 'POLICY.md'], ['app:diagram', 'APP-MAP.md']] as const) {
+      expect(node(PACKAGE_DIR, tool('tsx', 'dist', 'cli.mjs'), ['src/define/cli.ts', command, app]).trim(), command).toMatch(new RegExp(`${page.replace('.', '\\.')}: unchanged$`));
+    }
+    expect(pages.map((page) => readFileSync(join(app, page), 'utf8'))).toEqual(before);
     // `pnpm --filter ... typecheck`: no output, exit 0.
     expect(node(app, tool('typescript', 'bin', 'tsc'), ['--noEmit'])).toBe('');
     // `pnpm --filter ... test`
+    // Its golden tests among them: the matrix, the card and the map against what the app generates.
     const tests = node(app, tool('vitest', 'vitest.mjs'), ['run']);
     expect(tests).toMatch(/Test Files\s+2 passed/);
+    expect(tests).not.toMatch(/skipped|todo/);
     // `pnpm --filter ... regress`: the baseline that shipped, no changes.
     const regress = node(app, tool('tsx', 'dist', 'cli.mjs'), ['src/regress.ts']);
     expect(regress).toContain('no changes');

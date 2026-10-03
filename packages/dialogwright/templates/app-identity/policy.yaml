@@ -5,9 +5,10 @@
 #
 # `level` is the identity level the action needs (0 anonymous, 1 the factors in identity.yaml
 # matched). `rules` run in the order written and the first that fails decides: `identity` is the
-# level, `attempts` the failed tries at the identity checks, `confirmed` the fields a confirmed write
-# carries, in the order the confirmation hash is taken over (the write matches exactly what the
-# caller said yes to).
+# level, `attempts` the failed tries at the identity checks, `scope` that the account the call names
+# is one the caller may see (scopeOf in src/app.ts: a verified customer their own), `confirmed` the
+# fields a confirmed write carries, in the order the confirmation hash is taken over (the write
+# matches exactly what the caller said yes to).
 actions:
   # Checks the factors. Anyone may try it, so it is level 0, and the gate counts the failed tries.
   verifyCustomer:
@@ -19,12 +20,15 @@ actions:
   findAccount:
     say: look up the account
     level: 1
-    rules: [identity]
+    rules:
+      - identity
+      - scope: { param: accountId }
   bookService:
     say: book a service
     level: 1
     rules:
       - identity
+      - scope: { param: accountId }
       - confirmed: [accountId, service]
 
 # How each value an action is sent is recorded (the gate event, the trace, the console and the

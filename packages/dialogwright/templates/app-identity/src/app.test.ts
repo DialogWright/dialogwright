@@ -1,6 +1,8 @@
-import { checkApp, formatProblem } from 'dialogwright';
+import { fileURLToPath } from 'node:url';
+import { ANONYMOUS, checkApp, formatProblem } from 'dialogwright';
+import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, policyInvariants, runRuleExamples } from 'dialogwright/testing';
 import { describe, expect, it } from 'vitest';
-import { APP_DIR, Systems, TOOLS, app, code } from './app';
+import { APP_DIR, Systems, TOOLS, app, code, scopeOf } from './app';
 
 describe('the app folder', () => {
   it('passes dialogwright check: the folder, the code and the corpus agree', async () => {
@@ -23,10 +25,42 @@ describe('the app folder', () => {
   });
 });
 
+describe('the policy read back', () => {
+  // The three pages beside policy.yaml are generated, reviewed and committed with it: after a change
+  // to policy.yaml, identity.yaml or the forms, run the command a failure names, read the diff as a change
+  // in what the agent may do, and commit it. Never rewrite one only to make a test pass.
+  const page = (file: string): string => fileURLToPath(new URL(`../${file}`, import.meta.url));
+
+  it('holds to the policy invariants on the gate grid', () => expect(policyInvariants(app).violations).toEqual([]));
+
+  it('has no custom rule whose examples the gate disagrees with', () => expect(runRuleExamples(app)).toEqual([]));
+
+  it('policy.matrix is what the gate decides', () => {
+    expectPolicyMatrix(app, page('policy.matrix'), `pnpm policy:matrix ${APP_DIR}`);
+  });
+
+  it('POLICY.md is the policy card the app generates', () => {
+    expectPolicyCard(app, page('POLICY.md'), `pnpm policy:card ${APP_DIR}`);
+  });
+
+  it('APP-MAP.md is the app map the app generates', () => {
+    expectAppMap(app, page('APP-MAP.md'), `pnpm app:diagram ${APP_DIR}`);
+  });
+
+  it('has no dangling reference: every form is started by an intent and every action is reached', () => {
+    expect(danglingReferences(app)).toEqual([]);
+  });
+});
+
 describe('identity', () => {
   it('verifies a caller with an account number and a date of birth, and the booking needs them (level 1)', () => {
     expect(app.identity).toMatchObject({ subjectKind: 'customer', factorSlots: ['accountId', 'dob'], verifyTool: 'verifyCustomer' });
     expect(app.policy.toolLevel).toMatchObject({ verifyCustomer: 0, findAccount: 1, bookService: 1 });
+  });
+
+  it('lets a verified customer name their own account, and no one else any account (the scope rule)', () => {
+    expect(scopeOf({ kind: 'customer', level: 1, id: '55501234', first: 'Avery' })).toEqual(['55501234']);
+    expect(scopeOf(ANONYMOUS)).toEqual([]);
   });
 
   it('verifies only when both factors match one account', async () => {

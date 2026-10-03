@@ -14,6 +14,9 @@ policy.yaml     what the agent may do, action by action: the level and the rules
 identity.yaml   how a caller proves who they are: the factors, the verify tool, how many tries
 {{/identity}}
 slots.yaml      every slot, in the order the engine works through them
+policy.matrix   what the gate decides, for every action and every kind of caller (generated)
+POLICY.md       the policy card: the policy in plain English, with its diagrams (generated)
+APP-MAP.md      the app map: intents, forms, slots, actions and rules as diagrams (generated)
 src/app.ts      the code: the tools and the form hooks, joined to the folder by defineApp
 src/data.ts     the fixture data behind the stub tool
 fixtures/       the corpus, the scripted calls and the stub baseline
@@ -33,6 +36,8 @@ pnpm --filter @dialogwright/example-{{name}} regress   # the stub regression: pr
 pnpm --filter @dialogwright/example-{{name}} regress --scenario <id>  # one scripted call, turn by turn (--corpus <id>: one corpus line)
 pnpm --filter @dialogwright/example-{{name}} cli --client heuristic   # a text console, with no keys
 ```
+
+The three generated pages are the policy read back: compliance reads them, and `src/app.test.ts` fails when one is not what the app generates. They ship matching the example. After a change to the policy, the forms or the tools, write them again with `pnpm policy:matrix apps/{{name}}`, `pnpm policy:card apps/{{name}}` and `pnpm app:diagram apps/{{name}}`, read each diff as a change in what the agent may do, and commit them with the change.
 
 Nothing here needs an API key. The engine's stub clients stand in for the decision model, answering from the labels in `fixtures/corpus.jsonl`.
 

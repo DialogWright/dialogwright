@@ -156,7 +156,7 @@ Add the app's regression to CI: `- run: pnpm --filter @dialogwright/example-<nam
 
 ## Step 7: Read the policy back
 
-Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write. Add `testing.policyMatrix` and the policy tests in [patterns.md](patterns.md#testing-the-policy), then write the policy matrix, the policy card and the app map:
+Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write. The scaffold ships the example's read back: `testing.policyMatrix` in `src/app.ts`, the three pages beside `policy.yaml`, and their tests in `src/app.test.ts` ("the policy read back"), so from the first change to the policy, the forms or the tools those tests fail until the pages are written again. Make `testing.policyMatrix` your app's callers and records ([patterns.md](patterns.md#testing-the-policy): a principal per delegate role, the subject at each level), keep the tests, then write the policy matrix, the policy card and the app map:
 
 ```sh
 pnpm policy:matrix apps/<name>     # policy.matrix: the gate's verdict for every action and kind of caller

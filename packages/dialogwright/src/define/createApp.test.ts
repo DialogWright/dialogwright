@@ -4,6 +4,7 @@ import { join, relative, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { USAGE, main, type Io } from './cli';
+import { contentHash } from '../core/app/configHash';
 import { REPO_ROOT, createApp, displayNameOf, markOf, nameProblem, render, templateFiles } from './createApp';
 
 const scratch: string[] = [];
@@ -21,9 +22,9 @@ function walk(dir: string, base = dir): string[] {
 }
 
 const PLAIN_FILES = [
-  '.env.example', 'CLAUDE.md', 'README.md', 'app.yaml', 'fixtures/corpus.jsonl', 'fixtures/expected/corpus.json',
+  '.env.example', 'APP-MAP.md', 'CLAUDE.md', 'POLICY.md', 'README.md', 'app.yaml', 'fixtures/corpus.jsonl', 'fixtures/expected/corpus.json',
   'fixtures/expected/scenarios.json', 'fixtures/scenarios/core.json', 'forms.yaml', 'intents.yaml', 'package.json',
-  'policy.yaml', 'prompts.yaml', 'slots.yaml', 'src/app.test.ts', 'src/app.ts', 'src/cli.ts', 'src/data.ts',
+  'policy.matrix', 'policy.yaml', 'prompts.yaml', 'slots.yaml', 'src/app.test.ts', 'src/app.ts', 'src/cli.ts', 'src/data.ts',
   'src/fixtures.test.ts', 'src/index.ts', 'src/regress.ts', 'src/serve.ts', 'src/testing/setup.ts', 'tsconfig.json', 'vitest.config.ts',
 ];
 
@@ -147,6 +148,25 @@ describe('createApp', () => {
     expect(readdirSync(existing)).toEqual(['keep.txt']);
   });
 
+  it('ships the policy read back for any name: the pages need only the name and display put in', () => {
+    // The card embeds policy.yaml's and identity.yaml's hashes, which are of the parsed content: the
+    // name, the display and the folder appear only in comments there, so every scaffold of a variant
+    // has the hashes the shipped card has. The end-to-end test runs the three commands on a fresh one.
+    const hashes = (identity: boolean, values: Record<string, string>): string[] => {
+      const files = templateFiles(identity);
+      return ['policy.yaml', 'identity.yaml'].filter((f) => files.has(f)).map((f) => contentHash(parse(render(files.get(f)!, values, identity))));
+    };
+    for (const identity of [false, true]) {
+      const card = render(templateFiles(identity).get('POLICY.md')!, { name: 'a', display: 'A', mark: 'AA', root: '..' }, identity);
+      const one = hashes(identity, { name: 'demo', display: 'Demo', mark: 'DE', root: '../..' });
+      expect(hashes(identity, { name: 'water-utility', display: 'Example Water & Light', mark: 'EW', root: '../../../x/y' })).toEqual(one);
+      for (const hash of one) expect(card, `identity ${identity}`).toContain(`\`${hash}\``);
+      for (const page of ['policy.matrix', 'POLICY.md', 'APP-MAP.md']) {
+        expect(render(templateFiles(identity).get(page)!, { name: 'n', display: 'D', mark: 'DD', root: '.' }, identity).match(/\{\{|\}\}/g), page).toBeNull();
+      }
+    }
+  });
+
   it('has an .env.example with names only, and no value', () => {
     const dir = join(temp(), 'demo');
     createApp({ name: 'demo', dir });
@@ -157,7 +177,7 @@ describe('createApp', () => {
 
   it('keeps the vocabulary of the template neutral and its data invented', () => {
     // One industry's words, written in pieces so that this file keeps to the rule it checks.
-    const words = ['cla' + 'ims?', 'cover' + 'age', 'insur' + 'ance', 'insur' + 'er', 'bro' + 'ker', 'mem' + 'ber', 'policy' + 'holder', 'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent'];
+    const words = ['cla' + 'ims?', 'cover' + 'age', 'insur' + 'ance', 'insur' + 'er', 'bro' + 'ker', 'mem' + 'ber', 'policy' + 'holder', 'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent', 'har' + 'bor'];
     const banned = new RegExp(`\\b(${words.join('|')})\\b`, 'i');
     for (const identity of [false, true]) {
       for (const [file, text] of templateFiles(identity)) {
@@ -177,7 +197,7 @@ describe('dialogwright create-app', () => {
     expect(code).toBe(0);
     expect(err).toEqual([]);
     expect(existsSync(join(base, 'my', 'demo', 'identity.yaml'))).toBe(true);
-    expect(out[0]).toBe('created my/demo: 26 files, with identity.yaml, for "Demo"');
+    expect(out[0]).toBe('created my/demo: 29 files, with identity.yaml, for "Demo"');
     const text = out.join('\n');
     expect(text).toContain('Next:');
     expect(text).toContain('not directly under apps/');
@@ -232,7 +252,7 @@ describe('dialogwright create-app', () => {
     expect(installed).toEqual([root]);
     expect(err[0]).toContain('pnpm install failed');
     expect(out.join('\n')).toContain('1. pnpm install');
-    expect(out[0]).toBe('created apps/demo: 25 files, without identity.yaml, for "Demo"');
+    expect(out[0]).toBe('created apps/demo: 28 files, without identity.yaml, for "Demo"');
   });
 
   it('does not run pnpm install with --no-install, and skips the step when it worked', async () => {

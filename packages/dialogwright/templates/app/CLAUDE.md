@@ -9,7 +9,8 @@
 {{#identity}}
 - `identity.yaml`: how a caller proves who they are (the factors, the verify tool and the number of tries).
 {{/identity}}
-- `src/app.ts`: the tools and the form hooks, joined to the folder by `defineApp`. `src/data.ts`: the fixture data behind the stub tool.
+- `policy.matrix`, `POLICY.md` and `APP-MAP.md`: the policy read back, generated from the folder and the code (what the gate decides for every action and every kind of caller, the policy in plain English, and the app as diagrams). They ship matching the example; `src/app.test.ts` fails when one differs from what the app generates.
+- `src/app.ts`: the tools and the form hooks, joined to the folder by `defineApp`, and `testing.policyMatrix`, the callers and accounts the matrix crosses. `src/data.ts`: the fixture data behind the stub tool.
 - `fixtures/`: `corpus.jsonl` (labelled utterances, every intent has some), `scenarios/` (scripted calls) and `expected/` (the stub baseline). A corpus line's `answers` field (`"answers":{"addressedToSystem":{"noul":0.15}}` on the side-speech line) sets the stub's answer to one of the engine's own questions; `noul` is a yes-or-no answer's probability of yes. See `.claude/skills/create-app/corpus.md`.
 
 ## Commands
@@ -26,9 +27,17 @@ pnpm --filter @dialogwright/example-{{name}} regress --scenario <id>  # one scri
 
 `pnpm check` prints one line per problem, `file:line:column  path  message  ->  fix`. Act on the fix text.
 
+After a change to `policy.yaml`{{#identity}}, `identity.yaml`{{/identity}}, the forms or the tools, write the read back again and read each diff as a change in what the agent may do (the folder may be given by its path from the repository root):
+
+```sh
+pnpm policy:matrix apps/{{name}}
+pnpm policy:card apps/{{name}}
+pnpm app:diagram apps/{{name}}
+```
+
 ## Before committing
 
-Run `pnpm check`, then this app's typecheck, tests and `regress`, then the root checks (`pnpm verify` and the other apps' regressions). Never regenerate the baseline or a snapshot to make something pass: a changed output is a finding to explain. The one exception is this app's first baseline, made once with `regress --update` and reviewed in full. Never run `regress --client record`: recording calls a paid API and is for the owner of the app to do.
+Run `pnpm check`, then this app's typecheck, tests and `regress`, then the root checks (`pnpm verify` and the other apps' regressions). Never regenerate the baseline, a snapshot or a page of the read back to make something pass: a changed output is a finding to explain. The one exception is this app's first baseline, made once with `regress --update` and reviewed in full. Never run `regress --client record`: recording calls a paid API and is for the owner of the app to do.
 
 ## Rules for this app
 

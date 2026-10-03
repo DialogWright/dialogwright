@@ -92,6 +92,32 @@ export const code: AppCode = {
       caller: () => ANONYMOUS,
       placeholders: { service: { value: 'repair', display: 'a repair' } },
     },
+    // The callers and accounts the gate grid crosses with every action, for the policy read back:
+    // `pnpm policy:matrix` writes policy.matrix from them, `pnpm policy:card` POLICY.md and
+    // `pnpm app:diagram` APP-MAP.md, and src/app.test.ts fails when one differs from what the app
+    // generates. The app verifies no one and no one acts for others, so every caller gets the same
+    // answers; the grid still tries a delegate whose role no rule names, one with no role, and a party
+    // of another kind, so a rule added later that treats them differently shows in the matrix. When
+    // callers verify or act for others, give each kind and role its own principal here.
+    policyMatrix: () => ({
+      principals: {
+        subject1: { kind: 'customer', level: 1, id: '55501234', first: 'Avery' },
+        subject2: { kind: 'customer', level: 2, id: '55501234', first: 'Avery' },
+        delegates: {},
+        unlistedRole: { kind: 'staff', level: 2, id: 'S-1', first: 'Quinn', role: 'assistant' },
+        roleless: { kind: 'staff', level: 2, id: 'S-2', first: 'Rowan' },
+        otherParty: { kind: 'visitor', level: 2, id: 'V-1', first: 'Robin' },
+      },
+      // The accounts a call names: the caller's own, another's, one no one here may see, and one that
+      // does not exist. A record id is needed only for a `scope: { record }` rule.
+      records: {
+        own: { subject: '55501234' },
+        inScope: { subject: '55505678' },
+        outOfScope: { subject: '55509012' },
+        unknown: { subject: '55500000' },
+      },
+      values: { service: 'repair' },
+    }),
   },
 };
 

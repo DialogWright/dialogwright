@@ -469,7 +469,7 @@ place:
 
 Three kinds of test, all from `'dialogwright/testing'`.
 
-**The policy matrix** is the reviewed record of what the gate decides: under each action, a row per kind of caller with the verdict and its reason, then each custom rule's examples. It lives beside `policy.yaml` as `policy.matrix`, and it is how you read the policy back (step 7). The gate grid behind it needs the app's callers and records, `testing.policyMatrix` in `src/app.ts`:
+**The policy matrix** is the reviewed record of what the gate decides: under each action, a row per kind of caller with the verdict and its reason, then each custom rule's examples. It lives beside `policy.yaml` as `policy.matrix`, and it is how you read the policy back (step 7). The scaffold ships one for its example, with the card, the map and the tests below; replace the example's callers and records with your own. The gate grid behind it needs the app's callers and records, `testing.policyMatrix` in `src/app.ts`:
 
 ```ts
 // src/app.ts, in code

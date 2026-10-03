@@ -139,6 +139,32 @@ export const code: AppCode = {
         service: { value: 'repair', display: 'a repair' },
       },
     },
+    // The callers and accounts the gate grid crosses with every action, for the policy read back:
+    // `pnpm policy:matrix` writes policy.matrix from them, `pnpm policy:card` POLICY.md and
+    // `pnpm app:diagram` APP-MAP.md, and src/app.test.ts fails when one differs from what the app
+    // generates. A verified customer at each level; no one acts for others yet (`delegates` is empty,
+    // one principal per role when identity.yaml has delegates), but the grid still tries a delegate
+    // whose role no rule names, one with no role, and a party of another kind.
+    policyMatrix: () => ({
+      principals: {
+        subject1: { kind: 'customer', level: 1, id: ACCOUNTS[0]!.accountId, first: ACCOUNTS[0]!.first },
+        subject2: { kind: 'customer', level: 2, id: ACCOUNTS[0]!.accountId, first: ACCOUNTS[0]!.first },
+        delegates: {},
+        unlistedRole: { kind: 'staff', level: 2, id: 'S-1', first: 'Quinn', role: 'assistant' },
+        roleless: { kind: 'staff', level: 2, id: 'S-2', first: 'Rowan' },
+        otherParty: { kind: 'visitor', level: 2, id: 'V-1', first: 'Robin' },
+      },
+      // The accounts a call names (the `scope` rule's accountId): the caller's own, another
+      // customer's, one no one here may see, and one that does not exist. A record id is needed
+      // only for a `scope: { record }` rule.
+      records: {
+        own: { subject: ACCOUNTS[0]!.accountId },
+        inScope: { subject: ACCOUNTS[1]!.accountId },
+        outOfScope: { subject: '55509012' },
+        unknown: { subject: '55500000' },
+      },
+      values: { service: 'repair', dob: ACCOUNTS[0]!.dob },
+    }),
   },
 };
 

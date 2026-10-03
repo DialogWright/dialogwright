@@ -44,6 +44,8 @@ describe('dialogwright policy:card and app:diagram', () => {
   it('finds every folder with a page, and the App a folder exports', async () => {
     expect(findPageFolders(ROOT, 'POLICY.md').map((d) => relative(ROOT, d))).toEqual(expect.arrayContaining(FOLDERS));
     expect(findPageFolders(ROOT, 'APP-MAP.md').map((d) => relative(ROOT, d))).toEqual(expect.arrayContaining(FOLDERS));
+    // create-app's templates ship both pages with the app's name still to be put in: no app is there.
+    for (const page of ['POLICY.md', 'APP-MAP.md']) expect(findPageFolders(ROOT, page).filter((d) => d.includes('templates'))).toEqual([]);
     expect(await loadFolderApp(LIBRARY_DIR)).toBe(libraryApp);
   });
 
