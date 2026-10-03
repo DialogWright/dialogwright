@@ -195,10 +195,63 @@ actions:
 
 - `level` is the identity level the action needs (0 anonymous, 1 the factors matched, 2 the factors and a one-time code; `identity.yaml` names them). An action with no level needs the highest, so one left without fails closed. An action may also have a `say`, what it does in plain words.
 - `rules` is a list: a rule with no parameters is its bare name, and a rule with parameters is a one-key map. `identity` is the level, `attempts` the failed tries at the identity checks, `scope: { param: accountId }` (or `record: recordId`, a record the gate resolves to its owner) whose record it is, `role: { viewer: refuse, clerk: person, reason: staff-filing }` what each role may do (`allow`, `refuse`, or `person`, a person takes the call, for the reason named, `role-person` by default), `confirmed: [book]` the fields a confirmed write carries, in the order the confirmation hash is taken over (the write matches exactly what the caller said yes to), `fields: [note, date]` the fields sent on to a downstream service, and `custom: known-branch` a rule of the app's own, written in the code. Every tool in the code needs an action here; a tool with no action cannot be called.
+- `dateInRange` and `limit` hold one param's value to bounds; the next section has them.
 - `purposes` (`purposes: { renew: { level: 1 } }`) is the level a purpose needs when it is more than its first action's.
 - `wording` holds the words the rules use in the audit and the console.
 
 A file written before this shape (`toolLevel`, `rulesFor`, ...) is converted with `dialogwright policy:convert <folder>`, which keeps its decisions and its comments, and says which rows it dropped because no rule read them.
+
+#### The range rules: `dateInRange` and `limit`
+
+Two built-in rules hold a param's value to bounds, so a common check needs no code. A store's refund, say: the amount at most the order's total, the return date no later than today and inside the order's return window.
+
+```yaml
+actions:
+  refundOrder:
+    level: 2
+    rules:
+      - identity
+      - scope: { record: orderId }
+      - fields: [orderId, amount, returnDate]
+      - limit: { field: amount, min: 0.01, max: orderTotal(orderId) }
+      - dateInRange:
+          field: returnDate
+          notAfter: today
+          within: returnWindow(orderId)
+          reasons: { outsideWindow: late-return }
+          verdicts: { outsideWindow: NEEDS_HUMAN }
+```
+
+- `dateInRange: { field, notBefore?, notAfter?, within?, reasons?, verdicts? }`. `field` is the param holding the date, `yyyy-mm-dd` and a day the calendar has. `notBefore` and `notAfter` are `today` (the call session's date, never the clock), a date, or a reference to a lookup that gives one. `within` is a reference to a lookup that gives a window, `{ start, end }` with `end: null` for one with no end; a lookup that gives `null` has no window, and the date is outside it. At least one of the three.
+- `limit: { field, min?, max?, reasons?, verdicts? }`. `field` is the param holding the number: an optional minus, digits, an optional point and digits (`12`, `0.50`, `-3`), and nothing else (no units, currency, thousands separators, exponents or spaces). `min` and `max` are numbers, or references to a lookup that gives one (a number, or a text in the same form). At least one of the two. Numbers are compared exactly, as decimals.
+- Every bound is inclusive: a value equal to a bound, or to either end of a window, passes.
+- `reasons` names the reason the gate gives for each way the rule fails, for the app's refusal lines (`blockPromptId`) and handoffs: `invalid` (not a date: `not-a-date`; not a number: `not-a-number`), `outOfRange` (`date-range`; `limit`), and for `dateInRange` `outsideWindow` (`date-window`). `verdicts` sets `outOfRange` and `outsideWindow` to `BLOCK` (the default) or `NEEDS_HUMAN`.
+- They fail closed. A value that is not a date or a number BLOCKs, whatever `verdicts` says. A bound that cannot be found BLOCKs with the reason `bound-unknown`: the param a reference reads is missing, the lookup is not a function or gives something that is not a date, a number or a window. A lookup that throws BLOCKs the call too (`rule-error`).
+
+A reference is `<lookup>(<param>)`, or `<lookup>(<param>).<field>` to read one field of what the lookup gives (`order(orderId).total`). Each part is a plain word (a letter, then letters, digits and underscores). It is read when the app is built, never run: the lookup is a function of the gate's lookups (what `systems()` returns beside `ownerOf` and `scopeOf`), called with the value of `<param>` in the call, and the app names the lookups a reference may call in `code.lookups` (`definePolicy(..., { lookups })` for an app that is not a folder):
+
+```ts
+export const code: AppCode = {
+  // ...
+  lookups: ['orderTotal', 'returnWindow'],
+  systems: () => {
+    const store = new StoreSystems();
+    return {
+      sys: store,
+      lookups: {
+        ownerOf: (id) => store.ownerOf(id),
+        scopeOf: (p) => store.scopeOf(p),
+        orderTotal: (id) => store.order(id)?.total ?? null,
+        returnWindow: (id) => store.returnWindow(id),
+      },
+    };
+  },
+};
+```
+
+A bound comes only from the app's code and systems, never from the session's facts or the conversation. `check` refuses a reference to a lookup `code.lookups` does not name, a name every object has (`constructor`, `toString`, `prototype`, ...) as a lookup or a field, the gate's own `ownerOf` or `scopeOf`, and, where the action's `fields` or `confirmed` rule says which params it sends, a `field` or reference param outside them. A field is read only as a plain object's own value, never a getter or an inherited one. List `scope` before a range rule, so a lookup is only asked about a record the caller may see.
+
+Each records itself under its name (`dateInRange`, `limit`) with lines like `amount at least 0.01, at most orderTotal(orderId ...1234) 120` and `returnDate outside returnWindow(orderId ...1234) 2026-09-20..2026-10-20`: the param's name and the bounds it was held to (today's date, a literal, what a lookup gave), with the id a lookup was called with masked to its last four. The call's own value is never in the line, since it may be a value the app redacts, and a line goes to the audit as it is.
 
 ### identity.yaml (optional)
 
@@ -285,6 +338,7 @@ The test for what is data: could a person who does not write code review it, and
 | `systems` | A factory for a fresh copy of the app's systems for each call, and the gate's lookups over them (`ownerOf`, `scopeOf`) | State and connections. |
 | `forms` | The hooks of each form, by form id (section 5) | They run during the dialog. |
 | `customRules` | The app's own policy rules, by the id `custom:` names them by | A rule compares values and decides. |
+| `lookups` | The names of the gate's lookups (on `systems().lookups`) the range rules' references may call | They are functions of the app's systems. |
 | `principals`, `portal`, `services` | Signed-in callers, the app's own portal settings (never read by the engine), downstream service clients | Integration. |
 | `facts`, `questions`, `callerState`, `blockPromptId`, `onServiceResult` | What the app keeps on the session, its own model questions, and small decisions the engine asks the app to make | They are functions of the session. |
 | `testing` | The hooks the regression harness and the stubs use | Test support. |

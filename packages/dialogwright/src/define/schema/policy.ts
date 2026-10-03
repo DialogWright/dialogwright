@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { checkAlways, identifier, level, name, text, unique } from './common';
 import { closest } from '../problems';
+import { literalOrder, parseDateBound, parseLookupRef, parseNumberBound } from '../../gate/bounded';
 
 /**
  * policy.yaml: the whole of what the app's agent may do, one entry per action (a tool), each with
@@ -23,11 +24,20 @@ import { closest } from '../problems';
  *         - scope: { param: accountId }
  *         - confirmed: [accountId, note, date]
  *         - custom: not-twice
+ *     refundOrder:
+ *       level: 2
+ *       rules:
+ *         - identity
+ *         - scope: { record: orderId }
+ *         - limit: { field: amount, min: 0.01, max: orderTotal(orderId) }
+ *         - dateInRange: { field: returnDate, notAfter: today, within: returnWindow(orderId) }
  *   purposes:
  *     file_request: { level: 2 }
  *
  * A rule with no parameters is its bare name (`identity`, `attempts`); a rule with parameters is a
  * map of its name to them, one rule per list entry, so each rule is one line to read and to diff.
+ * The range rules' bounds (dateInRange, limit) are literals or references to the app's lookups,
+ * `<lookup>(<param>)` or `<lookup>(<param>).<field>` (../../gate/bounded.ts), read here, never run.
  *
  * An app written before this shape (toolLevel, rulesFor, ... : the gate's tables as they are) is
  * converted with `dialogwright policy:convert`; nothing reads that shape any more.
@@ -70,9 +80,9 @@ export const policyWording = z
 /** The rules written by their bare name: they take no parameters. */
 export const BARE_RULES = ['identity', 'attempts'] as const;
 /** The rules written as a map of the name to their parameters. */
-export const PARAM_RULES = ['scope', 'role', 'confirmed', 'fields', 'custom'] as const;
+export const PARAM_RULES = ['scope', 'role', 'confirmed', 'fields', 'dateInRange', 'limit', 'custom'] as const;
 /** Every rule name, in the order the docs list them. */
-export const RULE_NAMES = ['identity', 'scope', 'role', 'confirmed', 'attempts', 'fields', 'custom'] as const;
+export const RULE_NAMES = ['identity', 'scope', 'role', 'confirmed', 'attempts', 'fields', 'dateInRange', 'limit', 'custom'] as const;
 export type BareRule = (typeof BARE_RULES)[number];
 export type ParamRule = (typeof PARAM_RULES)[number];
 export type RuleName = (typeof RULE_NAMES)[number];
@@ -113,7 +123,94 @@ const fieldsRule = unique(identifier(), 'field').describe('fields (R7): the only
 
 const customRule = name().describe('custom: one of the app\'s own rules, by the id its code registers it under (code.customRules).');
 
-const RULE_PARAMS: Record<ParamRule, z.ZodType> = { scope: scopeRule, role: roleRule, confirmed: confirmedRule, fields: fieldsRule, custom: customRule };
+// The range rules (../../gate/bounded.ts): a param's value held to bounds written as literals or as
+// references to the app's lookups, `<lookup>(<param>)` or `<lookup>(<param>).<field>`.
+
+const REF_FIX = 'write <lookup>(<param>) or <lookup>(<param>).<field>: a lookup the app\'s code declares (code.lookups), called with one of the action\'s params';
+
+/** A string read by `parse`, its problem reported where it is. */
+const parsedString = (parse: (v: string) => { problem: string } | object, fix: string) =>
+  z.string().check(checkAlways((value, ctx) => {
+    if (typeof value !== 'string') return;
+    const read = parse(value);
+    if ('problem' in read) ctx.addIssue({ code: 'custom', path: [], message: read.problem, params: { fix } });
+  }));
+
+const lookupRef = () => parsedString(parseLookupRef, REF_FIX);
+const dateBound = () => parsedString(parseDateBound, `write "today", a date such as 2026-01-31, or ${REF_FIX.slice('write '.length)}`);
+const numberBound = () =>
+  z.union([z.number(), z.string()]).check(checkAlways((value, ctx) => {
+    if (typeof value !== 'number' && typeof value !== 'string') return;
+    const read = parseNumberBound(value);
+    if ('problem' in read) ctx.addIssue({ code: 'custom', path: [], message: read.problem, params: { fix: `write a number such as 100 or 0.01, or ${REF_FIX.slice('write '.length)}` } });
+  }));
+const rangeVerdict = () => z.enum(['BLOCK', 'NEEDS_HUMAN']);
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** The problems of a range rule that no one field shows: no bound, literal bounds the wrong way round, a window's reason or verdict with no window. */
+function rangeProblems(bounds: readonly string[], low: string, high: string, parse: (v: unknown) => { bound: unknown } | { problem: string }, windowKey?: string) {
+  return checkAlways((value, ctx) => {
+    if (!isRecord(value)) return;
+    const issue = (path: (string | number)[], message: string, fix: string): void => ctx.addIssue({ code: 'custom', path, message, params: { fix } });
+    if (!bounds.some((k) => value[k] !== undefined)) issue([], `the rule names no bound: write ${bounds.map((b) => `"${b}"`).join(', ').replace(/, ([^,]*)$/, ' or $1')}`, `add ${bounds[0] === 'min' ? '"max: <a number or a reference>"' : '"notAfter: today", or another bound'}`);
+    const [a, b] = [parse(value[low]), parse(value[high])];
+    if ('bound' in a && 'bound' in b && literalOrder(a.bound as never, b.bound as never) === false) {
+      issue([low], `${low} (${String(value[low])}) is after ${high} (${String(value[high])}), so no value is within both`, `swap them, or correct the one that is wrong`);
+    }
+    if (windowKey !== undefined && value[windowKey] === undefined) {
+      for (const part of ['reasons', 'verdicts']) {
+        if (isRecord(value[part]) && value[part].outsideWindow !== undefined) issue([part, 'outsideWindow'], `the rule has no "${windowKey}", so it is never outside a window`, `delete it, or add "${windowKey}: <lookup>(<param>)"`);
+      }
+    }
+  });
+}
+
+const dateInRangeRule = z
+  .strictObject({
+    field: identifier().describe('The action\'s param that holds the date (yyyy-mm-dd). A value that is not a date BLOCKs.'),
+    notBefore: dateBound().optional().describe('The earliest date the value may be, inclusive: "today", a date, or a reference to a lookup that gives one.'),
+    notAfter: dateBound().optional().describe('The latest date the value may be, inclusive: "today", a date, or a reference to a lookup that gives one.'),
+    within: lookupRef().optional().describe('A reference to a lookup that gives a window, { start, end } (end null: open-ended), the value must be inside, ends inclusive. A lookup that gives null has no window: the value is outside it.'),
+    reasons: z
+      .strictObject({
+        invalid: name().optional().describe('The reason a value that is not a date is refused for. Default "not-a-date".'),
+        outOfRange: name().optional().describe('The reason a date before notBefore or after notAfter fails for. Default "date-range".'),
+        outsideWindow: name().optional().describe('The reason a date outside the window fails for. Default "date-window".'),
+      })
+      .optional()
+      .describe('The reason the gate gives for each way the rule fails, for the app\'s refusal lines and handoffs.'),
+    verdicts: z
+      .strictObject({
+        outOfRange: rangeVerdict().optional().describe('BLOCK (default) or NEEDS_HUMAN, for a date out of its bounds.'),
+        outsideWindow: rangeVerdict().optional().describe('BLOCK (default) or NEEDS_HUMAN, for a date outside the window.'),
+      })
+      .optional()
+      .describe('The verdict for a date out of its bounds or outside its window. A value that is not a date, and a bound that cannot be found, always BLOCK.'),
+  })
+  .check(rangeProblems(['notBefore', 'notAfter', 'within'], 'notBefore', 'notAfter', parseDateBound, 'within'))
+  .describe('dateInRange: the action\'s date param is a date within its bounds, each inclusive. At least one of notBefore, notAfter, within.');
+
+const limitRule = z
+  .strictObject({
+    field: identifier().describe('The action\'s param that holds the number: digits, an optional leading minus and an optional point with digits; no units, separators or spaces. Anything else BLOCKs.'),
+    min: numberBound().optional().describe('The smallest the number may be, inclusive: a number, or a reference to a lookup that gives one.'),
+    max: numberBound().optional().describe('The largest the number may be, inclusive: a number, or a reference to a lookup that gives one (for example orderTotal(orderId), or order(orderId).total).'),
+    reasons: z
+      .strictObject({
+        invalid: name().optional().describe('The reason a value that is not a number is refused for. Default "not-a-number".'),
+        outOfRange: name().optional().describe('The reason a number below min or above max fails for. Default "limit".'),
+      })
+      .optional()
+      .describe('The reason the gate gives for each way the rule fails.'),
+    verdicts: z
+      .strictObject({ outOfRange: rangeVerdict().optional().describe('BLOCK (default) or NEEDS_HUMAN, for a number outside its limits.') })
+      .optional()
+      .describe('The verdict for a number outside its limits. A value that is not a number, and a bound that cannot be found, always BLOCK.'),
+  })
+  .check(rangeProblems(['min', 'max'], 'min', 'max', parseNumberBound))
+  .describe('limit: the action\'s number param is within its limits, each inclusive. At least one of min, max.');
+
+const RULE_PARAMS: Record<ParamRule, z.ZodType> = { scope: scopeRule, role: roleRule, confirmed: confirmedRule, fields: fieldsRule, dateInRange: dateInRangeRule, limit: limitRule, custom: customRule };
 
 /** An example of each rule with parameters, for a fix. */
 const RULE_EXAMPLES: Record<ParamRule, string> = {
@@ -121,8 +218,29 @@ const RULE_EXAMPLES: Record<ParamRule, string> = {
   role: 'role: { viewer: refuse, clerk: person }',
   confirmed: 'confirmed: [accountId, note]',
   fields: 'fields: [note, date]',
+  dateInRange: 'dateInRange: { field: returnDate, notAfter: today }',
+  limit: 'limit: { field: amount, max: orderTotal(orderId) }',
   custom: 'custom: <the rule\'s id in code.customRules>',
 };
+
+/** The parameters of a dateInRange rule, as written. */
+export interface DateInRangeYaml {
+  field: string;
+  notBefore?: string;
+  notAfter?: string;
+  within?: string;
+  reasons?: { invalid?: string; outOfRange?: string; outsideWindow?: string };
+  verdicts?: { outOfRange?: 'BLOCK' | 'NEEDS_HUMAN'; outsideWindow?: 'BLOCK' | 'NEEDS_HUMAN' };
+}
+
+/** The parameters of a limit rule, as written. */
+export interface LimitYaml {
+  field: string;
+  min?: number | string;
+  max?: number | string;
+  reasons?: { invalid?: string; outOfRange?: string };
+  verdicts?: { outOfRange?: 'BLOCK' | 'NEEDS_HUMAN' };
+}
 
 /** One entry of an action's rules, as written: a bare rule's name, or a map of one rule's name to its parameters. */
 export type RuleEntryYaml =
@@ -131,6 +249,8 @@ export type RuleEntryYaml =
   | { role: { reason?: string } & Record<string, string> }
   | { confirmed: string[] }
   | { fields: string[] }
+  | { dateInRange: DateInRangeYaml }
+  | { limit: LimitYaml }
   | { custom: string };
 
 /** The JSON Schema of one rule entry, for an editor: the bare names, and each rule with its parameters. */
@@ -214,15 +334,22 @@ const ruleEntry = z
       ctx.addIssue({ ...(inner as unknown as z.core.$ZodRawIssue), path: [rule, ...inner.path] } as z.core.$ZodRawIssue);
     }
   }))
-  .meta({ ...ruleEntryJson, description: 'One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, custom).' }) as unknown as z.ZodType<RuleEntryYaml>;
+  .meta({ ...ruleEntryJson, description: 'One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, dateInRange, limit, custom).' }) as unknown as z.ZodType<RuleEntryYaml>;
 
-/** What makes two rules of an action the same rule: its name, and for a custom rule its id. Null for an entry that is no rule (its own problem says why). */
+/** What makes two rules of an action the same rule: its name, and for a custom rule its id, for a range rule its field. Null for an entry that is no rule (its own problem says why). */
 export function ruleKey(entry: unknown): string | null {
   if (typeof entry === 'string') return (BARE_RULES as readonly string[]).includes(entry) ? entry : null;
   if (!isMap(entry)) return null;
   const keys = Object.keys(entry);
   if (keys.length !== 1 || !(PARAM_RULES as readonly string[]).includes(keys[0]!)) return null;
-  return keys[0] === 'custom' ? `custom: ${String(entry.custom)}` : keys[0]!;
+  const rule = keys[0]!;
+  if (rule === 'custom') return `custom: ${String(entry.custom)}`;
+  // A range rule holds one param to its bounds: an action may hold two params (a start and an end date) with one each.
+  if (rule === 'dateInRange' || rule === 'limit') {
+    const params = entry[rule];
+    return isMap(params) && typeof params.field === 'string' ? `${rule}: ${params.field}` : null;
+  }
+  return rule;
 }
 
 const rules = z

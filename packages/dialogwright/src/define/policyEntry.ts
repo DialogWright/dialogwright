@@ -20,13 +20,16 @@ export type { CompilePolicyOptions, CompileIdentityOptions, CompiledIdentity, Ru
 export { convertFolder, convertTables, writeConversion, toText as conversionText, ConvertError } from './convert/convertPolicy';
 export type { Conversion, ConvertOptions, FolderConversion } from './convert/convertPolicy';
 export { policySchema, identitySchema, RULE_NAMES } from './schema/index';
-export type { PolicyYaml, IdentityYaml, ActionYaml, RuleEntryYaml, RuleName } from './schema/index';
+export type { PolicyYaml, IdentityYaml, ActionYaml, RuleEntryYaml, RuleName, DateInRangeYaml, LimitYaml } from './schema/index';
 
 // The gate: the policy's named rules compiled (the gate an app's calls go through), and the legacy
 // evaluator over the tables (the shadow gate's reference, which an app's direct gate tests may call);
 // the hash the confirmed rule compares, and the built-in rule ids.
-export { compiledPolicyOf, compileGate, programFromTables, sourceOf, LEGACY_RULE_ID } from '../gate/compiled';
-export type { CompiledPolicy, PolicySource, PolicyAction } from '../gate/compiled';
+export { compiledPolicyOf, compileGate, programFromTables, sourceOf, LEGACY_RULE_ID, RULE_ID, NAMED_RULE_IDS } from '../gate/compiled';
+export type { CompiledPolicy, PolicySource, PolicyAction, LegacyRuleName } from '../gate/compiled';
+// The range rules (dateInRange, limit) and the reference grammar their bounds are written in.
+export { parseLookupRef, parseDateBound, parseNumberBound, isIsoDate, DATE_IN_RANGE_REASONS, LIMIT_REASONS, BOUND_UNKNOWN } from '../gate/bounded';
+export type { LookupRef, DateBound, NumberBound, RangeVerdict, DateInRangeParams, LimitParams } from '../gate/bounded';
 export { evaluateCall, confirmationHash, RULE_IDS, isRuleId } from '../gate/policy';
 export type { RuleId } from '../gate/policy';
 

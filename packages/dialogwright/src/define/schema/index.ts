@@ -20,7 +20,7 @@ export type { FormHook, FormYaml, FormsYaml } from './forms';
 export { FORM_HOOKS } from './forms';
 export type { IdentityYaml } from './identity';
 export type { IntentYaml, IntentsYaml } from './intents';
-export type { ActionYaml, BareRule, ParamRule, PolicyYaml, RuleEntryYaml, RuleName } from './policy';
+export type { ActionYaml, BareRule, DateInRangeYaml, LimitYaml, ParamRule, PolicyYaml, RuleEntryYaml, RuleName } from './policy';
 export { BARE_RULES, PARAM_RULES, RULE_NAMES, ruleKey } from './policy';
 export type { PromptYaml, PromptsYaml } from './prompts';
 export { SLOTS_FILE, CODE_SLOT_TYPE } from './slots';

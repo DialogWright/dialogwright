@@ -1,4 +1,5 @@
 import type { PolicyTables, PolicyWording, RoleAccess, SubjectParam, ToolName } from '../core/app/types';
+import { DATE_IN_RANGE_ID, dateInRangeRule, LIMIT_ID, limitRule, type DateInRangeParams, type LimitParams } from './bounded';
 import {
   askerOf, checkOutcome, confirmationHash, DEFAULT_RECORD_OWNER, DEFAULT_ROLE_PERSON_REASON, DEFAULT_SCOPE, DEFAULT_SUBJECT, DEFAULT_TOOL_LEVEL, defaultRoleLine,
   scopeShown, threwLine, unknownRuleLine, unlistedLine,
@@ -21,6 +22,11 @@ import { isAnonymous, type GateDecision, type GateFacts, type GateLookups, type 
  * evaluator (./policy.ts evaluateCall) gives over the compiled tables; the shadow gate
  * (dialogwright/testing withShadowGate) holds the two together.
  *
+ * Two built-in rules are the file's alone (./bounded.ts): `dateInRange` and `limit`, which hold a
+ * param's value to bounds (literals, today, the app's lookups). They have no legacy id and record
+ * themselves under their names; the legacy evaluator does not know them, so an app that uses one has
+ * no shadow reference for it.
+ *
  * It fails closed as the legacy one does: an action not listed is R0, a custom rule the app does not
  * define BLOCKs (unknown-rule), a rule that throws BLOCKs (rule-error), and a rule's answer that does
  * not hold together BLOCKs (rule-invalid, ./lines.ts checkOutcome).
@@ -38,10 +44,28 @@ export type Rule =
   | { readonly rule: 'role'; readonly access: Readonly<Record<string, RoleAccess>>; readonly reason?: string }
   | { readonly rule: 'confirmed'; readonly fields: readonly string[] }
   | { readonly rule: 'fields'; readonly fields: readonly string[] }
+  | ({ readonly rule: 'dateInRange' } & DateInRangeParams)
+  | ({ readonly rule: 'limit' } & LimitParams)
   | { readonly rule: 'custom'; readonly id: string };
 
+/** The rules the legacy evaluator knows, each by the id it has always been recorded under. */
+export type LegacyRuleName = 'identity' | 'scope' | 'confirmed' | 'role' | 'attempts' | 'fields';
+
 /** The legacy id each built-in rule is recorded under in decisions and audit lines (until rules are named there). */
-export const LEGACY_RULE_ID: Readonly<Record<Exclude<Rule['rule'], 'custom'>, string>> = { identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' };
+export const LEGACY_RULE_ID: Readonly<Record<LegacyRuleName, string>> = { identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' };
+
+/**
+ * The id each built-in rule is recorded under: the legacy id of the rules the legacy evaluator knows,
+ * and its own name for a rule it does not (dateInRange, limit), which has no legacy id to keep.
+ */
+export const RULE_ID: Readonly<Record<Exclude<Rule['rule'], 'custom'>, string>> = { ...LEGACY_RULE_ID, dateInRange: DATE_IN_RANGE_ID, limit: LIMIT_ID };
+
+/**
+ * The ids of the built-in rules only a policy file can give parameters to (gate/bounded.ts): the
+ * legacy evaluator over the tables does not know them (it BLOCKs a call that reaches one, as an
+ * unknown rule), and an app's own rule may not take one as its id.
+ */
+export const NAMED_RULE_IDS: readonly string[] = [DATE_IN_RANGE_ID, LIMIT_ID];
 
 /** An action as the policy lists it: the level it needs and its rules, in order. */
 export interface PolicyAction {
@@ -193,6 +217,8 @@ function stepOf(rule: Rule, action: PolicyAction, source: PolicySource): Step {
     case 'role': return { id: LEGACY_RULE_ID.role, run: roleRule(rule.access, rule.reason ?? DEFAULT_ROLE_PERSON_REASON, source.wording) };
     case 'attempts': return { id: LEGACY_RULE_ID.attempts, run: attemptsRule(source.maxAttempts) };
     case 'fields': return { id: LEGACY_RULE_ID.fields, run: fieldsRule(rule.fields) };
+    case 'dateInRange': return { id: RULE_ID.dateInRange, run: dateInRangeRule(rule) };
+    case 'limit': return { id: RULE_ID.limit, run: limitRule(rule) };
     case 'custom': return { id: rule.id, run: has(source.customRules, rule.id) ? source.customRules![rule.id]! : null };
   }
 }
@@ -241,7 +267,7 @@ export function compileGate(source: PolicySource, tables: PolicyTables, subjectK
 }
 
 /** The built-in rule each legacy id names, in tables an app wrote by hand. */
-const BUILT_IN_OF: Readonly<Record<string, Exclude<Rule['rule'], 'custom'>>> = Object.fromEntries(Object.entries(LEGACY_RULE_ID).map(([rule, id]) => [id, rule as Exclude<Rule['rule'], 'custom'>]));
+const BUILT_IN_OF: Readonly<Record<string, LegacyRuleName>> = Object.fromEntries(Object.entries(LEGACY_RULE_ID).map(([rule, id]) => [id, rule as LegacyRuleName]));
 
 /**
  * The adapter for an app built by hand with tables only: its tables read as the policy they say.

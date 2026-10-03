@@ -1,11 +1,12 @@
 import { DEFAULT_CODE_LENGTH } from '../core/app/lookup';
 import type { IdentityConfig, PolicyTables, PolicyWording, RoleAccess, SubjectParam, ToolName } from '../core/app/types';
-import { attachSource, LEGACY_RULE_ID, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
+import { lookupNameProblem, parseDateBound, parseLookupRef, parseNumberBound, refText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
+import { attachSource, LEGACY_RULE_ID, NAMED_RULE_IDS, RULE_ID, type LegacyRuleName, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import { isRuleId } from '../gate/policy';
 import type { Level } from '../gate/types';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
-import type { IdentityYaml, PolicyYaml, RuleEntryYaml, RuleName } from './schema/index';
+import type { IdentityYaml, PolicyYaml, RuleEntryYaml } from './schema/index';
 
 /**
  * policy.yaml and identity.yaml in their new shape (./schema/policy.ts, ./schema/identity.ts),
@@ -20,11 +21,11 @@ import type { IdentityYaml, PolicyYaml, RuleEntryYaml, RuleName } from './schema
  * verify tool's action runs only the rules listed for it).
  */
 
-/** The legacy id each built-in rule is recorded under in decisions and audit lines (until rules are named there). */
-export const RULE_ID_OF: Readonly<Record<Exclude<RuleName, 'custom'>, string>> = LEGACY_RULE_ID;
+/** The legacy id each built-in rule the legacy evaluator knows is recorded under in decisions and audit lines (until rules are named there). */
+export const RULE_ID_OF: Readonly<Record<LegacyRuleName, string>> = LEGACY_RULE_ID;
 
-/** The built-in rule each legacy id is, for a message. */
-const RULE_NAME_OF: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(RULE_ID_OF).map(([rule, id]) => [id, rule]));
+/** The built-in rule each id is (a legacy id, or a range rule's own name), for a message. */
+const RULE_NAME_OF: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(RULE_ID).map(([rule, id]) => [id, rule]));
 
 /** The level an action needs when it names none: the highest, so it fails closed (as the gate's own default). */
 export const DEFAULT_ACTION_LEVEL: Level = 2;
@@ -58,12 +59,68 @@ export function readRule(entry: RuleEntryYaml): Rule {
   }
   if ('confirmed' in entry) return { rule: 'confirmed', fields: entry.confirmed };
   if ('fields' in entry) return { rule: 'fields', fields: entry.fields };
+  if ('dateInRange' in entry) {
+    const { field, notBefore, notAfter, within, reasons, verdicts } = entry.dateInRange;
+    return {
+      rule: 'dateInRange',
+      field,
+      ...(notBefore !== undefined ? { notBefore: dateBoundOf(notBefore) } : {}),
+      ...(notAfter !== undefined ? { notAfter: dateBoundOf(notAfter) } : {}),
+      ...(within !== undefined ? { within: refOf(within) } : {}),
+      ...(reasons !== undefined ? { reasons } : {}),
+      ...(verdicts !== undefined ? { verdicts } : {}),
+    };
+  }
+  if ('limit' in entry) {
+    const { field, min, max, reasons, verdicts } = entry.limit;
+    return {
+      rule: 'limit',
+      field,
+      ...(min !== undefined ? { min: numberBoundOf(min) } : {}),
+      ...(max !== undefined ? { max: numberBoundOf(max) } : {}),
+      ...(reasons !== undefined ? { reasons } : {}),
+      ...(verdicts !== undefined ? { verdicts } : {}),
+    };
+  }
   return { rule: 'custom', id: entry.custom };
 }
 
-/** The id a rule runs under in the gate's tables and is recorded under: a built-in's legacy id, a custom rule's own. */
+/** A bound or reference of a valid file, read (the schema has checked it parses). */
+function readOrThrow<T>(read: { problem: string } | T, text: unknown): T {
+  if (typeof read === 'object' && read !== null && 'problem' in read) throw new Error(`policy.yaml was not checked: ${String(text)}: ${(read as { problem: string }).problem}`);
+  return read as T;
+}
+const refOf = (text: string): LookupRef => readOrThrow(parseLookupRef(text), text).ref;
+const dateBoundOf = (text: string): DateBound => readOrThrow(parseDateBound(text), text).bound;
+const numberBoundOf = (value: number | string): NumberBound => readOrThrow(parseNumberBound(value), value).bound;
+
+/** The references a range rule makes to the app's lookups, with where each is written. */
+export function lookupRefsOf(rule: Rule): { key: string; ref: LookupRef }[] {
+  const out: { key: string; ref: LookupRef }[] = [];
+  const add = (key: string, b: DateBound | NumberBound | LookupRef | undefined): void => {
+    if (b === undefined) return;
+    if ('lookup' in b) out.push({ key, ref: b });
+    else if (b.kind === 'lookup') out.push({ key, ref: b.ref });
+  };
+  if (rule.rule === 'dateInRange') {
+    add('notBefore', rule.notBefore);
+    add('notAfter', rule.notAfter);
+    add('within', rule.within);
+  } else if (rule.rule === 'limit') {
+    add('min', rule.min);
+    add('max', rule.max);
+  }
+  return out;
+}
+
+/** Whether an id is a built-in rule's, so no app's own rule may take it: R0, a legacy id, or a range rule's name. */
+export function isBuiltInRuleId(id: string): boolean {
+  return isRuleId(id) || id === 'R0' || NAMED_RULE_IDS.includes(id);
+}
+
+/** The id a rule runs under in the gate's tables and is recorded under: a built-in's legacy id (a range rule's name), a custom rule's own. */
 export function ruleIdOf(rule: Rule): string {
-  return rule.rule === 'custom' ? rule.id : RULE_ID_OF[rule.rule];
+  return rule.rule === 'custom' ? rule.id : RULE_ID[rule.rule];
 }
 
 /** The engine's words for the role rule's compared line (gate/policy.ts), where the file's wording.role leaves an access out. */
@@ -243,6 +300,8 @@ export interface PolicyCheckInput {
   addSlot?(slot: string): string;
   /** The custom rule ids the code registers. */
   customRules?: readonly string[];
+  /** The lookups the code declares for the range rules' references (AppCode.lookups). */
+  lookups?: readonly string[];
   /** The prompt ids of the default locale. */
   prompts?: readonly string[];
   /** Whether a form has a confirmedParams hook (so something is ever confirmed). */
@@ -265,6 +324,31 @@ function reporter(c: PolicyCheckInput, out: Problem[]) {
     const at = (atKey ? (c.locateKey ?? c.locate)(file, path) : c.locate(file, path)) ?? { line: 0, column: 0 };
     out.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   };
+}
+
+/**
+ * The params an action's calls may carry, where one of its rules closes them (a fields rule, else a
+ * confirmed rule: either BLOCKs a call with any other param), or null where none does.
+ */
+function paramsOf(rules: readonly Rule[]): { params: readonly string[]; from: string } | null {
+  for (const name of ['fields', 'confirmed'] as const) {
+    const closing = rules.find((r) => r.rule === name);
+    if (closing && (closing.rule === 'fields' || closing.rule === 'confirmed')) return { params: closing.fields, from: name };
+  }
+  return null;
+}
+
+/** The problems with the lookups the code declares: each a plain word the references may call. */
+export function lookupDeclarationProblems(lookups: readonly unknown[]): { index: number; message: string }[] {
+  const out: { index: number; message: string }[] = [];
+  lookups.forEach((name, index) => {
+    if (typeof name !== 'string') out.push({ index, message: 'a lookup is named by a string' });
+    else {
+      const problem = lookupNameProblem(name);
+      if (problem) out.push({ index, message: problem });
+    }
+  });
+  return out;
 }
 
 /**
@@ -306,7 +390,7 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
       const path: DataPath = ['actions', tool, 'rules', i];
       switch (rule.rule) {
         case 'custom':
-          if (isRuleId(rule.id) || rule.id === 'R0') {
+          if (isBuiltInRuleId(rule.id)) {
             const builtIn = RULE_NAME_OF[rule.id];
             at(P, [...path, 'custom'], `"custom: ${rule.id}" names a built-in rule's id, which would run that rule without its parameters`, builtIn ? `write the built-in rule by its name ("${builtIn}" with its parameters), or give the app's rule an id of its own` : 'give the app\'s rule an id of its own');
           } else if (c.customRules && !c.customRules.includes(rule.id)) {
@@ -333,6 +417,20 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
         case 'attempts':
           if (!identity) at(P, path, 'the attempts rule counts failed tries at the identity checks, but the app has no identity.yaml, so there are none', 'delete the rule, or add identity.yaml');
           break;
+        case 'dateInRange':
+        case 'limit': {
+          const rulePath: DataPath = [...path, rule.rule];
+          // The params the action sends, where its rules close them (a fields or confirmed rule): a
+          // param outside them can never reach the gate with a value, so the rule could never pass.
+          const sent = paramsOf(action.rules.map(readRule));
+          const lists = sent ? `its ${sent.from} rule lists ${sent.params.join(', ') || 'none'}` : '';
+          if (sent && !sent.params.includes(rule.field)) at(P, [...rulePath, 'field'], `"${rule.field}" is not a param "${tool}" sends (${lists})`, `${renameHint(rule.field, sent.params)}name one of those, or add "${rule.field}" to its ${sent.from} rule`);
+          for (const { key, ref } of lookupRefsOf(rule)) {
+            if (sent && !sent.params.includes(ref.param)) at(P, [...rulePath, key], `${refText(ref)} reads "${ref.param}", which is not a param "${tool}" sends (${lists})`, `${renameHint(ref.param, sent.params)}call the lookup with one of those, or add "${ref.param}" to its ${sent.from} rule`);
+            if (c.lookups && !c.lookups.includes(ref.lookup)) at(P, [...rulePath, key], `${refText(ref)} calls the lookup "${ref.lookup}", which the code does not declare`, `${renameHint(ref.lookup, c.lookups)}add "${ref.lookup}" to ${c.inCode('lookups')} and a function of that name to the gate's lookups (code.systems), or correct the reference`);
+          }
+          break;
+        }
         default:
           break;
       }
