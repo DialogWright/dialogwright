@@ -44,11 +44,10 @@ attempts: 3
     level: 1
     rules:
       - identity
-      - role: { manager: refuse }       # with delegates only: see below
       - scope: { param: accountId }
 ```
 
-`sendCode` texts the phone of the account it names. With delegates (see "Delegates"), the `scope` rule alone lets a manager name any account they manage and have a code texted to that customer's phone, so refuse every delegate role with a `role` rule (a subject passes it). `pnpm check` refuses a code sender without one when identity.yaml has delegates. With no delegates, leave the `role` line out.
+`sendCode` texts the phone of the account it names, so the engine keeps it for the subject: it refuses any party who is not the subject (BLOCK `not-subject`) before the rules run, so a delegate cannot have a code texted to someone else's phone and no role rule is needed. The policy matrix and card show it.
 
 The code. The code itself is checked by the engine's verifier (`tc.tools.codes`): in tests and the stub regression it is a mock that accepts any code of the right length whose last digit is even, so a scripted call keys `{ "dtmf": "123456" }` to pass and `{ "dtmf": "123457" }` to fail.
 
@@ -304,7 +303,7 @@ export const code: AppCode = {
 ```
 
 - The field must be one of the params the action sends (its `confirmed` or `fields` list), and its value a plain decimal (`240.00`) or an ISO date (`2026-09-25`), never with a currency sign or a thousands separator.
-- Put `scope` before a range rule, so a lookup is only asked about an account the caller may see.
+- Put `scope` before a range rule, so a lookup is only asked about an account the caller may see: `check` refuses a lookup reference whose param no earlier `scope` rule in the same action holds. A bound that is the same for every caller (a fee schedule, say) says `unscoped: true` on the rule, as `limit: { field: fee, unscoped: true, max: feeSchedule(service) }`.
 - A failure is `BLOCK` with the reason `limit`, `date-range` or `date-window` (or yours, under `reasons`), or a person with `verdicts: { outOfRange: NEEDS_HUMAN }`.
 
 **A day within N days of today** is a number of days from today, `today+N` ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)):

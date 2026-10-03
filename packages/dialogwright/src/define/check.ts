@@ -225,7 +225,6 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   }
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
-  problems.push(...checkCodeSender(config, locate));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
   return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
 }
@@ -322,48 +321,6 @@ function checkMenu(config: LoadedConfig, locate: LoadResult['locate']): Problem[
     });
   });
   return problems;
-}
-
-// ---------------------------------------------------------------------------------------------
-// The one-time code: only a subject has one texted to their phone
-// ---------------------------------------------------------------------------------------------
-
-/**
- * The tool that texts the one-time code sends it to the phone on file of the subject its params
- * name. With delegates, the scope rule alone lets a delegate name any subject they act for, so the
- * app could text a code to someone else's phone (a delegate never steps up: their level is the
- * portal's). Its action must keep delegates out with a role rule: each role refused (or handed to a
- * person), since a role not listed is refused, a party with no role is too, and a subject passes.
- */
-function checkCodeSender(config: LoadedConfig, locate: LoadResult['locate']): Problem[] {
-  const identity = config.identity;
-  const send = identity?.levels[2]?.send;
-  const delegates = Object.entries(identity?.principals.delegates ?? {});
-  if (!identity || send === undefined || delegates.length === 0) return [];
-  // An action that is not there is crossLink's to report.
-  const action = Object.hasOwn(config.policy.actions, send) ? config.policy.actions[send] : undefined;
-  if (!action) return [];
-  const kinds = delegates.map(([kind]) => kind).join(', ');
-  const roles = [...new Set(delegates.flatMap(([, d]) => d.roles ?? []))];
-  const refuseAll = roles.length > 0 ? `role: { ${roles.map((r) => `${r}: refuse`).join(', ')} }` : 'role: { <a role>: refuse }';
-  const hazard = `"${send}" texts the one-time code to the phone of the subject it names, and identity.yaml has parties who act for subjects (${kinds})`;
-  const at = (path: DataPath): Pick<Problem, 'file' | 'line' | 'column' | 'path'> => ({ file: 'policy.yaml', ...(locate('policy.yaml', path) ?? { line: 0, column: 0 }), path: formatPath(path) });
-  const index = action.rules.findIndex((rule) => typeof rule === 'object' && rule !== null && 'role' in rule);
-  if (index < 0) {
-    return [{
-      ...at(['actions', send, 'rules']),
-      message: `${hazard}, but its rules have no role rule, so one of them could have a code texted to the phone of any subject they act for`,
-      fix: `add "- ${refuseAll}" to the rules of ${send}, after identity: a role not listed is refused, and so is a party with no role, while a subject passes${roles.length === 0 ? ' (give the delegates a role under principals in identity.yaml first)' : ''}`,
-    }];
-  }
-  const rule = (action.rules[index] as { role: Record<string, string> }).role;
-  return Object.entries(rule)
-    .filter(([role, access]) => role !== 'reason' && access === 'allow')
-    .map(([role]) => ({
-      ...at(['actions', send, 'rules', index, 'role', role]),
-      message: `${hazard}, and its role rule allows the role "${role}", so a ${role} could have a code texted to the phone of any subject they act for`,
-      fix: `write "${role}: refuse" (only a subject steps up to the code)`,
-    }));
 }
 
 // ---------------------------------------------------------------------------------------------
