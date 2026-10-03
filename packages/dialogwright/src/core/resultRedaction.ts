@@ -16,8 +16,9 @@ import type { App, ToolName } from './app/types';
  * wherever the tool's summary or the record it names repeats it (core/lifecycle.ts callTool).
  *
  * What it does not reach: what the tool itself does with the whole record while it runs (a side
- * effect it queues, a write to the session), which the tool's code must keep to what the caller may
- * see, and an error the tool throws.
+ * effect it queues goes to its service as queued, though its params as recorded have the withheld
+ * texts masked, core/recording.ts recordedEffect; a write to the session), which the tool's code
+ * must keep to what the caller may see, and an error the tool throws.
  *
  * A subject acting for themselves is never redacted, and neither is an anonymous caller. A party who
  * is neither, whose kind (and role) has no row in the table at all, has every field the tool

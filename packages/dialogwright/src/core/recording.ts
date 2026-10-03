@@ -25,7 +25,10 @@ import type { App, AuditMask } from './app/types';
  * the scope rule names a subject) too. That holds for the value as it is (in any case, as a whole
  * token: not inside a longer run of letters or digits) and for values of SCRUB_MIN_LENGTH characters
  * or more; a rule or a tool that reshapes a value (reformats a date, spaces out digits, quotes a part
- * of it) is not recognised, so code still writes only what may be recorded.
+ * of it) is not recognised, so code still writes only what may be recorded. The side effects a tool
+ * queues while it runs are recorded with the same scrub, and with what its result withheld
+ * (recordedEffect: what is sent to the service is the effect itself), and a downstream service's
+ * audit row for the answer to one with that effect's (carryScrub).
  *
  * Only the call's own params are known here: a value the code reads from elsewhere (the session, its
  * systems) and writes into a line is the code's to mask.
@@ -147,20 +150,41 @@ export function withheldScrubber(values: readonly string[]): Scrub | null {
   return scrubberOfValues(values.map((v) => [v, '•'] as const));
 }
 
-/** The scrub each recorded decision was made with (registered by the lifecycle), for the rows recorded after it. */
-const SCRUBS = new WeakMap<GateDecision, Scrub>();
+/**
+ * The scrub each recorded thing was made with (registered by the lifecycle, and carried by the
+ * runner and the server from a side effect to the answer it brings): a decision, for the rows
+ * recorded after it; a side effect, for its params as recorded; a service's answer, for its row.
+ */
+const SCRUBS = new WeakMap<object, Scrub>();
 
-/** Registers the scrub for the free text recorded beside `decision` (the lifecycle does, as it records the decision). */
-export function registerScrub(decision: GateDecision, scrub: Scrub): void {
-  SCRUBS.set(decision, scrub);
+/** Registers the scrub for the free text recorded beside `target` (a decision, a side effect, a service's answer). */
+export function registerScrub(target: object, scrub: Scrub): void {
+  SCRUBS.set(target, scrub);
 }
 
 /**
- * The scrub registered for a decision the lifecycle recorded in this process, or null (nothing of
- * its call was masked, or the decision was read back from a trace, where the raw values are gone).
+ * The scrub registered for something the lifecycle recorded in this process, or null (nothing of its
+ * call was masked, or it was read back from a trace or a log, where the raw values are gone).
  */
-export function scrubberOf(decision: GateDecision): Scrub | null {
-  return SCRUBS.get(decision) ?? null;
+export function scrubberOf(target: object): Scrub | null {
+  return SCRUBS.get(target) ?? null;
+}
+
+/** Carries the scrub of `from` (a side effect) to `to` (the service's answer to it), where it has one. */
+export function carryScrub(from: object, to: object): void {
+  const scrub = scrubberOf(from);
+  if (scrub !== null) registerScrub(to, scrub);
+}
+
+/**
+ * A side effect as recorded (the trace, the console): each of its text params with the scrub its
+ * call registered (the call's masked params, and what its result withheld) applied. What is sent to
+ * the service is the effect itself, unchanged.
+ */
+export function recordedEffect<E extends { readonly params: Readonly<Record<string, string>> }>(effect: E): E {
+  const scrub = scrubberOf(effect);
+  if (scrub === null) return effect;
+  return { ...effect, params: Object.fromEntries(Object.entries(effect.params).map(([k, v]) => [k, typeof v === 'string' ? scrub(v) : v])) };
 }
 
 /** The decision's rule lines with the scrub applied to their description and compared text. */

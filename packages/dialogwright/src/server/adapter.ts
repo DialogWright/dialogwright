@@ -21,6 +21,7 @@ import type { HandoffWording, SpokenDigitRule } from '../core/app/types';
 import type { Effect } from '../core/lifecycle';
 import { summarizeHandoff as summarizeHandoffDefault, type SummaryOptions } from '../handoff/summary';
 import type { AuditEntry } from '../audit/types';
+import { carryScrub } from '../core/recording';
 
 /** Spoken when a turn throws, so a failure is a retry rather than dead air. */
 export const TURN_ERROR_TEXT = 'Sorry, something went wrong on my end. Please say that again.';
@@ -378,7 +379,9 @@ function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect): void
     if (e.ended || e.session.pendingService === null) return;
     if (answer.result !== null) {
       e.frames.write('in', serviceResultFrame(effect.service, null));
-      if ((await turn(deps, e, serviceResultEvent(effect.service, null))) || e.ended || e.session.pendingService === null) return;
+      const none = serviceResultEvent(effect.service, null);
+      carryScrub(effect, none);
+      if ((await turn(deps, e, none)) || e.ended || e.session.pendingService === null) return;
     }
     e.session = { ...e.session, pendingService: null };
     e.frames.write('log', { serviceWaitAbandoned: true });

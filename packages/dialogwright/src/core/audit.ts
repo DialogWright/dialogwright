@@ -19,7 +19,9 @@ import { scrubbedDrafts, scrubberOf } from './recording';
  * redacted copies (redactCall: each param masked as its slot or policy.yaml's audit: says); identity is
  * recorded as a factor passed or failed, never the values; a tool's result is its one-line summary,
  * never its payload. What a tool or a downstream service adds is the app's own row (ToolDef.audit,
- * ServiceDef.audit), under the same rule. A keypad code never reaches a draft at all.
+ * ServiceDef.audit), under the same rule, and each is masked as the call (or the side effect) it
+ * follows: a raw value of a param recorded masked or never is masked wherever the row repeats it. A
+ * keypad code never reaches a draft at all.
  */
 export interface AuditInput {
   /** the session as the turn found it */
@@ -91,7 +93,8 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // app records only what passed its check.
   if (event.type === 'service.result' && event.service === before.pendingService) {
     const row = app.services?.[event.service]?.audit?.(event.result, event.note);
-    if (row) drafts.push(row);
+    // Masked as the effect that asked was recorded (core/recording.ts carryScrub), where the answer carries its scrub.
+    if (row) drafts.push(...scrubbedDrafts([row], scrubberOf(event)));
   }
   for (const e of t.gateEvents) {
     const { call, verdict, reason, needLevel } = e.decision;

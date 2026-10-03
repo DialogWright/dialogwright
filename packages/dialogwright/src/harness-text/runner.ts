@@ -15,6 +15,7 @@ import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
+import { carryScrub } from '../core/recording';
 export { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { demoTools } from '../core/tools';
@@ -319,7 +320,10 @@ export async function followEffects(run: TurnRun, opts: RunOptions, down = false
   for (const effect of run.result.effects) {
     if (effect.kind !== 'service') continue;
     const answer = appOf(session).testing?.serviceAnswers?.[effect.service];
-    const next = await runTurn(session, serviceResultEvent(effect.service, down || !answer ? null : answer(effect.params)), opts);
+    const event = serviceResultEvent(effect.service, down || !answer ? null : answer(effect.params));
+    // The answer's audit row is masked as the effect's params were recorded, as the server does (server/services.ts).
+    carryScrub(effect, event);
+    const next = await runTurn(session, event, opts);
     runs.push(next);
     session = next.result.session;
   }

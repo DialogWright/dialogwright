@@ -9,7 +9,7 @@ import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
-import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber } from './recording';
+import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
 
 export { redactCall };
 
@@ -129,7 +129,9 @@ export const RESULT_UNREDACTABLE = 'result-unredactable';
  * (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW.
  *
  * The summary and the record it names are masked as the call is (a raw value of a param recorded
- * masked or never) and as the result was (every text a withheld field held). A result that cannot be
+ * masked or never) and as the result was (every text a withheld field held), and so are the params
+ * of the side effects the tool queues as it runs, where they are recorded (the trace, the console),
+ * never where they are sent. A result that cannot be
  * stripped as the policy says (a tool that declared fields its value does not have) never goes on:
  * the call that ran is still recorded, with a summary that says so, and its outcome is NEEDS_HUMAN
  * (RESULT_UNREDACTABLE), so the caller goes to a person.
@@ -144,6 +146,8 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
     out.gateEvents.push({ decision, summary: null });
     return { decision, value: null };
   }
+  // The side effects the tool queues as it runs: recorded with the call's scrub (recordedEffect), sent as they are.
+  const effectsBefore = out.effects.length;
   const ran = runTool(s, call, tc, out, code);
   // Redaction per principal, the one place it happens: nothing past this line holds the whole
   // result. The hooks, the facts and the lines get the stripped value; the event (so the trace, the
@@ -154,17 +158,25 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
     stripped = redactResult(call.tool, ran.value, fields);
   } catch {
     // The tool ran: its call is recorded, though nothing of what it returned is.
+    scrubEffects(out, effectsBefore, scrubberOf(decision));
     out.gateEvents.push({ decision, summary: `result not recorded: the fields withheld from this caller (${fields.join(', ')}) could not be stripped from it` });
     return { decision: { ...decision, verdict: 'NEEDS_HUMAN', reason: RESULT_UNREDACTABLE }, value: null };
   }
   const { value, redacted, withheld } = stripped;
   // The summary and the record it names are recorded beside the call, so they are masked as it is, and as the result was.
   const scrub = bothScrubs(scrubberOf(decision), withheldScrubber(withheld));
+  scrubEffects(out, effectsBefore, scrub);
   const said = scrub && typeof ran.summary === 'string' ? scrub(ran.summary) : ran.summary;
   const summary = redacted ? redactedSummary(said, fields) : said;
   const ref = scrub && typeof ran.ref === 'string' ? scrub(ran.ref) : ran.ref;
   out.gateEvents.push(ref === undefined ? { decision, summary } : { decision, summary, ref });
   return redacted ? { decision, value, redacted: fields } : { decision, value };
+}
+
+/** Registers `scrub` for the side effects queued since `from`, for their params as recorded (core/recording.ts recordedEffect). */
+function scrubEffects(out: TurnOut, from: number, scrub: Scrub | null): void {
+  if (scrub === null) return;
+  for (const effect of out.effects.slice(from)) registerScrub(effect, scrub);
 }
 
 /**

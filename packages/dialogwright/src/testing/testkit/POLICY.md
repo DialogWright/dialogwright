@@ -59,7 +59,7 @@ What each role may do. In the actions that have a role rule, a role the rule doe
 
 ## What is withheld
 
-A party who acts for customers does not see every field of what some actions return: right after the action runs, the engine sets these fields to nothing wherever the result holds them, at any depth, before a line, the session, the trace, the console or the audit reads it. The record of the call says which fields were withheld, and where the action's summary repeats what one held, that is masked. What the action itself does with the whole record as it runs (a side effect it queues, what it writes to the session) and an error it raises are not covered: the action's code keeps those to what the caller may see. A row for a role replaces its kind's for that action, and a party of a kind with no row here at all (nor its role) sees none of the fields an action declares it may withhold. A customer acting for themselves sees the whole of their own record.
+A party who acts for customers does not see every field of what some actions return: right after the action runs, the engine sets these fields to nothing wherever the result holds them, at any depth, before a line, the session, the trace, the console or the audit reads it. The record of the call says which fields were withheld, and where the action's summary repeats what one held, that is masked. What the action itself does with the whole record as it runs is not covered: a side effect it queues goes to its service as queued (its record masks what was withheld), and what it writes to the session and an error it raises are its own; the action's code keeps those to what the caller may see. A row for a role replaces its kind's for that action, and a party of a kind with no row here at all (nor its role) sees none of the fields an action declares it may withhold. A customer acting for themselves sees the whole of their own record.
 
 | Who | Action | Fields withheld |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ A party who acts for customers does not see every field of what some actions ret
 
 ## What is recorded
 
-What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary or its own audit rows repeat a value that is hidden, shortened or never recorded, it is masked there too.
+What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary, its own audit rows, the side effects it queues (as recorded) or a downstream service's row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.
 
 | Action | Value | Recorded |
 | --- | --- | --- |
