@@ -41,7 +41,8 @@ Run these at the repository root.
 pnpm check                                          # every app folder: YAML, schemas, cross-links to the code, prompts, corpus
 pnpm --filter @dialogwright/example-utility typecheck
 pnpm --filter @dialogwright/example-utility test
-pnpm --filter @dialogwright/example-utility regress   # the stub regression: expects "no changes"
+pnpm --filter @dialogwright/example-utility regress   # the stub regression: prints "no changes", then a summary
+pnpm --filter @dialogwright/example-utility regress --scenario <id>  # one scripted call, turn by turn (--corpus <id>: one corpus line)
 pnpm --filter @dialogwright/example-utility cli --client heuristic   # a text console, with no keys
 pnpm policy:matrix apps/utility                       # rewrite policy.matrix after a policy change you meant; read the diff
 ```

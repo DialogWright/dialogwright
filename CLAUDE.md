@@ -36,6 +36,7 @@ pnpm check         # every app folder under apps/: YAML, schemas, cross-links to
 pnpm create-app <name> [--identity] [--dir <path>] [--display <text>]   # a new app from the template, linked into the workspace
 pnpm --filter dialogwright regress:testkit
 pnpm --filter @dialogwright/example-clinic regress
+pnpm --filter @dialogwright/example-clinic regress --scenario <id>   # one scripted call, turn by turn (also --corpus <id>; any app's regress)
 pnpm --filter dialogwright schemas   # regenerate the JSON Schemas after a schema change
 pnpm --filter dialogwright exec tsx src/define/cli.ts policy:convert <absolute folder>   # policy.yaml and identity.yaml from the old table shape to the current one (also: --from-tables <module>)
 pnpm --filter dialogwright slot-docs   # regenerate docs/slots/*.md after a slot type's options, README or examples change

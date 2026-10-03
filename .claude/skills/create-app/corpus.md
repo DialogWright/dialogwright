@@ -120,5 +120,7 @@ A line whose context is a form (or a summary) is run in a session seeded as thou
 - Steps: `{ "say": "..." }` (its words must be a corpus line's text; the app's `fixtures.test.ts` checks), `{ "dtmf": "..." }` (keys; the one-time code passes when its last digit is even), `{ "silence": true }`, `{ "signIn": "<id>" }`.
 - `expect` is checked on the last turn: `decision` (`prompt`, `handoff`, `complete`, ...), and any of `promptId`, `reason` (a handoff's: `live-agent`, `identity`, `role-person`, `needs-human`, ...), `form`, `slots` (values by slot id), `principalLevel`, `gate` (the last gate decision, `"<tool>:<VERDICT>"`), `text` (words the last turn's lines contain).
 - A call that ends on a form's `said` completion ends at `"promptId": "anything_else"` with the form's line among the turn's lines; an informational answer ends at `"promptId": "ask_intent"`.
+- Once a form completes, the form and its own slots are cleared (only the identity factors and any `carrySlots` stay on the call), so a call that ends after a completion can never match `form` or the form's `slots`. Expect `promptId`, `gate` and `text` instead: the completion line usually names the values (a count, a date, a reference).
+- When a call does not reach what it expects, `regress --scenario <id>` prints it turn by turn: each step, the prompt id, the acknowledgements, the words, the form, the level, the slots and every gate decision (the skill's step 6).
 
 Step 5 of the skill lists the calls every app needs.

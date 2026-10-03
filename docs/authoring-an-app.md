@@ -1060,6 +1060,33 @@ For a form that collects slots and acts, such as renewing a loan:
 4. If the tool needs a rule of its own, write it with `defineRule` (with an example the gate allows and one it refuses) in `code.customRules`, name its id with a `custom:` rule in the action, and write the new policy matrix with `pnpm policy:matrix <folder>`.
 5. `pnpm check` says if the tool and its action do not match: a tool with no action, an action with no tool, a rule that is never named.
 
+### Follow one scripted call turn by turn
+
+The stub regression (`pnpm --filter @dialogwright/example-<name> regress`) prints one line per difference from the baseline, a `FAIL scenario <id>: <field>: expected ..., got ...` line for each scripted call that does not reach what it expects, and `no changes` when there is neither, then a summary (`corpus 129/129 outcomes match expected`, `scenarios 34/34 pass expectation, 34/34 match expected`). A `FAIL` line names only the field that differed. To see how the call got there, ask for its transcript:
+
+```sh
+pnpm --filter @dialogwright/example-<name> regress --scenario plan-by-phone
+pnpm --filter @dialogwright/example-<name> regress --corpus pl-02 --scenario plan-keypad   # repeatable; both together
+```
+
+Each step of the call, what the caller said or keyed, then for each turn: the prompt id, the acknowledgements said before it, the words the caller hears, the form, the caller's level and the slots that hold a value after the turn, and every gate decision (the tool, its purpose, the verdict, the reason and the rule that decided). Keyed digits run one turn each; only the keys that said something or asked the gate are shown. Then what the call expects, `pass` or `FAIL ...`, and `baseline: no changes` or the differences from the baseline. A corpus line shows the state it is seeded in (the form, the question it answers, the caller's level and the seeded slots), then its one turn. For example:
+
+```
+  4. keys 123456
+       (6 keys, one turn each; 5 said nothing and are not shown)
+       -> prompt anything_else
+          acks   otp_verified, parcel_blocked_scope
+          says   "Thank you, you're verified. I don't see that parcel on your account, and I can only share your own parcels. Is there anything else I can help with?"
+          form   -   level 2   slots accountId=55501234, dob=1985-04-12
+          gate   verifyCode ALLOW
+          gate   listParcels ALLOW
+          gate   getParcel BLOCK reason=scope; R2 The record belongs to someone this caller may see: record owner ...5678 · caller may see ...1234 only
+```
+
+It runs the same turns as the whole regression, with the same client (`--client recorded` works too), and exits 1 when a call misses its expectation or an outcome differs from the baseline. It writes nothing; `--update` cannot be given with it.
+
+Note what the last line above shows: once a form completes, the form and its own slots are cleared (the slots app.yaml lists under `carrySlots` excepted; the identity factors, which no form lists, stay on the call). A scripted call that ends after a completion can expect `promptId: anything_else`, the `gate` and the completion line's words (`text`), never `form` or the form's `slots`.
+
 ### Where to start
 
 To build an app from a description (a paragraph of what callers can ask for, who must verify, what is confirmed), follow the create-app skill, [.claude/skills/create-app/SKILL.md](../.claude/skills/create-app/SKILL.md): it plans the app in a worksheet, maps it onto slot types, policy and identity, scaffolds it, and iterates on the checks until green. Its [patterns](../.claude/skills/create-app/patterns.md) and [corpus guide](../.claude/skills/create-app/corpus.md) are useful on their own.

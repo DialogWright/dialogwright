@@ -123,7 +123,22 @@ pnpm --filter @dialogwright/example-<name> test
 pnpm --filter @dialogwright/example-<name> regress
 ```
 
-The regression prints one line per difference from the baseline: `+ corpus <id>: new`, `- corpus <id>: removed`, `~ corpus <id>.<field>: <before> -> <after>`, and `FAIL scenario <id>: ...` when a scripted call does not reach what it expects, then a summary. While you build, the baseline is still the example's, so your lines are `new`, the example's are `removed`, and the app's `fixtures.test.ts` fails on its baseline comparison. That is expected. What must be clean before you make the baseline: `pnpm check`, the type check, every other test, no `FAIL scenario` line, and no error loading the corpus (a duplicate text, a label a question cannot give, `as` outside `no_form`).
+The regression prints one line per difference from the baseline: `+ corpus <id>: new`, `- corpus <id>: removed`, `~ corpus <id>.<field>: <before> -> <after>`, and `FAIL scenario <id>: ...` when a scripted call does not reach what it expects, then a summary. A clean run prints `no changes` as its first line, then the summary:
+
+```text
+no changes
+
+corpus     129/129 outcomes match expected
+scenarios   34/34 pass expectation,  34/34 match expected
+```
+
+A `FAIL scenario` line names only the field that differed. To see the call turn by turn (each step's words or keys, the prompt id, the acknowledgements and the words the caller hears, the form, the caller's level and the slots after the turn, and every gate decision with its reason), ask for its transcript; `--corpus <id>` does the same for one corpus line, from the state it is seeded in:
+
+```sh
+pnpm --filter @dialogwright/example-<name> regress --scenario <id>     # repeatable; --corpus <id> too
+```
+
+It ends with `pass` or `FAIL ...` and `baseline: no changes` or the differences. Read the transcript rather than writing a script over the harness. While you build, the baseline is still the example's, so your lines are `new`, the example's are `removed`, and the app's `fixtures.test.ts` fails on its baseline comparison. That is expected. What must be clean before you make the baseline: `pnpm check`, the type check, every other test, no `FAIL scenario` line, and no error loading the corpus (a duplicate text, a label a question cannot give, `as` outside `no_form`).
 
 Then make the app's own first baseline, once:
 

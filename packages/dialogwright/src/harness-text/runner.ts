@@ -301,6 +301,8 @@ export interface Scenario {
 export interface ScenarioRun {
   outcome: Outcome;
   runs: TurnRun[];
+  /** For each of `runs`, the index in the scenario's steps of the step that made it: -1 for the opening turn. */
+  stepOf: number[];
   pass: boolean;
   mismatches: string[];
 }
@@ -334,13 +336,15 @@ export async function runScenario(scenario: Scenario, opts: RunOptions): Promise
   // One book of business per scenario, so a record created on one turn is there on the next.
   const o = { ...opts, client, tools: opts.tools ?? demoTools() };
   const runs: TurnRun[] = [];
+  const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(opts)(), scenario.as);
   const setup = await runTurn(session, startEvent(), o);
   runs.push(setup);
+  stepOf.push(-1);
   session = setup.result.session;
   let last = setup;
   let serviceDown = false;
-  for (const step of scenario.steps) {
+  for (const [index, step] of scenario.steps.entries()) {
     if (session.ended) break;
     if ('serviceDown' in step) {
       serviceDown = true;
@@ -355,11 +359,13 @@ export async function runScenario(scenario: Scenario, opts: RunOptions): Promise
     for (const event of events) {
       last = await runTurn(session, event, o);
       runs.push(last);
+      stepOf.push(index);
       failNext = false;
       // A scenario is synchronous, so a downstream service's answer is the very next turn.
       const followed = await followEffects(last, o, serviceDown);
       if (followed.length > 0) serviceDown = false;
       runs.push(...followed);
+      stepOf.push(...followed.map(() => index));
       last = followed.at(-1) ?? last;
       session = last.result.session;
       if (session.ended) break;
@@ -368,7 +374,7 @@ export async function runScenario(scenario: Scenario, opts: RunOptions): Promise
   }
   const outcome = outcomeOf(scenario.id, last.result, runs.flatMap((r) => r.result.gateEvents));
   const mismatches = checkExpectation(outcome, scenario.expect, spokenText(last.result));
-  return { outcome, runs, pass: mismatches.length === 0, mismatches };
+  return { outcome, runs, stepOf, pass: mismatches.length === 0, mismatches };
 }
 
 /** Everything the caller hears this turn, ack phrases included. */

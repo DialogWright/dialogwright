@@ -20,7 +20,8 @@ Run these at the repository root.
 pnpm check                                                # the folder against its schemas, the code, the prompts and the corpus
 pnpm --filter @dialogwright/example-{{name}} typecheck
 pnpm --filter @dialogwright/example-{{name}} test
-pnpm --filter @dialogwright/example-{{name}} regress      # the stub regression: expects "no changes"
+pnpm --filter @dialogwright/example-{{name}} regress      # the stub regression: prints "no changes", then a summary
+pnpm --filter @dialogwright/example-{{name}} regress --scenario <id>  # one scripted call, turn by turn (--corpus <id>: one corpus line)
 ```
 
 `pnpm check` prints one line per problem, `file:line:column  path  message  ->  fix`. Act on the fix text.
