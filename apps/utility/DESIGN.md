@@ -117,7 +117,24 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 | Informational intents on the keypad menu | when the app was built, `handleDtmf` in the engine ignored a menu key that was not a form or `agent` (the caller heard nothing) | first left the outage map and hours off the menu; the engine now plays the line, so they are back as 4 and 5 (Task 6), with scripted calls for each | a scenario and some reading of turn.ts; closed |
 | Nothing owed on the account | a bound refuses only when the write is tried, after the summary; `limit` cannot stop the form before its questions for a subject | the summary reads "$0.00 in three payments" and the gate then refuses with `plan_amount_outside` | a clumsy call for that one caller |
 | A delegate's answers inside a form | corpus lines inside a form cannot carry `as`, so they are seeded with a customer | the `account` answers run as a customer in the corpus; the manager's path is covered by scripted calls with `as` | none |
-| The framework's own test of policy.matrix folders | `packages/dialogwright/src/define/matrixCommand.test.ts` lists the workspace's matrix folders exactly, so a new app's `policy.matrix` fails it | left failing (the framework is out of bounds); recorded in docs/trials/2026-10-03-utility.md | `pnpm -r test` is red until the framework test is changed |
+| The framework's own test of policy.matrix folders | `packages/dialogwright/src/define/matrixCommand.test.ts` listed the workspace's matrix folders exactly, so a new app's `policy.matrix` failed it | left failing during the trial (the framework was out of bounds); the test now asserts it contains the framework's folders, as the card and map tests do | `pnpm -r test` was red until then; closed |
+
+## The paragraph, by scripted call
+
+Every requirement of the paragraph, and the scripted calls in `fixtures/scenarios/core.json` that hold it (the edges of each bound are also in `src/app.test.ts`).
+
+| Requirement | Scripted calls |
+|---|---|
+| An outage report with no verification, the address and what they see confirmed before it is filed | `outage-anonymous`, `outage-up-front`, `outage-symptom-keypad`, `outage-change-address`, `outage-declined` (a no is not filed), `keypad-menu-outage` |
+| The balance and due date, after the account number and date of birth | `balance-by-phone`, `balance-account-up-front`, `balance-keypad`, `balance-wrong-birth-date-three-times`; on the chat, `balance-chat-sign-in`, `balance-chat-typed-account` |
+| A payment arrangement after a one-time code | `plan-by-phone`, `plan-values-up-front`, `plan-keypad`, `plan-after-balance`, `plan-change-date`, `plan-wrong-code-three-times`; on the chat, `plan-chat-sign-in` |
+| The first payment within thirty days | `plan-thirty-days-on` (the last day allowed), `plan-first-date-too-late` (refused) |
+| Not more than what is owed | `plan-nothing-owed` (refused by `limit`); the total is the balance, so a call cannot ask for more, and the edges (`240.00`, `240.01`) are unit tests |
+| Property managers: balances for their buildings | `balance-by-a-manager`, `balance-by-a-manager-asked`, `balance-by-a-manager-keypad`, `balance-by-a-manager-not-theirs` (refused) |
+| Property managers: outages for their buildings | `outage-by-a-manager` |
+| Property managers: an arrangement goes to a person | `plan-by-a-manager` |
+| The outage map and the office hours | `outage-map`, `office-hours`, `keypad-menu-outage-map`, `keypad-menu-office-hours-then-balance` |
+| A person at any time | at the start: `asks-for-a-person`; on the keypad menu: `person-keypad-menu`; inside a form: `asks-for-a-person-in-outage`, `asks-for-a-person-in-plan`; while verifying: `person-while-verifying`; at the code prompt: `person-at-code-prompt`; at a summary: `person-at-outage-summary`, `person-at-plan-summary`; a manager on the chat: `manager-asks-for-a-person` |
 
 ## The policy card read back
 
@@ -160,7 +177,7 @@ Changes that needed no edit: the thirty-day bound moved from the custom rule `fi
 - [x] The policy read back (`policy.matrix`, `POLICY.md` and `APP-MAP.md`) matches "Who may do what" above, cell by cell ("The policy card read back").
 - [x] No tool decides who may do what; every line a caller hears is in `prompts.yaml`.
 - [x] Nothing private or real: invented names and streets, 555 numbers, `example.com` addresses.
-- [x] `pnpm check` ok; this app's, the clinic's and the testkit's regressions match their baselines. `pnpm verify` is not green: one framework test (`matrixCommand.test.ts`) lists the workspace's matrix folders and fails with this app's `policy.matrix` (see Gaps). The app's own tests and type check are green.
+- [x] `pnpm check` ok; `pnpm -r typecheck` and `pnpm -r test` green; this app's, the clinic's and the testkit's regressions match their baselines (the framework test that failed during the trial is fixed; see Gaps).
 - [x] The baseline was made once with `regress --update`, read entry by entry, and every later edit is under "Baseline edits".
 - [x] `.github/workflows/ci.yml` runs this app's regression; `pnpm-lock.yaml` is committed.
 - [x] `README.md` says what the app does and how it is built, and keeps the scaffold's recording steps; `CLAUDE.md` still matches the folder.

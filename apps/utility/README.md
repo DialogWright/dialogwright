@@ -16,6 +16,10 @@ On the chat, a customer signs in through the portal instead of saying the factor
 
 The policy, read back, is [POLICY.md](POLICY.md) (the policy card, in words), [policy.matrix](policy.matrix) (what the gate decides for every action and every kind of caller) and [APP-MAP.md](APP-MAP.md) (the app's structure). Each is generated, tested against the app, and written again only for a change you meant.
 
+## How it was built
+
+This app is the trial of the create-app skill ([.claude/skills/create-app](../../.claude/skills/create-app/SKILL.md)). An AI coding assistant with no other context was given the paragraph at the top of [DESIGN.md](DESIGN.md) and told to use the skill; it scaffolded the folder with `pnpm create-app utility --identity`, wrote the worksheet, the YAML, the stub tools, the corpus and the scripted calls, and had `pnpm check`, the type check, the tests and the stub regression green in about 15 minutes of wall clock. It logged every stumble as it went: [docs/trials/2026-10-03-utility.md](../../docs/trials/2026-10-03-utility.md) has each one with the fix it led to in the docs, the skill, the error messages or the framework. The app was then finished from that log: the thirty-day bound became a built-in `dateInRange`, the outage map and the hours went back on the keypad menu, the policy card and the app map were generated and read back against the paragraph, and the scripted calls were extended to a person asked for from every place a caller can be.
+
 ## The folder
 
 ```
@@ -61,13 +65,13 @@ Nothing here needs an API key. The engine's stub clients stand in for the decisi
 - `fixtures/scenarios/core.json`: scripted calls, each with the outcome it expects. Every spoken step of a scripted call must also be in the corpus, so the stub can answer it.
 - `fixtures/expected/`: the baseline, the stub's outcome for every corpus line and scripted call. The regression run compares against it and prints `no changes`.
 
-The baseline that came with this folder is the example's. When your own app is built, make its first baseline once, with `regress --update`, and read the whole diff against what you expect. From then on, never regenerate it: a changed output is a finding to explain, not noise to overwrite.
+This app's baseline was made once, with `regress --update`, and read entry by entry. It is never regenerated: a changed output is a finding to explain, and each later edit (a changed outcome, or a new corpus line or scripted call) is made by hand and logged under "Baseline edits" in [DESIGN.md](DESIGN.md).
 
 ## Recording against the real model
 
-The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API, so it is a deliberate local step and never part of CI.
+The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API, so it is the maintainer's deliberate local step, run by hand with their own key, and never part of CI. This app has no cassette yet: CI runs only its stub regression (`.github/workflows/ci.yml`), and until a cassette is committed, `--client recorded` reports every turn as a cassette miss.
 
-1. Copy `.env.example` to `.env` in this folder (it is git-ignored) and put your TypeSafe API key in it as `TYPESAFE_API_KEY`. The launchers do not read `.env` themselves, so load it into your shell: `set -a && source .env && set +a`.
+1. Copy [`.env.example`](.env.example) to `.env` in this folder (it is git-ignored) and put your TypeSafe API key in it as `TYPESAFE_API_KEY`. The launchers do not read `.env` themselves, so load it into your shell: `set -a && source .env && set +a`.
 2. At the repository root: `pnpm --filter @dialogwright/example-utility regress --client record --threshold JEV_TIMEOUT_MS=15000`. It appends each answer to `fixtures/recorded/<model>.jsonl` and aborts after three consecutive client errors. The diff against the stub baseline shows where the real model reads a line differently from its label; that is expected, and it never rewrites the baseline.
 3. Check the replay offline, with the key unset: `pnpm --filter @dialogwright/example-utility regress --client recorded`. A line the model reads differently from its label stays the truth in the corpus and gets a `knownGap` with its reason (see "Known gaps" in the [clinic's README](../../apps/clinic/README.md)).
 4. Commit the cassette. It holds only the corpus text and the model's answers to it.
