@@ -32,6 +32,7 @@ attempts: 3
 `policy.yaml` (both tools need actions, like every tool):
 
 ```yaml
+# policy.yaml, under actions:
   verifyCode:
     say: check the one-time code
     level: 1
@@ -41,8 +42,11 @@ attempts: 3
     level: 1
     rules:
       - identity
+      - role: { manager: refuse }       # with delegates only: see below
       - scope: { param: accountId }
 ```
+
+`sendCode` texts the phone of the account it names. With delegates (see "Delegates"), the `scope` rule alone lets a manager name any account they manage and have a code texted to that customer's phone, so refuse every delegate role with a `role` rule (a subject passes it). `pnpm check` refuses a code sender without one when identity.yaml has delegates. With no delegates, leave the `role` line out.
 
 The code. The code itself is checked by the engine's verifier (`tc.tools.codes`): in tests and the stub regression it is a mock that accepts any code of the right length whose last digit is even, so a scripted call keys `{ "dtmf": "123456" }` to pass and `{ "dtmf": "123457" }` to fail.
 

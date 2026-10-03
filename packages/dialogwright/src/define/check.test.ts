@@ -149,6 +149,23 @@ describe('checkApp: the prompts every locale needs', () => {
     ]);
   });
 
+  it('with delegates, the tool that texts the one-time code must refuse them with a role rule', async () => {
+    const withDelegates = IDENTITY.replace('principals: { subject: patron }', 'principals: { subject: patron, delegates: { librarian: { roles: [clerk, head] } } }');
+    const code = async (rules: string): Promise<string[]> => {
+      const dir = folder({ 'identity.yaml': withDelegates, 'policy.yaml': (t) => t.replace(/  findHold:\n    level: 0\n    rules:\n      - identity\n/, `  findHold:\n    level: 0\n    rules:\n      - identity\n${rules}`) });
+      return (await lines(dir)).filter((l) => l.includes('texts the one-time code'));
+    };
+    expect(await code('')).toEqual([
+      'policy.yaml:10:5  actions.findHold.rules  "findHold" texts the one-time code to the phone of the subject it names, and identity.yaml has parties who act for subjects (librarian), but its rules have no role rule, so one of them could have a code texted to the phone of any subject they act for  ->  add "- role: { clerk: refuse, head: refuse }" to the rules of findHold, after identity: a role not listed is refused, and so is a party with no role, while a subject passes',
+    ]);
+    expect(await code('      - role: { clerk: refuse, head: allow }\n')).toEqual([
+      'policy.yaml:12:38  actions.findHold.rules[1].role.head  "findHold" texts the one-time code to the phone of the subject it names, and identity.yaml has parties who act for subjects (librarian), and its role rule allows the role "head", so a head could have a code texted to the phone of any subject they act for  ->  write "head: refuse" (only a subject steps up to the code)',
+    ]);
+    expect(await code('      - role: { clerk: refuse, head: person }\n')).toEqual([]);
+    const noDelegates = folder({ 'identity.yaml': IDENTITY });
+    expect((await lines(noDelegates)).filter((l) => l.includes('texts the one-time code'))).toEqual([]);
+  });
+
   it('a missing engine line names the variables the engine gives it', async () => {
     const dir = folder({ 'identity.yaml': IDENTITY.replace(', 2: ', ''), 'prompts.yaml': without('ack_intent') });
     const problems = await lines(dir);
