@@ -340,8 +340,8 @@ describe('an app that uses both, built by defineApp', () => {
     const { decision, turn } = renew('quiet_orchard');
     expect(decision.verdict).toBe('ALLOW');
     expect(decision.rules.slice(2)).toEqual([
-      { id: 'dateInRange', description: 'The date in due is within its bounds', compared: 'due on or after today 2026-09-18, within renewWindow(book ...hard) 2026-09-18..2026-10-16', pass: true },
-      { id: 'limit', description: 'The number in fee is within its limits', compared: 'fee at least 0, at most renewTerms(book ...hard).feeCap 1.00', pass: true },
+      { id: 'dateInRange', description: 'The date in due is within its bounds', compared: 'due on or after today 2026-09-18, within renewWindow(book) 2026-09-18..2026-10-16', pass: true },
+      { id: 'limit', description: 'The number in fee is within its limits', compared: 'fee at least 0, at most renewTerms(book).feeCap 1.00', pass: true },
     ]);
     expect(turn.decision.kind).not.toBe('handoff');
   });
@@ -349,11 +349,11 @@ describe('an app that uses both, built by defineApp', () => {
   it('refuses a renewal over the fee cap (BLOCK, its own reason), and hands one past the window to a person', () => {
     const over = renew('river_atlas').decision;
     expect({ verdict: over.verdict, reason: over.reason, last: over.rules.at(-1) }).toEqual({
-      verdict: 'BLOCK', reason: 'fee-cap', last: { id: 'limit', description: 'The number in fee is within its limits', compared: 'fee above renewTerms(book ...tlas).feeCap 1.00', pass: false },
+      verdict: 'BLOCK', reason: 'fee-cap', last: { id: 'limit', description: 'The number in fee is within its limits', compared: 'fee above renewTerms(book).feeCap 1.00', pass: false },
     });
     const late = renew('clockwork_garden');
     expect({ verdict: late.decision.verdict, reason: late.decision.reason, compared: late.decision.rules.at(-1)?.compared }).toEqual({
-      verdict: 'NEEDS_HUMAN', reason: 'renew-window', compared: 'due outside renewWindow(book ...rden) 2026-09-18..2026-10-16',
+      verdict: 'NEEDS_HUMAN', reason: 'renew-window', compared: 'due outside renewWindow(book) 2026-09-18..2026-10-16',
     });
     expect(late.turn.decision.kind).toBe('handoff');
   });

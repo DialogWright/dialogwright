@@ -258,6 +258,15 @@ describe('the free text beside a call: a rule cannot leak a masked param', () =>
     expect(scrubberFor(app, { tool: 't', params: { pin: '123' } })!('identity.level 1 >= 2 · pin 123')).toBe('identity.level 1 >= 2 · pin •');
   });
 
+  it('a value recorded hidden, by length or never shows not even its last four (the scope rule\'s subject)', () => {
+    const subject: ToolCall = { tool: 't', params: { pin: '555123456789', code: 'AB-55516789', parcel: 'PX-55519876' } };
+    const s = scrubberFor(app, subject)!;
+    expect(s('subject ...6789 · caller may see ...6789 only')).toBe('subject • · caller may see • only');
+    expect(s('record owner ...6789, ...67890')).toBe('record owner •, ...67890');
+    // One recorded by its last four keeps them.
+    expect(s('parcel ...9876')).toBe('parcel ...9876');
+  });
+
   it('its limit: a value reshaped (reformatted, split, partly quoted) is not recognised', () => {
     expect(scrub('parcel PX 5551 9876, or 55519876')).toBe('parcel PX 5551 9876, or 55519876');
   });

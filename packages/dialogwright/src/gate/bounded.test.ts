@@ -6,6 +6,7 @@ import {
   type DateInRangeParams, type LimitParams,
 } from './bounded';
 import { compiledPolicyOf } from './compiled';
+import { redactCall, scrubbedDecision, scrubberFor } from '../core/recording';
 import type { GateFacts, GateLookups, Party, RuleContext, RuleOutcome, ToolCall } from './types';
 
 /**
@@ -204,7 +205,7 @@ describe('dateInRange', () => {
   it('passes a date within its bounds, every bound inclusive, and says which bounds it held to', () => {
     const p = { notBefore: ref('order', 'orderId', 'deliveredOn'), notAfter: TODAY, within: { lookup: 'returnWindow', param: 'orderId' } };
     expect(line(dateRule(p, { returnDate: '2026-09-25', orderId: 'ORD-1234' }))).toBe(
-      'pass | returnDate on or after order(orderId ...1234).deliveredOn 2026-09-20, on or before today 2026-10-02, within returnWindow(orderId ...1234) 2026-09-20..2026-10-20',
+      'pass | returnDate on or after order(orderId).deliveredOn 2026-09-20, on or before today 2026-10-02, within returnWindow(orderId) 2026-09-20..2026-10-20',
     );
     // On each bound: the day itself passes.
     expect(dateRule(p, { returnDate: '2026-09-20', orderId: 'ORD-1234' }).fail).toBeUndefined();
@@ -249,12 +250,12 @@ describe('dateInRange', () => {
 
   it('fails a date outside the window, and a lookup with no window (null) is outside it', () => {
     const within = { lookup: 'returnWindow', param: 'orderId' };
-    expect(line(dateRule({ within }, { returnDate: '2026-09-19', orderId: 'ORD-1234' }))).toBe('BLOCK date-window | returnDate outside returnWindow(orderId ...1234) 2026-09-20..2026-10-20');
-    expect(line(dateRule({ within }, { returnDate: '2026-10-21', orderId: 'ORD-1234' }))).toBe('BLOCK date-window | returnDate outside returnWindow(orderId ...1234) 2026-09-20..2026-10-20');
+    expect(line(dateRule({ within }, { returnDate: '2026-09-19', orderId: 'ORD-1234' }))).toBe('BLOCK date-window | returnDate outside returnWindow(orderId) 2026-09-20..2026-10-20');
+    expect(line(dateRule({ within }, { returnDate: '2026-10-21', orderId: 'ORD-1234' }))).toBe('BLOCK date-window | returnDate outside returnWindow(orderId) 2026-09-20..2026-10-20');
     // An open-ended window (end null) holds any date on or after its start.
-    expect(line(dateRule({ within }, { returnDate: '2030-01-01', orderId: 'ORD-5678' }))).toBe('pass | returnDate within returnWindow(orderId ...5678) 2026-09-01..open');
+    expect(line(dateRule({ within }, { returnDate: '2030-01-01', orderId: 'ORD-5678' }))).toBe('pass | returnDate within returnWindow(orderId) 2026-09-01..open');
     const human = { within, verdicts: { outsideWindow: 'NEEDS_HUMAN' }, reasons: { outsideWindow: 'late-return' } } as const;
-    expect(line(dateRule(human, { returnDate: '2026-09-25', orderId: 'ORD-NONE' }))).toBe('NEEDS_HUMAN late-return | returnDate: returnWindow(orderId ...NONE) has no window');
+    expect(line(dateRule(human, { returnDate: '2026-09-25', orderId: 'ORD-NONE' }))).toBe('NEEDS_HUMAN late-return | returnDate: returnWindow(orderId) has no window');
     expect(dateRule(human, { returnDate: '2026-11-25', orderId: 'ORD-1234' }).fail).toEqual({ verdict: 'NEEDS_HUMAN', reason: 'late-return' });
   });
 
@@ -268,7 +269,7 @@ describe('dateInRange', () => {
     expect(unknown({ within }, { returnDate: '2026-09-25' }, lookups({ returnWindow: spy }))).toEqual(blocked);
     expect(unknown({ within }, { returnDate: '2026-09-25', orderId: '' }, lookups({ returnWindow: spy }))).toEqual(blocked);
     expect(spy).not.toHaveBeenCalled();
-    expect(line(dateRule({ within }, { returnDate: '2026-09-25' }))).toBe('BLOCK bound-unknown | returnDate: within returnWindow(orderId missing) gave no window');
+    expect(line(dateRule({ within }, { returnDate: '2026-09-25' }))).toBe('BLOCK bound-unknown | returnDate: within returnWindow(orderId) gave no window');
     // The lookup is missing, or is not a function.
     expect(unknown({ within: { lookup: 'refundWindow', param: 'orderId' } }, { returnDate: '2026-09-25', orderId: 'ORD-1234' })).toEqual(blocked);
     expect(unknown({ within }, { returnDate: '2026-09-25', orderId: 'ORD-1234' }, lookups({ returnWindow: { start: '2026-01-01', end: null } }))).toEqual(blocked);
@@ -311,18 +312,18 @@ describe('dateInRange', () => {
 describe('limit', () => {
   it('passes a number within its limits, each inclusive, and says which it held to', () => {
     const p = { min: num('0.01'), max: ref('orderTotal', 'orderId') };
-    expect(line(limit(p, { amount: '45.10', orderId: 'ORD-1234' }))).toBe('pass | amount at least 0.01, at most orderTotal(orderId ...1234) 120');
+    expect(line(limit(p, { amount: '45.10', orderId: 'ORD-1234' }))).toBe('pass | amount at least 0.01, at most orderTotal(orderId) 120');
     expect(limit(p, { amount: '120', orderId: 'ORD-1234' }).fail).toBeUndefined();
     expect(limit(p, { amount: '120.00', orderId: 'ORD-1234' }).fail).toBeUndefined();
     expect(limit(p, { amount: '0.01', orderId: 'ORD-1234' }).fail).toBeUndefined();
     // A decimal text from the lookup, compared exactly.
-    expect(line(limit({ max: ref('orderTotal', 'orderId') }, { amount: '80.5', orderId: 'ORD-5678' }))).toBe('pass | amount at most orderTotal(orderId ...5678) 80.50');
-    expect(line(limit({ max: ref('order', 'orderId', 'total') }, { amount: '1', orderId: 'ORD-1234' }))).toBe('pass | amount at most order(orderId ...1234).total 120');
+    expect(line(limit({ max: ref('orderTotal', 'orderId') }, { amount: '80.5', orderId: 'ORD-5678' }))).toBe('pass | amount at most orderTotal(orderId) 80.50');
+    expect(line(limit({ max: ref('order', 'orderId', 'total') }, { amount: '1', orderId: 'ORD-1234' }))).toBe('pass | amount at most order(orderId).total 120');
   });
 
   it('fails a number past either limit, by the smallest step, as the rule says', () => {
     const p = { min: num('0.01'), max: ref('orderTotal', 'orderId') };
-    expect(line(limit(p, { amount: '120.01', orderId: 'ORD-1234' }))).toBe('BLOCK limit | amount above orderTotal(orderId ...1234) 120');
+    expect(line(limit(p, { amount: '120.01', orderId: 'ORD-1234' }))).toBe('BLOCK limit | amount above orderTotal(orderId) 120');
     expect(line(limit(p, { amount: '0.009', orderId: 'ORD-1234' }))).toBe('BLOCK limit | amount below 0.01');
     expect(line(limit(p, { amount: '-5', orderId: 'ORD-1234' }))).toBe('BLOCK limit | amount below 0.01');
     // Exact: past the precision of a JavaScript number.
@@ -345,7 +346,7 @@ describe('limit', () => {
     const blocked = { verdict: 'BLOCK', reason: 'bound-unknown' };
     const max = ref('orderTotal', 'orderId');
     const human = { max, verdicts: { outOfRange: 'NEEDS_HUMAN' } } as const;
-    expect(line(limit({ max }, { amount: '5' }))).toBe('BLOCK bound-unknown | amount: max orderTotal(orderId missing) gave no number');
+    expect(line(limit({ max }, { amount: '5' }))).toBe('BLOCK bound-unknown | amount: max orderTotal(orderId) gave no number');
     expect(limit(human, { amount: '5', orderId: 'ORD-NONE' }).fail).toEqual(blocked);
     expect(limit({ max: ref('refundCap', 'orderId') }, { amount: '5', orderId: 'ORD-1234' }).fail).toEqual(blocked);
     for (const junk of [undefined, null, '120 USD', '1,000', Number.NaN, Infinity, 1e21, {}, [120], { total: 120 }, true]) {
@@ -405,6 +406,16 @@ describe('through the gate', () => {
     expect({ verdict: over.verdict, reason: over.reason, rules: over.rules.map((r) => r.id) }).toEqual({ verdict: 'BLOCK', reason: 'limit', rules: ['limit'] });
     const late = decide({ amount: '20', returnDate: '2026-09-01', orderId: 'ORD-1234' });
     expect({ verdict: late.verdict, reason: late.reason }).toEqual({ verdict: 'NEEDS_HUMAN', reason: 'date-window' });
+  });
+
+  it('names the param a lookup is called with, never its value: not even the last four of one recorded never', () => {
+    const tables = policy();
+    const app = { slots: {}, policy: { ...tables, audit: { orderId: 'secret' as const } } };
+    const call = { tool: 'refundOrder', params: { amount: '200', returnDate: '2026-09-30', orderId: 'ORD-55516789' } };
+    const d = compiledPolicyOf(tables, '').evaluate(call, caller, facts, lookups({ orderTotal: () => 120 }));
+    const recorded = scrubbedDecision({ ...d, call: redactCall(app, call) }, scrubberFor(app, call));
+    expect(recorded.rules[0]!.compared).toBe('amount above orderTotal(orderId) 120');
+    expect(JSON.stringify(recorded)).not.toMatch(/6789|5551/);
   });
 
   it('a lookup that throws BLOCKs the call (rule-error), and the error never leaves the gate', () => {

@@ -1,4 +1,3 @@
-import { maskId } from './principal';
 import type { GateLookups, RuleContext, RuleOutcome, ToolCall } from './types';
 
 /**
@@ -36,8 +35,9 @@ import type { GateLookups, RuleContext, RuleOutcome, ToolCall } from './types';
  * value equal to them.
  *
  * What the lines show: the field's name and the bounds (today's date, or `today+N` and the date it
- * gives, a literal, what a lookup returned), with the param a lookup was called with masked to its last four (maskId). Never the
- * call's own value: it may be a slot the app redacts, and a compared line reaches the audit as is.
+ * gives, a literal, what a lookup returned), with a reference as written (`capOf(accountId)`): the
+ * param a lookup was called with by its name only. Never a param's value, not even its last four:
+ * it may be one the app records hidden or never, and a compared line reaches the audit as is.
  */
 
 /** A reference to one of the app's lookups: `<lookup>(<param>)` or `<lookup>(<param>).<field>`. */
@@ -276,11 +276,14 @@ function paramOf(call: ToolCall, param: string): string | undefined {
   return Object.hasOwn(call.params, param) ? call.params[param] : undefined;
 }
 
-/** A reference as a line shows it: the lookup, the param's name and its value masked. */
-function refShown(ref: LookupRef, call: ToolCall): string {
-  const value = paramOf(call, ref.param);
-  const arg = value === undefined || value === '' ? `${ref.param} missing` : `${ref.param} ${maskId(value)}`;
-  return `${ref.lookup}(${arg})${ref.field === undefined ? '' : `.${ref.field}`}`;
+/**
+ * A reference as a line shows it: as written, the lookup and the param's name, never its value. The
+ * param may be recorded hidden, by length or never (policy.yaml `audit:`, a slot's redact), which the
+ * gate does not know, and even its last four would say part of it; a compared line reaches the audit
+ * as it is.
+ */
+function refShown(ref: LookupRef): string {
+  return refText(ref);
 }
 
 /** One own data property of a plain object: not a getter, not an array's, not from a prototype. */
@@ -329,7 +332,7 @@ function dateBound(b: DateBound, c: RuleContext): Bound<string> | null {
       return isIsoDate(b.date) ? { value: b.date, shown: b.date } : null;
     case 'lookup': {
       const r = resolveRef(b.ref, c.call, c.lk);
-      return r.ok && isIsoDate(r.value) ? { value: r.value, shown: `${refShown(b.ref, c.call)} ${r.value}` } : null;
+      return r.ok && isIsoDate(r.value) ? { value: r.value, shown: `${refShown(b.ref)} ${r.value}` } : null;
     }
   }
 }
@@ -342,7 +345,7 @@ function numberBound(b: NumberBound, c: RuleContext): Bound<Decimal> | null {
   const r = resolveRef(b.ref, c.call, c.lk);
   if (!r.ok) return null;
   const d = readDecimal(r.value);
-  return d ? { value: d, shown: `${refShown(b.ref, c.call)} ${String(r.value)}` } : null;
+  return d ? { value: d, shown: `${refShown(b.ref)} ${String(r.value)}` } : null;
 }
 
 /** The window a `within` lookup gives: its start and its end (null: open-ended); null for no window; undefined when it is not one. */
@@ -373,14 +376,14 @@ export function dateInRangeRule(params: DateInRangeParams): (c: RuleContext) => 
     for (const [which, b] of [['notBefore', params.notBefore], ['notAfter', params.notAfter]] as const) {
       if (b === undefined) continue;
       const bound = dateBound(b, c);
-      if (!bound) return failed(`${field}: ${which} ${b.kind === 'lookup' ? refShown(b.ref, c.call) : b.kind === 'today' ? todayText(b) : b.kind} gave no date`, 'BLOCK', BOUND_UNKNOWN);
+      if (!bound) return failed(`${field}: ${which} ${b.kind === 'lookup' ? refShown(b.ref) : b.kind === 'today' ? todayText(b) : b.kind} gave no date`, 'BLOCK', BOUND_UNKNOWN);
       if (which === 'notBefore' && value < bound.value) return failed(`${field} before ${bound.shown}`, verdict.outOfRange, reason.outOfRange);
       if (which === 'notAfter' && value > bound.value) return failed(`${field} after ${bound.shown}`, verdict.outOfRange, reason.outOfRange);
       held.push(`${which === 'notBefore' ? 'on or after' : 'on or before'} ${bound.shown}`);
     }
     if (params.within) {
       const r = resolveRef(params.within, c.call, c.lk);
-      const shown = refShown(params.within, c.call);
+      const shown = refShown(params.within);
       const w = r.ok ? windowOf(r.value) : undefined;
       if (w === undefined) return failed(`${field}: within ${shown} gave no window`, 'BLOCK', BOUND_UNKNOWN);
       if (w === null) return failed(`${field}: ${shown} has no window`, verdict.outsideWindow, reason.outsideWindow);
@@ -408,7 +411,7 @@ export function limitRule(params: LimitParams): (c: RuleContext) => RuleOutcome 
     for (const [which, b] of [['min', params.min], ['max', params.max]] as const) {
       if (b === undefined) continue;
       const bound = numberBound(b, c);
-      if (!bound) return failed(`${field}: ${which} ${b.kind === 'lookup' ? refShown(b.ref, c.call) : b.value} gave no number`, 'BLOCK', BOUND_UNKNOWN);
+      if (!bound) return failed(`${field}: ${which} ${b.kind === 'lookup' ? refShown(b.ref) : b.value} gave no number`, 'BLOCK', BOUND_UNKNOWN);
       const cmp = compareDecimal(value, bound.value);
       if (which === 'min' && cmp < 0) return failed(`${field} below ${bound.shown}`, outOfRange, reason.outOfRange);
       if (which === 'max' && cmp > 0) return failed(`${field} above ${bound.shown}`, outOfRange, reason.outOfRange);

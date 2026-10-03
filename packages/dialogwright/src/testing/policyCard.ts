@@ -187,7 +187,7 @@ function header(app: App, dir: string): string[] {
 function defaults(app: App, source: PolicySource): string[] {
   const identity = identityOf(app);
   const out = ['## Defaults', '', '- Anything not listed under Actions is refused.', '- The rules of an action run in the order shown, and the first one that fails decides.'];
-  out.push('- Identifiers in decision lines appear by their last four characters (`...1234`), never in full.');
+  out.push('- Identifiers in decision lines appear by their last four characters (`...1234`), never in full; a value recorded hidden, by length or never shows not even those.');
   if (app.identity) {
     const checks = `the ${slotsInWords(app, identity.factorSlots)}${identity.codeTool ? ', and the one-time code' : ''}`;
     out.push(`- A caller has ${source.maxAttempts} tries at each identity check (${checks}). After that a person takes the call.`);

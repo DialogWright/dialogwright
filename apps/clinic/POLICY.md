@@ -13,7 +13,7 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 
 - Anything not listed under Actions is refused.
 - The rules of an action run in the order shown, and the first one that fails decides.
-- Identifiers in decision lines appear by their last four characters (`...1234`), never in full.
+- Identifiers in decision lines appear by their last four characters (`...1234`), never in full; a value recorded hidden, by length or never shows not even those.
 - In traces and the audit a caller's values are recorded as they are said, except: date of birth hidden (a year is kept); member ID by its last four.
 
 ## Identity

@@ -21,10 +21,11 @@ import type { App, AuditMask } from './app/types';
  * own rule writes its compared line as it likes), the tool's summary and the record it names, and
  * the tool's own audit rows (ToolDef.audit). Wherever one of them repeats the raw value of a param
  * that is recorded masked or never, the value is replaced by what the call records for it ("•" for a
- * secret). That holds for the value as it is (in any case, as a whole token: not inside a longer run
- * of letters or digits) and for values of SCRUB_MIN_LENGTH characters or more; a rule or a tool that
- * reshapes a value (reformats a date, spaces out digits, quotes a part of it) is not recognised, so
- * code still writes only what may be recorded.
+ * secret), and where it is recorded hidden, by length or never, its last-four form (`...1234`, as
+ * the scope rule names a subject) too. That holds for the value as it is (in any case, as a whole
+ * token: not inside a longer run of letters or digits) and for values of SCRUB_MIN_LENGTH characters
+ * or more; a rule or a tool that reshapes a value (reformats a date, spaces out digits, quotes a part
+ * of it) is not recognised, so code still writes only what may be recorded.
  *
  * Only the call's own params are known here: a value the code reads from elsewhere (the session, its
  * systems) and writes into a line is the code's to mask.
@@ -113,17 +114,32 @@ export function bothScrubs(a: Scrub | null, b: Scrub | null): Scrub | null {
 /**
  * The scrub for the free text recorded beside `call`: each raw value of a param that is recorded
  * masked or never, replaced by its recorded form, "•" for a secret (scrubberOfValues: whole tokens,
- * any case, SCRUB_MIN_LENGTH characters or more). Null when the call has no such value, so nothing
- * need change.
+ * any case, SCRUB_MIN_LENGTH characters or more). A value recorded by its last four has its masked
+ * form looked for too where it is recorded hidden, by length or never (`...1234` would say four of
+ * its characters). Null when the call has no such value, so nothing need change.
  */
 export function scrubberFor(app: RecordingApp, call: ToolCall): Scrub | null {
   const pairs: [string, string][] = [];
+  const lastFour: [string, string][] = [];
   for (const [k, v] of Object.entries(call.params)) {
     const how = recordingOf(app, k);
     if (how === 'keep' || v === '') continue;
-    pairs.push([v, recordedValue(how, v) ?? '•']);
+    const shown = recordedValue(how, v) ?? '•';
+    pairs.push([v, shown]);
+    // A line that names the value by its last four (the scope rule's subject, say) says them only where the value is recorded so.
+    if (how !== 'last4' && v.length >= SCRUB_MIN_LENGTH) lastFour.push([maskId(v), shown]);
   }
-  return scrubberOfValues(pairs);
+  const masked = lastFour.length === 0 ? null : maskedIdScrub(lastFour);
+  return bothScrubs(scrubberOfValues(pairs), masked);
+}
+
+/** The scrub of a value's last-four form (`...1234`) in a line, for a value recorded hidden, by length or never. */
+function maskedIdScrub(pairs: readonly (readonly [string, string])[]): Scrub {
+  const shownFor = new Map<string, string>();
+  // Two values with the same last four: the first's shown form is used for both.
+  for (const [masked, shown] of pairs) if (!shownFor.has(masked)) shownFor.set(masked, shown);
+  const pattern = new RegExp(`(?:${[...shownFor.keys()].sort((a, b) => b.length - a.length).map(escape).join('|')})(?![\\p{L}\\p{N}])`, 'gu');
+  return (text) => text.replace(pattern, (m) => shownFor.get(m) ?? '•');
 }
 
 /** The scrub of a result's withheld values (core/resultRedaction.ts): each text a withheld field held, "•" wherever the summary or the record named repeats it. */
