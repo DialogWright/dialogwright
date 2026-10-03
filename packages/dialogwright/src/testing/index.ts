@@ -6,7 +6,8 @@
  * cassette had no answer for; the slot conformance kit runs the checks any slot type must pass over
  * its examples (src/slots/conformance). The policy's safety net: gate-event goldens write every
  * gate decision of a regression run (gateEvents.ts), and the gate grid crosses every tool with every
- * kind of principal, subject and fact, the legacy evaluator as its reference (gateGrid.ts); the
+ * kind of principal, subject and fact, the legacy evaluator (evaluateCall, exported here as test
+ * support) as its reference (gateGrid.ts); the
  * shadow gate runs an app's gate beside that reference on every call of a grid or a whole run and
  * fails on any difference (shadowGate.ts). The policy's invariants hold an app's gate to what its
  * policy file says on the whole grid (policyInvariants.ts), and the policy matrix is the reviewed
@@ -32,6 +33,10 @@ export {
   gridDecisionLine, formatGateGridMismatches, gridRuleCounts, gridUnexercised, gridVerdicts, UNLISTED_TOOL, GRID_PROBES, EXTRA_FIELD,
 } from './gateGrid';
 export type { GateGridInput, GateGridCase, GateGridPoint, GateGrid, GateGridMismatch, GateEvaluate } from './gateGrid';
+// The legacy evaluator over the tables: the shadow gate's and the grid's reference, which an app's
+// direct gate tests may hold its compiled gate to (through namedDecision, and with the identity tools'
+// subject check in front of it, as legacyGateEvaluator has).
+export { evaluateCall } from '../gate/policy';
 export {
   withShadowGate, shadowGate, gateEvaluator, legacyGateOf, createGateShadowReport, gateShadowUnexercised, formatGateShadowReport,
   formatGateShadowMismatch, GateShadowMismatchError,
