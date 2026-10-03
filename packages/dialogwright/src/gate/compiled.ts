@@ -69,6 +69,8 @@ export const NAMED_RULE_IDS: readonly string[] = [DATE_IN_RANGE_ID, LIMIT_ID];
 
 /** An action as the policy lists it: the level it needs and its rules, in order. */
 export interface PolicyAction {
+  /** What the action does, in plain words (policy.yaml's `say`): the policy card's label. The gate never reads it. */
+  readonly say?: string;
   readonly level: Level;
   readonly rules: readonly Rule[];
 }

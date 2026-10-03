@@ -175,7 +175,7 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
     const rules = Object.freeze(action.rules.map((entry) => Object.freeze(readRule(entry))));
     toolLevel[tool] = level;
     rulesFor[tool] = Object.freeze(rules.map(ruleIdOf));
-    actions[tool] = Object.freeze({ level, rules });
+    actions[tool] = Object.freeze(action.say === undefined ? { level, rules } : { say: action.say, level, rules });
     for (const rule of rules) {
       if (rule.rule === 'scope' && rule.subject !== null) subjects[tool] = rule.subject;
       else if (rule.rule === 'fields') serviceFields[tool] = rule.fields;
@@ -202,6 +202,8 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
   if (options.customRules !== undefined) tables.customRules = options.customRules;
   const wording = file.wording ? wordingOf(file.wording) : undefined;
   if (wording) tables.wording = wording;
+  const redact = redactOf(file.redact);
+  if (redact) tables.redact = redact;
   const source: PolicySource = {
     actions: Object.freeze(actions),
     purposes: purposeLevel,
@@ -213,6 +215,41 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
   const compiled = Object.freeze(tables) as PolicyTables;
   attachSource(compiled, Object.freeze(source));
   return compiled;
+}
+
+/** policy.yaml's redact section as the engine reads it (PolicyTables.redact), frozen; none when it withholds nothing from anyone. */
+function redactOf(redact: PolicyYaml['redact']): PolicyTables['redact'] {
+  const rows = Object.entries(redact ?? {});
+  if (rows.length === 0) return undefined;
+  return Object.freeze(Object.fromEntries(rows.map(([who, byTool]) => [who, Object.freeze(Object.fromEntries(Object.entries(byTool).map(([tool, fields]) => [tool, Object.freeze([...fields])])))])));
+}
+
+/** Who a redact row is for: the delegate kind, and the role after the first dot (`agent.clerk`), if any. */
+export function redactWho(key: string): { kind: string; role?: string } {
+  const dot = key.indexOf('.');
+  return dot < 0 ? { kind: key } : { kind: key.slice(0, dot), role: key.slice(dot + 1) };
+}
+
+/** The fields a tool declares (ToolDef.fields), read from code that may be wrong: none unless it is a list of strings. */
+export function declaredFields(tool: unknown): readonly string[] {
+  const fields = typeof tool === 'object' && tool !== null ? (tool as { fields?: unknown }).fields : undefined;
+  return Array.isArray(fields) ? fields.filter((f): f is string => typeof f === 'string') : [];
+}
+
+/** The problems with a tool's declared fields (ToolDef.fields): a list of distinct plain words, each a field of its result. */
+export function toolFieldProblems(tool: unknown): string[] {
+  if (typeof tool !== 'object' || tool === null || !Object.hasOwn(tool, 'fields')) return [];
+  const fields = (tool as { fields?: unknown }).fields;
+  if (fields === undefined) return [];
+  if (!Array.isArray(fields)) return ['fields is not a list of the fields of its result'];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  fields.forEach((f: unknown, i) => {
+    if (typeof f !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(f)) out.push(`fields[${i}] (${JSON.stringify(f)}) is not a field name: it must start with a letter and use only letters, digits and underscores`);
+    else if (seen.has(f)) out.push(`field "${f}" is listed twice`);
+    else seen.add(f);
+  });
+  return out;
 }
 
 export interface CompileIdentityOptions {
@@ -294,6 +331,8 @@ export interface PolicyCheckInput {
   locateKey?(file: string, path: DataPath): { line: number; column: number } | null;
   /** The tools the code defines. */
   tools?: readonly string[];
+  /** The fields each tool declares its result may lose (ToolDef.fields); a tool left out declares none. Left out: not checked. */
+  toolFields?: Readonly<Record<string, readonly string[]>>;
   /** Every slot id the app has: the identity factors must be slots. */
   slots?: ReadonlySet<string>;
   /** The fix for a slot that does not exist: where it would be added. */
@@ -442,6 +481,7 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
     }
   }
   for (const [purpose, { level }] of Object.entries(policy.purposes)) levelProblem(`purpose "${purpose}"`, level, ['purposes', purpose, 'level'], true);
+  redactProblems(c, at);
 
   // Decision 5: the summary hash is taken once per form, over one list, until forms name the action they write.
   const first = confirmed[0];
@@ -461,6 +501,61 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
     }
   }
   return out;
+}
+
+/**
+ * policy.yaml's redact section against identity.yaml and the code: each row is for a kind of party
+ * who acts for subjects (never the subject kind: a subject acting for themselves is never
+ * redacted), and a role of that kind; each of its tools is an action; each field one the tool
+ * declares (ToolDef.fields).
+ */
+function redactProblems(c: PolicyCheckInput, at: ReturnType<typeof reporter>): void {
+  const policy = c.policy;
+  if (!policy?.redact) return;
+  const P = c.files.policy;
+  const I = c.files.identity;
+  const delegates = c.identity?.principals.delegates ?? {};
+  const kinds = Object.keys(delegates);
+  const actions = Object.keys(policy.actions);
+  for (const [who, byTool] of Object.entries(policy.redact)) {
+    const path: DataPath = ['redact', who];
+    const { kind, role } = redactWho(who);
+    if (!c.identity) {
+      at(P, path, `"${who}" names a party who acts for subjects, but the app has no identity.yaml, so no caller does`, 'delete the redact section, or add identity.yaml with the parties who act for subjects and their roles', true);
+      continue;
+    }
+    if (kind === c.identity.principals.subject) {
+      at(P, path, `"${kind}" is the subject kind in ${I}: a subject acting for themselves is never redacted`, kinds.length > 0 ? `name a kind who acts for subjects (${quoteList(kinds)}), or delete it` : 'delete it', true);
+      continue;
+    }
+    if (!has(delegates, kind)) {
+      at(P, path, `"${kind}" is not a kind of party who acts for subjects in ${I}${kinds.length > 0 ? ` (${quoteList(kinds)})` : ', which declares none'}`, `${renameHint(kind, kinds)}add "${kind}" under principals.delegates in ${I}, or delete it`, true);
+      continue;
+    }
+    if (role !== undefined) {
+      const roles = delegates[kind]?.roles ?? [];
+      if (!roles.includes(role)) {
+        const guess = closest(role, roles);
+        at(P, path, `role "${role}" is not a role of "${kind}" in ${I}${roles.length > 0 ? ` (${quoteList(roles)})` : ', which gives it none'}`, `${guess ? `rename it to "${kind}.${guess}", or ` : ''}add "${role}" to the roles of "${kind}" under principals.delegates in ${I}, or delete it`, true);
+      }
+    }
+    for (const [tool, fields] of Object.entries(byTool)) {
+      const toolPath: DataPath = [...path, tool];
+      if (!has(policy.actions, tool)) {
+        at(P, toolPath, `"${tool}" is not an action in ${P}, so nothing it returns reaches anyone`, `${renameHint(tool, actions)}delete it`, true);
+        continue;
+      }
+      if (!c.toolFields) continue;
+      const declared = c.toolFields[tool] ?? [];
+      if (declared.length === 0) {
+        if (fields.length > 0) at(P, toolPath, `"${tool}" declares no fields, so none of its result can be withheld`, `add "fields: [${fields.join(', ')}]" to ${c.inCode('tools', tool)} (the fields of its result the policy may withhold), or delete this entry`, true);
+        continue;
+      }
+      fields.forEach((field, i) => {
+        if (!declared.includes(field)) at(P, [...toolPath, i], `"${field}" is not a field "${tool}" declares (${declared.join(', ')})`, `${renameHint(field, declared)}add "${field}" to the fields of ${c.inCode('tools', tool)}, or delete it from this list`);
+      });
+    }
+  }
 }
 
 /**

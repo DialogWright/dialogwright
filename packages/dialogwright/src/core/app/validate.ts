@@ -190,4 +190,27 @@ export function validateApp(app: App): void {
     seenLinks.add(id);
   }
   for (const tool of Object.keys(roles ?? {})) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has roles for tool "${tool}", which has no rules`);
+  for (const [tool, def] of Object.entries(app.tools)) {
+    const fields: unknown = def.fields;
+    if (fields === undefined) continue;
+    if (!Array.isArray(fields) || fields.some((f) => typeof f !== 'string' || f === '')) return fail(`tool "${tool}"'s fields is not a list of field names`);
+    if (new Set(fields).size !== fields.length) fail(`tool "${tool}" lists a field twice`);
+  }
+  // Redaction per principal (core/resultRedaction.ts) fails closed here, not mid-call: each row is
+  // for the app's delegate kind (or one of its roles), and withholds fields its tools declare.
+  for (const [who, byTool] of Object.entries(app.policy.redact ?? {})) {
+    const dot = who.indexOf('.');
+    const kind = dot < 0 ? who : who.slice(0, dot);
+    const role = dot < 0 ? undefined : who.slice(dot + 1);
+    const identity = app.identity;
+    if (!identity) fail(`policy redacts for "${who}", and the app has no identity`);
+    else if (kind === identity.subjectKind) fail(`policy redacts for "${who}", the subject kind: a subject acting for themselves is never redacted`);
+    else if (kind !== identity.delegateKind) fail(`policy redacts for "${who}", which is not the identity's delegate kind`);
+    else if (role !== undefined && !(identity.delegateRoles ?? []).includes(role)) fail(`policy redacts for "${who}": "${role}" is not a role of "${kind}"`);
+    for (const [tool, fields] of Object.entries(byTool)) {
+      if (!Object.hasOwn(app.tools, tool) || !Object.hasOwn(rulesFor, tool)) fail(`policy redacts the result of "${tool}" for "${who}", which is not a tool with rules`);
+      const declared = app.tools[tool]!.fields ?? [];
+      for (const field of fields) if (!declared.includes(field)) fail(`policy redacts "${field}" of "${tool}" for "${who}", which the tool does not declare (ToolDef.fields)`);
+    }
+  }
 }

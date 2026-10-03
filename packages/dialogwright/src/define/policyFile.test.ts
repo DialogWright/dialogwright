@@ -62,7 +62,10 @@ describe('compile equality: the testkit', () => {
   const frozen: PolicyTables = { ...FROZEN_TESTKIT_POLICY, customRules: TESTKIT_CUSTOM_RULES };
 
   it('policy.yaml compiles to the tables the testkit wrote by hand, its custom rule the testkit\'s own function', () => {
-    expect(comparable(TESTKIT_POLICY)).toEqual(comparable(frozen));
+    // What the hand-written tables could not say: what a depot agent does not see of a parcel (redact).
+    const { redact, ...tables } = TESTKIT_POLICY;
+    expect(comparable(tables)).toEqual(comparable(frozen));
+    expect(redact).toEqual({ agent: { getParcel: ['safePlace'], listParcels: ['safePlace'] }, 'agent.clerk': { getParcel: [], listParcels: [] } });
     expect(TESTKIT_POLICY.customRules!.R8).toBe(TESTKIT_CUSTOM_RULES.R8);
     expect(testkitApp.policy).toBe(TESTKIT_POLICY);
   });
@@ -369,6 +372,56 @@ describe('the checks', () => {
     ]);
     expect(problemsOf(() => defineIdentity({ subjectKind: 'patient', factorSlots: ['a'], verifyTool: 'v', codeTool: 'c', sendCodeTool: 's' }))).toEqual([
       '(file): identity.yaml is in the old shape (subjectKind, factorSlots, ...), which is not read any more -> convert it with "dialogwright policy:convert <app folder>" (or "--from-tables <module>" for tables written in TypeScript), which keeps its decisions and its comments, then check the result: it starts with "principals:", "levels:" and "attempts:"',
+    ]);
+  });
+});
+
+describe('the checks: redaction (redact:)', () => {
+  /** The small app with getRecord declaring the fields of its result the policy may withhold. */
+  const FIELDED = { ...TOOLS, getRecord: { fields: ['notes', 'reason'] } };
+  const redactWith = (redact: unknown, identity: Record<string, unknown> | null = IDENTITY, tools: Record<string, unknown> = FIELDED): string[] =>
+    problemsOf(() => definePolicy({ ...POLICY, redact }, { ...(identity ? { identity } : {}), tools, slots: SLOTS, customRules: RULES }));
+
+  it('compiles by kind and by kind and role; none when nothing is withheld', () => {
+    const redact = { agent: { getRecord: ['notes'] }, 'agent.clerk': { getRecord: [] } };
+    expect(redactWith(redact)).toEqual([]);
+    expect(definePolicy({ ...POLICY, redact }, { identity: IDENTITY, tools: FIELDED, slots: SLOTS, customRules: RULES }).redact).toEqual(redact);
+    expect(definePolicy(POLICY, { identity: IDENTITY, tools: FIELDED, slots: SLOTS, customRules: RULES })).not.toHaveProperty('redact');
+  });
+
+  it('a field the tool does not declare, and a tool that declares none', () => {
+    expect(redactWith({ agent: { getRecord: ['notes', 'reasons'], sendCode: ['phone'] } })).toEqual([
+      'redact.agent.getRecord[1]: "reasons" is not a field "getRecord" declares (notes, reason) -> rename it to "reason", or add "reasons" to the fields of code.tools.getRecord, or delete it from this list',
+      'redact.agent.sendCode: "sendCode" declares no fields, so none of its result can be withheld -> add "fields: [phone]" to code.tools.sendCode (the fields of its result the policy may withhold), or delete this entry',
+    ]);
+  });
+
+  it('an unknown kind, role or action, with the closest; the subject kind; no identity.yaml', () => {
+    expect(redactWith({ agnt: { getRecord: ['notes'] }, 'agent.clrk': { getRecord: [] }, agent: { getRecrd: ['notes'] } })).toEqual([
+      'redact.agnt: "agnt" is not a kind of party who acts for subjects in identity.yaml ("agent") -> rename it to "agent", or add "agnt" under principals.delegates in identity.yaml, or delete it',
+      'redact["agent.clrk"]: role "clrk" is not a role of "agent" in identity.yaml ("viewer", "clerk") -> rename it to "agent.clerk", or add "clrk" to the roles of "agent" under principals.delegates in identity.yaml, or delete it',
+      'redact.agent.getRecrd: "getRecrd" is not an action in policy.yaml, so nothing it returns reaches anyone -> rename it to "getRecord", or delete it',
+    ]);
+    expect(redactWith({ customer: { getRecord: ['notes'] } })).toEqual([
+      'redact.customer: "customer" is the subject kind in identity.yaml: a subject acting for themselves is never redacted -> name a kind who acts for subjects ("agent"), or delete it',
+    ]);
+    expect(problemsOf(() => definePolicy({ actions: { getRecord: { level: 0, rules: [] } }, redact: { agent: { getRecord: ['notes'] } } }, { tools: { getRecord: FIELDED.getRecord } }))).toEqual([
+      'redact.agent: "agent" names a party who acts for subjects, but the app has no identity.yaml, so no caller does -> delete the redact section, or add identity.yaml with the parties who act for subjects and their roles',
+    ]);
+  });
+
+  it('a key that is neither a kind nor a kind and role, and a field listed twice', () => {
+    expect(redactWith({ 'Agent.clerk': { getRecord: ['notes'] }, agent: { getRecord: ['notes', 'notes'] } })).toEqual([
+      'redact["Agent.clerk"]: the key "Agent.clerk" is not a delegate kind, or a kind and one of its roles: write <kind> or <kind>.<role> -> write the kind as identity.yaml has it under principals.delegates (for example "agent"), or the kind, a dot and one of its roles (for example "agent.clerk")',
+      'redact.agent.getRecord[1]: field "notes" is listed twice -> delete one of the two "notes" entries',
+    ]);
+  });
+
+  it('the fields a tool declares must be a list of distinct names', () => {
+    expect(redactWith({}, IDENTITY, { ...TOOLS, getRecord: { fields: ['notes', 'notes', 'a b'] }, sendCode: { fields: 'phone' } })).toEqual([
+      'code.tools.getRecord.fields: tool "getRecord": field "notes" is listed twice -> make code.tools.getRecord.fields a list of the distinct fields of its result the policy may withhold',
+      'code.tools.getRecord.fields: tool "getRecord": fields[2] ("a b") is not a field name: it must start with a letter and use only letters, digits and underscores -> make code.tools.getRecord.fields a list of the distinct fields of its result the policy may withhold',
+      'code.tools.sendCode.fields: tool "sendCode": fields is not a list of the fields of its result -> make code.tools.sendCode.fields a list of the distinct fields of its result the policy may withhold',
     ]);
   });
 });

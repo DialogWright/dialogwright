@@ -8,16 +8,19 @@ import { createApp, CreateAppError, displayNameOf, REPO_ROOT } from './createApp
 import { ConvertError, convertFolder, convertTables, toText, writeConversion } from './convert/convertPolicy';
 import type { IdentityConfig, PolicyTables } from '../core/app/types';
 import { matrixCommand } from './matrixCommand';
+import { pageCommand, type PageCommand } from './pageCommand';
 import { formatProblem, type Problem } from './problems';
 
 /**
  * The `dialogwright` command (the package's bin; run through tsx, which is how the repo runs its
- * TypeScript). Four commands:
+ * TypeScript). Six commands:
  *
  *   dialogwright check [--json] [dir...]
  *   dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install]
  *   dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--sign-in]
  *   dialogwright policy:matrix [dir...]   (./matrixCommand.ts: writes each app's policy.matrix)
+ *   dialogwright policy:card [dir...]     (./pageCommand.ts: writes each app's POLICY.md, the policy card)
+ *   dialogwright app:diagram [dir...]     (./pageCommand.ts: writes each app's APP-MAP.md, the app map)
  *
  * `check` checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
  * per problem, then a summary line per folder (`N problems in <dir>`, or `<dir>: ok`). Exit code 1
@@ -48,6 +51,10 @@ export const USAGE = [
   '  --sign-in: write `signIn: { level: 2 }`, for an app whose channel can sign a caller in',
   '       dialogwright policy:matrix [dir...]',
   '  dir: a folder with the app\'s policy.yaml and a module exporting the app; with none, every folder with a policy.matrix',
+  '       dialogwright policy:card [dir...]',
+  '  dir: the same; writes POLICY.md, the policy in plain English with its diagrams; with none, every folder with a POLICY.md',
+  '       dialogwright app:diagram [dir...]',
+  '  dir: the same; writes APP-MAP.md, the app\'s intents, forms, slots, actions and rules as diagrams; with none, every folder with an APP-MAP.md',
 ].join('\n');
 
 export interface Io {
@@ -98,12 +105,26 @@ export function findAppFolders(cwd: string): { root: string; dirs: string[] } {
   return { root, dirs };
 }
 
+/** The pages `policy:card` and `app:diagram` write beside policy.yaml. Their modules are loaded only when one runs: the other commands do not need them. */
+const POLICY_CARD: PageCommand = {
+  name: 'policy:card',
+  file: 'POLICY.md',
+  write: async (app, file) => (await import('../testing/policyCard')).writePolicyCard(app, file),
+};
+const APP_DIAGRAM: PageCommand = {
+  name: 'app:diagram',
+  file: 'APP-MAP.md',
+  write: async (app, file) => (await import('../testing/appMap')).writeAppMap(app, file),
+};
+
 /** Runs the command with `argv` (what follows `dialogwright`); returns the exit code. */
 export async function main(argv: readonly string[], io: Io = stdio()): Promise<number> {
   const [command, ...rest] = argv;
   if (command === 'policy:convert') return convertCommand(rest, io);
   if (command === 'create-app') return createAppCommand(rest, io);
   if (command === 'policy:matrix') return matrixCommand(rest, io);
+  if (command === 'policy:card') return pageCommand(POLICY_CARD, rest, io);
+  if (command === 'app:diagram') return pageCommand(APP_DIAGRAM, rest, io);
   if (command !== 'check') {
     io.err(command === undefined ? USAGE : `dialogwright: "${command}" is not a command\n${USAGE}`);
     return 2;

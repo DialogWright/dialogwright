@@ -149,6 +149,7 @@ forms:
 - `slots` are asked in this order. Every slot id must be a slot spec in the code (section 4).
 - `summaryPromptId` is the prompt that reads the filled form back for a yes. `null` means the form completes as soon as its slots are full.
 - `hooks` lists the code hooks the form uses. `complete` is required. The list must match the code exactly: `defineApp` refuses a hook the code writes that the list leaves out, and a hook the list names that the code does not write. Section 5 says what each hook is.
+- `calls` lists the actions (tools) the form's hooks call through the gate: its entry call, and the calls its completion and summary hooks make. Declare it for every form or for none (`calls: []` for a form that calls nothing). The engine never reads it; the app map draws a form to its actions with it, and `check` reports an action that no form reaches (an action the identity flow calls itself, the identity tools, is not counted). An app that declares none gets a map that stops at each form.
 - Every form id must also be a `kind: form` intent.
 
 ### prompts.yaml
@@ -199,6 +200,7 @@ actions:
 - `dateInRange` and `limit` hold one param's value to bounds; the next section has them.
 - `purposes` (`purposes: { renew: { level: 1 } }`) is the level a purpose needs when it is more than its first action's.
 - `wording` holds the words the rules use in the audit and the console.
+- `redact` names the fields of an action's result withheld from a party who acts for subjects; [its own section](#redaction-per-principal-redact) has it.
 
 A file written before this shape (`toolLevel`, `rulesFor`, ...) is converted with `dialogwright policy:convert <folder>`, which keeps its decisions and its comments, and says which rows it dropped because no rule read them.
 
@@ -254,6 +256,31 @@ A bound comes only from the app's code and systems, never from the session's fac
 
 Each records itself under its name (`dateInRange`, `limit`) with lines like `amount at least 0.01, at most orderTotal(orderId ...1234) 120` and `returnDate outside returnWindow(orderId ...1234) 2026-09-20..2026-10-20`: the param's name and the bounds it was held to (today's date, a literal, what a lookup gave), with the id a lookup was called with masked to its last four. The call's own value is never in the line, since it may be a value the app redacts, and a line goes to the audit as it is.
 
+#### Redaction per principal: `redact`
+
+A party who acts for subjects (a depot agent for its customers, say) may read a record without being shown all of it. The tool returns the whole record, and the policy says what each kind of party, or one of its roles, does not see:
+
+```yaml
+redact:
+  agent:
+    getParcel: [safePlace]
+    listParcels: [safePlace]
+  agent.clerk:
+    getParcel: []
+    listParcels: []
+```
+
+```ts
+getParcel: { run: (call, sys) => { /* the whole parcel */ }, fields: ['safePlace'] },
+```
+
+- A key is a delegate kind from identity.yaml (`agent`), or the kind and one of its roles (`agent.clerk`). A role's list for an action replaces its kind's, so an empty list shows a role what its kind may not see. A role with no row of its own gets the kind's.
+- A tool declares the fields of its result the policy may withhold (`fields` on the tool, in code): of the value when it is an object, of each item when it is a list. `redact` may name only those, and only actions the policy lists.
+- The engine strips them in one place, right after the tool runs (the lifecycle's `callTool`): each withheld field is set to `null`, and `redacted: <fields>` is added to the call's summary (`in_transit; redacted: safePlace`). Nothing else ever sees the whole value: not the form hooks (`onEntry`, `complete`, `callTool`'s `value`, whose `redacted` lists what was withheld), the facts, the lines, the trace, the console or the audit. Write the tool's own summary without these fields: it is written before the stripping.
+- A subject acting for themselves is never redacted, and neither is an anonymous caller. The gate's decisions do not change; only what the call hands on does.
+- `check` refuses a key that is not a delegate kind or one of its roles (the subject kind included), an action the policy does not list, and a field the tool does not declare, each with the closest name. An app built in code (`validateApp`) refuses the same when it is registered. A tool with fields that returns anything but an object or a list of objects throws, so a value is never handed on whole.
+- The policy card has a section, "What is withheld", with a row per kind or role and action.
+
 #### Testing the policy against the file
 
 Three tests hold the gate to what policy.yaml says, each from `'dialogwright/testing'` and each run over the gate grid (every action crossed with every kind of caller, subject and fact, from the app's `testing.policyMatrix()`):
@@ -270,6 +297,36 @@ Three tests hold the gate to what policy.yaml says, each from `'dialogwright/tes
 
   A policy change is a diff of this file. Write it deliberately with `pnpm policy:matrix <folder>` (with no folder, every `policy.matrix` in the workspace), read the diff, and commit it; never in CI.
 - `runRuleExamples(app)` runs every custom rule's examples through the compiled gate, and fails on one the gate decides otherwise, or whose refusal is not the rule's own.
+
+#### The policy card
+
+`POLICY.md`, beside policy.yaml, is the policy in plain English for someone who will not read YAML: a table with one row per action, written from the compiled app (the gate's own rules, so it cannot say what the gate does not do). Write it with `pnpm policy:card <folder>` (with no folder, every `POLICY.md` in the workspace) and commit it; GitHub renders it, diagrams included.
+
+It has the files' config hashes (policy.yaml and identity.yaml, as every call's audit record carries them); the defaults ("anything not listed is refused", identifiers by their last four, the attempts, what is recorded masked); the identity ladder (each level by its name, what the caller gives in the words of the slots' nouns, the tools that check it, the code, the sign-in) with a Mermaid diagram of it; who the app serves and who acts for them, with what each role gets; what is withheld from them (`redact`), where anything is; one row per action, with its label (`say:` in policy.yaml, else the tool id), its level by name and each rule in words with its parameters (the scope rule's param as a noun, the confirmed values, the fields sent, a range rule's bounds, a custom rule's static `description`); and a second diagram of the actions grouped by level with their rules and the roles that are refused or handed to a person. Write `say:` for every action, and a `description` for every custom rule, in the words a reviewer would use. A role is shown by its id spelt out (`office_admin` as "office admin").
+
+`expectPolicyCard(app, file)` (from `'dialogwright/testing'`) fails a test on any difference between the page and what the app generates, with a line diff and the command that writes it; put it beside the policy matrix's test. The card is a golden: a policy change is a diff of two files a reviewer reads, and only the command writes it, never CI.
+
+#### The app map
+
+`APP-MAP.md`, beside policy.yaml, draws the app's structure with Mermaid: a table of the intents and what each does; the keypad menu as a tree, with the intents that only say a line joined to their prompt; and, for each form, a diagram from its intent to its slots (each with its type), the summary it reads back, the actions it calls (`calls` in forms.yaml) and each action's rules. Write it with `pnpm app:diagram <folder>` and test it with `expectAppMap(app, file)`, as the card.
+
+It is the structure, not a script for a call: the dialog is mixed-initiative, so a caller may give the slots in any order, change their mind or ask for two things in a row. What the map cannot connect is drawn marked and listed under "Dangling references" (`danglingReferences(app)` returns it): an intent with no form, a form no intent starts, an informational intent whose line is not there, a keypad digit to no intent, a form that asks for a slot that does not exist, a call to an action the policy does not list, and an action no form reaches. `check` reports the ones it can from the YAML, with a fix, including the last (an action in policy.yaml that no form's `calls` lists and the identity flow does not call).
+
+#### Who reviews the policy
+
+Policy is a file compliance owns, so a change to it should need their review. GitHub's CODEOWNERS does that: list the files that say what the agent may do, and the people who must approve a change to them (turn on "Require review from Code Owners" in the branch protection rule). For an app's repository:
+
+```text
+# .github/CODEOWNERS: a pull request that changes these files needs the owners' approval.
+# What the agent may do, and how a caller proves who they are:
+policy.yaml        @your-org/compliance
+identity.yaml      @your-org/compliance
+# What compliance reads, and the golden that shows a change as a diff:
+POLICY.md          @your-org/compliance
+policy.matrix      @your-org/compliance
+```
+
+A bare file name matches in every folder, so each app of a repository is covered. A change to the rules lands as a diff of policy.yaml, of `POLICY.md` and of `policy.matrix` together, in plain words and as the verdicts that follow from it, which a reviewer who does not write code can read and accept or refuse. Owners may be users or teams; an owner needs write access to the repository, or the line is ignored. This repository's own file (`.github/CODEOWNERS`) owns the same four names.
 
 ### identity.yaml (optional)
 
@@ -891,7 +948,7 @@ At the repository root, `pnpm check` finds every folder under `apps/` that has a
 It checks, in one pass:
 
 1. **Each file against its schema.** Unknown keys, wrong types, a missing required file, a YAML syntax error. A misspelt name offers the near match.
-2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
+2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every form's `calls` names tools the code defines, and, when forms declare `calls`, every action is reached by a form or the identity flow; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
 3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for a role rule's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`. A missing line's message says when the engine says it and, when it gives the line variables, which ones (`..., and gives it {first}  ->  add "signin_thanks:" with its text (it may use {first}) and interruptible to prompts.yaml`).
 4. **The keypad menu**: every key names a form intent or `agent`; a key for an informational or control intent is refused, since the engine ignores it.
 5. **Each locale against prompts.yaml**: a translated line uses only the variables the prompts.yaml line has (the code fills those and no others, so another would fail when it is said), and a locale has no line that prompts.yaml does not (it would never be said).

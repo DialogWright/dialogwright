@@ -97,7 +97,10 @@ describe('each app converts to the files it runs from', () => {
 
   it('the testkit, from its TypeScript tables (no comments to keep): its custom rule is named, not carried', () => {
     const converted = convertTables(FROZEN_TESTKIT_POLICY as PolicyTables, { ...FROZEN_TESTKIT_IDENTITY, sendCodeParams: () => ({}) }, { signIn: true });
-    expect(dataOf(toText(converted.policy))).toEqual(dataOf(committed('testkit', 'policy')));
+    // The tables have no redaction, which the committed file adds (what a depot agent does not see of a parcel).
+    const { redact, ...file } = dataOf(committed('testkit', 'policy'));
+    expect(redact).toBeDefined();
+    expect(dataOf(toText(converted.policy))).toEqual(file);
     expect(parse(toText(converted.identity!))).toEqual(parse(committed('testkit', 'identity')));
     expect(converted.dropped).toEqual([]);
     const compiled = compileIdentity(identitySchema.parse(parse(toText(converted.identity!))));

@@ -12,6 +12,8 @@
     "check": "pnpm --filter dialogwright check",
     "create-app": "pnpm --filter dialogwright create-app",
     "verify": "pnpm typecheck && pnpm test",
-    "policy:matrix": "pnpm --filter dialogwright policy:matrix"
+    "policy:matrix": "pnpm --filter dialogwright policy:matrix",
+    "policy:card": "pnpm --filter dialogwright policy:card",
+    "app:diagram": "pnpm --filter dialogwright app:diagram"
   }
 }

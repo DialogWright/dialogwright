@@ -40,7 +40,9 @@
     "slot-docs": "tsx scripts/slotDocs.ts",
     "check": "tsx src/define/cli.ts check",
     "create-app": "tsx src/define/cli.ts create-app",
-    "policy:matrix": "tsx src/define/cli.ts policy:matrix"
+    "policy:matrix": "tsx src/define/cli.ts policy:matrix",
+    "policy:card": "tsx src/define/cli.ts policy:card",
+    "app:diagram": "tsx src/define/cli.ts app:diagram"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

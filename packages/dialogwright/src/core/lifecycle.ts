@@ -8,6 +8,7 @@ import { emptySlot, type Session } from './session';
 import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
+import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 
 /**
  * The form lifecycle: every tool a turn reaches goes through `callTool`, and so through the gate.
@@ -51,10 +52,13 @@ export function newTurnOut(): TurnOut {
 /**
  * The gate's answer, and the tool's value when it was allowed to run (null otherwise). What the
  * value is, is the app's: the engine reads only its identity tools' (VerifyOutcome, a boolean).
+ * `redacted`: the fields of the value the policy withheld from the caller (each now null;
+ * core/resultRedaction.ts), present only when it withheld any.
  */
 export interface ToolOutcome {
   decision: GateDecision;
   value: unknown;
+  redacted?: readonly string[];
 }
 
 /**
@@ -111,9 +115,10 @@ function evaluate(s: Session, call: ToolCall, tc: TurnContext): GateDecision {
 }
 
 /**
- * The only way a turn reaches a tool: evaluate the gate, and on ALLOW run the tool and record a
- * summary (no PHI). Every gate decision is recorded, allowed or not, with the call redacted. A
- * probe (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW.
+ * The only way a turn reaches a tool: evaluate the gate, and on ALLOW run the tool, withhold from
+ * its result what the policy keeps from this caller (policy.yaml `redact:`), and record a summary
+ * (no PHI). Every gate decision is recorded, allowed or not, with the call redacted. A probe
+ * (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW.
  *
  * `code` is the keypad one-time code for verifyCode. It travels beside the call, never in its
  * params, so it reaches neither the gate event nor the trace.
@@ -125,9 +130,15 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
     out.gateEvents.push({ decision, summary: null });
     return { decision, value: null };
   }
-  const { value, summary, ref } = runTool(s, call, tc, out, code);
-  out.gateEvents.push(ref === undefined ? { decision, summary } : { decision, summary, ref });
-  return { decision, value };
+  const ran = runTool(s, call, tc, out, code);
+  // Redaction per principal, the one place it happens: nothing past this line holds the whole
+  // result. The hooks, the facts and the lines get the stripped value; the event (so the trace, the
+  // console and the audit) gets the summary with what was withheld.
+  const fields = withheldFields(appOf(s), s.principal, call.tool);
+  const { value, redacted } = redactResult(call.tool, ran.value, fields);
+  const summary = redacted ? redactedSummary(ran.summary, fields) : ran.summary;
+  out.gateEvents.push(ran.ref === undefined ? { decision, summary } : { decision, summary, ref: ran.ref });
+  return redacted ? { decision, value, redacted: fields } : { decision, value };
 }
 
 /**

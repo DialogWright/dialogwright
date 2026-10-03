@@ -41,7 +41,8 @@ const fake: App = {
     },
   },
   slots: { dob: testkitApp.slots.dob!, accountId: testkitApp.slots.accountId!, missingNote: testkitApp.slots.missingNote! },
-  identity: { subjectKind: 'customer', factorSlots: ['dob', 'accountId'], verifyTool: 'verifyCustomer', codeTool: 'verifyCode', sendCodeTool: 'sendCode' },
+  // The testkit's delegates too: its policy withholds a field from them (redact), by kind and role.
+  identity: { subjectKind: 'customer', delegateKind: 'agent', delegateRoles: ['viewer', 'clerk'], factorSlots: ['dob', 'accountId'], verifyTool: 'verifyCustomer', codeTool: 'verifyCode', sendCodeTool: 'sendCode' },
   tools: { ...testkitApp.tools, getAccount: { run: () => ({ value: null, summary: 'the fake app\'s account' }) } },
   policy: testkitApp.policy,
   systems: testkitApp.systems,

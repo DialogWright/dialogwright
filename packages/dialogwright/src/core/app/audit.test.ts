@@ -19,7 +19,8 @@ useTestkit();
 const bare: App = {
   ...testkitApp,
   id: 'audit-bare',
-  tools: Object.fromEntries(Object.entries(testkitApp.tools).map(([k, t]) => [k, { run: t.run }])),
+  // No audit hooks; the fields the testkit's policy withholds from its delegates stay declared.
+  tools: Object.fromEntries(Object.entries(testkitApp.tools).map(([k, t]) => [k, t.fields ? { run: t.run, fields: t.fields } : { run: t.run }])),
   services: undefined,
 };
 

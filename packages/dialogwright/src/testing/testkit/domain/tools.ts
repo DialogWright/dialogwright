@@ -25,6 +25,13 @@ function tool<T extends TestkitTool>(run: Run<T>, audit?: ToolDef['audit']): Too
   return { run: (call, sys, ctx) => run(call.params, sys as ParcelSystems, ctx), ...(audit ? { audit } : {}) };
 }
 
+/** The fields of a parcel the policy may withhold (ToolDef.fields). */
+const PARCEL_FIELDS = ['safePlace'] as const;
+
+function withFields(def: ToolDef, fields: readonly string[]): ToolDef {
+  return { ...def, fields };
+}
+
 /** Example Parcels' tools, each run against the in-memory systems once the gate has allowed the call. */
 export const TESTKIT_TOOLS: { readonly [T in TestkitTool]: ToolDef } = {
   verifyCustomer: tool<'verifyCustomer'>((p, sys) => {
@@ -43,14 +50,16 @@ export const TESTKIT_TOOLS: { readonly [T in TestkitTool]: ToolDef } = {
     const a = sys.account(p.accountId ?? '');
     return { value: a, summary: a ? 'account found' : 'no account' };
   }),
-  listParcels: tool<'listParcels'>((p, sys) => {
+  // The whole parcel, safe place and all: what a party acting for customers may not see of it is
+  // the policy's (policy.yaml redact), and the engine withholds it.
+  listParcels: withFields(tool<'listParcels'>((p, sys) => {
     const list = sys.listParcels(p.accountId ?? '');
     return { value: list, summary: `${list.length} parcel${list.length === 1 ? '' : 's'}` };
-  }),
-  getParcel: tool<'getParcel'>((p, sys) => {
+  }), PARCEL_FIELDS),
+  getParcel: withFields(tool<'getParcel'>((p, sys) => {
     const v = sys.getParcel(p.parcel ?? '');
     return { value: v, summary: v ? v.status : 'not found' };
-  }),
+  }), PARCEL_FIELDS),
   getWindows: tool<'getWindows'>((p, sys) => {
     const open = sys.windowOpen(p.deliveryDay ?? '', p.deliveryPart ?? '');
     return { value: { open }, summary: open ? 'window open' : 'window full' };

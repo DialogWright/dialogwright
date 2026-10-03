@@ -46,8 +46,15 @@ const form = z
           });
         }
       })),
+    calls: unique(identifier(), 'action')
+      .optional()
+      .describe(
+        'The actions (tools) this form\'s hooks call through the gate: its entry call and the calls its completion makes. ' +
+          'Declare it for every form or for none (an empty list for a form that calls nothing): the app map draws each form to its actions, ' +
+          'and `check` reports an action that no form reaches and the identity flow does not call.',
+      ),
   })
-  .describe('One form: the slots it collects, the summary it reads back, and the code hooks it uses.');
+  .describe('One form: the slots it collects, the summary it reads back, the code hooks it uses, and the actions it calls.');
 
 export const formsSchema = z
   .strictObject({
