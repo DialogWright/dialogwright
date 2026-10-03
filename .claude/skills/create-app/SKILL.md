@@ -18,7 +18,7 @@ Three supporting files sit next to this one:
 Read these first; the rest of this skill assumes them:
 
 1. [CLAUDE.md](../../../CLAUDE.md): the three roles and the rules.
-2. [docs/authoring-an-app.md](../../../docs/authoring-an-app.md): sections 1 and 2 (the folder and each file, including "The range rules"), 3 (what stays in TypeScript), 5 (the form hooks) and 6 (`pnpm check`). Skim section 4 (slots); the type pages cover it.
+2. [docs/authoring-an-app.md](../../../docs/authoring-an-app.md) (long: read it a section at a time, from its contents list): sections 1 and 2 (the folder and each file, including "The range rules"), 3 (what stays in TypeScript), 5 (the form hooks) and 6 (`pnpm check`). Skim section 4 (slots); the type pages cover it.
 3. [docs/slots/README.md](../../../docs/slots/README.md): the slot types and "Which type?".
 
 The rules you keep, whatever the paragraph says:

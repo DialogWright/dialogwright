@@ -195,6 +195,28 @@ principalEntry: (c) => {
 },
 ```
 
+### The shapes, for reference
+
+All exported by `'dialogwright'` (defined in `packages/dialogwright/src/gate/types.ts` and `src/core/app/types.ts`):
+
+```ts
+// A proven caller: a subject (verified, or signed in) or a delegate. `first` fills {first}; `role` is what a `role` rule reads.
+interface Party { kind: string; level: 1 | 2; id: string; first: string; name?: string; role?: string; contact?: { phoneLast4?: string }; attrs?: Record<string, string> }
+type Principal = Party | typeof ANONYMOUS;                     // ANONYMOUS is level 0
+
+// code.principals: who a sign-in proves, for the scripted calls' `signIn` and `as`.
+interface PrincipalDirectory { subjectPrincipal?(id: string, level: 1 | 2): Party | null; delegatePrincipal?(id: string): Party | null }
+
+// code.portal: who may sign in on the chat. A delegate's listing has its role; a subject's its names.
+interface PortalConfig {
+  subjects?(): { id: string; first: string; last: string }[];
+  delegates?(): { id: string; name: string; role: string; attrs?: Record<string, string> }[];
+  roleLabel?(role: string): string;                             // how the chat page shows a role
+}
+```
+
+`testing.policyMatrix` (the `PolicyMatrix` type) is under [Testing the policy](#testing-the-policy).
+
 ## Confirmed writes
 
 A write the caller must agree to: the form has a summary (`summaryPromptId`), `confirmedParams`, and its action a `confirmed` rule. The caller's yes arms a hash of exactly the values read back, and the gate refuses a write that sends anything else.
