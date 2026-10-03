@@ -8,7 +8,8 @@
  * gate decision of a regression run (gateEvents.ts), and the gate grid crosses every tool with every
  * kind of principal, subject and fact, the legacy evaluator as its reference (gateGrid.ts); the
  * shadow gate runs an app's gate beside that reference on every call of a grid or a whole run and
- * fails on any difference (shadowGate.ts).
+ * fails on any difference (shadowGate.ts). The policy's invariants hold an app's gate to what its
+ * policy file says on the whole grid (policyInvariants.ts).
  */
 export {
   shadowSlot, withShadowSlots, shadowFromEnv, shadowModeOf, createShadowReport, formatShadowReport, formatShadowMismatch,
@@ -32,3 +33,8 @@ export {
   formatGateShadowMismatch, GateShadowMismatchError,
 } from './shadowGate';
 export type { GateShadowReport, GateShadowMismatch, GateShadowOptions, GateShadowCounts } from './shadowGate';
+export {
+  policyInvariants, checkPolicyInvariants, formatPolicyInvariantViolations, ruleLabel, PolicyInvariantError, INVARIANTS, INVARIANT_ABOUT,
+  CONVERSATION_STATE_DAY,
+} from './policyInvariants';
+export type { InvariantName, PolicyInvariantViolation, PolicyInvariantReport, PolicyInvariantOptions } from './policyInvariants';
