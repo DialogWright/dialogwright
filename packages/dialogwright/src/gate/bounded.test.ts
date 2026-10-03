@@ -133,6 +133,25 @@ describe('the reference grammar', () => {
     expect(parseNumberBound('orderTotal(orderId)')).toEqual({ bound: ref('orderTotal', 'orderId') });
     for (const bad of [Number.NaN, Infinity, 1e21, 1e-7, '1,000', '1e3', true, null]) expect(parseNumberBound(bad), String(bad)).toHaveProperty('problem');
   });
+
+  it('a number beyond what the file holds exactly is written as text', () => {
+    expect(parseNumberBound(Number.MAX_SAFE_INTEGER)).toEqual({ bound: num(String(Number.MAX_SAFE_INTEGER)) });
+    // 9007199254740993 in a YAML file is read as 9007199254740992: refused, with the fix.
+    for (const big of [Number.MAX_SAFE_INTEGER + 2, -(Number.MAX_SAFE_INTEGER + 2), 1e20]) {
+      expect(parseNumberBound(big), String(big)).toEqual({ problem: expect.stringContaining('write it as text, quoted') });
+    }
+    expect(parseNumberBound('9007199254740993')).toEqual({ bound: num('9007199254740993') });
+    const problems = (() => {
+      try {
+        // As a YAML file's 9007199254740993 is read: a number, already rounded.
+        definePolicy({ actions: { pay: { level: 0, rules: [{ limit: { field: 'amount', max: Number.MAX_SAFE_INTEGER + 2 } }] } } }, { tools: { pay: { params: ['amount'] } } });
+        return [];
+      } catch (e) {
+        return String((e as Error).message).split('\n').slice(1);
+      }
+    })();
+    expect(problems.join('\n')).toMatch(/actions\.pay\.rules\[0\]\.limit\.max .*9007199254740992 is beyond 9007199254740991.*write it as text, quoted/);
+  });
 });
 
 describe('dates and numbers, strictly', () => {

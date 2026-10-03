@@ -252,6 +252,11 @@ function compareDecimal(a: Decimal, b: Decimal): number {
 
 /** A number bound as written, read; or what is wrong with it. */
 export function parseNumberBound(value: unknown): { bound: NumberBound } | { problem: string } {
+  // A YAML number past what a JavaScript number holds exactly has been rounded before it gets here
+  // (9007199254740993 reads as ...992): such a bound is written as text, which is read exactly.
+  if (typeof value === 'number' && Number.isFinite(value) && Math.abs(value) > Number.MAX_SAFE_INTEGER) {
+    return { problem: `${String(value)} is beyond ${Number.MAX_SAFE_INTEGER}, the largest number the file holds exactly, so it may already be rounded: write it as text, quoted, as the digits you mean ("12345678901234567890")` };
+  }
   if (typeof value === 'number' || (typeof value === 'string' && DECIMAL.test(value))) {
     return readDecimal(value) !== null ? { bound: { kind: 'number', value: String(value) } } : { problem: `${String(value)} is not a number the rule reads exactly (write it as plain digits, with a point if it has a fraction)` };
   }
