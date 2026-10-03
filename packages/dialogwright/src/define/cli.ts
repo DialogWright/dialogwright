@@ -1,17 +1,20 @@
 #!/usr/bin/env tsx
 import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkAppFully } from './check';
+import { ConvertError, convertFolder, convertTables, toText, writeConversion } from './convert/convertPolicy';
+import type { IdentityConfig, PolicyTables } from '../core/app/types';
 import { formatProblem, type Problem } from './problems';
 
 /**
  * The `dialogwright` command (the package's bin; run through tsx, which is how the repo runs its
- * TypeScript). One command so far:
+ * TypeScript). Two commands:
  *
  *   dialogwright check [--json] [dir...]
+ *   dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--sign-in]
  *
- * Checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
+ * `check` checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
  * per problem, then a summary line per folder (`N problems in <dir>`, or `<dir>: ok`). Exit code 1
  * when there is any problem, 0 when there is none, 2 for a command that is not understood. A warning
  * (a file in a shape read only until every app is converted) goes to stderr as `<dir>: warning: ...`
@@ -22,7 +25,16 @@ import { formatProblem, type Problem } from './problems';
  * Problem for one folder named on the command line; otherwise an object from each folder to its array.
  */
 
-export const USAGE = 'usage: dialogwright check [--json] [dir...]\n  dir: an app folder (one with app.yaml); with none, the working directory, or the app folders under apps/ of the workspace';
+export const USAGE = [
+  'usage: dialogwright check [--json] [dir...]',
+  '  dir: an app folder (one with app.yaml); with none, the working directory, or the app folders under apps/ of the workspace',
+  '       dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--sign-in]',
+  '  dir: an app folder whose policy.yaml (and identity.yaml) are in the old shape',
+  '  --from-tables module: a module exporting `policy` (PolicyTables) and, for an app that verifies callers, `identity` (IdentityConfig)',
+  '  --out dir: where the new files are written (default: dir, in place; for --from-tables, the module\'s folder)',
+  '  --dry-run: write nothing, only report',
+  '  --sign-in: write `signIn: { level: 2 }`, for an app whose channel can sign a caller in',
+].join('\n');
 
 export interface Io {
   out(line: string): void;
@@ -62,6 +74,7 @@ export function findAppFolders(cwd: string): { root: string; dirs: string[] } {
 /** Runs the command with `argv` (what follows `dialogwright`); returns the exit code. */
 export async function main(argv: readonly string[], io: Io = stdio()): Promise<number> {
   const [command, ...rest] = argv;
+  if (command === 'policy:convert') return convertCommand(rest, io);
   if (command !== 'check') {
     io.err(command === undefined ? USAGE : `dialogwright: "${command}" is not a command\n${USAGE}`);
     return 2;
@@ -98,6 +111,81 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   }
   if (json) io.out(JSON.stringify(dirs.length === 1 && !discovered ? results[dirs[0]!.label] : results, null, 2));
   return Object.values(results).some((problems) => problems.length > 0) ? 1 : 0;
+}
+
+/**
+ * `dialogwright policy:convert`: policy.yaml and identity.yaml from the old shape to the new
+ * (./convert/convertPolicy.ts). Prints what it wrote, then every old row it dropped (nothing reads
+ * it, so the new shape cannot say it) and every comment it could not place, each on its own line to
+ * stdout. Exit code 0 when it converted (or the files are already in the new shape), 1 when it
+ * cannot (the problems are on stderr), 2 for a command that is not understood.
+ */
+async function convertCommand(args: readonly string[], io: Io): Promise<number> {
+  let dir: string | undefined;
+  let fromTables: string | undefined;
+  let out: string | undefined;
+  let dryRun = false;
+  let signIn = false;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === '--dry-run') dryRun = true;
+    else if (arg === '--sign-in') signIn = true;
+    else if (arg === '--from-tables' || arg === '--out') {
+      const value = args[i + 1];
+      if (value === undefined || value.startsWith('-')) {
+        io.err(`dialogwright policy:convert: ${arg} needs a value\n${USAGE}`);
+        return 2;
+      }
+      i += 1;
+      if (arg === '--out') out = value;
+      else fromTables = value;
+    } else if (arg.startsWith('-')) {
+      io.err(`dialogwright policy:convert: ${arg} is not an option\n${USAGE}`);
+      return 2;
+    } else if (dir === undefined) dir = arg;
+    else {
+      io.err(`dialogwright policy:convert: one folder at a time\n${USAGE}`);
+      return 2;
+    }
+  }
+  if ((dir === undefined) === (fromTables === undefined)) {
+    io.err(`dialogwright policy:convert: give an app folder, or --from-tables and a module\n${USAGE}`);
+    return 2;
+  }
+
+  try {
+    let files: Record<string, string>;
+    let dropped: string[];
+    let unplaced: string[] = [];
+    let into: string;
+    if (dir !== undefined) {
+      into = resolve(io.cwd, out ?? dir);
+      const converted = convertFolder(resolve(io.cwd, dir), { out: into, signIn });
+      for (const file of converted.alreadyNew) io.out(`${file} is already in the new shape: left alone`);
+      ({ files, dropped, unplaced } = converted);
+    } else {
+      const path = resolve(io.cwd, fromTables!);
+      into = resolve(io.cwd, out ?? dirname(path));
+      const module = (await import(pathToFileURL(path).href)) as { policy?: PolicyTables; identity?: IdentityConfig; default?: { policy?: PolicyTables; identity?: IdentityConfig } };
+      const policy = module.policy ?? module.default?.policy;
+      if (!policy) throw new ConvertError([`${fromTables}: the module exports no \`policy\` (PolicyTables) -> export the app's tables as \`policy\`, and its identity as \`identity\``]);
+      const converted = convertTables(policy, module.identity ?? module.default?.identity, { signIn, schemaDir: relative(realpathSync(existsSync(into) ? into : dirname(into)), join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schemas')) || '.' });
+      files = { 'policy.yaml': toText(converted.policy), ...(converted.identity ? { 'identity.yaml': toText(converted.identity) } : {}) };
+      dropped = converted.dropped;
+    }
+    if (dryRun) for (const file of Object.keys(files)) io.out(`${file}: would write ${join(relative(io.cwd, into) || '.', file)}`);
+    else {
+      writeConversion({ files, dropped, unplaced, alreadyNew: [] }, into);
+      for (const file of Object.keys(files)) io.out(`wrote ${join(relative(io.cwd, into) || '.', file)}`);
+    }
+    for (const line of dropped) io.out(`dropped ${line}`);
+    for (const line of unplaced) io.out(`comment not placed ${line}`);
+    return 0;
+  } catch (error) {
+    if (!(error instanceof ConvertError)) throw error;
+    for (const problem of error.problems) io.err(problem);
+    return 1;
+  }
 }
 
 /** True when this file is the program being run (and not imported by a test). */

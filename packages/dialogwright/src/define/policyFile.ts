@@ -71,7 +71,7 @@ export function ruleIdOf(rule: Rule): string {
 }
 
 /** The engine's words for the role rule's compared line (gate/policy.ts), where the file's wording.role leaves an access out. */
-const DEFAULT_ROLE_TEMPLATES: Readonly<Record<RoleAccess, string>> = {
+export const DEFAULT_ROLE_TEMPLATES: Readonly<Record<RoleAccess, string>> = {
   allow: 'role {role} may {tool}: yes',
   refuse: 'role {role} may {tool}: no',
   person: 'role {role} may {tool}: with a person',
