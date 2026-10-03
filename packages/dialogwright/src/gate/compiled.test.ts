@@ -165,10 +165,13 @@ describe('the seam', () => {
     }
   });
 
-  it('imports only from ./lines, ./principal and ./types; anything else is type-only', () => {
-    const src = readFileSync(new URL('./compiled.ts', import.meta.url), 'utf8');
-    const imports = [...src.matchAll(/^import\s+(type\s+)?[\s\S]*?from\s+'([^']+)';?\s*$/gm)];
-    expect(imports.length).toBeGreaterThan(0);
-    for (const m of imports) if (!['./lines', './principal', './types'].includes(m[2]!)) expect(Boolean(m[1]), m[2]).toBe(true);
+  it('imports only from ./lines, ./bounded, ./principal and ./types; anything else is type-only (and ./bounded only from ./principal and ./types)', () => {
+    const runtime: Record<string, readonly string[]> = { './compiled.ts': ['./lines', './bounded', './principal', './types'], './bounded.ts': ['./principal', './types'] };
+    for (const [file, allowed] of Object.entries(runtime)) {
+      const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+      const imports = [...src.matchAll(/^import\s+(type\s+)?[\s\S]*?from\s+'([^']+)';?\s*$/gm)];
+      expect(imports.length).toBeGreaterThan(0);
+      for (const m of imports) if (!allowed.includes(m[2]!)) expect(Boolean(m[1]), `${file} ${m[2]}`).toBe(true);
+    }
   });
 });

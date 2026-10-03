@@ -1,4 +1,5 @@
 import { isRuleId } from '../../gate/policy';
+import { NAMED_RULE_IDS, sourceOf } from '../../gate/compiled';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../questionIds';
 import { askedQuestionIds, probeContexts } from './probeQuestions';
 import { unknownSlotThresholds, unknownThresholdMessage } from '../slotThresholds';
@@ -99,12 +100,20 @@ export function validateApp(app: App): void {
   for (const id of REQUIRED_CONTROL_INTENTS) if (!Object.hasOwn(app.intents, id)) fail(`missing control intent "${id}"`);
   const { rulesFor, toolLevel, purposeLevel, roles, subjects, customRules } = app.policy;
   for (const [id, rule] of Object.entries(customRules ?? {})) {
-    if (isRuleId(id) || id === 'R0') fail(`policy's custom rule "${id}" has a built-in rule's id`);
+    if (isRuleId(id) || id === 'R0' || NAMED_RULE_IDS.includes(id)) fail(`policy's custom rule "${id}" has a built-in rule's id`);
     if (typeof rule !== 'function') fail(`policy's custom rule "${id}" is not a function`);
   }
+  // The range rules (dateInRange, limit) take parameters only a policy file gives: tables compiled
+  // from one carry the rules they were compiled from (sourceOf), and the rule must be one of them.
+  const source = sourceOf(app.policy);
   for (const [tool, ids] of Object.entries(rulesFor)) {
     if (!Object.hasOwn(app.tools, tool)) fail(`policy has rules for tool "${tool}", which is not a tool`);
+    const named = source && Object.hasOwn(source.actions, tool) ? source.actions[tool]!.rules.map((r) => r.rule as string) : [];
     for (const id of ids) {
+      if (NAMED_RULE_IDS.includes(id)) {
+        if (!named.includes(id)) fail(`policy for tool "${tool}" names the rule "${id}" without its parameters, which only policy.yaml gives`);
+        continue;
+      }
       if (!isRuleId(id) && !(customRules && Object.hasOwn(customRules, id))) fail(`policy for tool "${tool}" names unknown rule "${id}"`);
     }
     if (ids.includes('R2') && !Object.hasOwn(subjects, tool)) fail(`policy for tool "${tool}" runs R2 but names no subject`);

@@ -133,6 +133,159 @@
                 {
                   "type": "object",
                   "properties": {
+                    "dateInRange": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the date (yyyy-mm-dd). A value that is not a date BLOCKs."
+                        },
+                        "notBefore": {
+                          "description": "The earliest date the value may be, inclusive: \"today\", a date, or a reference to a lookup that gives one.",
+                          "type": "string"
+                        },
+                        "notAfter": {
+                          "description": "The latest date the value may be, inclusive: \"today\", a date, or a reference to a lookup that gives one.",
+                          "type": "string"
+                        },
+                        "within": {
+                          "description": "A reference to a lookup that gives a window, { start, end } (end null: open-ended), the value must be inside, ends inclusive. A lookup that gives null has no window: the value is outside it.",
+                          "type": "string"
+                        },
+                        "reasons": {
+                          "description": "The reason the gate gives for each way the rule fails, for the app's refusal lines and handoffs.",
+                          "type": "object",
+                          "properties": {
+                            "invalid": {
+                              "description": "The reason a value that is not a date is refused for. Default \"not-a-date\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            },
+                            "outOfRange": {
+                              "description": "The reason a date before notBefore or after notAfter fails for. Default \"date-range\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            },
+                            "outsideWindow": {
+                              "description": "The reason a date outside the window fails for. Default \"date-window\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "verdicts": {
+                          "description": "The verdict for a date out of its bounds or outside its window. A value that is not a date, and a bound that cannot be found, always BLOCK.",
+                          "type": "object",
+                          "properties": {
+                            "outOfRange": {
+                              "description": "BLOCK (default) or NEEDS_HUMAN, for a date out of its bounds.",
+                              "type": "string",
+                              "enum": [
+                                "BLOCK",
+                                "NEEDS_HUMAN"
+                              ]
+                            },
+                            "outsideWindow": {
+                              "description": "BLOCK (default) or NEEDS_HUMAN, for a date outside the window.",
+                              "type": "string",
+                              "enum": [
+                                "BLOCK",
+                                "NEEDS_HUMAN"
+                              ]
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "field"
+                      ],
+                      "additionalProperties": false,
+                      "description": "dateInRange: the action's date param is a date within its bounds, each inclusive. At least one of notBefore, notAfter, within."
+                    }
+                  },
+                  "required": [
+                    "dateInRange"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The dateInRange rule with its parameters, for example \"dateInRange: { field: returnDate, notAfter: today }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "limit": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the number: digits, an optional leading minus and an optional point with digits; no units, separators or spaces. Anything else BLOCKs."
+                        },
+                        "min": {
+                          "description": "The smallest the number may be, inclusive: a number, or a reference to a lookup that gives one.",
+                          "type": [
+                            "number",
+                            "string"
+                          ]
+                        },
+                        "max": {
+                          "description": "The largest the number may be, inclusive: a number, or a reference to a lookup that gives one (for example orderTotal(orderId), or order(orderId).total).",
+                          "type": [
+                            "number",
+                            "string"
+                          ]
+                        },
+                        "reasons": {
+                          "description": "The reason the gate gives for each way the rule fails.",
+                          "type": "object",
+                          "properties": {
+                            "invalid": {
+                              "description": "The reason a value that is not a number is refused for. Default \"not-a-number\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            },
+                            "outOfRange": {
+                              "description": "The reason a number below min or above max fails for. Default \"limit\".",
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "verdicts": {
+                          "description": "The verdict for a number outside its limits. A value that is not a number, and a bound that cannot be found, always BLOCK.",
+                          "type": "object",
+                          "properties": {
+                            "outOfRange": {
+                              "description": "BLOCK (default) or NEEDS_HUMAN, for a number outside its limits.",
+                              "type": "string",
+                              "enum": [
+                                "BLOCK",
+                                "NEEDS_HUMAN"
+                              ]
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "field"
+                      ],
+                      "additionalProperties": false,
+                      "description": "limit: the action's number param is within its limits, each inclusive. At least one of min, max."
+                    }
+                  },
+                  "required": [
+                    "limit"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The limit rule with its parameters, for example \"limit: { field: amount, max: orderTotal(orderId) }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
                     "custom": {
                       "type": "string",
                       "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
@@ -146,7 +299,7 @@
                   "description": "The custom rule with its parameters, for example \"custom: <the rule's id in code.customRules>\"."
                 }
               ],
-              "description": "One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, custom)."
+              "description": "One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, dateInRange, limit, custom)."
             },
             "description": "The rules the gate runs before the action, in this order; the first that fails decides. An empty list runs none."
           }

@@ -13,9 +13,10 @@ import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resol
 import type { LibrarySlotSpec, SlotTypes } from '../slots/types';
 import { applySlotWording, isLibrarySlot, localeSlotsFile } from '../slots/wording';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
-import { RULE_IDS, isRuleId } from '../gate/policy';
+import { RULE_IDS } from '../gate/policy';
+import { NAMED_RULE_IDS } from '../gate/compiled';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
-import { compileIdentity, compilePolicy, customRulesNamed, identityProblems, policyProblems } from './policyFile';
+import { compileIdentity, compilePolicy, customRulesNamed, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
 
@@ -68,6 +69,12 @@ export interface AppCode {
   services?: App['services'];
   /** The app's own policy rules, by the id rulesFor names them by (PolicyTables.customRules). */
   customRules?: PolicyTables['customRules'];
+  /**
+   * The lookups policy.yaml's range rules may call in their references (`max: orderTotal(orderId)`):
+   * names of functions on the gate's lookups (`systems().lookups`), each called with one param's
+   * value. A reference to any other is refused. Default: none.
+   */
+  lookups?: readonly string[];
   principals?: App['principals'];
   portal?: App['portal'];
   facts?: App['facts'];
@@ -359,6 +366,7 @@ export function crossLink(
     slots: linked.known,
     addSlot,
     customRules: Object.keys(customRules),
+    lookups: Array.isArray(code.lookups) ? code.lookups.filter((x): x is string => typeof x === 'string') : [],
     prompts: promptIds,
     confirms: Object.values(forms).some((form) => form.hooks.includes('confirmedParams')),
     inCode,
@@ -367,9 +375,13 @@ export function crossLink(
   problems.push(...policyProblems(check), ...identityProblems(check));
   const named = customRulesNamed(policy);
   for (const [id, rule] of Object.entries(customRules)) {
-    if (isRuleId(id) || id === 'R0') inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's custom: rules; the built-in ids are R0, ${RULE_IDS.join(', ')}`);
+    if (isBuiltInRuleId(id)) inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's custom: rules; ${NAMED_RULE_IDS.includes(id) ? `"${id}" is a built-in rule written by its name with its parameters` : `the built-in ids are R0, ${RULE_IDS.join(', ')}`}`);
     else if (typeof rule !== 'function') inTs(['customRules', id], `custom rule "${id}" is not a function`, `make ${inCode('customRules', id)} a function of the rule context`);
     else if (!named.has(id)) yaml('policy.yaml', ['actions'], `custom rule "${id}" (${codePath('customRules', id)}) is not named by any action's rules, so it never runs`, `add "- custom: ${id}" to the rules of the action it guards, or delete the rule from ${inCode('customRules', id)}`);
+  }
+  if (code.lookups !== undefined && !Array.isArray(code.lookups)) inTs(['lookups'], 'lookups is not a list', `make ${inCode('lookups')} a list of the names of the gate's lookups the policy may call`);
+  for (const { index, message } of lookupDeclarationProblems(Array.isArray(code.lookups) ? code.lookups : [])) {
+    inTs(['lookups', String(index)], message, `name a function of the gate's lookups with a plain word of its own, in ${inCode('lookups')}`);
   }
   for (const [access, template] of Object.entries(policy.wording?.role ?? {})) {
     for (const [, name] of (template ?? '').matchAll(/\{([^}]*)\}/g)) {

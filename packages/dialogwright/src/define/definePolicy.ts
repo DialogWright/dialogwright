@@ -1,8 +1,9 @@
 import type { IdentityConfig, PolicyTables, SlotId, ToolName } from '../core/app/types';
-import { isRuleId, RULE_IDS } from '../gate/policy';
+import { RULE_IDS } from '../gate/policy';
+import { NAMED_RULE_IDS } from '../gate/compiled';
 import { AppDefinitionError, codePath } from './defineApp';
 import { loadConfigFile, type ConfigFile } from './load';
-import { compileIdentity, compilePolicy, customRulesNamed, identityProblems, policyProblems, type PolicyCheckInput } from './policyFile';
+import { compileIdentity, compilePolicy, customRulesNamed, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, type PolicyCheckInput } from './policyFile';
 import { keyPositionOf, positionOf, type Problem } from './problems';
 import type { IdentityYaml, PolicyYaml } from './schema/index';
 
@@ -36,6 +37,12 @@ export interface DefinePolicyOptions {
   slots?: Readonly<Record<SlotId, unknown>>;
   /** The app's own rules, by the id `custom:` names them by (PolicyTables.customRules). */
   customRules?: PolicyTables['customRules'];
+  /**
+   * The lookups the range rules' references may call (`max: orderTotal(orderId)`): the names of
+   * functions on the gate's lookups (App.systems), each called with one param's value. A reference to
+   * any other is refused. Default: none.
+   */
+  lookups?: readonly string[];
 }
 
 export interface DefineIdentityOptions {
@@ -62,7 +69,7 @@ function locator(files: readonly (ConfigFile<unknown> | null)[], key = false): P
   };
 }
 
-function checkInput(policy: ConfigFile<PolicyYaml> | null, identity: ConfigFile<IdentityYaml> | null, code: { tools?: object; slots?: object; customRules?: object; prompts?: readonly string[] | object }): PolicyCheckInput {
+function checkInput(policy: ConfigFile<PolicyYaml> | null, identity: ConfigFile<IdentityYaml> | null, code: { tools?: object; slots?: object; customRules?: object; prompts?: readonly string[] | object; lookups?: readonly string[] }): PolicyCheckInput {
   const files = [policy, identity];
   const input: PolicyCheckInput = {
     policy: policy?.value ?? null,
@@ -71,6 +78,7 @@ function checkInput(policy: ConfigFile<PolicyYaml> | null, identity: ConfigFile<
     locate: locator(files),
     locateKey: locator(files, true),
     customRules: Object.keys(code.customRules ?? {}),
+    lookups: Array.isArray(code.lookups) ? code.lookups.filter((x): x is string => typeof x === 'string') : [],
     inCode: (...segs) => codePath(...segs),
     codePath: (...segs) => codePath(...segs),
   };
@@ -88,7 +96,7 @@ function customRuleProblems(file: string, policy: PolicyYaml, customRules: Polic
     out.push({ file, line: 0, column: 0, path: codePath('customRules', id), message, fix });
   };
   for (const [id, rule] of Object.entries(customRules ?? {})) {
-    if (isRuleId(id) || id === 'R0') at(id, `custom rule "${id}" has a built-in rule's id`, `rename it in ${codePath('customRules', id)} and in the "custom:" rules that name it; the built-in ids are R0, ${RULE_IDS.join(', ')}`);
+    if (isBuiltInRuleId(id)) at(id, `custom rule "${id}" has a built-in rule's id`, `rename it in ${codePath('customRules', id)} and in the "custom:" rules that name it; ${NAMED_RULE_IDS.includes(id) ? `"${id}" is a built-in rule written by its name with its parameters` : `the built-in ids are R0, ${RULE_IDS.join(', ')}`}`);
     else if (typeof rule !== 'function') at(id, `custom rule "${id}" is not a function`, `make ${codePath('customRules', id)} a function of the rule context`);
     else if (!named.has(id)) at(id, `custom rule "${id}" (${codePath('customRules', id)}) is not named by any action's rules, so it never runs`, `add "- custom: ${id}" to the rules of the action it guards, or delete the rule from ${codePath('customRules', id)}`);
   }
@@ -102,6 +110,9 @@ export function definePolicy(source: string | Record<string, unknown>, options: 
   const problems: Problem[] = [...policy.problems, ...(identity?.problems ?? [])];
   if (policy.value && (identity === null || identity.value)) {
     problems.push(...policyProblems(checkInput(policy, identity, options)), ...customRuleProblems(policy.file, policy.value, options.customRules));
+  }
+  for (const { index, message } of lookupDeclarationProblems(Array.isArray(options.lookups) ? options.lookups : [])) {
+    problems.push({ file: policy.file, line: 0, column: 0, path: `${codePath('lookups')}[${index}]`, message, fix: `name a function of the gate's lookups with a plain word of its own, in ${codePath('lookups')}` });
   }
   if (problems.length > 0 || !policy.value) throw new AppDefinitionError(policy.file, problems, `the policy in ${describeSource(source)}`);
   const attempts = identity?.value?.attempts;
