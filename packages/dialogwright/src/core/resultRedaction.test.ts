@@ -19,7 +19,7 @@ import type { Principal } from '../gate/types';
 import { registerApp } from './app/registry';
 import { validateApp } from './app/validate';
 import type { App, CompletionContext } from './app/types';
-import { callTool, newTurnOut } from './lifecycle';
+import { callTool, newTurnOut, RESULT_UNREDACTABLE } from './lifecycle';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { newSession, type Session } from './session';
 import { DEFAULT_THRESHOLDS } from './thresholds';
@@ -43,8 +43,29 @@ const SAFE_PLACE = 'in the porch';
 
 const ctx = (): TurnContext => ({ nowMs: 0, todayIso: '2026-09-18', thresholds: { ...DEFAULT_THRESHOLDS }, tools: demoTools() });
 
-function call(principal: Principal, tool: string, params: Record<string, string>, tc = ctx()) {
-  const s = newSession('r', 0, WEB_CHAT, principal);
+const getParcel = testkitApp.tools.getParcel!;
+/** The testkit with a getParcel that wraps the parcel and says its safe place in its summary and its record: a careless tool. */
+const CHATTY: App = {
+  ...testkitApp,
+  id: 'redact-chatty',
+  tools: {
+    ...testkitApp.tools,
+    getParcel: {
+      ...getParcel,
+      run: (c, sys, x) => {
+        const parcel = getParcel.run(c, sys, x).value as ParcelView;
+        return { value: { parcel }, summary: `${parcel.status}, left ${parcel.safePlace} (not "${parcel.safePlace}way")`, ref: `${parcel.number}:${parcel.safePlace}` };
+      },
+    },
+  },
+};
+/** The testkit with a getParcel that returns its parcel as text: nothing can be stripped from it. */
+const STRINGY: App = { ...testkitApp, id: 'redact-stringy', tools: { ...testkitApp.tools, getParcel: { ...getParcel, run: (c, sys, x) => ({ value: JSON.stringify(getParcel.run(c, sys, x).value), summary: 'text' }) } } };
+registerApp(CHATTY);
+registerApp(STRINGY);
+
+function call(principal: Principal, tool: string, params: Record<string, string>, tc = ctx(), appId?: string) {
+  const s = newSession('r', 0, WEB_CHAT, principal, appId);
   const out = newTurnOut();
   const outcome = callTool(s, { tool, params }, tc, out);
   return { outcome, events: out.gateEvents, tc };
@@ -73,26 +94,66 @@ describe('stripping a value', () => {
   it('sets each field to null on a copy of an object, and says so', () => {
     const record = { number: '1', note: 'private', other: 'kept' };
     const r = redactResult('getRecord', record, ['note', 'missing']);
-    expect(r).toEqual({ value: { number: '1', note: null, other: 'kept', missing: null }, redacted: true });
+    expect(r).toEqual({ value: { number: '1', note: null, other: 'kept', missing: null }, redacted: true, withheld: ['private'] });
     expect(record.note).toBe('private');
   });
 
   it('strips each object of a list, and leaves a null item alone', () => {
     const r = redactResult('listRecords', [{ id: 'a', note: 'x' }, null, { id: 'b', note: 'y' }], ['note']);
-    expect(r).toEqual({ value: [{ id: 'a', note: null }, null, { id: 'b', note: null }], redacted: true });
+    expect(r).toEqual({ value: [{ id: 'a', note: null }, null, { id: 'b', note: null }], redacted: true, withheld: ['x', 'y'] });
   });
 
   it('withholds nothing from nothing: no fields, a null value, an empty list', () => {
     const v = { note: 'x' };
-    expect(redactResult('getRecord', v, [])).toEqual({ value: v, redacted: false });
-    expect(redactResult('getRecord', null, ['note'])).toEqual({ value: null, redacted: false });
-    expect(redactResult('getRecord', undefined, ['note'])).toEqual({ value: undefined, redacted: false });
-    expect(redactResult('listRecords', [], ['note'])).toEqual({ value: [], redacted: false });
+    expect(redactResult('getRecord', v, [])).toEqual({ value: v, redacted: false, withheld: [] });
+    expect(redactResult('getRecord', null, ['note'])).toEqual({ value: null, redacted: false, withheld: [] });
+    expect(redactResult('getRecord', undefined, ['note'])).toEqual({ value: undefined, redacted: false, withheld: [] });
+    expect(redactResult('listRecords', [], ['note'])).toEqual({ value: [], redacted: false, withheld: [] });
   });
 
   it('refuses a value it cannot strip a field from, so it never goes on whole', () => {
     expect(() => redactResult('getRecord', 'note: private', ['note'])).toThrow('tool "getRecord" returned a string, so the fields the policy withholds (note) cannot be stripped from it: a tool with fields (ToolDef.fields) returns an object or a list of objects');
     expect(() => redactResult('listRecords', ['private'], ['note'])).toThrow('tool "listRecords" returned a list holding a string, so the fields the policy withholds (note) cannot be stripped from it');
+  });
+
+  it('strips a field at any depth: in a wrapper\'s list, in a nested object, own keys only', () => {
+    const wrapper = { items: [{ safePlace: 'porch', n: 1 }], total: 1 };
+    expect(redactResult('t', wrapper, ['safePlace'])).toEqual({ value: { items: [{ safePlace: null, n: 1 }], total: 1, safePlace: null }, redacted: true, withheld: ['porch'] });
+    expect(wrapper.items[0]!.safePlace).toBe('porch');
+    expect(redactResult('t', { parcel: { safePlace: 'porch', inner: { safePlace: ['side', 'gate'] } } }, ['safePlace'])).toEqual({
+      value: { parcel: { safePlace: null, inner: { safePlace: null } }, safePlace: null }, redacted: true, withheld: ['porch', 'side', 'gate'],
+    });
+    // A field an object has only from its prototype is not its own, and stays where it is.
+    const proto = Object.create({ safePlace: 'inherited' }) as Record<string, unknown>;
+    proto.n = 1;
+    const r = redactResult('t', { inner: proto }, ['safePlace']).value as { inner: Record<string, unknown> };
+    expect(Object.keys(r.inner)).toEqual(['n']);
+  });
+
+  it('copies a shared object once and a cycle as a cycle, keeps a class\'s prototype, and leaves a date as it is', () => {
+    class Box { constructor(public safePlace: string, public label: string) {} }
+    const shared = { safePlace: 'porch' };
+    const cyclic: Record<string, unknown> = { safePlace: 'shed' };
+    cyclic.self = cyclic;
+    const when = new Date(0);
+    const r = redactResult('t', { a: shared, b: shared, c: cyclic, box: new Box('garage', 'x'), when }, ['safePlace']);
+    const v = r.value as { a: object; b: object; c: Record<string, unknown>; box: Box; when: Date };
+    expect(v.a).toBe(v.b);
+    expect(v.a).toEqual({ safePlace: null });
+    expect(v.c.self).toBe(v.c);
+    expect(v.c.safePlace).toBeNull();
+    expect(v.box).toBeInstanceOf(Box);
+    expect(v.box).toMatchObject({ safePlace: null, label: 'x' });
+    expect(v.when).toBe(when);
+    expect([...r.withheld].sort()).toEqual(['garage', 'porch', 'shed']);
+    // A date as the whole value is copied, never changed.
+    expect(redactResult('t', when, ['safePlace']).value).toEqual({ safePlace: null });
+    expect(when).not.toHaveProperty('safePlace');
+  });
+
+  it('refuses a Map or a Set below a result it withholds from: its contents are where the keys do not reach', () => {
+    expect(() => redactResult('t', { m: new Map([['safePlace', 'porch']]) }, ['safePlace'])).toThrow('tool "t" returned a Map inside its result');
+    expect(() => redactResult('t', [{ s: new Set(['porch']) }], ['safePlace'])).toThrow('tool "t" returned a Set inside its result');
   });
 
   it('notes what was withheld after the tool\'s own summary', () => {
@@ -127,6 +188,23 @@ describe('callTool withholds the fields, once, for a delegate and not for a subj
       expect(outcome).not.toHaveProperty('redacted');
       expect(events[0]!.summary).toBe('in_transit');
     }
+  });
+
+  it('masks a withheld value wherever the tool\'s summary or the record it names repeats it', () => {
+    const { outcome, events } = call(VIEWER, 'getParcel', { parcel: PARCEL }, ctx(), CHATTY.id);
+    expect(outcome.value).toEqual({ parcel: expect.objectContaining({ number: PARCEL, safePlace: null }), safePlace: null });
+    expect(events[0]!.summary).toBe('in_transit, left • (not "in the porchway"); redacted: safePlace');
+    expect(events[0]!.ref).toBe(`${PARCEL}:•`);
+    expect(JSON.stringify(events)).not.toContain(SAFE_PLACE + '"');
+  });
+
+  it('a result that cannot be stripped never goes on: the call that ran is recorded, and a person takes it', () => {
+    const { outcome, events } = call(VIEWER, 'getParcel', { parcel: PARCEL }, ctx(), STRINGY.id);
+    expect(outcome).toEqual({ decision: expect.objectContaining({ verdict: 'NEEDS_HUMAN', reason: RESULT_UNREDACTABLE }), value: null });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.decision.verdict).toBe('ALLOW');
+    expect(events[0]!.summary).toBe('result not recorded: the fields withheld from this caller (safePlace) could not be stripped from it');
+    expect(JSON.stringify(events)).not.toContain(SAFE_PLACE);
   });
 
   it('a refused call has nothing to withhold', () => {

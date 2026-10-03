@@ -9,7 +9,7 @@ import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
-import { redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf } from './recording';
+import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber } from './recording';
 
 export { redactCall };
 
@@ -117,10 +117,22 @@ function evaluate(s: Session, call: ToolCall, tc: TurnContext): GateDecision {
 }
 
 /**
+ * The reason a call the gate allowed is handed to a person when the tool's result cannot be withheld
+ * from as the policy says (redactResult throws): the call ran and is recorded, its result goes nowhere.
+ */
+export const RESULT_UNREDACTABLE = 'result-unredactable';
+
+/**
  * The only way a turn reaches a tool: evaluate the gate, and on ALLOW run the tool, withhold from
  * its result what the policy keeps from this caller (policy.yaml `redact:`), and record a summary
  * (no PHI). Every gate decision is recorded, allowed or not, with the call redacted. A probe
  * (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW.
+ *
+ * The summary and the record it names are masked as the call is (a raw value of a param recorded
+ * masked or never) and as the result was (every text a withheld field held). A result that cannot be
+ * stripped as the policy says (a tool that declared fields its value does not have) never goes on:
+ * the call that ran is still recorded, with a summary that says so, and its outcome is NEEDS_HUMAN
+ * (RESULT_UNREDACTABLE), so the caller goes to a person.
  *
  * `code` is the keypad one-time code for verifyCode. It travels beside the call, never in its
  * params, so it reaches neither the gate event nor the trace.
@@ -137,9 +149,17 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
   // result. The hooks, the facts and the lines get the stripped value; the event (so the trace, the
   // console and the audit) gets the summary with what was withheld.
   const fields = withheldFields(appOf(s), s.principal, call.tool);
-  const { value, redacted } = redactResult(call.tool, ran.value, fields);
-  // The summary and the record it names are recorded beside the call, so they are masked as it is.
-  const scrub = scrubberOf(decision);
+  let stripped: ReturnType<typeof redactResult>;
+  try {
+    stripped = redactResult(call.tool, ran.value, fields);
+  } catch {
+    // The tool ran: its call is recorded, though nothing of what it returned is.
+    out.gateEvents.push({ decision, summary: `result not recorded: the fields withheld from this caller (${fields.join(', ')}) could not be stripped from it` });
+    return { decision: { ...decision, verdict: 'NEEDS_HUMAN', reason: RESULT_UNREDACTABLE }, value: null };
+  }
+  const { value, redacted, withheld } = stripped;
+  // The summary and the record it names are recorded beside the call, so they are masked as it is, and as the result was.
+  const scrub = bothScrubs(scrubberOf(decision), withheldScrubber(withheld));
   const said = scrub && typeof ran.summary === 'string' ? scrub(ran.summary) : ran.summary;
   const summary = redacted ? redactedSummary(said, fields) : said;
   const ref = scrub && typeof ran.ref === 'string' ? scrub(ran.ref) : ran.ref;

@@ -126,6 +126,11 @@ export function scrubberFor(app: RecordingApp, call: ToolCall): Scrub | null {
   return scrubberOfValues(pairs);
 }
 
+/** The scrub of a result's withheld values (core/resultRedaction.ts): each text a withheld field held, "•" wherever the summary or the record named repeats it. */
+export function withheldScrubber(values: readonly string[]): Scrub | null {
+  return scrubberOfValues(values.map((v) => [v, '•'] as const));
+}
+
 /** The scrub each recorded decision was made with (registered by the lifecycle), for the rows recorded after it. */
 const SCRUBS = new WeakMap<GateDecision, Scrub>();
 
