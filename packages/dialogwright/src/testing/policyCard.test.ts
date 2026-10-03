@@ -53,6 +53,7 @@ describe('the policy card: each rule in words', () => {
       ],
     },
     noteOrder: { level: 1, rules: [{ fields: [] }, { scope: { param: 'accountId' } }, { dateInRange: { field: 'startDate', notBefore: '2026-01-31' } }] },
+    feeOrder: { level: 1, rules: [{ limit: { field: 'amount', unscoped: true, max: 'feeSchedule(orderId)' } }] },
     scheduleOrder: { level: 1, rules: [{ dateInRange: { field: 'startDate', notBefore: 'today-1', notAfter: 'today+30' } }, { dateInRange: { field: 'endDate', notBefore: 'today+1', notAfter: 'today+3660' } }, { dateInRange: { field: 'callbackDate', notAfter: 'today-7' } }] },
     openThing: { level: 0, rules: [] },
   }));
@@ -72,18 +73,33 @@ describe('the policy card: each rule in words', () => {
     expect(card).toContain("by role: a viewer's request is refused; a clerk's request goes to a person (staff-filing); a supervisor's request goes ahead; any other role, or none, is refused; a customer acting for themselves is not held to this rule");
   });
 
+  it('lists the actions no role rule governs, for every role and a party with no role, and the identity checks as refused', () => {
+    expect(card).toContain('| every role, and a party with no role | noteOrder<br/>feeOrder<br/>scheduleOrder<br/>openThing | none | none |');
+    expect(card).toContain('The last row is every action that has no role rule: every role, and a party with no role, goes ahead to its other rules');
+    const own = policyCardText(testkitApp, tmp());
+    expect(own).toContain("| every role, and a party with no role | read the customer's account<br/>read the delivery windows<br/>list the customer's parcels<br/>read a parcel<br/>tell the depot about a report | none | check the account ID and date of birth<br/>text a one-time code<br/>check the one-time code |");
+  });
+
+  it('says where a hidden value keeps its year and where it is a dot', () => {
+    const own = policyCardText(testkitApp, tmp());
+    expect(own).toContain('date of birth hidden (the trace keeps only its year, `••/••/1985`; a call as recorded, in the gate\'s decision, the console and the audit, shows `•`)');
+    expect(own).toContain('| date of birth (`dob`) | hidden (`•`) |');
+  });
+
   it('says a record the action names belongs to the caller or someone they act for, and a param is the caller\'s own or one they act for', () => {
     expect(card).toContain('the order ID must belong to the caller, or to someone they act for');
     expect(card).toContain("the account ID must be the caller's own, or one they act for");
   });
 
   it('says the bounds of a limit and of a date, what a lookup gives, and the verdict outside them', () => {
-    expect(card).toContain('the amount must be at least 0.01 and at most what `orderTotal(orderId)` gives (a number outside it is refused; anything that is not a number is refused)');
-    expect(card).toContain('the return date must be on or before today and inside the window `returnWindow(orderId)` gives (a date out of bounds is refused; one outside the window goes to a person; anything that is not a date is refused)');
+    expect(card).toContain("the amount must be at least 0.01 and at most what `orderTotal(orderId)` gives (a number outside it is refused; anything that is not a number is refused); `orderTotal` reads the order ID the scope rule above holds to the caller's own records, or those they act for");
+    expect(card).toContain("the return date must be on or before today and inside the window `returnWindow(orderId)` gives (a date out of bounds is refused; one outside the window goes to a person; anything that is not a date is refused); `returnWindow` reads the order ID the scope rule above holds to the caller's own records, or those they act for");
     expect(card).toContain('the start date must be on or after 2026-01-31 (a date out of bounds is refused; anything that is not a date is refused)');
     expect(card).toContain('the start date must be no earlier than 1 day before today and no later than 30 days from today (a date out of bounds is refused; anything that is not a date is refused)');
     expect(card).toContain('the end date must be no earlier than 1 day from today and no later than 3660 days from today (a date out of bounds is refused; anything that is not a date is refused)');
     expect(card).toContain('the callback date must be no later than 7 days before today (a date out of bounds is refused; anything that is not a date is refused)');
+    // A rule whose lookup is about no caller's own record says so.
+    expect(card).toContain("the amount must be at most what `feeSchedule(orderId)` gives (a number outside it is refused; anything that is not a number is refused); `feeSchedule` is about no caller's own record, so every caller is held to the same bounds");
   });
 
   it('says a fields rule with no field sends none, and labels an action by its tool id when it has no say', () => {

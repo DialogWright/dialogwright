@@ -17,7 +17,7 @@ import { formatProblem, type Problem } from './problems';
  *
  *   dialogwright check [--json] [dir...]
  *   dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install]
- *   dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--sign-in]
+ *   dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--no-sign-in]
  *   dialogwright policy:matrix [dir...]   (./matrixCommand.ts: writes each app's policy.matrix)
  *   dialogwright policy:card [dir...]     (./pageCommand.ts: writes each app's POLICY.md, the policy card)
  *   dialogwright app:diagram [dir...]     (./pageCommand.ts: writes each app's APP-MAP.md, the app map)
@@ -43,12 +43,13 @@ export const USAGE = [
   '  --identity: add identity.yaml, so callers verify with two factors (an account number and a birth date) before the booking',
   '  --display text: the name the greeting and the console use (default: the name in capitals, "water-utility" is "Water Utility")',
   '  --no-install: do not run `pnpm install` afterwards, which links the new app into the workspace',
-  '       dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--sign-in]',
+  '       dialogwright policy:convert (dir | --from-tables module) [--out dir] [--dry-run] [--no-sign-in]',
   '  dir: an app folder whose policy.yaml (and identity.yaml) are in the old shape',
   '  --from-tables module: a module exporting `policy` (PolicyTables) and, for an app that verifies callers, `identity` (IdentityConfig)',
   '  --out dir: where the new files are written (default: dir, in place; for --from-tables, the module\'s folder)',
   '  --dry-run: write nothing, only report',
-  '  --sign-in: write `signIn: { level: 2 }`, for an app whose channel can sign a caller in',
+  '  --no-sign-in: leave `signIn` out of identity.yaml (by default it is `signIn: { level: 2 }` where the ladder has a code,',
+  '    as an app took a sign-in before identity.yaml); for an app no channel signs a caller in to',
   '       dialogwright policy:matrix [dir...]',
   '  dir: a folder with the app\'s policy.yaml and a module exporting the app; with none, every folder with a policy.matrix',
   '       dialogwright policy:card [dir...]',
@@ -251,11 +252,13 @@ async function convertCommand(args: readonly string[], io: Io): Promise<number> 
   let fromTables: string | undefined;
   let out: string | undefined;
   let dryRun = false;
-  let signIn = false;
+  let signIn = true;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
     if (arg === '--dry-run') dryRun = true;
+    // --sign-in is the default, still accepted.
     else if (arg === '--sign-in') signIn = true;
+    else if (arg === '--no-sign-in') signIn = false;
     else if (arg === '--from-tables' || arg === '--out') {
       const value = args[i + 1];
       if (value === undefined || value.startsWith('-')) {

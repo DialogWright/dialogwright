@@ -25,7 +25,7 @@ describe('the policy invariants', () => {
   it('hold on the testkit, and every invariant applies to some case', () => {
     const report = policyInvariants(testkitApp);
     expect(report.violations).toEqual([]);
-    expect(report.cases).toBe(27648);
+    expect(report.cases).toBe(31104);
     for (const name of INVARIANTS) expect([name, report.applied[name] > 0]).toEqual([name, true]);
   });
 
@@ -42,8 +42,8 @@ const gate = gateOf(testkitApp);
 const SOURCE = gate.source;
 
 /** A gate compiled from the testkit's policy after `change`: the gate as it runs, with one rule replaced. */
-function buggy(change: (source: PolicySource) => PolicySource): GateEvaluate {
-  const g = compileGate(change(SOURCE), gate.tables, gate.subjectKind);
+function buggy(change: (source: PolicySource) => PolicySource, identityTools: readonly string[] = gate.identityTools): GateEvaluate {
+  const g = compileGate(change(SOURCE), gate.tables, gate.subjectKind, identityTools);
   return (call, p, facts, lk) => g.evaluate(call, p, facts, lk);
 }
 
@@ -90,6 +90,10 @@ const BUGS: Record<InvariantName, { bug: string; evaluate: GateEvaluate }> = {
   unlisted: {
     bug: 'an action the policy does not list is allowed',
     evaluate: (call, p, facts, lk) => (Object.hasOwn(SOURCE.actions, call.tool) ? gate.evaluate(call, p, facts, lk) : ({ call, verdict: 'ALLOW', rules: [] } satisfies GateDecision)),
+  },
+  'subject-only': {
+    bug: 'the gate forgets the identity tools are for the subject, so a party acting for subjects may text a code',
+    evaluate: buggy((source) => source, []),
   },
   level: {
     bug: 'the identity rule is one level short',

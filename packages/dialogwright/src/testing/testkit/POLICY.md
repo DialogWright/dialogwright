@@ -13,9 +13,9 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 
 - Anything not listed under Actions is refused.
 - The rules of an action run in the order shown, and the first one that fails decides.
-- Identifiers in decision lines appear by their last four characters (`...1234`), never in full.
+- Identifiers in decision lines appear by their last four characters (`...1234`), never in full; a value recorded hidden, by length or never shows not even those.
 - A caller has 3 tries at each identity check (the account ID and date of birth, and the one-time code). After that a person takes the call.
-- In traces and the audit a caller's values are recorded as they are said, except: account ID by its last four; date of birth hidden (a year is kept); description by its length.
+- In traces and the audit a caller's values are recorded as they are said, except: account ID by its last four; date of birth hidden (the trace keeps only its year, `••/••/1985`; a call as recorded, in the gate's decision, the console and the audit, shows `•`); description by its length.
 
 ## Identity
 
@@ -26,6 +26,7 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 | 2 | confirmed by code | level 1, and a 6-digit one-time code sent to the contact on file | text a one-time code (`sendCode`); check the one-time code (`verifyCode`) |
 
 - Each level includes the one below it. A customer below an action's level is asked for what the next level needs; any other caller is refused.
+- The identity checks (check the account ID and date of birth, `verifyCustomer`; text a one-time code, `sendCode`; check the one-time code, `verifyCode`) are for customers only: a caller not yet verified may use them, and any other party (one who acts for customers, or anyone else) is refused them before their rules run.
 - The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.
 - A sign-in through a portal proves level 2 ('confirmed by code'), so a signed-in caller starts there.
 
@@ -48,16 +49,17 @@ flowchart LR
 - **customer**: the people the app serves. They are verified up the ladder above and may see only their own records.
 - **agent**: acts for customers, signed in through a portal. They may see the records of the customers they act for, with a role: viewer, clerk.
 
-What each role may do, in the actions that have a role rule (a role a rule does not list is refused, and so is a party with no role):
+What each role may do. In the actions that have a role rule, a role the rule does not list is refused, and so is a party with no role. The last row is every action that has no role rule: every role, and a party with no role, goes ahead to its other rules (the level, whose record it is, the confirmation). The identity checks (check the account ID and date of birth, text a one-time code and check the one-time code) are for customers only: a party who acts for them is refused those, whatever its role.
 
 | Role | Goes ahead | Goes to a person | Refused |
 | --- | --- | --- | --- |
 | viewer | none | none | report a missing parcel |
 | clerk | none | report a missing parcel | none |
+| every role, and a party with no role | read the customer's account<br/>read the delivery windows<br/>list the customer's parcels<br/>read a parcel<br/>tell the depot about a report | none | check the account ID and date of birth<br/>text a one-time code<br/>check the one-time code |
 
 ## What is withheld
 
-A party who acts for customers does not see every field of what some actions return: the engine sets these fields to nothing after the action runs, before a line, the session, the trace, the console or the audit reads the result, and the record of the call says which were withheld. A row for a role replaces its kind's for that action. A customer acting for themselves sees the whole of their own record.
+A party who acts for customers does not see every field of what some actions return: right after the action runs, the engine sets these fields to nothing wherever the result holds them, at any depth, before a line, the session, the trace, the console or the audit reads it. The record of the call says which fields were withheld, and where the action's summary repeats what one held, that is masked. What the action itself does with the whole record as it runs is not covered: a side effect it queues goes to its service as queued (its record masks what was withheld), and what it writes to the session and an error it raises are its own; the action's code keeps those to what the caller may see. A row for a role replaces its kind's for that action, and a party of a kind with no row here at all (nor its role) sees none of the fields an action declares it may withhold. A customer acting for themselves sees the whole of their own record.
 
 | Who | Action | Fields withheld |
 | --- | --- | --- |
@@ -68,12 +70,12 @@ A party who acts for customers does not see every field of what some actions ret
 
 ## What is recorded
 
-What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary or its own audit rows repeat a value that is hidden, shortened or never recorded, it is masked there too.
+What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary, its own audit rows, the side effects it queues (as recorded) or a downstream service's row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.
 
 | Action | Value | Recorded |
 | --- | --- | --- |
 | Check the account ID and date of birth (`verifyCustomer`) | account ID (`accountId`) | by its last four characters |
-| Check the account ID and date of birth (`verifyCustomer`) | date of birth (`dob`) | hidden |
+| Check the account ID and date of birth (`verifyCustomer`) | date of birth (`dob`) | hidden (`•`) |
 | Check the one-time code (`verifyCode`) | nothing | |
 | Text a one-time code (`sendCode`) | account ID (`accountId`) | by its last four characters |
 | Read the customer's account (`getAccount`) | account ID (`accountId`) | by its last four characters |
@@ -95,9 +97,9 @@ One row per action the agent may take. Anything else is refused.
 
 | Action | Level | The gate checks, in order |
 | --- | --- | --- |
-| **Check the account ID and date of birth**<br/>`verifyCustomer` | 0 anonymous | 1. the identity check has not already failed 3 times (after that a person takes the call) |
-| **Check the one-time code**<br/>`verifyCode` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the identity check has not already failed 3 times (after that a person takes the call) |
-| **Text a one-time code**<br/>`sendCode` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the account ID must be the caller's own, or one they act for |
+| **Check the account ID and date of birth**<br/>`verifyCustomer` | 0 anonymous | 1. only a customer, or a caller not yet verified, may use it (any other party is refused)<br/>2. the identity check has not already failed 3 times (after that a person takes the call) |
+| **Check the one-time code**<br/>`verifyCode` | 1 verified | 1. only a customer, or a caller not yet verified, may use it (any other party is refused)<br/>2. the caller must be at 'verified' or above<br/>3. the identity check has not already failed 3 times (after that a person takes the call) |
+| **Text a one-time code**<br/>`sendCode` | 1 verified | 1. only a customer, or a caller not yet verified, may use it (any other party is refused)<br/>2. the caller must be at 'verified' or above<br/>3. the account ID must be the caller's own, or one they act for |
 | **Read the customer's account**<br/>`getAccount` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the account ID must be the caller's own, or one they act for |
 | **Read the delivery windows**<br/>`getWindows` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the account ID must be the caller's own, or one they act for |
 | **List the customer's parcels**<br/>`listParcels` | 2 confirmed by code | 1. the caller must be at 'confirmed by code' or above<br/>2. the account ID must be the caller's own, or one they act for |

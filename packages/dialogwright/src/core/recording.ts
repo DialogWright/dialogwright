@@ -21,10 +21,14 @@ import type { App, AuditMask } from './app/types';
  * own rule writes its compared line as it likes), the tool's summary and the record it names, and
  * the tool's own audit rows (ToolDef.audit). Wherever one of them repeats the raw value of a param
  * that is recorded masked or never, the value is replaced by what the call records for it ("•" for a
- * secret). That holds for the value as it is (in any case); a rule or a tool that reshapes a value
- * (reformats a date, spaces out digits, quotes a part of it) is not recognised, so code still writes
- * only what may be recorded. Over-masking is the failure it allows: a short masked value also
- * matches inside other words, which then read masked too.
+ * secret), and where it is recorded hidden, by length or never, its last-four form (`...1234`, as
+ * the scope rule names a subject) too. That holds for the value as it is (in any case, as a whole
+ * token: not inside a longer run of letters or digits) and for values of SCRUB_MIN_LENGTH characters
+ * or more; a rule or a tool that reshapes a value (reformats a date, spaces out digits, quotes a part
+ * of it) is not recognised, so code still writes only what may be recorded. The side effects a tool
+ * queues while it runs are recorded with the same scrub, and with what its result withheld
+ * (recordedEffect: what is sent to the service is the effect itself), and a downstream service's
+ * audit row for the answer to one with that effect's (carryScrub).
  *
  * Only the call's own params are known here: a value the code reads from elsewhere (the session, its
  * systems) and writes into a line is the code's to mask.
@@ -77,38 +81,110 @@ export type Scrub = (text: string) => string;
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * The scrub for the free text recorded beside `call`: each non-empty raw value of a param that is
- * recorded masked or never, replaced (matched in any case, the longest first) by its recorded form,
- * "•" for a secret. Null when the call has no such value, so nothing need change.
+ * The fewest characters a value has for the scrub to look for it in free text. A shorter value (a
+ * one-letter answer, a two-digit number) cannot be told from the line's own words and numbers
+ * ("level 1", "a caller"), so it is not looked for: the call as recorded still masks it, and the
+ * gate's own lines never print a param's raw value.
  */
-export function scrubberFor(app: RecordingApp, call: ToolCall): Scrub | null {
+export const SCRUB_MIN_LENGTH = 3;
+
+/**
+ * The scrub that replaces each raw value (matched in any case, as a whole token: not inside a longer
+ * run of letters or digits, the longest first) by its shown form. Values shorter than
+ * SCRUB_MIN_LENGTH are not looked for. Null when there is nothing to look for.
+ */
+export function scrubberOfValues(pairs: Iterable<readonly [raw: string, shown: string]>): Scrub | null {
   const shownFor = new Map<string, string>();
-  for (const [k, v] of Object.entries(call.params)) {
-    const how = recordingOf(app, k);
-    if (how === 'keep' || v === '') continue;
-    const key = v.toLowerCase();
-    // Two params with the same value: the first masked form is used for both.
-    if (!shownFor.has(key)) shownFor.set(key, recordedValue(how, v) ?? '•');
+  for (const [raw, shown] of pairs) {
+    if (raw.length < SCRUB_MIN_LENGTH) continue;
+    const key = raw.toLowerCase();
+    // Two values the same: the first shown form is used for both.
+    if (!shownFor.has(key)) shownFor.set(key, shown);
   }
   if (shownFor.size === 0) return null;
-  const pattern = new RegExp([...shownFor.keys()].sort((a, b) => b.length - a.length).map(escape).join('|'), 'gi');
+  const alternatives = [...shownFor.keys()].sort((a, b) => b.length - a.length).map(escape).join('|');
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives})(?![\\p{L}\\p{N}])`, 'giu');
   return (text) => text.replace(pattern, (m) => shownFor.get(m.toLowerCase()) ?? '•');
 }
 
-/** The scrub each recorded decision was made with (registered by the lifecycle), for the rows recorded after it. */
-const SCRUBS = new WeakMap<GateDecision, Scrub>();
-
-/** Registers the scrub for the free text recorded beside `decision` (the lifecycle does, as it records the decision). */
-export function registerScrub(decision: GateDecision, scrub: Scrub): void {
-  SCRUBS.set(decision, scrub);
+/** Two scrubs as one (the first, then the second); either may be null. */
+export function bothScrubs(a: Scrub | null, b: Scrub | null): Scrub | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return (text) => b(a(text));
 }
 
 /**
- * The scrub registered for a decision the lifecycle recorded in this process, or null (nothing of
- * its call was masked, or the decision was read back from a trace, where the raw values are gone).
+ * The scrub for the free text recorded beside `call`: each raw value of a param that is recorded
+ * masked or never, replaced by its recorded form, "•" for a secret (scrubberOfValues: whole tokens,
+ * any case, SCRUB_MIN_LENGTH characters or more). A value recorded by its last four has its masked
+ * form looked for too where it is recorded hidden, by length or never (`...1234` would say four of
+ * its characters). Null when the call has no such value, so nothing need change.
  */
-export function scrubberOf(decision: GateDecision): Scrub | null {
-  return SCRUBS.get(decision) ?? null;
+export function scrubberFor(app: RecordingApp, call: ToolCall): Scrub | null {
+  const pairs: [string, string][] = [];
+  const lastFour: [string, string][] = [];
+  for (const [k, v] of Object.entries(call.params)) {
+    const how = recordingOf(app, k);
+    if (how === 'keep' || v === '') continue;
+    const shown = recordedValue(how, v) ?? '•';
+    pairs.push([v, shown]);
+    // A line that names the value by its last four (the scope rule's subject, say) says them only where the value is recorded so.
+    if (how !== 'last4' && v.length >= SCRUB_MIN_LENGTH) lastFour.push([maskId(v), shown]);
+  }
+  const masked = lastFour.length === 0 ? null : maskedIdScrub(lastFour);
+  return bothScrubs(scrubberOfValues(pairs), masked);
+}
+
+/** The scrub of a value's last-four form (`...1234`) in a line, for a value recorded hidden, by length or never. */
+function maskedIdScrub(pairs: readonly (readonly [string, string])[]): Scrub {
+  const shownFor = new Map<string, string>();
+  // Two values with the same last four: the first's shown form is used for both.
+  for (const [masked, shown] of pairs) if (!shownFor.has(masked)) shownFor.set(masked, shown);
+  const pattern = new RegExp(`(?:${[...shownFor.keys()].sort((a, b) => b.length - a.length).map(escape).join('|')})(?![\\p{L}\\p{N}])`, 'gu');
+  return (text) => text.replace(pattern, (m) => shownFor.get(m) ?? '•');
+}
+
+/** The scrub of a result's withheld values (core/resultRedaction.ts): each text a withheld field held, "•" wherever the summary or the record named repeats it. */
+export function withheldScrubber(values: readonly string[]): Scrub | null {
+  return scrubberOfValues(values.map((v) => [v, '•'] as const));
+}
+
+/**
+ * The scrub each recorded thing was made with (registered by the lifecycle, and carried by the
+ * runner and the server from a side effect to the answer it brings): a decision, for the rows
+ * recorded after it; a side effect, for its params as recorded; a service's answer, for its row.
+ */
+const SCRUBS = new WeakMap<object, Scrub>();
+
+/** Registers the scrub for the free text recorded beside `target` (a decision, a side effect, a service's answer). */
+export function registerScrub(target: object, scrub: Scrub): void {
+  SCRUBS.set(target, scrub);
+}
+
+/**
+ * The scrub registered for something the lifecycle recorded in this process, or null (nothing of its
+ * call was masked, or it was read back from a trace or a log, where the raw values are gone).
+ */
+export function scrubberOf(target: object): Scrub | null {
+  return SCRUBS.get(target) ?? null;
+}
+
+/** Carries the scrub of `from` (a side effect) to `to` (the service's answer to it), where it has one. */
+export function carryScrub(from: object, to: object): void {
+  const scrub = scrubberOf(from);
+  if (scrub !== null) registerScrub(to, scrub);
+}
+
+/**
+ * A side effect as recorded (the trace, the console): each of its text params with the scrub its
+ * call registered (the call's masked params, and what its result withheld) applied. What is sent to
+ * the service is the effect itself, unchanged.
+ */
+export function recordedEffect<E extends { readonly params: Readonly<Record<string, string>> }>(effect: E): E {
+  const scrub = scrubberOf(effect);
+  if (scrub === null) return effect;
+  return { ...effect, params: Object.fromEntries(Object.entries(effect.params).map(([k, v]) => [k, typeof v === 'string' ? scrub(v) : v])) };
 }
 
 /** The decision's rule lines with the scrub applied to their description and compared text. */

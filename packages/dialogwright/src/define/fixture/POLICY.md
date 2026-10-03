@@ -13,7 +13,7 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 
 - Anything not listed under Actions is refused.
 - The rules of an action run in the order shown, and the first one that fails decides.
-- Identifiers in decision lines appear by their last four characters (`...1234`), never in full.
+- Identifiers in decision lines appear by their last four characters (`...1234`), never in full; a value recorded hidden, by length or never shows not even those.
 - In traces and the audit a caller's values are recorded as they are said, except: library card by its last four.
 
 ## Identity
@@ -31,7 +31,7 @@ No one is verified, so the app has no subjects and no one acts for them.
 
 ## What is recorded
 
-What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary or its own audit rows repeat a value that is hidden, shortened or never recorded, it is masked there too.
+What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary, its own audit rows, the side effects it queues (as recorded) or a downstream service's row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.
 
 | Action | Value | Recorded |
 | --- | --- | --- |

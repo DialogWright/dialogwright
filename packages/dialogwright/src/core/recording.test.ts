@@ -243,8 +243,28 @@ describe('the free text beside a call: a rule cannot leak a masked param', () =>
     expect(scrub(`day ${RAW_DAY} · identity.level 2 >= 2`)).toBe(`day ${RAW_DAY} · identity.level 2 >= 2`);
   });
 
-  it('a short masked value is masked wherever it appears: over-masking is the failure it allows', () => {
-    expect(scrub('the zone of z')).toBe('the •one of •');
+  it('a value is masked as a whole token, never inside a longer word or number', () => {
+    expect(scrub('pin 4321, pin:4321 (4321) pin 43210 and x4321')).toBe('pin •, pin:• (•) pin 43210 and x4321');
+    expect(scrub('Blue Foxes, blue fox.')).toBe('Blue Foxes, <8 chars>.');
+  });
+
+  it('a value too short to tell from the line\'s own words is not looked for (the recorded call still masks it)', () => {
+    // A one-letter tag: no "c•ller", no "m•y".
+    expect(scrub('the zone of z: caller may see ...1234 only')).toBe('the zone of z: caller may see ...1234 only');
+    const short = scrubberFor(app, { tool: 't', params: { tag: 'a', pin: '1' } });
+    expect(short).toBeNull();
+    expect(redactCall(app, { tool: 't', params: { tag: 'a', pin: '1' } }).params).toEqual({ tag: '•' });
+    // Three characters and more are looked for.
+    expect(scrubberFor(app, { tool: 't', params: { pin: '123' } })!('identity.level 1 >= 2 · pin 123')).toBe('identity.level 1 >= 2 · pin •');
+  });
+
+  it('a value recorded hidden, by length or never shows not even its last four (the scope rule\'s subject)', () => {
+    const subject: ToolCall = { tool: 't', params: { pin: '555123456789', code: 'AB-55516789', parcel: 'PX-55519876' } };
+    const s = scrubberFor(app, subject)!;
+    expect(s('subject ...6789 · caller may see ...6789 only')).toBe('subject • · caller may see • only');
+    expect(s('record owner ...6789, ...67890')).toBe('record owner •, ...67890');
+    // One recorded by its last four keeps them.
+    expect(s('parcel ...9876')).toBe('parcel ...9876');
   });
 
   it('its limit: a value reshaped (reformatted, split, partly quoted) is not recognised', () => {

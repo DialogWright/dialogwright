@@ -2,8 +2,9 @@ import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, RoleAccess, ToolName } from '../core/app/types';
 import { recordingOf } from '../core/recording';
+import { lookupRefsOf } from '../define/policyFile';
 import { refText, todayText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
-import type { PolicyAction, PolicySource, Rule } from '../gate/compiled';
+import { identityToolsOf, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { isDefinedRule } from '../gate/defineRule';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import type { Level } from '../gate/types';
@@ -78,6 +79,20 @@ function roleLine(rule: Extract<Rule, { rule: 'role' }>, subjectKind: string): s
   return `by role: ${parts.join('; ')}; ${rest}${own}`;
 }
 
+/**
+ * Whose records a range rule's lookups read, in words: the ones the scope rule before it holds the
+ * caller to (`check` requires one for every param a reference reads), or no one's (`unscoped`).
+ * Nothing for a rule whose bounds are all literals.
+ */
+function whoseLookups(app: App, rule: Extract<Rule, { rule: 'dateInRange' | 'limit' }>): string {
+  const refs = lookupRefsOf(rule);
+  if (refs.length === 0) return '';
+  const lookups = [...new Set(refs.map(({ ref }) => code(ref.lookup)))].join(', ');
+  if (rule.unscoped === true) return `; ${lookups} ${refs.length === 1 ? 'is' : 'are'} about no caller's own record, so every caller is held to the same bounds`;
+  const nouns = andList([...new Set(refs.map(({ ref }) => paramNoun(app, ref.param)))]);
+  return `; ${lookups} ${refs.length === 1 ? 'reads' : 'read'} the ${nouns} the scope rule above holds to the caller's own records, or those they act for`;
+}
+
 /** One rule of an action in plain English, with its parameters. */
 function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Rule): string {
   const subjectKind = identityOf(app).subjectKind;
@@ -107,11 +122,11 @@ function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Ru
         ...(rule.notBefore || rule.notAfter ? [`a date out of bounds ${failure(rule.verdicts?.outOfRange)}`] : []),
         ...(rule.within ? [`one outside the window ${failure(rule.verdicts?.outsideWindow)}`] : []),
       ];
-      return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (${outcomes.join('; ')}; anything that is not a date is refused)`;
+      return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (${outcomes.join('; ')}; anything that is not a date is refused)${whoseLookups(app, rule)}`;
     }
     case 'limit': {
       const bounds = [...(rule.min ? [`at least ${boundText(rule.min)}`] : []), ...(rule.max ? [`at most ${boundText(rule.max)}`] : [])];
-      return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (a number outside it ${failure(rule.verdicts?.outOfRange)}; anything that is not a number is refused)`;
+      return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (a number outside it ${failure(rule.verdicts?.outOfRange)}; anything that is not a number is refused)${whoseLookups(app, rule)}`;
     }
     case 'custom': {
       const defined = source.customRules?.[rule.id];
@@ -187,14 +202,18 @@ function header(app: App, dir: string): string[] {
 function defaults(app: App, source: PolicySource): string[] {
   const identity = identityOf(app);
   const out = ['## Defaults', '', '- Anything not listed under Actions is refused.', '- The rules of an action run in the order shown, and the first one that fails decides.'];
-  out.push('- Identifiers in decision lines appear by their last four characters (`...1234`), never in full.');
+  out.push('- Identifiers in decision lines appear by their last four characters (`...1234`), never in full; a value recorded hidden, by length or never shows not even those.');
   if (app.identity) {
     const checks = `the ${slotsInWords(app, identity.factorSlots)}${identity.codeTool ? ', and the one-time code' : ''}`;
     out.push(`- A caller has ${source.maxAttempts} tries at each identity check (${checks}). After that a person takes the call.`);
   }
   const recorded = Object.entries(app.slots).flatMap(([id, spec]) => (spec.redact ? [{ id, how: spec.redact }] : []));
   if (recorded.length > 0) {
-    const how = { last4: 'by its last four', mask: 'hidden (a year is kept)', length: 'by its length' } as const;
+    const how = {
+      last4: 'by its last four',
+      mask: 'hidden (the trace keeps only its year, `••/••/1985`; a call as recorded, in the gate\'s decision, the console and the audit, shows `•`)',
+      length: 'by its length',
+    } as const;
     // Two slots that share a noun and a redaction (a factor and a delegate's slot for the same
     // account) read as one entry, not the same words twice.
     const parts = [...new Set(recorded.map(({ id, how: h }) => `${slotNoun(app, id)} ${how[h]}`))];
@@ -227,9 +246,10 @@ function identitySection(app: App, source: PolicySource): string[] {
   }
   out.push('');
   out.push(`- Each level includes the one below it. A ${identity.subjectKind} below an action's level is asked for what the next level needs; any other caller is refused.`);
+  out.push(`- The identity checks (${identityToolsOf(identity).map((t) => `${actionLabel(source, t)}, ${code(t)}`).join('; ')}) are for ${identity.subjectKind}s only: a caller not yet verified may use them, and any other party (one who acts for ${identity.subjectKind}s, or anyone else) is refused them before their rules run.`);
   if (top === 2) out.push('- The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.');
   out.push(identity.signInLevel === undefined
-    ? '- The app takes no portal sign-in: every caller proves who they are on the call.'
+    ? '- The app takes no portal sign-in: every caller proves who they are on the call, and a caller on a channel that signs callers in (a web chat) whose request needs identity goes to a person.'
     : `- A sign-in through a portal proves level ${identity.signInLevel} ('${levelName(app, identity.signInLevel)}'), so a signed-in caller starts there.`);
   const purposes = Object.entries(source.purposes).filter(([, level]) => level > 0);
   if (purposes.length > 0) {
@@ -271,12 +291,18 @@ function principalsSection(app: App, source: PolicySource): string[] {
   const roles = rolesOf(app, source);
   out.push(`- **${identity.delegateKind}**: acts for ${identity.subjectKind}s, signed in through a portal. They may see the records of the ${identity.subjectKind}s they act for${roles.length > 0 ? `, with a role: ${roles.map(roleLabel).join(', ')}` : ''}.`);
   const { byRole } = roleOutcomes(source);
+  // The actions no role rule governs: every role, and a party with no role, goes ahead to their other
+  // rules; the identity tools excepted, which are for the subject only (gate/compiled.ts subjectOnlyDecision).
+  const identityTools = identityToolsOf(identity).filter((t) => Object.hasOwn(source.actions, t));
+  const governed = new Set(Object.entries(source.actions).filter(([, a]) => a.rules.some((r) => r.rule === 'role')).map(([tool]) => tool));
+  const open = Object.keys(source.actions).filter((tool) => !governed.has(tool) && !identityTools.includes(tool));
+  const list = (tools: readonly ToolName[]): string => (tools.length === 0 ? 'none' : tools.map((t) => cell(actionLabel(source, t))).join('<br/>'));
+  const subjectsOnly = identityTools.length === 0 ? '' : ` The identity checks (${andList(identityTools.map((t) => actionLabel(source, t)))}) are for ${identity.subjectKind}s only: a party who acts for them is refused those, whatever its role.`;
   if (byRole.size === 0) {
-    out.push('', 'No action is governed by role: the role rule is not used.');
+    out.push('', `No action is governed by role: the role rule is not used. Every role, and a party with no role, may ask for any action, held to its other rules.${subjectsOnly}`);
     return out;
   }
-  const list = (tools: readonly ToolName[]): string => (tools.length === 0 ? 'none' : tools.map((t) => cell(actionLabel(source, t))).join('<br/>'));
-  out.push('', 'What each role may do, in the actions that have a role rule (a role a rule does not list is refused, and so is a party with no role):', '');
+  out.push('', `What each role may do. In the actions that have a role rule, a role the rule does not list is refused, and so is a party with no role. The last row is every action that has no role rule: every role, and a party with no role, goes ahead to its other rules (the level, whose record it is, the confirmation).${subjectsOnly}`, '');
   out.push('| Role | Goes ahead | Goes to a person | Refused |', '| --- | --- | --- | --- |');
   for (const role of roles) {
     const e = byRole.get(role) ?? { allow: [], person: [], refuse: [] };
@@ -284,6 +310,7 @@ function principalsSection(app: App, source: PolicySource): string[] {
     const unlisted = [...byRole.values()].flatMap((r) => [...r.allow, ...r.person, ...r.refuse]).filter((t, i, all) => all.indexOf(t) === i && !named.has(t));
     out.push(`| ${roleLabel(role)} | ${list(e.allow)} | ${list(e.person)} | ${list([...e.refuse, ...unlisted])} |`);
   }
+  out.push(`| every role, and a party with no role | ${list(open)} | none | ${list(identityTools)} |`);
   return out;
 }
 
@@ -296,7 +323,7 @@ function redactionSection(app: App, source: PolicySource): string[] {
   if (rows.length === 0) return [];
   const subjectKind = identityOf(app).subjectKind;
   const out = ['## What is withheld', ''];
-  out.push(`A party who acts for ${subjectKind}s does not see every field of what some actions return: the engine sets these fields to nothing after the action runs, before a line, the session, the trace, the console or the audit reads the result, and the record of the call says which were withheld. A row for a role replaces its kind's for that action. ${capitalize(article(subjectKind))} ${subjectKind} acting for themselves sees the whole of their own record.`);
+  out.push(`A party who acts for ${subjectKind}s does not see every field of what some actions return: right after the action runs, the engine sets these fields to nothing wherever the result holds them, at any depth, before a line, the session, the trace, the console or the audit reads it. The record of the call says which fields were withheld, and where the action's summary repeats what one held, that is masked. What the action itself does with the whole record as it runs is not covered: a side effect it queues goes to its service as queued (its record masks what was withheld), and what it writes to the session and an error it raises are its own; the action's code keeps those to what the caller may see. A row for a role replaces its kind's for that action, and a party of a kind with no row here at all (nor its role) sees none of the fields an action declares it may withhold. ${capitalize(article(subjectKind))} ${subjectKind} acting for themselves sees the whole of their own record.`);
   out.push('', '| Who | Action | Fields withheld |', '| --- | --- | --- |');
   for (const [who, byTool] of rows) {
     const dot = who.indexOf('.');
@@ -313,7 +340,7 @@ function redactionSection(app: App, source: PolicySource): string[] {
 /** How a value is recorded, in words (core/recording.ts). */
 const RECORDED: Readonly<Record<AuditMask, string>> = {
   last4: 'by its last four characters',
-  mask: 'hidden',
+  mask: 'hidden (`•`)',
   length: 'by its length only',
   secret: 'never',
   keep: 'as it is',
@@ -329,7 +356,7 @@ function recordingSection(app: App, source: PolicySource): string[] {
   const listed = (tool: string): readonly string[] | undefined => (Object.hasOwn(app.tools, tool) ? app.tools[tool]!.params : undefined);
   if (app.policy.audit === undefined && !tools.some((tool) => listed(tool) !== undefined)) return [];
   const out = ['## What is recorded', ''];
-  out.push('What the record of a call keeps of each value the action is sent: the gate\'s decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml\'s `audit` declares, and `check` refuses one that neither covers. Where a rule\'s line, the action\'s summary or its own audit rows repeat a value that is hidden, shortened or never recorded, it is masked there too.');
+  out.push('What the record of a call keeps of each value the action is sent: the gate\'s decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml\'s `audit` declares, and `check` refuses one that neither covers. Where a rule\'s line, the action\'s summary, its own audit rows, the side effects it queues (as recorded) or a downstream service\'s row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.');
   out.push('', '| Action | Value | Recorded |', '| --- | --- | --- |');
   for (const tool of tools) {
     const action = source.actions[tool]?.say;
@@ -343,11 +370,16 @@ function recordingSection(app: App, source: PolicySource): string[] {
 }
 
 function actionsSection(app: App, source: PolicySource): string[] {
+  const identityTools = identityToolsOf(identityOf(app));
+  const subjectKind = identityOf(app).subjectKind;
   const out = ['## Actions', '', 'One row per action the agent may take. Anything else is refused.', ''];
   out.push('| Action | Level | The gate checks, in order |', '| --- | --- | --- |');
   for (const [tool, action] of Object.entries(source.actions)) {
     const label = action.say === undefined ? code(tool) : `**${cell(capitalize(action.say))}**<br/>${code(tool)}`;
-    const rules = action.rules.length === 0 ? 'nothing: no rule runs' : action.rules.map((r, i) => `${i + 1}. ${cell(ruleText(app, source, action, r))}`).join('<br/>');
+    // The identity tools' own check runs first (gate/compiled.ts subjectOnlyDecision), written in no file.
+    const subjectOnly = app.identity !== undefined && identityTools.includes(tool) ? [`only ${article(subjectKind)} ${subjectKind}, or a caller not yet verified, may use it (any other party is refused)`] : [];
+    const said = [...subjectOnly, ...action.rules.map((r) => ruleText(app, source, action, r))];
+    const rules = said.length === 0 ? 'nothing: no rule runs' : said.map((r, i) => `${i + 1}. ${cell(r)}`).join('<br/>');
     out.push(`| ${label} | ${action.level} ${cell(levelName(app, action.level))} | ${rules} |`);
   }
   return out;

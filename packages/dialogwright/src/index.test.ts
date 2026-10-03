@@ -117,14 +117,17 @@ describe('the test-support entry', () => {
 describe('the policy entry', () => {
   it('"dialogwright/policy" has the policy and identity files\' API and the gate, which the root entry leaves out', async () => {
     const policy = await import('./define/policyEntry');
-    for (const name of ['definePolicy', 'defineIdentity', 'compilePolicy', 'compileIdentity', 'compiledPolicyOf', 'compileGate', 'programFromTables', 'evaluateCall', 'confirmationHash', 'readRule', 'ruleIdOf', 'roleLine', 'isRuleId', 'isBuiltInRuleId', 'passed']) {
+    for (const name of ['definePolicy', 'defineIdentity', 'compilePolicy', 'compileIdentity', 'compiledPolicyOf', 'compileGate', 'programFromTables', 'identityToolsOf', 'subjectOnlyDecision', 'confirmationHash', 'roleLine', 'isRuleId', 'isBuiltInRuleId', 'passed']) {
       expect(typeof (policy as Record<string, unknown>)[name], name).toBe('function');
       expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
     }
-    expect(policy.evaluateCall).toBe((await import('./gate/policy')).evaluateCall);
+    // The legacy evaluator is test support (the shadow gate's reference), and the compilers' own helpers are internals.
+    for (const name of ['evaluateCall', 'readRule', 'ruleIdOf', 'RULE_ID_OF']) expect((policy as Record<string, unknown>)[name], name).toBeUndefined();
+    const testing = await import('./testing/index');
+    expect(testing.evaluateCall).toBe((await import('./gate/policy')).evaluateCall);
     expect(policy.compiledPolicyOf).toBe((await import('./gate/compiled')).compiledPolicyOf);
     expect(policy.definePolicy).toBe((await import('./define/definePolicy')).definePolicy);
-    expect(policy.RULE_ID_OF).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' });
+    expect(policy.LEGACY_RULE_ID).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' });
     expect([...policy.RULE_IDS]).toEqual(['R1', 'R2', 'R3', 'R5', 'R6', 'R7']);
     // the names decisions and audit lines record, and the ids tables still list
     expect(policy.RULE_ID).toEqual({ identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: 'dateInRange', limit: 'limit' });

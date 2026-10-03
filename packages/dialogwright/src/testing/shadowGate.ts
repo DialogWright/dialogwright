@@ -124,12 +124,14 @@ export function gateEvaluator(app: App): GateEvaluate {
 }
 
 /**
- * The legacy evaluator (gate/policy.ts evaluateCall) over `tables` for the app's subject kind: the
- * shadow's reference. Default: the app's own tables; give the tables the app ran before its policy
+ * The legacy evaluator (gate/policy.ts evaluateCall) over `tables` for the app's subject kind, with
+ * the gate's one check it never made in front of it (the identity tools are for the subject only;
+ * gateGrid.ts legacyGateEvaluator): the shadow's reference. Default: the app's own tables; give the tables the app ran before its policy
  * was a file (frozen test data) to hold the gate to those.
  */
 export function legacyGateOf(app: App, tables: PolicyTables = app.policy): GateEvaluate {
-  return legacyGateEvaluator({ policy: tables, subjectKind: identityOf(app).subjectKind });
+  const input = { policy: tables, subjectKind: identityOf(app).subjectKind };
+  return legacyGateEvaluator(app.identity ? { ...input, identity: app.identity } : input);
 }
 
 /**
@@ -140,7 +142,7 @@ export function legacyGateOf(app: App, tables: PolicyTables = app.policy): GateE
 export function withShadowGate(app: App, reference: GateEvaluate = legacyGateOf(app), options: GateShadowOptions = {}): App {
   const own: CompiledPolicy = gateOf(app);
   const evaluate = shadowGate((call, p, facts, lk) => own.evaluate(call, p, facts, lk), reference, options);
-  const gate: CompiledPolicy = { source: own.source, tables: own.tables, subjectKind: own.subjectKind, evaluate };
+  const gate: CompiledPolicy = { source: own.source, tables: own.tables, subjectKind: own.subjectKind, identityTools: own.identityTools, evaluate };
   return { ...app, gate };
 }
 

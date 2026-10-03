@@ -54,13 +54,14 @@ describe('policy.yaml: the range rules checked', () => {
   it('a valid policy compiles, each range rule under its name, and the gate reads its parameters', () => {
     const rules = [
       { fields: ['orderId', 'amount', 'returnDate'] },
+      { scope: { record: 'orderId' } },
       { limit: { field: 'amount', min: 0.01, max: 'orderTotal(orderId)' } },
       { dateInRange: { field: 'returnDate', notBefore: 'order(orderId).deliveredOn', notAfter: 'today', within: 'returnWindow(orderId)', reasons: { outsideWindow: 'late-return' }, verdicts: { outsideWindow: 'NEEDS_HUMAN' } } },
     ];
     expect(policyWith(rules)).toEqual([]);
     const tables = definePolicy(refund(rules), { tools: TOOLS, lookups: LOOKUPS });
-    expect(tables.rulesFor.refundOrder).toEqual(['R7', 'limit', 'dateInRange']);
-    expect(sourceOf(tables)?.actions.refundOrder?.rules[2]).toEqual({
+    expect(tables.rulesFor.refundOrder).toEqual(['R7', 'R2', 'limit', 'dateInRange']);
+    expect(sourceOf(tables)?.actions.refundOrder?.rules[3]).toEqual({
       rule: 'dateInRange',
       field: 'returnDate',
       notBefore: { kind: 'lookup', ref: { lookup: 'order', param: 'orderId', field: 'deliveredOn' } },
@@ -71,7 +72,7 @@ describe('policy.yaml: the range rules checked', () => {
     });
     const relative = definePolicy(refund([{ dateInRange: { field: 'returnDate', notBefore: 'today-7', notAfter: 'today+30' } }]), { tools: TOOLS, lookups: LOOKUPS });
     expect(sourceOf(relative)?.actions.refundOrder?.rules[0]).toEqual({ rule: 'dateInRange', field: 'returnDate', notBefore: { kind: 'today', days: -7 }, notAfter: { kind: 'today', days: 30 } });
-    expect(sourceOf(tables)?.actions.refundOrder?.rules[1]).toEqual({ rule: 'limit', field: 'amount', min: { kind: 'number', value: '0.01' }, max: { kind: 'lookup', ref: { lookup: 'orderTotal', param: 'orderId' } } });
+    expect(sourceOf(tables)?.actions.refundOrder?.rules[2]).toEqual({ rule: 'limit', field: 'amount', min: { kind: 'number', value: '0.01' }, max: { kind: 'lookup', ref: { lookup: 'orderTotal', param: 'orderId' } } });
     // Two range rules of one kind may hold two params, one each; the same param twice is one rule listed twice.
     expect(policyWith([{ dateInRange: { field: 'returnDate', notAfter: 'today' } }, { dateInRange: { field: 'pickupDate', notBefore: 'today' } }])).toEqual([]);
     expect(policyWith([{ limit: { field: 'amount', max: 5 } }, { limit: { field: 'amount', min: 1 } }])).toEqual([
@@ -142,25 +143,44 @@ describe('policy.yaml: the range rules checked', () => {
     ]);
   });
 
+  it('a reference reads a param held to the caller\'s own records by a scope rule before it, or says its lookup is about no one\'s', () => {
+    const limit = { limit: { field: 'amount', max: 'orderTotal(orderId)' } };
+    const unscopedProblem = 'actions.refundOrder.rules[0].limit.max: orderTotal(orderId) reads "orderId", which no scope rule before this one holds to the caller\'s own records, so the bound could be read off anyone\'s -> add "- scope: { param: orderId }" (or "{ record: orderId }" for a record id) before this rule, or write "unscoped: true" in it if the lookup is not about the caller\'s own record (a price list, a calendar)';
+    expect(policyWith([limit])).toEqual([unscopedProblem]);
+    // A scope rule after the range rule is too late: the bound is read first.
+    expect(policyWith([limit, { scope: { record: 'orderId' } }])).toEqual([unscopedProblem]);
+    // A scope rule on another param holds nothing about this one.
+    expect(policyWith([{ scope: { param: 'returnDate' } }, limit])).toEqual([unscopedProblem.replace('rules[0]', 'rules[1]')]);
+    expect(policyWith([{ scope: { param: 'orderId' } }, limit])).toEqual([]);
+    expect(policyWith([{ scope: { record: 'orderId' } }, limit])).toEqual([]);
+    expect(policyWith([{ limit: { ...limit.limit, unscoped: true } }])).toEqual([]);
+    expect(policyWith([{ dateInRange: { field: 'returnDate', within: 'returnWindow(orderId)' } }])).toEqual([unscopedProblem.replace('limit.max: orderTotal(orderId)', 'dateInRange.within: returnWindow(orderId)')]);
+    // unscoped with no reference says nothing.
+    expect(policyWith([{ limit: { field: 'amount', max: 5, unscoped: true } }])).toEqual([
+      'actions.refundOrder.rules[0].limit.unscoped: the limit rule of "refundOrder" is unscoped, but none of its bounds is a reference, so there is no lookup to leave unscoped -> delete "unscoped: true"',
+    ]);
+    expect(sourceOf(definePolicy(refund([{ limit: { ...limit.limit, unscoped: true } }]), { tools: TOOLS, lookups: LOOKUPS }))?.actions.refundOrder?.rules[0]).toMatchObject({ rule: 'limit', unscoped: true });
+  });
+
   it('a lookup the code does not declare, and a param the action does not send', () => {
-    expect(policyWith([{ limit: { field: 'amount', max: 'orderTotl(orderId)' } }])).toEqual([
+    expect(policyWith([{ limit: { field: 'amount', unscoped: true, max: 'orderTotl(orderId)' } }])).toEqual([
       'actions.refundOrder.rules[0].limit.max: orderTotl(orderId) calls the lookup "orderTotl", which the code does not declare -> rename it to "orderTotal", or add "orderTotl" to code.lookups and a function of that name to the gate\'s lookups (code.systems), or correct the reference',
     ]);
-    expect(policyWith([{ limit: { field: 'amount', max: 'orderTotal(orderId)' } }], [])).toHaveLength(1);
+    expect(policyWith([{ limit: { field: 'amount', unscoped: true, max: 'orderTotal(orderId)' } }], [])).toHaveLength(1);
     expect(policyWith([
       { confirmed: ['orderId', 'amount'] },
-      { limit: { field: 'amont', max: 'orderTotal(order)' } },
+      { limit: { field: 'amont', unscoped: true, max: 'orderTotal(order)' } },
     ])).toEqual([
       'actions.refundOrder.rules[1].limit.field: "amont" is not a param "refundOrder" sends (its confirmed rule lists orderId, amount) -> rename it to "amount", or name one of those, or add "amont" to its confirmed rule',
       'actions.refundOrder.rules[1].limit.max: orderTotal(order) reads "order", which is not a param "refundOrder" sends (its confirmed rule lists orderId, amount) -> rename it to "orderId", or call the lookup with one of those, or add "order" to its confirmed rule',
     ]);
     // With no fields or confirmed rule, the params an action sends are the ones its tool lists (ToolDef.params).
-    expect(policyWith([{ limit: { field: 'amonut', max: 'orderTotal(ordrId)' } }])).toEqual([
+    expect(policyWith([{ limit: { field: 'amonut', unscoped: true, max: 'orderTotal(ordrId)' } }])).toEqual([
       'actions.refundOrder.rules[0].limit.field: "amonut" is not a param "refundOrder" sends (its tool lists orderId, amount, returnDate, pickupDate) -> rename it to "amount", or name one of those, or add "amonut" to code.tools.refundOrder.params',
       'actions.refundOrder.rules[0].limit.max: orderTotal(ordrId) reads "ordrId", which is not a param "refundOrder" sends (its tool lists orderId, amount, returnDate, pickupDate) -> rename it to "orderId", or call the lookup with one of those, or add "ordrId" to code.tools.refundOrder.params',
     ]);
     // And with neither, they are not known: nothing to check them against.
-    expect(problemsOf(() => definePolicy(refund([{ limit: { field: 'anything', max: 'orderTotal(whatever)' } }]), { lookups: LOOKUPS }))).toEqual([]);
+    expect(problemsOf(() => definePolicy(refund([{ limit: { field: 'anything', unscoped: true, max: 'orderTotal(whatever)' } }]), { lookups: LOOKUPS }))).toEqual([]);
   });
 
   it('the code\'s lookups are plain words of its own; an app\'s own rule may not take a range rule\'s name', () => {
@@ -178,7 +198,7 @@ describe('policy.yaml: the range rules checked', () => {
 });
 
 describe('tables and the legacy evaluator', () => {
-  const tables = (): PolicyTables => definePolicy(refund([{ limit: { field: 'amount', max: 'orderTotal(orderId)' } }]), { tools: TOOLS, lookups: LOOKUPS });
+  const tables = (): PolicyTables => definePolicy(refund([{ limit: { field: 'amount', unscoped: true, max: 'orderTotal(orderId)' } }]), { tools: TOOLS, lookups: LOOKUPS });
   const lookups = { ownerOf: () => null, scopeOf: () => [], orderTotal: () => 50 } as GateLookups;
   const call = { tool: 'refundOrder', params: { amount: '20', orderId: 'ORD-1234' } };
   const facts = { attempts: 0, confirmedHash: null, todayIso: '2026-10-02' };
@@ -226,11 +246,13 @@ actions:
       - confirmed: [book, due, fee]
       - dateInRange:
           field: due
+          # The renewal terms are the library's, by book: not a patron's record.
+          unscoped: true
           notBefore: today
           within: renewWindow(book)
           reasons: { outsideWindow: renew-window }
           verdicts: { outsideWindow: NEEDS_HUMAN }
-      - limit: { field: fee, min: 0, max: renewTerms(book).feeCap, reasons: { outOfRange: fee-cap } }
+      - limit: { field: fee, unscoped: true, min: 0, max: renewTerms(book).feeCap, reasons: { outOfRange: fee-cap } }
   findHold:
     level: 0
     rules:
@@ -340,8 +362,8 @@ describe('an app that uses both, built by defineApp', () => {
     const { decision, turn } = renew('quiet_orchard');
     expect(decision.verdict).toBe('ALLOW');
     expect(decision.rules.slice(2)).toEqual([
-      { id: 'dateInRange', description: 'The date in due is within its bounds', compared: 'due on or after today 2026-09-18, within renewWindow(book ...hard) 2026-09-18..2026-10-16', pass: true },
-      { id: 'limit', description: 'The number in fee is within its limits', compared: 'fee at least 0, at most renewTerms(book ...hard).feeCap 1.00', pass: true },
+      { id: 'dateInRange', description: 'The date in due is within its bounds', compared: 'due on or after today 2026-09-18, within renewWindow(book) 2026-09-18..2026-10-16', pass: true },
+      { id: 'limit', description: 'The number in fee is within its limits', compared: 'fee at least 0, at most renewTerms(book).feeCap 1.00', pass: true },
     ]);
     expect(turn.decision.kind).not.toBe('handoff');
   });
@@ -349,11 +371,11 @@ describe('an app that uses both, built by defineApp', () => {
   it('refuses a renewal over the fee cap (BLOCK, its own reason), and hands one past the window to a person', () => {
     const over = renew('river_atlas').decision;
     expect({ verdict: over.verdict, reason: over.reason, last: over.rules.at(-1) }).toEqual({
-      verdict: 'BLOCK', reason: 'fee-cap', last: { id: 'limit', description: 'The number in fee is within its limits', compared: 'fee above renewTerms(book ...tlas).feeCap 1.00', pass: false },
+      verdict: 'BLOCK', reason: 'fee-cap', last: { id: 'limit', description: 'The number in fee is within its limits', compared: 'fee above renewTerms(book).feeCap 1.00', pass: false },
     });
     const late = renew('clockwork_garden');
     expect({ verdict: late.decision.verdict, reason: late.decision.reason, compared: late.decision.rules.at(-1)?.compared }).toEqual({
-      verdict: 'NEEDS_HUMAN', reason: 'renew-window', compared: 'due outside renewWindow(book ...rden) 2026-09-18..2026-10-16',
+      verdict: 'NEEDS_HUMAN', reason: 'renew-window', compared: 'due outside renewWindow(book) 2026-09-18..2026-10-16',
     });
     expect(late.turn.decision.kind).toBe('handoff');
   });

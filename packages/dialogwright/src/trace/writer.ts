@@ -7,6 +7,7 @@ import type { JevResponse, JevUsage, QuestionMap } from '../jev/types';
 import type { TurnError, TurnResult } from '../core/turn';
 import type { Session } from '../core/session';
 import { appOf } from '../core/app/registry';
+import { recordedEffect } from '../core/recording';
 
 export class TraceWriter {
   constructor(private readonly path: string) {
@@ -85,7 +86,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     // drafts (before chaining -- no seq or hash yet; those live only on the live `audit` bus event).
     gateEvents: [...result.gateEvents],
     kb: result.kb,
-    effects: [...result.effects],
+    // As recorded: each param masked as its call was (core/recording.ts recordedEffect); the runner sends the effect itself.
+    effects: result.effects.map(recordedEffect),
     audit: [...result.audit],
     timing,
     usage: {

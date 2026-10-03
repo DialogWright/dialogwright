@@ -342,10 +342,23 @@ describe('policy:convert from tables', () => {
     expect(converted.dropped).toEqual(['wording.role (allow): the function is not a template over {role} and {tool}, so its line cannot be written in the file; write wording.role.allow by hand']);
   });
 
-  it('--sign-in adds what the old shape cannot say', () => {
+  it('a ladder with a code takes a sign-in at level 2, as before identity.yaml, unless --no-sign-in', () => {
     const identity = { subjectKind: 'customer', factorSlots: ['a'], verifyTool: 'v', codeTool: 'c', sendCodeTool: 's' };
-    expect(parse(toText(convertTables(tables({ roles: undefined, rulesFor: { a: ['R1'] } }), identity, { signIn: true }).identity!)).signIn).toEqual({ level: 2 });
-    expect(parse(toText(convertTables(tables({ roles: undefined, rulesFor: { a: ['R1'] } }), identity).identity!)).signIn).toBeUndefined();
+    const signInOf = (options?: { signIn?: boolean }) => parse(toText(convertTables(tables({ roles: undefined, rulesFor: { a: ['R1'] } }), identity, options).identity!)).signIn;
+    expect(signInOf()).toEqual({ level: 2 });
+    expect(signInOf({ signIn: true })).toEqual({ level: 2 });
+    expect(signInOf({ signIn: false })).toBeUndefined();
+  });
+
+  it('the command writes the sign-in by default, and leaves it out with --no-sign-in', async () => {
+    const dir = temp();
+    cpSync(join(LEGACY, 'valid'), dir, { recursive: true });
+    expect(await main(['policy:convert', '.', '--no-sign-in'], cli(dir).io)).toBe(0);
+    expect(parse(readFileSync(join(dir, 'identity.yaml'), 'utf8')).signIn).toBeUndefined();
+    const again = temp();
+    cpSync(join(LEGACY, 'valid'), again, { recursive: true });
+    expect(await main(['policy:convert', '.'], cli(again).io)).toBe(0);
+    expect(parse(readFileSync(join(again, 'identity.yaml'), 'utf8')).signIn).toEqual({ level: 2 });
   });
 });
 

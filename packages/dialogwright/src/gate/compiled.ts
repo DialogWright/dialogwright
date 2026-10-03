@@ -28,6 +28,13 @@ import { isAnonymous, type GateDecision, type GateFacts, type GateLookups, type 
  * param's value to bounds (literals, today, the app's lookups). The legacy evaluator does not know
  * them, so an app that uses one has no shadow reference for it.
  *
+ * One check is the gate's own, written in no file: the identity tools (the app's verify tool and its
+ * one-time code's two tools) are for the subject only, so a party who is not one of the app's
+ * subjects is refused them before their rules run (subjectOnlyDecision, the `subject` line, BLOCK
+ * `not-subject`). The legacy evaluator does not know it either: the shadow gate's reference adds the
+ * same check in front of it (testing/gateGrid.ts legacyGateEvaluator), the one deliberate
+ * difference between the two.
+ *
  * It fails closed as the legacy one does: an action not listed is `unlisted`, a custom rule the app does not
  * define BLOCKs (unknown-rule), a rule that throws BLOCKs (rule-error), and a rule's answer that does
  * not hold together BLOCKs (rule-invalid, ./lines.ts checkOutcome).
@@ -86,16 +93,47 @@ export const UNLISTED_RULE_ID = 'unlisted';
 export const TABLE_RULE_ID: Readonly<Record<Exclude<Rule['rule'], 'custom'>, string>> = { ...LEGACY_RULE_ID, dateInRange: DATE_IN_RANGE_ID, limit: LIMIT_ID };
 
 /**
+ * The id of the gate's own check on the identity tools (the app's verify tool, its code-sending tool
+ * and its code-checking tool): only one of the app's subjects, or a caller not yet verified, may use
+ * them. No action writes it as a rule; it runs before the action's own rules, and its line is in a
+ * decision only when it refuses (SUBJECT_ONLY_REASON). Reserved like a built-in's name.
+ */
+export const SUBJECT_RULE_ID = 'subject';
+
+/** The reason the identity tools refuse a party who is not one of the app's subjects. */
+export const SUBJECT_ONLY_REASON = 'not-subject';
+
+/**
  * Whether an id is a built-in's, so no app's own rule may take it: a rule's name, the unlisted
- * line's, or a legacy id (R0, R1..R7), which tables, the converter and every audit file written
- * before rules were named still use for the built-ins.
+ * line's, the identity tools' subject check's, or a legacy id (R0, R1..R7), which tables, the
+ * converter and every audit file written before rules were named still use for the built-ins.
  */
 export function isBuiltInRuleId(id: string): boolean {
-  return (BUILT_IN_RULES as readonly string[]).includes(id) || id === UNLISTED_RULE_ID || id === LEGACY_UNLISTED_ID || Object.values(LEGACY_RULE_ID).includes(id);
+  return (BUILT_IN_RULES as readonly string[]).includes(id) || id === UNLISTED_RULE_ID || id === SUBJECT_RULE_ID || id === LEGACY_UNLISTED_ID || Object.values(LEGACY_RULE_ID).includes(id);
 }
 
 /** The ids no app's own rule may take, in words for a message. */
-export const BUILT_IN_IDS_NOTE = `the built-in ids are the rules' names (${[...BUILT_IN_RULES, UNLISTED_RULE_ID].join(', ')}) and their old ids (${[LEGACY_UNLISTED_ID, ...Object.values(LEGACY_RULE_ID)].join(', ')})`;
+export const BUILT_IN_IDS_NOTE = `the built-in ids are the rules' names (${[...BUILT_IN_RULES, UNLISTED_RULE_ID, SUBJECT_RULE_ID].join(', ')}) and their old ids (${[LEGACY_UNLISTED_ID, ...Object.values(LEGACY_RULE_ID)].join(', ')})`;
+
+/**
+ * The gate's own check on the identity tools, run before an identity tool's own rules: a party who
+ * is not one of the app's subjects (one who acts for subjects, or any other kind) is refused, BLOCK
+ * `not-subject`, with the `subject` line. An identity check proves a subject to themselves: the
+ * factors are a subject's, and the one-time code goes to a subject's own phone, so a party acting
+ * for subjects has nothing to prove there and must not be the one who sets a code going. An
+ * anonymous caller (the one the factors are asked of) and a subject pass, with no line. Null when
+ * the call passes; `identityTools` are the tools the check holds (identityToolsOf).
+ */
+export function subjectOnlyDecision(call: ToolCall, p: Principal, subjectKind: string, identityTools: readonly ToolName[]): GateDecision | null {
+  if (isAnonymous(p) || p.kind === subjectKind || !identityTools.includes(call.tool)) return null;
+  const line: RuleResult = {
+    id: SUBJECT_RULE_ID,
+    description: 'Only the subject proves who they are',
+    compared: `${p.kind} is not ${subjectKind === '' ? 'a subject' : `a ${subjectKind}`}: ${call.tool} is for the subject only`,
+    pass: false,
+  };
+  return { call, rules: [line], verdict: 'BLOCK', reason: SUBJECT_ONLY_REASON };
+}
 
 /**
  * The ids of the built-in rules only a policy file can give parameters to (gate/bounded.ts): the
@@ -134,7 +172,16 @@ export interface CompiledPolicy {
   readonly tables: PolicyTables;
   /** The app's subject kind (App.identity.subjectKind; '' for an app that verifies no one). */
   readonly subjectKind: string;
-  /** The gate's decision on a call: the action's rules, in order, stopping at the first failure. */
+  /**
+   * The app's identity tools (its verify tool, and its code-sending and code-checking tools where it
+   * has a code), which only a subject or a caller not yet verified may use (subjectOnlyDecision).
+   * None for an app that verifies no one.
+   */
+  readonly identityTools: readonly ToolName[];
+  /**
+   * The gate's decision on a call: for an identity tool, first the subject check (subjectOnlyDecision);
+   * then the action's rules, in order, stopping at the first failure.
+   */
   evaluate(call: ToolCall, p: Principal, facts: GateFacts, lk: GateLookups): GateDecision;
 }
 
@@ -268,18 +315,23 @@ function stepOf(rule: Rule, action: PolicyAction, source: PolicySource): Step {
 
 /**
  * The policy's named rules compiled into the gate. `tables` is what the same policy compiles to (an
- * app's own rule reads it as RuleContext.policy); `subjectKind` is the app's.
+ * app's own rule reads it as RuleContext.policy); `subjectKind` is the app's, and `identityTools` its
+ * identity tools (identityToolsOf), which the gate keeps for the subject (subjectOnlyDecision).
  */
-export function compileGate(source: PolicySource, tables: PolicyTables, subjectKind: string): CompiledPolicy {
+export function compileGate(source: PolicySource, tables: PolicyTables, subjectKind: string, identityTools: readonly ToolName[] = []): CompiledPolicy {
   const steps = new Map<ToolName, readonly Step[]>();
   for (const [tool, action] of Object.entries(source.actions)) steps.set(tool, action.rules.map((rule) => stepOf(rule, action, source)));
+  const tools = Object.freeze([...identityTools]);
   return {
     source,
     tables,
     subjectKind,
+    identityTools: tools,
     evaluate(call, p, facts, lk) {
       const listed = steps.get(call.tool);
       if (!listed) return { call, rules: [unlistedLine(call.tool, UNLISTED_RULE_ID)], verdict: 'BLOCK', reason: 'unknown-tool' };
+      const notSubject = subjectOnlyDecision(call, p, subjectKind, tools);
+      if (notSubject) return notSubject;
       const ctx: RuleContext = { call, p, facts, lk, policy: tables, subjectKind };
       const rules: RuleResult[] = [];
       for (const step of listed) {
@@ -359,14 +411,22 @@ export function sourceOf(tables: PolicyTables): PolicySource | null {
 }
 
 /**
- * The gate for an app's tables and subject kind: compiled from the policy file the tables were
- * compiled from, or, for tables written by hand (or copied and changed), from the tables themselves
- * (programFromTables). Compiled once per tables object and subject kind.
+ * The gate for an app's tables, subject kind and identity tools (identityToolsOf; none: no tool is
+ * kept for the subject): compiled from the policy file the tables were compiled from, or, for tables
+ * written by hand (or copied and changed), from the tables themselves (programFromTables). Compiled
+ * once per tables object, subject kind and identity tools. An app's calls go through gateOf, which
+ * gives the app's own.
  */
-export function compiledPolicyOf(tables: PolicyTables, subjectKind: string): CompiledPolicy {
+export function compiledPolicyOf(tables: PolicyTables, subjectKind: string, identityTools: readonly ToolName[] = []): CompiledPolicy {
   let bySubject = COMPILED.get(tables);
   if (!bySubject) COMPILED.set(tables, (bySubject = new Map()));
-  let gate = bySubject.get(subjectKind);
-  if (!gate) bySubject.set(subjectKind, (gate = compileGate(SOURCES.get(tables) ?? programFromTables(tables), tables, subjectKind)));
+  const key = JSON.stringify([subjectKind, identityTools]);
+  let gate = bySubject.get(key);
+  if (!gate) bySubject.set(key, (gate = compileGate(SOURCES.get(tables) ?? programFromTables(tables), tables, subjectKind, identityTools)));
   return gate;
+}
+
+/** The identity tools of an app's identity configuration, each named once: its verify tool, and its code tools where it has a code. */
+export function identityToolsOf(identity: { readonly verifyTool: ToolName; readonly codeTool?: ToolName; readonly sendCodeTool?: ToolName }): ToolName[] {
+  return [...new Set([identity.verifyTool, identity.sendCodeTool, identity.codeTool].filter((t): t is ToolName => typeof t === 'string' && t !== ''))];
 }

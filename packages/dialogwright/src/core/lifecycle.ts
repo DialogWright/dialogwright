@@ -9,7 +9,7 @@ import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
-import { redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf } from './recording';
+import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
 
 export { redactCall };
 
@@ -67,6 +67,15 @@ export interface ToolOutcome {
 const IGNORE: Decision = { kind: 'ignore' };
 
 /**
+ * Whether the session's caller is a party who is not one of the app's subjects (one who acts for
+ * subjects, or any other kind): no identity check is theirs. An anonymous caller is not one: the
+ * gate decides what they may do.
+ */
+function isOtherParty(s: Session, subjectKind: string): boolean {
+  return !isAnonymous(s.principal) && s.principal.kind !== subjectKind;
+}
+
+/**
  * What the gate may know of the session for this call. The attempts are the ones the call's own
  * identity check has failed: the one-time code's for the app's code tool, the factors' for anything
  * else (the attempts rule runs only for the identity tools the app's rulesFor gives it to).
@@ -108,10 +117,24 @@ function evaluate(s: Session, call: ToolCall, tc: TurnContext): GateDecision {
 }
 
 /**
+ * The reason a call the gate allowed is handed to a person when the tool's result cannot be withheld
+ * from as the policy says (redactResult throws): the call ran and is recorded, its result goes nowhere.
+ */
+export const RESULT_UNREDACTABLE = 'result-unredactable';
+
+/**
  * The only way a turn reaches a tool: evaluate the gate, and on ALLOW run the tool, withhold from
  * its result what the policy keeps from this caller (policy.yaml `redact:`), and record a summary
  * (no PHI). Every gate decision is recorded, allowed or not, with the call redacted. A probe
  * (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW.
+ *
+ * The summary and the record it names are masked as the call is (a raw value of a param recorded
+ * masked or never) and as the result was (every text a withheld field held), and so are the params
+ * of the side effects the tool queues as it runs, where they are recorded (the trace, the console),
+ * never where they are sent. A result that cannot be
+ * stripped as the policy says (a tool that declared fields its value does not have) never goes on:
+ * the call that ran is still recorded, with a summary that says so, and its outcome is NEEDS_HUMAN
+ * (RESULT_UNREDACTABLE), so the caller goes to a person.
  *
  * `code` is the keypad one-time code for verifyCode. It travels beside the call, never in its
  * params, so it reaches neither the gate event nor the trace.
@@ -123,19 +146,37 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
     out.gateEvents.push({ decision, summary: null });
     return { decision, value: null };
   }
+  // The side effects the tool queues as it runs: recorded with the call's scrub (recordedEffect), sent as they are.
+  const effectsBefore = out.effects.length;
   const ran = runTool(s, call, tc, out, code);
   // Redaction per principal, the one place it happens: nothing past this line holds the whole
   // result. The hooks, the facts and the lines get the stripped value; the event (so the trace, the
   // console and the audit) gets the summary with what was withheld.
   const fields = withheldFields(appOf(s), s.principal, call.tool);
-  const { value, redacted } = redactResult(call.tool, ran.value, fields);
-  // The summary and the record it names are recorded beside the call, so they are masked as it is.
-  const scrub = scrubberOf(decision);
+  let stripped: ReturnType<typeof redactResult>;
+  try {
+    stripped = redactResult(call.tool, ran.value, fields);
+  } catch {
+    // The tool ran: its call is recorded, though nothing of what it returned is.
+    scrubEffects(out, effectsBefore, scrubberOf(decision));
+    out.gateEvents.push({ decision, summary: `result not recorded: the fields withheld from this caller (${fields.join(', ')}) could not be stripped from it` });
+    return { decision: { ...decision, verdict: 'NEEDS_HUMAN', reason: RESULT_UNREDACTABLE }, value: null };
+  }
+  const { value, redacted, withheld } = stripped;
+  // The summary and the record it names are recorded beside the call, so they are masked as it is, and as the result was.
+  const scrub = bothScrubs(scrubberOf(decision), withheldScrubber(withheld));
+  scrubEffects(out, effectsBefore, scrub);
   const said = scrub && typeof ran.summary === 'string' ? scrub(ran.summary) : ran.summary;
   const summary = redacted ? redactedSummary(said, fields) : said;
   const ref = scrub && typeof ran.ref === 'string' ? scrub(ran.ref) : ran.ref;
   out.gateEvents.push(ref === undefined ? { decision, summary } : { decision, summary, ref });
   return redacted ? { decision, value, redacted: fields } : { decision, value };
+}
+
+/** Registers `scrub` for the side effects queued since `from`, for their params as recorded (core/recording.ts recordedEffect). */
+function scrubEffects(out: TurnOut, from: number, scrub: Scrub | null): void {
+  if (scrub === null) return;
+  for (const effect of out.effects.slice(from)) registerScrub(effect, scrub);
 }
 
 /**
@@ -168,6 +209,10 @@ function identityCall<V>(s: Session, tool: string, params: Record<string, string
  */
 export function sendCodeAndAsk(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[], reissue = false): Decision {
   const identity = identityOf(appOf(s));
+  // Only one of the app's subjects is ever sent a code (the gate refuses any other party the identity
+  // tools, gate/compiled.ts subjectOnlyDecision); no flow asks for one for such a party, and should
+  // one, a person takes the call before anything is texted.
+  if (isOtherParty(s, identity.subjectKind)) return handoff(s, 'needs-human', acks);
   if (!hasCode(identity)) return handoff(s, 'needs-human', acks);
   if (!s.codeSent || reissue) {
     const { sendCodeTool, sendCodeParams } = identity;
@@ -196,10 +241,21 @@ export function blockAck(s: Session, reason: string | undefined): Ack | null {
 /**
  * A web chat customer proves who they are by signing in to the portal, never by typing their account
  * ID and birth date into a chat: while a request waits on identity, it waits for that sign-in
- * (the `signed_in` event). True for an anonymous chat session with a parked entry call.
+ * (the `signed_in` event). True for an anonymous chat session with a parked entry call, in an app
+ * that takes a sign-in (identity.yaml's `signIn`, IdentityConfig.signInLevel): an app without one
+ * ignores the event, so there is nothing to wait for (signInImpossible).
  */
 export function awaitingSignIn(s: Session): boolean {
-  return s.caps.signIn && isAnonymous(s.principal) && s.stepUp !== null;
+  return s.caps.signIn && identityOf(appOf(s)).signInLevel !== undefined && isAnonymous(s.principal) && s.stepUp !== null;
+}
+
+/**
+ * A chat caller who needs identity in an app that takes no sign-in: the factors are never asked on
+ * a channel that signs callers in, and the app ignores the sign-in, so no step-up can be finished
+ * here, and a person takes the call.
+ */
+function signInImpossible(s: Session): boolean {
+  return s.caps.signIn && identityOf(appOf(s)).signInLevel === undefined && isAnonymous(s.principal) && s.stepUp !== null;
 }
 
 /**
@@ -211,6 +267,7 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
     const again = s.lastPromptId === 'signin_required' || s.lastPromptId === 'signin_reminder';
     return prompt(again ? 'signin_reminder' : 'signin_required', 'intent', {}, acks);
   }
+  if (signInImpossible(s)) return handoff(s, 'needs-human', acks);
   if (isAnonymous(s.principal)) {
     const missing = identityOf(appOf(s)).factorSlots.find((id) => s.slots[id]!.value === null);
     if (missing) return askSlot(s, missing, s.slots[missing]!.window, acks);
@@ -317,9 +374,14 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
  * in its params: it is in no gate event, trace, slot or model request.
  */
 export function handleCodeDigit(s: Session, digit: string, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | null {
+  const app = appOf(s);
+  // A code is only ever a subject's to key (as sendCodeAndAsk): anyone else goes to a person.
+  if (isOtherParty(s, identityOf(app).subjectKind)) {
+    s.dtmfBuffer = '';
+    return handoff(s, 'needs-human', acks);
+  }
   if (!/^\d$/.test(digit)) return IGNORE;
   s.dtmfBuffer += digit;
-  const app = appOf(s);
   if (s.dtmfBuffer.length < codeLengthOf(app)) return IGNORE;
   const code = s.dtmfBuffer;
   s.dtmfBuffer = '';

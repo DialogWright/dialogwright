@@ -8,6 +8,9 @@ import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap } from '../jev/types';
 import { demoTools } from './tools';
 import { useTestkit } from '../testing/apps';
+import { testkitApp } from '../testing/testkit';
+import { registerApp } from './app/registry';
+import { awaitingSignIn } from './lifecycle';
 import { CUSTOMERS } from '../testing/testkit/domain/data';
 import { customerPrincipal } from '../testing/testkit/domain/principals';
 
@@ -131,3 +134,24 @@ describe('speech: false', () => {
     expect(bye(SPEAKER).decision).toMatchObject({ kind: 'complete', promptId: 'goodbye' });
   });
 });
+
+describe('signIn: an app that takes none', () => {
+  // The testkit with no sign-in in its identity: a web chat caller can neither give the factors (they
+  // are never asked on a channel that signs callers in) nor sign in (the app ignores the event).
+  const { signInLevel: _none, ...identity } = testkitApp.identity!;
+  registerApp({ ...testkitApp, id: 'nosignin', identity });
+  const startedHere = (c: Channel): Session => resolve(newSession('t', 0, c, undefined, 'nosignin'), startEvent(), null, tc).session;
+  const parkedHere = (c: Channel) => say(startedHere(c), 'where is my parcel please', { intent: choice({ track_parcel: 0.95, none: 0.05 }) });
+
+  it('hands a chat caller who needs identity to a person, rather than asking them to sign in again and again', () => {
+    const r = parkedHere(PORTAL);
+    expect(r.decision).toMatchObject({ kind: 'handoff', reason: 'needs-human' });
+    expect(awaitingSignIn(r.session)).toBe(false);
+  });
+
+  it('ignores a sign-in, and still asks a caller on the phone for the factors', () => {
+    expect(resolve(startedHere(PORTAL), signedInEvent(customerPrincipal(CUSTOMERS[0]!, 2)), null, tc).decision).toMatchObject({ kind: 'ignore' });
+    expect(parkedHere(KIOSK).decision).toMatchObject({ promptId: 'ask_accountId' });
+  });
+});
+

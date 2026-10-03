@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { App, IdentityConfig, PolicyMatrix, PolicyMatrixSubject, PolicyTables, ToolName } from '../core/app/types';
 import { delegateProblem } from '../core/app/principals';
 import { identityOf } from '../core/app/lookup';
-import { LEGACY_RULE_ID, LEGACY_UNLISTED_ID, UNLISTED_RULE_ID } from '../gate/compiled';
+import { identityToolsOf, LEGACY_RULE_ID, LEGACY_UNLISTED_ID, subjectOnlyDecision, UNLISTED_RULE_ID } from '../gate/compiled';
 import { confirmationHash, evaluateCall } from '../gate/policy';
 import { ANONYMOUS } from '../gate/principal';
 import type { GateDecision, GateFacts, GateLookups, Party, Principal, RuleResult, ToolCall } from '../gate/types';
@@ -16,7 +16,10 @@ import { REGRESS_TODAY } from '../harness-text/baseline';
  * evaluator (gate/policy.ts evaluateCall) is the reference, so the gate is compared against it
  * decision by decision, whole (compareGateGrid). The legacy evaluator records the ids it always did
  * (R1..R7, R0) and the gate records the rules' names, so the reference's decisions go through the one
- * id map below (nameOfLegacyId) and are otherwise compared as they are.
+ * id map below (nameOfLegacyId) and are otherwise compared as they are. One difference is deliberate:
+ * the gate keeps the app's identity tools for its subjects (gate/compiled.ts subjectOnlyDecision),
+ * which the legacy evaluator never did, so the reference makes the same check in front of the legacy
+ * evaluator (legacyGateEvaluator) and everything else is compared exactly.
  */
 
 /** A tool name no app has: the grid's unlisted action. */
@@ -86,10 +89,15 @@ export function namedDecision(d: GateDecision): GateDecision {
 
 /**
  * The legacy evaluator over the input's tables and subject kind: the grid's reference, its rule ids
- * mapped to the rules' names (nameOfLegacyId) so a decision is compared with the gate's whole.
+ * mapped to the rules' names (nameOfLegacyId) so a decision is compared with the gate's whole. In
+ * front of it, the one check the legacy evaluator never made and the gate does: the identity tools
+ * of the input's identity (identityToolsOf) refuse a party who is not one of the app's subjects
+ * (subjectOnlyDecision), the documented difference between the two. Without an identity, no tool is
+ * kept for the subject, and the legacy evaluator decides alone.
  */
-export function legacyGateEvaluator(input: Pick<GateGridInput, 'policy' | 'subjectKind'>): GateEvaluate {
-  return (call, p, facts, lk) => namedDecision(evaluateCall(call, p, facts, lk, input.policy, input.subjectKind));
+export function legacyGateEvaluator(input: Pick<GateGridInput, 'policy' | 'subjectKind' | 'identity'>): GateEvaluate {
+  const identityTools = input.identity ? identityToolsOf(input.identity) : [];
+  return (call, p, facts, lk) => subjectOnlyDecision(call, p, input.subjectKind, identityTools) ?? namedDecision(evaluateCall(call, p, facts, lk, input.policy, input.subjectKind));
 }
 
 /** One point of the grid, by its labels. */
@@ -123,14 +131,20 @@ function rolesNamed(policy: PolicyTables): string[] {
   return [...new Set(Object.values(policy.roles ?? {}).flatMap((row) => Object.keys(row)))];
 }
 
-/** The principals of the grid, by label: anonymous, the subject at 1 and 2, each delegate, and the three edge parties. */
+/**
+ * The principals of the grid, by label: anonymous, the subject at 1 and 2, each delegate, the first
+ * delegate again at level 1 (a party who is not a subject, below an action's level: the identity
+ * rule refuses one rather than stepping them up), and the three edge parties.
+ */
 export function gridPrincipals(matrix: PolicyMatrix): Array<readonly [string, Principal]> {
   const m = matrix.principals;
+  const first = Object.entries(m.delegates)[0];
   return [
     ['anonymous', ANONYMOUS],
     ['subject@1', m.subject1],
     ['subject@2', m.subject2],
     ...Object.entries(m.delegates).map(([role, p]) => [`delegate:${role}`, p] as const),
+    ...(first ? [[`delegate:${first[0]}@1`, { ...first[1], level: 1 }] as const] : []),
     ['unlisted-role', m.unlistedRole],
     ['roleless', m.roleless],
     ['other-party', m.otherParty],

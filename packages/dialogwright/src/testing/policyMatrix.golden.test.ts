@@ -51,7 +51,7 @@ describe('the policy matrix', () => {
     expect(message).toContain('is not what the gate of "testkit" decides');
     expect(message).toMatch(/^- {3}delegate:viewer +BLOCK role$/m);
     expect(message).toMatch(/^\+ {3}delegate:viewer +subject own, fields exact, confirmed none\|mismatch +BLOCK confirmation$/m);
-    expect(message).toMatch(/^\+ {20}subject inScope, fields exact, confirmed match, params due\|delivered +ALLOW$/m);
+    expect(message).toMatch(/^\+ {22}subject inScope, fields exact, confirmed match, params due\|delivered +ALLOW$/m);
     // The subject's own lines did not move.
     expect(message).not.toMatch(/^[-+] {3}subject@2/m);
     expect(message).toContain('write it with `pnpm policy:matrix packages/dialogwright/src/testing/testkit`');
@@ -68,8 +68,8 @@ describe('the policy matrix', () => {
 
   it('says every caller once when all decide alike, and a caller who decides as another by name', () => {
     const text = policyMatrixText(testkitApp);
-    expect(text).toContain('(unlisted) · not in the policy\n  every caller     BLOCK unknown-tool\n');
-    expect(text).toContain('  subject@1        as anonymous\n');
+    expect(text).toContain('(unlisted) · not in the policy\n  every caller       BLOCK unknown-tool\n');
+    expect(text).toContain('  subject@1          as anonymous\n');
     expect(text).toContain('createReport · level 2 · identity, role(viewer refuse, clerk person), scope(accountId), confirmed(accountId, missingNote, expectedDate), custom R8\n');
   });
 });
