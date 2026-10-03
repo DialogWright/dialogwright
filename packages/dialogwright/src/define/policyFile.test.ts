@@ -11,6 +11,7 @@ import { TESTKIT_CUSTOM_RULES, TESTKIT_IDENTITY, TESTKIT_POLICY } from '../testi
 import { checkAppFully } from './check';
 import { AppDefinitionError, defineApp } from './defineApp';
 import { defineIdentity, definePolicy } from './definePolicy';
+import { defineRule } from '../gate/defineRule';
 import { LIBRARY_DIR, libraryApp, libraryCode } from './fixture/app';
 import { loadAppFolder } from './load';
 import { compileIdentity, compilePolicy } from './policyFile';
@@ -193,7 +194,18 @@ function problemsOf(build: () => unknown): string[] {
 /** A small app's code for the checks: three tools, two slots, one rule of its own. */
 const TOOLS = { getRecord: {}, fileRequest: {}, checkFactors: {}, sendCode: {}, checkCode: {} };
 const SLOTS = { accountId: {}, note: {}, dob: {} };
-const RULES = { 'not-twice': noDoubleBooking };
+/** The small app's own rule, with the examples check requires: a free slot passes, a taken one is refused. */
+const CUSTOMER = { kind: 'customer', level: 2, id: '55501234', first: 'Alex' } as const;
+const notTwice = defineRule({
+  id: 'not-twice',
+  description: 'The slot is free',
+  run: (c) => (c.call.params.date !== 'taken' ? { pass: true, compared: 'free' } : { pass: false, compared: 'taken', verdict: 'BLOCK', reason: 'taken' }),
+  examples: [
+    { name: 'a free day', call: { params: { accountId: '55501234', note: 'x', date: 'free' } }, principal: CUSTOMER, expect: { verdict: 'ALLOW' } },
+    { name: 'a taken day', call: { params: { accountId: '55501234', note: 'x', date: 'taken' } }, principal: CUSTOMER, expect: { verdict: 'BLOCK', reason: 'taken' } },
+  ],
+});
+const RULES = { 'not-twice': notTwice };
 
 const IDENTITY = {
   principals: { subject: 'customer', delegates: { agent: { roles: ['viewer', 'clerk'] } } },

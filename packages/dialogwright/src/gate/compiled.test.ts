@@ -12,6 +12,7 @@ import { demoTools } from '../core/tools';
 import { VOICE_RELAY } from '../channel/caps';
 import type { App, PolicyTables } from '../core/app/types';
 import { definePolicy } from '../define/definePolicy';
+import { defineRule } from './defineRule';
 import { compileGate, compiledPolicyOf, programFromTables, sourceOf, type CompiledPolicy, type PolicySource } from './compiled';
 import { confirmationHash, evaluateCall } from './policy';
 import type { GateFacts, GateLookups, Party, RuleContext, RuleOutcome } from './types';
@@ -116,10 +117,18 @@ describe('the compiled gate reads each rule\'s own parameters', () => {
 
   it('an app\'s own rule reads the tables the policy compiled to, as RuleContext.policy', () => {
     let seen: PolicyTables | null = null;
-    const peek = (c: RuleContext): RuleOutcome => {
-      seen = c.policy;
-      return { result: { id: 'peek', description: 'd', compared: 'c', pass: true } };
-    };
+    const peek = defineRule({
+      id: 'peek',
+      description: 'd',
+      run: (c) => {
+        seen = c.policy;
+        return c.call.params.refuse === undefined ? { pass: true, compared: 'c' } : { pass: false, compared: 'c', verdict: 'BLOCK', reason: 'refused' };
+      },
+      examples: [
+        { name: 'a call', call: { params: {} }, principal: patient, expect: { verdict: 'ALLOW' } },
+        { name: 'a call it refuses', call: { params: { refuse: 'yes' } }, principal: patient, expect: { verdict: 'BLOCK', reason: 'refused' } },
+      ],
+    });
     const policy = definePolicy({ actions: { act: { level: 0, rules: [{ custom: 'peek' }] } } }, { tools: { act: {} }, customRules: { peek } });
     expect(compiledPolicyOf(policy, '').evaluate({ tool: 'act', params: {} }, patient, facts, lookups).verdict).toBe('ALLOW');
     expect(seen).toBe(policy);

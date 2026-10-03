@@ -16,6 +16,7 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { RULE_IDS } from '../gate/policy';
 import { NAMED_RULE_IDS } from '../gate/compiled';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
+import { ruleDefinitionProblems } from '../gate/defineRule';
 import { compileIdentity, compilePolicy, customRulesNamed, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
@@ -378,6 +379,7 @@ export function crossLink(
     if (isBuiltInRuleId(id)) inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's custom: rules; ${NAMED_RULE_IDS.includes(id) ? `"${id}" is a built-in rule written by its name with its parameters` : `the built-in ids are R0, ${RULE_IDS.join(', ')}`}`);
     else if (typeof rule !== 'function') inTs(['customRules', id], `custom rule "${id}" is not a function`, `make ${inCode('customRules', id)} a function of the rule context`);
     else if (!named.has(id)) yaml('policy.yaml', ['actions'], `custom rule "${id}" (${codePath('customRules', id)}) is not named by any action's rules, so it never runs`, `add "- custom: ${id}" to the rules of the action it guards, or delete the rule from ${inCode('customRules', id)}`);
+    else for (const { message, fix } of ruleDefinitionProblems(id, rule, inCode('customRules', id))) inTs(['customRules', id], message, fix);
   }
   if (code.lookups !== undefined && !Array.isArray(code.lookups)) inTs(['lookups'], 'lookups is not a list', `make ${inCode('lookups')} a list of the names of the gate's lookups the policy may call`);
   for (const { index, message } of lookupDeclarationProblems(Array.isArray(code.lookups) ? code.lookups : [])) {

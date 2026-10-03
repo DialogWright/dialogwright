@@ -4,10 +4,11 @@
  * (definePolicy, defineIdentity), the compilers they and defineApp share, the gate itself (the
  * compiled policy an app's calls go through, and the legacy evaluator the shadow gate compares it
  * with) with the types its tables and rules are written in, for an app's custom rules and its gate
- * tests, and the converter behind `dialogwright policy:convert` (convertTables, convertFolder). Kept
- * out of the root entry, which stays the engine's everyday API; the gate's types are in both.
+ * tests, `defineRule` for an app's own rules and the examples that say what they do, and the
+ * converter behind `dialogwright policy:convert` (convertTables, convertFolder). Kept out of the
+ * root entry, which stays the engine's everyday API; the gate's types are in both.
  *
- *   import { definePolicy, defineIdentity, compiledPolicyOf, evaluateCall, type RuleContext } from 'dialogwright/policy';
+ *   import { definePolicy, defineIdentity, defineRule, compiledPolicyOf, type RuleContext } from 'dialogwright/policy';
  */
 
 // policy.yaml and identity.yaml for an app that is not a folder, and the compilers behind them.
@@ -32,6 +33,10 @@ export { parseLookupRef, parseDateBound, parseNumberBound, isIsoDate, DATE_IN_RA
 export type { LookupRef, DateBound, NumberBound, RangeVerdict, DateInRangeParams, LimitParams } from '../gate/bounded';
 export { evaluateCall, confirmationHash, RULE_IDS, isRuleId } from '../gate/policy';
 export type { RuleId } from '../gate/policy';
+
+// An app's own rule, with the examples that say what it does (check refuses one without them).
+export { defineRule, isDefinedRule, ruleDefinitionProblems } from '../gate/defineRule';
+export type { DefinedRule, RuleDefinition, RuleExample, RuleExampleCall, RuleAnswer, RuleProblem } from '../gate/defineRule';
 
 // The types the gate's tables and an app's own rules are written in.
 export type { PolicyTables, PolicyWording, RoleAccess, SubjectParam, ScopeAsker, IdentityConfig, ToolName } from '../core/app/types';

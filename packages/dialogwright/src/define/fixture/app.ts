@@ -2,8 +2,9 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   addDays, defineApp, defineSlot, describeDay, localeOf,
-  type AppCode, type Completion, type CompletionContext, type PolicyMatrix, type RuleContext, type RuleOutcome, type Session, type SlotSpec, type ToolDef,
+  type AppCode, type Completion, type CompletionContext, type PolicyMatrix, type Session, type SlotSpec, type ToolDef,
 } from '../../index';
+import { defineRule } from '../policyEntry';
 
 /**
  * Example Town Library: a small, fictional library's phone line, written as an app folder. The YAML
@@ -117,13 +118,23 @@ export const LIBRARY_TOOLS: Record<string, ToolDef> = {
   },
 };
 
+/** A caller of the library line: it verifies no one, so every caller is anonymous to the gate. */
+const CALLER = { kind: 'anonymous', level: 0 } as const;
+
 /** The library's own rule: a hold is looked up only at a branch the library has. */
-function knownBranch(c: RuleContext): RuleOutcome {
-  const branch = c.call.params.branch ?? '';
-  const known = Object.hasOwn(BRANCHES, branch);
-  const result = { id: 'known-branch', description: 'The hold is at one of the library\'s branches', compared: known ? `branch ${branch}: known` : 'branch not known', pass: known };
-  return known ? { result } : { result, fail: { verdict: 'BLOCK', reason: 'branch' } };
-}
+export const knownBranch = defineRule({
+  id: 'known-branch',
+  description: 'The hold is at one of the library\'s branches',
+  run(c) {
+    const branch = c.call.params.branch ?? '';
+    return Object.hasOwn(BRANCHES, branch) ? { pass: true, compared: `branch ${branch}: known` } : { pass: false, compared: 'branch not known', verdict: 'BLOCK', reason: 'branch' };
+  },
+  examples: [
+    { name: 'a hold at a branch the library has', call: { params: { book: 'river_atlas', branch: 'north' } }, principal: CALLER, expect: { verdict: 'ALLOW' } },
+    { name: 'a hold at a branch it does not have', call: { params: { book: 'river_atlas', branch: 'east' } }, principal: CALLER, expect: { verdict: 'BLOCK', reason: 'branch' } },
+    { name: 'a hold at no branch', call: { params: { book: 'river_atlas', branch: '' } }, principal: CALLER, expect: { verdict: 'BLOCK', reason: 'branch' } },
+  ],
+});
 
 const valueOf = (s: Session, slot: string): string => s.slots[slot]?.value ?? '';
 const displayOf = (s: Session, slot: string): string => s.slots[slot]?.display ?? '';
