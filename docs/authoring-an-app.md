@@ -285,6 +285,22 @@ It has the files' config hashes (policy.yaml and identity.yaml, as every call's 
 
 It is the structure, not a script for a call: the dialog is mixed-initiative, so a caller may give the slots in any order, change their mind or ask for two things in a row. What the map cannot connect is drawn marked and listed under "Dangling references" (`danglingReferences(app)` returns it): an intent with no form, a form no intent starts, an informational intent whose line is not there, a keypad digit to no intent, a form that asks for a slot that does not exist, a call to an action the policy does not list, and an action no form reaches. `check` reports the ones it can from the YAML, with a fix, including the last (an action in policy.yaml that no form's `calls` lists and the identity flow does not call).
 
+#### Who reviews the policy
+
+Policy is a file compliance owns, so a change to it should need their review. GitHub's CODEOWNERS does that: list the files that say what the agent may do, and the people who must approve a change to them (turn on "Require review from Code Owners" in the branch protection rule). For an app's repository:
+
+```text
+# .github/CODEOWNERS: a pull request that changes these files needs the owners' approval.
+# What the agent may do, and how a caller proves who they are:
+policy.yaml        @your-org/compliance
+identity.yaml      @your-org/compliance
+# What compliance reads, and the golden that shows a change as a diff:
+POLICY.md          @your-org/compliance
+policy.matrix      @your-org/compliance
+```
+
+A bare file name matches in every folder, so each app of a repository is covered. A change to the rules lands as a diff of policy.yaml, of `POLICY.md` and of `policy.matrix` together, in plain words and as the verdicts that follow from it, which a reviewer who does not write code can read and accept or refuse. Owners may be users or teams; an owner needs write access to the repository, or the line is ignored. This repository's own file (`.github/CODEOWNERS`) owns the same four names.
+
 ### identity.yaml (optional)
 
 How a caller proves who they are, and who the app serves. The clinic has none. The engine's valid-folder test fixture is:
