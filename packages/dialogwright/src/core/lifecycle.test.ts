@@ -468,7 +468,7 @@ describe('at the code prompt', () => {
 describe('a refused entry call', () => {
   it('says why, is not counted as completed, and goes on to the next queued request', () => {
     const base = ctx();
-    // A book of business where nobody is in scope: every account-keyed call is refused on R2.
+    // A book of business where nobody is in scope: every account-keyed call is refused on the scope rule.
     const lookups = { ...lookupsFor(sysOf(base)), scopeOf: () => [] };
     const tc = { ...base, tools: { ...base.tools, lookups } };
     let r = resolve(newSession('s', 0, VOICE_RELAY), startEvent(), null, tc);
@@ -622,7 +622,7 @@ describe('reporting a missing parcel', () => {
     let r = toSummary(tc);
     r = say(tc, r.session, 'yes, but it was sunday', { ...YES, expectedDateMode: choice({ weekday: 0.92, none: 0.08 }), expectedDateWeekday: choice({ sunday: 0.93, none: 0.07 }) });
     expect(tools(r)).toEqual([['createReport', 'BLOCK']]);
-    expect(r.gateEvents[0]!.decision).toMatchObject({ reason: 'confirmation', rules: expect.arrayContaining([expect.objectContaining({ id: 'R3', pass: false, compared: 'confirmed hash != call hash' })]) });
+    expect(r.gateEvents[0]!.decision).toMatchObject({ reason: 'confirmation', rules: expect.arrayContaining([expect.objectContaining({ id: 'confirmed', pass: false, compared: 'confirmed hash != call hash' })]) });
     expect(r.decision).toMatchObject({ promptId: 'confirm_report', vars: { expectedDate: 'Sunday, September 13' } });
     expect(r.effects).toEqual([]);
     expect(sysOf(tc).ownerOf('9001')).toBeNull();
@@ -640,7 +640,7 @@ describe('reporting a missing parcel', () => {
     expect(r.session.pendingHash).toBeNull();
     const again = callTool(r.session, { tool: 'createReport', params: { accountId: '55501234', missingNote: NOTE, expectedDate: '2026-09-15' } }, tc, newTurnOut());
     expect(again.decision).toMatchObject({ verdict: 'BLOCK', reason: 'confirmation' });
-    expect(again.decision.rules.find((x) => x.id === 'R3')).toMatchObject({ id: 'R3', compared: 'no confirmation' });
+    expect(again.decision.rules.find((x) => x.id === 'confirmed')).toMatchObject({ id: 'confirmed', compared: 'no confirmation' });
   });
 
   it('while the depot agent is awaited, nothing the caller says or keys re-reads the summary or files again', () => {
@@ -703,7 +703,7 @@ describe('reporting a missing parcel', () => {
     r = say(tc, r.session, 'file a missing parcel report for a customer', { intent: choice({ report_missing: 0.93, none: 0.07 }) });
     expect(tools(r)).toEqual([['createReport', 'BLOCK']]);
     expect(r.gateEvents[0]!.decision).toMatchObject({ reason: 'role', call: { params: {}, purpose: 'entry-check' } });
-    expect(r.gateEvents[0]!.decision.rules.find((x) => x.id === 'R5')).toMatchObject({ id: 'R5', pass: false, compared: 'role viewer may createReport: no' });
+    expect(r.gateEvents[0]!.decision.rules.find((x) => x.id === 'role')).toMatchObject({ id: 'role', pass: false, compared: 'role viewer may createReport: no' });
     // No "Sure, I can help you report a missing parcel" ahead of the refusal.
     expect(r.decision).toMatchObject({ promptId: 'anything_else', acks: [{ promptId: 'report_blocked_role' }] });
     expect(r.session.form).toBeNull();
@@ -722,7 +722,7 @@ describe('reporting a missing parcel', () => {
     expect(r.gateEvents[0]!.decision).toMatchObject({ reason: 'role-person', call: { purpose: 'entry-check' } });
     expect(r.decision).toMatchObject({ kind: 'handoff', reason: 'role-person', promptId: 'handoff_role_person' });
     expect(r.decision.kind === 'handoff' && r.decision.acks.map((a) => a.promptId)).not.toContain('ack_intent');
-    expect(r.gateEvents[0]!.decision.rules.find((x) => x.id === 'R5')).toMatchObject({ id: 'R5', compared: 'role clerk may createReport: with a person' });
+    expect(r.gateEvents[0]!.decision.rules.find((x) => x.id === 'role')).toMatchObject({ id: 'role', compared: 'role clerk may createReport: with a person' });
     expect(r.effects).toEqual([]);
   });
 

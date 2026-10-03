@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `39a14e79e04b152e962c81605af16fd8716c2716f3a51b2318a399a28a731c5c` |
+| `policy.yaml` | `e0a98c19cfaf7880d69995be47e256f21fc556c8f1f35bb0c4fc63b044398799` |
 | `identity.yaml` | `6692c172f4a0b784e6993d801acfd608af150561fa09e2f75e29c2eea1389d3a` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -65,6 +65,29 @@ A party who acts for customers does not see every field of what some actions ret
 | agent, any role | List the customer's parcels (`listParcels`) | `safePlace` |
 | agent, as clerk | Read a parcel (`getParcel`) | none |
 | agent, as clerk | List the customer's parcels (`listParcels`) | none |
+
+## What is recorded
+
+What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary or its own audit rows repeat a value that is hidden, shortened or never recorded, it is masked there too.
+
+| Action | Value | Recorded |
+| --- | --- | --- |
+| Check the account ID and date of birth (`verifyCustomer`) | account ID (`accountId`) | by its last four characters |
+| Check the account ID and date of birth (`verifyCustomer`) | date of birth (`dob`) | hidden |
+| Check the one-time code (`verifyCode`) | nothing | |
+| Text a one-time code (`sendCode`) | account ID (`accountId`) | by its last four characters |
+| Read the customer's account (`getAccount`) | account ID (`accountId`) | by its last four characters |
+| Read the delivery windows (`getWindows`) | account ID (`accountId`) | by its last four characters |
+| Read the delivery windows (`getWindows`) | delivery day (`deliveryDay`) | as it is |
+| Read the delivery windows (`getWindows`) | time of day (`deliveryPart`) | as it is |
+| List the customer's parcels (`listParcels`) | account ID (`accountId`) | by its last four characters |
+| Read a parcel (`getParcel`) | parcel (`parcel`) | as it is |
+| Report a missing parcel (`createReport`) | account ID (`accountId`) | by its last four characters |
+| Report a missing parcel (`createReport`) | description (`missingNote`) | by its length only |
+| Report a missing parcel (`createReport`) | due date (`expectedDate`) | as it is |
+| Tell the depot about a report (`notifyDepot`) | report (`report`) | as it is |
+| Tell the depot about a report (`notifyDepot`) | description (`missingNote`) | by its length only |
+| Tell the depot about a report (`notifyDepot`) | due date (`expectedDate`) | as it is |
 
 ## Actions
 

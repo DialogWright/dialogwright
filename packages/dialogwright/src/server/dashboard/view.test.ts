@@ -306,7 +306,7 @@ describe('stages, gate, source, audit and handoff', () => {
     const { events } = await scripted(['where is parcel 7201', ACCOUNT_ID, DOB, { dtmf: CODE }]);
     const v = reduce(events);
     expect(v.gate?.verdict).toBe('BLOCK');
-    const r2 = v.gate?.rules.find((r) => r.id === 'R2');
+    const r2 = v.gate?.rules.find((r) => r.id === 'scope');
     expect(r2?.pass).toBe(false);
     // The other customer's account ID ends in 5678; the gate's own masking (maskId) is what shows it.
     expect(r2?.compared).toContain('...5678');

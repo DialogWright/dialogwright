@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { IdentityConfig, PolicyTables, RoleAccess } from '../../core/app/types';
 import type { JsonSchema } from '../schema/json';
 import { formatProblem, problemsOfIssues, type Problem } from '../problems';
-import { DEFAULT_CODE_LENGTH, DEFAULT_MAX_ATTEMPTS, DEFAULT_ROLE_TEMPLATES, RULE_ID_OF } from '../policyFile';
+import { DEFAULT_CODE_LENGTH, DEFAULT_MAX_ATTEMPTS, DEFAULT_ROLE_TEMPLATES, isBuiltInRuleId, RULE_ID_OF } from '../policyFile';
 import { identitySchema } from '../schema/identity';
 import { policySchema } from '../schema/policy';
 import {
@@ -112,6 +112,12 @@ function ruleOf(id: string, tool: string, old: OldPolicy, problems: string[], us
       used.fields.add(tool);
       return { fields: [...(Object.hasOwn(old.serviceFields, tool) ? old.serviceFields[tool]! : [])] };
     default:
+      // Rules are named now: an app's own rule may not take a built-in's name (or R0, or unlisted), so
+      // an old table that did cannot be converted as it is. R1..R7 are handled above, as ever.
+      if (isBuiltInRuleId(id)) {
+        problems.push(`rulesFor.${tool}: "${id}" is the name of a built-in rule, or an id the gate keeps for itself, so the app's own rule cannot have it -> rename the rule in the code's customRules and in rulesFor`);
+        return null;
+      }
       return { custom: id };
   }
 }

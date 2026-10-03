@@ -765,7 +765,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (pc.target === 'form') {
         const acks = enqueue(s, verdict.queue);
         // A yes that also changes a value ("yes, but it was Sunday") changes it. The write reads its
-        // values from the slots, so the gate (R3) refuses it against what the summary said, and the
+        // values from the slots, so the gate (the confirmed rule) refuses it against what the summary said, and the
         // summary is read again: what is filed is only ever what the caller heard and agreed to.
         const fill = correctingFill(s, answers, ctx, pc.form);
         if (fill.disambiguate) return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };

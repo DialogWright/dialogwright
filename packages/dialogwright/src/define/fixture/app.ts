@@ -14,7 +14,7 @@ import { defineRule } from '../policyEntry';
  * forms' hooks. It speaks English and Spanish: locale/es/ has the Spanish lines and how the books and
  * branches are said in Spanish (slots.yaml), and the lines its code says give each book and due day
  * in the call's language. A caller renews a book (a confirmed write, so the
- * gate's R3 holds it to the title read back), asks whether a hold is ready at a branch, or asks what
+ * gate's confirmed rule holds it to the title read back), asks whether a hold is ready at a branch, or asks what
  * is checked out on their card. The engine's tests build it with defineApp and run calls through it.
  */
 
@@ -92,6 +92,7 @@ export class LibrarySystems {
 
 export const LIBRARY_TOOLS: Record<string, ToolDef> = {
   renewLoan: {
+    params: ['book'],
     run(call, sys, { tc }) {
       const systems = sys as LibrarySystems;
       const ref = `R${101 + systems.renewals.length}`;
@@ -101,14 +102,17 @@ export const LIBRARY_TOOLS: Record<string, ToolDef> = {
     },
   },
   findHold: {
+    params: ['book', 'branch'],
     run(call, sys) {
       const status = (sys as LibrarySystems).holds[`${call.params.book}@${call.params.branch}`] ?? null;
       return { value: status, summary: status ? `hold ${status}` : 'no hold' };
     },
   },
   // The param is named after the slot it carries, so the gate event, the trace and the audit
-  // record it as the slot's redact says: by its last four.
+  // record it as the slot's redact says: by its last four. The others are declared in policy.yaml's
+  // audit (kept as they are).
   listLoans: {
+    params: ['card'],
     run(call, sys) {
       const { loans: onFile } = sys as LibrarySystems;
       const card = call.params.card ?? '';
@@ -139,7 +143,7 @@ export const knownBranch = defineRule({
 const valueOf = (s: Session, slot: string): string => s.slots[slot]?.value ?? '';
 const displayOf = (s: Session, slot: string): string => s.slots[slot]?.display ?? '';
 
-/** The renewal writes the book read back at the summary, once the caller said yes (R3). */
+/** The renewal writes the book read back at the summary, once the caller said yes (the confirmed rule). */
 const renewParams = (s: Session): Record<string, string> => ({ book: valueOf(s, 'book') });
 
 function renew(c: CompletionContext): Completion {

@@ -13,3 +13,8 @@ actions:
   listLoans:
     level: 0
     rules: [identity]
+# How each value an action is sent is recorded, where it is not a slot with a redact setting (the
+# card number is recorded by its last four, as its slot says).
+audit:
+  book: keep
+  branch: keep

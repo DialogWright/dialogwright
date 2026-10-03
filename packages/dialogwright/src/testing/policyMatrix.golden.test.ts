@@ -105,7 +105,7 @@ describe('the custom rules\' examples', () => {
     expect(problems).toEqual([
       null,
       'custom rule "R8" example "due on the day their boots were delivered" in createReport: expected NEEDS_HUMAN delivered, got ALLOW',
-      'custom rule "R8" example "another customer\'s report" in createReport: got BLOCK scope, and the gate stopped at R2 before the rule ran',
+      'custom rule "R8" example "another customer\'s report" in createReport: got BLOCK scope, and the gate stopped at scope before the rule ran',
     ]);
     expect(() => runRuleExamples(app)).toThrow(RuleExampleError);
     expect(() => policyMatrixText(app)).toThrow(/2 custom rule example problem/);

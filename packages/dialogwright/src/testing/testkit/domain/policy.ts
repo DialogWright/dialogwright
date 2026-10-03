@@ -15,7 +15,7 @@ import { TESTKIT_TOOLS } from './tools';
  * Example Parcels' action policy and identity: policy.yaml and identity.yaml in the testkit's
  * folder, loaded with definePolicy and defineIdentity (the same files, checks and messages as an app
  * folder's, for an app that is not a folder), and the one rule of its own (R8), which is code. Every
- * tool not listed in the file is refused (R0); an action with no level needs the highest. R8 is
+ * tool not listed in the file is refused (unlisted); an action with no level needs the highest. R8 is
  * defined with the examples that say what it does (defineRule), which the matrix runner runs.
  */
 const POLICY_FILE = fileURLToPath(new URL('../policy.yaml', import.meta.url));

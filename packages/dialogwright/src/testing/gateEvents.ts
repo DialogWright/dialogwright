@@ -1,4 +1,5 @@
 import type { GateEvent } from '../core/lifecycle';
+import { appOf } from '../core/app/registry';
 import { loadCorpus, type CorpusEntry } from '../jev/corpus';
 import { isCassetteMiss } from '../jev/cassette';
 import { buildClient, buildThresholds } from '../run/client';
@@ -34,6 +35,13 @@ export interface GateEventGolden {
   readonly events: number;
   /** Turns a cassette had no answer for (a recorded run must have none). */
   readonly misses: number;
+  /**
+   * The params the app's own calls carried that their tool does not list (ToolDef.params), as
+   * `tool.param`, distinct and sorted: `check` holds only the listed params to being recorded as
+   * declared (policy.yaml `audit:`), so an app's golden test expects none. A tool that lists no
+   * params is not counted.
+   */
+  readonly unlistedParams: readonly string[];
 }
 
 /** The clients a golden is taken with: the label stubs, and the app's recorded cassette replayed. */
@@ -64,13 +72,18 @@ export async function gateEventGolden(kind: GateGoldenClient, options: GateEvent
   let turns = 0;
   let events = 0;
   let misses = 0;
+  const unlisted = new Set<string>();
   const write = (runs: readonly TurnRun[]): void => {
     runs.forEach((run, i) => {
       turns += 1;
       if (isCassetteMiss(run.record)) misses += 1;
+      const tools = appOf(run.result.session).tools;
       for (const event of run.result.gateEvents) {
         events += 1;
         lines.push(...gateEventLines(i, event));
+        const { tool, params } = event.decision.call;
+        const listed = Object.hasOwn(tools, tool) ? tools[tool]!.params : undefined;
+        if (Array.isArray(listed)) for (const param of Object.keys(params)) if (!listed.includes(param)) unlisted.add(`${tool}.${param}`);
       }
     });
   };
@@ -84,5 +97,5 @@ export async function gateEventGolden(kind: GateGoldenClient, options: GateEvent
     lines.push(`# scenario ${scenario.id}`);
     write(r.runs);
   }
-  return { text: `${lines.join('\n')}\n`, entries: corpus.length + scenarios.length, turns, events, misses };
+  return { text: `${lines.join('\n')}\n`, entries: corpus.length + scenarios.length, turns, events, misses, unlistedParams: [...unlisted].sort() };
 }

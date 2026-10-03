@@ -6,8 +6,9 @@ import { isAnonymous, type GateDecision, type GateFacts, type GateLookups, type 
 /**
  * The legacy evaluator: the gate's rules over the app's flattened tables (App.policy, PolicyTables).
  * The gate a call goes through reads the policy's named rules instead (./compiled.ts, CompiledPolicy);
- * this one stays, unchanged in what it decides, as the reference the shadow gate compares that one
- * with (dialogwright/testing withShadowGate, legacyGateEvaluator), until rules are named in the audit.
+ * this one stays, unchanged in what it decides and in the ids it records (R1..R7, R0), as the
+ * reference the shadow gate compares that one with (dialogwright/testing withShadowGate,
+ * legacyGateEvaluator, which maps these ids to the rules' names).
  *
  * What a tool needs, which rules it runs and in what order, what each rule compares against and the
  * words its lines use are the app's tables; the built-in rules are here, each with a test in
@@ -127,7 +128,7 @@ const RULE: Record<RuleId, (c: RuleContext) => RuleOutcome> = {
 export function evaluateCall(call: ToolCall, p: Principal, facts: GateFacts, lk: GateLookups, policy: PolicyTables, subjectKind: string): GateDecision {
   const ids = Object.hasOwn(policy.rulesFor, call.tool) ? policy.rulesFor[call.tool] : undefined;
   if (!ids) {
-    return { call, rules: [unlistedLine(call.tool)], verdict: 'BLOCK', reason: 'unknown-tool' };
+    return { call, rules: [unlistedLine(call.tool, 'R0')], verdict: 'BLOCK', reason: 'unknown-tool' };
   }
   const ctx: RuleContext = { call, p, facts, lk, policy, subjectKind };
   const rules: RuleResult[] = [];

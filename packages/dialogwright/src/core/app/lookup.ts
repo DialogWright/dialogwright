@@ -22,7 +22,7 @@ export function toolOf(app: App, name: ToolName): ToolDef {
 
 /**
  * What an app without identity verification (App.identity absent) is read as: no factor slots, no
- * identity tools (an empty name, which no tool has: the gate blocks it, R0), and an empty subject
+ * identity tools (an empty name, which no tool has: the gate blocks it as unlisted), and an empty subject
  * kind, which no subject has (validateApp requires a lowercase word), so no party is ever taken for
  * one of the app's subjects. Such an app never steps up: validateApp refuses any tool above level 0.
  */

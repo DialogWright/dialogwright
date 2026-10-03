@@ -17,24 +17,25 @@ import { isAnonymous, type GateDecision, type GateFacts, type GateLookups, type 
  * record, `role` its roles and its own reason (Decision 4), `confirmed` its own fields (Decision 5;
  * the summary hash is still taken over one list, PolicyTables.confirmedFields, which `check` keeps
  * equal to every action's), `attempts` the identity file's maximum, `fields` its params, `custom`
- * the app's rule of that id. Each still records itself under its legacy id (R1..R7, a custom
- * rule's own) with the same words, so a decision, its lines and its audit row are what the legacy
- * evaluator (./policy.ts evaluateCall) gives over the compiled tables; the shadow gate
- * (dialogwright/testing withShadowGate) holds the two together.
+ * the app's rule of that id. Each records itself under its name (`identity`, `scope`, `confirmed`,
+ * `role`, `attempts`, `fields`; a custom rule under its own id) with the words it has always used,
+ * so a decision, its lines and its audit row are what the legacy evaluator (./policy.ts
+ * evaluateCall) gives over the compiled tables, except that the legacy evaluator still records the
+ * ids it always did (R1..R7, R0); the shadow gate (dialogwright/testing withShadowGate) holds the
+ * two together through one id map (testing/gateGrid.ts nameOfLegacyId).
  *
  * Two built-in rules are the file's alone (./bounded.ts): `dateInRange` and `limit`, which hold a
- * param's value to bounds (literals, today, the app's lookups). They have no legacy id and record
- * themselves under their names; the legacy evaluator does not know them, so an app that uses one has
- * no shadow reference for it.
+ * param's value to bounds (literals, today, the app's lookups). The legacy evaluator does not know
+ * them, so an app that uses one has no shadow reference for it.
  *
- * It fails closed as the legacy one does: an action not listed is R0, a custom rule the app does not
+ * It fails closed as the legacy one does: an action not listed is `unlisted`, a custom rule the app does not
  * define BLOCKs (unknown-rule), a rule that throws BLOCKs (rule-error), and a rule's answer that does
  * not hold together BLOCKs (rule-invalid, ./lines.ts checkOutcome).
  */
 
 /**
  * One rule as an action lists it: its name and its parameters. A file's rules always name what they
- * read; the scope rule's subject is null only for tables an app wrote by hand that run R2 for a tool
+ * read; the scope rule's subject is null only for tables an app wrote by hand that run the scope rule for a tool
  * with no subjects row (programFromTables), which fails closed.
  */
 export type Rule =
@@ -48,17 +49,53 @@ export type Rule =
   | ({ readonly rule: 'limit' } & LimitParams)
   | { readonly rule: 'custom'; readonly id: string };
 
-/** The rules the legacy evaluator knows, each by the id it has always been recorded under. */
+/** The rules the legacy evaluator knows. */
 export type LegacyRuleName = 'identity' | 'scope' | 'confirmed' | 'role' | 'attempts' | 'fields';
 
-/** The legacy id each built-in rule is recorded under in decisions and audit lines (until rules are named there). */
+/**
+ * The id each of those rules has in a table's `rulesFor` (and in the legacy evaluator's decisions and
+ * lines): the ids tables written by hand, the converter and the legacy evaluator still use. The gate
+ * records each under its name (RULE_ID).
+ */
 export const LEGACY_RULE_ID: Readonly<Record<LegacyRuleName, string>> = { identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' };
 
+/** The id the legacy evaluator records for an action that is not listed; the gate records it as UNLISTED_RULE_ID. */
+export const LEGACY_UNLISTED_ID = 'R0';
+
+/** The built-in rules, by name: what an action's `rules:` writes. */
+export const BUILT_IN_RULES = ['identity', 'scope', 'confirmed', 'role', 'attempts', 'fields', 'dateInRange', 'limit'] as const;
+
 /**
- * The id each built-in rule is recorded under: the legacy id of the rules the legacy evaluator knows,
- * and its own name for a rule it does not (dateInRange, limit), which has no legacy id to keep.
+ * The id each built-in rule is recorded under in decisions, audit lines, the trace and the console:
+ * its own name. A custom rule is recorded under the id the app gave it, which may be none of these.
  */
-export const RULE_ID: Readonly<Record<Exclude<Rule['rule'], 'custom'>, string>> = { ...LEGACY_RULE_ID, dateInRange: DATE_IN_RANGE_ID, limit: LIMIT_ID };
+export const RULE_ID: Readonly<Record<Exclude<Rule['rule'], 'custom'>, string>> = {
+  identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: DATE_IN_RANGE_ID, limit: LIMIT_ID,
+};
+
+/**
+ * The id the gate records for an action no policy lists, which no action writes as a rule: the line
+ * that says the tool is not on the approved list. Reserved like a built-in's name.
+ */
+export const UNLISTED_RULE_ID = 'unlisted';
+
+/**
+ * The id each built-in rule has in a table's `rulesFor`: the legacy id of the rules the legacy
+ * evaluator knows, and its own name for a rule it does not (dateInRange, limit).
+ */
+export const TABLE_RULE_ID: Readonly<Record<Exclude<Rule['rule'], 'custom'>, string>> = { ...LEGACY_RULE_ID, dateInRange: DATE_IN_RANGE_ID, limit: LIMIT_ID };
+
+/**
+ * Whether an id is a built-in's, so no app's own rule may take it: a rule's name, the unlisted
+ * line's, or a legacy id (R0, R1..R7), which tables, the converter and every audit file written
+ * before rules were named still use for the built-ins.
+ */
+export function isBuiltInRuleId(id: string): boolean {
+  return (BUILT_IN_RULES as readonly string[]).includes(id) || id === UNLISTED_RULE_ID || id === LEGACY_UNLISTED_ID || Object.values(LEGACY_RULE_ID).includes(id);
+}
+
+/** The ids no app's own rule may take, in words for a message. */
+export const BUILT_IN_IDS_NOTE = `the built-in ids are the rules' names (${[...BUILT_IN_RULES, UNLISTED_RULE_ID].join(', ')}) and their old ids (${[LEGACY_UNLISTED_ID, ...Object.values(LEGACY_RULE_ID)].join(', ')})`;
 
 /**
  * The ids of the built-in rules only a policy file can give parameters to (gate/bounded.ts): the
@@ -77,7 +114,7 @@ export interface PolicyAction {
 
 /** The policy as written, read: what a CompiledPolicy is built from. */
 export interface PolicySource {
-  /** Per tool, its action. A tool not here is not on the approved list (R0). */
+  /** Per tool, its action. A tool not here is not on the approved list (unlisted). */
   readonly actions: Readonly<Record<ToolName, PolicyAction>>;
   /** The level a form's purpose raises a call to. */
   readonly purposes: Readonly<Record<string, Level>>;
@@ -113,20 +150,20 @@ const has = (obj: object | undefined, key: string): boolean => obj !== undefined
 // The built-in rules, each taking its own parameters
 // ---------------------------------------------------------------------------------------------
 
-/** identity (R1): the principal's level against the action's, raised by the call's purpose. */
+/** identity: the principal's level against the action's, raised by the call's purpose. */
 function identityRule(level: Level, purposes: Readonly<Record<string, Level>>): (c: RuleContext) => RuleOutcome {
   return (c) => {
     const purpose = c.call.purpose && has(purposes, c.call.purpose) ? purposes[c.call.purpose]! : 0;
     const need = Math.max(level, purpose) as Level;
     const pass = c.p.level >= need;
-    const result = { id: 'R1', description: 'Identity strong enough for this action', compared: `identity.level ${c.p.level} >= ${need}`, pass };
+    const result = { id: 'identity', description: 'Identity strong enough for this action', compared: `identity.level ${c.p.level} >= ${need}`, pass };
     // A party who is not one of the app's subjects has no factors to give, so cannot step up: BLOCK.
     const cannotStepUp = !isAnonymous(c.p) && c.p.kind !== c.subjectKind;
     return pass ? { result } : { result, fail: cannotStepUp ? { verdict: 'BLOCK', reason: 'identity' } : { verdict: 'STEP_UP', needLevel: need } };
   };
 }
 
-/** scope (R2): the subject the call names (by its param, or a record's owner) is one the caller may see. */
+/** scope: the subject the call names (by its param, or a record's owner) is one the caller may see. */
 function scopeRule(subject: SubjectParam | null, wording: PolicyWording | undefined): (c: RuleContext) => RuleOutcome {
   const asRecord = subject?.via === 'record';
   return (c) => {
@@ -135,7 +172,7 @@ function scopeRule(subject: SubjectParam | null, wording: PolicyWording | undefi
     const scope = c.lk.scopeOf(c.p);
     if (subject === null) {
       // Nothing to compare: it fails closed.
-      const result = { id: 'R2', description, compared: `tool ${c.call.tool} names no subject · caller may see ${scopeShown(scope)}`, pass: false };
+      const result = { id: 'scope', description, compared: `tool ${c.call.tool} names no subject · caller may see ${scopeShown(scope)}`, pass: false };
       return { result, fail: { verdict: 'BLOCK', reason: 'scope' } };
     }
     const named = c.call.params[subject.param] ?? '';
@@ -147,12 +184,12 @@ function scopeRule(subject: SubjectParam | null, wording: PolicyWording | undefi
     const owner = asRecord
       ? `${wording?.recordOwner ?? DEFAULT_RECORD_OWNER} ${who !== null ? maskId(who) : 'unknown'}`
       : `${wording?.subject ?? DEFAULT_SUBJECT} ${who !== null ? maskId(who) : 'missing'}`;
-    const result = { id: 'R2', description, compared: `${owner} · caller may see ${scopeShown(scope)}`, pass };
+    const result = { id: 'scope', description, compared: `${owner} · caller may see ${scopeShown(scope)}`, pass };
     return pass ? { result } : { result, fail: { verdict: 'BLOCK', reason: 'scope' } };
   };
 }
 
-/** confirmed (R3): the call sends exactly these fields, and the caller confirmed exactly their values. */
+/** confirmed: the call sends exactly these fields, and the caller confirmed exactly their values. */
 function confirmedRule(fields: readonly string[]): (c: RuleContext) => RuleOutcome {
   const description = 'The caller confirmed exactly these values';
   return (c) => {
@@ -161,64 +198,64 @@ function confirmedRule(fields: readonly string[]): (c: RuleContext) => RuleOutco
     const missing = fields.filter((k) => !sent.includes(k));
     if (extra.length > 0 || missing.length > 0) {
       const compared = extra.length > 0 ? `extra fields: ${extra.join(', ')}` : `missing fields: ${missing.join(', ')}`;
-      return { result: { id: 'R3', description, compared, pass: false }, fail: { verdict: 'BLOCK', reason: 'confirmation' } };
+      return { result: { id: 'confirmed', description, compared, pass: false }, fail: { verdict: 'BLOCK', reason: 'confirmation' } };
     }
     const held = c.facts.confirmedHash;
     const pass = held !== null && held === confirmationHash(c.call.params, fields);
-    const result = { id: 'R3', description, compared: pass ? 'confirmed hash = call hash' : held ? 'confirmed hash != call hash' : 'no confirmation', pass };
+    const result = { id: 'confirmed', description, compared: pass ? 'confirmed hash = call hash' : held ? 'confirmed hash != call hash' : 'no confirmation', pass };
     return pass ? { result } : { result, fail: { verdict: 'BLOCK', reason: 'confirmation' } };
   };
 }
 
-/** role (R5): what this rule lets the caller's role do with the action; a role it does not name is refused. */
+/** role: what this rule lets the caller's role do with the action; a role it does not name is refused. */
 function roleRule(access: Readonly<Record<string, RoleAccess>>, reason: string, wording: PolicyWording | undefined): (c: RuleContext) => RuleOutcome {
   const description = 'The caller\'s role allows this action';
   const line = wording?.role ?? defaultRoleLine;
   return (c) => {
     const role = isAnonymous(c.p) ? undefined : c.p.role;
     if (role === undefined) {
-      // No role: an anonymous caller (R1 stops one first) or one of the app's subjects passes. A party
+      // No role: an anonymous caller (identity stops one first) or one of the app's subjects passes. A party
       // of any other kind acts for subjects, and one built without a role may do nothing a role governs.
       const compared = `role ${c.p.kind}`;
-      if (isAnonymous(c.p) || c.p.kind === c.subjectKind) return { result: { id: 'R5', description, compared, pass: true } };
-      return { result: { id: 'R5', description, compared: `${compared}: none`, pass: false }, fail: { verdict: 'BLOCK', reason: 'role' } };
+      if (isAnonymous(c.p) || c.p.kind === c.subjectKind) return { result: { id: 'role', description, compared, pass: true } };
+      return { result: { id: 'role', description, compared: `${compared}: none`, pass: false }, fail: { verdict: 'BLOCK', reason: 'role' } };
     }
     const may: RoleAccess = has(access, role) ? access[role]! : 'refuse';
     const compared = line(role, c.call.tool, may);
-    if (may === 'allow') return { result: { id: 'R5', description, compared, pass: true } };
+    if (may === 'allow') return { result: { id: 'role', description, compared, pass: true } };
     const fail = may === 'person' ? { verdict: 'NEEDS_HUMAN' as const, reason } : { verdict: 'BLOCK' as const, reason: 'role' };
-    return { result: { id: 'R5', description, compared, pass: false }, fail };
+    return { result: { id: 'role', description, compared, pass: false }, fail };
   };
 }
 
-/** attempts (R6): the call's identity check has failed fewer times than the identity file allows. */
+/** attempts: the call's identity check has failed fewer times than the identity file allows. */
 function attemptsRule(max: number): (c: RuleContext) => RuleOutcome {
   return (c) => {
     const n = c.facts.attempts;
     const pass = n < max;
-    const result = { id: 'R6', description: 'Identity attempts under the limit', compared: `attempts ${n} < ${max}`, pass };
+    const result = { id: 'attempts', description: 'Identity attempts under the limit', compared: `attempts ${n} < ${max}`, pass };
     return pass ? { result } : { result, fail: { verdict: 'NEEDS_HUMAN', reason: 'attempts' } };
   };
 }
 
-/** fields (R7): the call sends on no field but these. */
+/** fields: the call sends on no field but these. */
 function fieldsRule(fields: readonly string[]): (c: RuleContext) => RuleOutcome {
   return (c) => {
     const extra = Object.keys(c.call.params).filter((k) => !fields.includes(k));
     const pass = extra.length === 0;
-    const result = { id: 'R7', description: 'Only the fields this agent may receive', compared: pass ? `fields within [${fields.join(', ')}]` : `extra fields: ${extra.join(', ')}`, pass };
+    const result = { id: 'fields', description: 'Only the fields this agent may receive', compared: pass ? `fields within [${fields.join(', ')}]` : `extra fields: ${extra.join(', ')}`, pass };
     return pass ? { result } : { result, fail: { verdict: 'BLOCK', reason: 'minimization' } };
   };
 }
 
 function stepOf(rule: Rule, action: PolicyAction, source: PolicySource): Step {
   switch (rule.rule) {
-    case 'identity': return { id: LEGACY_RULE_ID.identity, run: identityRule(action.level, source.purposes) };
-    case 'scope': return { id: LEGACY_RULE_ID.scope, run: scopeRule(rule.subject, source.wording) };
-    case 'confirmed': return { id: LEGACY_RULE_ID.confirmed, run: confirmedRule(rule.fields) };
-    case 'role': return { id: LEGACY_RULE_ID.role, run: roleRule(rule.access, rule.reason ?? DEFAULT_ROLE_PERSON_REASON, source.wording) };
-    case 'attempts': return { id: LEGACY_RULE_ID.attempts, run: attemptsRule(source.maxAttempts) };
-    case 'fields': return { id: LEGACY_RULE_ID.fields, run: fieldsRule(rule.fields) };
+    case 'identity': return { id: RULE_ID.identity, run: identityRule(action.level, source.purposes) };
+    case 'scope': return { id: RULE_ID.scope, run: scopeRule(rule.subject, source.wording) };
+    case 'confirmed': return { id: RULE_ID.confirmed, run: confirmedRule(rule.fields) };
+    case 'role': return { id: RULE_ID.role, run: roleRule(rule.access, rule.reason ?? DEFAULT_ROLE_PERSON_REASON, source.wording) };
+    case 'attempts': return { id: RULE_ID.attempts, run: attemptsRule(source.maxAttempts) };
+    case 'fields': return { id: RULE_ID.fields, run: fieldsRule(rule.fields) };
     case 'dateInRange': return { id: RULE_ID.dateInRange, run: dateInRangeRule(rule) };
     case 'limit': return { id: RULE_ID.limit, run: limitRule(rule) };
     case 'custom': return { id: rule.id, run: has(source.customRules, rule.id) ? source.customRules![rule.id]! : null };
@@ -242,7 +279,7 @@ export function compileGate(source: PolicySource, tables: PolicyTables, subjectK
     subjectKind,
     evaluate(call, p, facts, lk) {
       const listed = steps.get(call.tool);
-      if (!listed) return { call, rules: [unlistedLine(call.tool)], verdict: 'BLOCK', reason: 'unknown-tool' };
+      if (!listed) return { call, rules: [unlistedLine(call.tool, UNLISTED_RULE_ID)], verdict: 'BLOCK', reason: 'unknown-tool' };
       const ctx: RuleContext = { call, p, facts, lk, policy: tables, subjectKind };
       const rules: RuleResult[] = [];
       for (const step of listed) {
@@ -268,7 +305,7 @@ export function compileGate(source: PolicySource, tables: PolicyTables, subjectK
   };
 }
 
-/** The built-in rule each legacy id names, in tables an app wrote by hand. */
+/** The built-in rule each legacy id names, in the tables an app wrote by hand (rulesFor). */
 const BUILT_IN_OF: Readonly<Record<string, LegacyRuleName>> = Object.fromEntries(Object.entries(LEGACY_RULE_ID).map(([rule, id]) => [id, rule as LegacyRuleName]));
 
 /**

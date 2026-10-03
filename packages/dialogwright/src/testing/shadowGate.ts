@@ -3,13 +3,17 @@ import type { App, PolicyTables } from '../core/app/types';
 import { gateOf, identityOf } from '../core/app/lookup';
 import type { CompiledPolicy } from '../gate/compiled';
 import { isAnonymous, type GateDecision, type GateFacts, type Principal, type ToolCall } from '../gate/types';
-import { gridDecisionLine, legacyGateEvaluator, type GateEvaluate } from './gateGrid';
+import { gridDecisionLine, legacyGateEvaluator, nameOfLegacyId, type GateEvaluate } from './gateGrid';
+import { UNLISTED_RULE_ID } from '../gate/compiled';
 import type { ShadowMode } from './shadowSlot';
 
 /**
  * Test support: the shadow gate. The gate that reads the policy's named rules (gate/compiled.ts)
  * replaced the legacy evaluator over the tables (gate/policy.ts evaluateCall); the two must decide
- * every call alike, whole decision for whole decision. `withShadowGate(app, reference)` returns the
+ * every call alike, whole decision for whole decision, but for the ids of the rules' lines: the gate
+ * records the rules' names and the legacy evaluator its legacy ids, so the legacy reference's
+ * decisions go through the one id map (gateGrid.ts nameOfLegacyId, applied by legacyGateEvaluator)
+ * before they are compared. `withShadowGate(app, reference)` returns the
  * app with a gate that, on every call, asks the app's own gate (the candidate) and the reference,
  * compares the two decisions deep and strict (the call, the verdict, the reason, the level, every
  * rule's id, description, compared line and pass), and answers with the reference's. On a
@@ -142,19 +146,20 @@ export function withShadowGate(app: App, reference: GateEvaluate = legacyGateOf(
 
 /**
  * What the shadow never saw: each rule id of `rulesFor` (default: every id the report saw) that the
- * reference never ran passing, or never ran failing, as "<id> never passes|fails" (R0, an action not
- * listed, only ever fails). With `byTool`, per "<tool> <id>" of the tables' rulesFor.
+ * reference never ran passing, or never ran failing, as "<rule name> never passes|fails" (`unlisted`,
+ * an action not listed, only ever fails). `rulesFor`'s ids are the tables' (R1..R7), reported by the
+ * names the gate records them under. With `byTool`, per "<tool> <name>" of the tables' rulesFor.
  */
 export function gateShadowUnexercised(report: GateShadowReport, rulesFor?: PolicyTables['rulesFor'], byTool = false): string[] {
   const out: string[] = [];
   const keys = rulesFor
-    ? [...new Set(Object.entries(rulesFor).flatMap(([tool, ids]) => ids.map((id) => (byTool ? `${tool} ${id}` : id))))]
+    ? [...new Set(Object.entries(rulesFor).flatMap(([tool, ids]) => ids.map((id) => (byTool ? `${tool} ${nameOfLegacyId(id)}` : nameOfLegacyId(id)))))]
     : Object.keys(byTool ? report.toolRules : report.rules);
   const table = byTool ? report.toolRules : report.rules;
   for (const key of keys) {
     const n = table[key] ?? { pass: 0, fail: 0 };
-    // R0 is the line for an action not listed, which never passes.
-    if (n.pass === 0 && key !== 'R0' && !key.endsWith(' R0')) out.push(`${key} never passes`);
+    // `unlisted` is the line for an action not listed, which never passes.
+    if (n.pass === 0 && key !== UNLISTED_RULE_ID && !key.endsWith(` ${UNLISTED_RULE_ID}`)) out.push(`${key} never passes`);
     if (n.fail === 0) out.push(`${key} never fails`);
   }
   return out;

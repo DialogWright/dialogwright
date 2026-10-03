@@ -32,8 +32,8 @@ describe('the shadow gate on the clinic', () => {
     runGateGrid(input, shadowGate(gateEvaluator(clinicApp), legacyGateEvaluator(input), { mode: 'report', report }));
     expect(report.mismatches, formatGateShadowReport(report)).toEqual([]);
     expect(report.compared).toBe(3 * 6 * 18 * 6);
-    // No call can fail R1 at level 0; every other rule of every action passes and fails.
-    expect(gateShadowUnexercised(report, FROZEN_CLINIC_POLICY.rulesFor, true)).toEqual(Object.keys(FROZEN_CLINIC_POLICY.rulesFor).map((t) => `${t} R1 never fails`));
+    // No call can fail identity at level 0; every other rule of every action passes and fails.
+    expect(gateShadowUnexercised(report, FROZEN_CLINIC_POLICY.rulesFor, true)).toEqual(Object.keys(FROZEN_CLINIC_POLICY.rulesFor).map((t) => `${t} identity never fails`));
   });
 
   async function run(kind: 'stub' | 'recorded', app: App) {
@@ -58,9 +58,9 @@ describe('the shadow gate on the clinic', () => {
     expect(actual.corpus).toEqual(expected.corpus);
     expect(report.mismatches, formatGateShadowReport(report)).toEqual([]);
     expect(report.compared).toBeGreaterThan(50);
-    // No call of a run fails R1 (every action is level 0) or R3 (every write was read back and
-    // confirmed); the grid fails R3.
-    expect(gateShadowUnexercised(report)).toEqual(['R1 never fails', 'R3 never fails']);
+    // No call of a run fails identity (every action is level 0) or confirmed (every write was read back and
+    // confirmed); the grid fails confirmed.
+    expect(gateShadowUnexercised(report)).toEqual(['identity never fails', 'confirmed never fails']);
   }, 60_000);
 
   it('a full replay of the recorded calls: every decision the same, no cassette miss, the replay as without the shadow', async () => {
@@ -73,6 +73,6 @@ describe('the shadow gate on the clinic', () => {
     expect(actual.corpus).toEqual(plain.corpus);
     expect(report.mismatches, formatGateShadowReport(report)).toEqual([]);
     expect(report.compared).toBeGreaterThan(50);
-    expect(gateShadowUnexercised(report)).toEqual(['R1 never fails', 'R3 never fails']);
+    expect(gateShadowUnexercised(report)).toEqual(['identity never fails', 'confirmed never fails']);
   }, 120_000);
 });

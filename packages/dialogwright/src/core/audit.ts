@@ -11,11 +11,12 @@ import { appOf } from './app/registry';
 import { identityOf } from './app/lookup';
 import type { App } from './app/types';
 import { configAuditDetail } from './app/configHash';
+import { scrubbedDrafts, scrubberOf } from './recording';
 
 /**
  * What one turn tells the audit log. Built from what the turn already reports, after
  * the fact, so the handlers stay as they are. No PHI goes in: the calls are the gate events' own
- * redacted copies (redactCall: each param that names a slot masked as the slot says); identity is
+ * redacted copies (redactCall: each param masked as its slot or policy.yaml's audit: says); identity is
  * recorded as a factor passed or failed, never the values; a tool's result is its one-line summary,
  * never its payload. What a tool or a downstream service adds is the app's own row (ToolDef.audit,
  * ServiceDef.audit), under the same rule. A keypad code never reaches a draft at all.
@@ -38,20 +39,22 @@ export function describeCall(call: ToolCall): string {
   return `${call.tool}(${Object.entries(call.params).map(([k, v]) => `${k}=${v}`).join(', ')})`;
 }
 
-/** Each rule the gate checked, as "R2 fail: parcel owner ...5678 · caller may see ...1234 only". */
+/** Each rule the gate checked, as "scope fail: parcel owner ...5678 · caller may see ...1234 only". */
 function ruleLines(e: GateEvent): string[] {
   return e.decision.rules.map((r) => `${r.id} ${r.pass ? 'pass' : 'fail'}: ${r.compared}`);
 }
 
 /**
  * The drafts that follow a gate decision: what the call did, when the gate let it run. The tool's
- * own rows where it declares them (ToolDef.audit), else its one-line summary.
+ * own rows where it declares them (ToolDef.audit), else its one-line summary. The tool's own rows
+ * are held to the call's declarations: a raw value of a param recorded masked or never is masked
+ * wherever a row repeats it (core/recording.ts), as the summary and the rules' lines already are.
  */
 function ranDrafts(app: App, e: GateEvent, after: Session, kb: KbSource | null): AuditDraft[] {
   const { call } = e.decision;
   if (e.summary === null) return [];
   const audit = app.tools[call.tool]?.audit;
-  if (audit) return audit({ call, summary: e.summary, ...(e.ref !== undefined ? { ref: e.ref } : {}), after, kb });
+  if (audit) return scrubbedDrafts(audit({ call, summary: e.summary, ...(e.ref !== undefined ? { ref: e.ref } : {}), after, kb }), scrubberOf(e.decision));
   return [{ type: 'tool_result', detail: { tool: call.tool, summary: e.summary } }];
 }
 

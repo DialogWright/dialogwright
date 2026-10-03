@@ -147,7 +147,7 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 9007199254740991,
-      "description": "Failed tries allowed at each identity check (the factors, the code) before a person takes the call: what the attempts rule (R6) holds an action to."
+      "description": "Failed tries allowed at each identity check (the factors, the code) before a person takes the call: what the attempts rule holds an action to."
     },
     "signIn": {
       "description": "What a sign-in proves, for a channel that can sign a caller in (a web portal): the core checks the capability, never the channel's name.",

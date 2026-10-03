@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `cd3dd0f08ee66b15a767b1f376c8ddec45c5b63e012cee5d08e35b74079ba92e` |
+| `policy.yaml` | `527fce34e8b8b32e4be24b13c80b022b78b2c52ae1f65a2b01d476e3043c7ead` |
 | `identity.yaml` | none: this app verifies no one |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -28,6 +28,33 @@ flowchart LR
 ## Who is served and who acts for them
 
 No one is verified, so the app has no subjects and no one acts for them.
+
+## What is recorded
+
+What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary or its own audit rows repeat a value that is hidden, shortened or never recorded, it is masked there too.
+
+| Action | Value | Recorded |
+| --- | --- | --- |
+| Find an appointment (`findAppointment`) | name (`name`) | as it is |
+| Find an appointment (`findAppointment`) | date of birth (`dob`) | hidden |
+| Find an appointment (`findAppointment`) | provider (`provider`) | as it is |
+| List open times (`listOpenings`) | provider (`provider`) | as it is |
+| List open times (`listOpenings`) | day (`date`) | as it is |
+| Book an appointment (`bookAppointment`) | name (`name`) | as it is |
+| Book an appointment (`bookAppointment`) | date of birth (`dob`) | hidden |
+| Book an appointment (`bookAppointment`) | provider (`provider`) | as it is |
+| Book an appointment (`bookAppointment`) | day (`date`) | as it is |
+| Book an appointment (`bookAppointment`) | time (`time`) | as it is |
+| Move an appointment (`moveAppointment`) | name (`name`) | as it is |
+| Move an appointment (`moveAppointment`) | date of birth (`dob`) | hidden |
+| Move an appointment (`moveAppointment`) | provider (`provider`) | as it is |
+| Move an appointment (`moveAppointment`) | day (`date`) | as it is |
+| Move an appointment (`moveAppointment`) | time (`time`) | as it is |
+| Cancel an appointment (`cancelAppointment`) | name (`name`) | as it is |
+| Cancel an appointment (`cancelAppointment`) | date of birth (`dob`) | hidden |
+| Cancel an appointment (`cancelAppointment`) | provider (`provider`) | as it is |
+| Cancel an appointment (`cancelAppointment`) | day (`date`) | as it is |
+| Cancel an appointment (`cancelAppointment`) | time (`time`) | as it is |
 
 ## Actions
 

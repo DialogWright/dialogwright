@@ -31,7 +31,7 @@ const form = z
       .describe(
         'The code hooks this form uses, written in the app\'s TypeScript; "complete" is required. ' +
           'entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), ' +
-          'confirmedParams (the values a confirmed write sends, for the gate\'s R3), complete (runs when the form is full and confirmed), ' +
+          'confirmedParams (the values a confirmed write sends, for the gate\'s confirmed rule), complete (runs when the form is full and confirmed), ' +
           'onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), ' +
           'onSummaryRead (looks at what the summary is about to name).',
       )

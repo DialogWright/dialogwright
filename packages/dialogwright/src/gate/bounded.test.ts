@@ -392,7 +392,7 @@ describe('through the gate', () => {
           },
         },
       },
-      { tools: { refundOrder: {} }, lookups: ['orderTotal', 'returnWindow'] },
+      { tools: { refundOrder: { params: ['orderId', 'amount', 'returnDate'] } }, lookups: ['orderTotal', 'returnWindow'] },
     );
 
   it('runs the rules in order, under their names, and stops at the first that fails', () => {

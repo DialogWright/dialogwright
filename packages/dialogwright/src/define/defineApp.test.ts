@@ -77,7 +77,7 @@ describe('defineApp: the library fixture', () => {
     expect(libraryApp.intents.hours).toEqual({ criteria: 'Asks when the library is open', label: 'hear the opening hours', kind: 'informational', promptId: 'hours' });
     expect(Object.keys(libraryApp.intents.renew_loan!)).toEqual(['criteria', 'label', 'kind']);
     expect(libraryApp.menu).toEqual([{ digit: '1', intent: 'renew_loan' }, { digit: '2', intent: 'check_hold' }, { digit: '0', intent: 'agent' }]);
-    expect(Object.keys(libraryApp.policy)).toEqual(['toolLevel', 'purposeLevel', 'rulesFor', 'serviceFields', 'confirmedFields', 'maxAttempts', 'subjects', 'customRules']);
+    expect(Object.keys(libraryApp.policy)).toEqual(['toolLevel', 'purposeLevel', 'rulesFor', 'serviceFields', 'confirmedFields', 'maxAttempts', 'subjects', 'customRules', 'audit']);
     expect(Object.keys(libraryApp.prompts)).toEqual(['manifest', 'tags', 'spokenVars']);
     expect(Object.keys(libraryApp.prompts.manifest).slice(0, 3)).toEqual(['greeting', 'greeting_chat', 'ask_intent']);
     expect(libraryApp.prompts.manifest.no_input).toEqual({ text: "I didn't hear anything.", interruptible: false });
@@ -174,7 +174,7 @@ describe('defineApp: a call through resolve', () => {
     expect(heard(opener)).toBe('Sure, I can help you check a hold. Which branch is the hold at, North or Riverside?');
     const branch = say(opener, 'Riverside', { ...ANSWERING, branch: choice({ riverside: 0.9, none: 0.1 }) });
     expect(calls(branch)).toEqual(['findHold:ALLOW']);
-    expect(branch.gateEvents[0]!.decision.rules.map((r) => `${r.id}:${r.pass}`)).toEqual(['R1:true', 'known-branch:true']);
+    expect(branch.gateEvents[0]!.decision.rules.map((r) => `${r.id}:${r.pass}`)).toEqual(['identity:true', 'known-branch:true']);
     expect(heard(branch)).toBe('A Quiet Orchard is on hold for you at the Riverside branch, but it has not come in yet. Is there anything else I can help with?');
   });
 });
@@ -208,6 +208,8 @@ describe('defineApp: the folder and the code must name the same things', () => {
     const { findHold: _, ...tools } = libraryCode.tools;
     expect(problems({ ...libraryCode, tools })).toEqual([
       'policy.yaml:8:3  actions.findHold  tool "findHold" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.findHold), or delete this action',
+      // Only findHold sends the branch, so its audit declaration is left with nothing to declare.
+      'policy.yaml:20:3  audit.branch  no tool lists "branch" in its params, so the declaration is never used  ->  delete it, or add "branch" to the params of the tool whose calls carry it',
     ]);
   });
 
@@ -240,7 +242,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
       'policy.yaml:2:1  actions  tool "payFine" (code.tools.payFine) has no entry under actions, so it can never be called  ->  add "payFine:" under actions with its level and rules, or delete the tool from app.ts (code.tools.payFine)',
       'policy.yaml:2:1  actions  custom rule "late-fee" (code.customRules["late-fee"]) is not named by any action\'s rules, so it never runs  ->  add "- custom: late-fee" to the rules of the action it guards, or delete the rule from app.ts (code.customRules["late-fee"])',
       'app.ts  code.forms.check_hold.onSumaryRead  "onSumaryRead" is not a form hook; the hooks are entry, onEntry, principalEntry, confirmedParams, complete, onAnswers, onSummaryAnswer, keepsSlot, onSummaryRead  ->  rename it to "onSummaryRead", or delete it from app.ts (code.forms.check_hold.onSumaryRead)',
-      'app.ts  code.customRules.R2  custom rule "R2" has a built-in rule\'s id  ->  rename it in app.ts (code.customRules.R2) and in policy.yaml\'s custom: rules; the built-in ids are R0, R1, R2, R3, R5, R6, R7',
+      'app.ts  code.customRules.R2  custom rule "R2" has a built-in rule\'s id  ->  rename it in app.ts (code.customRules.R2) and in policy.yaml\'s custom: rules; the built-in ids are the rules\' names (identity, scope, confirmed, role, attempts, fields, dateInRange, limit, unlisted) and their old ids (R0, R1, R2, R3, R5, R6, R7)',
       'app.ts  code.identity  the code has identity hooks, but the folder has no identity.yaml  ->  add identity.yaml (principals, levels and attempts, with the identity tools), or delete it from app.ts (code.identity)',
     ]);
   });
@@ -272,7 +274,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
   });
 });
 
-describe('defineApp: what app.yaml shows and the clips name, and what R3 needs', () => {
+describe('defineApp: what app.yaml shows and the clips name, and what the confirmed rule needs', () => {
   const app = (edit: (text: string) => string): string => folder({ 'app.yaml': edit(readFileSync(join(LIBRARY_DIR, 'app.yaml'), 'utf8')) });
 
   it('console labels, the slot order and question prefixes name forms and slots that exist; a lookup fact names a tool', () => {
@@ -392,12 +394,16 @@ describe('defineApp: identity and policy wording', () => {
       '    level: 0',
       '    rules: [identity]',
       extra,
+      'audit:',
+      '  book: keep',
+      '  branch: keep',
+      '',
     ].join('\n');
   const prompts = () => `${readFileSync(join(LIBRARY_DIR, 'prompts.yaml'), 'utf8')}  card_failed:\n    text: That card number did not match.\n    interruptible: true\n`;
   const run = () => ({ value: null, summary: 'ok' });
   const code: AppCode = {
     ...libraryCode,
-    tools: { ...libraryCode.tools, verifyCard: { run }, checkCode: { run }, sendCode: { run } },
+    tools: { ...libraryCode.tools, verifyCard: { run, params: ['card'] }, checkCode: { run, params: [] }, sendCode: { run, params: ['card'] } },
     identity: { sendCodeParams: (s) => ({ card: s.slots.card?.value ?? '' }) },
   };
 
@@ -416,6 +422,9 @@ describe('defineApp: identity and policy wording', () => {
     expect(problems({ ...code, slots, tools }, dir)).toEqual([
       // the library's check_loans form asks for the card too
       'forms.yaml:12:13  forms.check_loans.slots[0]  slot "card" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.card)',
+      // With no card slot, nothing says the card number is recorded by its last four any more.
+      'policy.yaml:12:3  actions.listLoans  the param "card" of "listLoans" (code.tools.listLoans.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said  ->  declare it under audit in policy.yaml ("card: keep" to record it as it is, or last4, mask, length or secret), or make "card" a slot with a redact setting',
+      'policy.yaml:15:3  actions.verifyCard  the param "card" of "verifyCard" (code.tools.verifyCard.params) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said  ->  declare it under audit in policy.yaml ("card: keep" to record it as it is, or last4, mask, length or secret), or make "card" a slot with a redact setting',
       'policy.yaml:21:3  actions.sendCode  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode), or delete this action',
       'identity.yaml:6:34  levels["1"].factors[0]  slot "card" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.card)',
       'identity.yaml:7:74  levels["2"].send  tool "sendCode" is not defined in the code  ->  add it to the app\'s tools in app.ts (code.tools.sendCode)',

@@ -5,7 +5,7 @@ import { evaluateCall } from '../gate/policy';
 import { testkitApp } from './testkit';
 import {
   compareGateGrid, formatGateGridMismatches, gateGridCases, gateGridInput, gridUnexercised, gridVerdicts, legacyGateEvaluator,
-  matrixProblems, runGateGrid, UNLISTED_TOOL, type GateGridInput,
+  matrixProblems, nameOfLegacyId, namedDecision, runGateGrid, UNLISTED_TOOL, type GateEvaluate, type GateGridInput,
 } from './gateGrid';
 
 /**
@@ -47,12 +47,12 @@ describe('the gate grid', () => {
     const mismatches = compareGateGrid(input, altered);
     expect(mismatches.length).toBeGreaterThan(0);
     for (const m of mismatches) expect(m.key).toMatch(/^createReport \S+ delegate:viewer /);
-    // Every viewer report case that reached R5 changed; nothing else did.
-    const reachedRole = grid.points.filter((p) => p.case.tool === 'createReport' && p.case.principal === 'delegate:viewer' && p.decision.rules.some((r) => r.id === 'R5'));
+    // Every viewer report case that reached the role rule changed; nothing else did.
+    const reachedRole = grid.points.filter((p) => p.case.tool === 'createReport' && p.case.principal === 'delegate:viewer' && p.decision.rules.some((r) => r.id === 'role'));
     expect(mismatches.length).toBe(reachedRole.length);
     const text = formatGateGridMismatches(mismatches, 2);
     expect(text).toContain(`${mismatches.length} case(s) decided otherwise`);
-    expect(text).toContain('expected BLOCK reason=role R1+ R5-');
+    expect(text).toContain('expected BLOCK reason=role identity+ role-');
     expect(text).toContain('role viewer may createReport: no');
     expect(text).toContain('role viewer may createReport: yes');
     expect(text).toContain(`... and ${mismatches.length - 2} more`);
@@ -65,7 +65,7 @@ describe('the gate grid', () => {
     expect(new Set(changed.map((m) => m.key.split(' ')[0]))).toEqual(new Set(['listParcels']));
     const throws = compareGateGrid(input, (call, p, facts, lk) => {
       if (call.tool === 'getParcel') throw new Error('not built yet');
-      return evaluateCall(call, p, facts, lk, input.policy, input.subjectKind);
+      return namedDecision(evaluateCall(call, p, facts, lk, input.policy, input.subjectKind));
     });
     expect(throws.length).toBe(grid.points.filter((p) => p.case.tool === 'getParcel').length);
     expect(formatGateGridMismatches(throws, 1)).toContain('actual   threw: not built yet');
@@ -77,8 +77,8 @@ describe('the gate grid', () => {
       call: { tool: 'getParcel', params: { parcel: '7101' } },
       verdict: 'ALLOW',
       rules: [
-        { id: 'R1', description: 'Identity strong enough for this action', compared: 'identity.level 2 >= 2', pass: true },
-        { id: 'R2', description: expect.any(String), compared: 'record owner ...1234 · caller may see ...1234 only', pass: true },
+        { id: 'identity', description: 'Identity strong enough for this action', compared: 'identity.level 2 >= 2', pass: true },
+        { id: 'scope', description: expect.any(String), compared: 'record owner ...1234 · caller may see ...1234 only', pass: true },
       ],
     });
   });
@@ -131,5 +131,35 @@ describe('the gate grid', () => {
       // The lookups know a courier for no depot: the scope check finds it too.
       'delegates.viewer may not see records.inScope',
     ]);
+  });
+});
+
+/**
+ * The one id map between the legacy evaluator (R1..R7, R0) and the gate (the rules' names): the
+ * reference's decisions are compared with the gate's after it, and nothing else of a decision moves.
+ */
+describe('the id map between the legacy evaluator and the gate', () => {
+  it('maps each legacy id to the rule\'s name and leaves an app\'s own id alone', () => {
+    expect(['R0', 'R1', 'R2', 'R3', 'R5', 'R6', 'R7'].map(nameOfLegacyId)).toEqual(['unlisted', 'identity', 'scope', 'confirmed', 'role', 'attempts', 'fields']);
+    for (const id of ['R4', 'R8', 'known-branch', 'identity', 'dateInRange', 'constructor']) expect(nameOfLegacyId(id)).toBe(id);
+  });
+
+  it('changes only the rule lines\' ids (and the id a line that fails closed words), never a verdict, reason, level, call or compared line', () => {
+    const input = gateGridInput(testkitApp);
+    const legacy: GateEvaluate = (call, p, facts, lk) => evaluateCall(call, p, facts, lk, input.policy, input.subjectKind);
+    const named = legacyGateEvaluator(input);
+    let compared = 0;
+    for (const { case: c } of runGateGrid(input).points) {
+      const raw = legacy(c.call, c.p, c.facts, input.lookups);
+      const mapped = named(c.call, c.p, c.facts, input.lookups);
+      expect({ ...mapped, rules: mapped.rules.map((r) => ({ ...r, id: '' })) }, c.key).toEqual({ ...raw, rules: raw.rules.map((r) => ({ ...r, id: '' })) });
+      expect(mapped.rules.map((r) => r.id), c.key).toEqual(raw.rules.map((r) => nameOfLegacyId(r.id)));
+      compared += 1;
+    }
+    expect(compared).toBeGreaterThan(1000);
+    // A line that fails closed words the rule's id; it follows the id.
+    const line = { id: 'R2', description: 'A rule the gate could run', compared: 'rule R2 threw', pass: false };
+    const d = namedDecision({ call: { tool: 't', params: {} }, rules: [line, { ...line, id: 'R8', compared: 'rule R2 threw' }], verdict: 'BLOCK', reason: 'rule-error' });
+    expect(d.rules).toEqual([{ ...line, id: 'scope', compared: 'rule scope threw' }, { ...line, id: 'R8', compared: 'rule R2 threw' }]);
   });
 });

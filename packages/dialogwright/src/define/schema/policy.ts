@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { checkAlways, identifier, level, matching, name, text, unique } from './common';
 import { closest } from '../problems';
 import { literalOrder, parseDateBound, parseLookupRef, parseNumberBound } from '../../gate/bounded';
+import type { AuditMask } from '../../core/app/types';
 
 /**
  * policy.yaml: the whole of what the app's agent may do, one entry per action (a tool), each with
@@ -49,6 +50,15 @@ import { literalOrder, parseDateBound, parseLookupRef, parseNumberBound } from '
  * fields of an action's result withheld from a party who acts for subjects; the tool declares the
  * fields it may lose (ToolDef.fields), and the engine strips them (core/resultRedaction.ts).
  *
+ * `audit:` says, by param name, how each param that is not a slot with a redact setting is recorded
+ * wherever the call is (core/recording.ts): `last4`, `mask`, `length`, `secret` (never) or `keep`
+ * (as it is). Each tool lists the params its calls carry (ToolDef.params), and `check` refuses one
+ * that is neither a redacted slot nor declared here:
+ *
+ *   audit:
+ *     recordId: keep
+ *     pin: secret
+ *
  * An app written before this shape (toolLevel, rulesFor, ... : the gate's tables as they are) is
  * converted with `dialogwright policy:convert`; nothing reads that shape any more.
  */
@@ -69,7 +79,7 @@ export const policyWording = z
         delegate: wordingFor.optional().describe('The scope rule\'s description when a party acting for subjects asks.'),
       })
       .optional()
-      .describe("The scope rule's (R2) description, by who asks and how the action names its subject. Default: \"The record belongs to someone this caller may see\"."),
+      .describe("The scope rule's description, by who asks and how the action names its subject. Default: \"The record belongs to someone this caller may see\"."),
     recordOwner: text().optional().describe('What the scope rule\'s compared line calls the owner of a record. Default "record owner".'),
     subject: text().optional().describe('What the scope rule\'s compared line calls a subject named by id. Default "subject".'),
     role: z
@@ -79,7 +89,7 @@ export const policyWording = z
         person: text().optional().describe('The role rule\'s compared line when a person takes the call. Default "role {role} may {tool}: with a person".'),
       })
       .optional()
-      .describe("The role rule's (R5) compared line, by what the rule gives the role, as a template with {role} and {tool}."),
+      .describe("The role rule's compared line, by what the rule gives the role, as a template with {role} and {tool}."),
   })
   .describe("The words the gate's built-in rules use in their description and compared lines, so the console and the audit read in the app's terms. Without it, neutral words.");
 
@@ -116,20 +126,20 @@ const scopeRule = z
       params: { fix: given.length === 0 ? 'write "scope: { param: <the subject\'s id param> }", or "scope: { record: <the record id param> }"' : 'keep the one that names the subject this action acts on' },
     });
   }))
-  .describe('scope (R2): the subject the action acts on must be one the caller may see. Exactly one of "param" (the param is the subject\'s own id) or "record" (the param is a record id, resolved to its owner).');
+  .describe('scope: the subject the action acts on must be one the caller may see. Exactly one of "param" (the param is the subject\'s own id) or "record" (the param is a record id, resolved to its owner).');
 
 const roleRule = z
   .object({
     reason: name().optional().describe('The reason a "person" role hands the call over for (its handoff line is handoff_<reason>). Default "role-person".'),
   })
   .catchall(roleAccess)
-  .describe('role (R5): what each role may do with the action: allow, refuse, or person (a person takes the call). A role not listed is refused, and so is a party who acts for subjects with no role; one of the app\'s subjects passes. The roles are those identity.yaml declares under principals.');
+  .describe('role: what each role may do with the action: allow, refuse, or person (a person takes the call). A role not listed is refused, and so is a party who acts for subjects with no role; one of the app\'s subjects passes. The roles are those identity.yaml declares under principals.');
 
 const confirmedRule = unique(identifier(), 'confirmed field')
   .min(1, { error: 'must name at least one field' })
-  .describe('confirmed (R3): the action sends exactly these fields, and the caller confirmed exactly these values at the read-back, in the order the hash is taken over.');
+  .describe('confirmed: the action sends exactly these fields, and the caller confirmed exactly these values at the read-back, in the order the hash is taken over.');
 
-const fieldsRule = unique(identifier(), 'field').describe('fields (R7): the only fields the action may send on (to a downstream service). An empty list sends none.');
+const fieldsRule = unique(identifier(), 'field').describe('fields: the only fields the action may send on (to a downstream service). An empty list sends none.');
 
 const customRule = name().describe('custom: one of the app\'s own rules, by the id its code registers it under (code.customRules).');
 
@@ -266,7 +276,7 @@ export type RuleEntryYaml =
 /** The JSON Schema of one rule entry, for an editor: the bare names, and each rule with its parameters. */
 const ruleEntryJson = (() => {
   const branches = [
-    z.enum(BARE_RULES).describe('A rule with no parameters: identity (R1, the caller\'s identity level is at least the action\'s) or attempts (R6, the identity check has failed fewer times than identity.yaml\'s attempts).'),
+    z.enum(BARE_RULES).describe('A rule with no parameters: identity (the caller\'s identity level is at least the action\'s) or attempts (the identity check has failed fewer times than identity.yaml\'s attempts).'),
     ...PARAM_RULES.map((rule) => z.strictObject({ [rule]: RULE_PARAMS[rule] }).describe(`The ${rule} rule with its parameters, for example "${RULE_EXAMPLES[rule]}".`)),
   ];
   const { $schema: _schema, ...json } = z.toJSONSchema(z.union(branches as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]), { io: 'input', target: 'draft-7' }) as Record<string, unknown>;
@@ -408,6 +418,19 @@ export const policyRedact = z
   )
   .describe('What a party who acts for subjects does not get to see of what an action returns, by delegate kind (agent) or by kind and role (agent.clerk), whose list for an action replaces the kind\'s. The tool returns the whole record and the engine strips the fields before any hook, line, trace, console or audit sees it. A subject acting for themselves is never redacted. Default: nothing is withheld.');
 
+/** How a param may be recorded (policy.yaml `audit:`; core/recording.ts AUDIT_MASKS), in the order the docs list them. */
+const AUDIT_MASKS = ['last4', 'mask', 'length', 'secret', 'keep'] as const satisfies readonly AuditMask[];
+
+/** policy.yaml's audit section, as written: each param that is not a slot with a redact setting, and how it is recorded. */
+export const policyAudit = z
+  .record(
+    identifier(),
+    z
+      .enum(AUDIT_MASKS)
+      .describe('How the param is recorded: last4 (by its last four characters, "...1234"), mask (hidden, "•"), length (by its length, "<38 chars>"), secret (never: left out of the call as recorded), keep (as it is).'),
+  )
+  .describe('How each param the actions are sent is recorded, where it is not a slot with a redact setting (whose redact says so), by param name, in every action that sends it: the gate event, the trace, the console and the audit, and wherever a rule\'s line, the action\'s summary or its own audit rows repeat the value. Every param a tool lists in its params (in code) is a slot with a redact setting or is named here, and so is every field a confirmed or fields rule names that is not a slot. Default: none, so check refuses an undeclared param.');
+
 export const policySchema = z
   .strictObject({
     actions: z
@@ -419,6 +442,7 @@ export const policySchema = z
       .describe('The identity level each purpose needs (what a caller wants done, a form id, before any tool is called), when it is more than its first action\'s. Default: none.'),
     wording: policyWording.optional(),
     redact: policyRedact.optional(),
+    audit: policyAudit.optional(),
   })
   .describe('policy.yaml: what the agent may do, action by action. Custom rule functions stay in code; this file names them.');
 

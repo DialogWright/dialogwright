@@ -1,9 +1,8 @@
 import { DEFAULT_CODE_LENGTH } from '../core/app/lookup';
 import type { IdentityConfig, PolicyTables, PolicyWording, RoleAccess, SubjectParam, ToolName } from '../core/app/types';
 import { lookupNameProblem, parseDateBound, parseLookupRef, parseNumberBound, refText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
-import { attachSource, LEGACY_RULE_ID, NAMED_RULE_IDS, RULE_ID, type LegacyRuleName, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
+import { attachSource, BUILT_IN_RULES, isBuiltInRuleId, LEGACY_RULE_ID, TABLE_RULE_ID, type LegacyRuleName, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
-import { isRuleId } from '../gate/policy';
 import type { Level } from '../gate/types';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
 import type { IdentityYaml, PolicyYaml, RuleEntryYaml } from './schema/index';
@@ -15,17 +14,21 @@ import type { IdentityYaml, PolicyYaml, RuleEntryYaml } from './schema/index';
  *
  * The compilers are the exact inverse of the tables' meaning, so an app converted to the files runs
  * the same decisions, line for line: each action's rules become its rulesFor row in the order
- * written, each built-in rule under its legacy id (identity R1, scope R2, confirmed R3, role R5,
- * attempts R6, fields R7) and each custom rule under its own id; an action's missing level is the
+ * written, each built-in rule under its id in the tables (identity R1, scope R2, confirmed R3, role
+ * R5, attempts R6, fields R7, which the gate records under the rules' names) and each custom rule
+ * under its own id; an action's missing level is the
  * explicit 2 the gate would give it anyway; and nothing is added that the file does not say (a
  * verify tool's action runs only the rules listed for it).
  */
 
-/** The legacy id each built-in rule the legacy evaluator knows is recorded under in decisions and audit lines (until rules are named there). */
+/** The id each built-in rule the legacy evaluator knows has in the tables' rulesFor (the gate records it under its name). */
 export const RULE_ID_OF: Readonly<Record<LegacyRuleName, string>> = LEGACY_RULE_ID;
 
-/** The built-in rule each id is (a legacy id, or a range rule's own name), for a message. */
-const RULE_NAME_OF: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(RULE_ID).map(([rule, id]) => [id, rule]));
+/** The built-in rule each id is (a table id: a legacy id, or a range rule's own name; or a rule's name), for a message. */
+const RULE_NAME_OF: Readonly<Record<string, string>> = {
+  ...Object.fromEntries(Object.entries(TABLE_RULE_ID).map(([rule, id]) => [id, rule])),
+  ...Object.fromEntries(BUILT_IN_RULES.map((rule) => [rule, rule])),
+};
 
 /** The level an action needs when it names none: the highest, so it fails closed (as the gate's own default). */
 export const DEFAULT_ACTION_LEVEL: Level = 2;
@@ -113,14 +116,14 @@ export function lookupRefsOf(rule: Rule): { key: string; ref: LookupRef }[] {
   return out;
 }
 
-/** Whether an id is a built-in rule's, so no app's own rule may take it: R0, a legacy id, or a range rule's name. */
-export function isBuiltInRuleId(id: string): boolean {
-  return isRuleId(id) || id === 'R0' || NAMED_RULE_IDS.includes(id);
-}
+export { isBuiltInRuleId };
 
-/** The id a rule runs under in the gate's tables and is recorded under: a built-in's legacy id (a range rule's name), a custom rule's own. */
+/**
+ * The id a rule has in the tables' rulesFor: a built-in's legacy id (a range rule's name), a custom
+ * rule's own. The gate records a built-in under its name (RULE_ID), not this id.
+ */
 export function ruleIdOf(rule: Rule): string {
-  return rule.rule === 'custom' ? rule.id : RULE_ID[rule.rule];
+  return rule.rule === 'custom' ? rule.id : TABLE_RULE_ID[rule.rule];
 }
 
 /** The engine's words for the role rule's compared line (gate/policy.ts), where the file's wording.role leaves an access out. */
@@ -204,6 +207,8 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
   if (wording) tables.wording = wording;
   const redact = redactOf(file.redact);
   if (redact) tables.redact = redact;
+  // How each param that is no redacted slot is recorded: the engine's, not the gate's (core/recording.ts).
+  if (file.audit !== undefined && Object.keys(file.audit).length > 0) tables.audit = Object.freeze({ ...file.audit });
   const source: PolicySource = {
     actions: Object.freeze(actions),
     purposes: purposeLevel,
@@ -228,6 +233,38 @@ function redactOf(redact: PolicyYaml['redact']): PolicyTables['redact'] {
 export function redactWho(key: string): { kind: string; role?: string } {
   const dot = key.indexOf('.');
   return dot < 0 ? { kind: key } : { kind: key.slice(0, dot), role: key.slice(dot + 1) };
+}
+
+/** The params a tool lists (ToolDef.params), read from code that may be wrong: null unless it is a list (its strings). */
+export function declaredParams(tool: unknown): readonly string[] | null {
+  const params = typeof tool === 'object' && tool !== null ? (tool as { params?: unknown }).params : undefined;
+  return Array.isArray(params) ? params.filter((p): p is string => typeof p === 'string') : null;
+}
+
+/** The problems with a tool's params (ToolDef.params): a list of distinct plain words. */
+export function toolParamProblems(tool: unknown): string[] {
+  if (typeof tool !== 'object' || tool === null || !Object.hasOwn(tool, 'params')) return [];
+  const params = (tool as { params?: unknown }).params;
+  if (params === undefined) return [];
+  if (!Array.isArray(params)) return ['params is not a list of the params its calls carry'];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  params.forEach((p: unknown, i) => {
+    if (typeof p !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(p)) out.push(`params[${i}] (${JSON.stringify(p)}) is not a param name: it must start with a letter and use only letters, digits and underscores`);
+    else if (seen.has(p)) out.push(`param "${p}" is listed twice`);
+    else seen.add(p);
+  });
+  return out;
+}
+
+/** Each slot's redact setting (SlotSpec.redact), null for none, read from code that may be wrong. */
+export function slotRedactOf(slots: Readonly<Record<string, unknown>>): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const [id, spec] of Object.entries(slots)) {
+    const redact = typeof spec === 'object' && spec !== null ? (spec as { redact?: unknown }).redact : undefined;
+    out[id] = typeof redact === 'string' ? redact : null;
+  }
+  return out;
 }
 
 /** The fields a tool declares (ToolDef.fields), read from code that may be wrong: none unless it is a list of strings. */
@@ -333,6 +370,17 @@ export interface PolicyCheckInput {
   tools?: readonly string[];
   /** The fields each tool declares its result may lose (ToolDef.fields); a tool left out declares none. Left out: not checked. */
   toolFields?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The params each tool lists for its calls (ToolDef.params), null for a tool that lists none. Left
+   * out: not checked (the params `audit:` must cover are then only the confirmed and fields rules').
+   */
+  toolParams?: Readonly<Record<string, readonly string[] | null>>;
+  /**
+   * Each slot the code gives and its redact setting (SlotSpec.redact), null for none: a param of a
+   * slot's name is recorded as it says. A slot the files name that the code does not give is left
+   * out (its own problem says so), and a param of its name is not checked.
+   */
+  slotRedact?: Readonly<Record<string, string | null>>;
   /** Every slot id the app has: the identity factors must be slots. */
   slots?: ReadonlySet<string>;
   /** The fix for a slot that does not exist: where it would be added. */
@@ -395,8 +443,8 @@ export function lookupDeclarationProblems(lookups: readonly unknown[]): { index:
  * its level is one the ladder has; each rule's parameters name what exists (custom rules, declared
  * roles); and the confirmed list, which the summary hash is taken over once per form, is the same
  * for every action (Decision 5). Each role rule's person reason is its own (Decision 4). The
- * confirmed and fields rules name params, which are not checked against the slots: a write may send
- * a param that is no slot (a picked time, a record id).
+ * confirmed and fields rules name params, which need not be slots (a picked time, a record id): what
+ * is recorded of each is checked with the tools' params (auditProblems).
  */
 export function policyProblems(c: PolicyCheckInput): Problem[] {
   const out: Problem[] = [];
@@ -431,7 +479,12 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
         case 'custom':
           if (isBuiltInRuleId(rule.id)) {
             const builtIn = RULE_NAME_OF[rule.id];
-            at(P, [...path, 'custom'], `"custom: ${rule.id}" names a built-in rule's id, which would run that rule without its parameters`, builtIn ? `write the built-in rule by its name ("${builtIn}" with its parameters), or give the app's rule an id of its own` : 'give the app\'s rule an id of its own');
+            if (builtIn) {
+              const what = builtIn === rule.id ? 'a built-in rule\'s name' : `the old id of the built-in "${builtIn}" rule`;
+              at(P, [...path, 'custom'], `"custom: ${rule.id}" is ${what}, which would run that rule without its parameters`, `write the built-in rule by its name ("${builtIn}" with its parameters), or give the app's rule an id of its own`);
+            } else {
+              at(P, [...path, 'custom'], `"custom: ${rule.id}" is an id the gate keeps for itself (the line for an action that is not listed)`, 'give the app\'s rule an id of its own');
+            }
           } else if (c.customRules && !c.customRules.includes(rule.id)) {
             at(P, [...path, 'custom'], `custom rule "${rule.id}" is not defined in the code`, `${renameHint(rule.id, c.customRules)}add it to ${c.inCode('customRules', rule.id)}, or delete this rule`);
           }
@@ -439,7 +492,8 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
         case 'confirmed':
           // The fields are the params the write sends (a form's confirmedParams), which need not be
           // slots (a time the caller picked from a list, say), as the fields rule's need not be (a
-          // record id): neither is checked against the slots until actions declare their params.
+          // record id): each is a param the tool lists, or a slot or a param declared under audit
+          // (auditProblems).
           confirmed.push({ tool, fields: rule.fields, path: [...path, 'confirmed'] });
           break;
         case 'role':
@@ -459,13 +513,16 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
         case 'dateInRange':
         case 'limit': {
           const rulePath: DataPath = [...path, rule.rule];
-          // The params the action sends, where its rules close them (a fields or confirmed rule): a
-          // param outside them can never reach the gate with a value, so the rule could never pass.
-          const sent = paramsOf(action.rules.map(readRule));
-          const lists = sent ? `its ${sent.from} rule lists ${sent.params.join(', ') || 'none'}` : '';
-          if (sent && !sent.params.includes(rule.field)) at(P, [...rulePath, 'field'], `"${rule.field}" is not a param "${tool}" sends (${lists})`, `${renameHint(rule.field, sent.params)}name one of those, or add "${rule.field}" to its ${sent.from} rule`);
+          // The params the action sends, where its rules close them (a fields or confirmed rule), else
+          // the params its tool lists (ToolDef.params): a param outside them can never reach the gate
+          // with a value, so the rule could never pass.
+          const listed = c.toolParams && has(c.toolParams, tool) ? c.toolParams[tool] : null;
+          const sent = paramsOf(action.rules.map(readRule)) ?? (listed ? { params: listed, from: 'params' } : null);
+          const lists = sent ? (sent.from === 'params' ? `its tool lists ${sent.params.join(', ') || 'none'}` : `its ${sent.from} rule lists ${sent.params.join(', ') || 'none'}`) : '';
+          const addTo = (param: string): string => (sent?.from === 'params' ? `add "${param}" to ${c.inCode('tools', tool, 'params')}` : `add "${param}" to its ${sent?.from} rule`);
+          if (sent && !sent.params.includes(rule.field)) at(P, [...rulePath, 'field'], `"${rule.field}" is not a param "${tool}" sends (${lists})`, `${renameHint(rule.field, sent.params)}name one of those, or ${addTo(rule.field)}`);
           for (const { key, ref } of lookupRefsOf(rule)) {
-            if (sent && !sent.params.includes(ref.param)) at(P, [...rulePath, key], `${refText(ref)} reads "${ref.param}", which is not a param "${tool}" sends (${lists})`, `${renameHint(ref.param, sent.params)}call the lookup with one of those, or add "${ref.param}" to its ${sent.from} rule`);
+            if (sent && !sent.params.includes(ref.param)) at(P, [...rulePath, key], `${refText(ref)} reads "${ref.param}", which is not a param "${tool}" sends (${lists})`, `${renameHint(ref.param, sent.params)}call the lookup with one of those, or ${addTo(ref.param)}`);
             if (c.lookups && !c.lookups.includes(ref.lookup)) at(P, [...rulePath, key], `${refText(ref)} calls the lookup "${ref.lookup}", which the code does not declare`, `${renameHint(ref.lookup, c.lookups)}add "${ref.lookup}" to ${c.inCode('lookups')} and a function of that name to the gate's lookups (code.systems), or correct the reference`);
           }
           break;
@@ -482,6 +539,7 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
   }
   for (const [purpose, { level }] of Object.entries(policy.purposes)) levelProblem(`purpose "${purpose}"`, level, ['purposes', purpose, 'level'], true);
   redactProblems(c, at);
+  auditProblems(c, at);
 
   // Decision 5: the summary hash is taken once per form, over one list, until forms name the action they write.
   const first = confirmed[0];
@@ -554,6 +612,68 @@ function redactProblems(c: PolicyCheckInput, at: ReturnType<typeof reporter>): v
       fields.forEach((field, i) => {
         if (!declared.includes(field)) at(P, [...toolPath, i], `"${field}" is not a field "${tool}" declares (${declared.join(', ')})`, `${renameHint(field, declared)}add "${field}" to the fields of ${c.inCode('tools', tool)}, or delete it from this list`);
       });
+    }
+  }
+}
+
+/** What `audit:` may say of a param, in words for a fix. */
+const AUDIT_CHOICES = 'or last4, mask, length or secret';
+
+/** The params a scope, confirmed or fields rule names, with where each is written: what the tool's calls must carry. */
+function ruleParams(rule: Rule, path: DataPath): { param: string; path: DataPath; rule: string }[] {
+  switch (rule.rule) {
+    case 'scope': return rule.subject === null ? [] : [{ param: rule.subject.param, path: [...path, 'scope', rule.subject.via === 'record' ? 'record' : 'param'], rule: 'scope' }];
+    case 'confirmed':
+    case 'fields': return rule.fields.map((param, i) => ({ param, path: [...path, rule.rule, i], rule: rule.rule }));
+    // A range rule's params are checked where it is (policyProblems), against the params the action sends.
+    default: return [];
+  }
+}
+
+/**
+ * What is recorded of each param (policy.yaml `audit:`) against the code: every tool lists the
+ * params its calls carry (ToolDef.params), and each is a slot with a redact setting or declared
+ * under `audit:`, so nothing is recorded as it is without the file saying so; the params its rules
+ * name are ones it lists; a confirmed or fields rule's entry is a slot or declared (where the tool
+ * lists no params); and each declaration is of a param a tool sends that no slot's redact covers.
+ */
+function auditProblems(c: PolicyCheckInput, at: ReturnType<typeof reporter>): void {
+  const policy = c.policy;
+  if (!policy) return;
+  const P = c.files.policy;
+  const audit = policy.audit ?? {};
+  const redacted = c.slotRedact;
+  // A slot with a redact setting says how its param is recorded; one the code does not give is its own problem.
+  const declared = (param: string): boolean => has(audit, param) || (redacted !== undefined && (has(redacted, param) ? redacted[param] !== null : c.slots?.has(param) === true));
+  const slotFix = (param: string): string => (c.slots?.has(param) ? `give the slot "${param}" a redact setting` : `make "${param}" a slot with a redact setting`);
+  for (const [tool, action] of Object.entries(policy.actions)) {
+    const listed = c.toolParams && has(c.toolParams, tool) ? c.toolParams[tool]! : undefined;
+    if (listed === null) {
+      at(P, ['actions', tool], `tool "${tool}" does not list the params its calls carry (${c.codePath('tools', tool, 'params')}), so what is recorded of them cannot be checked`, `add "params: [<each param its calls carry>]" to ${c.inCode('tools', tool)} ("params: []" for none)`, true);
+    }
+    if (listed && redacted) {
+      for (const param of listed) {
+        if (declared(param)) continue;
+        at(P, ['actions', tool], `the param "${param}" of "${tool}" (${c.codePath('tools', tool, 'params')}) is neither a slot with a redact setting nor declared under audit, so how it is recorded is not said`, `declare it under audit in ${P} ("${param}: keep" to record it as it is, ${AUDIT_CHOICES}), or ${slotFix(param)}`, true);
+      }
+    }
+    action.rules.forEach((entry, i) => {
+      for (const { param, path, rule } of ruleParams(readRule(entry), ['actions', tool, 'rules', i])) {
+        if (listed) {
+          if (!listed.includes(param)) at(P, path, `the ${rule} rule of "${tool}" names "${param}", which the tool does not list in its params (${listed.join(', ') || 'none'})`, `${renameHint(param, listed)}add "${param}" to ${c.inCode('tools', tool, 'params')}, or correct the rule`);
+        } else if ((rule === 'confirmed' || rule === 'fields') && c.slots && !c.slots.has(param) && !has(audit, param)) {
+          // The tool lists no params to check: each field still says how it is recorded.
+          at(P, path, `"${param}" is neither a slot nor a param declared under audit, so how it is recorded is not said`, `declare it under audit ("${param}: keep" to record it as it is, ${AUDIT_CHOICES}), or name a slot`);
+        }
+      }
+    });
+  }
+  const sent = c.toolParams && Object.values(c.toolParams).every((p) => p !== null) ? new Set(Object.values(c.toolParams).flatMap((p) => p ?? [])) : null;
+  for (const param of Object.keys(audit)) {
+    if (redacted && has(redacted, param) && redacted[param] !== null) {
+      at(P, ['audit', param], `"${param}" is a slot recorded by its redact setting (${redacted[param]}), so audit does not declare it`, 'delete it here: the slot\'s redact setting says how it is recorded', true);
+    } else if (sent && !sent.has(param)) {
+      at(P, ['audit', param], `no tool lists "${param}" in its params, so the declaration is never used`, `${renameHint(param, [...sent])}delete it, or add "${param}" to the params of the tool whose calls carry it`, true);
     }
   }
 }

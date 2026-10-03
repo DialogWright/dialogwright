@@ -34,9 +34,9 @@ describe('a reschedule, greeting to confirmation', () => {
     const done = say(summary.session, 'yes', YES);
     expect(done.decision).toMatchObject({ kind: 'complete', form: 'reschedule', promptId: 'reschedule_confirmed', completed: ['reschedule'] });
     expect(heard(done)).toBe(`Your appointment is moved to Tuesday, September 22 at ${first}. Goodbye.`);
-    // The write goes through the gate, R3 armed by the yes over exactly what was read.
+    // The write goes through the gate, the confirmed rule armed by the yes over exactly what was read.
     expect(calls(done)).toEqual(['moveAppointment:ALLOW']);
-    expect(done.gateEvents[0]!.decision.rules.map((r) => `${r.id}:${r.pass}`)).toEqual(['R1:true', 'R3:true']);
+    expect(done.gateEvents[0]!.decision.rules.map((r) => `${r.id}:${r.pass}`)).toEqual(['identity:true', 'confirmed:true']);
     expect(done.session).toMatchObject({ ended: true, form: 'reschedule' });
     expect(done.session.slots.date).toMatchObject({ value: '2026-09-22', confirmed: true });
     expect(factsOf(done.session).offer).toMatchObject({ provider: 'chen', date: '2026-09-22', index: 0 });

@@ -13,9 +13,9 @@ import { VOICE_RELAY } from '../channel/caps';
 import type { App, PolicyTables } from '../core/app/types';
 import { definePolicy } from '../define/definePolicy';
 import { defineRule } from './defineRule';
-import { compileGate, compiledPolicyOf, programFromTables, sourceOf, type CompiledPolicy, type PolicySource } from './compiled';
+import { BUILT_IN_RULES, compileGate, compiledPolicyOf, isBuiltInRuleId, LEGACY_RULE_ID, programFromTables, RULE_ID, sourceOf, TABLE_RULE_ID, UNLISTED_RULE_ID, type CompiledPolicy, type PolicySource } from './compiled';
 import { confirmationHash, evaluateCall } from './policy';
-import type { GateFacts, GateLookups, Party, RuleContext, RuleOutcome } from './types';
+import { passed, type GateFacts, type GateLookups, type Party, type RuleContext, type RuleOutcome } from './types';
 
 /**
  * The gate that reads the policy's named rules: each built-in rule with its own parameters (a role
@@ -51,8 +51,8 @@ const ACTIONS = {
   sendCode: { level: 1, rules: ['identity'] },
   checkCode: { level: 1, rules: ['identity', 'attempts'] },
 };
-const TOOLS = Object.fromEntries(Object.keys(ACTIONS).map((t) => [t, {}]));
-const tables = (): PolicyTables => definePolicy({ actions: ACTIONS }, { identity: IDENTITY, tools: TOOLS, slots: { patientId: {}, note: {} } });
+const TOOLS = { fileRequest: { params: ['patientId', 'note'] }, cancelVisit: { params: ['visit', 'patientId', 'note'] }, checkFactors: { params: ['patientId'] }, sendCode: { params: [] }, checkCode: { params: [] } };
+const tables = (): PolicyTables => definePolicy({ actions: ACTIONS, audit: { visit: 'keep' } }, { identity: IDENTITY, tools: TOOLS, slots: { patientId: { redact: 'last4' }, note: { redact: 'length' } } });
 
 describe('the compiled gate reads each rule\'s own parameters', () => {
   it('a role rule hands the call to a person for its own reason (Decision 4); the tables keep the first', () => {
@@ -63,7 +63,7 @@ describe('the compiled gate reads each rule\'s own parameters', () => {
     const cancel = gate.evaluate({ tool: 'cancelVisit', params: { visit: 'B-2', note: 'x' } }, staff('scribe'), facts, lookups);
     expect(file).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'staff-filing' });
     expect(cancel).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'staff-cancel' });
-    expect(cancel.rules.at(-1)).toEqual({ id: 'R5', description: 'The caller\'s role allows this action', compared: 'role scribe may cancelVisit: with a person', pass: false });
+    expect(cancel.rules.at(-1)).toEqual({ id: 'role', description: 'The caller\'s role allows this action', compared: 'role scribe may cancelVisit: with a person', pass: false });
     // The legacy evaluator over the tables has the one reason: this is where the two part, deliberately.
     expect(evaluateCall({ tool: 'cancelVisit', params: { visit: 'B-2', note: 'x' } }, staff('scribe'), facts, lookups, policy, 'patient')).toMatchObject({ reason: 'staff-filing' });
   });
@@ -83,13 +83,13 @@ describe('the compiled gate reads each rule\'s own parameters', () => {
     expect(gate.evaluate(write, patient, { ...facts, confirmedHash: confirmationHash(write.params, ['a', 'b']) }, lookups).verdict).toBe('ALLOW');
     const other = { tool: 'other', params: { c: '3' } };
     expect(gate.evaluate(other, patient, { ...facts, confirmedHash: confirmationHash(other.params, ['c']) }, lookups).verdict).toBe('ALLOW');
-    expect(gate.evaluate(other, patient, { ...facts, confirmedHash: confirmationHash(write.params, ['a', 'b']) }, lookups).rules.at(-1)).toMatchObject({ id: 'R3', compared: 'confirmed hash != call hash' });
-    expect(gate.evaluate({ tool: 'check', params: {} }, patient, { ...facts, attempts: 3 }, lookups).rules).toEqual([{ id: 'R6', description: 'Identity attempts under the limit', compared: 'attempts 3 < 4', pass: true }]);
+    expect(gate.evaluate(other, patient, { ...facts, confirmedHash: confirmationHash(write.params, ['a', 'b']) }, lookups).rules.at(-1)).toMatchObject({ id: 'confirmed', compared: 'confirmed hash != call hash' });
+    expect(gate.evaluate({ tool: 'check', params: {} }, patient, { ...facts, attempts: 3 }, lookups).rules).toEqual([{ id: 'attempts', description: 'Identity attempts under the limit', compared: 'attempts 3 < 4', pass: true }]);
     expect(gate.evaluate({ tool: 'check', params: {} }, patient, { ...facts, attempts: 4 }, lookups)).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'attempts' });
     expect(compiledPolicyOf(tables(), 'patient').source.maxAttempts).toBe(4);
   });
 
-  it('an action\'s level and the purposes; an unlisted action is R0, also one named after an object property', () => {
+  it('an action\'s level and the purposes; an unlisted action is `unlisted`, also one named after an object property', () => {
     const gate = compileGate({ actions: { read: { level: 1, rules: [{ rule: 'identity' }] } }, purposes: { deep: 2 }, maxAttempts: 3 }, TESTKIT_POLICY, 'patient');
     const one = { ...patient, level: 1 as const };
     expect(gate.evaluate({ tool: 'read', params: {} }, one, facts, lookups).verdict).toBe('ALLOW');
@@ -97,7 +97,7 @@ describe('the compiled gate reads each rule\'s own parameters', () => {
     expect(gate.evaluate({ tool: 'read', params: {}, purpose: 'constructor' }, one, facts, lookups).verdict).toBe('ALLOW');
     for (const tool of ['write', 'constructor', '__proto__']) {
       expect(gate.evaluate({ tool, params: {} }, one, facts, lookups)).toEqual({
-        call: { tool, params: {} }, verdict: 'BLOCK', reason: 'unknown-tool', rules: [{ id: 'R0', description: 'The action is on the approved list', compared: `tool ${tool} not in policy`, pass: false }],
+        call: { tool, params: {} }, verdict: 'BLOCK', reason: 'unknown-tool', rules: [{ id: 'unlisted', description: 'The action is on the approved list', compared: `tool ${tool} not in policy`, pass: false }],
       });
     }
   });
@@ -129,7 +129,7 @@ describe('the compiled gate reads each rule\'s own parameters', () => {
         { name: 'a call it refuses', call: { params: { refuse: 'yes' } }, principal: patient, expect: { verdict: 'BLOCK', reason: 'refused' } },
       ],
     });
-    const policy = definePolicy({ actions: { act: { level: 0, rules: [{ custom: 'peek' }] } } }, { tools: { act: {} }, customRules: { peek } });
+    const policy = definePolicy({ actions: { act: { level: 0, rules: [{ custom: 'peek' }] } } }, { tools: { act: { params: [] } }, customRules: { peek } });
     expect(compiledPolicyOf(policy, '').evaluate({ tool: 'act', params: {} }, patient, facts, lookups).verdict).toBe('ALLOW');
     expect(seen).toBe(policy);
   });
@@ -152,7 +152,7 @@ describe('the seam', () => {
     expect(compiledPolicyOf(changed, 'customer').source).toEqual(programFromTables(changed));
     const one = { kind: 'customer', level: 1 as const, id: '55501234', first: 'Alex' };
     const call = { tool: 'getAccount', params: { accountId: '55501234' } };
-    expect(compiledPolicyOf(TESTKIT_POLICY, 'customer').evaluate(call, one, facts, lookups).rules[0]).toMatchObject({ id: 'R1', pass: true });
+    expect(compiledPolicyOf(TESTKIT_POLICY, 'customer').evaluate(call, one, facts, lookups).rules[0]).toMatchObject({ id: 'identity', pass: true });
     expect(compiledPolicyOf(changed, 'customer').evaluate(call, one, facts, lookups)).toMatchObject({ verdict: 'STEP_UP', needLevel: 2 });
   });
 
@@ -182,5 +182,51 @@ describe('the seam', () => {
       expect(imports.length).toBeGreaterThan(0);
       for (const m of imports) if (!allowed.includes(m[2]!)) expect(Boolean(m[1]), `${file} ${m[2]}`).toBe(true);
     }
+  });
+});
+
+describe('the rules are recorded under their names', () => {
+  const gate = compiledPolicyOf(tables(), 'patient');
+  const write = { tool: 'fileRequest', params: { patientId: 'P-1', note: 'x' } };
+
+  it('each built-in rule is its own name, a custom rule its own id, and an action not listed `unlisted`', () => {
+    expect(RULE_ID).toEqual({ identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: 'dateInRange', limit: 'limit' });
+    expect([...BUILT_IN_RULES]).toEqual(Object.keys(RULE_ID));
+    expect(UNLISTED_RULE_ID).toBe('unlisted');
+    const allowed = gate.evaluate(write, patient, { ...facts, confirmedHash: confirmationHash(write.params, ['patientId', 'note']) }, lookups);
+    expect(allowed.verdict).toBe('ALLOW');
+    expect(allowed.rules.map((r) => [r.id, r.pass])).toEqual([['identity', true], ['role', true], ['scope', true], ['confirmed', true]]);
+    expect(gate.evaluate({ tool: 'checkFactors', params: { patientId: 'P-1' } }, patient, facts, lookups).rules.map((r) => r.id)).toEqual(['attempts']);
+    expect(gate.evaluate({ tool: 'nothingAtAll', params: {} }, patient, facts, lookups).rules).toEqual([{ id: 'unlisted', description: 'The action is on the approved list', compared: 'tool nothingAtAll not in policy', pass: false }]);
+    // The testkit's policy has fields and an app's own rule (R8, whose id is its own).
+    const kit = sourceOf(TESTKIT_POLICY)!;
+    for (const action of Object.values(kit.actions)) for (const rule of action.rules) expect(rule.rule === 'custom' || BUILT_IN_RULES.includes(rule.rule)).toBe(true);
+  });
+
+  it('the ids tables and the legacy evaluator use are kept apart from the names: tables read as rules record names', () => {
+    expect(LEGACY_RULE_ID).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' });
+    expect(TABLE_RULE_ID).toEqual({ ...LEGACY_RULE_ID, dateInRange: 'dateInRange', limit: 'limit' });
+    // The compiled tables still list the legacy ids; the gate over them records the names.
+    expect(tables().rulesFor.fileRequest).toEqual(['R1', 'R5', 'R2', 'R3']);
+    const byHand = compiledPolicyOf({ ...tables(), rulesFor: { ...tables().rulesFor } }, 'patient');
+    expect(byHand.evaluate(write, patient, facts, lookups).rules.map((r) => r.id)).toEqual(['identity', 'role', 'scope', 'confirmed']);
+  });
+
+  it('passed(decision, rule): the rule ran and passed; not run (an earlier rule stopped the call) or failed is not', () => {
+    const held = gate.evaluate(write, staff('viewer'), facts, lookups);
+    expect(held).toMatchObject({ verdict: 'BLOCK', reason: 'role' });
+    expect(passed(held, 'identity')).toBe(true);
+    expect(passed(held, 'role')).toBe(false);
+    expect(passed(held, 'scope')).toBe(false);
+    expect(passed(held, 'R5')).toBe(false);
+    const sent = gate.evaluate(write, staff('clerk'), facts, lookups);
+    expect(sent).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'staff-filing' });
+    expect(passed(sent, 'role')).toBe(false);
+    expect(passed(gate.evaluate(write, patient, facts, lookups), 'role')).toBe(true);
+  });
+
+  it('no app\'s own rule may take a name, `unlisted` or a legacy id', () => {
+    for (const id of [...BUILT_IN_RULES, 'unlisted', 'R0', 'R1', 'R2', 'R3', 'R5', 'R6', 'R7']) expect(isBuiltInRuleId(id), id).toBe(true);
+    for (const id of ['R4', 'R8', 'known-branch', 'Role', 'policy']) expect(isBuiltInRuleId(id), id).toBe(false);
   });
 });
