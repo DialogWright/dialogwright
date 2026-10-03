@@ -22,12 +22,13 @@ function io(cwd: string) {
   return { io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l), cwd }, out, err };
 }
 
+/** The framework's own folders with pages; an app built with the create-app skill adds its own, so these are contained, not equal. */
 const FOLDERS = ['apps/clinic', 'packages/dialogwright/src/define/fixture', 'packages/dialogwright/src/testing/testkit'];
 
 describe('dialogwright policy:card and app:diagram', () => {
   it('finds every folder with a page, and the App a folder exports', async () => {
-    expect(findPageFolders(ROOT, 'POLICY.md').map((d) => relative(ROOT, d))).toEqual(FOLDERS);
-    expect(findPageFolders(ROOT, 'APP-MAP.md').map((d) => relative(ROOT, d))).toEqual(FOLDERS);
+    expect(findPageFolders(ROOT, 'POLICY.md').map((d) => relative(ROOT, d))).toEqual(expect.arrayContaining(FOLDERS));
+    expect(findPageFolders(ROOT, 'APP-MAP.md').map((d) => relative(ROOT, d))).toEqual(expect.arrayContaining(FOLDERS));
     expect(await loadFolderApp(LIBRARY_DIR)).toBe(libraryApp);
   });
 
@@ -43,7 +44,8 @@ describe('dialogwright policy:card and app:diagram', () => {
   it('with no folder, writes again each page the workspace has', async () => {
     const run = io(ROOT);
     expect(await main(['policy:card'], run.io)).toBe(0);
-    expect(run.out).toEqual(FOLDERS.map((d) => `${d}/POLICY.md: unchanged`));
+    expect(run.out).toEqual(expect.arrayContaining(FOLDERS.map((d) => `${d}/POLICY.md: unchanged`)));
+    expect(run.out.every((l) => l.endsWith('/POLICY.md: unchanged'))).toBe(true);
   });
 
   it('refuses an option, and says which folder it cannot use', async () => {
