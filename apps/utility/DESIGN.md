@@ -103,6 +103,7 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 - A property manager is refused `sendCode` (role rule): a manager never steps up, so a code to a tenant's phone has no use and could alarm the tenant. Found reading the policy matrix.
 - Over-answers: a caller may say the address and what they see in one breath, or the count and the first day; the forms skip what is filled.
 - A property manager's balance check names the account (`account` slot); the scope rule limits them to the accounts they manage.
+- What is recorded of each value a call carries is declared, not assumed. The account number is recorded by its last four and the date of birth hidden, as their slots say. The outage address is recorded as said (`redact: none` on `place`, and `place: keep` under `audit` in policy.yaml). The trade-off: the trace and the audit hold the address a caller spoke, so anyone who reads them learns where an outage was reported from, and a caller who volunteers more than an address (a name, a remark) has it kept too; the read-back needs the words as said, and the address is where the crew goes, so it was kept as it was. An app that holds addresses to be private would mask it (`length`, or `last4`) and read a confirmation back from the form's own state instead. The symptom, the count, the first date and the total are choices, a day and an amount, recorded as they are.
 
 ## Gaps
 

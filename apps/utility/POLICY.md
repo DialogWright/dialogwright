@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `721b6aa2159ef77db23b0b6ce88606872362b040ed67b63b356058ca51ea6857` |
+| `policy.yaml` | `a75b2038b30891fad6a6fe18ac6097f6dfda12f225f295989c35ba71a45936c7` |
 | `identity.yaml` | `70a08a016eb7eab0df6ab30fe736773c565cc32764ff494321428bd1870e939f` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -53,6 +53,31 @@ What each role may do, in the actions that have a role rule (a role a rule does 
 | Role | Goes ahead | Goes to a person | Refused |
 | --- | --- | --- | --- |
 | manager | file an outage report<br/>read the balance and due date | set up a payment arrangement | text a one-time code |
+
+## What is recorded
+
+What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary or its own audit rows repeat a value that is hidden, shortened or never recorded, it is masked there too.
+
+| Action | Value | Recorded |
+| --- | --- | --- |
+| Check the account number and date of birth (`verifyCustomer`) | account (`accountId`) | by its last four characters |
+| Check the account number and date of birth (`verifyCustomer`) | date of birth (`dob`) | hidden |
+| Text a one-time code (`sendCode`) | account (`accountId`) | by its last four characters |
+| Check the one-time code (`verifyCode`) | nothing | |
+| File an outage report (`reportOutage`) | account (`accountId`) | by its last four characters |
+| File an outage report (`reportOutage`) | address (`place`) | as it is |
+| File an outage report (`reportOutage`) | what they see (`symptom`) | as it is |
+| File an outage report (`reportOutage`) | installments (`count`) | as it is |
+| File an outage report (`reportOutage`) | first payment (`firstDate`) | as it is |
+| File an outage report (`reportOutage`) | total (`total`) | as it is |
+| Look up the account (`findAccount`) | account (`accountId`) | by its last four characters |
+| Read the balance and due date (`readBalance`) | account (`accountId`) | by its last four characters |
+| Set up a payment arrangement (`setUpPlan`) | account (`accountId`) | by its last four characters |
+| Set up a payment arrangement (`setUpPlan`) | address (`place`) | as it is |
+| Set up a payment arrangement (`setUpPlan`) | what they see (`symptom`) | as it is |
+| Set up a payment arrangement (`setUpPlan`) | installments (`count`) | as it is |
+| Set up a payment arrangement (`setUpPlan`) | first payment (`firstDate`) | as it is |
+| Set up a payment arrangement (`setUpPlan`) | total (`total`) | as it is |
 
 ## Actions
 

@@ -80,10 +80,17 @@ export function scopeOf(p: Principal): readonly string[] {
   return [];
 }
 
-/** Every tool, by name; each has an action in policy.yaml, and policy.yaml names no other. */
+/**
+ * Every tool, by name; each has an action in policy.yaml, and policy.yaml names no other. `params` is
+ * what its calls carry: policy.yaml's `audit` says how each is recorded (a slot's redact setting
+ * covers the account number and the date of birth). The two confirmed writes send every field of the
+ * one confirmed list, '' for the ones they do not have. The one-time code is no param: the engine
+ * hands it to verifyCode and never records it.
+ */
 export const TOOLS: Record<string, ToolDef> = {
   // Checks the factors: the account number and the date of birth. A match is the customer at level 1.
   verifyCustomer: {
+    params: ['accountId', 'dob'],
     run(call) {
       const account = ACCOUNTS.find((a) => a.accountId === call.params.accountId && a.dob === call.params.dob);
       const principal = account ? customerPrincipal(account.accountId, 1) : null;
@@ -93,6 +100,7 @@ export const TOOLS: Record<string, ToolDef> = {
   },
   // Texts a one-time code to the phone on the account.
   sendCode: {
+    params: ['accountId'],
     run(call) {
       const account = accountOf(call.params.accountId ?? '');
       return { value: account ? { phoneLast4: account.phoneLast4 } : null, summary: account ? `texted ...${account.phoneLast4}` : 'no phone' };
@@ -100,6 +108,7 @@ export const TOOLS: Record<string, ToolDef> = {
   },
   // Checks the one-time code with the engine's verifier (a mock in tests: an even last digit passes).
   verifyCode: {
+    params: [],
     run(_call, _sys, { tc, code }) {
       const ok = code !== undefined && tc.tools.codes.check(code);
       return { value: ok, summary: ok ? 'code accepted' : 'code rejected' };
@@ -107,6 +116,7 @@ export const TOOLS: Record<string, ToolDef> = {
   },
   // Files an outage report for the address as the caller said it.
   reportOutage: {
+    params: ['accountId', 'place', 'symptom', 'count', 'firstDate', 'total'],
     run(call, sys) {
       const systems = sys as Systems;
       const ref = `OT${401 + systems.outages.length}`;
@@ -116,6 +126,7 @@ export const TOOLS: Record<string, ToolDef> = {
   },
   // The account, for the entry call of the balance and the arrangement forms.
   findAccount: {
+    params: ['accountId'],
     run(call) {
       const account = accountOf(call.params.accountId ?? '');
       return { value: account ? { first: account.first } : null, summary: account ? 'account found' : 'no account' };
@@ -123,6 +134,7 @@ export const TOOLS: Record<string, ToolDef> = {
   },
   // The balance and the due date.
   readBalance: {
+    params: ['accountId'],
     run(call) {
       const account = accountOf(call.params.accountId ?? '');
       return { value: account ? { balance: account.balance, due: account.due } : null, summary: account ? 'balance read' : 'no account' };
@@ -130,6 +142,7 @@ export const TOOLS: Record<string, ToolDef> = {
   },
   // Sets up the arrangement: the total split into the installments, the first on the day given.
   setUpPlan: {
+    params: ['accountId', 'place', 'symptom', 'count', 'firstDate', 'total'],
     run(call, sys) {
       const systems = sys as Systems;
       const installments = splitInto(call.params.total ?? '0', COUNTS[call.params.count ?? ''] ?? 1);

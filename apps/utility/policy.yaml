@@ -70,3 +70,17 @@ actions:
 # The arrangement form asks for the one-time code before its own questions.
 purposes:
   set_up_plan: { level: 2 }
+
+# How each value an action is sent is recorded (the gate event, the trace, the console and the
+# audit). The account number and the date of birth are slots with a redact setting: the account
+# number is recorded by its last four and the date of birth hidden, as the slots say. Every other
+# param the tools list (src/app.ts) is declared here. The outage address is the caller's own
+# words, recorded as said, as its slot says (`redact: none`, see DESIGN.md): an address is where the
+# crew goes, not a secret, and a summary that reads it back as said needs it. The rest are choices
+# from short lists and a date and an amount, recorded as they are.
+audit:
+  place: keep
+  symptom: keep
+  count: keep
+  firstDate: keep
+  total: keep
