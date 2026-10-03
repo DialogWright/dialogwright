@@ -193,10 +193,15 @@ export interface IdentityConfig {
    * slot id is also the name of the verify tool's param that carries its value.
    */
   factorSlots: SlotId[];
-  /** The tool that verifies the factors (e.g. verifyCustomer) and the one that checks the code (verifyCode). */
+  /** The tool that verifies the factors (e.g. verifyCustomer). */
   verifyTool: ToolName;
-  codeTool: ToolName;
-  sendCodeTool: ToolName;
+  /**
+   * Level 2's tools: the one that checks the one-time code (e.g. verifyCode) and the one that sends
+   * it (sendCode). Both, or neither: a ladder of one rung (identity.yaml with no level 2) has no
+   * code, so nothing may need level 2 (validateApp) and the lifecycle never sends one.
+   */
+  codeTool?: ToolName;
+  sendCodeTool?: ToolName;
   /** How many digits the one-time code has, keyed on the keypad: 4 to 8. Without it, 6 (identity.yaml's `otp: { length }`). */
   codeLength?: number;
   /**

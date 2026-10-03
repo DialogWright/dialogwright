@@ -1,7 +1,7 @@
 import { confirmationHash } from '../gate/policy';
 import { maskId, raise } from '../gate/principal';
 import { isAnonymous, isParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
-import { codeLengthOf, formOf, gateOf, identityOf, toolOf } from './app/lookup';
+import { codeLengthOf, formOf, gateOf, hasCode, identityOf, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
@@ -155,11 +155,14 @@ function identityCall<V>(s: Session, tool: string, params: Record<string, string
 /**
  * Level 2 needs the one-time code: text it to the phone on file, through the gate, then ask for it.
  * Once per call: asking again (after a silence, say) reminds the caller of the text already sent. A
- * `reissue` (the code was said aloud, so it is exposed) always texts a new one.
+ * `reissue` (the code was said aloud, so it is exposed) always texts a new one. A ladder of one rung
+ * has no code to send: nothing there needs level 2 (validateApp), so asking for one goes to a person.
  */
 export function sendCodeAndAsk(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[], reissue = false): Decision {
+  const identity = identityOf(appOf(s));
+  if (!hasCode(identity)) return handoff(s, 'needs-human', acks);
   if (!s.codeSent || reissue) {
-    const { sendCodeTool, sendCodeParams } = identityOf(appOf(s));
+    const { sendCodeTool, sendCodeParams } = identity;
     const { decision, value } = identityCall<unknown>(s, sendCodeTool, sendCodeParams?.(s) ?? {}, tc, out);
     if (decision.verdict !== 'ALLOW' || value === null) return handoff(s, 'needs-human', acks);
     s.codeSent = true;
@@ -313,6 +316,7 @@ export function handleCodeDigit(s: Session, digit: string, tc: TurnContext, out:
   const code = s.dtmfBuffer;
   s.dtmfBuffer = '';
   const identity = identityOf(app);
+  if (!hasCode(identity)) return handoff(s, 'needs-human', acks);
   const { codeTool } = identity;
   const { decision, value } = identityCall<boolean>(s, codeTool, {}, tc, out, code);
   if (decision.verdict === 'NEEDS_HUMAN') return handoff(s, 'identity', acks);

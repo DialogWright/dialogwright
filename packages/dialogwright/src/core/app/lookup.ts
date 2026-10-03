@@ -50,6 +50,16 @@ export function codeLengthOf(app: App): number {
   return identityOf(app).codeLength ?? DEFAULT_CODE_LENGTH;
 }
 
+/** Whether the identity's ladder has level 2, the one-time code: both its tools are named. */
+export function hasCode(identity: IdentityConfig): identity is IdentityConfig & { codeTool: string; sendCodeTool: string } {
+  return !!identity.codeTool && !!identity.sendCodeTool;
+}
+
+/** The top of the identity's ladder: 2 with the one-time code, else 1 (a ladder of one rung). */
+export function topLevelOf(identity: IdentityConfig): 1 | 2 {
+  return hasCode(identity) ? 2 : 1;
+}
+
 /**
  * The gate an app's calls go through: its own (App.gate), or the policy its tables were compiled
  * from, for its subject kind (gate/compiled.ts compiledPolicyOf), compiled once.

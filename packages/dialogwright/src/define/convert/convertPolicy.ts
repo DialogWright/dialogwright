@@ -254,14 +254,18 @@ function oldOfTables(tables: PolicyTables, identity: IdentityConfig | undefined,
     if (Object.keys(templates).length > 0) wording.role = templates;
   }
   if (Object.keys(wording).length > 0) policy.wording = wording;
+  // The old shape always had the code: an identity written in code without one is already the new shape's to say.
+  if (identity && (identity.codeTool === undefined || identity.sendCodeTool === undefined)) {
+    throw new ConvertError(['identity: no codeTool and sendCodeTool, which the old shape always had (a ladder of one rung) -> write identity.yaml by hand, with level 1 only']);
+  }
   const oldIdentity: OldIdentity | null = identity
     ? {
         subjectKind: identity.subjectKind,
         ...(identity.delegateKind !== undefined ? { delegateKind: identity.delegateKind } : {}),
         factorSlots: [...identity.factorSlots],
         verifyTool: identity.verifyTool,
-        codeTool: identity.codeTool,
-        sendCodeTool: identity.sendCodeTool,
+        codeTool: identity.codeTool!,
+        sendCodeTool: identity.sendCodeTool!,
         ...(identity.failedPromptId !== undefined ? { failedPromptId: identity.failedPromptId } : {}),
       }
     : null;

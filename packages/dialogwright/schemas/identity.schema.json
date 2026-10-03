@@ -141,7 +141,7 @@
         "1"
       ],
       "additionalProperties": false,
-      "description": "The identity ladder above level 0 (anonymous), each level with its factors and the tools that check them. Cumulative: level 2 is level 1 and its own factors."
+      "description": "The identity ladder above level 0 (anonymous), each level with its factors and the tools that check them. Cumulative: level 2 is level 1 and its own factors. Level 2 is optional: without it there is no one-time code, and no action may need level 2."
     },
     "attempts": {
       "type": "integer",

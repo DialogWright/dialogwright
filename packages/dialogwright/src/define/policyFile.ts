@@ -170,27 +170,29 @@ export interface CompiledIdentity {
 }
 
 /**
- * identity.yaml (the new shape, already checked) as the lifecycle's identity configuration (with
- * the levels' names, labels for the console, and the code's length, default 6), and its attempts
- * for the policy (compilePolicy's maxAttempts). Throws for a ladder with no level 2, which `check`
- * refuses: the engine's step-up always ends with the one-time code for now.
+ * identity.yaml (the new shape, already checked) as the lifecycle's identity configuration, and its
+ * attempts for the policy (compilePolicy's maxAttempts). Level 1 is the factors and their check;
+ * level 2, where the ladder has it, is the one-time code (its tools and its length, default 6). The
+ * levels' names and the attempts go on the configuration too, for the console and for validateApp:
+ * the engine decides on the level numbers alone.
  */
 export function compileIdentity(file: IdentityYaml, options: CompileIdentityOptions = {}): CompiledIdentity {
   const one = file.levels[1];
   const two = file.levels[2];
-  if (!two) throw new Error('identity.yaml has no level 2: the engine\'s step-up ends with the one-time code, so an app that verifies callers needs it');
   const identity = { subjectKind: file.principals.subject } as IdentityConfig;
   const delegates = Object.keys(file.principals.delegates ?? {});
   if (delegates.length > 1) throw new Error(`identity.yaml names ${delegates.length} delegate kinds; one is supported for now`);
   if (delegates.length === 1) identity.delegateKind = delegates[0]!;
   identity.factorSlots = one.factors;
   identity.verifyTool = one.verify;
-  identity.codeTool = two.verify;
-  identity.sendCodeTool = two.send;
+  if (two) {
+    identity.codeTool = two.verify;
+    identity.sendCodeTool = two.send;
+  }
   if (options.sendCodeParams !== undefined) identity.sendCodeParams = options.sendCodeParams;
   if (one.failedPrompt !== undefined) identity.failedPromptId = one.failedPrompt;
-  identity.codeLength = two.factors[0]?.otp.length ?? DEFAULT_CODE_LENGTH;
-  identity.levelNames = Object.freeze({ 1: one.name, 2: two.name });
+  if (two) identity.codeLength = two.factors[0]?.otp.length ?? DEFAULT_CODE_LENGTH;
+  identity.levelNames = Object.freeze(two ? { 1: one.name, 2: two.name } : { 1: one.name });
   identity.maxAttempts = file.attempts;
   return { identity, maxAttempts: file.attempts };
 }
@@ -362,9 +364,9 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
 
 /**
  * identity.yaml against policy.yaml and the code: the factors are slots, the identity tools are
- * tools with an action each, the failed line is a prompt, each level has a name of its own, the
- * ladder has what the engine runs (a level 2 and its code, for now), a sign-in proves the
- * top level, and one delegate kind.
+ * tools with an action each, the failed line is a prompt, each level has a name of its own, a
+ * sign-in proves the top level, and one delegate kind. A ladder of one rung (no level 2, so no
+ * code) is allowed: policyProblems then refuses any action or purpose that needs level 2.
  */
 export function identityProblems(c: PolicyCheckInput): Problem[] {
   const out: Problem[] = [];
@@ -397,9 +399,6 @@ export function identityProblems(c: PolicyCheckInput): Problem[] {
   }
   if (two && one.name.trim() !== '' && one.name.trim().toLowerCase() === two.name.trim().toLowerCase()) {
     at(I, ['levels', '2', 'name'], `levels 1 and 2 are both called "${two.name.trim()}"`, 'give each level a name of its own, so the console and the policy card can tell them apart');
-  }
-  if (!two) {
-    at(I, ['levels'], 'the ladder has no level 2; for now the engine\'s step-up always ends with the one-time code, so an app that verifies callers needs it', 'add "2: { name: <its name>, factors: [{ otp: { length: 6 } }], send: <the tool that sends the code>, verify: <the tool that checks it> }" under levels');
   }
   const top = topLevel(identity);
   if (identity.signIn && identity.signIn.level !== top) {

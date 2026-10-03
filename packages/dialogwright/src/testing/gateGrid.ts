@@ -40,7 +40,7 @@ export function gateGridInput(app: App): GateGridInput {
   const matrix = app.testing?.policyMatrix?.();
   if (!matrix) throw new Error(`app "${app.id}" has no policy matrix (App.testing.policyMatrix)`);
   const id = identityOf(app);
-  const tools = [...Object.keys(app.tools), id.verifyTool, id.codeTool, id.sendCodeTool].filter((t) => t !== '');
+  const tools = [...Object.keys(app.tools), id.verifyTool, id.codeTool, id.sendCodeTool].filter((t): t is string => t !== undefined && t !== '');
   return { policy: app.policy, subjectKind: id.subjectKind, lookups: matrix.lookups?.() ?? app.systems().lookups, matrix, tools };
 }
 

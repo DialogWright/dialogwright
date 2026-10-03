@@ -285,8 +285,13 @@ describe('the checks', () => {
     expect(soloWith({ rules: ['identity'] }, null)).toEqual([
       'actions.getRecord: action "getRecord" has no level, so it needs the highest (2), but the app has no identity.yaml, so no caller can reach it -> add "level: 0", or add identity.yaml so callers can verify',
     ]);
-    expect(identityWith({ levels: { 1: IDENTITY.levels[1] } })).toEqual([
-      'levels: the ladder has no level 2; for now the engine\'s step-up always ends with the one-time code, so an app that verifies callers needs it -> add "2: { name: <its name>, factors: [{ otp: { length: 6 } }], send: <the tool that sends the code>, verify: <the tool that checks it> }" under levels',
+  });
+
+  it('a ladder of one rung (no level 2, so no code) is a ladder: only what needs level 2 is refused', () => {
+    const noTwo = { ...IDENTITY, levels: { 1: IDENTITY.levels[1] } };
+    expect(identityWith({ levels: { 1: IDENTITY.levels[1] } })).toEqual([]);
+    expect(policyWith({}, noTwo)).toEqual([
+      'actions.fileRequest.level: action "fileRequest" needs identity level 2, but the ladder in identity.yaml has no level 2 -> set it to 1, or add level 2 under levels in identity.yaml',
     ]);
   });
 
@@ -294,6 +299,10 @@ describe('the checks', () => {
     expect(identityWith({ signIn: { level: 1 } })).toEqual([
       'signIn.level: a sign-in proves level 1, but the top of the ladder is level 2; a sign-in proves the top level -> write "level: 2"',
     ]);
+    expect(identityWith({ signIn: { level: 2 }, levels: { 1: IDENTITY.levels[1] } })).toEqual([
+      'signIn.level: a sign-in proves level 2, but the top of the ladder is level 1; a sign-in proves the top level -> write "level: 1"',
+    ]);
+    expect(identityWith({ signIn: { level: 1 }, levels: { 1: IDENTITY.levels[1] } })).toEqual([]);
     // A code of any length the schema allows (4 to 8) is the engine's to key.
     for (const length of [4, 8]) expect(identityWith({ levels: { ...IDENTITY.levels, 2: { ...IDENTITY.levels[2], factors: [{ otp: { length } }] } } })).toEqual([]);
     expect(identityWith({ levels: { 1: { ...IDENTITY.levels[1], name: '  ' }, 2: { ...IDENTITY.levels[2], name: 'Verified ' } } })).toEqual([

@@ -14,9 +14,10 @@ import { TESTKIT_CUSTOM_RULES } from '../testing/testkit/domain/policy';
 import { SLOTS } from '../testing/testkit/domain/slots';
 import { TESTKIT_TOOLS } from '../testing/testkit/domain/tools';
 import manifest from '../testing/testkit/prompts/manifest.json';
-import { codeLengthOf } from './app/lookup';
+import { codeLengthOf, hasCode } from './app/lookup';
 import { registerApp } from './app/registry';
 import type { App } from './app/types';
+import { validateApp } from './app/validate';
 import { newSession, type Session } from './session';
 import { maskCodeEvent } from './spokenCode';
 import { DEFAULT_THRESHOLDS } from './thresholds';
@@ -25,8 +26,9 @@ import { resolve, type TurnContext, type TurnResult } from './turn';
 
 /**
  * The identity ladder as identity.yaml writes it, run end to end on copies of the testkit: a one-time
- * code of 4 and of 8 digits (keyed to its length, checked, said aloud and reissued). Each copy is
- * compiled from the testkit's own policy.yaml and identity.yaml, edited as an author would edit them.
+ * code of 4 and of 8 digits (keyed to its length, checked, said aloud and reissued), and a ladder of
+ * one rung (no code: a full verify ends at level 1, and nothing sends a code). Each copy is compiled
+ * from the testkit's own policy.yaml and identity.yaml, edited as an author would edit them.
  */
 useTestkit();
 
@@ -54,6 +56,21 @@ const codeOf = (length: number) => (file: Yaml): void => {
 
 const FOUR = variant('testkit-code4', { identity: codeOf(4) });
 const EIGHT = variant('testkit-code8', { identity: codeOf(8) });
+/** No level 2: no code tools, every action at level 1 or below, and a sign-in that proves level 1. */
+const ONE_RUNG = variant('testkit-one-rung', {
+  identity: (file) => {
+    delete file.levels[2];
+    file.signIn = { level: 1 };
+  },
+  policy: (file) => {
+    delete file.actions.verifyCode;
+    delete file.actions.sendCode;
+    for (const action of Object.values(file.actions) as Yaml[]) if (action.level === 2) action.level = 1;
+    file.purposes.report_missing.level = 1;
+  },
+  dropTools: ['verifyCode', 'sendCode'],
+});
+
 function context(): TurnContext {
   return { nowMs: 0, todayIso: '2026-09-18', thresholds: { ...DEFAULT_THRESHOLDS }, tools: demoTools() };
 }
@@ -142,5 +159,32 @@ describe('the one-time code\'s length, from identity.yaml', () => {
     expect(tools(r)).toEqual(['sendCode:ALLOW']);
     expect(r.audit.filter((a) => a.type === 'code_spoken')).toEqual([{ type: 'code_spoken', detail: { masked: true, reissued: true } }]);
     expect(r.session.slots.accountId!.value).toBe('55501234');
+  });
+});
+
+describe('a ladder of one rung (identity.yaml with level 1 only)', () => {
+  it('compiles with no code: no code tools, no length, one name', () => {
+    const identity = ONE_RUNG.identity!;
+    expect(hasCode(identity)).toBe(false);
+    expect([identity.codeTool, identity.sendCodeTool, identity.codeLength]).toEqual([undefined, undefined, undefined]);
+    expect(identity.levelNames).toEqual({ 1: 'verified' });
+  });
+
+  it('a full verify ends at level 1, the request goes on, and no code is ever sent or asked for', () => {
+    const r = identified(ONE_RUNG);
+    expect(tools(r)).toEqual(['verifyCustomer:ALLOW', 'listParcels:ALLOW']);
+    expect(r.session.principal.level).toBe(1);
+    expect(r.session.promptedFor).not.toBe('otp');
+    expect(r.session.codeSent).toBe(false);
+    expect(r.decision).toMatchObject({ kind: 'prompt', acks: [{ promptId: 'identity_verified' }] });
+    expect(r.session.stepUp).toBeNull();
+  });
+
+  it('refuses at registration anything that needs level 2', () => {
+    const listParcels2 = { ...ONE_RUNG, id: 'one-rung-2', policy: { ...ONE_RUNG.policy, toolLevel: { ...ONE_RUNG.policy.toolLevel, listParcels: 2 as const } } };
+    expect(() => validateApp(listParcels2)).toThrow('app "one-rung-2": tool "listParcels" needs identity level 2, and the identity\'s ladder stops at level 1 (it has no one-time code)');
+    const purpose2 = { ...ONE_RUNG, policy: { ...ONE_RUNG.policy, purposeLevel: { report_missing: 2 as const } } };
+    expect(() => validateApp(purpose2)).toThrow('purpose "report_missing" needs identity level 2');
+    expect(() => validateApp({ ...ONE_RUNG, identity: { ...ONE_RUNG.identity!, codeTool: 'verifyCustomer' } })).toThrow('identity names a codeTool but no sendCodeTool');
   });
 });

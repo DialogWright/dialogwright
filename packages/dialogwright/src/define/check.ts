@@ -75,6 +75,9 @@ const MENU_PROMPT = { id: 'nomatch_dtmf_menu', why: 'it offers the keypad menu a
 export const IDENTITY_PROMPTS: readonly { id: string; why: string }[] = [
   { id: 'handoff_identity', why: 'a caller who could not be verified is handed to a person' },
   { id: 'identity_verified', why: 'the caller was verified' },
+];
+/** The one-time code's lines: only for a ladder with level 2 (a ladder of one rung has no code). */
+export const CODE_PROMPTS: readonly { id: string; why: string }[] = [
   { id: 'ask_otp', why: 'it asks for the one-time code' },
   { id: 'ask_otp_spoken', why: 'the caller said the code instead of keying it' },
   { id: 'otp_spoken_reissued', why: 'the caller said the code and a new one is sent' },
@@ -93,12 +96,12 @@ export const PORTAL_PROMPTS: readonly { id: string; why: string }[] = [
 /** R5's NEEDS_HUMAN reason when policy.yaml names none: the gate's own (gate/lines.ts). */
 export { DEFAULT_ROLE_PERSON_REASON };
 
-/** The identity factors' slots and the line said after a failed match, with where the line is named. */
-function identityParts(config: LoadedConfig): { factors: readonly string[]; failedPromptId?: string; failedPath: DataPath } | null {
+/** The identity factors' slots, the line said after a failed match (with where it is named), and whether the ladder has the one-time code. */
+function identityParts(config: LoadedConfig): { factors: readonly string[]; failedPromptId?: string; failedPath: DataPath; code: boolean } | null {
   const identity = config.identity;
   if (!identity) return null;
   const one = identity.levels[1];
-  return { factors: one.factors, ...(one.failedPrompt === undefined ? {} : { failedPromptId: one.failedPrompt }), failedPath: ['levels', '1', 'failedPrompt'] };
+  return { factors: one.factors, ...(one.failedPrompt === undefined ? {} : { failedPromptId: one.failedPrompt }), failedPath: ['levels', '1', 'failedPrompt'], code: identity.levels[2] !== undefined };
 }
 
 /**
@@ -142,6 +145,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): { id: strin
   const identity = identityParts(config);
   if (identity) {
     needs.push(...IDENTITY_PROMPTS);
+    if (identity.code) needs.push(...CODE_PROMPTS);
     needs.push({ id: identity.failedPromptId ?? 'identity_failed', why: 'the identity factors did not match' });
   }
   if (code?.portal) needs.push(...PORTAL_PROMPTS);

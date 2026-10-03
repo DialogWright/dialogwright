@@ -17,9 +17,10 @@ import { identifier, matching, name, text, unique } from './common';
  *   attempts: 3
  *   signIn: { level: 2 }
  *
- * The ladder is cumulative (level 2 is level 1 and its own factors) and has at most two rungs above
- * level 0, which is anonymous. Levels stay numbers everywhere the engine records them; a level's name
- * is a label. The one-time code's call params (`sendCodeParams`) are a function, and stay in code.
+ * The ladder is cumulative (level 2 is level 1 and its own factors) and has one or two rungs above
+ * level 0, which is anonymous: without level 2 there is no one-time code, and nothing may need level
+ * 2. Levels stay numbers everywhere the engine records them; a level's name is a label (the console,
+ * the policy card). The one-time code's call params (`sendCodeParams`) are a function, and stay in code.
  *
  * An app written before this shape (subjectKind, factorSlots, ... : the lifecycle's identity
  * configuration as it is) is converted with `dialogwright policy:convert`; nothing reads that shape
@@ -89,7 +90,7 @@ export const identitySchema = z
         1: level1,
         2: level2.optional(),
       })
-      .describe('The identity ladder above level 0 (anonymous), each level with its factors and the tools that check them. Cumulative: level 2 is level 1 and its own factors.'),
+      .describe('The identity ladder above level 0 (anonymous), each level with its factors and the tools that check them. Cumulative: level 2 is level 1 and its own factors. Level 2 is optional: without it there is no one-time code, and no action may need level 2.'),
     attempts: z
       .number({ error: 'must be a number' })
       .int({ error: 'must be a whole number' })

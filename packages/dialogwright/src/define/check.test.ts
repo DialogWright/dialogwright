@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { DEFAULT_ROLE_PERSON_REASON, ENGINE_PROMPTS, IDENTITY_PROMPTS, MAX_CORPUS_BYTES, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts } from './check';
+import { CODE_PROMPTS, DEFAULT_ROLE_PERSON_REASON, ENGINE_PROMPTS, IDENTITY_PROMPTS, MAX_CORPUS_BYTES, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts } from './check';
 import type { AppCode } from './defineApp';
 import { USAGE, findAppFolders, main, type Io } from './cli';
 import { libraryCode, LIBRARY_DIR } from './fixture/app';
@@ -153,6 +153,14 @@ describe('checkApp: the prompts every locale needs', () => {
     expect(ids).not.toContain('nomatch_dtmf_menu');
     expect(ids.filter((id) => id === 'ask_book')).toHaveLength(1);
     expect(enginePrompts(config, { ...libraryCode, portal: {} }).map((p) => p.id)).toEqual(expect.arrayContaining(['signin_required', 'greeting_chat_signed_in']));
+  });
+
+  it('a ladder of one rung needs no code lines: nothing asks for a code', () => {
+    const config = loadAppFolder(folder({ 'identity.yaml': IDENTITY })).config!;
+    const { 2: _, ...one } = config.identity!.levels;
+    const ids = enginePrompts({ ...config, identity: { ...config.identity!, levels: one as NonNullable<typeof config.identity>['levels'] } }).map((p) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(['identity_failed', 'identity_verified', 'handoff_identity']));
+    for (const { id } of CODE_PROMPTS) expect(ids).not.toContain(id);
   });
 
   it('an identity failedPromptId replaces identity_failed, and the opening lines app.yaml names replace greeting and greeting_chat', () => {
@@ -470,7 +478,7 @@ describe('the engine prompt list', () => {
   });
 
   it('names every prompt id the engine says as a literal, or says why not', () => {
-    const named = new Set([...Object.keys(ENGINE_PROMPTS), 'greeting', 'greeting_chat', 'nomatch_dtmf_menu', ...IDENTITY_PROMPTS.map((p) => p.id), ...PORTAL_PROMPTS.map((p) => p.id)]);
+    const named = new Set([...Object.keys(ENGINE_PROMPTS), 'greeting', 'greeting_chat', 'nomatch_dtmf_menu', ...IDENTITY_PROMPTS.map((p) => p.id), ...CODE_PROMPTS.map((p) => p.id), ...PORTAL_PROMPTS.map((p) => p.id)]);
     // The ones an app writes or that depend on the app's own code, never the same in two apps.
     const elsewhere = new Set(['identity_failed', 'handoff_identity']);
     expect(literals().size).toBeGreaterThan(30);
