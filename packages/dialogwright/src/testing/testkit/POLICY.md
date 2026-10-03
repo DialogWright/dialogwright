@@ -26,6 +26,7 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 | 2 | confirmed by code | level 1, and a 6-digit one-time code sent to the contact on file | text a one-time code (`sendCode`); check the one-time code (`verifyCode`) |
 
 - Each level includes the one below it. A customer below an action's level is asked for what the next level needs; any other caller is refused.
+- The identity checks (check the account ID and date of birth, `verifyCustomer`; text a one-time code, `sendCode`; check the one-time code, `verifyCode`) are for customers only: a caller not yet verified may use them, and any other party (one who acts for customers, or anyone else) is refused them before their rules run.
 - The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.
 - A sign-in through a portal proves level 2 ('confirmed by code'), so a signed-in caller starts there.
 
@@ -95,9 +96,9 @@ One row per action the agent may take. Anything else is refused.
 
 | Action | Level | The gate checks, in order |
 | --- | --- | --- |
-| **Check the account ID and date of birth**<br/>`verifyCustomer` | 0 anonymous | 1. the identity check has not already failed 3 times (after that a person takes the call) |
-| **Check the one-time code**<br/>`verifyCode` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the identity check has not already failed 3 times (after that a person takes the call) |
-| **Text a one-time code**<br/>`sendCode` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the account ID must be the caller's own, or one they act for |
+| **Check the account ID and date of birth**<br/>`verifyCustomer` | 0 anonymous | 1. only a customer, or a caller not yet verified, may use it (any other party is refused)<br/>2. the identity check has not already failed 3 times (after that a person takes the call) |
+| **Check the one-time code**<br/>`verifyCode` | 1 verified | 1. only a customer, or a caller not yet verified, may use it (any other party is refused)<br/>2. the caller must be at 'verified' or above<br/>3. the identity check has not already failed 3 times (after that a person takes the call) |
+| **Text a one-time code**<br/>`sendCode` | 1 verified | 1. only a customer, or a caller not yet verified, may use it (any other party is refused)<br/>2. the caller must be at 'verified' or above<br/>3. the account ID must be the caller's own, or one they act for |
 | **Read the customer's account**<br/>`getAccount` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the account ID must be the caller's own, or one they act for |
 | **Read the delivery windows**<br/>`getWindows` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the account ID must be the caller's own, or one they act for |
 | **List the customer's parcels**<br/>`listParcels` | 2 confirmed by code | 1. the caller must be at 'confirmed by code' or above<br/>2. the account ID must be the caller's own, or one they act for |

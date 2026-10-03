@@ -3,7 +3,7 @@ import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, RoleAccess, ToolName } from '../core/app/types';
 import { recordingOf } from '../core/recording';
 import { refText, todayText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
-import type { PolicyAction, PolicySource, Rule } from '../gate/compiled';
+import { identityToolsOf, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { isDefinedRule } from '../gate/defineRule';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import type { Level } from '../gate/types';
@@ -225,6 +225,7 @@ function identitySection(app: App, source: PolicySource): string[] {
   }
   out.push('');
   out.push(`- Each level includes the one below it. A ${identity.subjectKind} below an action's level is asked for what the next level needs; any other caller is refused.`);
+  out.push(`- The identity checks (${identityToolsOf(identity).map((t) => `${actionLabel(source, t)}, ${code(t)}`).join('; ')}) are for ${identity.subjectKind}s only: a caller not yet verified may use them, and any other party (one who acts for ${identity.subjectKind}s, or anyone else) is refused them before their rules run.`);
   if (top === 2) out.push('- The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.');
   out.push(identity.signInLevel === undefined
     ? '- The app takes no portal sign-in: every caller proves who they are on the call.'
@@ -341,11 +342,16 @@ function recordingSection(app: App, source: PolicySource): string[] {
 }
 
 function actionsSection(app: App, source: PolicySource): string[] {
+  const identityTools = identityToolsOf(identityOf(app));
+  const subjectKind = identityOf(app).subjectKind;
   const out = ['## Actions', '', 'One row per action the agent may take. Anything else is refused.', ''];
   out.push('| Action | Level | The gate checks, in order |', '| --- | --- | --- |');
   for (const [tool, action] of Object.entries(source.actions)) {
     const label = action.say === undefined ? code(tool) : `**${cell(capitalize(action.say))}**<br/>${code(tool)}`;
-    const rules = action.rules.length === 0 ? 'nothing: no rule runs' : action.rules.map((r, i) => `${i + 1}. ${cell(ruleText(app, source, action, r))}`).join('<br/>');
+    // The identity tools' own check runs first (gate/compiled.ts subjectOnlyDecision), written in no file.
+    const subjectOnly = app.identity !== undefined && identityTools.includes(tool) ? [`only ${article(subjectKind)} ${subjectKind}, or a caller not yet verified, may use it (any other party is refused)`] : [];
+    const said = [...subjectOnly, ...action.rules.map((r) => ruleText(app, source, action, r))];
+    const rules = said.length === 0 ? 'nothing: no rule runs' : said.map((r, i) => `${i + 1}. ${cell(r)}`).join('<br/>');
     out.push(`| ${label} | ${action.level} ${cell(levelName(app, action.level))} | ${rules} |`);
   }
   return out;

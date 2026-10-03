@@ -141,7 +141,7 @@ describe('the seam', () => {
     expect(source).not.toBeNull();
     expect(source.actions.createReport!.rules.map((r) => r.rule)).toEqual(['identity', 'role', 'scope', 'confirmed', 'custom']);
     expect(gateOf(testkitApp).source).toBe(source);
-    expect(gateOf(testkitApp)).toBe(compiledPolicyOf(TESTKIT_POLICY, 'customer'));
+    expect(gateOf(testkitApp)).toBe(compiledPolicyOf(TESTKIT_POLICY, 'customer', ['verifyCustomer', 'sendCode', 'verifyCode']));
     expect(Object.isFrozen(TESTKIT_POLICY) && Object.isFrozen(TESTKIT_POLICY.toolLevel) && Object.isFrozen(TESTKIT_POLICY.rulesFor)).toBe(true);
     expect(() => { (TESTKIT_POLICY.toolLevel as Record<string, number>).getAccount = 2; }).toThrow(TypeError);
   });

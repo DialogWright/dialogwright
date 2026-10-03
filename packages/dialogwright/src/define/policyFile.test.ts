@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { IdentityConfig, PolicyMatrix, PolicyTables } from '../core/app/types';
-import { compiledPolicyOf, sourceOf } from '../gate/compiled';
+import { compiledPolicyOf, identityToolsOf, sourceOf } from '../gate/compiled';
 import type { GateLookups, Principal, RuleContext, RuleOutcome } from '../gate/types';
 import { compareGateGrid, formatGateGridMismatches, gateGridInput, legacyGateEvaluator, type GateGridInput } from '../testing/gateGrid';
 import { testkitApp } from '../testing/testkit/index';
@@ -41,9 +41,10 @@ const VALID = join(__dirname, '__fixtures__', 'valid');
  * `compiled`, and against the gate that reads the named rules `compiled` was compiled from.
  */
 function gridMismatches(input: GateGridInput, compiled: PolicyTables): string[] {
-  const gate = compiledPolicyOf(compiled, input.subjectKind);
+  const gate = compiledPolicyOf(compiled, input.subjectKind, input.identity ? identityToolsOf(input.identity) : []);
   expect(gate.source).toBe(sourceOf(compiled));
-  return [legacyGateEvaluator({ policy: compiled, subjectKind: input.subjectKind }), gate.evaluate].flatMap((candidate) => {
+  const reference = { policy: compiled, subjectKind: input.subjectKind };
+  return [legacyGateEvaluator(input.identity ? { ...reference, identity: input.identity } : reference), gate.evaluate].flatMap((candidate) => {
     const mismatches = compareGateGrid(input, candidate);
     return mismatches.length === 0 ? [] : [formatGateGridMismatches(mismatches)];
   });

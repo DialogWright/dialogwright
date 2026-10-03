@@ -139,7 +139,7 @@ function actionHeader(tool: ToolName, action: PolicyAction | undefined, source: 
 function principalText(p: Principal, label: string, subjectKind: string): string {
   if (isAnonymous(p)) return 'no one proven (level 0)';
   const role = p.role === undefined ? (label === 'roleless' ? ' with no role' : '') : `, role ${p.role}`;
-  const note = label === 'unlisted-role' ? ' (a role the policy does not name)' : label === 'other-party' ? ' (neither a subject nor of a delegate kind)' : p.kind === subjectKind && subjectKind !== '' ? ' (one of the app\'s subjects)' : '';
+  const note = label === 'unlisted-role' ? ' (a role the policy does not name)' : label === 'other-party' ? ' (neither a subject nor of a delegate kind)' : p.kind === subjectKind && subjectKind !== '' ? ' (one of the app\'s subjects)' : /^delegate:.*@1$/.test(label) ? ' (a delegate below level 2)' : '';
   return `${p.kind}${role}, level ${p.level}${note}`;
 }
 

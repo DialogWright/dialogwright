@@ -1,6 +1,6 @@
 import type { App, FormDef, FormId, IdentityConfig, SlotId, ToolDef, ToolName } from './types';
 import type { SlotSpec } from '../slots/types';
-import { compiledPolicyOf, type CompiledPolicy } from '../../gate/compiled';
+import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 
 /** An app's form by id; an id the app does not define is a bug, named in the error. */
 export function formOf(app: App, id: FormId): FormDef {
@@ -62,8 +62,10 @@ export function topLevelOf(identity: IdentityConfig): 1 | 2 {
 
 /**
  * The gate an app's calls go through: its own (App.gate), or the policy its tables were compiled
- * from, for its subject kind (gate/compiled.ts compiledPolicyOf), compiled once.
+ * from, for its subject kind and with its identity tools kept for the subject (gate/compiled.ts
+ * compiledPolicyOf, identityToolsOf), compiled once.
  */
 export function gateOf(app: App): CompiledPolicy {
-  return app.gate ?? compiledPolicyOf(app.policy, identityOf(app).subjectKind);
+  const identity = identityOf(app);
+  return app.gate ?? compiledPolicyOf(app.policy, identity.subjectKind, identityToolsOf(identity));
 }

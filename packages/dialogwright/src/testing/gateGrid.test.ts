@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isDeepStrictEqual } from 'node:util';
 import type { GateDecision } from '../gate/types';
 import { evaluateCall } from '../gate/policy';
+import { identityToolsOf, subjectOnlyDecision } from '../gate/compiled';
 import { testkitApp } from './testkit';
 import {
   compareGateGrid, formatGateGridMismatches, gateGridCases, gateGridInput, gridUnexercised, gridVerdicts, legacyGateEvaluator,
@@ -23,12 +24,12 @@ describe('the gate grid', () => {
     expect(new Set(cases.map((c) => c.tool))).toEqual(new Set([...Object.keys(testkitApp.policy.rulesFor), UNLISTED_TOOL]));
     expect(new Set(cases.map((c) => c.purpose))).toEqual(new Set([null, 'entry-check', 'retry-check', 'report_missing']));
     expect(new Set(cases.map((c) => c.principal))).toEqual(new Set([
-      'anonymous', 'subject@1', 'subject@2', 'delegate:viewer', 'delegate:clerk', 'unlisted-role', 'roleless', 'other-party',
+      'anonymous', 'subject@1', 'subject@2', 'delegate:viewer', 'delegate:clerk', 'delegate:viewer@1', 'unlisted-role', 'roleless', 'other-party',
     ]));
     expect(new Set(cases.map((c) => c.subject))).toEqual(new Set(['own', 'inScope', 'outOfScope', 'unknown', 'empty', '-']));
     expect(new Set(cases.map((c) => c.attempts))).toEqual(new Set([0, 3]));
-    // 9 tools and the unlisted one, 4 purposes, 8 principals; 7 tools name a subject (5 ways), createReport 3 param sets; 3 field variants, 2 attempts, 3 confirmations.
-    expect(cases.length).toBe(4 * 8 * 18 * (6 * 5 + 1 * 5 * 3 + 3 * 1));
+    // 9 tools and the unlisted one, 4 purposes, 9 principals (the first delegate twice: at level 2, and at 1); 7 tools name a subject (5 ways), createReport 3 param sets; 3 field variants, 2 attempts, 3 confirmations.
+    expect(cases.length).toBe(4 * 9 * 18 * (6 * 5 + 1 * 5 * 3 + 3 * 1));
     expect(gridVerdicts(grid)).toEqual({ ALLOW: expect.any(Number), BLOCK: expect.any(Number), STEP_UP: expect.any(Number), NEEDS_HUMAN: expect.any(Number) });
   });
 
@@ -63,9 +64,10 @@ describe('the gate grid', () => {
     const changed = compareGateGrid(input, lowered);
     expect(changed.length).toBeGreaterThan(0);
     expect(new Set(changed.map((m) => m.key.split(' ')[0]))).toEqual(new Set(['listParcels']));
+    const reference = legacyGateEvaluator(input);
     const throws = compareGateGrid(input, (call, p, facts, lk) => {
       if (call.tool === 'getParcel') throw new Error('not built yet');
-      return namedDecision(evaluateCall(call, p, facts, lk, input.policy, input.subjectKind));
+      return reference(call, p, facts, lk);
     });
     expect(throws.length).toBe(grid.points.filter((p) => p.case.tool === 'getParcel').length);
     expect(formatGateGridMismatches(throws, 1)).toContain('actual   threw: not built yet');
@@ -140,9 +142,16 @@ describe('the id map between the legacy evaluator and the gate', () => {
     const legacy: GateEvaluate = (call, p, facts, lk) => evaluateCall(call, p, facts, lk, input.policy, input.subjectKind);
     const named = legacyGateEvaluator(input);
     let compared = 0;
+    const identityTools = identityToolsOf(input.identity!);
     for (const { case: c } of runGateGrid(input).points) {
       const raw = legacy(c.call, c.p, c.facts, input.lookups);
       const mapped = named(c.call, c.p, c.facts, input.lookups);
+      // The one check the legacy evaluator never made, in front of it in the reference: nothing is mapped there.
+      const notSubject = subjectOnlyDecision(c.call, c.p, input.subjectKind, identityTools);
+      if (notSubject) {
+        expect(mapped, c.key).toEqual(notSubject);
+        continue;
+      }
       expect({ ...mapped, rules: mapped.rules.map((r) => ({ ...r, id: '' })) }, c.key).toEqual({ ...raw, rules: raw.rules.map((r) => ({ ...r, id: '' })) });
       expect(mapped.rules.map((r) => r.id), c.key).toEqual(raw.rules.map((r) => nameOfLegacyId(r.id)));
       compared += 1;

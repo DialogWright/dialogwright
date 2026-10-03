@@ -42,9 +42,9 @@ describe('the shadow gate on the testkit', () => {
     const grid = runGateGrid(input, shadowGate(gateEvaluator(testkitApp), legacyGateEvaluator(input), { mode: 'report', report }));
     expect(report.mismatches, formatGateShadowReport(report)).toEqual([]);
     expect(report.compared).toBe(grid.points.length);
-    expect(report.compared).toBe(4 * 8 * 18 * (6 * 5 + 1 * 5 * 3 + 3 * 1));
+    expect(report.compared).toBe(4 * 9 * 18 * (6 * 5 + 1 * 5 * 3 + 3 * 1));
     expect(gateShadowUnexercised(report, FROZEN.rulesFor, true)).toEqual([]);
-    expect(Object.keys(report.rules).sort()).toEqual(['R8', 'attempts', 'confirmed', 'fields', 'identity', 'role', 'scope', 'unlisted']);
+    expect(Object.keys(report.rules).sort()).toEqual(['R8', 'attempts', 'confirmed', 'fields', 'identity', 'role', 'scope', 'subject', 'unlisted']);
   });
 
   async function run(app: App, report: GateShadowReport) {
@@ -78,7 +78,7 @@ describe('the shadow gate on the testkit', () => {
 
   it('finds a reference that differs by one role, in throw mode and in report mode', () => {
     const roles = { ...FROZEN.roles, createReport: { ...FROZEN.roles!.createReport, viewer: 'allow' as const } };
-    const altered = legacyGateEvaluator({ policy: { ...FROZEN, roles }, subjectKind: input.subjectKind });
+    const altered = legacyGateEvaluator({ policy: { ...FROZEN, roles }, subjectKind: input.subjectKind, identity: input.identity! });
     expect(() => runGateGrid(input, shadowGate(gateEvaluator(testkitApp), altered))).toThrow(GateShadowMismatchError);
     expect(() => runGateGrid(input, shadowGate(gateEvaluator(testkitApp), altered))).toThrow(/createReport by agent@2:viewer decided otherwise/);
     const report = createGateShadowReport();

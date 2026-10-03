@@ -67,6 +67,15 @@ export interface ToolOutcome {
 const IGNORE: Decision = { kind: 'ignore' };
 
 /**
+ * Whether the session's caller is a party who is not one of the app's subjects (one who acts for
+ * subjects, or any other kind): no identity check is theirs. An anonymous caller is not one: the
+ * gate decides what they may do.
+ */
+function isOtherParty(s: Session, subjectKind: string): boolean {
+  return !isAnonymous(s.principal) && s.principal.kind !== subjectKind;
+}
+
+/**
  * What the gate may know of the session for this call. The attempts are the ones the call's own
  * identity check has failed: the one-time code's for the app's code tool, the factors' for anything
  * else (the attempts rule runs only for the identity tools the app's rulesFor gives it to).
@@ -168,6 +177,10 @@ function identityCall<V>(s: Session, tool: string, params: Record<string, string
  */
 export function sendCodeAndAsk(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[], reissue = false): Decision {
   const identity = identityOf(appOf(s));
+  // Only one of the app's subjects is ever sent a code (the gate refuses any other party the identity
+  // tools, gate/compiled.ts subjectOnlyDecision); no flow asks for one for such a party, and should
+  // one, a person takes the call before anything is texted.
+  if (isOtherParty(s, identity.subjectKind)) return handoff(s, 'needs-human', acks);
   if (!hasCode(identity)) return handoff(s, 'needs-human', acks);
   if (!s.codeSent || reissue) {
     const { sendCodeTool, sendCodeParams } = identity;
@@ -317,9 +330,14 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
  * in its params: it is in no gate event, trace, slot or model request.
  */
 export function handleCodeDigit(s: Session, digit: string, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | null {
+  const app = appOf(s);
+  // A code is only ever a subject's to key (as sendCodeAndAsk): anyone else goes to a person.
+  if (isOtherParty(s, identityOf(app).subjectKind)) {
+    s.dtmfBuffer = '';
+    return handoff(s, 'needs-human', acks);
+  }
   if (!/^\d$/.test(digit)) return IGNORE;
   s.dtmfBuffer += digit;
-  const app = appOf(s);
   if (s.dtmfBuffer.length < codeLengthOf(app)) return IGNORE;
   const code = s.dtmfBuffer;
   s.dtmfBuffer = '';

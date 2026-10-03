@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { App } from '../core/app/types';
 import { gateOf } from '../core/app/lookup';
-import { RULE_ID, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
+import { identityToolsOf, RULE_ID, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { confirmationHash } from '../gate/lines';
 import { maskId } from '../gate/principal';
 import { isAnonymous, type GateDecision, type GateFacts, type Principal, type RuleResult } from '../gate/types';
@@ -10,8 +10,8 @@ import { gateGridCases, gateGridInput, type GateEvaluate, type GateGridCase, typ
 /**
  * Test support: the policy's invariants, read from the file. `policyInvariants(app)` puts the app's
  * gate through the gate grid (gateGrid.ts) and holds every decision to what the policy's named rules
- * say, whatever order they are written in: an action not listed is blocked for everyone; a caller
- * below an action's level is never allowed; scope, confirmed, role, fields and attempts each refuse
+ * say, whatever order they are written in: an action not listed is blocked for everyone; an identity
+ * tool is never allowed for a party who is not a subject; a caller below an action's level is never allowed; scope, confirmed, role, fields and attempts each refuse
  * what they exist to refuse; an allowed call ran every rule its action lists, and each passed;
  * raising a caller's level never turns an allow into a refusal; and the scope rule's answer does not
  * move with conversation state. Each failure names the invariant, the grid case and the rule.
@@ -22,13 +22,14 @@ import { gateGridCases, gateGridInput, type GateEvaluate, type GateGridCase, typ
  */
 
 export const INVARIANTS = [
-  'unlisted', 'level', 'scope', 'confirmed', 'role', 'fields', 'attempts', 'all-rules-passed', 'monotonic', 'scope-stable',
+  'unlisted', 'subject-only', 'level', 'scope', 'confirmed', 'role', 'fields', 'attempts', 'all-rules-passed', 'monotonic', 'scope-stable',
 ] as const;
 export type InvariantName = (typeof INVARIANTS)[number];
 
 /** What each invariant holds, in plain words. */
 export const INVARIANT_ABOUT: Readonly<Record<InvariantName, string>> = {
   unlisted: 'an action the policy does not list is blocked for everyone',
+  'subject-only': 'an identity tool (the verify tool, the one-time code\'s tools) is never allowed for a party who is not one of the app\'s subjects',
   level: 'a caller below the action\'s level (raised by the call\'s purpose where the action checks identity) is never allowed',
   scope: 'with scope, a call naming a subject outside the caller\'s scope, an empty one or an unknown one is never allowed',
   confirmed: 'with confirmed, a call is never allowed unless it sends exactly the confirmed fields and the caller confirmed exactly their values',
@@ -130,6 +131,7 @@ export function checkPolicyInvariants(app: App, options: PolicyInvariantOptions 
   const applied = Object.fromEntries(INVARIANTS.map((n) => [n, 0])) as Record<InvariantName, number>;
   const violations: PolicyInvariantViolation[] = [];
   const cases = gateGridCases(input);
+  const identityTools = input.identity ? identityToolsOf(input.identity) : [];
   // The scope lines seen per (tool, caller, subject param values): the first case's, to compare the rest with.
   const scopeSeen = new Map<string, { key: string; lines: RuleResult[] }>();
 
@@ -145,6 +147,12 @@ export function checkPolicyInvariants(app: App, options: PolicyInvariantOptions 
       applied.unlisted += 1;
       if (d.verdict !== 'BLOCK') broke('unlisted', '(not in the policy)', `${decisionText(d)}, but ${c.tool} is an action the policy does not list`);
       continue;
+    }
+
+    // The identity tools of the app's identity (not the gate's own list, so a gate that forgets one is caught).
+    if (identityTools.includes(c.tool) && !isAnonymous(c.p) && c.p.kind !== input.subjectKind) {
+      applied['subject-only'] += 1;
+      if (allowed) broke('subject-only', '(the identity tools are for the subject)', `ALLOW for a ${c.p.kind}, who is not one of the app's subjects`);
     }
 
     const identityRule = action.rules.find((r) => r.rule === 'identity');
