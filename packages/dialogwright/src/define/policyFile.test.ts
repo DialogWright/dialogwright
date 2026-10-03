@@ -2,7 +2,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { PolicyMatrix, PolicyTables } from '../core/app/types';
+import type { IdentityConfig, PolicyMatrix, PolicyTables } from '../core/app/types';
 import { compiledPolicyOf, sourceOf } from '../gate/compiled';
 import type { GateLookups, Principal, RuleContext, RuleOutcome } from '../gate/types';
 import { compareGateGrid, formatGateGridMismatches, gateGridInput, legacyGateEvaluator, type GateGridInput } from '../testing/gateGrid';
@@ -48,6 +48,15 @@ function gridMismatches(input: GateGridInput, compiled: PolicyTables): string[] 
   });
 }
 
+/** The keys of the identity configuration the old file shape had. */
+const OLD_IDENTITY_KEYS: readonly string[] = ['subjectKind', 'delegateKind', 'factorSlots', 'verifyTool', 'codeTool', 'sendCodeTool', 'sendCodeParams', 'failedPromptId'];
+
+/** A compiled identity as the old shape had it, and what only identity.yaml can say (the ladder's other parts). */
+function splitLadder(identity: Partial<IdentityConfig>): { rest: Record<string, unknown>; ladder: Record<string, unknown> } {
+  const entries = Object.entries(identity);
+  return { rest: Object.fromEntries(entries.filter(([k]) => OLD_IDENTITY_KEYS.includes(k))), ladder: Object.fromEntries(entries.filter(([k]) => !OLD_IDENTITY_KEYS.includes(k))) };
+}
+
 describe('compile equality: the testkit', () => {
   const frozen: PolicyTables = { ...FROZEN_TESTKIT_POLICY, customRules: TESTKIT_CUSTOM_RULES };
 
@@ -58,8 +67,11 @@ describe('compile equality: the testkit', () => {
   });
 
   it('identity.yaml compiles to the testkit\'s identity, its sendCodeParams the code\'s', () => {
-    const { sendCodeParams, ...rest } = TESTKIT_IDENTITY;
+    const { sendCodeParams, ...compiled } = TESTKIT_IDENTITY;
+    const { rest, ladder } = splitLadder(compiled);
     expect(rest).toEqual(FROZEN_TESTKIT_IDENTITY);
+    // What the old shape could not say: the levels' names.
+    expect(ladder).toEqual({ levelNames: { 1: 'verified', 2: 'confirmed by code' } });
     expect(typeof sendCodeParams).toBe('function');
     expect(testkitApp.identity).toBe(TESTKIT_IDENTITY);
     expect(TESTKIT_POLICY.maxAttempts).toBe(3);
@@ -95,7 +107,9 @@ describe('compile equality: the valid fixture', () => {
   const frozen: PolicyTables = { ...FROZEN_VALID_POLICY, customRules: { 'no-double-booking': noDoubleBooking } };
 
   it('identity.yaml compiles to the old file\'s identity', () => {
-    expect(identity).toEqual(FROZEN_VALID_IDENTITY);
+    const { rest, ladder } = splitLadder(identity);
+    expect(rest).toEqual(FROZEN_VALID_IDENTITY);
+    expect(ladder).toEqual({ levelNames: { 1: 'verified', 2: 'confirmed by code' } });
     expect(maxAttempts).toBe(FROZEN_VALID_POLICY.maxAttempts);
   });
 
@@ -276,12 +290,18 @@ describe('the checks', () => {
     ]);
   });
 
-  it('a sign-in that does not prove the top level, a code of another length, two delegate kinds, attempts with no identity.yaml', () => {
+  it('a sign-in that does not prove the top level, a code of another length, level names blank or the same, two delegate kinds, attempts with no identity.yaml', () => {
     expect(identityWith({ signIn: { level: 1 } })).toEqual([
       'signIn.level: a sign-in proves level 1, but the top of the ladder is level 2; a sign-in proves the top level -> write "level: 2"',
     ]);
     expect(identityWith({ levels: { ...IDENTITY.levels, 2: { ...IDENTITY.levels[2], factors: [{ otp: { length: 8 } }] } } })).toEqual([
       'levels["2"].factors[0].otp.length: a one-time code of 8 digits is not supported yet: the engine reads 6 -> write 6, or leave length out',
+    ]);
+    expect(identityWith({ levels: { 1: { ...IDENTITY.levels[1], name: '  ' }, 2: { ...IDENTITY.levels[2], name: 'Verified ' } } })).toEqual([
+      'levels["1"].name: level 1\'s name is blank -> name the level, as the console and the policy card will show it (for example "verified")',
+    ]);
+    expect(identityWith({ levels: { 1: IDENTITY.levels[1], 2: { ...IDENTITY.levels[2], name: ' Verified' } } })).toEqual([
+      'levels["2"].name: levels 1 and 2 are both called "Verified" -> give each level a name of its own, so the console and the policy card can tell them apart',
     ]);
     expect(identityWith({ principals: { subject: 'customer', delegates: { agent: { roles: ['viewer'] }, staff: { roles: ['clerk'] } } } })).toEqual([
       'principals.delegates: 2 delegate kinds (agent, staff); one is supported for now (the engine names a party who acts for subjects by one word) -> keep one kind, with every role under it',

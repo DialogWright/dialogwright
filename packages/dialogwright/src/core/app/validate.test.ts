@@ -134,6 +134,16 @@ describe('validateApp', () => {
   });
 });
 
+describe('validateApp: the identity ladder', () => {
+  const identity = testkitApp.identity!;
+
+  it('refuses at registration level names that are blank or the same', () => {
+    expect(() => validateApp({ ...testkitApp, identity: { ...identity, levelNames: { 1: ' ', 2: 'confirmed by code' } } })).toThrow('identity level 1 has no name');
+    expect(() => validateApp({ ...testkitApp, identity: { ...identity, levelNames: { 1: 'verified' } } })).toThrow('identity level 2 has no name');
+    expect(() => validateApp({ ...testkitApp, identity: { ...identity, levelNames: { 1: 'Verified', 2: 'verified' } } })).toThrow('identity levels 1 and 2 are both called "Verified"');
+  });
+});
+
 describe('formOf, slotSpecOf and toolOf', () => {
   it('return the testkit\'s definitions', () => {
     expect(formOf(testkitApp, 'track_parcel')).toBe(testkitApp.forms.track_parcel);

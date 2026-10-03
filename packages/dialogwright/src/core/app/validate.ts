@@ -133,6 +133,12 @@ export function validateApp(app: App): void {
       if (!Object.hasOwn(app.tools, tool)) fail(`identity ${role} "${tool}" is not a tool`);
       if (!Object.hasOwn(rulesFor, tool)) fail(`identity ${role} "${tool}" has no rules in the policy`);
     }
+    // A level's name is a label (the console, the policy card): it says something, and not what the other level says.
+    const { levelNames } = app.identity;
+    if (levelNames !== undefined) {
+      for (const [i, name] of [levelNames[1], levelNames[2]].entries()) if (typeof name !== 'string' || name.trim() === '') fail(`identity level ${i + 1} has no name`);
+      if (levelNames[1].trim().toLowerCase() === levelNames[2]!.trim().toLowerCase()) fail(`identity levels 1 and 2 are both called "${levelNames[1]}"`);
+    }
   }
   for (const tool of Object.keys(toolLevel)) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has a level for tool "${tool}", which has no rules`);
   const seenLinks = new Set<string>();

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import type { PolicyTables } from '../../core/app/types';
+import type { IdentityConfig, PolicyTables } from '../../core/app/types';
 import { checkApp } from '../check';
 import { main, type Io } from '../cli';
 import { compileIdentity, compilePolicy } from '../policyFile';
@@ -52,6 +52,13 @@ function dataOf(text: string): Record<string, any> {
 /** The file an app runs from today, which the converter's output must be (less the words an author adds). */
 const committed = (app: keyof typeof COMMITTED, file: 'policy' | 'identity'): string => readFileSync(join(COMMITTED[app], `${file}.yaml`), 'utf8');
 
+
+/** A compiled identity as the old shape had it: without what only identity.yaml says (the levels' names, and the ladder's other parts). */
+function oldShape(identity: IdentityConfig): Partial<IdentityConfig> {
+  const old = ['subjectKind', 'delegateKind', 'factorSlots', 'verifyTool', 'codeTool', 'sendCodeTool', 'sendCodeParams', 'failedPromptId'];
+  return Object.fromEntries(Object.entries(identity).filter(([k]) => old.includes(k)));
+}
+
 describe('each app converts to the files it runs from', () => {
   it('the library fixture, from its old policy.yaml: nothing dropped', () => {
     const converted = convertFolder(join(LEGACY, 'library'));
@@ -77,7 +84,7 @@ describe('each app converts to the files it runs from', () => {
     const identity = parse(converted.files['identity.yaml']!);
     expect(identity).toEqual(parse(committed('valid', 'identity')));
     const compiled = compileIdentity(identitySchema.parse(identity));
-    expect(compiled.identity).toEqual(FROZEN_VALID_IDENTITY);
+    expect(oldShape(compiled.identity)).toEqual(FROZEN_VALID_IDENTITY);
     expect(compiled.maxAttempts).toBe(FROZEN_VALID_POLICY.maxAttempts);
     // What compiles is the old tables less the dropped rows (the roles stay in identity.yaml, which the role wording's lines are over).
     const policy = compilePolicy(policySchema.parse(parse(converted.files['policy.yaml']!)), { maxAttempts: compiled.maxAttempts });
@@ -94,7 +101,7 @@ describe('each app converts to the files it runs from', () => {
     expect(parse(toText(converted.identity!))).toEqual(parse(committed('testkit', 'identity')));
     expect(converted.dropped).toEqual([]);
     const compiled = compileIdentity(identitySchema.parse(parse(toText(converted.identity!))));
-    expect(compiled.identity).toEqual(FROZEN_TESTKIT_IDENTITY);
+    expect(oldShape(compiled.identity)).toEqual(FROZEN_TESTKIT_IDENTITY);
     const policy = compilePolicy(policySchema.parse(parse(toText(converted.policy))), { maxAttempts: compiled.maxAttempts });
     expect(comparable(policy)).toEqual(comparable(FROZEN_TESTKIT_POLICY));
   });

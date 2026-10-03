@@ -169,8 +169,8 @@ export interface CompiledIdentity {
 }
 
 /**
- * identity.yaml (the new shape, already checked) as the lifecycle's identity configuration, and its
- * attempts for the policy (compilePolicy's maxAttempts). Throws for a ladder with no level 2, which
+ * identity.yaml (the new shape, already checked) as the lifecycle's identity configuration (with
+ * the levels' names, labels for the console), and its attempts for the policy (compilePolicy's maxAttempts). Throws for a ladder with no level 2, which
  * `check` refuses: the engine's step-up always ends with the one-time code for now.
  */
 export function compileIdentity(file: IdentityYaml, options: CompileIdentityOptions = {}): CompiledIdentity {
@@ -187,6 +187,7 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
   identity.sendCodeTool = two.send;
   if (options.sendCodeParams !== undefined) identity.sendCodeParams = options.sendCodeParams;
   if (one.failedPrompt !== undefined) identity.failedPromptId = one.failedPrompt;
+  identity.levelNames = Object.freeze({ 1: one.name, 2: two.name });
   return { identity, maxAttempts: file.attempts };
 }
 
@@ -357,8 +358,9 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
 
 /**
  * identity.yaml against policy.yaml and the code: the factors are slots, the identity tools are
- * tools with an action each, the failed line is a prompt, the ladder has what the engine runs (a
- * level 2 with a six-digit code, for now), a sign-in proves the top level, and one delegate kind.
+ * tools with an action each, the failed line is a prompt, each level has a name of its own, the
+ * ladder has what the engine runs (a level 2 with a six-digit code, for now), a sign-in proves the
+ * top level, and one delegate kind.
  */
 export function identityProblems(c: PolicyCheckInput): Problem[] {
   const out: Problem[] = [];
@@ -383,6 +385,14 @@ export function identityProblems(c: PolicyCheckInput): Problem[] {
   }
   if (one.failedPrompt !== undefined && c.prompts && !c.prompts.includes(one.failedPrompt)) {
     at(I, ['levels', '1', 'failedPrompt'], `prompt "${one.failedPrompt}" is not in prompts.yaml`, `${renameHint(one.failedPrompt, c.prompts)}add "${one.failedPrompt}:" to prompts.yaml with its text and interruptible`);
+  }
+  // A level's name is a label (the console, the policy card): it must say something, and not what another level says.
+  const names: [string, string | undefined][] = [['1', one.name], ['2', two?.name]];
+  for (const [level, name] of names) {
+    if (name !== undefined && name.trim() === '') at(I, ['levels', level, 'name'], `level ${level}'s name is blank`, `name the level, as the console and the policy card will show it (for example "${level === '1' ? 'verified' : 'confirmed by code'}")`);
+  }
+  if (two && one.name.trim() !== '' && one.name.trim().toLowerCase() === two.name.trim().toLowerCase()) {
+    at(I, ['levels', '2', 'name'], `levels 1 and 2 are both called "${two.name.trim()}"`, 'give each level a name of its own, so the console and the policy card can tell them apart');
   }
   if (!two) {
     at(I, ['levels'], 'the ladder has no level 2; for now the engine\'s step-up always ends with the one-time code, so an app that verifies callers needs it', 'add "2: { name: <its name>, factors: [{ otp: { length: 6 } }], send: <the tool that sends the code>, verify: <the tool that checks it> }" under levels');

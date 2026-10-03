@@ -204,6 +204,12 @@ export interface IdentityConfig {
   sendCodeParams?(s: Session): Record<string, string>;
   /** The line said before the factors are asked again after a failed match. Without it, 'identity_failed'. */
   failedPromptId?: string;
+  /**
+   * What each level of the ladder is called (identity.yaml's `name`, e.g. 1: "verified"): labels for
+   * the console and the policy card. The engine records and decides on the numbers; a name never
+   * reaches the session, the model, an outcome or an audit row.
+   */
+  levelNames?: Readonly<{ 1: string; 2?: string }>;
 }
 
 /**
