@@ -153,7 +153,7 @@ Every requirement of the paragraph, and the scripted calls in `fixtures/scenario
 | (not in the paragraph) | manager: "text a one-time code" refused | The choice under "Choices the paragraph left open". |
 | The outage map and office hours | the app map: two informational intents, keys 4 and 5 | Matches; the card has no policy for them (they call no action). |
 | A person at any time | the app map: `agent` and key 0 | Matches; covered by the scripted calls `asks-for-a-person*`, `person-*` and `manager-asks-for-a-person`. |
-| | Defaults: "account by its last four; account by its last four" | Two slots are account numbers (the factor `accountId` and the manager's `account`), each with the noun `account`, so the card lists the redaction twice. Not a policy mismatch; the card could merge identical entries (a framework change, noted for later). |
+| | Defaults: "account by its last four" | Two slots are account numbers (the factor `accountId` and the manager's `account`), each with the noun `account`. The card first listed the redaction twice; it now says an identical entry once. |
 
 The forms now declare `calls`, so the app map draws each form to its actions and their rules, and its "Dangling references" checks every action is reached.
 
