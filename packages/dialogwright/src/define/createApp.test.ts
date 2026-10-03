@@ -177,7 +177,7 @@ describe('createApp', () => {
 
   it('keeps the vocabulary of the template neutral and its data invented', () => {
     // One industry's words, written in pieces so that this file keeps to the rule it checks.
-    const words = ['cla' + 'ims?', 'cover' + 'age', 'insur' + 'ance', 'insur' + 'er', 'bro' + 'ker', 'mem' + 'ber', 'policy' + 'holder', 'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent', 'har' + 'bor'];
+    const words = ['cla' + 'ims?', 'cover' + 'age', 'insur' + 'ance', 'insur' + 'er', 'bro' + 'ker', 'mem' + 'ber', 'policy' + 'holder', 'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent', 'gene' + 'sys'];
     const banned = new RegExp(`\\b(${words.join('|')})\\b`, 'i');
     for (const identity of [false, true]) {
       for (const [file, text] of templateFiles(identity)) {
