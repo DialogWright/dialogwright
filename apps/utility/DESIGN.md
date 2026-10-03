@@ -109,12 +109,12 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 | What | The framework | What I did | Cost |
 |---|---|---|---|
 | An address | no address slot type | `text` with `say: null`; the read-back quotes the caller's words | none (pattern known) |
-| First payment within 30 days | `dateInRange` had no "today plus N" bound when the app was built | first a custom rule (`first-date-within-30-days`); now `notAfter: today+30`, and the custom rule is gone (Task 6) | small; closed |
+| First payment within 30 days | `dateInRange` had no "today plus N" bound when the app was built | first a custom rule (`first-date-within-30-days`); now `notAfter: today+30`, and the custom rule is gone (after the trial) | small; closed |
 | One confirmed list per app | outage and plan share one list | union of fields, '' for the ones a write lacks | small |
 | Delegates on the phone | delegates only on a signed-in chat | property managers use the chat | none |
 | The address read back | `pnpm check` refuses `say: null` with the default `redact: length`; patterns.md does not mention it | `redact: none` on `place`: the address is in the trace and the audit as said | a few minutes |
 | An address said with the request | a `text` slot keeps the whole turn | the read-back quotes the whole sentence ("the power is out at 22 Alder Street and nothing works"); the caller still confirms it | none; a real address type would fix it |
-| Informational intents on the keypad menu | when the app was built, `handleDtmf` in the engine ignored a menu key that was not a form or `agent` (the caller heard nothing) | first left the outage map and hours off the menu; the engine now plays the line, so they are back as 4 and 5 (Task 6), with scripted calls for each | a scenario and some reading of turn.ts; closed |
+| Informational intents on the keypad menu | when the app was built, `handleDtmf` in the engine ignored a menu key that was not a form or `agent` (the caller heard nothing) | first left the outage map and hours off the menu; the engine now plays the line, so they are back as 4 and 5 (after the trial), with scripted calls for each | a scenario and some reading of turn.ts; closed |
 | Nothing owed on the account | a bound refuses only when the write is tried, after the summary; `limit` cannot stop the form before its questions for a subject | the summary reads "$0.00 in three payments" and the gate then refuses with `plan_amount_outside` | a clumsy call for that one caller |
 | A delegate's answers inside a form | corpus lines inside a form cannot carry `as`, so they are seeded with a customer | the `account` answers run as a customer in the corpus; the manager's path is covered by scripted calls with `as` | none |
 | The framework's own test of policy.matrix folders | `packages/dialogwright/src/define/matrixCommand.test.ts` listed the workspace's matrix folders exactly, so a new app's `policy.matrix` failed it | left failing during the trial (the framework was out of bounds); the test now asserts it contains the framework's folders, as the card and map tests do | `pnpm -r test` was red until then; closed |
@@ -138,7 +138,7 @@ Every requirement of the paragraph, and the scripted calls in `fixtures/scenario
 
 ## The policy card read back
 
-`POLICY.md` (`pnpm policy:card apps/utility`) and `APP-MAP.md` (`pnpm app:diagram apps/utility`), read line by line against the paragraph (Task 6). No line of the policy needed a change; what the reading found:
+`POLICY.md` (`pnpm policy:card apps/utility`) and `APP-MAP.md` (`pnpm app:diagram apps/utility`), read line by line against the paragraph (after the trial). No line of the policy needed a change; what the reading found:
 
 | Sentence of the paragraph | What the card or the map says | Finding |
 |---|---|---|
@@ -162,7 +162,7 @@ The forms now declare `calls`, so the app map draws each form to its actions and
 | Entry | Field | Before -> after | Why |
 |---|---|---|---|
 | corpus `pl-02` | `slots.place` | the old street name -> `200 Heron Row` | The invented street was renamed in the fixture data, the corpus line and two scripted calls; the read-back is the caller's words, so the baseline follows them. |
-| corpus `ag-10` to `ag-13`; scenarios `person-keypad-menu`, `person-while-verifying`, `person-at-code-prompt`, `person-at-outage-summary`, `person-at-plan-summary`, `keypad-menu-outage-map`, `keypad-menu-office-hours-then-balance` | (new entries) | none -> the stub's outcome | Added in Task 6: a person asked for at each place a caller can be (the keypad menu, while verifying, at the code prompt, at each summary) and the two answers' keys. Only these entries were added, each read in its transcript (`regress --scenario`, `--corpus`) before it went in: every person request is `handoff live-agent` at the caller's level then, the map's and the hours' keys play their line and give the menu back, and the hours key is followed by the balance on the keypad. No existing entry changed. |
+| corpus `ag-10` to `ag-13`; scenarios `person-keypad-menu`, `person-while-verifying`, `person-at-code-prompt`, `person-at-outage-summary`, `person-at-plan-summary`, `keypad-menu-outage-map`, `keypad-menu-office-hours-then-balance` | (new entries) | none -> the stub's outcome | Added after the trial: a person asked for at each place a caller can be (the keypad menu, while verifying, at the code prompt, at each summary) and the two answers' keys. Only these entries were added, each read in its transcript (`regress --scenario`, `--corpus`) before it went in: every person request is `handoff live-agent` at the caller's level then, the map's and the hours' keys play their line and give the menu back, and the hours key is followed by the balance on the keypad. No existing entry changed. |
 
 Changes that needed no edit: the thirty-day bound moved from the custom rule `first-date-within-30-days` to `dateInRange` (`notAfter: today+30`). The rule that decides `plan-first-date-too-late` is now `dateInRange` (its line reads `firstDate after today+30 2026-10-18`), with the same verdict, reason (`date-range`) and line (`plan_date_outside`); the baseline records the outcome, not the deciding rule, so it did not change. `policy.matrix` was written again for it: the rule list of `setUpPlan` and the custom rules section changed, and no verdict did.
 
