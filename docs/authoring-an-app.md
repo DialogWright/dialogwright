@@ -199,6 +199,7 @@ actions:
 - `dateInRange` and `limit` hold one param's value to bounds; the next section has them.
 - `purposes` (`purposes: { renew: { level: 1 } }`) is the level a purpose needs when it is more than its first action's.
 - `wording` holds the words the rules use in the audit and the console.
+- `redact` names the fields of an action's result withheld from a party who acts for subjects; [its own section](#redaction-per-principal-redact) has it.
 
 A file written before this shape (`toolLevel`, `rulesFor`, ...) is converted with `dialogwright policy:convert <folder>`, which keeps its decisions and its comments, and says which rows it dropped because no rule read them.
 
@@ -254,6 +255,31 @@ A bound comes only from the app's code and systems, never from the session's fac
 
 Each records itself under its name (`dateInRange`, `limit`) with lines like `amount at least 0.01, at most orderTotal(orderId ...1234) 120` and `returnDate outside returnWindow(orderId ...1234) 2026-09-20..2026-10-20`: the param's name and the bounds it was held to (today's date, a literal, what a lookup gave), with the id a lookup was called with masked to its last four. The call's own value is never in the line, since it may be a value the app redacts, and a line goes to the audit as it is.
 
+#### Redaction per principal: `redact`
+
+A party who acts for subjects (a depot agent for its customers, say) may read a record without being shown all of it. The tool returns the whole record, and the policy says what each kind of party, or one of its roles, does not see:
+
+```yaml
+redact:
+  agent:
+    getParcel: [safePlace]
+    listParcels: [safePlace]
+  agent.clerk:
+    getParcel: []
+    listParcels: []
+```
+
+```ts
+getParcel: { run: (call, sys) => { /* the whole parcel */ }, fields: ['safePlace'] },
+```
+
+- A key is a delegate kind from identity.yaml (`agent`), or the kind and one of its roles (`agent.clerk`). A role's list for an action replaces its kind's, so an empty list shows a role what its kind may not see. A role with no row of its own gets the kind's.
+- A tool declares the fields of its result the policy may withhold (`fields` on the tool, in code): of the value when it is an object, of each item when it is a list. `redact` may name only those, and only actions the policy lists.
+- The engine strips them in one place, right after the tool runs (the lifecycle's `callTool`): each withheld field is set to `null`, and `redacted: <fields>` is added to the call's summary (`in_transit; redacted: safePlace`). Nothing else ever sees the whole value: not the form hooks (`onEntry`, `complete`, `callTool`'s `value`, whose `redacted` lists what was withheld), the facts, the lines, the trace, the console or the audit. Write the tool's own summary without these fields: it is written before the stripping.
+- A subject acting for themselves is never redacted, and neither is an anonymous caller. The gate's decisions do not change; only what the call hands on does.
+- `check` refuses a key that is not a delegate kind or one of its roles (the subject kind included), an action the policy does not list, and a field the tool does not declare, each with the closest name. An app built in code (`validateApp`) refuses the same when it is registered. A tool with fields that returns anything but an object or a list of objects throws, so a value is never handed on whole.
+- The policy card has a section, "What is withheld", with a row per kind or role and action.
+
 #### Testing the policy against the file
 
 Three tests hold the gate to what policy.yaml says, each from `'dialogwright/testing'` and each run over the gate grid (every action crossed with every kind of caller, subject and fact, from the app's `testing.policyMatrix()`):
@@ -275,7 +301,7 @@ Three tests hold the gate to what policy.yaml says, each from `'dialogwright/tes
 
 `POLICY.md`, beside policy.yaml, is the policy in plain English for someone who will not read YAML: a table with one row per action, written from the compiled app (the gate's own rules, so it cannot say what the gate does not do). Write it with `pnpm policy:card <folder>` (with no folder, every `POLICY.md` in the workspace) and commit it; GitHub renders it, diagrams included.
 
-It has the files' config hashes (policy.yaml and identity.yaml, as every call's audit record carries them); the defaults ("anything not listed is refused", identifiers by their last four, the attempts, what is recorded masked); the identity ladder (each level by its name, what the caller gives in the words of the slots' nouns, the tools that check it, the code, the sign-in) with a Mermaid diagram of it; who the app serves and who acts for them, with what each role gets; one row per action, with its label (`say:` in policy.yaml, else the tool id), its level by name and each rule in words with its parameters (the scope rule's param as a noun, the confirmed values, the fields sent, a range rule's bounds, a custom rule's static `description`); and a second diagram of the actions grouped by level with their rules and the roles that are refused or handed to a person. Write `say:` for every action, and a `description` for every custom rule, in the words a reviewer would use. A role is shown by its id spelt out (`office_admin` as "office admin").
+It has the files' config hashes (policy.yaml and identity.yaml, as every call's audit record carries them); the defaults ("anything not listed is refused", identifiers by their last four, the attempts, what is recorded masked); the identity ladder (each level by its name, what the caller gives in the words of the slots' nouns, the tools that check it, the code, the sign-in) with a Mermaid diagram of it; who the app serves and who acts for them, with what each role gets; what is withheld from them (`redact`), where anything is; one row per action, with its label (`say:` in policy.yaml, else the tool id), its level by name and each rule in words with its parameters (the scope rule's param as a noun, the confirmed values, the fields sent, a range rule's bounds, a custom rule's static `description`); and a second diagram of the actions grouped by level with their rules and the roles that are refused or handed to a person. Write `say:` for every action, and a `description` for every custom rule, in the words a reviewer would use. A role is shown by its id spelt out (`office_admin` as "office admin").
 
 `expectPolicyCard(app, file)` (from `'dialogwright/testing'`) fails a test on any difference between the page and what the app generates, with a line diff and the command that writes it; put it beside the policy matrix's test. The card is a golden: a policy change is a diff of two files a reviewer reads, and only the command writes it, never CI.
 

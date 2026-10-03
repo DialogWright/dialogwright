@@ -138,8 +138,12 @@ export interface AppContext {
   tc: TurnContext;
   /** The turn's output: a hook may record a KB source or queue an effect on it. */
   out: TurnOut;
-  /** A call through the gate, recorded like every other; `value` is null unless the gate allowed it. */
-  callTool(call: ToolCall): { decision: GateDecision; value: unknown };
+  /**
+   * A call through the gate, recorded like every other; `value` is null unless the gate allowed it.
+   * `redacted` names the fields of the value the policy withheld from the caller (policy.yaml
+   * `redact:`, each now null), present only when it withheld any.
+   */
+  callTool(call: ToolCall): { decision: GateDecision; value: unknown; redacted?: readonly string[] };
 }
 
 /** A form's entry hook: an AppContext with the turn's acks so far. */
@@ -270,6 +274,15 @@ export interface ToolDef {
    * the whole session, raw slots included, so read from it only what a row may carry.
    */
   audit?(t: ToolAuditInput): AuditDraft[];
+  /**
+   * The fields of what the tool returns that the policy may withhold from a party acting for
+   * subjects (policy.yaml `redact:`): of the value when it is an object, of each item when it is a
+   * list. Only a field named here may be named there. The tool returns the whole record; the engine
+   * sets each withheld field to null after the tool runs (core/resultRedaction.ts), before anything
+   * else sees the value, and adds `redacted: <fields>` to the summary. The summary itself is the
+   * tool's, written from the whole record: it must never carry one of these fields.
+   */
+  fields?: readonly string[];
 }
 
 /** What a tool's audit hook (ToolDef.audit) is given about a call the gate let run. */
@@ -357,6 +370,13 @@ export interface PolicyTables {
   customRules?: Readonly<Record<string, (c: RuleContext) => RuleOutcome>>;
   /** The words the built-in rules' lines use, so the console and the audit read in the app's terms. Without it, neutral words. */
   wording?: PolicyWording;
+  /**
+   * The fields of a tool's result withheld from a party acting for subjects (policy.yaml `redact:`),
+   * by who asks: a delegate kind (`agent`), or a kind and one of its roles (`agent.clerk`), whose
+   * row for a tool replaces the kind's. Each tool's list names fields the tool declares
+   * (ToolDef.fields). A subject acting for themselves is never redacted. Without it, nothing is.
+   */
+  redact?: Readonly<Record<string, Readonly<Record<ToolName, readonly string[]>>>>;
 }
 
 /** R2: the param naming a call's subject; `via: 'record'` when it is a record id to resolve to its owner. */

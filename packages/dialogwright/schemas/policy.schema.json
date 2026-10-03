@@ -419,6 +419,30 @@
       },
       "additionalProperties": false,
       "description": "The words the gate's built-in rules use in their description and compared lines, so the console and the audit read in the app's terms. Without it, neutral words."
+    },
+    "redact": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_.-]*)?$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "additionalProperties": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "description": "The fields of the action's result withheld (set to null) from this party. Each must be one the tool declares (its fields, in code). An empty list withholds nothing, so a role can see what its kind may not."
+        },
+        "description": "The actions whose results are redacted for this party, each with the fields withheld."
+      },
+      "description": "What a party who acts for subjects does not get to see of what an action returns, by delegate kind (agent) or by kind and role (agent.clerk), whose list for an action replaces the kind's. The tool returns the whole record and the engine strips the fields before any hook, line, trace, console or audit sees it. A subject acting for themselves is never redacted. Default: nothing is withheld."
     }
   },
   "required": [

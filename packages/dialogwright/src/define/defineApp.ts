@@ -18,7 +18,7 @@ import { RULE_IDS } from '../gate/policy';
 import { NAMED_RULE_IDS } from '../gate/compiled';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { ruleDefinitionProblems } from '../gate/defineRule';
-import { compileIdentity, compilePolicy, customRulesNamed, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems } from './policyFile';
+import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, toolFieldProblems } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
 
@@ -381,6 +381,7 @@ export function crossLink(
     locate,
     locateKey,
     tools,
+    toolFields: Object.fromEntries(tools.map((tool) => [tool, declaredFields(code.tools?.[tool])])),
     slots: linked.known,
     addSlot,
     customRules: Object.keys(customRules),
@@ -391,6 +392,9 @@ export function crossLink(
     codePath,
   };
   problems.push(...policyProblems(check), ...identityProblems(check));
+  for (const tool of tools) {
+    for (const message of toolFieldProblems(code.tools?.[tool])) inTs(['tools', tool, 'fields'], `tool "${tool}": ${message}`, `make ${inCode('tools', tool, 'fields')} a list of the distinct fields of its result the policy may withhold`);
+  }
   const named = customRulesNamed(policy);
   for (const [id, rule] of Object.entries(customRules)) {
     if (isBuiltInRuleId(id)) inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's custom: rules; ${NAMED_RULE_IDS.includes(id) ? `"${id}" is a built-in rule written by its name with its parameters` : `the built-in ids are R0, ${RULE_IDS.join(', ')}`}`);

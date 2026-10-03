@@ -65,3 +65,14 @@ actions:
 # Reporting a parcel missing needs the code from the start, though its entry call needs only level 1.
 purposes:
   report_missing: { level: 2 }
+
+# What a depot agent does not see of a parcel: where the customer asked for it to be left. A clerk,
+# who follows up the reports of missing parcels, does. The tools return the whole parcel and
+# declare the fields that may be withheld; the engine strips them.
+redact:
+  agent:
+    getParcel: [safePlace]
+    listParcels: [safePlace]
+  agent.clerk:
+    getParcel: []
+    listParcels: []

@@ -12,7 +12,8 @@ import {
 
 /**
  * Test support: the policy card, a one-page plain-English account of what an app's agent may do,
- * written from the compiled app (the gate's named rules, gateOf; the identity configuration) and
+ * written from the compiled app (the gate's named rules, gateOf; the identity configuration; what
+ * the policy withholds from a party acting for subjects, PolicyTables.redact) and
  * kept as POLICY.md beside policy.yaml, so compliance reads a page and not a file of rules. A page,
  * and two Mermaid diagrams GitHub renders: the identity ladder, and the actions grouped by level
  * with their rules and what each role gets.
@@ -271,6 +272,29 @@ function principalsSection(app: App, source: PolicySource): string[] {
   return out;
 }
 
+/**
+ * What a party who acts for subjects does not see of what an action returns (policy.yaml `redact:`),
+ * by kind and by role; none for an app that withholds nothing, so its card has no such section.
+ */
+function redactionSection(app: App, source: PolicySource): string[] {
+  const rows = Object.entries(app.policy.redact ?? {});
+  if (rows.length === 0) return [];
+  const subjectKind = identityOf(app).subjectKind;
+  const out = ['## What is withheld', ''];
+  out.push(`A party who acts for ${subjectKind}s does not see every field of what some actions return: the engine sets these fields to nothing after the action runs, before a line, the session, the trace, the console or the audit reads the result, and the record of the call says which were withheld. A row for a role replaces its kind's for that action. ${capitalize(article(subjectKind))} ${subjectKind} acting for themselves sees the whole of their own record.`);
+  out.push('', '| Who | Action | Fields withheld |', '| --- | --- | --- |');
+  for (const [who, byTool] of rows) {
+    const dot = who.indexOf('.');
+    const label = dot < 0 ? `${who}, any role` : `${who.slice(0, dot)}, as ${roleLabel(who.slice(dot + 1))}`;
+    for (const [tool, fields] of Object.entries(byTool)) {
+      const action = source.actions[tool]?.say;
+      const named = action === undefined ? code(tool) : `${cell(capitalize(action))} (${code(tool)})`;
+      out.push(`| ${cell(label)} | ${named} | ${fields.length === 0 ? 'none' : fields.map(code).join(', ')} |`);
+    }
+  }
+  return out;
+}
+
 function actionsSection(app: App, source: PolicySource): string[] {
   const out = ['## Actions', '', 'One row per action the agent may take. Anything else is refused.', ''];
   out.push('| Action | Level | The gate checks, in order |', '| --- | --- | --- |');
@@ -316,6 +340,9 @@ function policyDiagram(app: App, source: PolicySource): string[] {
   return out;
 }
 
+/** A section and the blank line after it; nothing for a section that is not there. */
+const withGap = (lines: string[]): string[] => (lines.length === 0 ? [] : [...lines, '']);
+
 /** The policy card for `app`, as Markdown. `dir` is the app's folder: the config hashes of policy.yaml and identity.yaml are read from it when the app carries none. */
 export function policyCardText(app: App, dir: string): string {
   const source = gateOf(app).source;
@@ -328,6 +355,7 @@ export function policyCardText(app: App, dir: string): string {
     '',
     ...principalsSection(app, source),
     '',
+    ...withGap(redactionSection(app, source)),
     ...actionsSection(app, source),
     '',
     '### Actions by level, with their rules and what each role gets',

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { checkAlways, identifier, level, name, text, unique } from './common';
+import { checkAlways, identifier, level, matching, name, text, unique } from './common';
 import { closest } from '../problems';
 import { literalOrder, parseDateBound, parseLookupRef, parseNumberBound } from '../../gate/bounded';
 
@@ -33,11 +33,20 @@ import { literalOrder, parseDateBound, parseLookupRef, parseNumberBound } from '
  *         - dateInRange: { field: returnDate, notAfter: today, within: returnWindow(orderId) }
  *   purposes:
  *     file_request: { level: 2 }
+ *   redact:
+ *     agent:
+ *       getRecord: [notes]
+ *     agent.clerk:
+ *       getRecord: []
  *
  * A rule with no parameters is its bare name (`identity`, `attempts`); a rule with parameters is a
  * map of its name to them, one rule per list entry, so each rule is one line to read and to diff.
  * The range rules' bounds (dateInRange, limit) are literals or references to the app's lookups,
  * `<lookup>(<param>)` or `<lookup>(<param>).<field>` (../../gate/bounded.ts), read here, never run.
+ *
+ * `redact:` names, by who asks (a delegate kind, or `<kind>.<role>` for one role's own list), the
+ * fields of an action's result withheld from a party who acts for subjects; the tool declares the
+ * fields it may lose (ToolDef.fields), and the engine strips them (core/resultRedaction.ts).
  *
  * An app written before this shape (toolLevel, rulesFor, ... : the gate's tables as they are) is
  * converted with `dialogwright policy:convert`; nothing reads that shape any more.
@@ -376,6 +385,28 @@ const action = z
   })
   .describe('One action: what it is, the identity level it needs and the rules the gate runs before it.');
 
+/**
+ * Who a row of `redact:` is for: a delegate kind (a lowercase word, as identity.yaml writes it), or
+ * the kind and one of its roles, joined by a dot (`agent.clerk`). A kind has no dot, so the first
+ * dot splits the two.
+ */
+const redactWho = () =>
+  matching(
+    /^[a-z][a-z0-9_]*(\.[A-Za-z][A-Za-z0-9_.-]*)?$/,
+    'is not a delegate kind, or a kind and one of its roles: write <kind> or <kind>.<role>',
+    'write the kind as identity.yaml has it under principals.delegates (for example "agent"), or the kind, a dot and one of its roles (for example "agent.clerk")',
+  );
+
+/** policy.yaml's redact section, as written: who asks, then each tool and the fields of its result withheld from them. */
+export const policyRedact = z
+  .record(
+    redactWho(),
+    z
+      .record(identifier(), unique(identifier(), 'field').describe('The fields of the action\'s result withheld (set to null) from this party. Each must be one the tool declares (its fields, in code). An empty list withholds nothing, so a role can see what its kind may not.'))
+      .describe('The actions whose results are redacted for this party, each with the fields withheld.'),
+  )
+  .describe('What a party who acts for subjects does not get to see of what an action returns, by delegate kind (agent) or by kind and role (agent.clerk), whose list for an action replaces the kind\'s. The tool returns the whole record and the engine strips the fields before any hook, line, trace, console or audit sees it. A subject acting for themselves is never redacted. Default: nothing is withheld.');
+
 export const policySchema = z
   .strictObject({
     actions: z
@@ -386,6 +417,7 @@ export const policySchema = z
       .default({})
       .describe('The identity level each purpose needs (what a caller wants done, a form id, before any tool is called), when it is more than its first action\'s. Default: none.'),
     wording: policyWording.optional(),
+    redact: policyRedact.optional(),
   })
   .describe('policy.yaml: what the agent may do, action by action. Custom rule functions stay in code; this file names them.');
 

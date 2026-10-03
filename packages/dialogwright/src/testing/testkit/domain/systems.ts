@@ -7,6 +7,8 @@ export interface ParcelView {
   readonly item: string;
   readonly status: ParcelStatus;
   readonly day: string;
+  /** Where it may be left; withheld from a depot viewer (policy.yaml redact, the tools' fields). */
+  readonly safePlace: string | null;
 }
 
 /** A missing-parcel report the line filed. */
@@ -29,7 +31,7 @@ export interface AccountView {
 }
 
 function view(p: Parcel): ParcelView {
-  return { number: p.number, item: p.item, status: p.status, day: p.day };
+  return { number: p.number, item: p.item, status: p.status, day: p.day, safePlace: p.safePlace };
 }
 
 /** Sunday is 0, as Date reads it. */

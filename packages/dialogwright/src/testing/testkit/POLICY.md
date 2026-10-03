@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `9afd79f5385229fdab24a5349c42a3884868168066e286545e34ee183b03d200` |
+| `policy.yaml` | `39a14e79e04b152e962c81605af16fd8716c2716f3a51b2318a399a28a731c5c` |
 | `identity.yaml` | `6692c172f4a0b784e6993d801acfd608af150561fa09e2f75e29c2eea1389d3a` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -54,6 +54,17 @@ What each role may do, in the actions that have a role rule (a role a rule does 
 | --- | --- | --- | --- |
 | viewer | none | none | report a missing parcel |
 | clerk | none | report a missing parcel | none |
+
+## What is withheld
+
+A party who acts for customers does not see every field of what some actions return: the engine sets these fields to nothing after the action runs, before a line, the session, the trace, the console or the audit reads the result, and the record of the call says which were withheld. A row for a role replaces its kind's for that action. A customer acting for themselves sees the whole of their own record.
+
+| Who | Action | Fields withheld |
+| --- | --- | --- |
+| agent, any role | Read a parcel (`getParcel`) | `safePlace` |
+| agent, any role | List the customer's parcels (`listParcels`) | `safePlace` |
+| agent, as clerk | Read a parcel (`getParcel`) | none |
+| agent, as clerk | List the customer's parcels (`listParcels`) | none |
 
 ## Actions
 
