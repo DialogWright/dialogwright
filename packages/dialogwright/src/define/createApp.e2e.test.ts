@@ -31,9 +31,10 @@ function link(app: string): void {
 
 /** Runs a node script in `cwd`, outside this test run's own vitest, and returns what it printed. */
 function node(cwd: string, script: string, args: string[]): string {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('VITEST')));
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('VITEST') && key !== 'FORCE_COLOR')), NO_COLOR: '1' };
   try {
-    return execFileSync(process.execPath, [script, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 });
+    // Without colour codes, which a CI run turns on whatever is asked, so the output can be read as text.
+    return execFileSync(process.execPath, [script, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 }).replace(/\u001b\[[0-9;]*m/g, '');
   } catch (error) {
     const { stdout, stderr } = error as { stdout?: string; stderr?: string };
     throw new Error(`${script.split('/').slice(-3).join('/')} ${args.join(' ')} failed in ${cwd}:\n${stdout ?? ''}${stderr ?? ''}`, { cause: error });
