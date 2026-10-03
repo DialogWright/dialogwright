@@ -72,7 +72,7 @@ describe('defineApp: the library fixture', () => {
   });
 
   it('keeps the contract\'s field order, the files\' map order, and no key standing for nothing', () => {
-    expect(Object.keys(libraryApp)).toEqual(['id', 'intents', 'menu', 'forms', 'slots', 'tools', 'policy', 'systems', 'wording', 'carrySlots', 'brand', 'console', 'voice', 'prompts', 'locales', 'configHashes']);
+    expect(Object.keys(libraryApp)).toEqual(['id', 'intents', 'menu', 'forms', 'slots', 'tools', 'policy', 'systems', 'wording', 'carrySlots', 'brand', 'console', 'voice', 'prompts', 'locales', 'testing', 'configHashes']);
     expect(Object.keys(libraryApp.intents)).toEqual(['renew_loan', 'check_hold', 'check_loans', 'hours', 'agent', 'repeat_prompt', 'done', 'other', 'none']);
     expect(libraryApp.intents.hours).toEqual({ criteria: 'Asks when the library is open', label: 'hear the opening hours', kind: 'informational', promptId: 'hours' });
     expect(Object.keys(libraryApp.intents.renew_loan!)).toEqual(['criteria', 'label', 'kind']);

@@ -906,4 +906,57 @@ export interface TestingHooks {
   serviceAnswers?: Readonly<Record<string, (params: Readonly<Record<string, string>>) => unknown>>;
   /** Caller turns each form takes on the keypad menu, which the metrics compare a completion against. Without it, 0. */
   dtmfBaseline?: Readonly<Record<FormId, number>>;
+  /**
+   * The principals and records the gate grid crosses with every tool (dialogwright/testing
+   * gateGridInput): the policy's safety net, run by the app's own tests. Never read by a call.
+   * Without it, the app has no grid.
+   */
+  policyMatrix?(): PolicyMatrix;
+}
+
+/**
+ * The people and records an app's gate grid crosses with every tool, probe and purpose
+ * (TestingHooks.policyMatrix). The grid adds an anonymous caller and an empty subject itself.
+ */
+export interface PolicyMatrix {
+  readonly principals: {
+    /** One of the app's subjects proven to level 1, and the same subject at level 2. */
+    readonly subject1: Party;
+    readonly subject2: Party;
+    /** Someone acting for subjects, one per role the app's tables name (PolicyTables.roles), by role. Empty when the app has none. */
+    readonly delegates: Readonly<Record<string, Party>>;
+    /** A delegate whose role no table names. */
+    readonly unlistedRole: Party;
+    /** A delegate with no role. */
+    readonly roleless: Party;
+    /** A party who is neither one of the app's subjects nor of any delegate's kind. */
+    readonly otherParty: Party;
+  };
+  /**
+   * The subjects a call names, each as a subject id (for a tool whose PolicyTables.subjects row names
+   * the subject) and as one of their records (for a row `via: 'record'`): the subject's own, another
+   * subject the delegates act for, one no principal of the matrix may see, and one that does not exist.
+   */
+  readonly records: Readonly<Record<'own' | 'inScope' | 'outOfScope' | 'unknown', PolicyMatrixSubject>>;
+  /**
+   * The params of a call, per tool, as named sets (e.g. a date an app's own rule passes and one it
+   * fails); the grid sets the subject param. A tool without sets gets one, built from its subject
+   * param, the confirmed fields (if it runs R3) and its service fields, each valued from `values`.
+   */
+  readonly calls?: Readonly<Record<ToolName, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
+  /** A value per param name for the calls the grid builds; any other param is 'x'. */
+  readonly values?: Readonly<Record<string, string>>;
+  /** The day the grid's facts carry (GateFacts.todayIso). Default 2026-09-18, the regression's day. */
+  readonly todayIso?: string;
+  /**
+   * The lookups the grid evaluates against. Default: a fresh copy of the app's (App.systems). An app
+   * whose seed data has no record outside every principal's scope may add one here, over its own.
+   */
+  lookups?(): GateLookups;
+}
+
+/** A subject a grid call names: their id, and the id of one of their records. */
+export interface PolicyMatrixSubject {
+  readonly subject: string;
+  readonly record: string;
 }

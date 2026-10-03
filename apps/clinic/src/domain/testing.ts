@@ -3,6 +3,7 @@ import {
   MAX_WORD_NGRAM, MONTHS, normalizeText, QUALIFIERS, RELATIVE_DAYS, saysDob, saysExplicitYear, spokenToDigits,
   tokenize, WEEKDAYS, WINDOWS, type CorpusSlotLabels, type HeuristicContext, type TestingHooks,
 } from 'dialogwright';
+import { clinicPolicyMatrix } from './policyMatrix';
 import { PROVIDERS } from './roster';
 
 /** The day-of-month labels, "1" .. "31", exactly as the birth date's and the day's questions offer them. */
@@ -286,4 +287,6 @@ export const CLINIC_TESTING: TestingHooks = {
   offerTransferForm: 'reschedule',
   // Caller turns each form takes on the keypad menu: the menu digit, then each slot's keypad answer.
   dtmfBaseline: { schedule_new: 7, reschedule: 7, cancel: 5, confirm_appointment: 5, billing: 3 },
+  // The principals and records the gate grid crosses with every tool.
+  policyMatrix: clinicPolicyMatrix,
 };

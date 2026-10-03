@@ -43,7 +43,7 @@ pnpm --filter dialogwright test slots/<type>   # a slot type's tests, including 
 - Never put policy in tool code. Tools do work; the gate decides whether they may run.
 - Never let a model write a regulated line. A model chooses among approved lines; it does not compose them.
 - The engine never imports an app.
-- An app imports only from `'dialogwright'` (src/index.ts), the supported API, and from its two other entries: `'dialogwright/testing'` (its tests: the shadow harness, the slot conformance kit) and `'dialogwright/slot-kit'` (the helpers a slot type is written with). The `dialogwright/<dir>/<file>` subpaths are internals; when an app needs one, export it from the root instead.
+- An app imports only from `'dialogwright'` (src/index.ts), the supported API, and from its two other entries: `'dialogwright/testing'` (its tests: the shadow harness, the slot conformance kit, the gate-event goldens and the gate grid) and `'dialogwright/slot-kit'` (the helpers a slot type is written with). The `dialogwright/<dir>/<file>` subpaths are internals; when an app needs one, export it from the root instead.
 - No real personal data anywhere: use the 555 phone range and invented names.
 - Run `pnpm check`, `pnpm verify` (the type check and the tests) and both regressions (the testkit's and the clinic's) before committing. `pnpm check` is the one that catches an app folder and its code disagreeing.
 - Every YAML file of an app starts with `# yaml-language-server: $schema=<relative path>/packages/dialogwright/schemas/<kind>.schema.json`, so an editor completes and checks it. Keep the line when you add a file.

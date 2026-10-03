@@ -4,7 +4,9 @@
  * public API stays the engine's. The shadow harness runs a replacement slot beside the slot it
  * replaces and fails on any difference (shadowSlot.ts); `isCassetteMiss` tells a replayed turn the
  * cassette had no answer for; the slot conformance kit runs the checks any slot type must pass over
- * its examples (src/slots/conformance).
+ * its examples (src/slots/conformance). The policy's safety net: gate-event goldens write every
+ * gate decision of a regression run (gateEvents.ts), and the gate grid crosses every tool with every
+ * kind of principal, subject and fact, the legacy evaluator as its reference (gateGrid.ts).
  */
 export {
   shadowSlot, withShadowSlots, shadowFromEnv, shadowModeOf, createShadowReport, formatShadowReport, formatShadowMismatch,
@@ -16,3 +18,10 @@ export {
   runSlotConformance, slotConformanceChecks, ConformanceError, CHECK_IDS, CHECK_ABOUT, kitContext, answersOf, quietAnswers, KIT_TODAY,
 } from '../slots/conformance/index';
 export type { CheckId, ConformanceCheck, SlotConformanceOptions, TestRegistrar } from '../slots/conformance/index';
+export { gateEventGolden, gateEventLines } from './gateEvents';
+export type { GateEventGolden, GateEventGoldenOptions, GateGoldenClient } from './gateEvents';
+export {
+  gateGridInput, gateGridCases, runGateGrid, compareGateGrid, legacyGateEvaluator, matrixProblems, gridPrincipals, gridTools,
+  gridDecisionLine, formatGateGridMismatches, gridRuleCounts, gridUnexercised, gridVerdicts, UNLISTED_TOOL, GRID_PROBES, EXTRA_FIELD,
+} from './gateGrid';
+export type { GateGridInput, GateGridCase, GateGridPoint, GateGrid, GateGridMismatch, GateEvaluate } from './gateGrid';

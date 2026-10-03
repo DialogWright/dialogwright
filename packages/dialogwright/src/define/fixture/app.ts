@@ -2,7 +2,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   addDays, defineApp, defineSlot, describeDay, localeOf,
-  type AppCode, type Completion, type CompletionContext, type RuleContext, type RuleOutcome, type Session, type SlotSpec, type ToolDef,
+  type AppCode, type Completion, type CompletionContext, type PolicyMatrix, type RuleContext, type RuleOutcome, type Session, type SlotSpec, type ToolDef,
 } from '../../index';
 
 /**
@@ -168,6 +168,36 @@ function checkLoans(c: CompletionContext): Completion {
   return { kind: 'said', acks: [...acks, { promptId: 'next_due', vars: { card, book: libraryApp.slots.book!.display(next.book, locale), due: describeDay(next.due, locale) } }] };
 }
 
+/**
+ * The library's principals and records for the gate grid (TestingHooks.policyMatrix). The library
+ * verifies no one, so none of them is one of its subjects to the gate, and it keeps no scope: the
+ * grid shows that every caller gets the same answers. A hold is tried at a branch the library has
+ * and at one it does not (its own rule, known-branch).
+ */
+export function libraryPolicyMatrix(): PolicyMatrix {
+  const patron = { kind: 'patron', id: '55520417', first: 'Avery' } as const;
+  return {
+    principals: {
+      subject1: { ...patron, level: 1 },
+      subject2: { ...patron, level: 2 },
+      delegates: {},
+      unlistedRole: { kind: 'librarian', level: 2, id: 'L-1', first: 'Quinn', role: 'desk' },
+      roleless: { kind: 'librarian', level: 2, id: 'L-2', first: 'Rowan' },
+      otherParty: { kind: 'visitor', level: 2, id: 'V-1', first: 'Robin' },
+    },
+    records: {
+      own: { subject: '55520417', record: 'R101' },
+      inScope: { subject: '55531290', record: 'R102' },
+      outOfScope: { subject: '55540000', record: 'R103' },
+      unknown: { subject: '55599999', record: 'R999' },
+    },
+    calls: {
+      findHold: { known: { book: 'river_atlas', branch: 'north' }, unknown: { book: 'river_atlas', branch: 'east' } },
+    },
+    values: { book: 'quiet_orchard' },
+  };
+}
+
 /** The library's code: everything the YAML names that runs. */
 export const libraryCode: AppCode = {
   slots: LIBRARY_SLOTS,
@@ -179,6 +209,7 @@ export const libraryCode: AppCode = {
     check_loans: { complete: checkLoans },
   },
   customRules: { 'known-branch': knownBranch },
+  testing: { policyMatrix: libraryPolicyMatrix },
 };
 
 /** The code parts under the name `dialogwright check` imports an app module's code by. */
