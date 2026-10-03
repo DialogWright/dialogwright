@@ -7,6 +7,7 @@ Pre-release; APIs will change. The package ships TypeScript source. Requires Nod
 ## Start here
 
 - [CLAUDE.md](CLAUDE.md): the three roles, the layout, the commands and the rules.
+- [The create-app skill](.claude/skills/create-app/SKILL.md): building an app from a one-paragraph description, step by step, with a worksheet, verified patterns (identity, a one-time code, delegates, confirmed writes, range rules) and the corpus format.
 - [Authoring an app](docs/authoring-an-app.md): the folder, each YAML file with an example, what stays in TypeScript, how to write a slot (library types first, code second), how `pnpm check` reports problems, locales, configuration hashes.
 - [Design](docs/design.md): the idea, the roles, how policy and identity work, testing, the roadmap.
 - [Contributing](CONTRIBUTING.md): rules, pull requests, and "Adding a slot type".

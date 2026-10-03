@@ -12,7 +12,7 @@ Apps are defined against the `App` contract and plug into the engine. The engine
 
 An app is a folder: YAML for what is data (intents, forms, prompts, policy, identity, locales), TypeScript for what runs (slots, tools, form hooks, custom rules), joined by `defineApp`. To build or change one, read [docs/authoring-an-app.md](docs/authoring-an-app.md) first.
 
-To start a new app, run `pnpm create-app <name>` (add `--identity` for one that verifies callers): it writes a small app under `apps/<name>` that passes `pnpm check`, its tests and its stub regression as created, with its own `CLAUDE.md`. Build from a description by following the create-app skill at `.claude/skills/create-app/` (forthcoming). Each app has its own `CLAUDE.md`: read it before changing that app.
+To start a new app, run `pnpm create-app <name>` (add `--identity` for one that verifies callers): it writes a small app under `apps/<name>` that passes `pnpm check`, its tests and its stub regression as created, with its own `CLAUDE.md`. To build an app from a description (a paragraph of what callers can do), follow the create-app skill, [.claude/skills/create-app/SKILL.md](.claude/skills/create-app/SKILL.md): a worksheet, the mapping onto slot types, policy and identity, the scaffold, the corpus and scenarios, and the checks until green. Each app has its own `CLAUDE.md`: read it before changing that app.
 
 ## Layout
 
@@ -22,6 +22,7 @@ To start a new app, run `pnpm create-app <name>` (add `--identity` for one that 
 - `apps/*`: example apps. `apps/clinic` is the one to learn from. Each is a folder (app.yaml, intents.yaml, forms.yaml, prompts.yaml, policy.yaml, optional identity.yaml and locale/) with its code in `src/app.ts`, and a `CLAUDE.md` of its own.
 - `packages/dialogwright/templates/`: the files `pnpm create-app` copies (`app/`, and `app-identity/` for what `--identity` changes). Edit them as real files; a test scaffolds both and runs check, typecheck, the app's tests and its regression.
 - `packages/dialogwright/src/define/fixture/`: a tiny app folder (a library, with a Spanish locale) that the engine's own tests build.
+- `.claude/skills/create-app/`: the create-app skill (`SKILL.md`), its worksheet template, its patterns and its corpus guide. A test checks its links and its vocabulary.
 - `assets/brand`: logo and icons.
 
 ## Commands
