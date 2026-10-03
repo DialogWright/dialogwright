@@ -10,7 +10,7 @@
 - `identity.yaml`: how a caller proves who they are (the factors, the verify tool and the number of tries).
 {{/identity}}
 - `src/app.ts`: the tools and the form hooks, joined to the folder by `defineApp`. `src/data.ts`: the fixture data behind the stub tool.
-- `fixtures/`: `corpus.jsonl` (labelled utterances, every intent has some), `scenarios/` (scripted calls) and `expected/` (the stub baseline).
+- `fixtures/`: `corpus.jsonl` (labelled utterances, every intent has some), `scenarios/` (scripted calls) and `expected/` (the stub baseline). A corpus line's `answers` field (`"answers":{"addressedToSystem":{"noul":0.15}}` on the side-speech line) sets the stub's answer to one of the engine's own questions; `noul` is a yes-or-no answer's probability of yes. See `.claude/skills/create-app/corpus.md`.
 
 ## Commands
 

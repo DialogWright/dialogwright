@@ -13,6 +13,7 @@ Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time
 - The subject's own id is the principal's, once verified. Read it from there, so a tool's subject param is always the proven one:
 
   ```ts
+  // src/app.ts
   const accountIdOf = (s: Session): string => (s.principal.kind === 'customer' ? s.principal.id : s.slots.account?.value ?? '');
   ```
 
@@ -23,6 +24,7 @@ Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time
 Add level 2 only when an action needs it. `identity.yaml`:
 
 ```yaml
+# identity.yaml
 levels:
   1: { name: verified, factors: [accountId, dob], verify: verifyCustomer, failedPrompt: identity_failed }
   2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: sendCode, verify: verifyCode }
@@ -51,6 +53,7 @@ attempts: 3
 The code. The code itself is checked by the engine's verifier (`tc.tools.codes`): in tests and the stub regression it is a mock that accepts any code of the right length whose last digit is even, so a scripted call keys `{ "dtmf": "123456" }` to pass and `{ "dtmf": "123457" }` to fail.
 
 ```ts
+// src/app.ts, under code.tools
   verifyCode: {
     run(_call, _sys, { tc, code }) {
       const ok = code !== undefined && tc.tools.codes.check(code);
@@ -67,14 +70,16 @@ The code. The code itself is checked by the engine's verifier (`tc.tools.codes`)
 
 and in `code`: `identity: { sendCodeParams: (s) => ({ accountId: accountIdOf(s) }) }`. Give the verified principal `contact: { phoneLast4 }` in `verifyCustomer`, as the testkit does.
 
-A form whose action needs level 2 should ask for the code before its own slots, not after the caller has answered everything. Name a purpose for it and make the entry call with it:
+A form whose action needs level 2 should ask for the code before its own slots, not after the caller has answered everything. Name a purpose for it in policy.yaml (not identity.yaml, though it is about the level) and make the entry call with it:
 
 ```yaml
+# policy.yaml (beside actions:, at the top level; not identity.yaml)
 purposes:
   set_up_plan: { level: 2 }       # the form id
 ```
 
 ```ts
+// src/app.ts, in the form's hooks under code.forms
 entry: (s) => ({ tool: 'findAccount', params: { accountId: accountIdOf(s) }, purpose: 'set_up_plan' }),
 ```
 
@@ -95,6 +100,7 @@ signIn: { level: 2 }          # always the top level of the ladder (1 for a ladd
 ```
 
 ```ts
+// src/app.ts, in code
 principals: {
   subjectPrincipal: (id, level) => {
     const a = ACCOUNTS.find((x) => x.accountId === id);
@@ -121,6 +127,7 @@ Someone acting for subjects (a manager of several accounts, a caregiver) is a de
 `identity.yaml`:
 
 ```yaml
+# identity.yaml
 principals:
   subject: customer
   delegates:
@@ -130,6 +137,7 @@ principals:
 In `code`:
 
 ```ts
+// src/app.ts
 function managerPrincipal(id: string): Party | null {
   const m = MANAGERS.find((x) => x.id === id);
   return m ? { kind: 'manager', level: 2, id: m.id, name: m.name, first: m.first, role: 'manager' } : null;
@@ -154,6 +162,7 @@ With `portal`, `pnpm check` asks for the chat's sign-in lines (see "Phone and ch
 **What a delegate may do** is the `role` and `scope` rules. A role not named in an action's `role` rule is refused; a subject passes the `role` rule. The `scope` rule (`scope: { param: accountId }`) passes only when the param is one of `scopeOf(principal)`.
 
 ```yaml
+# policy.yaml, under actions:
   readAmount:
     level: 1
     rules:
@@ -171,6 +180,7 @@ With `portal`, `pnpm check` asks for the chat's sign-in lines (see "Phone and ch
 **Which account a delegate means.** A subject's account is the one they verified; a delegate names it. Give the form its own slot for the account (a `digits` slot, say `account`, separate from the factor slot `accountId`: outside a form, the words of a caller who is already verified, a delegate included, never fill a factor slot, so "what is owed on 5550 1234" as a delegate's first words would be lost). For a subject, fill that slot from the principal when the entry call succeeds, so they are not asked it; for a delegate, `principalEntry` replaces the entry call, and returning `null` lets the form ask for it:
 
 ```yaml
+# forms.yaml, under forms:
   read_amount:
     slots: [account]
     summaryPromptId: null
@@ -179,6 +189,7 @@ With `portal`, `pnpm check` asks for the chat's sign-in lines (see "Phone and ch
 ```
 
 ```ts
+// src/app.ts, under code.forms
 read_amount: {
   entry: (s) => ({ tool: 'findAccount', params: { accountId: accountIdOf(s) } }),
   onEntry: (s) => {
@@ -194,6 +205,7 @@ read_amount: {
 **A delegate whose request goes to a person** should hear it before answering the form's questions. In `principalEntry`, ask the gate about the write without running it (`purpose: 'entry-check'`), and hand over on its answer:
 
 ```ts
+// src/app.ts, in the form's hooks under code.forms
 principalEntry: (c) => {
   const { decision } = c.callTool({ tool: 'setUpPlan', params: {}, purpose: 'entry-check' });
   return decision.verdict === 'NEEDS_HUMAN' ? handoff(c.s, decision.reason ?? 'needs-human', c.acks) : null;
@@ -205,6 +217,7 @@ principalEntry: (c) => {
 All exported by `'dialogwright'` (defined in `packages/dialogwright/src/gate/types.ts` and `src/core/app/types.ts`):
 
 ```ts
+// For reference only: the types as exported by 'dialogwright', not a file you write.
 // A proven caller: a subject (verified, or signed in) or a delegate. `first` fills {first}; `role` is what a `role` rule reads.
 interface Party { kind: string; level: 1 | 2; id: string; first: string; name?: string; role?: string; contact?: { phoneLast4?: string }; attrs?: Record<string, string> }
 type Principal = Party | typeof ANONYMOUS;                     // ANONYMOUS is level 0
@@ -229,6 +242,7 @@ A write the caller must agree to: the form has a summary (`summaryPromptId`), `c
 **One list per app.** Every action with a `confirmed` rule names the same fields in the same order (the read-back's hash is taken over one list; `pnpm check` says so if two differ). With two confirmed writes, list the union, and have each form's `confirmedParams` and its write send every field on the list, `''` for the ones it does not have:
 
 ```yaml
+# policy.yaml, under actions:
   reportFault:
     level: 0
     rules:
@@ -243,6 +257,7 @@ A write the caller must agree to: the form has a summary (`summaryPromptId`), `c
 ```
 
 ```ts
+// src/app.ts
 const faultParams = (s: Session): Record<string, string> => ({
   accountId: '', place: s.slots.place?.value ?? '', fault: s.slots.fault?.value ?? '', count: '', firstDate: '', total: '',
 });
@@ -251,6 +266,7 @@ const faultParams = (s: Session): Record<string, string> => ({
 `complete`, as the scaffold writes it:
 
 ```ts
+// src/app.ts
 function completeFault(c: CompletionContext): Completion {
   const { s, acks } = c;
   s.confirmedHash = s.pendingHash;                       // arm the confirmed rule with what the summary read
@@ -270,11 +286,13 @@ function completeFault(c: CompletionContext): Completion {
 The built-in range rules hold one param to bounds (authoring guide, "The range rules"). A bound is a number or a date, `today` (the call's day), or a reference to a lookup, `<lookup>(<param>)`, which the code declares:
 
 ```yaml
+# policy.yaml, in an action's rules:
       - limit: { field: total, min: 0.01, max: amountDue(accountId) }
       - dateInRange: { field: firstDate, notBefore: today }
 ```
 
 ```ts
+// src/app.ts
 const dueOf = (accountId: string): string | null => ACCOUNTS.find((a) => a.accountId === accountId)?.due ?? null;
 
 export const code: AppCode = {
@@ -291,12 +309,14 @@ export const code: AppCode = {
 **A day within N days of today** is a number of days from today, `today+N` (authoring guide, "The range rules"):
 
 ```yaml
+# policy.yaml, in an action's rules:
       - dateInRange: { field: firstDate, notBefore: today, notAfter: today+30 }
 ```
 
 **A bound no built-in rule holds** is a custom rule. The shape below is the thirty days written as one, as the utility example first had it before `today+N` existed (it now uses `notAfter: today+30`, and so should you for that bound); it shows how a rule reads the call's day from the gate's facts, never the clock:
 
 ```yaml
+# policy.yaml, in an action's rules:
       - dateInRange: { field: firstDate, notBefore: today }
       - custom: first-date-within-30-days
 ```
@@ -304,6 +324,7 @@ export const code: AppCode = {
 A custom rule is made with `defineRule` (from `'dialogwright/policy'`): its id, what it holds in plain words, its `run`, and examples, at least one call the gate allows and one it refuses (`pnpm check` refuses a rule without them, and a plain function). Each example runs through the gate in every action that names the rule, so it must pass the action's other rules: a principal at the action's level, every param the action sends (its `confirmed` or `fields` list) with values inside the other bounds. The example's facts default to no failed attempts, its values confirmed, and the regression's day, 2026-09-18.
 
 ```ts
+// src/app.ts (or a module of its own that src/app.ts imports)
 import { defineRule } from 'dialogwright/policy';
 
 const PLAN_CALL = { accountId: '55501234', place: '', fault: '', count: 'three', firstDate: '2026-09-25', total: '240.00' };
@@ -336,6 +357,7 @@ A custom rule's `compared` line goes to the audit as it is: never put a value in
 A summary can name a value the code works out (a total from the record, a fee): the form's `onSummaryRead` hook gives it as a variable. Without it the regression stops with `prompt variable missing: <name>`.
 
 ```yaml
+# forms.yaml, under forms:
   set_up_plan:
     slots: [count, firstDate]
     summaryPromptId: confirm_set_up_plan     # "That's {total} in {count}, the first on {firstDate}. Shall I set that up?"
@@ -344,6 +366,7 @@ A summary can name a value the code works out (a total from the record, a fee): 
 ```
 
 ```ts
+// src/app.ts, in the form's hooks under code.forms
 onSummaryRead: ({ s }) => ({ vars: { total: dueOf(accountIdOf(s)) ?? '' } }),
 ```
 
@@ -354,6 +377,7 @@ The same value goes in `confirmedParams`, so the caller's yes covers it.
 - `c.refusal(decision)` for anything the gate did not allow: a `BLOCK` says the line `code.blockPromptId(reason, principal)` names, and the form ends ("anything else?" follows); with no line, and for `NEEDS_HUMAN`, the caller goes to a person with `handoff_needs_human`.
 
   ```ts
+  // src/app.ts, in code
   blockPromptId: (reason) => (reason === 'scope' ? 'account_not_yours' : reason === 'limit' ? 'plan_over_amount' : reason === 'date-range' ? 'plan_date_outside' : null),
   ```
 
@@ -368,6 +392,7 @@ The same value goes in `confirmedParams`, so the caller's yes covers it.
 An intent that only says something: no form, no tool, no policy.
 
 ```yaml
+# intents.yaml, under intents:
   office_hours:
     criteria: Asks when the office is open
     label: hear the office hours
@@ -377,13 +402,14 @@ An intent that only says something: no form, no tool, no policy.
 
 and the line in `prompts.yaml`. After it the caller hears `ask_intent`, so a scripted call that asks one expects `"promptId": "ask_intent"`. A web address in a line is invented (`example.com/...`), written as it should be spoken.
 
-A key on the keypad menu may name it: the key plays the line, then offers the menu again. A key for a control intent other than `agent` does nothing, so `pnpm check` refuses one.
+A key on the keypad menu may name it: the key plays the line, then offers the menu again. A key for a control intent other than `agent` does nothing, so `pnpm check` refuses one. When the menu listens is under "Keypad entry".
 
 ## Keypad entry
 
 - A `digits`, `date`, `birthdate` or `choice` slot takes `keypad: true` and then needs `ask_<slot>_dtmf` (the line that asks for the keys). The keypad is offered after spoken answers miss, and keys are taken whenever the slot was the last thing asked.
 - The one-time code is always keyed.
 - A scripted call's keypad step is `{ "dtmf": "55501234" }`.
+- **The keypad menu** (`menu:` in intents.yaml) listens only once it has been offered: on a call with a keypad (a phone call, never the chat), the second missed answer to "what can I help you with" (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the next turn's keys are menu keys. A third miss goes to a person (`max-attempts`). A key pressed before that, at the greeting say, is ignored and the caller hears nothing. After an informational key the menu is offered again, so it keeps listening. A scripted call for a menu key misses twice first: `[{ "say": "um" }, { "say": "okay" }, { "dtmf": "4" }]`, with "um" and "okay" corpus lines at `no_form` whose intent is `none`.
 
 ## Values with no slot type
 
@@ -398,6 +424,7 @@ A key on the keypad menu may name it: the key plays the line, then offers the me
 The address in `slots.yaml`:
 
 ```yaml
+# slots.yaml
 place:
   type: text
   what: the street address where the problem is
@@ -415,6 +442,7 @@ Three kinds of test, all from `'dialogwright/testing'`.
 **The policy matrix** is the reviewed record of what the gate decides: under each action, a row per kind of caller with the verdict and its reason, then each custom rule's examples. It lives beside `policy.yaml` as `policy.matrix`, and it is how you read the policy back (step 7). The gate grid behind it needs the app's callers and records, `testing.policyMatrix` in `src/app.ts`:
 
 ```ts
+// src/app.ts, in code
 testing: {
   policyMatrix: () => ({
     principals: {
@@ -442,6 +470,7 @@ testing: {
 With an app with no delegates, the `unlistedRole`, `roleless` and `otherParty` callers are still given (of a kind the app does not serve), as the clinic's are. Then the test, and the first matrix written deliberately:
 
 ```ts
+// src/app.test.ts
 import { fileURLToPath } from 'node:url';
 import { expectPolicyMatrix, policyInvariants, runRuleExamples } from 'dialogwright/testing';
 
@@ -480,6 +509,7 @@ Like the baseline, write it once the policy is right, read it whole, and from th
 **The policy card and the app map** are the same policy and the app's structure in words and diagrams, generated beside `policy.yaml` as `POLICY.md` and `APP-MAP.md`. Declare `calls` on every form first (the actions its hooks call through the gate), or the map stops at each form. Write them with `pnpm policy:card apps/<name>` and `pnpm app:diagram apps/<name>`, read them (step 7), and test them like the matrix:
 
 ```ts
+// src/app.test.ts
 import { danglingReferences, expectAppMap, expectPolicyCard } from 'dialogwright/testing';
 
 it('POLICY.md is the policy card the app generates', () => {
@@ -496,6 +526,7 @@ The card names a slot by its `noun`, else its console label (`console.slotLabels
 **The bounds, at their edges.** The matrix does not try each bound's values. Ask the gate directly, for the last value that passes and the first that fails, with the caller having said yes to exactly the params:
 
 ```ts
+// src/app.test.ts
 import { ANONYMOUS, type GateFacts, type Party, type Principal, type ToolCall } from 'dialogwright';
 import { confirmationHash } from 'dialogwright/policy';
 import { gateEvaluator } from 'dialogwright/testing';
@@ -523,6 +554,7 @@ it('holds the total and the first day to their bounds', () => {
 **The gate-event golden** (optional, useful while reviewing the baseline): every gate decision of the stub regression, each rule's line with it, as one text file, written on its first run.
 
 ```ts
+// src/app.test.ts
 import { gateEventGolden } from 'dialogwright/testing';
 
 it('gate-event golden', async () => {

@@ -129,6 +129,7 @@ menu:
 - Two control intents are required, because the engine reads them by name: `agent` and `repeat_prompt`. The snippet above shows both. The other control intents (`done`, `other`, `none`) are optional; the library has all three, and the clinic leaves out `done`, since its calls end when a task completes.
 - Keypad digits are quoted strings.
 - A key on the menu starts a form, plays an informational intent's line, or (`agent`) goes to a person. A key for any other control intent does nothing on a call (the caller hears nothing), so `pnpm check` refuses one.
+- The menu listens only once it has been offered. On a call with a keypad (a phone call; a chat has none), the second missed answer to the intent question (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the keys of the next turn are menu keys; with `MAX_ATTEMPTS` at its default of 3, a third miss goes to a person. A key pressed before then, at the greeting for example, is ignored. After an informational key the menu is offered again, so it keeps listening. A scripted call that presses a menu key therefore misses twice first.
 
 ### forms.yaml
 
