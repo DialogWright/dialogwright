@@ -463,9 +463,10 @@ describe('the engine prompt list', () => {
     expect([...families].sort()).toEqual(['ack_<x>', 'ask_<x>', 'ask_<x>_dtmf', 'ask_<x>_retry', 'confirm_<x>', 'disambiguate_<x>', 'handoff_<x>']);
   });
 
-  it('the role-person reason check names is the gate\'s', () => {
-    const policy = readFileSync(join(PACKAGE_DIR, 'src', 'gate', 'policy.ts'), 'utf8');
-    expect(policy).toContain(`const DEFAULT_ROLE_PERSON_REASON = '${DEFAULT_ROLE_PERSON_REASON}';`);
+  it('the role-person reason check names is the gate\'s', async () => {
+    const lines = readFileSync(join(PACKAGE_DIR, 'src', 'gate', 'lines.ts'), 'utf8');
+    expect(lines).toContain(`const DEFAULT_ROLE_PERSON_REASON = '${DEFAULT_ROLE_PERSON_REASON}';`);
+    expect(DEFAULT_ROLE_PERSON_REASON).toBe((await import('../gate/lines')).DEFAULT_ROLE_PERSON_REASON);
   });
 
   it('names every prompt id the engine says as a literal, or says why not', () => {

@@ -1,4 +1,6 @@
 import type { IdentityConfig, PolicyTables, PolicyWording, RoleAccess, SubjectParam, ToolName } from '../core/app/types';
+import { attachSource, LEGACY_RULE_ID, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
+import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import { isRuleId } from '../gate/policy';
 import type { Level } from '../gate/types';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
@@ -18,7 +20,7 @@ import type { IdentityYaml, PolicyYaml, RuleEntryYaml, RuleName } from './schema
  */
 
 /** The legacy id each built-in rule is recorded under in decisions and audit lines (until rules are named there). */
-export const RULE_ID_OF: Readonly<Record<Exclude<RuleName, 'custom'>, string>> = { identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' };
+export const RULE_ID_OF: Readonly<Record<Exclude<RuleName, 'custom'>, string>> = LEGACY_RULE_ID;
 
 /** The built-in rule each legacy id is, for a message. */
 const RULE_NAME_OF: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(RULE_ID_OF).map(([rule, id]) => [id, rule]));
@@ -33,21 +35,14 @@ export const DEFAULT_ACTION_LEVEL: Level = 2;
  */
 export const DEFAULT_MAX_ATTEMPTS = 3;
 
-/** The reason a role rule hands a call to a person for when it names none (gate/policy.ts DEFAULT_ROLE_PERSON_REASON; a test holds the two together). */
-export const DEFAULT_ROLE_PERSON_REASON = 'role-person';
+/** The reason a role rule hands a call to a person for when it names none: the gate's own (gate/lines.ts). */
+export { DEFAULT_ROLE_PERSON_REASON };
 
 /** The one-time code's length when identity.yaml gives none, and the only one the engine reads for now (core/lifecycle.ts CODE_LENGTH). */
 export const DEFAULT_CODE_LENGTH = 6;
 
-/** One rule as written, read: its name and its parameters. */
-export type Rule =
-  | { readonly rule: 'identity' }
-  | { readonly rule: 'attempts' }
-  | { readonly rule: 'scope'; readonly subject: SubjectParam }
-  | { readonly rule: 'role'; readonly access: Readonly<Record<string, RoleAccess>>; readonly reason?: string }
-  | { readonly rule: 'confirmed'; readonly fields: readonly string[] }
-  | { readonly rule: 'fields'; readonly fields: readonly string[] }
-  | { readonly rule: 'custom'; readonly id: string };
+/** One rule as written, read: its name and its parameters (the gate's own type, gate/compiled.ts). */
+export type { Rule };
 
 /** A rule entry of a valid file, read. */
 export function readRule(entry: RuleEntryYaml): Rule {
@@ -99,24 +94,32 @@ export interface CompilePolicyOptions {
 }
 
 /**
- * policy.yaml (the new shape, already checked) as the gate's tables. Where the file's rules say what
- * the tables hold once per app (the confirmed fields, the role rule's reason), the first rule that
- * says it gives it: `check` refuses an app whose rules disagree.
+ * policy.yaml (the new shape, already checked) as the gate's tables, and the gate's named rules
+ * (gate/compiled.ts) attached to them: the gate for these tables (compiledPolicyOf, App.gate) reads
+ * each action's rules with their own parameters, and the tables are what an app's own rule reads
+ * (RuleContext.policy) and what the summary hash is taken over (confirmedFields). Where the file's
+ * rules say what the tables hold once per app (the confirmed fields, the role rule's reason), the
+ * first rule that says it gives it: `check` requires every confirmed list to be the same (Decision
+ * 5), and a role rule's own reason is the one the gate gives (Decision 4). The tables are frozen, so
+ * they cannot drift from the rules attached to them.
  */
 export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = {}): PolicyTables {
   const toolLevel: Record<ToolName, Level> = {};
-  const rulesFor: Record<ToolName, string[]> = {};
+  const rulesFor: Record<ToolName, readonly string[]> = {};
   const serviceFields: Record<ToolName, readonly string[]> = {};
   const subjects: Record<ToolName, SubjectParam> = {};
   const roles: Record<ToolName, Readonly<Record<string, RoleAccess>>> = {};
+  const actions: Record<ToolName, PolicyAction> = {};
   let confirmedFields: readonly string[] | undefined;
   let reason: string | undefined;
   for (const [tool, action] of Object.entries(file.actions)) {
-    toolLevel[tool] = action.level ?? DEFAULT_ACTION_LEVEL;
-    const rules = action.rules.map(readRule);
-    rulesFor[tool] = rules.map(ruleIdOf);
+    const level = action.level ?? DEFAULT_ACTION_LEVEL;
+    const rules = Object.freeze(action.rules.map((entry) => Object.freeze(readRule(entry))));
+    toolLevel[tool] = level;
+    rulesFor[tool] = Object.freeze(rules.map(ruleIdOf));
+    actions[tool] = Object.freeze({ level, rules });
     for (const rule of rules) {
-      if (rule.rule === 'scope') subjects[tool] = rule.subject;
+      if (rule.rule === 'scope' && rule.subject !== null) subjects[tool] = rule.subject;
       else if (rule.rule === 'fields') serviceFields[tool] = rule.fields;
       else if (rule.rule === 'confirmed') confirmedFields ??= rule.fields;
       else if (rule.rule === 'role') {
@@ -125,20 +128,33 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
       }
     }
   }
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  const purposeLevel = Object.fromEntries(Object.entries(file.purposes).map(([purpose, { level }]) => [purpose, level]));
   const tables: Partial<PolicyTables> = {
     toolLevel,
-    purposeLevel: Object.fromEntries(Object.entries(file.purposes).map(([purpose, { level }]) => [purpose, level])),
+    purposeLevel,
     rulesFor,
     serviceFields,
     confirmedFields: confirmedFields ?? [],
-    maxAttempts: options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
+    maxAttempts,
   };
   if (Object.keys(roles).length > 0) tables.roles = roles;
   if (reason !== undefined) tables.rolePersonReason = reason;
   tables.subjects = subjects;
   if (options.customRules !== undefined) tables.customRules = options.customRules;
-  if (file.wording) tables.wording = wordingOf(file.wording);
-  return tables as PolicyTables;
+  const wording = file.wording ? wordingOf(file.wording) : undefined;
+  if (wording) tables.wording = wording;
+  const source: PolicySource = {
+    actions: Object.freeze(actions),
+    purposes: purposeLevel,
+    maxAttempts,
+    ...(wording ? { wording } : {}),
+    ...(options.customRules !== undefined ? { customRules: options.customRules } : {}),
+  };
+  for (const table of [toolLevel, purposeLevel, rulesFor, serviceFields, subjects, roles]) Object.freeze(table);
+  const compiled = Object.freeze(tables) as PolicyTables;
+  attachSource(compiled, Object.freeze(source));
+  return compiled;
 }
 
 export interface CompileIdentityOptions {
@@ -244,9 +260,10 @@ function reporter(c: PolicyCheckInput, out: Problem[]) {
 /**
  * policy.yaml against identity.yaml and the code: every action is a tool and every tool an action;
  * its level is one the ladder has; each rule's parameters name what exists (custom rules, declared
- * roles); and what the tables hold once per app is said once (Decision 5: one confirmed list;
- * Decision 4: one person reason, for now). The confirmed and fields rules name params, which are not
- * checked against the slots: a write may send a param that is no slot (a picked time, a record id).
+ * roles); and the confirmed list, which the summary hash is taken over once per form, is the same
+ * for every action (Decision 5). Each role rule's person reason is its own (Decision 4). The
+ * confirmed and fields rules name params, which are not checked against the slots: a write may send
+ * a param that is no slot (a picked time, a record id).
  */
 export function policyProblems(c: PolicyCheckInput): Problem[] {
   const out: Problem[] = [];
@@ -259,7 +276,6 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
   const top = identity ? topLevel(identity) : 0;
   const roles = new Set(Object.values(identity?.principals.delegates ?? {}).flatMap((d) => d.roles ?? []));
   const confirmed: { tool: string; fields: readonly string[]; path: DataPath }[] = [];
-  const reasons: { tool: string; reason: string; path: DataPath }[] = [];
 
   /** An action's or a purpose's level against the ladder. */
   const levelProblem = (what: string, level: number, path: DataPath, given: boolean): void => {
@@ -299,9 +315,8 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
             if (identity) at(P, [...path, 'role', role], `role "${role}" is not declared under principals in ${I}`, `${renameHint(role, [...roles])}add it to the roles of a delegate kind under principals.delegates in ${I}`, true);
             else at(P, [...path, 'role', role], `role "${role}" is named, but the app has no identity.yaml, so no caller has a role`, 'delete the role rule, or add identity.yaml with the parties who act for subjects and their roles', true);
           }
-          if (Object.values(rule.access).includes('person')) {
-            reasons.push({ tool, reason: rule.reason ?? DEFAULT_ROLE_PERSON_REASON, path: rule.reason !== undefined ? [...path, 'role', 'reason'] : [...path, 'role'] });
-          } else if (rule.reason !== undefined) {
+          // Decision 4: each role rule gives its own reason (the gate reads it from the rule).
+          if (!Object.values(rule.access).includes('person') && rule.reason !== undefined) {
             at(P, [...path, 'role', 'reason'], `the role rule of "${tool}" gives a reason, but no role in it goes to a person, so the reason is never used`, 'delete the reason, or give a role "person"');
           }
           break;
@@ -335,19 +350,6 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
     if (c.confirms === false) {
       const tools = [...new Set(confirmed.map((x) => x.tool))];
       at(P, first.path.slice(0, -1), `${quoteList(tools)} run${tools.length === 1 ? 's' : ''} the confirmed rule, but no form has a confirmedParams hook, so nothing is ever confirmed and the rule blocks every call`, 'add "confirmedParams" to the hooks of the form that makes the write, and write it in the code');
-    }
-  }
-  // Decision 4: a reason per role rule, which the gate's tables hold once per app for now.
-  const firstReason = reasons[0];
-  if (firstReason) {
-    for (const other of reasons.slice(1)) {
-      if (other.reason === firstReason.reason) continue;
-      at(
-        P,
-        other.path,
-        `the role rule of "${other.tool}" hands the call to a person for the reason "${other.reason}", and that of "${firstReason.tool}" for "${firstReason.reason}"; for now every role rule of an app gives the same reason (the gate's tables hold one)`,
-        `give this rule "reason: ${firstReason.reason}"${firstReason.reason === DEFAULT_ROLE_PERSON_REASON ? ', or leave it out' : ''}, as "${firstReason.tool}" has it`,
-      );
     }
   }
   return out;

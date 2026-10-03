@@ -1,5 +1,6 @@
 import type { App, FormDef, FormId, IdentityConfig, SlotId, ToolDef, ToolName } from './types';
 import type { SlotSpec } from '../slots/types';
+import { compiledPolicyOf, type CompiledPolicy } from '../../gate/compiled';
 
 /** An app's form by id; an id the app does not define is a bug, named in the error. */
 export function formOf(app: App, id: FormId): FormDef {
@@ -36,4 +37,12 @@ const NO_IDENTITY: IdentityConfig = Object.freeze({
 /** An app's identity config: its own (App.identity), or NO_IDENTITY for an app without one. */
 export function identityOf(app: App): IdentityConfig {
   return app.identity ?? NO_IDENTITY;
+}
+
+/**
+ * The gate an app's calls go through: its own (App.gate), or the policy its tables were compiled
+ * from, for its subject kind (gate/compiled.ts compiledPolicyOf), compiled once.
+ */
+export function gateOf(app: App): CompiledPolicy {
+  return app.gate ?? compiledPolicyOf(app.policy, identityOf(app).subjectKind);
 }

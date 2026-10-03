@@ -76,6 +76,7 @@ export type {
 } from './gate/types';
 export { isAnonymous, isParty } from './gate/types';
 export { ANONYMOUS, raise, maskId } from './gate/principal';
+export type { CompiledPolicy } from './gate/compiled';
 
 // A few engine types an app's launcher and tests name.
 export type { Session, SessionFacts } from './core/session';

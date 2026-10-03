@@ -6,14 +6,25 @@ import { CONFIRMED_FIELDS, TESTKIT_POLICY, TOOL_LEVEL } from '../testing/testkit
 import { agentPrincipal, customerPrincipal } from '../testing/testkit/domain/principals';
 import { lookupsFor, ParcelSystems } from '../testing/testkit/domain/systems';
 import { ANONYMOUS } from './principal';
-import { confirmationHash, evaluateCall as evaluateFor } from './policy';
-import type { GateFacts, GateLookups, Principal, ToolCall } from './types';
+import { compiledPolicyOf } from './compiled';
+import { confirmationHash, evaluateCall as legacyEvaluate } from './policy';
+import type { GateDecision, GateFacts, GateLookups, Principal, ToolCall } from './types';
 import type { PolicyTables } from '../core/app/types';
 
 useTestkit();
 
-/** The gate as the testkit calls it: its subject kind is the customer (testkitApp.identity.subjectKind). */
-const evaluateCall = (call: ToolCall, p: Principal, f: GateFacts, lk: GateLookups, policy: PolicyTables) => evaluateFor(call, p, f, lk, policy, 'customer');
+/**
+ * The gate as the testkit calls it (its subject kind is the customer, testkitApp.identity.subjectKind),
+ * both ways: the legacy evaluator over the tables, and the compiled gate the lifecycle runs (for the
+ * testkit's own tables, the named rules of its policy.yaml; for tables a test changes, the tables
+ * read as rules). Every test here holds the two to the same whole decision, and checks the compiled one.
+ */
+function evaluateCall(call: ToolCall, p: Principal, f: GateFacts, lk: GateLookups, policy: PolicyTables): GateDecision {
+  const legacy = legacyEvaluate(call, p, f, lk, policy, 'customer');
+  const compiled = compiledPolicyOf(policy, 'customer').evaluate(call, p, f, lk);
+  expect(compiled).toStrictEqual(legacy);
+  return compiled;
+}
 
 const sys = new ParcelSystems();
 const lookups = lookupsFor(sys);
@@ -213,10 +224,10 @@ describe('evaluateCall', () => {
     expect(a).toEqual(b);
   });
 
-  it('imports only from node:crypto, ./principal and ./types; anything else is type-only', () => {
+  it('imports only from ./lines, ./principal and ./types; anything else is type-only', () => {
     const src = readFileSync(new URL('./policy.ts', import.meta.url), 'utf8');
     const importRe = /^import\s+(type\s+)?.*?from\s+'([^']+)';?\s*$/gm;
-    const allowedValueImports = new Set(['node:crypto', './principal', './types']);
+    const allowedValueImports = new Set(['./lines', './principal', './types']);
     let match: RegExpExecArray | null;
     let found = 0;
     while ((match = importRe.exec(src)) !== null) {

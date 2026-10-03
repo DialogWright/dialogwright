@@ -117,11 +117,12 @@ describe('the test-support entry', () => {
 describe('the policy entry', () => {
   it('"dialogwright/policy" has the policy and identity files\' API and the gate, which the root entry leaves out', async () => {
     const policy = await import('./define/policyEntry');
-    for (const name of ['definePolicy', 'defineIdentity', 'compilePolicy', 'compileIdentity', 'evaluateCall', 'confirmationHash', 'readRule', 'ruleIdOf', 'roleLine', 'isRuleId']) {
+    for (const name of ['definePolicy', 'defineIdentity', 'compilePolicy', 'compileIdentity', 'compiledPolicyOf', 'compileGate', 'programFromTables', 'evaluateCall', 'confirmationHash', 'readRule', 'ruleIdOf', 'roleLine', 'isRuleId']) {
       expect(typeof (policy as Record<string, unknown>)[name], name).toBe('function');
       expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
     }
     expect(policy.evaluateCall).toBe((await import('./gate/policy')).evaluateCall);
+    expect(policy.compiledPolicyOf).toBe((await import('./gate/compiled')).compiledPolicyOf);
     expect(policy.definePolicy).toBe((await import('./define/definePolicy')).definePolicy);
     expect(policy.RULE_ID_OF).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' });
     expect([...policy.RULE_IDS]).toEqual(['R1', 'R2', 'R3', 'R5', 'R6', 'R7']);

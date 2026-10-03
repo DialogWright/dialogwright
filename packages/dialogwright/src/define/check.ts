@@ -90,7 +90,7 @@ export const PORTAL_PROMPTS: readonly { id: string; why: string }[] = [
   { id: 'greeting_chat_delegate', why: 'a chat opens for someone acting for subjects' },
 ];
 
-/** R5's NEEDS_HUMAN reason when policy.yaml names none (gate/policy.ts DEFAULT_ROLE_PERSON_REASON; a test holds the two together). */
+/** R5's NEEDS_HUMAN reason when policy.yaml names none: the gate's own (gate/lines.ts). */
 export { DEFAULT_ROLE_PERSON_REASON };
 
 /** The identity factors' slots and the line said after a failed match, with where the line is named. */

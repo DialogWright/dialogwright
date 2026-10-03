@@ -9,6 +9,7 @@ import type { AnswerMap, QuestionMap } from '../../jev/types';
 import type { ServiceResult } from '../../channel/events';
 import type { AuditDraft } from '../../audit/types';
 import type { GateDecision, GateLookups, Level, Party, Principal, RuleContext, RuleOutcome, ToolCall } from '../../gate/types';
+import type { CompiledPolicy } from '../../gate/compiled';
 
 /** Engine id types: plain strings. An app defines which values exist; the engine never hard-codes them. */
 export type SlotId = string;
@@ -562,6 +563,14 @@ export interface App {
   identity?: IdentityConfig;
   tools: Record<ToolName, ToolDef>;
   policy: PolicyTables;
+  /**
+   * The gate the app's calls go through (core/app/lookup.ts gateOf). Without it, the policy's named
+   * rules: the ones its tables were compiled from (compilePolicy, definePolicy, defineApp), or, for
+   * tables written by hand, the tables read as rules (gate/compiled.ts programFromTables). An app sets
+   * it only to put another gate in front of its calls, as the shadow gate does
+   * (dialogwright/testing withShadowGate).
+   */
+  gate?: CompiledPolicy;
   /**
    * The app's session facts. Without it a session's facts start empty, are copied whole
    * (structuredClone) with the session, stay when a form closes, and give the slot specs no records.

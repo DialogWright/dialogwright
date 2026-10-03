@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { PolicyMatrix, PolicyTables } from '../core/app/types';
+import { compiledPolicyOf, sourceOf } from '../gate/compiled';
 import type { GateLookups, Principal, RuleContext, RuleOutcome } from '../gate/types';
 import { compareGateGrid, formatGateGridMismatches, gateGridInput, legacyGateEvaluator, type GateGridInput } from '../testing/gateGrid';
 import { testkitApp } from '../testing/testkit/index';
@@ -34,10 +35,17 @@ import { FROZEN_VALID_IDENTITY, FROZEN_VALID_POLICY } from './__fixtures__/froze
 
 const VALID = join(__dirname, '__fixtures__', 'valid');
 
-/** The grid of the app's matrix, the evaluator over the frozen tables against the same over `compiled`. */
+/**
+ * The grid of the app's matrix, the evaluator over the frozen tables against the same over
+ * `compiled`, and against the gate that reads the named rules `compiled` was compiled from.
+ */
 function gridMismatches(input: GateGridInput, compiled: PolicyTables): string[] {
-  const mismatches = compareGateGrid(input, legacyGateEvaluator({ policy: compiled, subjectKind: input.subjectKind }));
-  return mismatches.length === 0 ? [] : [formatGateGridMismatches(mismatches)];
+  const gate = compiledPolicyOf(compiled, input.subjectKind);
+  expect(gate.source).toBe(sourceOf(compiled));
+  return [legacyGateEvaluator({ policy: compiled, subjectKind: input.subjectKind }), gate.evaluate].flatMap((candidate) => {
+    const mismatches = compareGateGrid(input, candidate);
+    return mismatches.length === 0 ? [] : [formatGateGridMismatches(mismatches)];
+  });
 }
 
 describe('compile equality: the testkit', () => {
@@ -243,15 +251,12 @@ describe('the checks', () => {
     ]);
   });
 
-  it('confirmed lists that differ (Decision 5), and role reasons that differ (Decision 4)', () => {
+  it('confirmed lists that differ (Decision 5); role reasons that differ are each the rule\'s own (Decision 4)', () => {
     expect(actionsWith({ sendCode: { level: 1, rules: ['identity', { confirmed: ['note', 'accountId'] }] } })).toEqual([
       'actions.sendCode.rules[1].confirmed: the confirmed fields of "sendCode" (note, accountId) differ from those of "fileRequest" (accountId, note); until a form names the action it writes, every confirmed rule of an app names the same fields in the same order (a read-back\'s hash is taken once, over one list) -> write [accountId, note] here, as "fileRequest" has it',
     ]);
     const role = (reason?: string) => ({ role: { viewer: 'allow', clerk: 'person', ...(reason ? { reason } : {}) } });
-    expect(actionsWith({ getRecord: { level: 1, rules: ['identity', role('staff-filing')] }, sendCode: { level: 1, rules: ['identity', role('staff-sending')] } })).toEqual([
-      'actions.fileRequest.rules[1].role: the role rule of "fileRequest" hands the call to a person for the reason "role-person", and that of "getRecord" for "staff-filing"; for now every role rule of an app gives the same reason (the gate\'s tables hold one) -> give this rule "reason: staff-filing", as "getRecord" has it',
-      'actions.sendCode.rules[1].role.reason: the role rule of "sendCode" hands the call to a person for the reason "staff-sending", and that of "getRecord" for "staff-filing"; for now every role rule of an app gives the same reason (the gate\'s tables hold one) -> give this rule "reason: staff-filing", as "getRecord" has it',
-    ]);
+    expect(actionsWith({ getRecord: { level: 1, rules: ['identity', role('staff-filing')] }, sendCode: { level: 1, rules: ['identity', role('staff-sending')] } })).toEqual([]);
     expect(actionsWith({ getRecord: { level: 1, rules: ['identity', { role: { viewer: 'allow', reason: 'staff-filing' } }] } })).toEqual([
       'actions.getRecord.rules[1].role.reason: the role rule of "getRecord" gives a reason, but no role in it goes to a person, so the reason is never used -> delete the reason, or give a role "person"',
     ]);

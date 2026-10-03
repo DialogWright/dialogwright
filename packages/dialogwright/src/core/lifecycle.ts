@@ -1,7 +1,7 @@
-import { confirmationHash, evaluateCall } from '../gate/policy';
+import { confirmationHash } from '../gate/policy';
 import { maskId, raise } from '../gate/principal';
 import { isAnonymous, isParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
-import { formOf, identityOf, toolOf } from './app/lookup';
+import { formOf, gateOf, identityOf, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
@@ -101,12 +101,13 @@ function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code
 const PROBES: ReadonlySet<string> = new Set(['retry-check', 'entry-check']);
 
 /**
- * The gate's decision as it may leave the lifecycle: the raw call is evaluated, and only its
- * redacted copy (redactCall) is carried on, into the event, the trace and the audit.
+ * The gate's decision as it may leave the lifecycle: the raw call is evaluated by the app's gate (its
+ * policy's named rules, gateOf), and only its redacted copy (redactCall) is carried on, into the
+ * event, the trace and the audit.
  */
 function evaluate(s: Session, call: ToolCall, tc: TurnContext): GateDecision {
   const app = appOf(s);
-  const evaluated = evaluateCall(call, s.principal, gateFacts(s, call, tc), tc.tools.lookups, app.policy, identityOf(app).subjectKind);
+  const evaluated = gateOf(app).evaluate(call, s.principal, gateFacts(s, call, tc), tc.tools.lookups);
   return { ...evaluated, call: redactCall(app, call) };
 }
 

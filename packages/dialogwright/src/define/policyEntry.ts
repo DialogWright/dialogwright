@@ -1,12 +1,13 @@
 /**
  * The package's policy entry, `dialogwright/policy`: an app's policy and identity, from the files to
  * the gate. What an app that is not a folder builds its App.policy and App.identity with
- * (definePolicy, defineIdentity), the compilers they and defineApp share, and the gate itself with
- * the types its tables and rules are written in, for an app's custom rules and its gate tests, and
- * the converter behind `dialogwright policy:convert` (convertTables, convertFolder). Kept
+ * (definePolicy, defineIdentity), the compilers they and defineApp share, the gate itself (the
+ * compiled policy an app's calls go through, and the legacy evaluator the shadow gate compares it
+ * with) with the types its tables and rules are written in, for an app's custom rules and its gate
+ * tests, and the converter behind `dialogwright policy:convert` (convertTables, convertFolder). Kept
  * out of the root entry, which stays the engine's everyday API; the gate's types are in both.
  *
- *   import { definePolicy, defineIdentity, evaluateCall, type RuleContext } from 'dialogwright/policy';
+ *   import { definePolicy, defineIdentity, compiledPolicyOf, evaluateCall, type RuleContext } from 'dialogwright/policy';
  */
 
 // policy.yaml and identity.yaml for an app that is not a folder, and the compilers behind them.
@@ -21,7 +22,11 @@ export type { Conversion, ConvertOptions, FolderConversion } from './convert/con
 export { policySchema, identitySchema, RULE_NAMES } from './schema/index';
 export type { PolicyYaml, IdentityYaml, ActionYaml, RuleEntryYaml, RuleName } from './schema/index';
 
-// The gate: its decision on a call, the hash its confirmed rule compares, and its built-in rule ids.
+// The gate: the policy's named rules compiled (the gate an app's calls go through), and the legacy
+// evaluator over the tables (the shadow gate's reference, which an app's direct gate tests may call);
+// the hash the confirmed rule compares, and the built-in rule ids.
+export { compiledPolicyOf, compileGate, programFromTables, sourceOf, LEGACY_RULE_ID } from '../gate/compiled';
+export type { CompiledPolicy, PolicySource, PolicyAction } from '../gate/compiled';
 export { evaluateCall, confirmationHash, RULE_IDS, isRuleId } from '../gate/policy';
 export type { RuleId } from '../gate/policy';
 

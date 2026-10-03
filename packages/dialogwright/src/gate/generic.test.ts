@@ -11,8 +11,9 @@ import type { App, PolicyTables, ToolDef } from '../core/app/types';
 import { validateApp } from '../core/app/validate';
 import { newSession } from '../core/session';
 import { ANONYMOUS, raise } from './principal';
-import { evaluateCall } from './policy';
-import { isAnonymous, isParty, type GateFacts, type GateLookups, type Party, type Principal, type RuleContext, type RuleOutcome, type ToolCall } from './types';
+import { compiledPolicyOf } from './compiled';
+import { evaluateCall as legacyEvaluate } from './policy';
+import { isAnonymous, isParty, type GateDecision, type GateFacts, type GateLookups, type Party, type Principal, type RuleContext, type RuleOutcome, type ToolCall } from './types';
 
 /**
  * The gate's generic paths, run against a small clinic that is not the testkit: its subject kind is
@@ -21,6 +22,18 @@ import { isAnonymous, isParty, type GateFacts, type GateLookups, type Party, typ
  */
 
 useTestkit();
+
+/**
+ * The gate both ways: the legacy evaluator over the tables, and the compiled gate the lifecycle runs
+ * (for these hand-written tables, the tables read as named rules, gate/compiled.ts programFromTables).
+ * Every test here holds the two to the same whole decision, and checks the compiled one.
+ */
+function evaluateCall(call: ToolCall, p: Principal, f: GateFacts, lk: GateLookups, policy: PolicyTables, subjectKind: string): GateDecision {
+  const legacy = legacyEvaluate(call, p, f, lk, policy, subjectKind);
+  const compiled = compiledPolicyOf(policy, subjectKind).evaluate(call, p, f, lk);
+  expect(compiled).toStrictEqual(legacy);
+  return compiled;
+}
 
 const ANA: Party = { kind: 'patient', level: 1, id: 'P-1001', first: 'Ana', contact: { phoneLast4: '0101' } };
 const ANA2: Party = { ...ANA, level: 2 };
