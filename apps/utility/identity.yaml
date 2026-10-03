@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/identity.schema.json
+# How a caller proves who they are, and who the app serves. Compliance owns this file.
+#
+# The subject is a customer. Level 1 is the account number and the date of birth, checked by
+# verifyCustomer. Level 2 adds a one-time code texted to the phone on the account, needed only for a
+# payment arrangement. Property managers act for the accounts of their buildings; they sign in on the
+# chat through the portal, which proves the top level.
+principals:
+  subject: customer
+  delegates:
+    property_manager: { roles: [manager] }
+levels:
+  1: { name: verified, factors: [accountId, dob], verify: verifyCustomer, failedPrompt: identity_failed }
+  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: sendCode, verify: verifyCode }
+# Three failed tries at each check, and a person takes the call.
+attempts: 3
+# A chat caller signs in through the portal; nothing typed counts as a factor.
+signIn: { level: 2 }

@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
+# Every slot the app has, in the order the engine works through them. Each is a library type
+# configured here (docs/slots/README.md lists the types and their options).
+
+# The address of an outage. There is no address type: a text slot keeps the caller's words, and the
+# summary reads them back as said (say: null), so the caller confirms the address itself. That
+# needs redact: none (check refuses say: null with the default redact: length), so the words are in
+# the trace and the audit as said: an outage address is where the crew goes, not a secret.
+place:
+  type: text
+  what: the street address where the power problem is
+  instructions: Count a street address, a building name or a cross street, even when it comes with a request.
+  say: null
+  redact: none
+  maxLength: 200
+
+# What the caller is seeing.
+symptom:
+  type: choice
+  keypad: true
+  options:
+    no_power:
+      say: no power at all
+      means: The caller says the power is completely out, nothing works, everything is dark
+    partial:
+      say: power out in part of the building
+      means: The caller says only some lights, rooms or outlets have no power
+    flicker:
+      say: flickering or dim lights
+      means: The caller says the lights flicker, blink, or are dim or brownish
+    wire_down:
+      say: a power line down
+      means: The caller says a power line or wire is down, sparking or on the ground
+  text:
+    instructions: Read asr.text. What does the caller say they are seeing with their power?
+
+# The account a balance is read for. A verified customer's is filled from who they verified as; a
+# property manager names one of the accounts they manage.
+account:
+  type: digits
+  noun: account
+  length: 8
+  group: [4, 4]
+  keypad: true
+
+# How many installments the balance is split into. There is no amount or count type: a short list.
+count:
+  type: choice
+  keypad: true
+  options:
+    two: two payments
+    three: three payments
+    four: four payments
+    six: six payments
+  text:
+    instructions: Read asr.text. How many payments does the caller want to split the balance into?
+
+# The day of the first installment.
+firstDate:
+  type: date
+  range: future
+  keypad: true
+
+# The identity factors (identity.yaml): an account number and a date of birth.
+accountId:
+  type: digits
+  noun: account
+  length: 8
+  group: [4, 4]
+  keypad: true
+dob:
+  type: birthdate
+  keypad: true

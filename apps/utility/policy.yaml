@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/policy.schema.json
+# What the agent may do, action by action: the whole of it. Policy is data here and never lives in
+# a tool; the gate decides, before every call, from this file. Every tool in src/app.ts needs an
+# action here, and every action not listed is refused. Compliance owns this file.
+#
+# The app has one list of confirmed fields, shared by its two confirmed writes (the outage report
+# and the payment arrangement): each sends every field, '' for the ones it does not have.
+actions:
+  # Checks the factors. Anyone may try it, so it is level 0, and the gate counts the failed tries.
+  verifyCustomer:
+    say: check the account number and date of birth
+    level: 0
+    rules: [attempts]
+  # Texts a one-time code to the phone on the caller's own account. Only the customer steps up to
+  # the code; a property manager never texts a code to a tenant's phone.
+  sendCode:
+    say: text a one-time code
+    level: 1
+    rules:
+      - identity
+      - role: { manager: refuse }
+      - scope: { param: accountId }
+  # Checks the one-time code.
+  verifyCode:
+    say: check the one-time code
+    level: 1
+    rules: [identity, attempts]
+
+  # Files an outage report. No verification; the caller confirms the address and what they see.
+  # A property manager may report one for their buildings.
+  reportOutage:
+    say: file an outage report
+    level: 0
+    rules:
+      - identity
+      - role: { manager: allow }
+      - confirmed: [accountId, place, symptom, count, firstDate, total]
+
+  # The account lookup before the balance and the arrangement: the caller's own account, or one a
+  # property manager manages.
+  findAccount:
+    say: look up the account
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  # Reads the balance and the due date.
+  readBalance:
+    say: read the balance and due date
+    level: 1
+    rules:
+      - identity
+      - role: { manager: allow }
+      - scope: { param: accountId }
+
+  # Sets up a payment arrangement: the customer's own account, with the code, for no more than the
+  # balance, the first payment from today to thirty days on. A property manager's request for a
+  # tenant's account goes to a person.
+  setUpPlan:
+    say: set up a payment arrangement
+    level: 2
+    rules:
+      - identity
+      - role: { manager: person }
+      - scope: { param: accountId }
+      - confirmed: [accountId, place, symptom, count, firstDate, total]
+      - limit: { field: total, min: 0.01, max: amountDue(accountId) }
+      - dateInRange: { field: firstDate, notBefore: today }
+      - custom: first-date-within-30-days
+
+# The arrangement form asks for the one-time code before its own questions.
+purposes:
+  set_up_plan: { level: 2 }

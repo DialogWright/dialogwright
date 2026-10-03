@@ -1,0 +1,246 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/prompts.schema.json
+# Every line a caller can hear, word for word. The agent says exactly these and never composes its
+# own. Braces are filled in by the engine ({intentLabel}) or by the code ({balance}); `interruptible`
+# says whether a caller may talk over it. `pnpm check` lists any line the engine needs that is
+# missing here.
+prompts:
+  # The opening lines and the engine's own lines
+  greeting:
+    text: Thanks for calling Example Power & Light. I can take an outage report, give you your balance, or set up a payment arrangement. How can I help?
+    interruptible: true
+  greeting_chat:
+    text: Hi, this is Example Power & Light. I can take an outage report, give you your balance, or set up a payment arrangement. What can I help with?
+    interruptible: true
+  greeting_chat_signed_in:
+    text: Hi {first}, this is Example Power & Light. I can take an outage report, give you your balance, or set up a payment arrangement. What can I help with?
+    interruptible: true
+  greeting_chat_delegate:
+    text: Hi {first}, this is Example Power & Light. I can check balances and take outage reports for the buildings you manage. What can I help with?
+    interruptible: true
+  signin_required:
+    text: For that, please sign in to your account first, using the sign in button above.
+    interruptible: false
+  signin_reminder:
+    text: For your security I can't take account details in the chat. Please sign in with the button above instead.
+    interruptible: false
+  signin_thanks:
+    text: Thanks, {first}, you're signed in.
+    interruptible: false
+  signin_ready:
+    text: What can I help you with?
+    interruptible: true
+  ask_intent:
+    text: How can I help you today?
+    interruptible: true
+  nomatch_open:
+    text: Sorry, I didn't catch that. You can report an outage, check your balance, or set up a payment arrangement.
+    interruptible: true
+  nomatch_dtmf_menu:
+    text: Let's try the keypad. To report an outage press 1. For your balance press 2. For a payment arrangement press 3. To speak with someone press 0.
+    interruptible: true
+  no_input:
+    text: I didn't hear anything.
+    interruptible: false
+  ack_intent:
+    text: Sure, I can help you {intentLabel}.
+    interruptible: false
+  confirm_intent_explicit:
+    text: Just to check, do you want to {intentLabel}? Yes or no.
+    interruptible: false
+  disambiguate_intent:
+    text: Do you want to {a}, or {b}?
+    interruptible: true
+  ack_intent_then:
+    text: Sure, I can help you {a}, and then {b}.
+    interruptible: false
+  ack_queued:
+    text: Sure, we'll {intentLabel} after this.
+    interruptible: false
+  bridge_next:
+    text: Now, let's {intentLabel}.
+    interruptible: false
+  ack_frustration:
+    text: I understand, let's get this sorted.
+    interruptible: false
+  offer_transfer:
+    text: Would you like me to connect you to a person, or keep going?
+    interruptible: true
+  ack_declined:
+    text: Okay, let's keep going.
+    interruptible: false
+  system_slow_dtmf_hint:
+    text: Sorry for the delay. You can also use your keypad.
+    interruptible: true
+  system_slow_chat:
+    text: Sorry, I'm having trouble on my end. Please send that again.
+    interruptible: true
+  ask_change:
+    text: What should I change?
+    interruptible: true
+  confirm_dtmf:
+    text: Press 1 to confirm, or 2 to change something.
+    interruptible: false
+  anything_else:
+    text: Is there anything else I can help with?
+    interruptible: true
+  goodbye:
+    text: Goodbye.
+    interruptible: false
+  goodbye_chat:
+    text: Thanks for chatting with Example Power & Light. Goodbye.
+    interruptible: false
+  screen_reprompt:
+    text: I can help you report an outage, check your balance, or set up a payment arrangement.
+    interruptible: true
+  screen_reprompt_form:
+    text: Let's keep going.
+    interruptible: true
+  handoff_live_agent:
+    text: One moment while I connect you to a person.
+    interruptible: false
+  handoff_frustrated:
+    text: Let me get you to someone who can help.
+    interruptible: false
+  handoff_max_attempts:
+    text: Let me get someone to help you with that.
+    interruptible: false
+  handoff_system_failure:
+    text: I'm having trouble right now. Let me connect you to someone.
+    interruptible: false
+  handoff_needs_human:
+    text: This one needs a person. Let me connect you to someone.
+    interruptible: false
+  handoff_security:
+    text: Let me connect you to someone who can help.
+    interruptible: false
+
+  # The identity factors (identity.yaml): the slots' questions, and the engine's identity lines
+  ask_accountId:
+    text: What's your eight digit account number?
+    interruptible: true
+  ask_accountId_retry:
+    text: Sorry, what's your account number? Please say it one digit at a time.
+    interruptible: true
+  ask_dob:
+    text: And your date of birth?
+    interruptible: true
+  ask_dob_retry:
+    text: Sorry, what's your date of birth? For example, June fourteenth, nineteen seventy five.
+    interruptible: true
+  ask_dob_year:
+    text: And the year you were born?
+    interruptible: true
+  identity_verified:
+    text: Thank you, {first}. You're verified.
+    interruptible: false
+  identity_failed:
+    text: I couldn't match those details. Let's try again.
+    interruptible: false
+  ask_accountId_dtmf:
+    text: Please enter your eight digit account number on your keypad.
+    interruptible: false
+  ask_dob_dtmf:
+    text: Please enter your date of birth on your keypad, two digits for the month, two for the day, and four for the year.
+    interruptible: false
+  ask_otp:
+    text: I've texted a six digit code to the phone on the account. Please enter it on your keypad.
+    interruptible: false
+  ask_otp_spoken:
+    text: For your security, please key the code on your keypad rather than saying it.
+    interruptible: false
+  otp_spoken_reissued:
+    text: Since the code was said aloud, I've texted you a new one. Please enter the new code on your keypad.
+    interruptible: false
+  otp_verified:
+    text: Thanks, that code matches.
+    interruptible: false
+  otp_failed:
+    text: That code didn't match. Please try again.
+    interruptible: false
+  handoff_role_person:
+    text: A payment arrangement for a tenant's account needs one of our team. Let me connect you to someone.
+    interruptible: false
+  handoff_identity:
+    text: I couldn't verify you, so let me connect you to someone who can help.
+    interruptible: false
+
+  # The slots: ask_<slot> and ask_<slot>_retry for each, plus whatever lines its type needs
+  ask_place:
+    text: What's the street address where the power is out?
+    interruptible: true
+  ask_place_retry:
+    text: Sorry, what's the address? The house number and the street are enough.
+    interruptible: true
+  ask_symptom:
+    text: What are you seeing? No power at all, power out in part of the building, flickering or dim lights, or a power line down?
+    interruptible: true
+  ask_symptom_retry:
+    text: Sorry, is it no power at all, power out in part of the building, flickering lights, or a line down?
+    interruptible: true
+  ask_symptom_dtmf:
+    text: On your keypad, press 1 for no power at all, 2 for power out in part of the building, 3 for flickering or dim lights, or 4 for a power line down.
+    interruptible: false
+  ask_account:
+    text: Which account is it? Please say the eight digit account number.
+    interruptible: true
+  ask_account_retry:
+    text: Sorry, what's the account number? Please say it one digit at a time.
+    interruptible: true
+  ask_account_dtmf:
+    text: Please enter the eight digit account number on your keypad.
+    interruptible: false
+  ask_count:
+    text: How many payments would you like to split it into? Two, three, four, or six?
+    interruptible: true
+  ask_count_retry:
+    text: Sorry, two, three, four, or six payments?
+    interruptible: true
+  ask_count_dtmf:
+    text: On your keypad, press 1 for two payments, 2 for three, 3 for four, or 4 for six.
+    interruptible: false
+  ask_firstDate:
+    text: What day would you like the first payment to be? It can be any day in the next thirty days.
+    interruptible: true
+  ask_firstDate_retry:
+    text: Sorry, what day should the first payment be?
+    interruptible: true
+  ask_firstDate_dtmf:
+    text: Please enter the month and day of the first payment on your keypad, two digits each.
+    interruptible: false
+
+  # The forms: the summary read back for a yes, and the line the form says when it completes
+  confirm_report_outage:
+    text: "You're reporting {symptom}, at this address: {place}. Shall I file that?"
+    interruptible: true
+  outage_reported:
+    text: Thanks. Your outage report is filed, reference {ref}. Our crews have it, and you can follow the restoration time on the outage map at example dot com slash outages. If a line is down, please stay well clear of it.
+    interruptible: false
+  balance_is:
+    text: The balance on the account ending in {last4} is {balance}, due {due}.
+    interruptible: false
+  account_not_found:
+    text: I couldn't find that account.
+    interruptible: false
+  account_not_yours:
+    text: I'm sorry, I can't give out details for that account.
+    interruptible: false
+  confirm_set_up_plan:
+    text: That's {total} in {count}, the first on {firstDate}. Shall I set that up?
+    interruptible: true
+  plan_set_up:
+    text: Done. Your payment arrangement is set up, {count} of about {each}, the first on {firstDate}. Your reference is {ref}.
+    interruptible: false
+  plan_amount_outside:
+    text: I can only set up an arrangement for an amount that's owed on the account, and no more than the balance. I can't set this one up.
+    interruptible: false
+  plan_date_outside:
+    text: The first payment has to be between today and thirty days from today, so I can't set that one up.
+    interruptible: false
+
+  # The informational answers
+  outage_map:
+    text: You can see current outages and restoration times on our outage map, at example dot com slash outages.
+    interruptible: true
+  office_hours:
+    text: Our customer office is open Monday through Friday, eight in the morning to five in the evening. You can report an outage any time, day or night.
+    interruptible: true
