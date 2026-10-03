@@ -16,7 +16,7 @@ function whoParams(s: Session): { name: string; dob: string; provider: string } 
 /**
  * A booking or a move writes the day the caller chose at the time offered on it. Read from the slots
  * and the offer as they stand: after "yes, but Thursday" the day is Thursday and no opening has been
- * offered on it, so the values differ from those read back and R3 refuses.
+ * offered on it, so the values differ from those read back and the confirmed rule refuses.
  */
 export function bookingParams(s: Session): Record<string, string> {
   const who = whoParams(s);
@@ -44,7 +44,7 @@ function nothingToActOn(c: CompletionContext): Completion | null {
 /**
  * The summary's yes: the confirmation armed, the write made through the gate, and the call ends on
  * the form's line. Nothing to act on (no booking found, no opening on the day): no write, a person.
- * A value changed since the summary was read: R3 refuses and the summary is read again (reconfirm).
+ * A value changed since the summary was read: the confirmed rule refuses and the summary is read again (reconfirm).
  * Any other refusal: the engine's (a person).
  */
 function writeThenEnd(tool: ClinicTool, params: (s: Session) => Record<string, string>, promptId: string): (c: CompletionContext) => Completion {

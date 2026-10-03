@@ -93,7 +93,7 @@ export const PORTAL_PROMPTS: readonly { id: string; why: string }[] = [
   { id: 'greeting_chat_delegate', why: 'a chat opens for someone acting for subjects' },
 ];
 
-/** R5's NEEDS_HUMAN reason when policy.yaml names none: the gate's own (gate/lines.ts). */
+/** The role rule's NEEDS_HUMAN reason when policy.yaml names none: the gate's own (gate/lines.ts). */
 export { DEFAULT_ROLE_PERSON_REASON };
 
 /** The identity factors' slots, the line said after a failed match (with where it is named), and whether the ladder has the one-time code. */
@@ -111,7 +111,7 @@ function identityParts(config: LoadedConfig): { factors: readonly string[]; fail
  * `ask_<slot>_dtmf` when the spec has a keypad rung (`dtmf`) or reads every spoken value back
  * (`spokenConfirm: always`, whose declined or unanswered read-back goes to the keypad),
  * `confirm_<slot>` for that read-back, `ack_<slot>` when a spoken value may be acknowledged
- * (`spokenConfirm: by-confidence`), and the spec's `partialPromptId`. And the handoff line for R5's
+ * (`spokenConfirm: by-confidence`), and the spec's `partialPromptId`. And the handoff line for the role rule's
  * reason, when a role's access to a tool is `person`. And every line a slot declares it can lead
  * the engine to say (SlotSpec.prompts: e.g. `disambiguate_<slot>`, a help prompt, a retryPromptId),
  * which only the code knows; a slot that declares none adds none.

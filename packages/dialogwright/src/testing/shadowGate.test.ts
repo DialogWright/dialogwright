@@ -44,7 +44,7 @@ describe('the shadow gate on the testkit', () => {
     expect(report.compared).toBe(grid.points.length);
     expect(report.compared).toBe(4 * 8 * 18 * (6 * 5 + 1 * 5 * 3 + 3 * 1));
     expect(gateShadowUnexercised(report, FROZEN.rulesFor, true)).toEqual([]);
-    expect(Object.keys(report.rules).sort()).toEqual(['R0', 'R1', 'R2', 'R3', 'R5', 'R6', 'R7', 'R8']);
+    expect(Object.keys(report.rules).sort()).toEqual(['R8', 'attempts', 'confirmed', 'fields', 'identity', 'role', 'scope', 'unlisted']);
   });
 
   async function run(app: App, report: GateShadowReport) {
@@ -73,7 +73,7 @@ describe('the shadow gate on the testkit', () => {
     expect(report.compared).toBeGreaterThan(100);
     // What a run reaches: every rule it runs passes somewhere; no call of a run fails the confirmed
     // or the fields rule (the grid fails both).
-    expect(gateShadowUnexercised(report)).toEqual(['R3 never fails', 'R7 never fails']);
+    expect(gateShadowUnexercised(report)).toEqual(['confirmed never fails', 'fields never fails']);
   }, 60_000);
 
   it('finds a reference that differs by one role, in throw mode and in report mode', () => {

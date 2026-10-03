@@ -44,7 +44,7 @@ export interface PolicyInvariantViolation {
   readonly invariant: InvariantName;
   /** The grid case (GateGridCase.key). */
   readonly key: string;
-  /** The rule as the file writes it, with the id it is recorded under, e.g. "scope (R2)"; for an action not listed, "(not in the policy)". */
+  /** The rule as the file writes it, e.g. "scope" or "custom R8"; for an action not listed, "(not in the policy)". */
   readonly rule: string;
   /** What the gate did and why that breaks the invariant. */
   readonly detail: string;
@@ -77,9 +77,9 @@ export const CONVERSATION_STATE_DAY = '2031-01-15';
 
 const has = (obj: object | undefined, key: string): boolean => obj !== undefined && Object.hasOwn(obj, key);
 
-/** A rule as the file writes it, with the id its line is recorded under. */
+/** A rule as the file writes it: a built-in by its name (which is the id its line is recorded under), a custom rule with its id. */
 export function ruleLabel(rule: Rule): string {
-  return rule.rule === 'custom' ? `custom ${rule.id}` : `${rule.rule} (${RULE_ID[rule.rule]})`;
+  return rule.rule === 'custom' ? `custom ${rule.id}` : rule.rule;
 }
 
 /** The id a rule's line is recorded under. */

@@ -276,7 +276,15 @@ describe('the checks', () => {
   it('a custom rule the code does not have, and one named by a built-in id', () => {
     expect(actionsWith({ getRecord: { level: 1, rules: ['identity', { custom: 'not-twise' }, { custom: 'R2' }] } })).toEqual([
       'actions.getRecord.rules[1].custom: custom rule "not-twise" is not defined in the code -> rename it to "not-twice", or add it to code.customRules["not-twise"], or delete this rule',
-      'actions.getRecord.rules[2].custom: "custom: R2" names a built-in rule\'s id, which would run that rule without its parameters -> write the built-in rule by its name ("scope" with its parameters), or give the app\'s rule an id of its own',
+      'actions.getRecord.rules[2].custom: "custom: R2" is the old id of the built-in "scope" rule, which would run that rule without its parameters -> write the built-in rule by its name ("scope" with its parameters), or give the app\'s rule an id of its own',
+    ]);
+  });
+
+  it('a custom rule named by a built-in rule\'s name, or by the id the gate keeps for an action not listed', () => {
+    expect(actionsWith({ getRecord: { level: 1, rules: ['identity', { custom: 'role' }, { custom: 'unlisted' }, { custom: 'R0' }] } })).toEqual([
+      'actions.getRecord.rules[1].custom: "custom: role" is a built-in rule\'s name, which would run that rule without its parameters -> write the built-in rule by its name ("role" with its parameters), or give the app\'s rule an id of its own',
+      'actions.getRecord.rules[2].custom: "custom: unlisted" is an id the gate keeps for itself (the line for an action that is not listed) -> give the app\'s rule an id of its own',
+      'actions.getRecord.rules[3].custom: "custom: R0" is an id the gate keeps for itself (the line for an action that is not listed) -> give the app\'s rule an id of its own',
     ]);
   });
 

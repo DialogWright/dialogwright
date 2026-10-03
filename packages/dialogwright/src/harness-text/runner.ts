@@ -156,7 +156,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     const read = renderSummary(session, prompt(promptId, 'confirm', summaryVars(session), [], ['yes', 'no']), tc, newTurnOut());
     session.lastPromptId = read.promptId;
     session.lastPromptText = promptText(app, read.promptId, read.vars, session.locale);
-    // The summary has been spoken, so its values are what a yes arms (gate R3): renderSummary took
+    // The summary has been spoken, so its values are what a yes arms (the gate's confirmed rule): renderSummary took
     // their hash as it read them.
     session.lastPromptOptions = ['yes', 'no'];
     return session;

@@ -39,7 +39,7 @@ export class ClinicSystems {
   }
 }
 
-/** No call names a subject (the clinic verifies no one, so no tool runs R2): the lookups have nothing to find. */
+/** No call names a subject (the clinic verifies no one, so no tool runs scope): the lookups have nothing to find. */
 export const CLINIC_LOOKUPS: GateLookups = { ownerOf: () => null, scopeOf: () => [] };
 
 /** A call through the gate, its value typed: null unless the gate allowed it. */
@@ -71,7 +71,7 @@ function write(kind: ScheduleChange['kind'], done: string): ToolDef {
 /**
  * The clinic's tools. Each runs only after the gate allowed it; none decides anything itself. The
  * two reads look the schedule up; the three writes change it, each after the caller confirmed the
- * summary that named exactly what is written (R3).
+ * summary that named exactly what is written (the confirmed rule).
  */
 export const CLINIC_TOOLS: { readonly [T in ClinicTool]: ToolDef } = {
   findAppointment: tool<'findAppointment'>(['name', 'dob', 'provider'], (p, sys, { tc }) => {

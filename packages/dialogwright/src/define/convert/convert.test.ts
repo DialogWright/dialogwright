@@ -289,6 +289,13 @@ describe('policy:convert refuses what it cannot write, and says how to fix the o
     ]);
   });
 
+  it('an old rule id that rules now name: R0, or the name of a built-in rule, taken by an app\'s own rule', () => {
+    expect(problems(`${base}rulesFor: { a: [R1, role, R0, known-branch] }\n`)).toEqual([
+      'rulesFor.a: "role" is the name of a built-in rule, or an id the gate keeps for itself, so the app\'s own rule cannot have it -> rename the rule in the code\'s customRules and in rulesFor',
+      'rulesFor.a: "R0" is the name of a built-in rule, or an id the gate keeps for itself, so the app\'s own rule cannot have it -> rename the rule in the code\'s customRules and in rulesFor',
+    ]);
+  });
+
   it('a file that is not valid, with the line the loader would give', () => {
     expect(problems('toolLevel: { a: 3 }\nrulesFor: {}\nconfirmedFields: []\nmaxAttempts: 3\n')).toEqual([expect.stringMatching(/^policy\.yaml:1:\d+  toolLevel\.a  /)]);
   });

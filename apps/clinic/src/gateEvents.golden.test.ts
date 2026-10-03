@@ -27,12 +27,12 @@ describe('gate-event golden', () => {
 });
 
 describe('gate grid', () => {
-  it('is stable, and sees every rule pass and fail but R1, which no call can fail at level 0', () => {
+  it('is stable, and sees every rule pass and fail but identity, which no call can fail at level 0', () => {
     const input = gateGridInput(clinicApp);
     const grid = runGateGrid(input);
     // 5 tools and the unlisted one; no purposes beside the two probes; 6 principals; one param set each; 18 facts.
     expect(grid.points.length).toBe(3 * 6 * 18 * 6);
     expect(compareGateGrid(input, legacyGateEvaluator(input))).toEqual([]);
-    expect(gridUnexercised(input, grid)).toEqual(Object.keys(clinicApp.policy.rulesFor).map((t) => `${t} R1 never fails`));
+    expect(gridUnexercised(input, grid)).toEqual(Object.keys(clinicApp.policy.rulesFor).map((t) => `${t} identity never fails`));
   });
 });

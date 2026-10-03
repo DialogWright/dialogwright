@@ -25,14 +25,14 @@ export function defaultRoleLine(role: string, tool: ToolName, access: RoleAccess
 }
 
 /**
- * The hash the confirmed rule (R3) compares: the exact values a write will send, over the confirmed
+ * The hash the confirmed rule compares: the exact values a write will send, over the confirmed
  * fields in their fixed order.
  */
 export function confirmationHash(params: Readonly<Record<string, string>>, fields: readonly string[]): string {
   return createHash('sha256').update(JSON.stringify(fields.map((k) => [k, params[k] ?? ''])), 'utf8').digest('hex');
 }
 
-/** Who asks, as the scope rule (R2) words it; null for an anonymous caller (R1 steps one up before R2 runs). */
+/** Who asks, as the scope rule words it; null for an anonymous caller (the identity rule steps one up before scope runs). */
 export function askerOf(p: Principal, subjectKind: string): ScopeAsker | null {
   if (isAnonymous(p)) return null;
   return p.kind === subjectKind ? 'subject' : 'delegate';
@@ -45,9 +45,9 @@ export function scopeShown(scope: readonly string[]): string {
   return scope.map(maskId).join(', ');
 }
 
-/** The line for a tool no action lists (R0). */
-export function unlistedLine(tool: ToolName): RuleResult {
-  return { id: 'R0', description: 'The action is on the approved list', compared: `tool ${tool} not in policy`, pass: false };
+/** The line for a tool no action lists, under the id the evaluator records it as (the gate's `unlisted`, the legacy evaluator's R0). */
+export function unlistedLine(tool: ToolName, id: string): RuleResult {
+  return { id, description: 'The action is on the approved list', compared: `tool ${tool} not in policy`, pass: false };
 }
 
 /** The line for a rule id that is neither a built-in nor one of the app's rules. */

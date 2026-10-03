@@ -4,7 +4,7 @@ import type { PolicyMatrix } from 'dialogwright';
  * The clinic's principals and records for the gate grid (TestingHooks.policyMatrix). The clinic
  * verifies no one and keeps no scope (no identity.yaml, no subjects in policy.yaml), so none of these
  * is one of its subjects to the gate: the grid shows every caller, proven or not, with a role or
- * without, gets the same answers, and that the writes hold to what was confirmed (R3).
+ * without, gets the same answers, and that the writes hold to what was confirmed (the confirmed rule).
  */
 export function clinicPolicyMatrix(): PolicyMatrix {
   const patient = { kind: 'patient', id: '55507788', first: 'Morgan' } as const;

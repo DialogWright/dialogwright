@@ -2,9 +2,10 @@ import { isDeepStrictEqual } from 'node:util';
 import type { App, IdentityConfig, PolicyMatrix, PolicyMatrixSubject, PolicyTables, ToolName } from '../core/app/types';
 import { delegateProblem } from '../core/app/principals';
 import { identityOf } from '../core/app/lookup';
+import { LEGACY_RULE_ID, LEGACY_UNLISTED_ID, UNLISTED_RULE_ID } from '../gate/compiled';
 import { confirmationHash, evaluateCall } from '../gate/policy';
 import { ANONYMOUS } from '../gate/principal';
-import type { GateDecision, GateFacts, GateLookups, Party, Principal, ToolCall } from '../gate/types';
+import type { GateDecision, GateFacts, GateLookups, Party, Principal, RuleResult, ToolCall } from '../gate/types';
 import { REGRESS_TODAY } from '../harness-text/baseline';
 
 /**
@@ -12,11 +13,13 @@ import { REGRESS_TODAY } from '../harness-text/baseline';
  * every kind of principal, every kind of subject a call can name, and the facts the gate reads
  * (attempts, the confirmation, the fields sent), each evaluated by the gate. The principals and
  * records are the app's (TestingHooks.policyMatrix); the crossing is the grid's. The legacy
- * evaluator (gate/policy.ts evaluateCall) is the reference, so a new evaluator is compared against it
- * decision by decision, whole (compareGateGrid).
+ * evaluator (gate/policy.ts evaluateCall) is the reference, so the gate is compared against it
+ * decision by decision, whole (compareGateGrid). The legacy evaluator records the ids it always did
+ * (R1..R7, R0) and the gate records the rules' names, so the reference's decisions go through the one
+ * id map below (nameOfLegacyId) and are otherwise compared as they are.
  */
 
-/** A tool name no app has: the grid's unlisted action (R0). */
+/** A tool name no app has: the grid's unlisted action. */
 export const UNLISTED_TOOL = '(unlisted)';
 
 /** The probe purposes the lifecycle asks the gate with (core/lifecycle.ts PROBES). */
@@ -51,9 +54,42 @@ export function gateGridInput(app: App): GateGridInput {
 /** A gate to put through the grid: the legacy evaluator, or a candidate to compare with it. */
 export type GateEvaluate = (call: ToolCall, p: Principal, facts: GateFacts, lk: GateLookups) => GateDecision;
 
-/** The legacy evaluator over the input's tables and subject kind: the grid's reference. */
+/**
+ * The id map between the legacy evaluator and the gate: the name the gate records for an id the
+ * legacy evaluator records (R1 identity, R2 scope, R3 confirmed, R5 role, R6 attempts, R7 fields, R0
+ * unlisted). Any other id (an app's own rule) is the same in both. Also the id a table's rulesFor
+ * names a rule by, as the gate records it (what gridUnexercised and gateShadowUnexercised read).
+ */
+const NAME_OF_LEGACY_ID: Readonly<Record<string, string>> = {
+  [LEGACY_UNLISTED_ID]: UNLISTED_RULE_ID,
+  ...Object.fromEntries(Object.entries(LEGACY_RULE_ID).map(([name, id]) => [id, name])),
+};
+
+export function nameOfLegacyId(id: string): string {
+  return Object.hasOwn(NAME_OF_LEGACY_ID, id) ? NAME_OF_LEGACY_ID[id]! : id;
+}
+
+/**
+ * A rule's line under the name the gate records it by. Only the id changes, and the id where a line
+ * that fails closed words it (gate/lines.ts: "rule <id> threw", "unknown", "answered invalidly").
+ */
+function namedLine(r: RuleResult): RuleResult {
+  const id = nameOfLegacyId(r.id);
+  const compared = r.compared.replace(/^rule (\S+) (unknown|threw|answered invalidly)$/, (whole, at: string, what: string) => (at === r.id ? `rule ${id} ${what}` : whole));
+  return { ...r, id, compared };
+}
+
+/** A decision with each rule line under the name the gate records it by (nothing else changes). */
+export function namedDecision(d: GateDecision): GateDecision {
+  return { ...d, rules: d.rules.map(namedLine) };
+}
+
+/**
+ * The legacy evaluator over the input's tables and subject kind: the grid's reference, its rule ids
+ * mapped to the rules' names (nameOfLegacyId) so a decision is compared with the gate's whole.
+ */
 export function legacyGateEvaluator(input: Pick<GateGridInput, 'policy' | 'subjectKind'>): GateEvaluate {
-  return (call, p, facts, lk) => evaluateCall(call, p, facts, lk, input.policy, input.subjectKind);
+  return (call, p, facts, lk) => namedDecision(evaluateCall(call, p, facts, lk, input.policy, input.subjectKind));
 }
 
 /** One point of the grid, by its labels. */
@@ -312,12 +348,13 @@ export function gridRuleCounts(grid: GateGrid): Record<string, { pass: number; f
   return out;
 }
 
-/** The rules a tool's row lists that the grid never saw pass, or never saw fail, as "<tool> <rule> never passes|fails". */
+/** The rules a tool's row lists that the grid never saw pass, or never saw fail, as "<tool> <rule name> never passes|fails". */
 export function gridUnexercised(input: GateGridInput, grid: GateGrid): string[] {
   const seen = gridRuleCounts(grid);
   const out: string[] = [];
   for (const [tool, ids] of Object.entries(input.policy.rulesFor)) {
-    for (const id of ids) {
+    for (const tableId of ids) {
+      const id = nameOfLegacyId(tableId);
       const n = seen[`${tool} ${id}`] ?? { pass: 0, fail: 0 };
       if (n.pass === 0) out.push(`${tool} ${id} never passes`);
       if (n.fail === 0) out.push(`${tool} ${id} never fails`);

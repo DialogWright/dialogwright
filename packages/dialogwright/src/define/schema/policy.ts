@@ -79,7 +79,7 @@ export const policyWording = z
         delegate: wordingFor.optional().describe('The scope rule\'s description when a party acting for subjects asks.'),
       })
       .optional()
-      .describe("The scope rule's (R2) description, by who asks and how the action names its subject. Default: \"The record belongs to someone this caller may see\"."),
+      .describe("The scope rule's description, by who asks and how the action names its subject. Default: \"The record belongs to someone this caller may see\"."),
     recordOwner: text().optional().describe('What the scope rule\'s compared line calls the owner of a record. Default "record owner".'),
     subject: text().optional().describe('What the scope rule\'s compared line calls a subject named by id. Default "subject".'),
     role: z
@@ -89,7 +89,7 @@ export const policyWording = z
         person: text().optional().describe('The role rule\'s compared line when a person takes the call. Default "role {role} may {tool}: with a person".'),
       })
       .optional()
-      .describe("The role rule's (R5) compared line, by what the rule gives the role, as a template with {role} and {tool}."),
+      .describe("The role rule's compared line, by what the rule gives the role, as a template with {role} and {tool}."),
   })
   .describe("The words the gate's built-in rules use in their description and compared lines, so the console and the audit read in the app's terms. Without it, neutral words.");
 
@@ -126,20 +126,20 @@ const scopeRule = z
       params: { fix: given.length === 0 ? 'write "scope: { param: <the subject\'s id param> }", or "scope: { record: <the record id param> }"' : 'keep the one that names the subject this action acts on' },
     });
   }))
-  .describe('scope (R2): the subject the action acts on must be one the caller may see. Exactly one of "param" (the param is the subject\'s own id) or "record" (the param is a record id, resolved to its owner).');
+  .describe('scope: the subject the action acts on must be one the caller may see. Exactly one of "param" (the param is the subject\'s own id) or "record" (the param is a record id, resolved to its owner).');
 
 const roleRule = z
   .object({
     reason: name().optional().describe('The reason a "person" role hands the call over for (its handoff line is handoff_<reason>). Default "role-person".'),
   })
   .catchall(roleAccess)
-  .describe('role (R5): what each role may do with the action: allow, refuse, or person (a person takes the call). A role not listed is refused, and so is a party who acts for subjects with no role; one of the app\'s subjects passes. The roles are those identity.yaml declares under principals.');
+  .describe('role: what each role may do with the action: allow, refuse, or person (a person takes the call). A role not listed is refused, and so is a party who acts for subjects with no role; one of the app\'s subjects passes. The roles are those identity.yaml declares under principals.');
 
 const confirmedRule = unique(identifier(), 'confirmed field')
   .min(1, { error: 'must name at least one field' })
-  .describe('confirmed (R3): the action sends exactly these fields, and the caller confirmed exactly these values at the read-back, in the order the hash is taken over.');
+  .describe('confirmed: the action sends exactly these fields, and the caller confirmed exactly these values at the read-back, in the order the hash is taken over.');
 
-const fieldsRule = unique(identifier(), 'field').describe('fields (R7): the only fields the action may send on (to a downstream service). An empty list sends none.');
+const fieldsRule = unique(identifier(), 'field').describe('fields: the only fields the action may send on (to a downstream service). An empty list sends none.');
 
 const customRule = name().describe('custom: one of the app\'s own rules, by the id its code registers it under (code.customRules).');
 
@@ -276,7 +276,7 @@ export type RuleEntryYaml =
 /** The JSON Schema of one rule entry, for an editor: the bare names, and each rule with its parameters. */
 const ruleEntryJson = (() => {
   const branches = [
-    z.enum(BARE_RULES).describe('A rule with no parameters: identity (R1, the caller\'s identity level is at least the action\'s) or attempts (R6, the identity check has failed fewer times than identity.yaml\'s attempts).'),
+    z.enum(BARE_RULES).describe('A rule with no parameters: identity (the caller\'s identity level is at least the action\'s) or attempts (the identity check has failed fewer times than identity.yaml\'s attempts).'),
     ...PARAM_RULES.map((rule) => z.strictObject({ [rule]: RULE_PARAMS[rule] }).describe(`The ${rule} rule with its parameters, for example "${RULE_EXAMPLES[rule]}".`)),
   ];
   const { $schema: _schema, ...json } = z.toJSONSchema(z.union(branches as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]), { io: 'input', target: 'draft-7' }) as Record<string, unknown>;

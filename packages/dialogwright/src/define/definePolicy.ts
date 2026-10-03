@@ -1,7 +1,6 @@
 import type { IdentityConfig, PolicyTables, SlotId, ToolName } from '../core/app/types';
-import { RULE_IDS } from '../gate/policy';
 import { ruleDefinitionProblems } from '../gate/defineRule';
-import { NAMED_RULE_IDS } from '../gate/compiled';
+import { BUILT_IN_IDS_NOTE, BUILT_IN_RULES } from '../gate/compiled';
 import { AppDefinitionError, codePath } from './defineApp';
 import { loadConfigFile, type ConfigFile } from './load';
 import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotRedactOf, toolFieldProblems, toolParamProblems, type PolicyCheckInput } from './policyFile';
@@ -108,7 +107,7 @@ function customRuleProblems(file: string, policy: PolicyYaml, customRules: Polic
     out.push({ file, line: 0, column: 0, path: codePath('customRules', id), message, fix });
   };
   for (const [id, rule] of Object.entries(customRules ?? {})) {
-    if (isBuiltInRuleId(id)) at(id, `custom rule "${id}" has a built-in rule's id`, `rename it in ${codePath('customRules', id)} and in the "custom:" rules that name it; ${NAMED_RULE_IDS.includes(id) ? `"${id}" is a built-in rule written by its name with its parameters` : `the built-in ids are R0, ${RULE_IDS.join(', ')}`}`);
+    if (isBuiltInRuleId(id)) at(id, `custom rule "${id}" has a built-in rule's id`, `rename it in ${codePath('customRules', id)} and in the "custom:" rules that name it; ${(BUILT_IN_RULES as readonly string[]).includes(id) ? `"${id}" is a built-in rule written by its name with its parameters` : BUILT_IN_IDS_NOTE}`);
     else if (typeof rule !== 'function') at(id, `custom rule "${id}" is not a function`, `make ${codePath('customRules', id)} a function of the rule context`);
     else if (!named.has(id)) at(id, `custom rule "${id}" (${codePath('customRules', id)}) is not named by any action's rules, so it never runs`, `add "- custom: ${id}" to the rules of the action it guards, or delete the rule from ${codePath('customRules', id)}`);
     else for (const { message, fix } of ruleDefinitionProblems(id, rule, codePath('customRules', id))) at(id, message, fix);

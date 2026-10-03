@@ -25,8 +25,9 @@ export type { PolicyYaml, IdentityYaml, ActionYaml, RuleEntryYaml, RuleName, Dat
 
 // The gate: the policy's named rules compiled (the gate an app's calls go through), and the legacy
 // evaluator over the tables (the shadow gate's reference, which an app's direct gate tests may call);
-// the hash the confirmed rule compares, and the built-in rule ids.
-export { compiledPolicyOf, compileGate, programFromTables, sourceOf, LEGACY_RULE_ID, RULE_ID, NAMED_RULE_IDS } from '../gate/compiled';
+// the hash the confirmed rule compares, and the built-in rules' ids (RULE_ID: the names decisions and
+// audit lines record; LEGACY_RULE_ID and TABLE_RULE_ID: the ids tables' rulesFor still use).
+export { compiledPolicyOf, compileGate, programFromTables, sourceOf, LEGACY_RULE_ID, TABLE_RULE_ID, RULE_ID, UNLISTED_RULE_ID, BUILT_IN_RULES, NAMED_RULE_IDS, isBuiltInRuleId } from '../gate/compiled';
 export type { CompiledPolicy, PolicySource, PolicyAction, LegacyRuleName } from '../gate/compiled';
 // The range rules (dateInRange, limit) and the reference grammar their bounds are written in.
 export { parseLookupRef, parseDateBound, parseNumberBound, isIsoDate, DATE_IN_RANGE_REASONS, LIMIT_REASONS, BOUND_UNKNOWN } from '../gate/bounded';
@@ -43,3 +44,5 @@ export type { PolicyTables, PolicyWording, RoleAccess, SubjectParam, ScopeAsker,
 export type {
   Level, Anonymous, Party, Principal, ToolCall, GateVerdict, RuleResult, GateDecision, GateLookups, GateFacts, RuleContext, RuleOutcome,
 } from '../gate/types';
+// Whether a decision ran a rule, by name, and it passed (what an app's code asks of the gate's answer).
+export { passed } from '../gate/types';

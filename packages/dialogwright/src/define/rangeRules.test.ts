@@ -171,7 +171,7 @@ describe('policy.yaml: the range rules checked', () => {
     ]);
     const rule = () => ({ result: { id: 'limit', description: 'x', compared: 'x', pass: true } });
     expect(problemsOf(() => definePolicy(refund([{ custom: 'limit' }]), { tools: TOOLS, customRules: { limit: rule } }))).toEqual([
-      'actions.refundOrder.rules[0].custom: "custom: limit" names a built-in rule\'s id, which would run that rule without its parameters -> write the built-in rule by its name ("limit" with its parameters), or give the app\'s rule an id of its own',
+      'actions.refundOrder.rules[0].custom: "custom: limit" is a built-in rule\'s name, which would run that rule without its parameters -> write the built-in rule by its name ("limit" with its parameters), or give the app\'s rule an id of its own',
       'code.customRules.limit: custom rule "limit" has a built-in rule\'s id -> rename it in code.customRules.limit and in the "custom:" rules that name it; "limit" is a built-in rule written by its name with its parameters',
     ]);
   });
@@ -371,7 +371,7 @@ describe('an app that uses both, built by defineApp', () => {
       expect(['ok', 'onBounds'], c.key).toContain(c.params);
       expect(c.fields, c.key).toBe('exact');
       expect(c.confirmation, c.key).toBe('match');
-      expect(decision.rules.map((r) => r.id)).toEqual(['R1', 'R3', 'dateInRange', 'limit']);
+      expect(decision.rules.map((r) => r.id)).toEqual(['identity', 'confirmed', 'dateInRange', 'limit']);
       expect(decision.rules.every((r) => r.pass)).toBe(true);
     }
     // Fails closed: a value that is not a date or a number, a bound past, an unknown book: never allowed, and the right verdict where the range rule decided.

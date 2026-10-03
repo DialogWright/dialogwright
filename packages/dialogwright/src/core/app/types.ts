@@ -58,7 +58,7 @@ export interface FormDef {
    */
   principalEntry?(ctx: EntryContext): Decision | Refused | null;
   /**
-   * For a form whose completion is a confirmed write (gate R3): the values it will write, read from
+   * For a form whose completion is a confirmed write (the gate's confirmed rule): the values it will write, read from
    * the session. Each time the summary is spoken their hash is taken, for the caller's yes to arm. A
    * form without one holds no confirmation.
    */
@@ -176,7 +176,7 @@ export interface Refused {
  *   on instead: the line is said, then the next request is bridged into, as after `said`.
  * - `refused`: the form ends without its answer (the gate refused the call, or there was none to
  *   give and no transfer to offer); its line is said and the call carries on, the form uncounted.
- * - `reconfirm`: the gate refused the write and the form loop asks again. On R3 (the values changed
+ * - `reconfirm`: the gate refused the write and the form loop asks again. On the confirmed rule (the values changed
  *   after the summary was read) that reads the summary again; where an app's own rule refused a value
  *   and the completion cleared that slot (e.g. a delivery date in the future), it asks for it again.
  * - `decision`: the completion takes the turn (report_filed, a transfer offer, a handoff) and the
@@ -344,33 +344,33 @@ export interface ServiceResolveOptions {
 }
 
 /**
- * What R5 lets a role do with a tool: make the call, be refused it (BLOCK 'role'), or have a person
+ * What the role rule (R5 in the tables) lets a role do with a tool: make the call, be refused it (BLOCK 'role'), or have a person
  * take it (NEEDS_HUMAN, PolicyTables.rolePersonReason).
  */
 export type RoleAccess = 'allow' | 'refuse' | 'person';
 
-/** The gate's tables (src/gate/policy.ts evaluateCall): the whole of what the app's agent may do. */
+/** The gate's tables (src/gate/policy.ts evaluateCall): the whole of what the app's agent may do. Their `rulesFor` lists the built-in rules by their table ids (R1 identity, R2 scope, R3 confirmed, R5 role, R6 attempts, R7 fields); the gate records them under their names. */
 export interface PolicyTables {
   /** The identity level each tool needs; a tool without one needs the highest (fails closed). */
   toolLevel: Readonly<Record<ToolName, Level>>;
   purposeLevel: Readonly<Record<string, Level>>;
   rulesFor: Readonly<Record<ToolName, readonly string[]>>;
-  /** R7: the fields each tool may send on to a downstream service; a tool with no row sends none. */
+  /** R7 (fields): the fields each tool may send on to a downstream service; a tool with no row sends none. */
   serviceFields: Readonly<Partial<Record<ToolName, readonly string[]>>>;
   confirmedFields: readonly string[];
-  /** R6: failed attempts allowed at each identity check (the factors, the one-time code). */
+  /** R6 (attempts): failed attempts allowed at each identity check (the factors, the one-time code). */
   maxAttempts: number;
   /**
-   * R5: per tool, what each role of a principal that has one (e.g. depot staff) may do with it. A
+   * R5 (role): per tool, what each role of a principal that has one (e.g. depot staff) may do with it. A
    * tool or a role with no row is refused. Without the table, every role is refused.
    */
   roles?: Readonly<Record<ToolName, Readonly<Record<string, RoleAccess>>>>;
-  /** R5's NEEDS_HUMAN reason when a role's access is 'person' (e.g. 'staff-filing'). Default 'role-person'. */
+  /** The role rule's NEEDS_HUMAN reason when a role's access is 'person' (e.g. 'staff-filing'). Default 'role-person'. */
   rolePersonReason?: string;
   /**
-   * R2: per tool, the param that names the subject the call acts on, and whether its value is a
+   * R2 (scope): per tool, the param that names the subject the call acts on, and whether its value is a
    * record id the gate resolves to its owner (GateLookups.ownerOf) or the subject's own id. A tool
-   * that runs R2 without a row is BLOCKed (fails closed); validateApp refuses an app with one.
+   * that runs scope (R2) without a row is BLOCKed (fails closed); validateApp refuses an app with one.
    */
   subjects: Readonly<Record<ToolName, SubjectParam>>;
   /**
@@ -405,13 +405,13 @@ export interface PolicyTables {
  */
 export type AuditMask = 'last4' | 'mask' | 'length' | 'secret' | 'keep';
 
-/** R2: the param naming a call's subject; `via: 'record'` when it is a record id to resolve to its owner. */
+/** Scope (R2): the param naming a call's subject; `via: 'record'` when it is a record id to resolve to its owner. */
 export interface SubjectParam {
   readonly param: string;
   readonly via?: 'record';
 }
 
-/** Who is asking, as R2 words it: one of the app's subjects, or a party acting for subjects. */
+/** Who is asking, as the scope rule words it: one of the app's subjects, or a party acting for subjects. */
 export type ScopeAsker = 'subject' | 'delegate';
 
 /**
@@ -420,15 +420,15 @@ export type ScopeAsker = 'subject' | 'delegate';
  */
 export interface PolicyWording {
   /**
-   * R2's description, by who asks and how the tool names its subject (a record, or the subject's id
+   * The scope rule's description, by who asks and how the tool names its subject (a record, or the subject's id
    * as a param). Default: "The record belongs to someone this caller may see".
    */
   scope?: Readonly<Partial<Record<ScopeAsker, Readonly<Partial<Record<'record' | 'param', string>>>>>>;
-  /** R2's compared line names the owner of a record as this (default "record owner"), and a subject named by id as this (default "subject"). */
+  /** The scope rule's compared line names the owner of a record as this (default "record owner"), and a subject named by id as this (default "subject"). */
   recordOwner?: string;
   subject?: string;
   /**
-   * R5's compared line for a role and what the roles table gives it for the tool. Default:
+   * The role rule's compared line for a role and what the roles table gives it for the tool. Default:
    * "role <role> may <tool>: yes", "...: no", "...: with a person".
    */
   role?(role: string, tool: ToolName, access: RoleAccess): string;
@@ -1034,7 +1034,7 @@ export interface PolicyMatrix {
   /**
    * The params of a call, per tool, as named sets (e.g. a date an app's own rule passes and one it
    * fails); the grid sets the subject param. A tool without sets gets one, built from its subject
-   * param, the confirmed fields (if it runs R3) and its service fields, each valued from `values`.
+   * param, the confirmed fields (if it runs the confirmed rule) and its service fields, each valued from `values`.
    */
   readonly calls?: Readonly<Record<ToolName, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
   /** A value per param name for the calls the grid builds; any other param is 'x'. */

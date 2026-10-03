@@ -11,14 +11,15 @@ import type { App, PolicyTables, ToolDef } from '../core/app/types';
 import { validateApp } from '../core/app/validate';
 import { newSession } from '../core/session';
 import { ANONYMOUS, raise } from './principal';
+import { namedDecision } from '../testing/gateGrid';
 import { compiledPolicyOf } from './compiled';
 import { evaluateCall as legacyEvaluate } from './policy';
 import { isAnonymous, isParty, type GateDecision, type GateFacts, type GateLookups, type Party, type Principal, type RuleContext, type RuleOutcome, type ToolCall } from './types';
 
 /**
  * The gate's generic paths, run against a small clinic that is not the testkit: its subject kind is
- * `patient`, and a caregiver acts for patients with a role. What R2 compares, who may step up, what
- * R5 allows and the words on each line all come from the clinic's tables.
+ * `patient`, and a caregiver acts for patients with a role. What the scope rule compares, who may step up, what
+ * the role rule allows and the words on each line all come from the clinic's tables.
  */
 
 useTestkit();
@@ -26,12 +27,14 @@ useTestkit();
 /**
  * The gate both ways: the legacy evaluator over the tables, and the compiled gate the lifecycle runs
  * (for these hand-written tables, the tables read as named rules, gate/compiled.ts programFromTables).
- * Every test here holds the two to the same whole decision, and checks the compiled one.
+ * Every test here holds the two to the same whole decision (the legacy evaluator records R1..R7 and
+ * R0, the gate the rules' names, so the legacy decision goes through the shadow gate's id map), and
+ * checks the compiled one.
  */
 function evaluateCall(call: ToolCall, p: Principal, f: GateFacts, lk: GateLookups, policy: PolicyTables, subjectKind: string): GateDecision {
   const legacy = legacyEvaluate(call, p, f, lk, policy, subjectKind);
   const compiled = compiledPolicyOf(policy, subjectKind).evaluate(call, p, f, lk);
-  expect(compiled).toStrictEqual(legacy);
+  expect(compiled).toStrictEqual(namedDecision(legacy));
   return compiled;
 }
 
@@ -92,15 +95,15 @@ const r = (call: ToolCall, p: Principal, id: string, policy?: PolicyTables) => g
 
 const NEUTRAL_SCOPE = 'The record belongs to someone this caller may see';
 
-describe('R2, by the app\'s subjects table', () => {
+describe('scope, by the app\'s subjects table', () => {
   it('compares a subject named by param with the caller\'s scope, in neutral words', () => {
     const own = gate({ tool: 'readChart', params: { patientId: 'P-1001' } }, ANA);
     expect(own.verdict).toBe('ALLOW');
-    expect(own.rules.at(-1)).toEqual({ id: 'R2', pass: true, description: NEUTRAL_SCOPE, compared: 'subject ...1001 · caller may see ...1001 only' });
+    expect(own.rules.at(-1)).toEqual({ id: 'scope', pass: true, description: NEUTRAL_SCOPE, compared: 'subject ...1001 · caller may see ...1001 only' });
     const other = gate({ tool: 'readChart', params: { patientId: 'P-2002' } }, ANA);
     expect(other).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
     expect(other.rules.at(-1)).toMatchObject({ pass: false, compared: 'subject ...2002 · caller may see ...1001 only' });
-    expect(r({ tool: 'readChart', params: {} }, ANA, 'R2')).toMatchObject({ pass: false, compared: 'subject missing · caller may see ...1001 only' });
+    expect(r({ tool: 'readChart', params: {} }, ANA, 'scope')).toMatchObject({ pass: false, compared: 'subject missing · caller may see ...1001 only' });
   });
 
   it('resolves a subject named by a record to its owner, and fails closed on an unknown one', () => {
@@ -108,8 +111,8 @@ describe('R2, by the app\'s subjects table', () => {
     const other = gate({ tool: 'getVisit', params: { visit: 'V-2' } }, ANA2);
     expect(other).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
     expect(other.rules.at(-1)).toMatchObject({ description: NEUTRAL_SCOPE, compared: 'record owner ...2002 · caller may see ...1001 only' });
-    expect(r({ tool: 'getVisit', params: { visit: 'V-9' } }, ANA2, 'R2')).toMatchObject({ pass: false, compared: 'record owner unknown · caller may see ...1001 only' });
-    expect(r({ tool: 'getVisit', params: { visit: '' } }, ANA2, 'R2')).toMatchObject({ pass: false, compared: 'record owner unknown · caller may see ...1001 only' });
+    expect(r({ tool: 'getVisit', params: { visit: 'V-9' } }, ANA2, 'scope')).toMatchObject({ pass: false, compared: 'record owner unknown · caller may see ...1001 only' });
+    expect(r({ tool: 'getVisit', params: { visit: '' } }, ANA2, 'scope')).toMatchObject({ pass: false, compared: 'record owner unknown · caller may see ...1001 only' });
   });
 
   it('lets a party acting for subjects see those in its scope', () => {
@@ -118,10 +121,10 @@ describe('R2, by the app\'s subjects table', () => {
     expect(d.rules.at(-1)).toMatchObject({ compared: 'record owner ...2002 · caller may see ...1001, ...2002' });
   });
 
-  it('BLOCKs a tool that runs R2 with no row in the subjects table (fails closed)', () => {
+  it('BLOCKs a tool that runs scope with no row in the subjects table (fails closed)', () => {
     const d = gate({ tool: 'unscoped', params: { patientId: 'P-1001' } }, ANA);
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
-    expect(d.rules.at(-1)).toMatchObject({ id: 'R2', pass: false, compared: 'tool unscoped names no subject · caller may see ...1001 only' });
+    expect(d.rules.at(-1)).toMatchObject({ id: 'scope', pass: false, compared: 'tool unscoped names no subject · caller may see ...1001 only' });
   });
 
   it('words its lines in the app\'s terms when the app gives them', () => {
@@ -133,20 +136,20 @@ describe('R2, by the app\'s subjects table', () => {
         subject: 'patient',
       },
     };
-    expect(r({ tool: 'readChart', params: { patientId: 'P-1001' } }, ANA, 'R2', worded)).toMatchObject({ description: "The chart is the patient's own", compared: 'patient ...1001 · caller may see ...1001 only' });
-    expect(r({ tool: 'getVisit', params: { visit: 'V-1' } }, caregiver('nurse'), 'R2', worded)).toMatchObject({ description: "The visit is for a patient on the caller's ward", compared: 'visit of ...1001 · caller may see ...1001, ...2002' });
+    expect(r({ tool: 'readChart', params: { patientId: 'P-1001' } }, ANA, 'scope', worded)).toMatchObject({ description: "The chart is the patient's own", compared: 'patient ...1001 · caller may see ...1001 only' });
+    expect(r({ tool: 'getVisit', params: { visit: 'V-1' } }, caregiver('nurse'), 'scope', worded)).toMatchObject({ description: "The visit is for a patient on the caller's ward", compared: 'visit of ...1001 · caller may see ...1001, ...2002' });
     // A case the app's wording leaves out keeps the neutral line.
-    expect(r({ tool: 'getVisit', params: { visit: 'V-1' } }, ANA2, 'R2', worded)).toMatchObject({ description: NEUTRAL_SCOPE });
+    expect(r({ tool: 'getVisit', params: { visit: 'V-1' } }, ANA2, 'scope', worded)).toMatchObject({ description: NEUTRAL_SCOPE });
   });
 });
 
-describe('R1, by the app\'s subject kind', () => {
+describe('identity, by the app\'s subject kind', () => {
   it('steps a subject or an anonymous caller up, and BLOCKs a party who is not a subject below the level', () => {
     expect(gate({ tool: 'readChart', params: { patientId: '' } }, ANONYMOUS)).toMatchObject({ verdict: 'STEP_UP', needLevel: 1 });
     expect(gate({ tool: 'getVisit', params: { visit: 'V-1' } }, ANA)).toMatchObject({ verdict: 'STEP_UP', needLevel: 2 });
     const d = gate({ tool: 'getVisit', params: { visit: 'V-1' } }, caregiver('nurse', 1));
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'identity' });
-    expect(d.rules).toEqual([{ id: 'R1', description: 'Identity strong enough for this action', compared: 'identity.level 1 >= 2', pass: false }]);
+    expect(d.rules).toEqual([{ id: 'identity', description: 'Identity strong enough for this action', compared: 'identity.level 1 >= 2', pass: false }]);
   });
 
   it('decides by the subject kind it is given, not by any kind of its own', () => {
@@ -156,31 +159,31 @@ describe('R1, by the app\'s subject kind', () => {
   });
 });
 
-describe('R5, by the app\'s roles table', () => {
+describe('role, by the app\'s roles table', () => {
   const call: ToolCall = { tool: 'updateChart', params: { patientId: 'P-1001' } };
 
   it('allows, refuses or hands to a person by role, in neutral words', () => {
-    expect(r(call, caregiver('nurse'), 'R5')).toMatchObject({ pass: true, compared: 'role nurse may updateChart: yes' });
+    expect(r(call, caregiver('nurse'), 'role')).toMatchObject({ pass: true, compared: 'role nurse may updateChart: yes' });
     expect(gate(call, caregiver('nurse')).verdict).toBe('ALLOW');
     expect(gate(call, caregiver('viewer'))).toMatchObject({ verdict: 'BLOCK', reason: 'role' });
-    expect(r(call, caregiver('viewer'), 'R5')).toMatchObject({ pass: false, compared: 'role viewer may updateChart: no' });
+    expect(r(call, caregiver('viewer'), 'role')).toMatchObject({ pass: false, compared: 'role viewer may updateChart: no' });
     expect(gate(call, caregiver('scribe'))).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'role-person' });
-    expect(r(call, caregiver('scribe'), 'R5')).toMatchObject({ pass: false, compared: 'role scribe may updateChart: with a person' });
+    expect(r(call, caregiver('scribe'), 'role')).toMatchObject({ pass: false, compared: 'role scribe may updateChart: with a person' });
   });
 
   it('refuses a role with no row; passes a subject with no role, and refuses any other party with none', () => {
     expect(gate(call, caregiver('porter'))).toMatchObject({ verdict: 'BLOCK', reason: 'role' });
-    expect(r(call, ANA2, 'R5')).toEqual({ id: 'R5', description: 'The caller\'s role allows this action', compared: 'role patient', pass: true });
+    expect(r(call, ANA2, 'role')).toEqual({ id: 'role', description: 'The caller\'s role allows this action', compared: 'role patient', pass: true });
     // A caregiver built without a role acts for patients with no rights a role would give: it fails closed.
     const { role: _none, ...roleless } = caregiver('nurse');
     expect(gate(call, roleless)).toMatchObject({ verdict: 'BLOCK', reason: 'role' });
-    expect(r(call, roleless, 'R5')).toEqual({ id: 'R5', description: 'The caller\'s role allows this action', compared: 'role caregiver: none', pass: false });
+    expect(r(call, roleless, 'role')).toEqual({ id: 'role', description: 'The caller\'s role allows this action', compared: 'role caregiver: none', pass: false });
   });
 
   it('takes the app\'s reason and words for its lines', () => {
     const own: PolicyTables = { ...POLICY, rolePersonReason: 'charting-desk', wording: { role: (role, tool, access) => `${role}/${tool}/${access}` } };
     expect(gate(call, caregiver('scribe'), own)).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'charting-desk' });
-    expect(r(call, caregiver('viewer'), 'R5', own)).toMatchObject({ compared: 'viewer/updateChart/refuse' });
+    expect(r(call, caregiver('viewer'), 'role', own)).toMatchObject({ compared: 'viewer/updateChart/refuse' });
   });
 });
 
@@ -188,7 +191,7 @@ describe('an app\'s own rule', () => {
   it('runs in the order rulesFor lists it, with the lookups the app gave', () => {
     const open = gate({ tool: 'updateChart', params: { patientId: 'P-1001' } }, caregiver('nurse'));
     expect(open.verdict).toBe('ALLOW');
-    expect(open.rules.map((x) => [x.id, x.pass])).toEqual([['R1', true], ['R5', true], ['R2', true], ['CHART_OPEN', true]]);
+    expect(open.rules.map((x) => [x.id, x.pass])).toEqual([['identity', true], ['role', true], ['scope', true], ['CHART_OPEN', true]]);
     const locked = gate({ tool: 'updateChart', params: { patientId: 'P-2002' } }, caregiver('nurse'));
     expect(locked).toMatchObject({ verdict: 'BLOCK', reason: 'chart-locked' });
     expect(locked.rules.at(-1)).toEqual({ id: 'CHART_OPEN', description: 'The chart is open for changes', compared: 'chart P-2002 locked', pass: false });
@@ -243,7 +246,13 @@ describe('validateApp, on the gate\'s tables', () => {
     expect(() => validateApp(clinic({ customRules: { CHART_OPEN: chartOpen, R2: chartOpen } }))).toThrow(/custom rule "R2" has a built-in rule's id/);
   });
 
-  it('refuses a tool that runs R2 with no subject, and a subject for a tool with no rules', () => {
+  it('refuses an app rule that takes a built-in rule\'s name or `unlisted`, as it does a legacy id', () => {
+    for (const id of ['identity', 'scope', 'confirmed', 'role', 'attempts', 'fields', 'dateInRange', 'limit', 'unlisted']) {
+      expect(() => validateApp(clinic({ customRules: { CHART_OPEN: chartOpen, [id]: chartOpen } })), id).toThrow(new RegExp(`custom rule "${id}" has a built-in rule's id`));
+    }
+  });
+
+  it('refuses a tool that runs scope with no subject, and a subject for a tool with no rules', () => {
     expect(() => validateApp(clinic({ subjects: POLICY.subjects }))).toThrow(/tool "unscoped" runs R2 but names no subject/);
     expect(() => validateApp(clinic({ subjects: { ...POLICY.subjects, unscoped: { param: 'x' }, ghost: { param: 'x' } } }))).toThrow(/subject for tool "ghost", which has no rules/);
   });
@@ -254,7 +263,7 @@ describe('validateApp, on the gate\'s tables', () => {
     }
   });
 
-  it('refuses an app rule that is not a function, or that takes R0', () => {
+  it('refuses an app rule that is not a function, or that takes R0 or unlisted', () => {
     expect(() => validateApp(clinic({ customRules: { CHART_OPEN: 'yes' as never } }))).toThrow(/custom rule "CHART_OPEN" is not a function/);
     expect(() => validateApp(clinic({ customRules: { CHART_OPEN: chartOpen, R0: chartOpen } }))).toThrow(/custom rule "R0" has a built-in rule's id/);
   });
@@ -308,13 +317,13 @@ describe('the gate fails closed on what an app hands it', () => {
   });
 
   it('stamps an app rule\'s line with its own id, and takes only the decision\'s fields from its failure', () => {
-    const posing = gate(call, nurse, withRule(() => ({ result: { id: 'R2', ...line, pass: true } })));
+    const posing = gate(call, nurse, withRule(() => ({ result: { id: 'scope', ...line, pass: true } })));
     expect(posing.verdict).toBe('ALLOW');
     expect(posing.rules.at(-1)).toEqual({ id: 'CHART_OPEN', ...line, pass: true });
     const smuggling = (() => ({ result: { id: 'CHART_OPEN', ...line, pass: false }, fail: { verdict: 'NEEDS_HUMAN', reason: 'r', call: { tool: 'x', params: {} }, rules: [] } })) as unknown as (c: RuleContext) => RuleOutcome;
     const d = gate(call, nurse, withRule(smuggling));
     expect(d).toEqual({ call, rules: [...d.rules.slice(0, -1), { id: 'CHART_OPEN', ...line, pass: false }], verdict: 'NEEDS_HUMAN', reason: 'r' });
-    expect(d.rules.map((x) => x.id)).toEqual(['R1', 'R5', 'R2', 'CHART_OPEN']);
+    expect(d.rules.map((x) => x.id)).toEqual(['identity', 'role', 'scope', 'CHART_OPEN']);
   });
 
   it('BLOCKs a rule that throws, an app\'s own or a built-in over the app\'s lookups', () => {
@@ -324,7 +333,7 @@ describe('the gate fails closed on what an app hands it', () => {
     const throwing: GateLookups = { ownerOf: () => { throw new Error('down'); }, scopeOf: () => { throw new Error('down'); } };
     const viaScope = evaluateCall({ tool: 'readChart', params: { patientId: 'P-1001' } }, ANA, facts, throwing, POLICY, 'patient');
     expect(viaScope).toMatchObject({ verdict: 'BLOCK', reason: 'rule-error' });
-    expect(viaScope.rules.at(-1)).toMatchObject({ id: 'R2', compared: 'rule R2 threw' });
+    expect(viaScope.rules.at(-1)).toMatchObject({ id: 'scope', compared: 'rule scope threw' });
     const viaOwner = evaluateCall({ tool: 'getVisit', params: { visit: 'V-1' } }, ANA2, facts, { ...lookups, ownerOf: throwing.ownerOf }, POLICY, 'patient');
     expect(viaOwner).toMatchObject({ verdict: 'BLOCK', reason: 'rule-error' });
   });
@@ -341,7 +350,7 @@ describe('the gate fails closed on what an app hands it', () => {
     for (const tool of ['constructor', 'toString', '__proto__']) {
       const d = gate({ tool, params: {} }, ANA2);
       expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'unknown-tool' });
-      expect(d.rules).toEqual([{ id: 'R0', description: 'The action is on the approved list', compared: `tool ${tool} not in policy`, pass: false }]);
+      expect(d.rules).toEqual([{ id: 'unlisted', description: 'The action is on the approved list', compared: `tool ${tool} not in policy`, pass: false }]);
     }
   });
 });

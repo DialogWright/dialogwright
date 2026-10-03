@@ -14,7 +14,7 @@ import { defineRule } from '../policyEntry';
  * forms' hooks. It speaks English and Spanish: locale/es/ has the Spanish lines and how the books and
  * branches are said in Spanish (slots.yaml), and the lines its code says give each book and due day
  * in the call's language. A caller renews a book (a confirmed write, so the
- * gate's R3 holds it to the title read back), asks whether a hold is ready at a branch, or asks what
+ * gate's confirmed rule holds it to the title read back), asks whether a hold is ready at a branch, or asks what
  * is checked out on their card. The engine's tests build it with defineApp and run calls through it.
  */
 
@@ -143,7 +143,7 @@ export const knownBranch = defineRule({
 const valueOf = (s: Session, slot: string): string => s.slots[slot]?.value ?? '';
 const displayOf = (s: Session, slot: string): string => s.slots[slot]?.display ?? '';
 
-/** The renewal writes the book read back at the summary, once the caller said yes (R3). */
+/** The renewal writes the book read back at the summary, once the caller said yes (the confirmed rule). */
 const renewParams = (s: Session): Record<string, string> => ({ book: valueOf(s, 'book') });
 
 function renew(c: CompletionContext): Completion {

@@ -95,7 +95,7 @@ export const identitySchema = z
       .number({ error: 'must be a number' })
       .int({ error: 'must be a whole number' })
       .min(1, { error: 'must be at least 1' })
-      .describe('Failed tries allowed at each identity check (the factors, the code) before a person takes the call: what the attempts rule (R6) holds an action to.'),
+      .describe('Failed tries allowed at each identity check (the factors, the code) before a person takes the call: what the attempts rule holds an action to.'),
     signIn: z
       .strictObject({
         level: z.literal([1, 2]).describe('The level a sign-in proves. It must be the top level of the ladder.'),

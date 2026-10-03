@@ -39,7 +39,7 @@ export function describeCall(call: ToolCall): string {
   return `${call.tool}(${Object.entries(call.params).map(([k, v]) => `${k}=${v}`).join(', ')})`;
 }
 
-/** Each rule the gate checked, as "R2 fail: parcel owner ...5678 · caller may see ...1234 only". */
+/** Each rule the gate checked, as "scope fail: parcel owner ...5678 · caller may see ...1234 only". */
 function ruleLines(e: GateEvent): string[] {
   return e.decision.rules.map((r) => `${r.id} ${r.pass ? 'pass' : 'fail'}: ${r.compared}`);
 }

@@ -35,7 +35,7 @@
                     "identity",
                     "attempts"
                   ],
-                  "description": "A rule with no parameters: identity (R1, the caller's identity level is at least the action's) or attempts (R6, the identity check has failed fewer times than identity.yaml's attempts)."
+                  "description": "A rule with no parameters: identity (the caller's identity level is at least the action's) or attempts (the identity check has failed fewer times than identity.yaml's attempts)."
                 },
                 {
                   "type": "object",
@@ -55,7 +55,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "scope (R2): the subject the action acts on must be one the caller may see. Exactly one of \"param\" (the param is the subject's own id) or \"record\" (the param is a record id, resolved to its owner)."
+                      "description": "scope: the subject the action acts on must be one the caller may see. Exactly one of \"param\" (the param is the subject's own id) or \"record\" (the param is a record id, resolved to its owner)."
                     }
                   },
                   "required": [
@@ -84,7 +84,7 @@
                           "person"
                         ]
                       },
-                      "description": "role (R5): what each role may do with the action: allow, refuse, or person (a person takes the call). A role not listed is refused, and so is a party who acts for subjects with no role; one of the app's subjects passes. The roles are those identity.yaml declares under principals."
+                      "description": "role: what each role may do with the action: allow, refuse, or person (a person takes the call). A role not listed is refused, and so is a party who acts for subjects with no role; one of the app's subjects passes. The roles are those identity.yaml declares under principals."
                     }
                   },
                   "required": [
@@ -103,7 +103,7 @@
                         "type": "string",
                         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                       },
-                      "description": "confirmed (R3): the action sends exactly these fields, and the caller confirmed exactly these values at the read-back, in the order the hash is taken over."
+                      "description": "confirmed: the action sends exactly these fields, and the caller confirmed exactly these values at the read-back, in the order the hash is taken over."
                     }
                   },
                   "required": [
@@ -121,7 +121,7 @@
                         "type": "string",
                         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                       },
-                      "description": "fields (R7): the only fields the action may send on (to a downstream service). An empty list sends none."
+                      "description": "fields: the only fields the action may send on (to a downstream service). An empty list sends none."
                     }
                   },
                   "required": [
@@ -344,7 +344,7 @@
       "type": "object",
       "properties": {
         "scope": {
-          "description": "The scope rule's (R2) description, by who asks and how the action names its subject. Default: \"The record belongs to someone this caller may see\".",
+          "description": "The scope rule's description, by who asks and how the action names its subject. Default: \"The record belongs to someone this caller may see\".",
           "type": "object",
           "properties": {
             "subject": {
@@ -395,7 +395,7 @@
           "minLength": 1
         },
         "role": {
-          "description": "The role rule's (R5) compared line, by what the rule gives the role, as a template with {role} and {tool}.",
+          "description": "The role rule's compared line, by what the rule gives the role, as a template with {role} and {tool}.",
           "type": "object",
           "properties": {
             "allow": {

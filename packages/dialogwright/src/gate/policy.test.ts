@@ -5,6 +5,7 @@ import { CUSTOMERS, STAFF } from '../testing/testkit/domain/data';
 import { CONFIRMED_FIELDS, TESTKIT_POLICY, TOOL_LEVEL } from '../testing/testkit/domain/policy';
 import { agentPrincipal, customerPrincipal } from '../testing/testkit/domain/principals';
 import { lookupsFor, ParcelSystems } from '../testing/testkit/domain/systems';
+import { namedDecision } from '../testing/gateGrid';
 import { ANONYMOUS } from './principal';
 import { compiledPolicyOf } from './compiled';
 import { confirmationHash, evaluateCall as legacyEvaluate } from './policy';
@@ -17,12 +18,15 @@ useTestkit();
  * The gate as the testkit calls it (its subject kind is the customer, testkitApp.identity.subjectKind),
  * both ways: the legacy evaluator over the tables, and the compiled gate the lifecycle runs (for the
  * testkit's own tables, the named rules of its policy.yaml; for tables a test changes, the tables
- * read as rules). Every test here holds the two to the same whole decision, and checks the compiled one.
+ * read as rules). Every test here holds the two to the same whole decision (the legacy evaluator
+ * records R1..R7 and R0, the compiled gate the rules' names, so the legacy decision is mapped by
+ * the shadow gate's id map first), and checks the compiled one.
  */
 function evaluateCall(call: ToolCall, p: Principal, f: GateFacts, lk: GateLookups, policy: PolicyTables): GateDecision {
   const legacy = legacyEvaluate(call, p, f, lk, policy, 'customer');
   const compiled = compiledPolicyOf(policy, 'customer').evaluate(call, p, f, lk);
-  expect(compiled).toStrictEqual(legacy);
+  // The two differ only in the ids of the built-in rules' lines (R1..R7, R0 and the rules' names).
+  expect(compiled).toStrictEqual(namedDecision(legacy));
   return compiled;
 }
 
@@ -33,71 +37,71 @@ const alex1 = customerPrincipal(CUSTOMERS[0]!, 1);
 const alex2 = customerPrincipal(CUSTOMERS[0]!, 2);
 const taylor = agentPrincipal(STAFF[0]!); // viewer, North Depot
 const morgan = agentPrincipal(STAFF[1]!); // clerk, North Depot
-/** North Depot's customers, as R2 shows them. */
+/** North Depot's customers, as the scope rule shows them. */
 const TAYLOR_SCOPE = '...1234, ...5678';
 const facts: GateFacts = { attempts: 0, confirmedHash: null, todayIso: '2026-09-18' };
 const reportParams = { accountId: '55501234', missingNote: 'A small brown box at the gate.', expectedDate: '2026-09-15' };
 
 describe('evaluateCall', () => {
-  it('R1: steps an anonymous caller up to level 1 for an account', () => {
+  it('identity: steps an anonymous caller up to level 1 for an account', () => {
     const d = evaluateCall({ tool: 'getAccount', params: { accountId: '' } }, ANONYMOUS, facts, lookups, POLICY);
     expect(d).toMatchObject({ verdict: 'STEP_UP', needLevel: 1 });
-    expect(d.rules.map((r) => r.id)).toEqual(['R1']);
+    expect(d.rules.map((r) => r.id)).toEqual(['identity']);
   });
 
-  it('R1: steps a level-1 customer up to level 2 for parcels', () => {
+  it('identity: steps a level-1 customer up to level 2 for parcels', () => {
     expect(evaluateCall({ tool: 'listParcels', params: { accountId: '55501234' } }, alex1, facts, lookups, POLICY)).toMatchObject({ verdict: 'STEP_UP', needLevel: 2 });
   });
 
-  it('R1: a purpose raises the bar above the tool level', () => {
+  it('identity: a purpose raises the bar above the tool level', () => {
     expect(TOOL_LEVEL.getAccount).toBe(1);
     expect(evaluateCall({ tool: 'getAccount', params: { accountId: '55501234' }, purpose: 'report_missing' }, alex1, facts, lookups, POLICY)).toMatchObject({ verdict: 'STEP_UP', needLevel: 2 });
   });
 
-  it('R2: allows a customer their own parcel', () => {
+  it('scope: allows a customer their own parcel', () => {
     expect(evaluateCall({ tool: 'getParcel', params: { parcel: '7101' } }, alex2, facts, lookups, POLICY).verdict).toBe('ALLOW');
   });
 
-  it('R2: blocks a customer asking for another customer\'s parcel, showing the comparison', () => {
+  it('scope: blocks a customer asking for another customer\'s parcel, showing the comparison', () => {
     const d = evaluateCall({ tool: 'getParcel', params: { parcel: '7201' } }, alex2, facts, lookups, POLICY);
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
-    expect(d.rules.at(-1)).toMatchObject({ id: 'R2', pass: false, compared: 'record owner ...5678 · caller may see ...1234 only' });
+    expect(d.rules.at(-1)).toMatchObject({ id: 'scope', pass: false, compared: 'record owner ...5678 · caller may see ...1234 only' });
   });
 
-  it('R2: allows staff a parcel in their depot\'s book and blocks one outside it', () => {
+  it('scope: allows staff a parcel in their depot\'s book and blocks one outside it', () => {
     expect(evaluateCall({ tool: 'getParcel', params: { parcel: '7201' } }, taylor, facts, lookups, POLICY).verdict).toBe('ALLOW');
     const d = evaluateCall({ tool: 'getParcel', params: { parcel: '7301' } }, taylor, facts, lookups, POLICY);
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
     // Staff's scope is the depot's customers, listed by last four.
-    expect(d.rules.at(-1)).toMatchObject({ id: 'R2', pass: false, compared: `record owner ...9012 · caller may see ${TAYLOR_SCOPE}` });
+    expect(d.rules.at(-1)).toMatchObject({ id: 'scope', pass: false, compared: `record owner ...9012 · caller may see ${TAYLOR_SCOPE}` });
   });
 
-  it('R2: compares a subject-keyed check against who is asking', () => {
+  it('scope: compares a subject-keyed check against who is asking', () => {
     const own = evaluateCall({ tool: 'getAccount', params: { accountId: '55501234' } }, alex2, facts, lookups, POLICY);
-    expect(own.rules.at(-1)).toMatchObject({ id: 'R2', pass: true, compared: 'subject ...1234 · caller may see ...1234 only' });
+    expect(own.rules.at(-1)).toMatchObject({ id: 'scope', pass: true, compared: 'subject ...1234 · caller may see ...1234 only' });
     const staff = evaluateCall({ tool: 'listParcels', params: { accountId: '55509012' } }, taylor, facts, lookups, POLICY);
-    expect(staff.rules.at(-1)).toMatchObject({ id: 'R2', pass: false, compared: `subject ...9012 · caller may see ${TAYLOR_SCOPE}` });
+    expect(staff.rules.at(-1)).toMatchObject({ id: 'scope', pass: false, compared: `subject ...9012 · caller may see ${TAYLOR_SCOPE}` });
   });
 
-  it('R2: an unknown parcel fails closed, so parcel numbers cannot be probed', () => {
+  it('scope: an unknown parcel fails closed, so parcel numbers cannot be probed', () => {
     const d = evaluateCall({ tool: 'getParcel', params: { parcel: '0000' } }, alex2, facts, lookups, POLICY);
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
-    expect(d.rules.at(-1)).toMatchObject({ id: 'R2', pass: false, compared: 'record owner unknown · caller may see ...1234 only' });
+    expect(d.rules.at(-1)).toMatchObject({ id: 'scope', pass: false, compared: 'record owner unknown · caller may see ...1234 only' });
   });
 
-  it('R2: an empty parcel param fails closed', () => {
+  it('scope: an empty parcel param fails closed', () => {
     const d = evaluateCall({ tool: 'getParcel', params: { parcel: '' } }, alex2, facts, lookups, POLICY);
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
-    expect(d.rules.at(-1)).toMatchObject({ id: 'R2', pass: false, compared: 'record owner unknown · caller may see ...1234 only' });
+    expect(d.rules.at(-1)).toMatchObject({ id: 'scope', pass: false, compared: 'record owner unknown · caller may see ...1234 only' });
   });
 
-  it('R2: a missing accountId on an account-keyed tool fails closed', () => {
+  it('scope: a missing accountId on an account-keyed tool fails closed', () => {
     const d = evaluateCall({ tool: 'listParcels', params: {} }, alex2, facts, lookups, POLICY);
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'scope' });
-    expect(d.rules.at(-1)).toMatchObject({ id: 'R2', pass: false, compared: 'subject missing · caller may see ...1234 only' });
+    expect(d.rules.at(-1)).toMatchObject({ id: 'scope', pass: false, compared: 'subject missing · caller may see ...1234 only' });
   });
 
-  it('R3: blocks a write whose values differ from what was confirmed', () => {
+  it('confirmed: blocks a write whose values differ from what was confirmed', () => {
     const confirmed = { ...facts, confirmedHash: confirmationHash(reportParams, CONFIRMED_FIELDS) };
     expect(evaluateCall({ tool: 'createReport', params: reportParams }, alex2, confirmed, lookups, POLICY).verdict).toBe('ALLOW');
     const changed = { ...reportParams, expectedDate: '2026-09-13' };
@@ -105,20 +109,20 @@ describe('evaluateCall', () => {
     expect(evaluateCall({ tool: 'createReport', params: reportParams }, alex2, facts, lookups, POLICY)).toMatchObject({ verdict: 'BLOCK', reason: 'confirmation' });
   });
 
-  it('R3: blocks a write that carries an extra field beyond the confirmed three', () => {
+  it('confirmed: blocks a write that carries an extra field beyond the confirmed three', () => {
     const confirmed = { ...facts, confirmedHash: confirmationHash(reportParams, CONFIRMED_FIELDS) };
     const withExtra = { ...reportParams, status: 'approved' };
     const d = evaluateCall({ tool: 'createReport', params: withExtra }, alex2, confirmed, lookups, POLICY);
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'confirmation' });
-    expect(d.rules.at(-1)).toMatchObject({ id: 'R3', pass: false, compared: 'extra fields: status' });
+    expect(d.rules.at(-1)).toMatchObject({ id: 'confirmed', pass: false, compared: 'extra fields: status' });
   });
 
-  it('R3: blocks a write that is missing one of the confirmed three fields', () => {
+  it('confirmed: blocks a write that is missing one of the confirmed three fields', () => {
     const confirmed = { ...facts, confirmedHash: confirmationHash(reportParams, CONFIRMED_FIELDS) };
     const { missingNote: _omit, ...missingOne } = reportParams;
     const d = evaluateCall({ tool: 'createReport', params: missingOne }, alex2, confirmed, lookups, POLICY);
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'confirmation' });
-    expect(d.rules.at(-1)).toMatchObject({ id: 'R3', pass: false, compared: 'missing fields: missingNote' });
+    expect(d.rules.at(-1)).toMatchObject({ id: 'confirmed', pass: false, compared: 'missing fields: missingNote' });
   });
 
   it('R8, the app\'s own rule: sends a report to a person when a parcel was delivered the day the missing one was due', () => {
@@ -133,7 +137,7 @@ describe('evaluateCall', () => {
     const confirmed = { ...facts, confirmedHash: confirmationHash(reportParams, CONFIRMED_FIELDS) };
     const d = evaluateCall({ tool: 'createReport', params: reportParams }, alex2, confirmed, lookups, POLICY);
     expect(d.verdict).toBe('ALLOW');
-    expect(d.rules.map((r) => [r.id, r.pass])).toEqual([['R1', true], ['R5', true], ['R2', true], ['R3', true], ['R8', true]]);
+    expect(d.rules.map((r) => [r.id, r.pass])).toEqual([['identity', true], ['role', true], ['scope', true], ['confirmed', true], ['R8', true]]);
     expect(d.rules.at(-1)).toMatchObject({ compared: 'due 2026-09-15: nothing delivered that day' });
   });
 
@@ -149,23 +153,23 @@ describe('evaluateCall', () => {
     expect(evaluateCall({ tool: 'createReport', params: reportParams }, alex2, ok, plain, POLICY)).toMatchObject({ verdict: 'BLOCK', reason: 'unchecked' });
   });
 
-  it('R5: blocks a viewer from filing and sends a clerk to a person', () => {
+  it('role: blocks a viewer from filing and sends a clerk to a person', () => {
     expect(evaluateCall({ tool: 'createReport', params: reportParams }, taylor, facts, lookups, POLICY)).toMatchObject({ verdict: 'BLOCK', reason: 'role' });
     expect(evaluateCall({ tool: 'createReport', params: reportParams }, morgan, facts, lookups, POLICY)).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'role-person' });
   });
 
-  it('R5: reads what each role may do from the app\'s roles table; a role or a table with no row is refused', () => {
+  it('role: reads what each role may do from the app\'s roles table; a role or a table with no row is refused', () => {
     const call = { tool: 'createReport', params: reportParams };
-    const r5 = (policy: PolicyTables, who: typeof taylor) => evaluateCall(call, who, facts, lookups, policy).rules.find((r) => r.id === 'R5');
-    // Without the table, R5 refuses every role: the clerk is refused as a viewer is.
+    const roleLine = (policy: PolicyTables, who: typeof taylor) => evaluateCall(call, who, facts, lookups, policy).rules.find((r) => r.id === 'role');
+    // Without the table, the role rule refuses every role: the clerk is refused as a viewer is.
     const none = { ...POLICY, roles: undefined };
     expect(evaluateCall(call, morgan, facts, lookups, none)).toMatchObject({ verdict: 'BLOCK', reason: 'role' });
-    expect(r5(none, morgan)).toMatchObject({ pass: false, compared: 'role clerk may createReport: no' });
-    // A role the table allows passes R5, and the call goes on to the rules after it.
+    expect(roleLine(none, morgan)).toMatchObject({ pass: false, compared: 'role clerk may createReport: no' });
+    // A role the table allows passes the role rule, and the call goes on to the rules after it.
     const allowed = { ...POLICY, roles: { createReport: { viewer: 'allow' as const } } };
-    expect(r5(allowed, taylor)).toMatchObject({ pass: true, compared: 'role viewer may createReport: yes' });
+    expect(roleLine(allowed, taylor)).toMatchObject({ pass: true, compared: 'role viewer may createReport: yes' });
     expect(evaluateCall(call, taylor, facts, lookups, allowed)).toMatchObject({ verdict: 'BLOCK', reason: 'confirmation' });
-    expect(r5(allowed, morgan)).toMatchObject({ pass: false, compared: 'role clerk may createReport: no' });
+    expect(roleLine(allowed, morgan)).toMatchObject({ pass: false, compared: 'role clerk may createReport: no' });
   });
 
   it('reads the app\'s tables, not its own: levels, attempts and rules come from the argument', () => {
@@ -184,15 +188,15 @@ describe('evaluateCall', () => {
   it('BLOCKs a rule id it does not know', () => {
     const d = evaluateCall({ tool: 'getAccount', params: { accountId: '55501234' } }, alex2, facts, lookups, { ...POLICY, rulesFor: { getAccount: ['R1', 'R9'] } });
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'unknown-rule' });
-    expect(d.rules.map((r) => [r.id, r.pass])).toEqual([['R1', true], ['R9', false]]);
+    expect(d.rules.map((r) => [r.id, r.pass])).toEqual([['identity', true], ['R9', false]]);
   });
 
-  it('R6: stops identity attempts after three', () => {
+  it('attempts: stops identity attempts after three', () => {
     expect(evaluateCall({ tool: 'verifyCustomer', params: {} }, ANONYMOUS, { ...facts, attempts: 3 }, lookups, POLICY)).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'attempts' });
     expect(evaluateCall({ tool: 'verifyCode', params: {} }, alex1, { ...facts, attempts: 3 }, lookups, POLICY)).toMatchObject({ verdict: 'NEEDS_HUMAN', reason: 'attempts' });
   });
 
-  it('R7: lets the depot agent receive only its listed fields', () => {
+  it('fields: lets the depot agent receive only its listed fields', () => {
     const filed = new ParcelSystems();
     const report = filed.createReport({ owner: '55501234', missingNote: 'x', expectedDate: '2026-09-15' }).number;
     const own = lookupsFor(filed);
@@ -214,7 +218,7 @@ describe('evaluateCall', () => {
     const call = { tool: 'deleteAccount' } as unknown as ToolCall;
     const d = evaluateCall(call, alex2, facts, lookups, POLICY);
     expect(d).toMatchObject({ verdict: 'BLOCK', reason: 'unknown-tool' });
-    expect(d.rules).toEqual([{ id: 'R0', description: 'The action is on the approved list', compared: 'tool deleteAccount not in policy', pass: false }]);
+    expect(d.rules).toEqual([{ id: 'unlisted', description: 'The action is on the approved list', compared: 'tool deleteAccount not in policy', pass: false }]);
   });
 
   it('is deterministic: identical inputs give deep-equal results', () => {

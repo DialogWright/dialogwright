@@ -14,8 +14,7 @@ import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resol
 import type { LibrarySlotSpec, SlotTypes } from '../slots/types';
 import { applySlotWording, isLibrarySlot, localeSlotsFile } from '../slots/wording';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
-import { RULE_IDS } from '../gate/policy';
-import { NAMED_RULE_IDS } from '../gate/compiled';
+import { BUILT_IN_IDS_NOTE, BUILT_IN_RULES } from '../gate/compiled';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { ruleDefinitionProblems } from '../gate/defineRule';
 import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotRedactOf, toolFieldProblems, toolParamProblems } from './policyFile';
@@ -400,7 +399,7 @@ export function crossLink(
   }
   const named = customRulesNamed(policy);
   for (const [id, rule] of Object.entries(customRules)) {
-    if (isBuiltInRuleId(id)) inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's custom: rules; ${NAMED_RULE_IDS.includes(id) ? `"${id}" is a built-in rule written by its name with its parameters` : `the built-in ids are R0, ${RULE_IDS.join(', ')}`}`);
+    if (isBuiltInRuleId(id)) inTs(['customRules', id], `custom rule "${id}" has a built-in rule's id`, `rename it in ${inCode('customRules', id)} and in policy.yaml's custom: rules; ${(BUILT_IN_RULES as readonly string[]).includes(id) ? `"${id}" is a built-in rule written by its name with its parameters` : BUILT_IN_IDS_NOTE}`);
     else if (typeof rule !== 'function') inTs(['customRules', id], `custom rule "${id}" is not a function`, `make ${inCode('customRules', id)} a function of the rule context`);
     else if (!named.has(id)) yaml('policy.yaml', ['actions'], `custom rule "${id}" (${codePath('customRules', id)}) is not named by any action's rules, so it never runs`, `add "- custom: ${id}" to the rules of the action it guards, or delete the rule from ${inCode('customRules', id)}`);
     else for (const { message, fix } of ruleDefinitionProblems(id, rule, inCode('customRules', id))) inTs(['customRules', id], message, fix);
@@ -575,7 +574,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
     forms: Object.fromEntries(Object.entries(config.forms.forms).map(([id, form]) => [id, formOf(form, code.forms[id]!)])),
     slots,
   };
-  // identity.yaml's attempts are the policy's: what the attempts rule (R6) holds an identity check to.
+  // identity.yaml's attempts are the policy's: what the attempts rule holds an identity check to.
   const compiled = config.identity ? compileIdentity(config.identity, code.identity?.sendCodeParams ? { sendCodeParams: code.identity.sendCodeParams } : {}) : null;
   if (compiled) app.identity = compiled.identity;
   app.tools = code.tools;

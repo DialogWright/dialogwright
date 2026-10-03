@@ -113,12 +113,12 @@ describe('the library fixture', () => {
     await expect(`${parts.flatMap((p) => p.lines).join('\n')}\n`).toMatchFileSnapshot('./__snapshots__/gate-events.library.txt');
   });
 
-  it('gate grid: stable, and every rule seen to pass and fail but R1, which no call can fail at level 0', () => {
+  it('gate grid: stable, and every rule seen to pass and fail but identity, which no call can fail at level 0', () => {
     const input = gateGridInput(libraryApp);
     const grid = runGateGrid(input);
     expect(grid.points.length).toBe(3 * 6 * 18 * (1 + 2 + 1 + 1));
     expect(compareGateGrid(input, legacyGateEvaluator(input))).toEqual([]);
-    expect(gridUnexercised(input, grid)).toEqual(['renewLoan R1 never fails', 'findHold R1 never fails', 'listLoans R1 never fails']);
+    expect(gridUnexercised(input, grid)).toEqual(['renewLoan identity never fails', 'findHold identity never fails', 'listLoans identity never fails']);
   });
 });
 
@@ -139,7 +139,7 @@ describe('the shadow gate on the library fixture', () => {
     runGateGrid(input, shadowGate(gateEvaluator(libraryApp), legacyGateEvaluator(input), { mode: 'report', report }));
     expect(report.mismatches, formatGateShadowReport(report)).toEqual([]);
     expect(report.compared).toBe(3 * 6 * 18 * (1 + 2 + 1 + 1));
-    expect(gateShadowUnexercised(report, FROZEN.rulesFor, true)).toEqual(['renewLoan R1 never fails', 'findHold R1 never fails', 'listLoans R1 never fails']);
+    expect(gateShadowUnexercised(report, FROZEN.rulesFor, true)).toEqual(['renewLoan identity never fails', 'findHold identity never fails', 'listLoans identity never fails']);
   });
 
   it('the scripted and direct calls: every decision the same, and the golden\'s lines unchanged', () => {
@@ -157,6 +157,6 @@ describe('the shadow gate on the library fixture', () => {
     }
     expect(report.mismatches, formatGateShadowReport(report)).toEqual([]);
     expect(report.compared).toBeGreaterThan(10);
-    expect(gateShadowUnexercised(report)).toEqual(['R1 never fails']);
+    expect(gateShadowUnexercised(report)).toEqual(['identity never fails']);
   });
 });

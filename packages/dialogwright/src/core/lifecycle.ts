@@ -69,7 +69,7 @@ const IGNORE: Decision = { kind: 'ignore' };
 /**
  * What the gate may know of the session for this call. The attempts are the ones the call's own
  * identity check has failed: the one-time code's for the app's code tool, the factors' for anything
- * else (R6 runs only for the identity tools the app's rulesFor gives it to).
+ * else (the attempts rule runs only for the identity tools the app's rulesFor gives it to).
  */
 function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
   const attempts = call.tool === identityOf(appOf(s)).codeTool ? s.identityAttempts.code : s.identityAttempts.factors;
@@ -78,7 +78,7 @@ function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
 
 /**
  * Runs a call the gate allowed: the app's tool, against the turn's systems. A tool the app does not
- * define never gets here (the gate's R0 blocks it), so one that does is a bug and throws.
+ * define never gets here (the gate's unlisted line blocks it), so one that does is a bug and throws.
  */
 function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code: string | undefined): { value: unknown; summary: string; ref?: string } {
   return toolOf(appOf(s), call.tool).run(call, tc.tools.sys, { s, tc, out, code });
@@ -86,8 +86,8 @@ function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code
 
 /**
  * Purposes that mark a call as a probe: the gate is asked what it would say, and the tool is never
- * run, whatever the answer. 'retry-check' asks before another identity attempt (R6); 'entry-check'
- * asks whether the principal's role may make a form's write at all (R5) before any of its questions.
+ * run, whatever the answer. 'retry-check' asks before another identity attempt (the attempts rule); 'entry-check'
+ * asks whether the principal's role may make a form's write at all (the role rule) before any of its questions.
  */
 const PROBES: ReadonlySet<string> = new Set(['retry-check', 'entry-check']);
 
@@ -140,7 +140,7 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
 
 /**
  * Before asking the caller for another try at a factor, ask the gate whether that try would be
- * allowed (R6). A refusal is recorded, its call redacted like every other event's, so the console
+ * allowed (the attempts rule). A refusal is recorded, its call redacted like every other event's, so the console
  * shows why the call went to a person; its purpose 'retry-check' tells the audit this was a probe,
  * not an attempt the caller made.
  */
@@ -353,7 +353,7 @@ function refusal(s: Session, decision: GateDecision, acks: Ack[]): Completion {
 
 /**
  * Called each time a form's summary is spoken: the hash of exactly what it read back, which the
- * caller's yes arms (R3). Only a form with confirmedParams (a confirmed write) holds one.
+ * caller's yes arms (the confirmed rule). Only a form with confirmedParams (a confirmed write) holds one.
  */
 export function takeSummaryHash(s: Session, form: FormId): void {
   const app = appOf(s);

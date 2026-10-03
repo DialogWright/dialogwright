@@ -7,7 +7,7 @@ export function customerPrincipal(c: Pick<Customer, 'id' | 'first' | 'phoneLast4
   return { kind: 'customer', level, id: c.id, first: c.first, contact: { phoneLast4: c.phoneLast4 } };
 }
 
-/** Depot staff, level 2 from the start (the staff portal), acting for their depot's customers with a role (R5). */
+/** Depot staff, level 2 from the start (the staff portal), acting for their depot's customers with a role (the role rule). */
 export function agentPrincipal(s: Pick<Staff, 'staffNo' | 'name' | 'depot' | 'depotId' | 'role'>): Party {
   return { kind: 'agent', level: 2, id: s.staffNo, name: s.name, first: s.name.split(' ')[0]!, role: s.role, attrs: { depot: s.depot, depotId: s.depotId } };
 }

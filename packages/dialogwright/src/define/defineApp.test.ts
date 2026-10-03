@@ -174,7 +174,7 @@ describe('defineApp: a call through resolve', () => {
     expect(heard(opener)).toBe('Sure, I can help you check a hold. Which branch is the hold at, North or Riverside?');
     const branch = say(opener, 'Riverside', { ...ANSWERING, branch: choice({ riverside: 0.9, none: 0.1 }) });
     expect(calls(branch)).toEqual(['findHold:ALLOW']);
-    expect(branch.gateEvents[0]!.decision.rules.map((r) => `${r.id}:${r.pass}`)).toEqual(['R1:true', 'known-branch:true']);
+    expect(branch.gateEvents[0]!.decision.rules.map((r) => `${r.id}:${r.pass}`)).toEqual(['identity:true', 'known-branch:true']);
     expect(heard(branch)).toBe('A Quiet Orchard is on hold for you at the Riverside branch, but it has not come in yet. Is there anything else I can help with?');
   });
 });
@@ -242,7 +242,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
       'policy.yaml:2:1  actions  tool "payFine" (code.tools.payFine) has no entry under actions, so it can never be called  ->  add "payFine:" under actions with its level and rules, or delete the tool from app.ts (code.tools.payFine)',
       'policy.yaml:2:1  actions  custom rule "late-fee" (code.customRules["late-fee"]) is not named by any action\'s rules, so it never runs  ->  add "- custom: late-fee" to the rules of the action it guards, or delete the rule from app.ts (code.customRules["late-fee"])',
       'app.ts  code.forms.check_hold.onSumaryRead  "onSumaryRead" is not a form hook; the hooks are entry, onEntry, principalEntry, confirmedParams, complete, onAnswers, onSummaryAnswer, keepsSlot, onSummaryRead  ->  rename it to "onSummaryRead", or delete it from app.ts (code.forms.check_hold.onSumaryRead)',
-      'app.ts  code.customRules.R2  custom rule "R2" has a built-in rule\'s id  ->  rename it in app.ts (code.customRules.R2) and in policy.yaml\'s custom: rules; the built-in ids are R0, R1, R2, R3, R5, R6, R7',
+      'app.ts  code.customRules.R2  custom rule "R2" has a built-in rule\'s id  ->  rename it in app.ts (code.customRules.R2) and in policy.yaml\'s custom: rules; the built-in ids are the rules\' names (identity, scope, confirmed, role, attempts, fields, dateInRange, limit, unlisted) and their old ids (R0, R1, R2, R3, R5, R6, R7)',
       'app.ts  code.identity  the code has identity hooks, but the folder has no identity.yaml  ->  add identity.yaml (principals, levels and attempts, with the identity tools), or delete it from app.ts (code.identity)',
     ]);
   });
@@ -274,7 +274,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
   });
 });
 
-describe('defineApp: what app.yaml shows and the clips name, and what R3 needs', () => {
+describe('defineApp: what app.yaml shows and the clips name, and what the confirmed rule needs', () => {
   const app = (edit: (text: string) => string): string => folder({ 'app.yaml': edit(readFileSync(join(LIBRARY_DIR, 'app.yaml'), 'utf8')) });
 
   it('console labels, the slot order and question prefixes name forms and slots that exist; a lookup fact names a tool', () => {

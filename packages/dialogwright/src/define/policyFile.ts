@@ -1,9 +1,8 @@
 import { DEFAULT_CODE_LENGTH } from '../core/app/lookup';
 import type { IdentityConfig, PolicyTables, PolicyWording, RoleAccess, SubjectParam, ToolName } from '../core/app/types';
 import { lookupNameProblem, parseDateBound, parseLookupRef, parseNumberBound, refText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
-import { attachSource, LEGACY_RULE_ID, NAMED_RULE_IDS, RULE_ID, type LegacyRuleName, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
+import { attachSource, BUILT_IN_RULES, isBuiltInRuleId, LEGACY_RULE_ID, TABLE_RULE_ID, type LegacyRuleName, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
-import { isRuleId } from '../gate/policy';
 import type { Level } from '../gate/types';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
 import type { IdentityYaml, PolicyYaml, RuleEntryYaml } from './schema/index';
@@ -15,17 +14,21 @@ import type { IdentityYaml, PolicyYaml, RuleEntryYaml } from './schema/index';
  *
  * The compilers are the exact inverse of the tables' meaning, so an app converted to the files runs
  * the same decisions, line for line: each action's rules become its rulesFor row in the order
- * written, each built-in rule under its legacy id (identity R1, scope R2, confirmed R3, role R5,
- * attempts R6, fields R7) and each custom rule under its own id; an action's missing level is the
+ * written, each built-in rule under its id in the tables (identity R1, scope R2, confirmed R3, role
+ * R5, attempts R6, fields R7, which the gate records under the rules' names) and each custom rule
+ * under its own id; an action's missing level is the
  * explicit 2 the gate would give it anyway; and nothing is added that the file does not say (a
  * verify tool's action runs only the rules listed for it).
  */
 
-/** The legacy id each built-in rule the legacy evaluator knows is recorded under in decisions and audit lines (until rules are named there). */
+/** The id each built-in rule the legacy evaluator knows has in the tables' rulesFor (the gate records it under its name). */
 export const RULE_ID_OF: Readonly<Record<LegacyRuleName, string>> = LEGACY_RULE_ID;
 
-/** The built-in rule each id is (a legacy id, or a range rule's own name), for a message. */
-const RULE_NAME_OF: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(RULE_ID).map(([rule, id]) => [id, rule]));
+/** The built-in rule each id is (a table id: a legacy id, or a range rule's own name; or a rule's name), for a message. */
+const RULE_NAME_OF: Readonly<Record<string, string>> = {
+  ...Object.fromEntries(Object.entries(TABLE_RULE_ID).map(([rule, id]) => [id, rule])),
+  ...Object.fromEntries(BUILT_IN_RULES.map((rule) => [rule, rule])),
+};
 
 /** The level an action needs when it names none: the highest, so it fails closed (as the gate's own default). */
 export const DEFAULT_ACTION_LEVEL: Level = 2;
@@ -113,14 +116,14 @@ export function lookupRefsOf(rule: Rule): { key: string; ref: LookupRef }[] {
   return out;
 }
 
-/** Whether an id is a built-in rule's, so no app's own rule may take it: R0, a legacy id, or a range rule's name. */
-export function isBuiltInRuleId(id: string): boolean {
-  return isRuleId(id) || id === 'R0' || NAMED_RULE_IDS.includes(id);
-}
+export { isBuiltInRuleId };
 
-/** The id a rule runs under in the gate's tables and is recorded under: a built-in's legacy id (a range rule's name), a custom rule's own. */
+/**
+ * The id a rule has in the tables' rulesFor: a built-in's legacy id (a range rule's name), a custom
+ * rule's own. The gate records a built-in under its name (RULE_ID), not this id.
+ */
 export function ruleIdOf(rule: Rule): string {
-  return rule.rule === 'custom' ? rule.id : RULE_ID[rule.rule];
+  return rule.rule === 'custom' ? rule.id : TABLE_RULE_ID[rule.rule];
 }
 
 /** The engine's words for the role rule's compared line (gate/policy.ts), where the file's wording.role leaves an access out. */
@@ -476,7 +479,12 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
         case 'custom':
           if (isBuiltInRuleId(rule.id)) {
             const builtIn = RULE_NAME_OF[rule.id];
-            at(P, [...path, 'custom'], `"custom: ${rule.id}" names a built-in rule's id, which would run that rule without its parameters`, builtIn ? `write the built-in rule by its name ("${builtIn}" with its parameters), or give the app's rule an id of its own` : 'give the app\'s rule an id of its own');
+            if (builtIn) {
+              const what = builtIn === rule.id ? 'a built-in rule\'s name' : `the old id of the built-in "${builtIn}" rule`;
+              at(P, [...path, 'custom'], `"custom: ${rule.id}" is ${what}, which would run that rule without its parameters`, `write the built-in rule by its name ("${builtIn}" with its parameters), or give the app's rule an id of its own`);
+            } else {
+              at(P, [...path, 'custom'], `"custom: ${rule.id}" is an id the gate keeps for itself (the line for an action that is not listed)`, 'give the app\'s rule an id of its own');
+            }
           } else if (c.customRules && !c.customRules.includes(rule.id)) {
             at(P, [...path, 'custom'], `custom rule "${rule.id}" is not defined in the code`, `${renameHint(rule.id, c.customRules)}add it to ${c.inCode('customRules', rule.id)}, or delete this rule`);
           }

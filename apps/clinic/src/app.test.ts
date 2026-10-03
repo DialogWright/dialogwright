@@ -204,7 +204,7 @@ describe('the clinic folder: policy.yaml', () => {
     expect(clinicApp.policy.toolLevel).toEqual({ findAppointment: 0, listOpenings: 0, bookAppointment: 0, moveAppointment: 0, cancelAppointment: 0 });
   });
 
-  it('holds the three writes to what the caller confirmed (R3), over who, with whom and when', () => {
+  it('holds the three writes to what the caller confirmed, over who, with whom and when', () => {
     expect(clinicApp.policy.rulesFor).toEqual({
       findAppointment: ['R1'], listOpenings: ['R1'], bookAppointment: ['R1', 'R3'], moveAppointment: ['R1', 'R3'], cancelAppointment: ['R1', 'R3'],
     });
