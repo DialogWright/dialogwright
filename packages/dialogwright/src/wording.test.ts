@@ -97,7 +97,7 @@ describe('the wording of the apps, the docs, the templates and the skill', () =>
   });
 
   it('has no em dash', () => {
-    const dashed = files().filter((file) => readFileSync(file, 'utf8').includes('—')).map(pathOf);
+    const dashed = files().filter((file) => readFileSync(file, 'utf8').includes('\u2014')).map(pathOf);
     expect(dashed).toEqual([]);
   });
 
