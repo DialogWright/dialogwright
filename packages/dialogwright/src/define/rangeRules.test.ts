@@ -68,6 +68,8 @@ describe('policy.yaml: the range rules checked', () => {
       reasons: { outsideWindow: 'late-return' },
       verdicts: { outsideWindow: 'NEEDS_HUMAN' },
     });
+    const relative = definePolicy(refund([{ dateInRange: { field: 'returnDate', notBefore: 'today-7', notAfter: 'today+30' } }]), { tools: TOOLS, lookups: LOOKUPS });
+    expect(sourceOf(relative)?.actions.refundOrder?.rules[0]).toEqual({ rule: 'dateInRange', field: 'returnDate', notBefore: { kind: 'today', days: -7 }, notAfter: { kind: 'today', days: 30 } });
     expect(sourceOf(tables)?.actions.refundOrder?.rules[1]).toEqual({ rule: 'limit', field: 'amount', min: { kind: 'number', value: '0.01' }, max: { kind: 'lookup', ref: { lookup: 'orderTotal', param: 'orderId' } } });
     // Two range rules of one kind may hold two params, one each; the same param twice is one rule listed twice.
     expect(policyWith([{ dateInRange: { field: 'returnDate', notAfter: 'today' } }, { dateInRange: { field: 'pickupDate', notBefore: 'today' } }])).toEqual([]);
@@ -85,6 +87,13 @@ describe('policy.yaml: the range rules checked', () => {
       'actions.refundOrder.rules[0].dateInRange.notBefore: notBefore (2026-12-01) is after notAfter (2026-01-01), so no value is within both -> swap them, or correct the one that is wrong',
       'actions.refundOrder.rules[1].limit.min: min (10) is after max (9.99), so no value is within both -> swap them, or correct the one that is wrong',
     ]);
+    // Two bounds that both count from today are ordered too; a date and a number of days from today are not (today moves).
+    expect(policyWith([{ dateInRange: { field: 'returnDate', notBefore: 'today+30', notAfter: 'today+7' } }])).toEqual([
+      'actions.refundOrder.rules[0].dateInRange.notBefore: notBefore (today+30) is after notAfter (today+7), so no value is within both -> swap them, or correct the one that is wrong',
+    ]);
+    expect(policyWith([{ dateInRange: { field: 'returnDate', notBefore: 'today+1', notAfter: 'today' } }])).toHaveLength(1);
+    expect(policyWith([{ dateInRange: { field: 'returnDate', notBefore: 'today-7', notAfter: 'today+30' } }])).toEqual([]);
+    expect(policyWith([{ dateInRange: { field: 'returnDate', notBefore: '2099-01-01', notAfter: 'today+30' } }])).toEqual([]);
   });
 
   it('a bound that is not a date, a number or a reference; a reference to what it may not reach', () => {
@@ -93,12 +102,22 @@ describe('policy.yaml: the range rules checked', () => {
       { limit: { field: 'amount', min: '1,000', max: 'order(orderId).constructor' } },
     ]);
     expect(problems).toEqual([
-      'actions.refundOrder.rules[0].dateInRange.notBefore: "yesterday" is not a reference: write <lookup>(<param>), or <lookup>(<param>).<field>, each a plain word with no spaces; a date bound is "today", a date (yyyy-mm-dd) or a reference -> write "today", a date such as 2026-01-31, or <lookup>(<param>) or <lookup>(<param>).<field>: a lookup the app\'s code declares (code.lookups), called with one of the action\'s params',
-      'actions.refundOrder.rules[0].dateInRange.notAfter: "2026-02-30" is not a day the calendar has -> write "today", a date such as 2026-01-31, or <lookup>(<param>) or <lookup>(<param>).<field>: a lookup the app\'s code declares (code.lookups), called with one of the action\'s params',
+      'actions.refundOrder.rules[0].dateInRange.notBefore: "yesterday" is not a reference: write <lookup>(<param>), or <lookup>(<param>).<field>, each a plain word with no spaces; a date bound is "today", today+N or today-N, a date (yyyy-mm-dd) or a reference -> write "today", a number of days from today such as today+30 or today-7, a date such as 2026-01-31, or <lookup>(<param>) or <lookup>(<param>).<field>: a lookup the app\'s code declares (code.lookups), called with one of the action\'s params',
+      'actions.refundOrder.rules[0].dateInRange.notAfter: "2026-02-30" is not a day the calendar has -> write "today", a number of days from today such as today+30 or today-7, a date such as 2026-01-31, or <lookup>(<param>) or <lookup>(<param>).<field>: a lookup the app\'s code declares (code.lookups), called with one of the action\'s params',
       'actions.refundOrder.rules[0].dateInRange.within: "returnWindow(order id)" is not a reference: write <lookup>(<param>), or <lookup>(<param>).<field>, each a plain word with no spaces -> write <lookup>(<param>) or <lookup>(<param>).<field>: a lookup the app\'s code declares (code.lookups), called with one of the action\'s params',
       'actions.refundOrder.rules[1].limit.min: "1,000" is not a reference: write <lookup>(<param>), or <lookup>(<param>).<field>, each a plain word with no spaces; a number bound is a number or a reference -> write a number such as 100 or 0.01, or <lookup>(<param>) or <lookup>(<param>).<field>: a lookup the app\'s code declares (code.lookups), called with one of the action\'s params',
       'actions.refundOrder.rules[1].limit.max: the field "constructor" is a name every object has (from Object.prototype), not a field a lookup returns; a number bound is a number or a reference -> write a number such as 100 or 0.01, or <lookup>(<param>) or <lookup>(<param>).<field>: a lookup the app\'s code declares (code.lookups), called with one of the action\'s params',
     ]);
+    const fix = 'write "today", a number of days from today such as today+30 or today-7, a date such as 2026-01-31, or <lookup>(<param>) or <lookup>(<param>).<field>: a lookup the app\'s code declares (code.lookups), called with one of the action\'s params';
+    expect(policyWith([{ dateInRange: { field: 'returnDate', notBefore: 'today-0', notAfter: 'today + 30' } }])).toEqual([
+      `actions.refundOrder.rules[0].dateInRange.notBefore: "today-0" is not a number of days from today: write today+N or today-N, N a whole number from 1 to 3660, with no spaces and no leading zero -> ${fix}`,
+      `actions.refundOrder.rules[0].dateInRange.notAfter: "today + 30" is not a number of days from today: write today+N or today-N, N a whole number from 1 to 3660, with no spaces and no leading zero -> ${fix}`,
+    ]);
+    for (const text of ['today+3661', 'today+030', 'today+1.5', 'today+30d', 'today+']) {
+      expect(policyWith([{ dateInRange: { field: 'returnDate', notAfter: text } }]), text).toEqual([
+        `actions.refundOrder.rules[0].dateInRange.notAfter: "${text}" is not a number of days from today: write today+N or today-N, N a whole number from 1 to 3660, with no spaces and no leading zero -> ${fix}`,
+      ]);
+    }
     for (const text of ['toString(orderId)', '__proto__(orderId)', 'prototype(orderId)', 'scopeOf(orderId)', 'ownerOf(orderId)', 'order(orderId).__proto__', 'order(orderId).total.cents']) {
       expect(policyWith([{ limit: { field: 'amount', max: text } }]), text).toHaveLength(1);
     }

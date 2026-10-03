@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PolicyTables } from '../core/app/types';
 import { definePolicy } from '../define/definePolicy';
 import {
-  dateInRangeRule, isIsoDate, isSafeName, limitRule, lookupNameProblem, parseDateBound, parseLookupRef, parseNumberBound, readDecimal,
+  addDays, dateInRangeRule, isIsoDate, literalOrder, MAX_DAYS_FROM_TODAY, isSafeName, limitRule, lookupNameProblem, parseDateBound, parseLookupRef, parseNumberBound, readDecimal,
   type DateInRangeParams, type LimitParams,
 } from './bounded';
 import { compiledPolicyOf } from './compiled';
@@ -50,6 +50,7 @@ const limit = (p: Omit<LimitParams, 'field'>, params: Record<string, string>, lk
 const line = (o: RuleOutcome): string => `${o.fail ? `${o.fail.verdict} ${o.fail.reason}` : 'pass'} | ${o.result.compared}`;
 
 const TODAY = { kind: 'today' } as const;
+const fromToday = (days: number) => ({ kind: 'today', days }) as const;
 const date = (d: string) => ({ kind: 'date', date: d }) as const;
 const ref = (lookup: string, param: string, field?: string) => ({ kind: 'lookup', ref: field === undefined ? { lookup, param } : { lookup, param, field } }) as const;
 const num = (value: string) => ({ kind: 'number', value }) as const;
@@ -92,6 +93,38 @@ describe('the reference grammar', () => {
     for (const bad of ['2026-02-29', '2026-13-01', 'Today', 'yesterday', '10/02/2026', 20261002]) expect(parseDateBound(bad), String(bad)).toHaveProperty('problem');
   });
 
+  it('reads a number of days from today: today+N and today-N, N from 1 to 3660', () => {
+    expect(MAX_DAYS_FROM_TODAY).toBe(3660);
+    expect(parseDateBound('today+1')).toEqual({ bound: fromToday(1) });
+    expect(parseDateBound('today+30')).toEqual({ bound: fromToday(30) });
+    expect(parseDateBound('today-7')).toEqual({ bound: fromToday(-7) });
+    expect(parseDateBound('today+3660')).toEqual({ bound: fromToday(3660) });
+    expect(parseDateBound('today-3660')).toEqual({ bound: fromToday(-3660) });
+    // A lookup whose name starts with "today" is still a reference.
+    expect(parseDateBound('todayPlus(orderId)')).toEqual({ bound: ref('todayPlus', 'orderId') });
+  });
+
+  it('refuses a number of days from today written any other way, and says how to write it', () => {
+    for (const bad of [
+      'today+0', 'today-0', 'today+', 'today-', 'today+ 30', 'today +30', 'today + 30', 'today+30 ', 'today+030', 'today+3661', 'today-3661', 'today+99999999999999999999',
+      'today+1.5', 'today+30d', 'today+30days', 'today++1', 'today+-1', 'today+1e3', 'today+0x1e',
+    ]) {
+      const read = parseDateBound(bad);
+      expect(read, bad).toEqual({ problem: `"${bad}" is not a number of days from today: write today+N or today-N, N a whole number from 1 to 3660, with no spaces and no leading zero` });
+    }
+    for (const bad of ['Today+30', 'today*2', 'tomorrow', 'today30']) expect(parseDateBound(bad), bad).toHaveProperty('problem');
+  });
+
+  it('orders two bounds that both count from today, and no other pair with today in it', () => {
+    expect(literalOrder(fromToday(-7), fromToday(30))).toBe(true);
+    expect(literalOrder(TODAY, fromToday(30))).toBe(true);
+    expect(literalOrder(fromToday(30), fromToday(30))).toBe(true);
+    expect(literalOrder(fromToday(30), fromToday(7))).toBe(false);
+    expect(literalOrder(fromToday(1), TODAY)).toBe(false);
+    expect(literalOrder(date('2026-01-01'), fromToday(30))).toBeNull();
+    expect(literalOrder(fromToday(30), ref('order', 'orderId', 'deliveredOn'))).toBeNull();
+  });
+
   it('reads number bounds: a number, a decimal text, a reference', () => {
     expect(parseNumberBound(100)).toEqual({ bound: num('100') });
     expect(parseNumberBound(0.01)).toEqual({ bound: num('0.01') });
@@ -117,6 +150,56 @@ describe('dates and numbers, strictly', () => {
   });
 });
 
+describe('days from today, in UTC calendar days', () => {
+  it('crosses a month\'s end, a year\'s end and a leap day where the calendar has them', () => {
+    const cases: [string, number, string][] = [
+      ['2026-10-02', 30, '2026-11-01'],
+      ['2026-10-02', -7, '2026-09-25'],
+      ['2026-01-31', 1, '2026-02-01'],
+      ['2026-03-01', -1, '2026-02-28'],
+      ['2026-04-30', 1, '2026-05-01'],
+      ['2026-12-31', 1, '2027-01-01'],
+      ['2027-01-01', -1, '2026-12-31'],
+      ['2024-02-28', 1, '2024-02-29'],
+      ['2024-02-29', 1, '2024-03-01'],
+      ['2024-03-01', -1, '2024-02-29'],
+      ['2023-02-28', 1, '2023-03-01'],
+      ['2000-02-28', 1, '2000-02-29'],
+      ['1900-02-28', 1, '1900-03-01'],
+      ['2024-01-01', 366, '2025-01-01'],
+      ['2025-01-01', 365, '2026-01-01'],
+      ['2026-10-02', 3660, '2036-10-09'],
+      ['2026-10-02', -3660, '2016-09-24'],
+      ['0050-06-15', 1, '0050-06-16'],
+      ['0001-01-01', 0, '0001-01-01'],
+      ['9999-12-30', 1, '9999-12-31'],
+    ];
+    for (const [from, days, to] of cases) expect(addDays(from, days), `${from} ${days}`).toBe(to);
+  });
+
+  it('gives no date past the calendar\'s ends, or from a today that is not a date', () => {
+    expect(addDays('9999-12-31', 1)).toBeNull();
+    expect(addDays('0001-01-01', -1)).toBeNull();
+    for (const bad of ['', 'unknown', '2026-02-30', '2026-10-02T00:00']) expect(addDays(bad, 1), bad).toBeNull();
+    expect(addDays('2026-10-02', 1.5)).toBeNull();
+  });
+
+  it('counts calendar days whatever the process\'s time zone', () => {
+    const zone = process.env.TZ;
+    try {
+      for (const tz of ['America/Los_Angeles', 'Pacific/Kiritimati', 'Europe/London', 'UTC']) {
+        process.env.TZ = tz;
+        expect(addDays('2026-03-08', 1), tz).toBe('2026-03-09');
+        expect(addDays('2026-10-25', 1), tz).toBe('2026-10-26');
+        expect(addDays('2026-03-29', -1), tz).toBe('2026-03-28');
+      }
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
+  });
+});
+
 describe('dateInRange', () => {
   it('passes a date within its bounds, every bound inclusive, and says which bounds it held to', () => {
     const p = { notBefore: ref('order', 'orderId', 'deliveredOn'), notAfter: TODAY, within: { lookup: 'returnWindow', param: 'orderId' } };
@@ -127,6 +210,26 @@ describe('dateInRange', () => {
     expect(dateRule(p, { returnDate: '2026-09-20', orderId: 'ORD-1234' }).fail).toBeUndefined();
     expect(dateRule(p, { returnDate: today, orderId: 'ORD-1234' }).fail).toBeUndefined();
     expect(dateRule({ within: p.within }, { returnDate: '2026-10-20', orderId: 'ORD-1234' }).fail).toBeUndefined();
+  });
+
+  it('holds a date to a number of days from today, each bound inclusive, and shows the date it computed', () => {
+    const p = { notBefore: fromToday(-7), notAfter: fromToday(30) };
+    expect(line(dateRule(p, { returnDate: '2026-10-15' }))).toBe('pass | returnDate on or after today-7 2026-09-25, on or before today+30 2026-11-01');
+    // On each bound: the day itself passes; the day past it fails.
+    expect(dateRule(p, { returnDate: '2026-09-25' }).fail).toBeUndefined();
+    expect(dateRule(p, { returnDate: '2026-11-01' }).fail).toBeUndefined();
+    expect(line(dateRule(p, { returnDate: '2026-09-24' }))).toBe('BLOCK date-range | returnDate before today-7 2026-09-25');
+    expect(line(dateRule(p, { returnDate: '2026-11-02' }))).toBe('BLOCK date-range | returnDate after today+30 2026-11-01');
+    // Today's date comes from the session's facts, across a month's and a year's end and a leap day.
+    const on = (todayIso: string): GateFacts => ({ ...facts, todayIso });
+    expect(line(dateRule({ notAfter: fromToday(1) }, { returnDate: '2025-01-01' }, undefined, on('2024-12-31')))).toBe('pass | returnDate on or before today+1 2025-01-01');
+    expect(line(dateRule({ notAfter: fromToday(1) }, { returnDate: '2024-03-01' }, undefined, on('2024-02-28')))).toBe('BLOCK date-range | returnDate after today+1 2024-02-29');
+    expect(line(dateRule({ notBefore: fromToday(-1) }, { returnDate: '2024-02-28' }, undefined, on('2024-03-01')))).toBe('BLOCK date-range | returnDate before today-1 2024-02-29');
+    expect(line(dateRule({ notAfter: fromToday(30) }, { returnDate: '2026-03-02' }, undefined, on('2026-01-31')))).toBe('pass | returnDate on or before today+30 2026-03-02');
+    // A bound the calendar does not have, or a today that is not a date: the bound is unknown, and the rule BLOCKs.
+    const human = { verdicts: { outOfRange: 'NEEDS_HUMAN' } } as const;
+    expect(line(dateRule({ ...human, notAfter: fromToday(1) }, { returnDate: '9999-12-31' }, undefined, on('9999-12-31')))).toBe('BLOCK bound-unknown | returnDate: notAfter today+1 gave no date');
+    expect(line(dateRule({ ...human, notBefore: fromToday(-30) }, { returnDate: '2026-09-25' }, undefined, on('')))).toBe('BLOCK bound-unknown | returnDate: notBefore today-30 gave no date');
   });
 
   it('a value that is not a date BLOCKs, whatever the verdicts say', () => {
