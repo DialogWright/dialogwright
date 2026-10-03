@@ -115,7 +115,7 @@ Every hand edit to `fixtures/expected/*.json` after the first `regress --update`
 - [ ] Every tool lists its `params`, every param has a row under "What is recorded", and the card's "What is recorded" table says what the row does; nothing a person said in their own words is kept without a reason written there.
 - [ ] No tool decides who may do what; every line a caller hears is in `prompts.yaml`.
 - [ ] Nothing private or real: invented names and streets, 555 numbers, `example.com` addresses.
-- [ ] `pnpm check` ok; `pnpm verify` green; this app's `regress` says `no changes`; the clinic's and the testkit's regressions say `no changes`.
+- [ ] `pnpm check` ok; `pnpm verify` green; every app's regression (this one's, the clinic's and every other under apps/) and the testkit's say `no changes`.
 - [ ] The baseline was made once with `regress --update`, read entry by entry, and every later edit is under "Baseline edits".
 - [ ] `.github/workflows/ci.yml` runs this app's regression; `pnpm-lock.yaml` is committed.
 - [ ] `README.md` says what the app does and how it is built, and keeps the scaffold's recording steps; `CLAUDE.md` still matches the folder.

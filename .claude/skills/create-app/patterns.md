@@ -293,12 +293,13 @@ The built-in range rules hold one param to bounds ([authoring guide, section 3.3
 
 ```ts
 // src/app.ts
-const dueOf = (accountId: string): string | null => ACCOUNTS.find((a) => a.accountId === accountId)?.due ?? null;
+// The amount owed, a plain decimal ("240.00"): the account's balance, not its due date.
+const balanceOf = (accountId: string): string | null => ACCOUNTS.find((a) => a.accountId === accountId)?.balance ?? null;
 
 export const code: AppCode = {
   // ...
   lookups: ['amountDue'],
-  systems: () => ({ sys: new Systems(), lookups: { ownerOf: () => null, scopeOf, amountDue: (id: string) => dueOf(id) } }),
+  systems: () => ({ sys: new Systems(), lookups: { ownerOf: () => null, scopeOf, amountDue: (id: string) => balanceOf(id) } }),
 };
 ```
 
@@ -367,7 +368,7 @@ A summary can name a value the code works out (a total from the record, a fee): 
 
 ```ts
 // src/app.ts, in the form's hooks under code.forms
-onSummaryRead: ({ s }) => ({ vars: { total: dueOf(accountIdOf(s)) ?? '' } }),
+onSummaryRead: ({ s }) => ({ vars: { total: balanceOf(accountIdOf(s)) ?? '' } }),
 ```
 
 The same value goes in `confirmedParams`, so the caller's yes covers it.
@@ -409,7 +410,7 @@ A key on the keypad menu may name it: the key plays the line, then offers the me
 - A `digits`, `date`, `birthdate` or `choice` slot takes `keypad: true` and then needs `ask_<slot>_dtmf` (the line that asks for the keys). The keypad is offered after spoken answers miss, and keys are taken whenever the slot was the last thing asked.
 - The one-time code is always keyed.
 - A scripted call's keypad step is `{ "dtmf": "55501234" }`.
-- **The keypad menu** (`menu:` in intents.yaml) listens only once it has been offered: on a call with a keypad (a phone call, never the chat), the second missed answer to "what can I help you with" (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the next turn's keys are menu keys. A third miss goes to a person (`max-attempts`). A key pressed before that, at the greeting say, is ignored and the caller hears nothing. After an informational key the menu is offered again, so it keeps listening. A scripted call for a menu key misses twice first: `[{ "say": "um" }, { "say": "okay" }, { "dtmf": "4" }]`, with "um" and "okay" corpus lines at `no_form` whose intent is `none`.
+- **The keypad menu** (`menu:` in intents.yaml) listens only once it has been offered: on a call with a keypad (a phone call, never the chat), the second missed answer to "what can I help you with" (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the next turn's keys are menu keys. A third miss goes to a person (`max-attempts`). A key pressed before that, at the greeting for instance, is ignored and the caller hears nothing. After an informational key the menu is offered again, so it keeps listening. A scripted call for a menu key misses twice first: `[{ "say": "um" }, { "say": "okay" }, { "dtmf": "4" }]`, with "um" and "okay" corpus lines at `no_form` whose intent is `none`.
 
 ## What is recorded: `params` and `audit`
 
