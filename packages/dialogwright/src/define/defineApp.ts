@@ -103,8 +103,10 @@ export class AppDefinitionError extends Error {
    * The code parts defineApp was given, when it was given any. `dialogwright check` reads them from
    * an app module that threw while it was imported, so the lines the engine needs because of the
    * code (a slot's keypad line, a portal's sign-in lines) are reported in the same run as these problems.
+   * It is not enumerable, so logging or serializing the error does not dump the app's code, and it is
+   * not named `code`, which Node and most libraries read as an error's string code.
    */
-  readonly code?: AppCode;
+  declare readonly appCode?: AppCode;
 
   /** `what` names the thing that is not valid when it is not an app folder ("the slots in src/slots.yaml"). */
   constructor(dir: string, problems: readonly Problem[], what: string = `the app in ${dir}`, code?: AppCode) {
@@ -112,7 +114,7 @@ export class AppDefinitionError extends Error {
     super(`${what} is not valid (${count}):\n${problems.map((p) => `  ${formatProblem(p)}`).join('\n')}`);
     this.name = 'AppDefinitionError';
     this.problems = problems;
-    if (code !== undefined) this.code = code;
+    if (code !== undefined) Object.defineProperty(this, 'appCode', { value: code, enumerable: false, writable: false, configurable: false });
   }
 }
 
@@ -120,7 +122,7 @@ export class AppDefinitionError extends Error {
  * Whether `error` is an AppDefinitionError from any copy of this module: it carries the brand, or
  * (from a copy older than the brand) the name, and in either case a list of problems.
  */
-export function isAppDefinitionError(error: unknown): error is { problems: readonly Problem[]; message: string; code?: unknown } {
+export function isAppDefinitionError(error: unknown): error is { problems: readonly Problem[]; message: string; appCode?: unknown } {
   if (typeof error !== 'object' || error === null) return false;
   const e = error as { [APP_DEFINITION_ERROR]?: unknown; name?: unknown; problems?: unknown };
   return (e[APP_DEFINITION_ERROR] === true || e.name === 'AppDefinitionError') && Array.isArray(e.problems);

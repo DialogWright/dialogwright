@@ -263,7 +263,7 @@ async function loadCode(dir: string): Promise<Found> {
   } catch (error) {
     // By its brand, not instanceof: the module may have reached defineApp through another copy of this one.
     if (isAppDefinitionError(error) && error.problems.length > 0 && error.problems.every(isProblem)) {
-      const code = typeof error.code === 'object' && error.code !== null ? (error.code as AppCode) : undefined;
+      const code = typeof error.appCode === 'object' && error.appCode !== null ? (error.appCode as AppCode) : undefined;
       return { problems: [...error.problems], linked: true, file, ...(code ? { code } : {}) };
     }
     // The whole message, on one line: an error that lists several things must keep every one of them.
