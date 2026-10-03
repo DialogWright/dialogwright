@@ -283,7 +283,13 @@ export const code: AppCode = {
 - Put `scope` before a range rule, so a lookup is only asked about an account the caller may see.
 - A failure is `BLOCK` with the reason `limit`, `date-range` or `date-window` (or yours, under `reasons`), or a person with `verdicts: { outOfRange: NEEDS_HUMAN }`.
 
-**A day within N days of today** has no bound yet (`notAfter` takes `today`, a date or a lookup, and a lookup is not given the call's day). Use `notBefore: today` in `dateInRange` and a custom rule for the far end, reading the call's day from the gate's facts, never the clock:
+**A day within N days of today** is a number of days from today, `today+N` (authoring guide, "The range rules"):
+
+```yaml
+      - dateInRange: { field: firstDate, notBefore: today, notAfter: today+30 }
+```
+
+**A bound no built-in rule holds** is a custom rule. The utility example still holds its thirty days with one, written before `today+N` existed; it shows the shape, reading the call's day from the gate's facts, never the clock:
 
 ```yaml
       - dateInRange: { field: firstDate, notBefore: today }
@@ -365,7 +371,7 @@ An intent that only says something: no form, no tool, no policy.
 
 and the line in `prompts.yaml`. After it the caller hears `ask_intent`, so a scripted call that asks one expects `"promptId": "ask_intent"`. A web address in a line is invented (`example.com/...`), written as it should be spoken.
 
-Leave it off the keypad menu: a key starts a form or (`agent`) goes to a person, and a key for an informational intent is ignored (the caller hears nothing), so `pnpm check` refuses one. Keep it out of the `nomatch_dtmf_menu` line too.
+A key on the keypad menu may name it: the key plays the line, then offers the menu again. A key for a control intent other than `agent` does nothing, so `pnpm check` refuses one.
 
 ## Keypad entry
 
@@ -507,8 +513,6 @@ A line of it reads `setUpPlan BLOCK reason=date-range {...}` followed by each ru
 
 Found so far, with the workaround each time. Log the ones you meet in the worksheet.
 
-- **A day within N days of today** has no `dateInRange` bound: `notBefore: today` and a custom rule (above).
-- **No key for an informational intent on the keypad menu**: the engine ignores it, and `pnpm check` refuses it (above).
 - **One list of confirmed fields per app**: list the union, send `''` for the rest (above).
 - **No slot type for an amount of money or an address** (above).
 - **Delegates only on a signed-in chat**: no phone path for a delegate; scripted calls use `as`, and a corpus line with `as` must be `no_form`. A delegate's answer inside a form comes from a corpus line without `as` that has the same words.

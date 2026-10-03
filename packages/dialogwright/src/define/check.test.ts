@@ -142,11 +142,10 @@ describe('checkApp: the prompts every locale needs', () => {
     ]);
   });
 
-  it('a key on the menu for an informational or control intent is refused: the engine ignores it', async () => {
+  it('a key on the menu for a control intent other than agent is refused: the engine ignores it; an informational one plays its line', async () => {
     const dir = folder({ 'intents.yaml': (t) => t.replace('  - digit: "0"\n    intent: agent', '  - digit: "4"\n    intent: hours\n  - digit: "5"\n    intent: repeat_prompt\n  - digit: "0"\n    intent: agent') });
     expect(await lines(dir)).toEqual([
-      'intents.yaml:47:13  menu[2].intent  menu digit "4" names "hours", an informational intent: a key on the menu starts a form or (agent) goes to a person, and any other key is ignored, so a caller who presses 4 hears nothing  ->  take digit "4" off the menu (and out of the nomatch_dtmf_menu line); a caller still asks for "hours" in words',
-      'intents.yaml:49:13  menu[3].intent  menu digit "5" names "repeat_prompt", a control intent: a key on the menu starts a form or (agent) goes to a person, and any other key is ignored, so a caller who presses 5 hears nothing  ->  take digit "5" off the menu (and out of the nomatch_dtmf_menu line); a caller still asks for "repeat_prompt" in words',
+      'intents.yaml:49:13  menu[3].intent  menu digit "5" names "repeat_prompt", a control intent: a key on the menu starts a form, plays an informational line or (agent) goes to a person, and any other key is ignored, so a caller who presses 5 hears nothing  ->  take digit "5" off the menu (and out of the nomatch_dtmf_menu line); a caller still asks for "repeat_prompt" in words',
     ]);
   });
 

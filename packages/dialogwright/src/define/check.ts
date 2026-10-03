@@ -299,26 +299,24 @@ const oneLine = (message: string): string => message.split('\n').map((l) => l.tr
 // ---------------------------------------------------------------------------------------------
 
 /**
- * A key of the keypad menu starts a form, or (`agent`) goes to a person: core/turn.ts takes no other
- * key on the menu, so a key for an informational or control intent is ignored and the caller hears
- * nothing. Refused here until the engine says such an intent's line on its key. A menu entry that
- * names no intent at all is crossLink's to report.
+ * A key of the keypad menu starts a form, plays an informational intent's line, or (`agent`) goes to
+ * a person: core/turn.ts takes no other key on the menu, so a key for another control intent is
+ * ignored and the caller hears nothing. A menu entry that names no intent at all is crossLink's to report.
  */
 function checkMenu(config: LoadedConfig, locate: LoadResult['locate']): Problem[] {
   const { intents, menu } = config.intents;
   const problems: Problem[] = [];
   menu.forEach(({ digit, intent }, i) => {
     const def = Object.hasOwn(intents, intent) ? intents[intent] : undefined;
-    if (!def || def.kind === 'form' || intent === 'agent') return;
+    if (!def || def.kind !== 'control' || intent === 'agent') return;
     const path: DataPath = ['menu', i, 'intent'];
     const at = locate('intents.yaml', path) ?? { line: 0, column: 0 };
-    const what = def.kind === 'informational' ? 'an informational intent' : `a ${def.kind} intent`;
     problems.push({
       file: 'intents.yaml',
       line: at.line,
       column: at.column,
       path: formatPath(path),
-      message: `menu digit "${digit}" names "${intent}", ${what}: a key on the menu starts a form or (agent) goes to a person, and any other key is ignored, so a caller who presses ${digit} hears nothing`,
+      message: `menu digit "${digit}" names "${intent}", a control intent: a key on the menu starts a form, plays an informational line or (agent) goes to a person, and any other key is ignored, so a caller who presses ${digit} hears nothing`,
       fix: `take digit "${digit}" off the menu (and out of the nomatch_dtmf_menu line); a caller still asks for "${intent}" in words`,
     });
   });
