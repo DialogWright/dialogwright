@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -100,6 +100,12 @@ async function fixtureStub(): Promise<JevClient> {
   }
   return sharedStub;
 }
+
+// Loaded once before any test, so no test's timing includes loading the corpus: the slow-turn test
+// below times its turn against the setup deadline, and a first load inside it made it flaky.
+beforeAll(async () => {
+  await fixtureStub();
+}, 60_000);
 
 describe('server end to end', () => {
   it('plays the greeting as a recorded clip when one is present, and logs which audio clips are present at startup', async () => {
@@ -210,12 +216,12 @@ describe('server end to end', () => {
     await relay.waitForTexts(1);
     await new Promise((r) => setTimeout(r, 1000));
     relay.prompt('my parcel never arrived');
-    // The greeting, then the report form's entry ack and ask_accountId.
-    expect((await relay.waitForTexts(3)).length).toBe(3);
+    // The greeting, then the report form's entry ack and ask_accountId (a generous wait: only the deadline is under test).
+    expect((await relay.waitForTexts(3, 10_000)).length).toBe(3);
     const stillOpen = Symbol('open');
     const settled = await Promise.race([relay.closed, new Promise((r) => setTimeout(() => r(stillOpen), 100))]);
     expect(settled).toBe(stillOpen);
-  });
+  }, 15_000);
 
   it('does not time out an authenticated call whose first turn is slow', async () => {
     const slow: JevClient = {
@@ -239,8 +245,8 @@ describe('server end to end', () => {
     const settled = await Promise.race([again.closed, new Promise((r) => setTimeout(() => r(stillOpen), 1000))]);
     expect(settled).toBe(stillOpen);
     // The reconnect hears the replayed prompt, and the slow turn's own frames land on this socket too.
-    expect((await again.waitForTexts(1)).length).toBeGreaterThanOrEqual(1);
-  });
+    expect((await again.waitForTexts(1, 10_000)).length).toBeGreaterThanOrEqual(1);
+  }, 15_000);
 
   it('reports a port in use as a clean error', async () => {
     await start();
