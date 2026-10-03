@@ -100,7 +100,15 @@ principals: {
 portal: { subjects: () => ACCOUNTS.map((a) => ({ id: a.accountId, first: a.first, last: a.last })) },
 ```
 
-`pnpm check` then asks for the chat's sign-in lines (`signin_required`, `signin_reminder`, `signin_thanks`, `signin_ready`, `greeting_chat_signed_in`, `greeting_chat_delegate`). A scripted chat call is `"as": "web"`, with a `{ "signIn": "<subject id>" }` step where the caller signs in; a chat caller who types an account number instead hears `signin_reminder`.
+`pnpm check` then asks for the chat's sign-in lines (`signin_required`, `signin_reminder`, `signin_thanks`, `signin_ready`, `greeting_chat_signed_in`, `greeting_chat_delegate`), and names the variables each is given: `{first}` in `signin_thanks`, `greeting_chat_signed_in` and `greeting_chat_delegate`, none in the others.
+
+The order a chat caller hears them in:
+
+1. The caller asks for something above level 0: the request waits, and they hear `signin_required`.
+2. Until they sign in, whatever they type (an account number included: nothing typed is a factor) hears `signin_reminder`.
+3. They sign in: `signin_thanks`, then the waiting request carries on (its next question, or its answer). With nothing waiting, `signin_thanks` and `signin_ready`.
+
+A scripted chat call is `"as": "web"`, with a `{ "signIn": "<subject id>" }` step where the caller signs in. A call that tests the reminder asks first, then types the number: `[{ "say": "what's my balance" }, { "say": "my account number is 55501234" }]` ends at `signin_reminder`. The reminder is never the first sign-in line a caller hears: a first message that is a request (even one that only gives an account number, labelled with the request it means) hears `signin_required`.
 
 ## Delegates
 
@@ -335,6 +343,8 @@ An intent that only says something: no form, no tool, no policy.
 
 and the line in `prompts.yaml`. After it the caller hears `ask_intent`, so a scripted call that asks one expects `"promptId": "ask_intent"`. A web address in a line is invented (`example.com/...`), written as it should be spoken.
 
+Leave it off the keypad menu: a key starts a form or (`agent`) goes to a person, and a key for an informational intent is ignored (the caller hears nothing), so `pnpm check` refuses one. Keep it out of the `nomatch_dtmf_menu` line too.
+
 ## Keypad entry
 
 - A `digits`, `date`, `birthdate` or `choice` slot takes `keypad: true` and then needs `ask_<slot>_dtmf` (the line that asks for the keys). The keypad is offered after spoken answers miss, and keys are taken whenever the slot was the last thing asked.
@@ -348,8 +358,21 @@ and the line in `prompts.yaml`. After it the caller hears `ask_intent`, so a scr
 | An amount the code can work out (what is owed, a fee) | Not a slot: compute it from the record, read it back with `onSummaryRead`, send it as a param and hold it with `limit`. | nothing |
 | A choice among a few amounts or counts | `choice`, keys that start with a letter (`two`, `three`), `say` for how each is spoken. | nothing |
 | An amount the caller names freely | No type yet. Offer choices instead, or write a slot in code (authoring guide, section 4, "When no type fits"). | a gap |
-| A street address | `text` with `say: null` (the summary reads the caller's words) and a summary line that quotes them ("at: {place}"). The value is the whole turn's words, so the read-back is the caller's sentence. | a gap |
+| A street address | `text` with `say: null` (the summary reads the caller's words) and `redact: none`, and a summary line that quotes them ("at: {place}"). The value is the whole turn's words, so the read-back is the caller's sentence. | a gap |
 | A code with letters | A slot in code. | a gap |
+
+The address in `slots.yaml`:
+
+```yaml
+place:
+  type: text
+  what: the street address where the problem is
+  say: null          # the read-back is the caller's own words
+  redact: none       # required with say: null; the words are kept in the trace and the audit
+  maxLength: 200
+```
+
+`redact: none` is the trade-off: with `say: null` the display is the caller's words, and the default `redact: length` keeps those out of the trace, so `pnpm check` refuses the pair (`give "say" a stand-in such as "your note", or set redact: none`). A stand-in would read back "your note" instead of the address, which defeats the read-back, so an address takes `redact: none`, and the words are then in the trace and the audit as said. Note it in the worksheet's gaps.
 
 ## Testing the policy
 
@@ -463,6 +486,7 @@ A line of it reads `setUpPlan BLOCK reason=date-range {...}` followed by each ru
 Found so far, with the workaround each time. Log the ones you meet in the worksheet.
 
 - **A day within N days of today** has no `dateInRange` bound: `notBefore: today` and a custom rule (above).
+- **No key for an informational intent on the keypad menu**: the engine ignores it, and `pnpm check` refuses it (above).
 - **One list of confirmed fields per app**: list the union, send `''` for the rest (above).
 - **No slot type for an amount of money or an address** (above).
 - **Delegates only on a signed-in chat**: no phone path for a delegate; scripted calls use `as`, and a corpus line with `as` must be `no_form`. A delegate's answer inside a form comes from a corpus line without `as` that has the same words.

@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import {
   addDays, defineApp, describeDay, localeOf,
-  type AppCode, type Completion, type CompletionContext, type Session, type ToolDef, type VerifyOutcome,
+  type AppCode, type Completion, type CompletionContext, type Principal, type Session, type ToolDef, type VerifyOutcome,
 } from 'dialogwright';
 import { ACCOUNTS, FIRST_OPENING_IN_DAYS } from './data';
 
@@ -41,6 +41,15 @@ export class Systems {
  * are collected by the engine before any tool that needs level 1, so by then it is there.
  */
 const accountIdOf = (s: Session): string => s.slots.accountId?.value ?? '';
+
+/**
+ * The accounts a principal may see, for the gate's `scope` rule (`scope: { param: accountId }` in
+ * policy.yaml): a verified customer their own, an anonymous caller none. Someone who acts for
+ * customers (a delegate) sees the accounts they act for: add them here when the app has delegates.
+ */
+export function scopeOf(p: Principal): readonly string[] {
+  return p.kind === 'customer' && p.level > 0 ? [p.id] : [];
+}
 
 /** Every tool, by name; each has an action in policy.yaml, and policy.yaml names no other. */
 export const TOOLS: Record<string, ToolDef> = {
@@ -101,7 +110,7 @@ export const code: AppCode = {
   // Every slot is a library type in slots.yaml; list one here only when `type: code` names it.
   slots: {},
   tools: TOOLS,
-  systems: () => ({ sys: new Systems(), lookups: { ownerOf: () => null, scopeOf: () => [] } }),
+  systems: () => ({ sys: new Systems(), lookups: { ownerOf: () => null, scopeOf } }),
   forms: {
     book_service: {
       // Made before the form's own slots: it needs level 1, so the gate steps an unverified caller up.
@@ -113,6 +122,8 @@ export const code: AppCode = {
   // What the regression harness and the stub clients need (never used on a live call): the state a
   // corpus line spoken mid-call is seeded with. A seeded form is one a verified caller is in the
   // middle of, so the caller is a verified one, and each slot already collected has a stand-in value.
+  // The caller is at the top of identity.yaml's ladder: level 1 here. When you add level 2 (a
+  // one-time code), make this caller level 2, or every corpus line inside a level 2 form hears ask_otp.
   testing: {
     // What `pnpm cli --client heuristic` listens for, in the order the first match wins: your own intents' keywords.
     heuristics: { intents: [['book_service', /\b(book|schedule|repair|inspection|installation|service)\b/]] },
