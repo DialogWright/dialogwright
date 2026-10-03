@@ -718,6 +718,116 @@
     }
   },
   {
+    "id": "person-keypad-menu",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "okay"
+      },
+      {
+        "dtmf": "0"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "person-while-verifying",
+    "steps": [
+      {
+        "say": "what's my balance"
+      },
+      {
+        "say": "skip this, I want an operator"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "person-at-code-prompt",
+    "steps": [
+      {
+        "say": "payment plan"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "say": "I don't have my phone, can I talk to someone"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 1
+    }
+  },
+  {
+    "id": "person-at-outage-summary",
+    "steps": [
+      {
+        "say": "I want to report a power outage"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "no power at all"
+      },
+      {
+        "say": "actually, put me through to a person"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "person-at-plan-summary",
+    "steps": [
+      {
+        "say": "payment plan"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "three"
+      },
+      {
+        "say": "tomorrow"
+      },
+      {
+        "say": "before I say yes, I want to talk to someone"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "principalLevel": 2
+    }
+  },
+  {
     "id": "outage-map",
     "steps": [
       {
@@ -769,6 +879,55 @@
       "decision": "prompt",
       "promptId": "anything_else",
       "gate": "reportOutage:ALLOW"
+    }
+  },
+  {
+    "id": "keypad-menu-outage-map",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "okay"
+      },
+      {
+        "dtmf": "4"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "nomatch_dtmf_menu",
+      "text": "example dot com slash outages"
+    }
+  },
+  {
+    "id": "keypad-menu-office-hours-then-balance",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "okay"
+      },
+      {
+        "dtmf": "5"
+      },
+      {
+        "dtmf": "2"
+      },
+      {
+        "dtmf": "55501234"
+      },
+      {
+        "dtmf": "04121980"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "readBalance:ALLOW",
+      "text": "$240.00"
     }
   }
 ]

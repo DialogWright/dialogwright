@@ -8,7 +8,9 @@ What a caller can do:
 - **Hear their balance and due date** (`check_balance`): the caller verifies with their account number and date of birth (level 1), by voice or keypad, and hears the balance on their own account (`readBalance`).
 - **Set up a payment arrangement** (`set_up_plan`): the balance split into two, three, four or six payments. It needs a one-time code texted to the phone on the account (level 2), asked before the form's questions. The gate holds the total to what is owed (`limit` against the `amountDue` lookup) and the first payment to between today and thirty days on (`dateInRange` with `notBefore: today` and `notAfter: today+30`).
 - **Ask for the outage map or the office hours**: fixed lines (`outage_map`, `office_hours`).
-- **Ask for a person** at any time (`agent`).
+- **Ask for a person** at any time (`agent`): at the start, inside a form, while verifying, at the code prompt or at a summary, by voice or with 0 on the keypad menu.
+
+On the keypad menu, 1 to 3 start the three tasks, 4 and 5 play the outage map and the office hours (and offer the menu again), and 0 is a person.
 
 On the chat, a customer signs in through the portal instead of saying the factors (`signIn` at level 2). A **property manager** (delegate `property_manager`, role `manager`) signs in on the chat and may report outages and check the balances of the accounts they manage (the `scope` rule over `scopeOf`); a payment arrangement for a tenant's account goes to a person (`role: { manager: person }`), before any question is asked.
 

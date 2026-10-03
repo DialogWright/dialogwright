@@ -102,6 +102,10 @@
 {"id": "ag-07", "text": "just get me a real person", "intent": "agent", "context": "set_up_plan"}
 {"id": "ag-08", "text": "I'd rather speak with someone about this", "intent": "agent", "context": "check_balance"}
 {"id": "ag-09", "text": "can I get a person on the chat", "intent": "agent", "context": "no_form", "as": "riley"}
+{"id": "ag-10", "text": "actually, put me through to a person", "intent": "agent", "context": "confirm_report_outage", "confirm": "unanswered"}
+{"id": "ag-11", "text": "before I say yes, I want to talk to someone", "intent": "agent", "context": "confirm_set_up_plan", "confirm": "unanswered"}
+{"id": "ag-12", "text": "I don't have my phone, can I talk to someone", "intent": "agent", "context": "set_up_plan", "prompted": "count"}
+{"id": "ag-13", "text": "skip this, I want an operator", "intent": "agent", "context": "check_balance", "prompted": "accountId"}
 {"id": "rp-01", "text": "Can you repeat that", "intent": "repeat_prompt", "context": "no_form"}
 {"id": "rp-02", "text": "Say that again", "intent": "repeat_prompt", "context": "report_outage"}
 {"id": "rp-03", "text": "repeat", "intent": "repeat_prompt", "context": "no_form"}

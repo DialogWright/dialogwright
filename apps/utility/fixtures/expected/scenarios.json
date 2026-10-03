@@ -795,6 +795,126 @@
     "pass": true,
     "mismatches": []
   },
+  "person-keypad-menu": {
+    "id": "person-keypad-menu",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "person-while-verifying": {
+    "id": "person-while-verifying",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "person-at-code-prompt": {
+    "id": "person-at-code-prompt",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "person-at-outage-summary": {
+    "id": "person-at-outage-summary",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "report_outage",
+    "slots": {
+      "place": "It's 14 Birch Lane",
+      "symptom": "no_power",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "person-at-plan-summary": {
+    "id": "person-at-plan-summary",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-09-19",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "findAccount:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
   "outage-map": {
     "id": "outage-map",
     "decision": "prompt",
@@ -870,6 +990,59 @@
     "queued": [],
     "principalLevel": 0,
     "gate": "reportOutage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "keypad-menu-outage-map": {
+    "id": "keypad-menu-outage-map",
+    "decision": "prompt",
+    "promptId": "nomatch_dtmf_menu",
+    "acks": [
+      "outage_map"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "keypad-menu-office-hours-then-balance": {
+    "id": "keypad-menu-office-hours-then-balance",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "balance_is"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "readBalance:ALLOW",
     "pass": true,
     "mismatches": []
   }

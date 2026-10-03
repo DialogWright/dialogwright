@@ -44,9 +44,8 @@ intents:
     label: nothing
     kind: control
 
-# The keypad menu: each task by digit, and 0 for a person. The outage map and the office hours are
-# not on it: the engine treats a menu key for an informational intent as no answer (it is ignored,
-# and the caller hears nothing), so only forms and a person are offered here. See DESIGN.md, Gaps.
+# The keypad menu: each task by digit, the two answers, and 0 for a person. A key for an answer
+# plays its line and offers the menu again.
 menu:
   - digit: "1"
     intent: report_outage
@@ -54,5 +53,9 @@ menu:
     intent: check_balance
   - digit: "3"
     intent: set_up_plan
+  - digit: "4"
+    intent: outage_map
+  - digit: "5"
+    intent: office_hours
   - digit: "0"
     intent: agent

@@ -2399,6 +2399,94 @@
     "principalLevel": 2,
     "gate": null
   },
+  "ag-10": {
+    "id": "ag-10",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "report_outage",
+    "slots": {
+      "place": "14 Birch Lane",
+      "symptom": "no_power",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-11": {
+    "id": "ag-11",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": "three",
+      "firstDate": "2026-09-25",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-12": {
+    "id": "ag-12",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "set_up_plan",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ag-13": {
+    "id": "ag-13",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "check_balance",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
   "rp-01": {
     "id": "rp-01",
     "decision": "replay",

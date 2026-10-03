@@ -99,7 +99,7 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 - Outage reports need no account and no verification; a property manager files them the same way (allowed).
 - Code length 6, three tries, the framework's defaults.
 - Accounts are eight digits (`5550 1234`), read in two groups of four; every slot that can be keyed has `keypad: true`.
-- The keypad menu offers the three forms (1, 2, 3) and a person (0). The outage map and office hours are not on it (see Gaps).
+- The keypad menu offers the three forms (1, 2, 3), the outage map (4), the office hours (5) and a person (0). A key for an answer plays its line and offers the menu again. (The trial left 4 and 5 off while the engine ignored such a key; see Gaps.)
 - A property manager is refused `sendCode` (role rule): a manager never steps up, so a code to a tenant's phone has no use and could alarm the tenant. Found reading the policy matrix.
 - Over-answers: a caller may say the address and what they see in one breath, or the count and the first day; the forms skip what is filled.
 - A property manager's balance check names the account (`account` slot); the scope rule limits them to the accounts they manage.
@@ -114,7 +114,7 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 | Delegates on the phone | delegates only on a signed-in chat | property managers use the chat | none |
 | The address read back | `pnpm check` refuses `say: null` with the default `redact: length`; patterns.md does not mention it | `redact: none` on `place`: the address is in the trace and the audit as said | a few minutes |
 | An address said with the request | a `text` slot keeps the whole turn | the read-back quotes the whole sentence ("the power is out at 22 Alder Street and nothing works"); the caller still confirms it | none; a real address type would fix it |
-| Informational intents on the keypad menu | `pnpm check` accepts them, but `handleDtmf` in the engine ignores a menu key that is not a form or `agent` (the caller hears nothing) | left the outage map and hours off the menu | a scenario and some reading of turn.ts |
+| Informational intents on the keypad menu | when the app was built, `handleDtmf` in the engine ignored a menu key that was not a form or `agent` (the caller heard nothing) | first left the outage map and hours off the menu; the engine now plays the line, so they are back as 4 and 5 (Task 6), with scripted calls for each | a scenario and some reading of turn.ts; closed |
 | Nothing owed on the account | a bound refuses only when the write is tried, after the summary; `limit` cannot stop the form before its questions for a subject | the summary reads "$0.00 in three payments" and the gate then refuses with `plan_amount_outside` | a clumsy call for that one caller |
 | A delegate's answers inside a form | corpus lines inside a form cannot carry `as`, so they are seeded with a customer | the `account` answers run as a customer in the corpus; the manager's path is covered by scripted calls with `as` | none |
 | The framework's own test of policy.matrix folders | `packages/dialogwright/src/define/matrixCommand.test.ts` lists the workspace's matrix folders exactly, so a new app's `policy.matrix` fails it | left failing (the framework is out of bounds); recorded in docs/trials/2026-10-03-utility.md | `pnpm -r test` is red until the framework test is changed |
@@ -124,6 +124,7 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 | Entry | Field | Before -> after | Why |
 |---|---|---|---|
 | corpus `pl-02` | `slots.place` | the old street name -> `200 Heron Row` | The invented street was renamed in the fixture data, the corpus line and two scripted calls; the read-back is the caller's words, so the baseline follows them. |
+| corpus `ag-10` to `ag-13`; scenarios `person-keypad-menu`, `person-while-verifying`, `person-at-code-prompt`, `person-at-outage-summary`, `person-at-plan-summary`, `keypad-menu-outage-map`, `keypad-menu-office-hours-then-balance` | (new entries) | none -> the stub's outcome | Added in Task 6: a person asked for at each place a caller can be (the keypad menu, while verifying, at the code prompt, at each summary) and the two answers' keys. Only these entries were added, each read in its transcript (`regress --scenario`, `--corpus`) before it went in: every person request is `handoff live-agent` at the caller's level then, the map's and the hours' keys play their line and give the menu back, and the hours key is followed by the balance on the keypad. No existing entry changed. |
 
 Changes that needed no edit: the thirty-day bound moved from the custom rule `first-date-within-30-days` to `dateInRange` (`notAfter: today+30`). The rule that decides `plan-first-date-too-late` is now `dateInRange` (its line reads `firstDate after today+30 2026-10-18`), with the same verdict, reason (`date-range`) and line (`plan_date_outside`); the baseline records the outcome, not the deciding rule, so it did not change. `policy.matrix` was written again for it: the rule list of `setUpPlan` and the custom rules section changed, and no verdict did.
 

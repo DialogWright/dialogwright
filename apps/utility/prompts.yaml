@@ -36,7 +36,7 @@ prompts:
     text: Sorry, I didn't catch that. You can report an outage, check your balance, or set up a payment arrangement.
     interruptible: true
   nomatch_dtmf_menu:
-    text: Let's try the keypad. To report an outage press 1. For your balance press 2. For a payment arrangement press 3. To speak with someone press 0.
+    text: Let's try the keypad. To report an outage press 1. For your balance press 2. For a payment arrangement press 3. For the outage map press 4. For our office hours press 5. To speak with someone press 0.
     interruptible: true
   no_input:
     text: I didn't hear anything.
