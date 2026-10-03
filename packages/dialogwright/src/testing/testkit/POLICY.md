@@ -15,7 +15,7 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 - The rules of an action run in the order shown, and the first one that fails decides.
 - Identifiers in decision lines appear by their last four characters (`...1234`), never in full; a value recorded hidden, by length or never shows not even those.
 - A caller has 3 tries at each identity check (the account ID and date of birth, and the one-time code). After that a person takes the call.
-- In traces and the audit a caller's values are recorded as they are said, except: account ID by its last four; date of birth hidden (a year is kept); description by its length.
+- In traces and the audit a caller's values are recorded as they are said, except: account ID by its last four; date of birth hidden (the trace keeps only its year, `••/••/1985`; a call as recorded, in the gate's decision, the console and the audit, shows `•`); description by its length.
 
 ## Identity
 
@@ -49,12 +49,13 @@ flowchart LR
 - **customer**: the people the app serves. They are verified up the ladder above and may see only their own records.
 - **agent**: acts for customers, signed in through a portal. They may see the records of the customers they act for, with a role: viewer, clerk.
 
-What each role may do, in the actions that have a role rule (a role a rule does not list is refused, and so is a party with no role):
+What each role may do. In the actions that have a role rule, a role the rule does not list is refused, and so is a party with no role. The last row is every action that has no role rule: every role, and a party with no role, goes ahead to its other rules (the level, whose record it is, the confirmation). The identity checks (check the account ID and date of birth, text a one-time code and check the one-time code) are for customers only: a party who acts for them is refused those, whatever its role.
 
 | Role | Goes ahead | Goes to a person | Refused |
 | --- | --- | --- | --- |
 | viewer | none | none | report a missing parcel |
 | clerk | none | report a missing parcel | none |
+| every role, and a party with no role | read the customer's account<br/>read the delivery windows<br/>list the customer's parcels<br/>read a parcel<br/>tell the depot about a report | none | check the account ID and date of birth<br/>text a one-time code<br/>check the one-time code |
 
 ## What is withheld
 
@@ -74,7 +75,7 @@ What the record of a call keeps of each value the action is sent: the gate's dec
 | Action | Value | Recorded |
 | --- | --- | --- |
 | Check the account ID and date of birth (`verifyCustomer`) | account ID (`accountId`) | by its last four characters |
-| Check the account ID and date of birth (`verifyCustomer`) | date of birth (`dob`) | hidden |
+| Check the account ID and date of birth (`verifyCustomer`) | date of birth (`dob`) | hidden (`•`) |
 | Check the one-time code (`verifyCode`) | nothing | |
 | Text a one-time code (`sendCode`) | account ID (`accountId`) | by its last four characters |
 | Read the customer's account (`getAccount`) | account ID (`accountId`) | by its last four characters |

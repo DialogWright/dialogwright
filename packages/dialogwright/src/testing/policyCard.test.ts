@@ -67,6 +67,19 @@ describe('the policy card: each rule in words', () => {
     expect(card).toContain("by role: a viewer's request is refused; a clerk's request goes to a person (staff-filing); a supervisor's request goes ahead; any other role, or none, is refused; a customer acting for themselves is not held to this rule");
   });
 
+  it('lists the actions no role rule governs, for every role and a party with no role, and the identity checks as refused', () => {
+    expect(card).toContain('| every role, and a party with no role | noteOrder<br/>feeOrder<br/>scheduleOrder<br/>openThing | none | none |');
+    expect(card).toContain('The last row is every action that has no role rule: every role, and a party with no role, goes ahead to its other rules');
+    const own = policyCardText(testkitApp, tmp());
+    expect(own).toContain("| every role, and a party with no role | read the customer's account<br/>read the delivery windows<br/>list the customer's parcels<br/>read a parcel<br/>tell the depot about a report | none | check the account ID and date of birth<br/>text a one-time code<br/>check the one-time code |");
+  });
+
+  it('says where a hidden value keeps its year and where it is a dot', () => {
+    const own = policyCardText(testkitApp, tmp());
+    expect(own).toContain('date of birth hidden (the trace keeps only its year, `••/••/1985`; a call as recorded, in the gate\'s decision, the console and the audit, shows `•`)');
+    expect(own).toContain('| date of birth (`dob`) | hidden (`•`) |');
+  });
+
   it('says a record the action names belongs to the caller or someone they act for, and a param is the caller\'s own or one they act for', () => {
     expect(card).toContain('the order ID must belong to the caller, or to someone they act for');
     expect(card).toContain("the account ID must be the caller's own, or one they act for");

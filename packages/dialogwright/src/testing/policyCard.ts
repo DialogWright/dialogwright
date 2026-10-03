@@ -209,7 +209,11 @@ function defaults(app: App, source: PolicySource): string[] {
   }
   const recorded = Object.entries(app.slots).flatMap(([id, spec]) => (spec.redact ? [{ id, how: spec.redact }] : []));
   if (recorded.length > 0) {
-    const how = { last4: 'by its last four', mask: 'hidden (a year is kept)', length: 'by its length' } as const;
+    const how = {
+      last4: 'by its last four',
+      mask: 'hidden (the trace keeps only its year, `••/••/1985`; a call as recorded, in the gate\'s decision, the console and the audit, shows `•`)',
+      length: 'by its length',
+    } as const;
     const parts = recorded.map(({ id, how: h }) => `${slotNoun(app, id)} ${how[h]}`);
     out.push(`- In traces and the audit a caller's values are recorded as they are said, except: ${parts.join('; ')}.`);
   }
@@ -285,12 +289,18 @@ function principalsSection(app: App, source: PolicySource): string[] {
   const roles = rolesOf(app, source);
   out.push(`- **${identity.delegateKind}**: acts for ${identity.subjectKind}s, signed in through a portal. They may see the records of the ${identity.subjectKind}s they act for${roles.length > 0 ? `, with a role: ${roles.map(roleLabel).join(', ')}` : ''}.`);
   const { byRole } = roleOutcomes(source);
+  // The actions no role rule governs: every role, and a party with no role, goes ahead to their other
+  // rules; the identity tools excepted, which are for the subject only (gate/compiled.ts subjectOnlyDecision).
+  const identityTools = identityToolsOf(identity).filter((t) => Object.hasOwn(source.actions, t));
+  const governed = new Set(Object.entries(source.actions).filter(([, a]) => a.rules.some((r) => r.rule === 'role')).map(([tool]) => tool));
+  const open = Object.keys(source.actions).filter((tool) => !governed.has(tool) && !identityTools.includes(tool));
+  const list = (tools: readonly ToolName[]): string => (tools.length === 0 ? 'none' : tools.map((t) => cell(actionLabel(source, t))).join('<br/>'));
+  const subjectsOnly = identityTools.length === 0 ? '' : ` The identity checks (${andList(identityTools.map((t) => actionLabel(source, t)))}) are for ${identity.subjectKind}s only: a party who acts for them is refused those, whatever its role.`;
   if (byRole.size === 0) {
-    out.push('', 'No action is governed by role: the role rule is not used.');
+    out.push('', `No action is governed by role: the role rule is not used. Every role, and a party with no role, may ask for any action, held to its other rules.${subjectsOnly}`);
     return out;
   }
-  const list = (tools: readonly ToolName[]): string => (tools.length === 0 ? 'none' : tools.map((t) => cell(actionLabel(source, t))).join('<br/>'));
-  out.push('', 'What each role may do, in the actions that have a role rule (a role a rule does not list is refused, and so is a party with no role):', '');
+  out.push('', `What each role may do. In the actions that have a role rule, a role the rule does not list is refused, and so is a party with no role. The last row is every action that has no role rule: every role, and a party with no role, goes ahead to its other rules (the level, whose record it is, the confirmation).${subjectsOnly}`, '');
   out.push('| Role | Goes ahead | Goes to a person | Refused |', '| --- | --- | --- | --- |');
   for (const role of roles) {
     const e = byRole.get(role) ?? { allow: [], person: [], refuse: [] };
@@ -298,6 +308,7 @@ function principalsSection(app: App, source: PolicySource): string[] {
     const unlisted = [...byRole.values()].flatMap((r) => [...r.allow, ...r.person, ...r.refuse]).filter((t, i, all) => all.indexOf(t) === i && !named.has(t));
     out.push(`| ${roleLabel(role)} | ${list(e.allow)} | ${list(e.person)} | ${list([...e.refuse, ...unlisted])} |`);
   }
+  out.push(`| every role, and a party with no role | ${list(open)} | none | ${list(identityTools)} |`);
   return out;
 }
 
@@ -327,7 +338,7 @@ function redactionSection(app: App, source: PolicySource): string[] {
 /** How a value is recorded, in words (core/recording.ts). */
 const RECORDED: Readonly<Record<AuditMask, string>> = {
   last4: 'by its last four characters',
-  mask: 'hidden',
+  mask: 'hidden (`•`)',
   length: 'by its length only',
   secret: 'never',
   keep: 'as it is',
