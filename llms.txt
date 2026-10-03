@@ -1,6 +1,6 @@
 # DialogWright
 
-> An open-source TypeScript framework for voice and chat agents that act safely. A fast decision model reads what the caller said and answers typed questions (judgments, never generated text). Deterministic code decides what happens next. Every action goes through a policy gate (identity level, scope, confirmation, attempt limits), and every decision is written to a hash-chained audit log. An app is a folder: YAML for what is data (intents, forms, prompts, policy, identity, slots, locales) and TypeScript for what runs (tools, form hooks, custom rules, and any slot no library type fits), joined by `defineApp`.
+> An open-source TypeScript framework for voice and chat agents that understand people and act safely. Callers talk naturally and the system maps what they mean to the right action: a fast decision model reads what was said and answers typed questions (judgments, never generated text). What the agent says and does is predictable: fixed lines, deterministic code that decides what happens next, and a policy gate on every action (identity level, scope, confirmation, attempt limits) whose decisions are written to a hash-chained audit log. Replies are fast. An app is a folder: YAML for what is data (intents, forms, prompts, policy, identity, slots, locales) and TypeScript for what runs (tools, form hooks, custom rules, and any slot no library type fits), joined by `defineApp`.
 
 Pre-release; APIs will change. The package ships TypeScript source. Requires Node 22.19 or later and pnpm. An app imports only from `'dialogwright'`. Read CLAUDE.md before changing anything: the gate decides, a model never writes a regulated line, the engine imports no app, no real personal data (555 phone numbers, invented names), and the engine package uses neutral vocabulary.
 
@@ -8,9 +8,9 @@ Pre-release; APIs will change. The package ships TypeScript source. Requires Nod
 
 - [CLAUDE.md](CLAUDE.md): the three roles, the layout, the commands and the rules.
 - [The create-app skill](.claude/skills/create-app/SKILL.md): building an app from a one-paragraph description, step by step, with a worksheet, verified patterns (identity, a one-time code, delegates, confirmed writes, range rules) and the corpus format.
-- [Authoring an app](docs/authoring-an-app.md): the folder, each YAML file with an example, what stays in TypeScript, how to write a slot (library types first, code second), how `pnpm check` reports problems, locales, configuration hashes.
-- [Design](docs/design.md): the idea, the roles, how policy and identity work, testing, the roadmap.
-- [Contributing](CONTRIBUTING.md): rules, pull requests, and "Adding a slot type".
+- [Authoring an app](docs/authoring-an-app.md): the folder, each YAML file with an example, policy and identity in full (section 3: the rules, the identity ladder, redaction, what is recorded, testing the policy, the policy card, CODEOWNERS), what stays in TypeScript, how to write a slot (library types first, code second), how `pnpm check` reports problems, locales, configuration hashes.
+- [Design](docs/design.md): the idea, the roles, how policy and identity work, testing, the numbered roadmap.
+- [Contributing](CONTRIBUTING.md): rules, pull requests, "Adding a slot type" and "Adding a built-in policy rule".
 - [apps/clinic](apps/clinic/README.md): the example app to learn from (a fictional clinic's appointment line; no keys needed).
 
 ## Slot types
@@ -26,6 +26,10 @@ A slot is one value a form collects. Most slots are configuration: name a type i
 - [record](docs/slots/record.md): one of the app's own records, chosen by what the caller says of it.
 - [text](docs/slots/text.md): the caller's own words, kept as said.
 
+## Policy and identity
+
+`policy.yaml` is the whole of what the agent may do: one entry per action (a tool) with its identity `level` and its `rules`, run in order, the first failure deciding. `identity.yaml` (optional) says who the app serves and how a caller proves who they are. The rules are `identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `dateInRange` (bounds such as `today`, `today+30`, a date, or a lookup reference) and `limit`, and `custom: <id>` for a rule of the app's own, written with `defineRule` and shipped with examples. Rules are recorded by name. See [section 3 of the authoring guide](docs/authoring-an-app.md#3-policy-and-identity).
+
 ## Schemas
 
 - `packages/dialogwright/schemas/*.schema.json`: the JSON Schema of every YAML file in an app folder (`app`, `intents`, `forms`, `prompts`, `policy`, `identity`, `slots`, `locale-slots`). Generated from the zod schemas; never edit by hand. Every YAML file names its schema on its first line.
@@ -38,6 +42,8 @@ A slot is one value a form collects. Most slots are configuration: name a type i
 - `pnpm verify`: the type check and the tests together.
 - `pnpm --filter dialogwright regress:testkit` and `pnpm --filter @dialogwright/example-clinic regress`: the regressions. Never regenerate a baseline or snapshot to make a test pass; a changed output is a finding to explain.
 - `pnpm --filter dialogwright schemas`: regenerate the JSON Schemas after a schema change.
+- `pnpm policy:matrix [dir...]`, `pnpm policy:card [dir...]`, `pnpm app:diagram [dir...]`: write `policy.matrix` (what the gate decides, for every action and kind of caller), `POLICY.md` (the policy in plain English with diagrams) and `APP-MAP.md` (intents, forms, slots, actions and rules as diagrams). Deliberate: tests compare each with what the app generates, so a policy change is a diff to review; CI never writes them.
+- `pnpm --filter dialogwright exec tsx src/define/cli.ts policy:convert <absolute folder>`: convert a policy.yaml or identity.yaml in the old table shape to the current one.
 - `pnpm --filter dialogwright slot-docs`: regenerate the slot type pages after a type's options, README or examples change.
 - `pnpm --filter dialogwright test slots/<type>`: run a slot type's tests, including the conformance kit.
 - `pnpm --filter @dialogwright/example-clinic cli --client heuristic`: a text console for the clinic, with no keys.

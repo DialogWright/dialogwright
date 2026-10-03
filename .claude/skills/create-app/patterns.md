@@ -283,7 +283,7 @@ function completeFault(c: CompletionContext): Completion {
 
 ## Bounds: `limit` and `dateInRange`
 
-The built-in range rules hold one param to bounds (authoring guide, "The range rules"). A bound is a number or a date, `today` (the call's day), or a reference to a lookup, `<lookup>(<param>)`, which the code declares:
+The built-in range rules hold one param to bounds ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)). A bound is a number or a date, `today` (the call's day), or a reference to a lookup, `<lookup>(<param>)`, which the code declares:
 
 ```yaml
 # policy.yaml, in an action's rules:
@@ -306,7 +306,7 @@ export const code: AppCode = {
 - Put `scope` before a range rule, so a lookup is only asked about an account the caller may see.
 - A failure is `BLOCK` with the reason `limit`, `date-range` or `date-window` (or yours, under `reasons`), or a person with `verdicts: { outOfRange: NEEDS_HUMAN }`.
 
-**A day within N days of today** is a number of days from today, `today+N` (authoring guide, "The range rules"):
+**A day within N days of today** is a number of days from today, `today+N` ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)):
 
 ```yaml
 # policy.yaml, in an action's rules:
@@ -446,7 +446,7 @@ audit:
 | An amount the code can work out (what is owed, a fee) | Not a slot: compute it from the record, read it back with `onSummaryRead`, send it as a param and hold it with `limit`. | nothing |
 | A choice among a few amounts or counts | `choice`, keys that start with a letter (`two`, `three`), `say` for how each is spoken. | nothing |
 | An amount the caller names freely, in whole units ("between 10 and 100 dollars") | No money type yet. A `digits` slot with `mask: '\d{1,3}'` and no `length`, `redact: none` and a `noun` ("dollar amount"), held to its bounds by `limit`. It reads "twenty five" and "one hundred fifty", but not "a hundred and fifty" (it parses numbers as identifiers), has no keypad (that needs `length`) and no cents. | a gap |
-| An amount the caller names freely, with cents | No type yet. Offer choices instead, or write a slot in code (authoring guide, section 4, "When no type fits"). | a gap |
+| An amount the caller names freely, with cents | No type yet. Offer choices instead, or write a slot in code ([authoring guide, "When no type fits"](../../../docs/authoring-an-app.md#when-no-type-fits-a-slot-in-code)). | a gap |
 | A street address | `text` with `say: null` (the summary reads the caller's words) and `redact: none`, and a summary line that quotes them ("at: {place}"). The value is the whole turn's words, so the read-back is the caller's sentence. | a gap |
 | A code with letters | A slot in code. | a gap |
 

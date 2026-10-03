@@ -1,6 +1,6 @@
 # The slot library
 
-A slot is one value a form collects. An app can write each slot by hand as a `SlotSpec` (see section 4 of `docs/authoring-an-app.md`), or name a slot type from this library and give it options:
+A slot is one value a form collects. An app can write each slot by hand as a `SlotSpec` (see section 5 of `docs/authoring-an-app.md`), or name a slot type from this library and give it options:
 
 ```ts
 import { defineSlot } from 'dialogwright';
