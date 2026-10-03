@@ -105,4 +105,22 @@ describe('the gate grid', () => {
     expect(() => gateGridCases(bad)).toThrow(/does not hold together/);
     expect(matrixProblems(input)).toEqual([]);
   });
+
+  it('refuses a matrix whose delegates are not what identity.yaml declares: their kind, their roles', () => {
+    const m = input.matrix;
+    expect(input.identity?.delegateRoles).toEqual(['viewer', 'clerk']);
+    const viewer = m.principals.delegates.viewer!;
+    const bad: GateGridInput = {
+      ...input,
+      identity: { ...input.identity!, delegateRoles: ['viewer'] },
+      matrix: { ...m, principals: { ...m.principals, roleless: { ...m.principals.roleless, kind: 'courier' }, delegates: { ...m.principals.delegates, viewer: { ...viewer, kind: 'courier' } } } },
+    };
+    expect(matrixProblems(bad).filter((p) => !p.startsWith('otherParty'))).toEqual([
+      'delegates.viewer is a courier, not the delegate kind "agent" identity.yaml declares',
+      'delegates.clerk has the role "clerk", which identity.yaml does not declare (viewer)',
+      'roleless is a courier, not the delegate kind "agent"',
+      // The lookups know a courier for no depot: the scope check finds it too.
+      'delegates.viewer may not see records.inScope',
+    ]);
+  });
 });

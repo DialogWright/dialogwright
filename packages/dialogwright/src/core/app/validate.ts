@@ -5,6 +5,7 @@ import { unknownSlotThresholds, unknownThresholdMessage } from '../slotThreshold
 import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, topLevelOf } from './lookup';
+import { principalProblems } from './principals';
 import type { App, ConfigHashes } from './types';
 
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
@@ -165,6 +166,7 @@ export function validateApp(app: App): void {
     }
     // identity.yaml's attempts are the attempts rule's: a policy compiled without them would hold the checks to another number.
     if (maxAttempts !== undefined && app.policy.maxAttempts !== maxAttempts) fail(`policy's maxAttempts (${app.policy.maxAttempts}) is not identity.yaml's attempts (${maxAttempts}); compile the policy with the identity (definePolicy's identity option)`);
+    for (const problem of principalProblems(app)) fail(problem);
   }
   for (const tool of Object.keys(toolLevel)) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has a level for tool "${tool}", which has no rules`);
   const seenLinks = new Set<string>();

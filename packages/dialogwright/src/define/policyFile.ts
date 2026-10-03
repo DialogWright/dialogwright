@@ -173,16 +173,16 @@ export interface CompiledIdentity {
  * identity.yaml (the new shape, already checked) as the lifecycle's identity configuration, and its
  * attempts for the policy (compilePolicy's maxAttempts). Level 1 is the factors and their check;
  * level 2, where the ladder has it, is the one-time code (its tools and its length, default 6). The
- * levels' names, the sign-in's level and the attempts go on the configuration too, for the console,
- * the turn and validateApp: the engine decides on the level numbers alone.
+ * levels' names, the sign-in's level, the delegates' roles and the attempts go on the configuration
+ * too, for the console, the turn and validateApp: the engine decides on the level numbers alone.
  */
 export function compileIdentity(file: IdentityYaml, options: CompileIdentityOptions = {}): CompiledIdentity {
   const one = file.levels[1];
   const two = file.levels[2];
   const identity = { subjectKind: file.principals.subject } as IdentityConfig;
-  const delegates = Object.keys(file.principals.delegates ?? {});
+  const delegates = Object.entries(file.principals.delegates ?? {});
   if (delegates.length > 1) throw new Error(`identity.yaml names ${delegates.length} delegate kinds; one is supported for now`);
-  if (delegates.length === 1) identity.delegateKind = delegates[0]!;
+  if (delegates.length === 1) identity.delegateKind = delegates[0]![0];
   identity.factorSlots = one.factors;
   identity.verifyTool = one.verify;
   if (two) {
@@ -194,6 +194,8 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
   if (two) identity.codeLength = two.factors[0]?.otp.length ?? DEFAULT_CODE_LENGTH;
   identity.levelNames = Object.freeze(two ? { 1: one.name, 2: two.name } : { 1: one.name });
   if (file.signIn) identity.signInLevel = file.signIn.level;
+  const roles = delegates[0]?.[1].roles;
+  if (delegates.length === 1) identity.delegateRoles = Object.freeze([...(roles ?? [])]);
   identity.maxAttempts = file.attempts;
   return { identity, maxAttempts: file.attempts };
 }

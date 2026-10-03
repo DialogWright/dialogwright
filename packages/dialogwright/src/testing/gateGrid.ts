@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
-import type { App, PolicyMatrix, PolicyMatrixSubject, PolicyTables, ToolName } from '../core/app/types';
+import type { App, IdentityConfig, PolicyMatrix, PolicyMatrixSubject, PolicyTables, ToolName } from '../core/app/types';
+import { delegateProblem } from '../core/app/principals';
 import { identityOf } from '../core/app/lookup';
 import { confirmationHash, evaluateCall } from '../gate/policy';
 import { ANONYMOUS } from '../gate/principal';
@@ -33,6 +34,8 @@ export interface GateGridInput {
   readonly matrix: PolicyMatrix;
   /** Tool names to try beside the tables' (the app's tools and identity tools). */
   readonly tools?: readonly ToolName[];
+  /** The app's identity (App.identity): the matrix's delegates are checked against the kind and roles it declares. */
+  readonly identity?: IdentityConfig;
 }
 
 /** An app's grid input: its tables, its subject kind, its matrix, and the matrix's lookups or a fresh copy of the app's. */
@@ -41,7 +44,8 @@ export function gateGridInput(app: App): GateGridInput {
   if (!matrix) throw new Error(`app "${app.id}" has no policy matrix (App.testing.policyMatrix)`);
   const id = identityOf(app);
   const tools = [...Object.keys(app.tools), id.verifyTool, id.codeTool, id.sendCodeTool].filter((t): t is string => t !== undefined && t !== '');
-  return { policy: app.policy, subjectKind: id.subjectKind, lookups: matrix.lookups?.() ?? app.systems().lookups, matrix, tools };
+  const input = { policy: app.policy, subjectKind: id.subjectKind, lookups: matrix.lookups?.() ?? app.systems().lookups, matrix, tools };
+  return app.identity ? { ...input, identity: app.identity } : input;
 }
 
 /** A gate to put through the grid: the legacy evaluator, or a candidate to compare with it. */
@@ -120,6 +124,17 @@ export function matrixProblems(input: GateGridInput): string[] {
   if (isSubject(m.unlistedRole)) out.push('unlistedRole is one of the app\'s subjects');
   if (m.roleless.role !== undefined) out.push(`roleless has role ${m.roleless.role}`);
   if (isSubject(m.roleless)) out.push('roleless is one of the app\'s subjects');
+  // The parties the matrix says act for subjects are the kind identity.yaml declares, each delegate with a declared role.
+  const identity = input.identity;
+  if (identity) {
+    for (const [role, p] of Object.entries(m.delegates)) {
+      const problem = delegateProblem(identity, p);
+      if (problem) out.push(`delegates.${role} ${problem}`);
+    }
+    for (const [label, p] of [['unlistedRole', m.unlistedRole], ['roleless', m.roleless]] as const) {
+      if (identity.delegateKind !== undefined && p.kind !== identity.delegateKind) out.push(`${label} is a ${p.kind}, not the delegate kind "${identity.delegateKind}"`);
+    }
+  }
   const delegateKinds = new Set([...Object.values(m.delegates), m.unlistedRole, m.roleless].map((p) => p.kind));
   if (isSubject(m.otherParty) || delegateKinds.has(m.otherParty.kind)) out.push(`otherParty is a ${m.otherParty.kind}, a kind the matrix already has`);
   const r = matrix.records;

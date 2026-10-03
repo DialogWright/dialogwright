@@ -224,6 +224,12 @@ export interface IdentityConfig {
    */
   signInLevel?: 1 | 2;
   /**
+   * The roles a party of the delegate kind may have, as identity.yaml declares them. With it, every
+   * delegate the app's portal and principals produce is checked against it (validateApp, and the
+   * harness as it signs one in). Without it (an identity written in code), roles are not checked.
+   */
+  delegateRoles?: readonly string[];
+  /**
    * The failed tries allowed at each identity check (identity.yaml's `attempts`): the policy's
    * maxAttempts must be the same number (validateApp). Without it, the policy's is not checked.
    */
