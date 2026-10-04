@@ -125,10 +125,10 @@ Its access, and why it is not in the operator console: the console has no access
 ## Refreshing
 
 ```sh
-pnpm kb:refresh [app folder] [--dry-run] [--json]
+pnpm kb:refresh [app folder] [--allow-private] [--dry-run] [--json]
 ```
 
-It reads every source in `kb/sources` again from its provenance: a file from the app folder, a crawled page through its crawl (once per crawl, with the settings recorded), a page with no crawl recorded on its own. It writes the documents that changed, and nothing else, then reports:
+It reads every source in `kb/sources` again from its provenance: a file from the app folder, a crawled page through its crawl (once per crawl, with the settings recorded), a page with no crawl recorded on its own. A source file is text anyone with the repository can edit, so what it names is held to bounds: a file is read only when its real path (links followed) is a file inside the app folder, and a `../` path, an absolute path, a link out of the folder or a folder is refused and reported as failed; a URL is read only when it is http(s), through the crawler, so a host on a private network is refused unless `--allow-private`. Before it asks any website it prints the hosts the sources name (`kb:refresh: asking library.example (the hosts the sources were read from)`). It writes the documents that changed, and nothing else, then reports:
 
 ```
 kb:refresh kb: 2 reads (1 document): 0 added, 1 changed, 0 unchanged

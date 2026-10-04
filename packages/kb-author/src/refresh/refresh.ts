@@ -1,7 +1,8 @@
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, realpathSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { KbPlace, KnowledgeBase } from 'dialogwright';
 import type { CrawlOptions } from '../crawl/crawl';
+import { canonicalUrl, hostOf } from '../crawl/url';
 import { draftsIn } from '../draft/draft';
 import { ingest, type IngestReport } from '../ingest';
 import { loadKb } from '../kbPlace';
@@ -20,14 +21,24 @@ import { existingSources, type CrawlProvenance, type DocumentChange } from '../w
  *
  * It writes nothing but kb/sources. A source written by hand (no provenance) is left as it is; a file
  * that is gone is reported and its source left as it is.
+ *
+ * What it reads is only what the sources name, and a source file is text anyone can edit, so:
+ *
+ * - a file is read only when it is a file inside the app folder (its real path, links followed); a
+ *   provenance that leads outside it (`../`, an absolute path, a link) is refused, and a folder too;
+ * - a URL is read only when it is an http(s) URL, through the crawler, which reads only public
+ *   addresses unless `allowPrivate` (kb:refresh --allow-private);
+ * - the hosts it will ask are given to `onHosts` before the first request (kb:refresh prints them).
  */
 
 export interface RefreshOptions {
   place: KbPlace;
   /** Today, as an ISO date: a changed document's `retrieved`. */
   today: string;
-  /** What every crawl is given beyond a page's own settings: the User-Agent, and a test's fetch and clock. */
-  crawl: Pick<CrawlOptions, 'userAgent' | 'fetch' | 'sleep' | 'now'>;
+  /** What every crawl is given beyond a page's own settings: the User-Agent, --allow-private, and a test's fetch, resolver and clock. */
+  crawl: Pick<CrawlOptions, 'userAgent' | 'allowPrivate' | 'resolve' | 'fetch' | 'sleep' | 'now'>;
+  /** Told the hosts the refresh will ask, before it asks any (kb:refresh prints them). */
+  onHosts?: (hosts: readonly string[]) => void;
   /** Re-read and report, but write nothing. */
   dryRun?: boolean;
 }
@@ -46,6 +57,8 @@ export interface RefreshRun {
 
 export interface RefreshReport {
   runs: RefreshRun[];
+  /** The hosts the sources' provenance named, which it asked (in order). */
+  hosts: string[];
   /** Sources not read again: written by hand (no provenance), or their file is gone. */
   notRead: { id: string; why: string }[];
   /** Passages withheld because their section changed since approval. */
@@ -56,6 +69,27 @@ export interface RefreshReport {
   uncited: { document: string; sections: string[] }[];
   /** Whether the passages' state was read after writing (not on a dry run). */
   readAfter: boolean;
+}
+
+/**
+ * Where a provenance file is: 'inside' the app folder (a file there, its links followed), 'gone', or
+ * what it is instead (outside the app folder, or not a file).
+ */
+function fileInApp(appDir: string, file: string): 'inside' | 'gone' | string {
+  const path = resolve(appDir, file);
+  if (!existsSync(path)) return 'gone';
+  let real: string;
+  let root: string;
+  try {
+    real = realpathSync(path);
+    root = realpathSync(appDir);
+  } catch {
+    return 'gone';
+  }
+  const rel = relative(root, real);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return `${file}, which is outside the app folder`;
+  if (!statSync(real).isFile()) return `${file}, which is not a file`;
+  return 'inside';
 }
 
 /** The crawl settings of a page's provenance, or null when it has none that read as settings. */
@@ -70,7 +104,8 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
   const { place, today } = options;
   const appDir = place.appDir ?? dirname(place.kbDir);
   const sourcesDir = join(place.kbDir, 'sources');
-  const report: RefreshReport = { runs: [], notRead: [], stale: [], gone: [], uncited: [], readAfter: false };
+  const report: RefreshReport = { runs: [], hosts: [], notRead: [], stale: [], gone: [], uncited: [], readAfter: false };
+  const refusedRuns: RefreshRun[] = [];
 
   // What to read again: each file, each crawl once (the pages it read share its settings), each page read without one.
   const files: string[] = [];
@@ -79,11 +114,15 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
   for (const e of existingSources(sourcesDir)) {
     const p = e.data?.provenance;
     if (typeof p?.file === 'string') {
-      if (existsSync(join(appDir, p.file))) files.push(p.file);
-      else report.notRead.push({ id: e.id, why: `its file ${p.file} is not there (the source is left as it is)` });
+      const where = fileInApp(appDir, p.file);
+      if (where === 'gone') report.notRead.push({ id: e.id, why: `its file ${p.file} is not there (the source is left as it is)` });
+      else if (where !== 'inside') refusedRuns.push({ input: p.file, kind: 'file', documents: [], skipped: [], error: `${e.id}'s provenance names ${where}: only a file inside the app folder is read again (the source is left as it is)` });
+      else files.push(p.file);
     } else if (typeof p?.url === 'string') {
       const c = crawlOf(p.crawl);
-      if (c) crawls.set(JSON.stringify(c), c);
+      const bad = [p.url, ...(c ? [c.start] : [])].find((u) => canonicalUrl(u) === undefined);
+      if (bad !== undefined) refusedRuns.push({ input: bad, kind: c ? 'crawl' : 'page', documents: [], skipped: [], error: `${e.id}'s provenance names ${bad}, which is not an http or https URL: it is not read (the source is left as it is)` });
+      else if (c) crawls.set(JSON.stringify(c), c);
       else pages.push(p.url);
     } else report.notRead.push({ id: e.id, why: e.data === null ? 'it does not read as a source file' : 'it has no provenance (written by hand)' });
   }
@@ -96,6 +135,15 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
       report.runs.push({ input, kind, documents: [], skipped: [], error: error instanceof Error ? error.message : String(error) });
     }
   };
+  report.runs.push(...refusedRuns);
+
+  // The hosts it will ask, said before it asks any.
+  const hosts = new Set<string>();
+  for (const c of crawls.values()) for (const h of [hostOf(c.start), ...(c.allowHosts ?? []).map((x) => x.toLowerCase())]) hosts.add(h);
+  for (const url of pages) hosts.add(hostOf(url));
+  report.hosts = [...hosts].sort();
+  if (report.hosts.length > 0) options.onHosts?.(report.hosts);
+
   const common = { appDir, kbDir: place.kbDir, today, ...(options.dryRun ? { dryRun: true } : {}) };
   for (const file of [...new Set(files)].sort()) await run(file, 'file', () => ingest({ ...common, input: join(appDir, file) }));
   for (const c of [...crawls.values()].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))) {

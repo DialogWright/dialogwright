@@ -257,6 +257,7 @@ describe('refreshing the sources', () => {
     const io: Io = { out: (l) => out.push(l), err: (l) => out.push(l), cwd: dir, today: () => TODAY, fetch: guardedFetch('http://127.0.0.1:9').fetch, sleep: clock.sleep, now: clock.now };
     expect(await main(['kb:refresh'], io)).toBe(0);
     expect(out).toEqual([
+      'kb:refresh: asking library.example (the hosts the sources were read from)',
       'kb:refresh kb: 2 reads (1 document): 0 added, 1 changed, 0 unchanged',
       '  changed   faq: ~ borrowing/lost-cards',
       '  not read  fee-schedule-2025: not read again this time (see what was skipped); the source is left as it is',
