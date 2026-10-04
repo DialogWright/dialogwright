@@ -19,6 +19,10 @@ export interface SetupFrame {
   callerName?: string;
   direction?: string;
   callStatus?: string;
+  // Telnyx's own call ids, beside its callSid (developers.telnyx.com, Conversation Relay); passed through the same way.
+  callControlId?: string;
+  callSessionId?: string;
+  callLegId?: string;
 }
 
 export interface PromptFrame {

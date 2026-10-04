@@ -15,6 +15,15 @@ function str(v: unknown): v is string {
   return typeof v === 'string' && v.length <= MAX_TEXT_LENGTH;
 }
 
+/**
+ * The optional setup fields a carrier documents, kept as they arrive: Twilio's, then the call ids
+ * Telnyx adds (callControlId, callSessionId, callLegId). Anything else on a setup is dropped.
+ */
+const SETUP_EXTRAS = [
+  'accountSid', 'parentCallSid', 'forwardedFrom', 'callType', 'callerName', 'direction', 'callStatus',
+  'callControlId', 'callSessionId', 'callLegId',
+] as const;
+
 /** Parse one ConversationRelay message. Returns null for anything not in the documented set. */
 export function parseInbound(raw: string): InboundFrame | null {
   let m: unknown;
@@ -29,10 +38,8 @@ export function parseInbound(raw: string): InboundFrame | null {
       if (!str(m.sessionId) || !str(m.callSid)) return null;
       if (m.from !== undefined && !str(m.from)) return null;
       if (m.to !== undefined && !str(m.to)) return null;
-      const extras: Partial<
-        Pick<SetupFrame, 'accountSid' | 'parentCallSid' | 'forwardedFrom' | 'callType' | 'callerName' | 'direction' | 'callStatus'>
-      > = {};
-      for (const k of ['accountSid', 'parentCallSid', 'forwardedFrom', 'callType', 'callerName', 'direction', 'callStatus'] as const) {
+      const extras: Partial<Pick<SetupFrame, (typeof SETUP_EXTRAS)[number]>> = {};
+      for (const k of SETUP_EXTRAS) {
         if (str(m[k])) extras[k] = m[k];
       }
       const customRaw: Record<string, string> = Object.create(null);

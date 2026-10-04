@@ -1,0 +1,28 @@
+{
+  "voice": {
+    "source": "https://www.twilio.com/docs/usage/webhooks/voice-webhooks (the fields Twilio documents for a call's webhook; values fictional)",
+    "headers": {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "rawBody": "AccountSid=AC00000000000000000000000000000000&ApiVersion=2010-04-01&CallSid=CA00000000000000000000000000000000&CallStatus=ringing&Direction=inbound&From=%2B15555550100&To=%2B15555550101",
+    "expect": {
+      "callId": "CA00000000000000000000000000000000",
+      "from": "+15555550100",
+      "to": "+15555550101",
+      "callStatus": "ringing"
+    }
+  },
+  "action": {
+    "source": "https://www.twilio.com/docs/voice/twiml/connect/conversationrelay (the fields the <Connect> action callback carries; values fictional)",
+    "headers": {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "rawBody": "AccountSid=AC00000000000000000000000000000000&CallSid=CA00000000000000000000000000000000&CallStatus=in-progress&From=%2B15555550100&To=%2B15555550101&SessionId=VX00000000000000000000000000000000&SessionStatus=ended&SessionDuration=42&HandoffData=%7B%22reasonCode%22%3A%22live-agent-handoff%22%7D",
+    "expect": {
+      "callId": "CA00000000000000000000000000000000",
+      "callStatus": "in-progress",
+      "sessionStatus": "ended",
+      "handoffData": "{\"reasonCode\":\"live-agent-handoff\"}"
+    }
+  }
+}

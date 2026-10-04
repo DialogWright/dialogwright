@@ -112,12 +112,14 @@ describe('the test-support entry', () => {
     for (const name of [
       'shadowSlot', 'withShadowSlots', 'shadowFromEnv', 'createShadowReport', 'ShadowMismatchError', 'isCassetteMiss',
       'runSlotConformance', 'slotConformanceChecks', 'ConformanceError', 'withShadowGate', 'shadowGate', 'createGateShadowReport', 'GateShadowMismatchError', 'nameOfLegacyId', 'namedDecision',
+      'runVoiceProviderConformance', 'voiceConformanceChecks',
     ]) {
       expect(typeof (testing as Record<string, unknown>)[name], name).toBe('function');
       expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
     }
     expect(testing.shadowSlot).toBe((await import('./testing/shadowSlot')).shadowSlot);
     expect(testing.runSlotConformance).toBe((await import('./slots/conformance/run')).runSlotConformance);
+    expect(testing.runVoiceProviderConformance).toBe((await import('./testing/voiceConformance')).runVoiceProviderConformance);
   });
 });
 
