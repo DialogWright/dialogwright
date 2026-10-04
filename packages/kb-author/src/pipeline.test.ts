@@ -63,19 +63,40 @@ const RULES: FakeRule[] = [
   { section: 'intro', topic: 'opening_hours', answer: OPENING_HOURS_ANSWER },
 ];
 
-/** A client of the review page: GETs and form POSTs with or without the token, redirects not followed. */
+/**
+ * A browser on the review page: GETs and form POSTs with or without the token, redirects not
+ * followed, the session cookie kept. A POST to a draft's, passage's or topic's action opens its page
+ * first and sends back the form's `seen` (what the page showed), as a person submitting it would.
+ */
 function client(server: ReviewServer) {
   const at = (path: string, token: string | null = server.token): string => `${server.origin}${path}${token === null ? '' : `?token=${encodeURIComponent(token)}`}`;
+  const jar = new Map<string, string>();
+  const headers = (): Record<string, string> => (jar.size > 0 ? { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } : {});
+  const keep = (r: Response): void => {
+    for (const c of r.headers.getSetCookie()) {
+      const [pair] = c.split(';');
+      const eq = pair!.indexOf('=');
+      jar.set(pair!.slice(0, eq), pair!.slice(eq + 1));
+    }
+  };
+  const get = async (path: string, token: string | null = server.token) => {
+    const r = await fetch(at(path, token), { redirect: 'manual', headers: headers() });
+    keep(r);
+    return { status: r.status, text: await r.text() };
+  };
   return {
-    get: async (path: string, token: string | null = server.token) => {
-      const r = await fetch(at(path, token), { redirect: 'manual' });
-      return { status: r.status, text: await r.text() };
-    },
+    get,
     post: async (path: string, fields: Record<string, string | string[]>, token: string | null = server.token) => {
       const body = new URLSearchParams();
       if (token !== null) body.set('token', token);
+      const action = /^(\/(?:draft|passage|topic)\/[^/]+)\/[a-z]+$/.exec(path);
+      if (action && !('seen' in fields)) {
+        const form = new RegExp(`action="${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*><input type="hidden" name="token" value="[^"]*"><input type="hidden" name="seen" value="([^"]*)">`).exec((await get(action[1]!)).text);
+        if (form) body.set('seen', form[1]!);
+      }
       for (const [k, v] of Object.entries(fields)) for (const one of typeof v === 'string' ? [v] : v) body.append(k, one);
-      const r = await fetch(`${server.origin}${path}`, { method: 'POST', body, redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+      const r = await fetch(`${server.origin}${path}`, { method: 'POST', body, redirect: 'manual', headers: { ...headers(), 'content-type': 'application/x-www-form-urlencoded' } });
+      keep(r);
       await r.text();
       return { status: r.status, location: r.headers.get('location') };
     },

@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { join, relative } from 'node:path';
 import { cleanScratch, folder, TODAY } from 'dialogwright/kb/__fixtures__/libraryKbApp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { main, type Io } from '../cli';
 import { findKb, type KbPlace } from '../kbPlace';
-import { acceptTopic, approve, editAndApprove, mergeTopic, reject } from './actions';
+import { loadKb } from '../kbPlace';
+import { acceptTopic, approve, approvedSectionText, editAndApprove, mergeTopic, reject } from './actions';
 import { backTo, sameToken, startReviewServer, type ReviewServer } from './server';
 import { excerptRange, wordDiff } from './text';
 
@@ -192,6 +193,140 @@ describe('ids from the review page\'s URL', () => {
     expect(backTo('/draft/late-fees')).toBe('/draft/late-fees');
     expect(backTo('/')).toBe('/');
     for (const bad of ['/\\evil.example', '//evil.example', '/\\/evil.example', 'https://evil.example/', 'evil', '/draft/x?y=1', '/a\\b', '', null]) expect([bad, backTo(bad)]).toEqual([bad, '/']);
+  });
+});
+
+/** The `seen` a page's form for `action` carries back. */
+function seenIn(html: string, action: string): string {
+  const m = new RegExp(`action="${action}"[^>]*><input type="hidden" name="token" value="[^"]*"><input type="hidden" name="seen" value="([^"]*)">`).exec(html);
+  if (!m) throw new Error(`no form for ${action} with what it saw`);
+  return m[1]!;
+}
+
+/** The flash the next page shows. */
+const flashIn = (html: string): string | null => /<div class="flash (?:ok|no)" role="(?:status|alert)">([\s\S]*?)<\/div>/.exec(html)?.[1]!.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#39;/g, "'") ?? null;
+
+describe('a reviewer per browser', () => {
+  it('keeps who is reviewing in a signed, HttpOnly, SameSite=Strict session cookie, so two browsers with the token are two reviewers', async () => {
+    const found = findKb(folder('kb-author-review-sessions'), 'app');
+    if (typeof found === 'string') throw new Error(found);
+    const server = await startReviewServer({ place: found, today: () => TODAY });
+    try {
+      const a = browser(server);
+      const b = browser(server);
+      const first = await a.get('/');
+      const cookie = first.headers['set-cookie'];
+      expect(cookie).toHaveLength(1);
+      expect(cookie![0]).toMatch(new RegExp(`^dw-review-${server.port}=[A-Za-z0-9_-]{32}\\.[A-Za-z0-9_-]{43}; Path=/; HttpOnly; SameSite=Strict$`));
+      // No cookie before the token is shown.
+      expect((await raw(server, { path: '/', headers: { host: `127.0.0.1:${server.port}` } })).headers['set-cookie']).toBeUndefined();
+      expect((await a.post('/reviewer', { by: 'Jane Smith', owner: 'Patron Services', back: '/' })).status).toBe(303);
+      expect((await a.get('/')).body).toContain('<span class="k">Reviewer</span> Jane Smith <span class="k">for</span> Patron Services');
+      const other = await b.get('/');
+      expect(other.body).toContain('<span class="k">Reviewer</span> not set');
+      expect(other.body).not.toContain('Jane Smith');
+      await b.post('/reviewer', { by: 'Sam Lee', owner: 'Branch Services', back: '/' });
+      expect((await b.get('/')).body).toContain('<span class="k">Reviewer</span> Sam Lee');
+      expect((await a.get('/')).body).toContain('<span class="k">Reviewer</span> Jane Smith');
+      // A cookie with its signature changed is not a session: a new one is started.
+      const [name, value] = [...a.jar][0]!;
+      const forged = browser(server);
+      forged.jar.set(name, `${value.split('.')[0]}.${'A'.repeat(43)}`);
+      const page = await forged.get('/');
+      expect(page.body).toContain('<span class="k">Reviewer</span> not set');
+      expect(page.headers['set-cookie']).toHaveLength(1);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe('what the reviewer saw is what they approve', () => {
+  const DRAFT = [
+    'id: sunday-hours',
+    'topic: sunday_hours',
+    'version: "2026.1"',
+    'effective: { from: 2026-01-01 }',
+    'source: { document: patron-guide, section: "1.1" }',
+    'answer: Every branch is closed on Sunday.',
+    `drafted: { by: fake-drafter, on: ${TODAY}, excerpt: "All branches are closed on Sunday." }`,
+    '',
+  ].join('\n');
+
+  it('refuses an approval, an edit, a rejection or a topic accepted when the file changed on disk since the page was opened', async () => {
+    const dir = folder('kb-author-review-seen');
+    writeFileSync(join(dir, 'kb', 'pending', 'topics.yaml'), 'sunday_hours:\n  title: Sunday hours\n');
+    writeFileSync(join(dir, 'kb', 'pending', 'sunday-hours.yaml'), DRAFT);
+    const found = findKb(dir, 'app');
+    if (typeof found === 'string') throw new Error(found);
+    const server = await startReviewServer({ place: found, today: () => TODAY });
+    try {
+      const web = browser(server);
+      await web.post('/reviewer', { by: 'Jane Smith', owner: 'Patron Services', back: '/' });
+
+      // The topic: its title changed on disk after the page was opened.
+      const topicSeen = seenIn((await web.get('/topic/sunday_hours')).body, '/topic/sunday_hours/accept');
+      writeFileSync(join(dir, 'kb', 'pending', 'topics.yaml'), 'sunday_hours:\n  title: Sunday opening\n');
+      const topicsBefore = readFileSync(join(dir, 'kb', 'topics.yaml'), 'utf8');
+      await web.post('/topic/sunday_hours/accept', { as: 'sunday_hours', seen: topicSeen });
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: sunday_hours changed since you opened it: reload the page and review it again');
+      expect(readFileSync(join(dir, 'kb', 'topics.yaml'), 'utf8')).toBe(topicsBefore);
+      await web.post('/topic/sunday_hours/accept', { as: 'sunday_hours', seen: seenIn((await web.get('/topic/sunday_hours')).body, '/topic/sunday_hours/accept') });
+      expect(flashIn((await web.get('/')).body)).toBe('accepted the topic "sunday_hours" ("Sunday opening") into kb/topics.yaml');
+
+      // The draft: its answer changed on disk after the page was opened.
+      const opened = (await web.get('/draft/sunday-hours')).body;
+      const seen = seenIn(opened, '/draft/sunday-hours/approve');
+      expect(seenIn(opened, '/draft/sunday-hours/edit')).toBe(seen);
+      expect(seenIn(opened, '/draft/sunday-hours/reject')).toBe(seen);
+      const changed = DRAFT.replace('Every branch is closed on Sunday.', 'Every branch is open on Sunday.');
+      writeFileSync(join(dir, 'kb', 'pending', 'sunday-hours.yaml'), changed);
+      for (const [action, fields] of [
+        ['approve', {}],
+        ['edit', { answer: 'Every branch is closed on Sunday.', excerpt: 'All branches are closed on Sunday.', from: '2026-01-01' }],
+        ['reject', { reason: 'Not needed.' }],
+      ] as const) {
+        await web.post(`/draft/sunday-hours/${action}`, { ...fields, seen });
+        expect([action, flashIn((await web.get('/')).body)]).toEqual([action, 'Not done: sunday-hours changed since you opened it: reload the page and review it again']);
+        expect(readFileSync(join(dir, 'kb', 'pending', 'sunday-hours.yaml'), 'utf8')).toBe(changed);
+      }
+      // A form with no record of what it showed is out of date too.
+      await web.post('/draft/sunday-hours/approve', {});
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: sunday-hours changed since you opened it: reload the page and review it again');
+      // Its source section changing is a change to what was shown, too.
+      const reopened = seenIn((await web.get('/draft/sunday-hours')).body, '/draft/sunday-hours/approve');
+      expect(reopened).not.toBe(seen);
+      const guide = join(dir, 'kb', 'sources', 'patron-guide.yaml');
+      const guideText = readFileSync(guide, 'utf8');
+      writeFileSync(guide, guideText.replace('to 4 p.m. All branches', 'to 5 p.m. All branches'));
+      await web.post('/draft/sunday-hours/approve', { seen: reopened });
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: sunday-hours changed since you opened it: reload the page and review it again');
+      writeFileSync(guide, guideText);
+      // Reloaded, it is approved as it is now.
+      writeFileSync(join(dir, 'kb', 'pending', 'sunday-hours.yaml'), DRAFT);
+      await web.post('/draft/sunday-hours/approve', { seen: seenIn((await web.get('/draft/sunday-hours')).body, '/draft/sunday-hours/approve') });
+      expect(flashIn((await web.get('/')).body)).toMatch(/^sunday-hours: approved \(version 2026\.1\) by Jane Smith for Patron Services/);
+      expect(existsSync(join(dir, 'kb', 'passages', 'sunday-hours.yaml'))).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe('the section as it was approved', () => {
+  it('is read from kb/approvals.jsonl only when its text hashes to the approval\'s sourceHash', () => {
+    const dir = folder('kb-author-review-approved-text');
+    const place = findKb(dir, 'app');
+    if (typeof place === 'string') throw new Error(place);
+    const kb = loadKb(place).kb!;
+    const passage = kb.passages['opening-hours']!;
+    const text = kb.sources['patron-guide']!.sections['1.1']!.text;
+    const line = (sourceText: string): string => `${JSON.stringify({ id: 'opening-hours', version: passage.version, approvedBy: 'Branch Manager', owner: 'Patron Services', on: '2025-12-10', sourceHash: passage.approval!.sourceHash, hash: passage.approval!.hash, from: 'passage', sourceText })}\n`;
+    writeFileSync(join(dir, 'kb', 'approvals.jsonl'), line(text));
+    expect(approvedSectionText(place, passage)).toBe(text);
+    // The log is a file anyone can edit: a text that is not what the hash says is not shown as what was approved.
+    writeFileSync(join(dir, 'kb', 'approvals.jsonl'), line('All branches are open every day, Sunday too.'));
+    expect(approvedSectionText(place, passage)).toBeNull();
   });
 });
 

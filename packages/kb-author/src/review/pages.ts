@@ -25,6 +25,8 @@ export interface PageContext {
   flash: ActionResult | null;
   /** The path of the page, for the reviewer form to come back to. */
   path: string;
+  /** A hash of what the page shows of its draft, passage or topic: every form that changes it carries it back. */
+  seen?: string;
 }
 
 const STYLE = `
@@ -101,8 +103,8 @@ const STYLE = `
 /** A link inside the review page, carrying the token. */
 export const href = (ctx: PageContext, path: string): string => `${path}?token=${encodeURIComponent(ctx.token)}`;
 
-/** The token as a form's hidden field. */
-const tokenField = (ctx: PageContext): string => `<input type="hidden" name="token" value="${esc(ctx.token)}">`;
+/** The token as a form's hidden field, and what the page shows (seen) when it shows a draft, a passage or a topic. */
+const tokenField = (ctx: PageContext): string => `<input type="hidden" name="token" value="${esc(ctx.token)}">${ctx.seen !== undefined ? `<input type="hidden" name="seen" value="${esc(ctx.seen)}">` : ''}`;
 
 /** A whole page. */
 export function page(ctx: PageContext, title: string, body: string): string {
@@ -147,7 +149,7 @@ function flashHtml(ctx: PageContext): string {
 function reviewerForm(ctx: PageContext): string {
   return `<section class="card" aria-labelledby="who">
   <h2 id="who">Who is reviewing</h2>
-  <p class="muted">An approval records the person who read each answer against its source and answers for it, and the team that owns the content. You are asked once while this page runs.</p>
+  <p class="muted">An approval records the person who read each answer against its source and answers for it, and the team that owns the content. You are asked once in this browser while this page runs.</p>
   <form method="post" action="/reviewer">
     ${tokenField(ctx)}<input type="hidden" name="back" value="${esc(ctx.path)}">
     <div class="row">
