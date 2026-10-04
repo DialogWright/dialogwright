@@ -1256,9 +1256,9 @@
   "question-not-in-force-accepted": {
     "id": "question-not-in-force-accepted",
     "decision": "handoff",
-    "promptId": "handoff_frustrated",
+    "promptId": "handoff_live_agent",
     "acks": [],
-    "reason": "frustrated",
+    "reason": "live-agent",
     "decidedGate": "wantsHuman",
     "verdict": "handoff",
     "form": "ask_question",

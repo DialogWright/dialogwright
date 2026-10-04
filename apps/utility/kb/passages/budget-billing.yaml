@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: budget-billing
+topic: budget_billing
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: budget-billing
+  section: how-budget-billing-works
+answer: Budget billing spreads your yearly electricity costs into equal monthly payments, so your bill is the same each month. We review the amount every six months and adjust it if your use has changed.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: 9094cd1a5737093b545d6e92f066e4dfd4b501657f8a26ab02da829faf23b0b6
+  hash: ba140ef2ea4f83bdc01c975534188b427f34a54fa0583dbb910d8b27ec758c39

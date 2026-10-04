@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: office-hours
+topic: office_hours
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: office-hours
+  section: customer-office
+answer: Our customer office is open Monday through Friday, eight in the morning to five in the evening, and closed on weekends and holidays. You can report an outage any time, day or night.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: 1aa6efdb1cfa592f8b00b4e396790dd0ceef2354d1a936131ca7d6b8ba56e99a
+  hash: 95128025d411cb9d7c0ed76e76a128dc56a19a710737fa3ed26d9c0297334275

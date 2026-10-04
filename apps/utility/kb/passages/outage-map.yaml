@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: outage-map
+topic: outage_map
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: outage-map
+  section: where-to-find-the-map
+answer: You can see current outages and estimated restoration times on our outage map, at example dot com slash outages. It's updated every 15 minutes.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: d0d0bf74fe96ce0e65ef3c1a91ef92f94f1575d628e7fc2e907258b7470c21cb
+  hash: 93c3d5a98e795ae9297e54d8f08cf20a2bcffb63615bb904c05ff462cfc9661f

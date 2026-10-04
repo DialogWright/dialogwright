@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: outage-credit
+topic: outage_credit
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: outage-credits
+  section: who-receives-a-credit
+answer: If your power is out for 24 hours or more in a row, you get a credit of 25 dollars on your next bill, applied automatically. There's nothing to apply for.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: deecb2bfd492302e7a57b574f01c25e7b67a2a927c0c941aa01cc78767b5d6a4
+  hash: 717eb386f1dcc4fd70f0af605a079c6f68ad833d31111e60bda32654897caf07

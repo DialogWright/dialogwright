@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: residential-rates
+topic: residential_rates
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: rate-schedule
+  section: monthly-rate
+answer: The residential rate is a customer charge of 12 dollars a month, plus 14.2 cents for each kilowatt-hour you use.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: 9eb7b31a733933cb2ff6f90c8beb1d7a97ec884c2ec2205cb29f443cf3a58d8f
+  hash: 26f30bd287f660afe9d407ca8e134ebd67c854293773e8a501828b75c7b1fc71

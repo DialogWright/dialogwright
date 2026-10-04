@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: disconnection
+topic: disconnection
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: disconnection-and-reconnection
+  section: before-a-disconnection
+answer: We never disconnect service for nonpayment without notice. We mail a written notice at least 10 days ahead, and call the phone on the account at least 2 days before.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: 5396340c1b8ad79e76f19ec0c12112c32b60773260294bb215ca7a38ae486088
+  hash: eb3aa40d7cfccc4da67d310410c19280c9c0d1e02a8edbb74f2594b9c7d146ca

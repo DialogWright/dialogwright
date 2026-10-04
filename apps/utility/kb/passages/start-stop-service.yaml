@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: start-stop-service
+topic: start_stop_service
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: start-stop-service
+  section: starting-or-stopping-service
+answer: To start or stop service, apply online at example dot com slash start, or call us, at least 3 business days before you move. When you stop service, your final bill is mailed within 10 days.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: b1db163c2ce5ef4b43b6fd18dcb008e8e1c7f804794465937a7d6b6affb7749e
+  hash: 990e112f6f9764c4151ab5ea6360a8cdbb2bf5edad1b7607f8bd0b0eee0d17c6
