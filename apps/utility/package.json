@@ -19,6 +19,7 @@
     "dialogwright": "workspace:*"
   },
   "devDependencies": {
+    "@dialogwright/widget": "workspace:*",
     "@types/node": "^22",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",

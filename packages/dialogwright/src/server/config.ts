@@ -8,6 +8,9 @@ import { RECOGNIZER_NAME } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 import { checkJwksUrl } from './chat/jwks';
+import { isLoopbackHost } from './localOnly';
+import { statSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 export type ClientKind = 'stub' | 'heuristic' | 'jev';
 
@@ -136,7 +139,21 @@ export interface ServerConfig {
    * so a deployment without chat has exactly the config it had before chat existed.
    */
   chat?: ChatSettings;
+  /**
+   * WIDGET=on|off, default off: whether the server serves the web chat widget's script on
+   * `/widget.js`, for trying the widget on a laptop (a site in production loads it from wherever the
+   * deployment publishes it). Absent when off. WIDGET_FILE is the built script.
+   */
+  widget?: WidgetSettings;
 }
+
+export interface WidgetSettings {
+  /** WIDGET_FILE, default DEFAULT_WIDGET_FILE resolved from where the server runs: the built script, which must exist. */
+  file: string;
+}
+
+/** Where the widget's built script is when the app depends on @dialogwright/widget and it has been built. */
+export const DEFAULT_WIDGET_FILE = 'node_modules/@dialogwright/widget/dist/dialogwright-widget.js';
 
 export type Env = Record<string, string | undefined>;
 
@@ -238,6 +255,7 @@ export function loadConfig(env: Env): ServerConfig {
   const twilioSpeechModel = recognizerName(env, 'TWILIO_SPEECH_MODEL', 'nova-3-general') ?? (twilioTranscriptionProvider === 'Deepgram' ? 'flux' : null);
   const telnyxTranscriptionProvider = recognizerName(env, 'TELNYX_TRANSCRIPTION_PROVIDER', 'deepgram');
   const chat = chatOf(env, publicHost);
+  const widget = widgetOf(env);
   return {
     port,
     publicHost,
@@ -271,7 +289,24 @@ export function loadConfig(env: Env): ServerConfig {
     handoffSummary: handoffSummarySwitch === 'on',
     consoleLocalOnly: localOnlySwitch === 'on',
     ...(chat ? { chat } : {}),
+    ...(widget ? { widget } : {}),
   };
+}
+
+/** WIDGET and, when it is on, WIDGET_FILE; undefined when it is off (WIDGET_FILE is then not read). */
+function widgetOf(env: Env): WidgetSettings | undefined {
+  const sw = (env.WIDGET ?? 'off').trim().toLowerCase();
+  if (sw !== 'on' && sw !== 'off') throw new Error(`WIDGET must be on or off, got "${env.WIDGET}"`);
+  if (sw === 'off') return undefined;
+  const file = resolve(env.WIDGET_FILE?.trim() || DEFAULT_WIDGET_FILE);
+  let isFile = false;
+  try {
+    isFile = statSync(file).isFile();
+  } catch {
+    isFile = false;
+  }
+  if (!isFile) throw new Error(`WIDGET_FILE does not exist: ${file} (build it with pnpm --filter @dialogwright/widget build)`);
+  return { file };
 }
 
 /** CHAT and, when it is on, the chat's own variables; undefined when it is off (the others are then not read). */
@@ -359,9 +394,26 @@ function listed(items: readonly string[]): string {
  * from. `paths` are the ones CONSOLE_LOCAL_ONLY guards (localOnly.ts localOnlyPaths).
  */
 export function consoleExposure(c: ServerConfig, paths: readonly string[] = ['/dashboard']): string {
-  return c.consoleLocalOnly
-    ? `console: ${listed(paths)} local only (http://localhost:${c.port}); 404 through the tunnel on ${c.publicHost}`
+  const laptop = isLoopbackHost(c.publicHost);
+  if (c.consoleLocalOnly) {
+    return `console: ${listed(paths)} local only (${localBase(c.port)}); 404 through ${laptop ? 'any tunnel' : `the tunnel on ${c.publicHost}`}`;
+  }
+  return laptop
+    ? `console: ${listed(paths)} on ${localBase(c.port)}, and PUBLIC through any tunnel to it (CONSOLE_LOCAL_ONLY=off)`
     : `console: ${listed(paths)} PUBLIC on https://${c.publicHost} (CONSOLE_LOCAL_ONLY=off)`;
+}
+
+/** Where a person on this machine opens the server's pages. */
+export function localBase(port: number): string {
+  return `http://localhost:${port}`;
+}
+
+/**
+ * Where the server's public paths are reached: https://PUBLIC_HOST, or, on a laptop whose PUBLIC_HOST
+ * is a name for this machine (localhost), this machine's own address, since nothing public points at it.
+ */
+export function publicBase(c: Pick<ServerConfig, 'publicHost'>, port: number): string {
+  return isLoopbackHost(c.publicHost) ? localBase(port) : `https://${c.publicHost}`;
 }
 
 export function describeConfig(c: ServerConfig): string {
@@ -396,5 +448,6 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
     ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)}) up to ${c.chat.maxSessions} sessions`, describeChatSignIn(c.chat.signIn)] : []),
+    ...(c.widget ? [`widget on (${c.widget.file})`] : []),
   ].join('  ');
 }

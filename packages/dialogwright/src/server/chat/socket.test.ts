@@ -581,8 +581,52 @@ describe('signing in to the chat', () => {
     await c.until((r) => r.at(-1)?.type === 'say');
     const n = c.received.length;
     c.send({ type: 'sign_in', token: 'mock:55505678' });
-    await c.until((r) => r.length > n);
-    expect(c.received[n]).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (the chat is already signed in)' });
+    // A line of the first sign-in's turn may still be on its way: the answer is the next error or signed_in.
+    const answer = (await c.until((r) => r.slice(n).some((m) => m.type === 'error' || m.type === 'signed_in'))).slice(n).find((m) => m.type === 'error' || m.type === 'signed_in');
+    expect(answer).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (the chat is already signed in)' });
+  });
+
+  it('a token beside a resume: not used on a chat signed in, signs in one still anonymous, and starts an ended one signed in', async () => {
+    const { url } = await start({ CHAT_SIGNIN: 'mock', CHAT_IDLE_MS: '1' });
+    const token = `mock:${CUSTOMER}`;
+    // Signed in at the start, then resumed with the token again: ready, and nothing refused.
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, token });
+    await c.until((r) => r.some((m) => m.type === 'signed_in') && r.at(-1)?.type === 'say');
+    const first = c.received[0] as Extract<Msg, { type: 'ready' }>;
+    c.close();
+    await c.closed;
+    const d = await ChatClient.connect(url);
+    d.send({ type: 'start', v: 1, resume: first.resume, token });
+    await d.until((r) => r.some((m) => m.type === 'ready'));
+    // A line, queued behind whatever the token led to: its reply is proof nothing was refused before it.
+    d.send({ type: 'text', text: OPENER });
+    await d.until((r) => r.some((m) => m.type === 'say'));
+    expect(d.received[0]!.type).toBe('ready');
+    expect(d.received.filter((m) => m.type !== 'say')).toHaveLength(1);
+    const back = d.received[0] as Extract<Msg, { type: 'ready' }>;
+    // The chat has ended (idle): the same start begins a new one, signed in with the token.
+    d.close();
+    await d.closed;
+    await new Promise((r) => setTimeout(r, 5));
+    running!.sweep();
+    const e = await ChatClient.connect(url);
+    e.send({ type: 'start', v: 1, resume: back.resume, token });
+    await e.until((r) => r.some((m) => m.type === 'signed_in'));
+    expect(e.received.slice(0, 2).map((m) => m.type)).toEqual(['error', 'ready']);
+    expect(e.received[0]).toMatchObject({ code: 'session_unknown' });
+    expect(e.received.find((m) => m.type === 'signed_in')).toEqual({ type: 'signed_in', level: 2 });
+    // Anonymous at the start, then resumed with a token: it signs in.
+    const f = await ChatClient.connect(url);
+    f.send({ type: 'start', v: 1 });
+    await f.until((r) => r.some((m) => m.type === 'say'));
+    const anon = f.received[0] as Extract<Msg, { type: 'ready' }>;
+    f.close();
+    await f.closed;
+    const g = await ChatClient.connect(url);
+    g.send({ type: 'start', v: 1, resume: anon.resume, token });
+    await g.until((r) => r.some((m) => m.type === 'signed_in'));
+    expect(g.received[0]).toMatchObject({ type: 'ready', session: anon.session });
   });
 });
 
@@ -608,6 +652,36 @@ describe('a delegate signing in to the chat (principals.fromClaims)', () => {
     const session = (c.received[0] as Extract<Msg, { type: 'ready' }>).session;
     // The audit's call_started names the delegate: the session began signed in as them.
     expect(auditEntries(config).find((e) => e.callId === session && e.type === 'call_started')).toMatchObject({ channel: 'chat', detail: { principal: 'agent', level: 2 } });
+  });
+
+  it('keeps a delegate\'s chat theirs on a resume with their token, and starts an ended one as theirs', async () => {
+    const { url, config } = await start({ CHAT_SIGNIN: 'mock', CHAT_IDLE_MS: '1' });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, token: 'mock:taylor' });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const first = c.received[0] as Extract<Msg, { type: 'ready' }>;
+    c.close();
+    await c.closed;
+    const d = await ChatClient.connect(url);
+    d.send({ type: 'start', v: 1, resume: first.resume, token: 'mock:taylor' });
+    await d.until((r) => r.some((m) => m.type === 'ready'));
+    d.send({ type: 'text', text: OPENER });
+    await d.until((r) => r.some((m) => m.type === 'say'));
+    // Not refused as a delegate signing in mid-chat: the token is not used on a chat signed in.
+    expect(d.received[0]!.type).toBe('ready');
+    expect(d.received.filter((m) => m.type !== 'say')).toHaveLength(1);
+    const back = d.received[0] as Extract<Msg, { type: 'ready' }>;
+    d.close();
+    await d.closed;
+    await new Promise((r) => setTimeout(r, 5));
+    running!.sweep();
+    const e = await ChatClient.connect(url);
+    e.send({ type: 'start', v: 1, resume: back.resume, token: 'mock:taylor' });
+    await e.until((r) => r.some((m) => m.type === 'say'));
+    expect(e.received.slice(0, 3).map((m) => m.type)).toEqual(['error', 'ready', 'signed_in']);
+    const again = (e.received[1] as Extract<Msg, { type: 'ready' }>).session;
+    expect(again).not.toBe(first.session);
+    expect(auditEntries(config).find((x) => x.callId === again && x.type === 'call_started')).toMatchObject({ channel: 'chat', detail: { principal: 'agent', level: 2 } });
   });
 
   it('refuses a delegate signing in mid-chat: a delegate signs in as the chat starts', async () => {

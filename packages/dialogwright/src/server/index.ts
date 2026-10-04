@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
-import { consoleExposure, describeConfig, loadConfig, type ServerConfig } from './config';
+import { consoleExposure, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
 import { createRequestHandler } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, type AdapterDeps } from './adapter';
@@ -318,12 +318,13 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
     if (!config.signatureCheck) console.log('[server] WARNING: webhook signature validation is OFF');
     const sidecars = start ? await start(config) : {};
     const running = await startServer(config, sidecars.overrides ?? {});
-    const webhooks = config.voiceProviders.map((id) => `https://${config.publicHost}/voice/${id}`).join(', ');
+    const base = publicBase(config, running.port);
+    const webhooks = config.voiceProviders.map((id) => `${base}/voice/${id}`).join(', ');
     const legacy = config.voiceProviders.includes('twilio') ? ' (Twilio also on /voice)' : '';
     console.log(`[server] listening on ${running.port}; voice webhook ${webhooks}${legacy}`);
-    const consoleBase = config.consoleLocalOnly ? `http://localhost:${running.port}` : `https://${config.publicHost}`;
+    const consoleBase = config.consoleLocalOnly ? localBase(running.port) : base;
     if (running.bus) console.log(`[server] console ${consoleBase}/dashboard`);
-    for (const r of running.routes) console.log(`[server] ${r.label} ${(r.localOnly ? consoleBase : `https://${config.publicHost}`)}${r.path}`);
+    for (const r of running.routes) console.log(`[server] ${r.label} ${(r.localOnly ? consoleBase : base)}${r.path}`);
     const stop = () => {
       console.log('[server] shutting down');
       void Promise.allSettled([running.close(), sidecars.close?.()]).then(() => process.exit(0));

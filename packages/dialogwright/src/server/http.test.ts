@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { generateKeyPairSync, sign as signEd25519 } from 'node:crypto';
 import { createServer, request, type Server } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clipName, createRequestHandler, decideActionTwiml, type HttpDeps } from './http';
@@ -591,6 +591,26 @@ describe('CONSOLE_LOCAL_ONLY', () => {
     expect(await raw(base, 'POST', '/chat/login')).toEqual({ status: 200, body: 'chat' });
   });
 
+  it('serves the console and chat on a laptop (PUBLIC_HOST=localhost) to a request naming this machine', async () => {
+    const d = { ...deps({ PUBLIC_HOST: 'localhost' }), bus: new DashboardBus(), routes: [fakeChat] };
+    const base = await listen(d);
+    const port = new URL(base).port;
+    for (const host of [`localhost:${port}`, 'localhost', `127.0.0.1:${port}`, `[::1]:${port}`, `LOCALHOST:${port}`]) {
+      expect((await raw(base, 'GET', '/dashboard', { host })).status, host).toBe(200);
+      expect(await raw(base, 'GET', '/chat', { host }), host).toEqual({ status: 200, body: 'chat' });
+    }
+  });
+
+  it.each([
+    ...tunnelled.filter(([label]) => label !== 'the public Host').map(([label, headers]): [string, Record<string, string>] => [label, { host: 'localhost:3000', ...headers }]),
+    ['a tunnel\'s own Host, with no header added', { host: 'demo.ngrok.app' }],
+    ['another site\'s name pointed at this machine', { host: 'www.example.com' }],
+  ] as Array<[string, Record<string, string>]>)('answers 404 on a laptop (PUBLIC_HOST=localhost) to a request with %s', async (_label, headers) => {
+    const d = { ...deps({ PUBLIC_HOST: 'localhost' }), bus: new DashboardBus(), routes: [fakeChat] };
+    const base = await listen(d);
+    for (const path of ['/dashboard', '/chat']) expect((await raw(base, 'GET', path, headers)).status, path).toBe(404);
+  });
+
   it('serves the console through the tunnel with CONSOLE_LOCAL_ONLY=off', async () => {
     const d = { ...deps({ CONSOLE_LOCAL_ONLY: 'off' }), bus: new DashboardBus(), routes: [fakeChat] };
     const base = await listen(d);
@@ -718,5 +738,59 @@ describe('decideActionTwiml', () => {
     const result = decideActionTwiml(d, { CallSid: 'CA1', HandoffData: '', CallStatus: 'in-progress', SessionStatus: 'failed' });
     expect(result.twiml).toContain('<ConversationRelay');
     expect(result.twiml).not.toContain('<Dial>');
+  });
+});
+
+describe('the widget file (WIDGET=on)', () => {
+  function widgetFile(body: string): string {
+    const file = join(mkdtempSync(join(tmpdir(), 'widget-')), 'dialogwright-widget.js');
+    writeFileSync(file, body);
+    return file;
+  }
+
+  it('serves the built widget at /widget.js, uncached, read afresh each time', async () => {
+    const file = widgetFile('window.DialogWright = 1;');
+    const base = await listen(deps({ WIDGET: 'on', WIDGET_FILE: file }));
+    const r = await get(base, '/widget.js');
+    expect(r.status).toBe(200);
+    expect(r.headers['content-type']).toBe('text/javascript; charset=utf-8');
+    expect(r.headers['cache-control']).toBe('no-cache');
+    expect(r.headers['x-content-type-options']).toBe('nosniff');
+    expect(r.body.toString()).toBe('window.DialogWright = 1;');
+    const h = await head(base, '/widget.js');
+    expect(h.status).toBe(200);
+    expect(h.headers['content-length']).toBe(String(Buffer.byteLength('window.DialogWright = 1;')));
+    expect(h.body.length).toBe(0);
+    // A rebuild on the laptop is served without a restart.
+    writeFileSync(file, 'window.DialogWright = 2;');
+    expect((await get(base, '/widget.js')).body.toString()).toBe('window.DialogWright = 2;');
+    expect((await get(base, '/widget.js?v=2')).status).toBe(200);
+    expect((await get(base, '/widget.jsx')).status).toBe(404);
+  });
+
+  it('is 404 when off, as any other path is', async () => {
+    const base = await listen(deps());
+    expect((await get(base, '/widget.js')).status).toBe(404);
+  });
+
+  it('is 404, and says why in the log, when the file has gone since the server started', async () => {
+    const file = widgetFile('x');
+    const lines: string[] = [];
+    const base = await listen({ ...deps({ WIDGET: 'on', WIDGET_FILE: file }), log: (l) => lines.push(l) });
+    rmSync(file);
+    expect((await get(base, '/widget.js')).status).toBe(404);
+    expect(lines.some((l) => l.startsWith(`widget: could not read ${file}`))).toBe(true);
+  });
+
+  it('is a public script: served through the tunnel too, with the console kept local only', async () => {
+    const base = await listen({ ...deps({ WIDGET: 'on', WIDGET_FILE: widgetFile('x') }), bus: new DashboardBus() });
+    const tunnel = { host: 'demo.ngrok.app', 'x-forwarded-for': '203.0.113.9' };
+    expect(await raw(base, 'GET', '/widget.js', tunnel)).toEqual({ status: 200, body: 'x' });
+    expect((await raw(base, 'GET', '/dashboard', tunnel)).status).toBe(404);
+  });
+
+  it('answers only GET and HEAD', async () => {
+    const base = await listen(deps({ WIDGET: 'on', WIDGET_FILE: widgetFile('x') }));
+    expect((await fetch(base + '/widget.js', { method: 'POST', body: 'x' })).status).toBe(404);
   });
 });
