@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-pending.schema.json
+
+id: office-hours
+topic: office_hours
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: office-hours
+  section: customer-office
+answer: Our customer office is open Monday through Friday, eight in the morning to five in the evening, and closed on weekends and holidays. You can report an outage any time, day or night.
+drafted:
+  by: assistant (drafted by hand in the drafter's format, no model call)
+  on: 2026-10-04
+  excerpt: Our customer office at 100 Main Street is open Monday through Friday, from 8 a.m. to 5 p.m., and is closed on weekends and public holidays. Outages can be reported by phone at any time, day or night.

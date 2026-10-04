@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-pending.schema.json
+
+id: residential-rates
+topic: residential_rates
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: rate-schedule
+  section: monthly-rate
+answer: The residential rate is a customer charge of 12 dollars a month, plus 14.2 cents for each kilowatt-hour you use.
+drafted:
+  by: assistant (drafted by hand in the drafter's format, no model call)
+  on: 2026-10-04
+  excerpt: The monthly bill is a customer charge of 12 dollars, plus an energy charge of 14.2 cents for each kilowatt-hour used in the billing period.

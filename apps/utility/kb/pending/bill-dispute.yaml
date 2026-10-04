@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-pending.schema.json
+
+id: bill-dispute
+topic: bill_dispute
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: customer-rights-notice
+  section: disputing-a-bill
+answer: If you think your bill is wrong, call us or write to us within 30 days of the bill date. While we review it, you only pay the part you don't dispute, and we won't disconnect you over the disputed amount.
+drafted:
+  by: assistant (drafted by hand in the drafter's format, no model call)
+  on: 2026-10-04
+  excerpt: If you believe your bill is wrong, call us at 555-0100 or write to us within 30 days of the bill date. While we review your dispute, you need to pay only the part of the bill you do not dispute, and your service will not be disconnected for the amount in dispute.

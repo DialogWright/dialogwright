@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-pending.schema.json
+
+id: late-fees
+topic: late_fees
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: rate-schedule
+  section: late-payment-charge
+answer: If a bill isn't paid in full by its due date, a late payment charge of 1.5 percent of the unpaid balance is added, once for each bill.
+drafted:
+  by: assistant (drafted by hand in the drafter's format, no model call)
+  on: 2026-10-04
+  excerpt: A bill that is not paid in full by its due date is charged a late payment charge of 1.5 percent of the unpaid balance. The charge is applied once for each bill.

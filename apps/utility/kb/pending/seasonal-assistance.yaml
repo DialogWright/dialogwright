@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-pending.schema.json
+
+id: seasonal-assistance
+topic: seasonal_assistance
+version: "2026.1"
+effective:
+  from: 2026-10-01
+source:
+  document: assistance-programs
+  section: winter-warmth-credit
+answer: Our Winter Warmth program gives a one-time bill credit of up to 300 dollars to households with income at or below 200 percent of the federal poverty guidelines. You can apply from October 1 through March 31.
+drafted:
+  by: assistant (drafted by hand in the drafter's format, no model call)
+  on: 2026-10-04
+  excerpt: For the 2026 to 2027 heating season, effective October 1, 2026, households with income at or below 200 percent of the federal poverty guidelines can receive a one-time bill credit of up to 300 dollars. Applications are accepted from October 1, 2026 through March 31, 2027.

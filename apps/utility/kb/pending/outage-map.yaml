@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-pending.schema.json
+
+id: outage-map
+topic: outage_map
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: outage-map
+  section: where-to-find-the-map
+answer: You can see current outages and estimated restoration times on our outage map, at example dot com slash outages. It's updated every 15 minutes.
+drafted:
+  by: assistant (drafted by hand in the drafter's format, no model call)
+  on: 2026-10-04
+  excerpt: The outage map at www.example.com/outages shows current outages, the number of customers affected, and the estimated time power will be restored. It is updated every 15 minutes.
