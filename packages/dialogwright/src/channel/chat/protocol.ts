@@ -37,7 +37,11 @@ const clientMessage = z.discriminatedUnion('type', [
 ]);
 export type ClientMessage = z.infer<typeof clientMessage>;
 
-export type ChatErrorCode = 'bad_message' | 'too_long' | 'not_allowed' | 'sign_in_failed' | 'session_unknown' | 'server_error';
+/**
+ * Why a message was refused. `busy`: the server holds as many chats as it may (a new start; the
+ * socket is then closed), or the client sent more than it can have waiting for a reply.
+ */
+export type ChatErrorCode = 'bad_message' | 'too_long' | 'not_allowed' | 'sign_in_failed' | 'session_unknown' | 'busy' | 'server_error';
 
 export type ServerMessage =
   | { type: 'ready'; session: string; resume: string; locale: string }

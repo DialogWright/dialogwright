@@ -20,6 +20,12 @@ export interface ChatSettings {
   origins: AllowedOrigins;
   /** CHAT_IDLE_MS, default 1,800,000: how long a chat session nobody writes to lives (and can be resumed). */
   idleMs: number;
+  /**
+   * CHAT_MAX_SESSIONS, default 1000: the most chat sessions live at once (a dropped one waiting for
+   * its resume included). Over it a new chat is refused `busy`; a resume never is. A limit per
+   * visitor's address is the reverse proxy's to keep: behind one, every chat comes from its address.
+   */
+  maxSessions: number;
   /** CHAT_SIGNIN, default none: how a chat user signs in (server/chat/signin.ts). */
   signIn: ChatSignInSettings;
 }
@@ -38,6 +44,8 @@ const CHAT_SIGNIN_METHODS = ['none', 'jwt', 'mock'] as const;
 
 /** A chat session nobody has written to for this long is ended (CHAT_IDLE_MS's default; server/chatHttp.ts's CHAT_IDLE_MS). */
 export const DEFAULT_CHAT_IDLE_MS = 1_800_000;
+/** The most chat sessions live at once, unless CHAT_MAX_SESSIONS says otherwise. */
+export const DEFAULT_CHAT_MAX_SESSIONS = 1000;
 
 /** Twilio ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider), for TTS_PROVIDER. */
 const TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
@@ -275,7 +283,9 @@ function chatOf(env: Env, publicHost: string): ChatSettings | undefined {
   if (!origins) throw new Error('missing required environment variable CHAT_ALLOWED_ORIGINS (CHAT=on)');
   const idleMs = integer(env, 'CHAT_IDLE_MS', DEFAULT_CHAT_IDLE_MS);
   if (idleMs <= 0) throw new Error(`CHAT_IDLE_MS must be a positive number of milliseconds, got "${env.CHAT_IDLE_MS}"`);
-  return { origins: parseAllowedOrigins(origins, publicHost), idleMs, signIn: chatSignInOf(env, publicHost) };
+  const maxSessions = integer(env, 'CHAT_MAX_SESSIONS', DEFAULT_CHAT_MAX_SESSIONS);
+  if (maxSessions <= 0) throw new Error(`CHAT_MAX_SESSIONS must be a positive integer, got "${env.CHAT_MAX_SESSIONS}"`);
+  return { origins: parseAllowedOrigins(origins, publicHost), idleMs, maxSessions, signIn: chatSignInOf(env, publicHost) };
 }
 
 function chatSignInOf(env: Env, publicHost: string): ChatSignInSettings {
@@ -385,6 +395,6 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx voice ${c.telnyxVoice ?? 'default'}`] : []),
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
-    ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)})`, describeChatSignIn(c.chat.signIn)] : []),
+    ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)}) up to ${c.chat.maxSessions} sessions`, describeChatSignIn(c.chat.signIn)] : []),
   ].join('  ');
 }

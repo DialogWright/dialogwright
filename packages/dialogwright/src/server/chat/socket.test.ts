@@ -25,6 +25,7 @@ import { startEvent, textEvent, type SessionEvent } from '../../channel/events';
 import { actionsToChatMessages, type ServerMessage } from '../../channel/chat/protocol';
 import { runChatTurnActions, type ChatTurnEntry } from '../chatTurn';
 import type { JevClient } from '../../jev/types';
+import { CHAT_MAX_WAITING } from './socket';
 
 useTestkit();
 
@@ -331,6 +332,54 @@ describe('the chat endpoint', () => {
     const d = await ChatClient.connect(url);
     d.send({ type: 'ping' });
     await d.until((r) => r.some((m) => m.type === 'pong'));
+  });
+
+  it('holds at most CHAT_MAX_SESSIONS chats: a new one over it is told busy and closed, a resume never is', async () => {
+    const { url, logs } = await start({ CHAT_MAX_SESSIONS: '1' });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const ready = c.received[0] as Extract<Msg, { type: 'ready' }>;
+
+    const d = await ChatClient.connect(url);
+    d.send({ type: 'start', v: 1 });
+    expect(await d.closed).toEqual({ code: 1013, reason: 'busy' });
+    expect(d.received).toEqual([{ type: 'error', code: 'busy', message: 'too many chats are open: try again later' }]);
+    expect(logs.filter((l) => l.includes('CHAT_MAX_SESSIONS'))).toEqual(['chat refused: 1 chat sessions are live, the most CHAT_MAX_SESSIONS allows']);
+
+    // The live session, dropped, resumes whatever the count.
+    c.close();
+    await c.closed;
+    const e = await ChatClient.connect(url);
+    e.send({ type: 'start', v: 1, resume: ready.resume });
+    await e.until((r) => r.length >= 1);
+    expect(e.received[0]).toMatchObject({ type: 'ready', session: ready.session });
+
+    // Once it ends, a new chat may start.
+    e.send({ type: 'text', text: AGENT });
+    await e.closed;
+    const f = await ChatClient.connect(url);
+    f.send({ type: 'start', v: 1 });
+    await f.until((r) => r.some((m) => m.type === 'say'));
+    expect(f.received[0]).toMatchObject({ type: 'ready' });
+  });
+
+  it('tells a client that sends faster than its replies come to wait, and runs what it took', async () => {
+    // A model that takes its time, so messages queue behind the turn in hand.
+    const slow: JevClient = { ask: async (req) => { await new Promise((resolve) => setTimeout(resolve, 30)); return stub.ask(req); } };
+    const { url } = await start({}, { client: slow });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const n = c.received.length;
+    for (let i = 0; i < CHAT_MAX_WAITING + 3; i += 1) c.send({ type: 'text', text: OPENER });
+    await c.until((r) => r.slice(n).filter((m) => m.type === 'error').length === 3);
+    expect(c.received.slice(n).filter((m) => m.type === 'error')).toEqual(Array(3).fill({ type: 'error', code: 'busy', message: 'wait for the reply to what was sent' }));
+    // Not counted as malformed, and the chat goes on once the queue has drained.
+    await new Promise((resolve) => setTimeout(resolve, 30 * 4 * (CHAT_MAX_WAITING + 1)));
+    const m = c.received.length;
+    c.send({ type: 'ping' });
+    await c.until((r) => r.slice(m).some((x) => x.type === 'pong'));
   });
 
   it('writes the frame log without the resume token', async () => {

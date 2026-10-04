@@ -37,6 +37,12 @@ export const CHAT_PATH = '/chat';
 export const CHAT_MAX_PAYLOAD = 16 * 1024;
 /** Malformed messages (cumulative) before the connection is treated as something other than a chat client. */
 export const CHAT_MALFORMED_LIMIT = 10;
+/**
+ * Messages a session may have waiting for their reply (the one in hand included). A person waits for
+ * an answer before typing much more; a client that does not is told `busy`, so it cannot queue
+ * unbounded turns (each one a model call) behind a slow one.
+ */
+export const CHAT_MAX_WAITING = 5;
 /** A connection that has not started a chat by now is closed. */
 export const CHAT_START_TIMEOUT_MS = 10_000;
 /** What a client that stops reading may leave unsent before its socket is closed. */
@@ -72,6 +78,8 @@ interface ChatEntry extends ChatTurnEntry {
   ended: boolean;
   tail: Promise<void>;
   inFlight: number;
+  /** Work queued for the session and not yet done (CHAT_MAX_WAITING). */
+  waiting: number;
 }
 
 /** One WebSocket connection, before and after it has a session. */
@@ -140,6 +148,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     ? { method: 'jwt', keyFor: jwksKeys({ url: how.jwksUrl, fetch: deps.fetch, nowMs: now, log }), issuer: how.issuer, audience: how.audience }
     : how;
   const sessions = new Map<string, ChatEntry>();
+  /** Whether the refusal for CHAT_MAX_SESSIONS has been logged since a session last ended (said once, not per refusal). */
+  let fullLogged = false;
   const resumeIds = new Map<string, string>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: CHAT_MAX_PAYLOAD });
 
@@ -162,6 +172,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
 
   /** Run `fn` after everything already queued for the session; an ended session skips it, an error is logged and the queue goes on. */
   const enqueue = (e: ChatEntry, fn: (e: ChatEntry) => Promise<void>): Promise<void> => {
+    e.waiting += 1;
     const run = e.tail
       .then(async () => {
         if (e.ended) return;
@@ -179,6 +190,9 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         } catch {
           // Nothing more to do: the queue must go on.
         }
+      })
+      .finally(() => {
+        e.waiting -= 1;
       });
     e.tail = run.catch(() => {});
     return run;
@@ -188,6 +202,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   const finish = (e: ChatEntry, reason: string): void => {
     e.ended = true;
     sessions.delete(e.id);
+    fullLogged = false;
     resumeIds.delete(e.resume);
     try {
       e.frames.write('log', { ended: reason });
@@ -273,11 +288,19 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
 
   /** A new session for a start, its opening turn queued: ready, then the opening lines. */
   const open = (conn: ChatConnection, m: Extract<ClientMessage, { type: 'start' }>): void => {
+    // A new chat only: a resume reopens a session already counted, and is never refused for the limit.
+    if (sessions.size >= deps.settings.maxSessions) {
+      if (!fullLogged) log(`chat refused: ${sessions.size} chat sessions are live, the most CHAT_MAX_SESSIONS allows`);
+      fullLogged = true;
+      send(conn.ws, null, { type: 'error', code: 'busy', message: 'too many chats are open: try again later' });
+      conn.ws.close(1013, 'busy');
+      return;
+    }
     const id = fresh();
     const { opts, frames } = deps.resources(id, { get: (sid) => sessions.get(sid) });
     const e: ChatEntry = {
       id, session: newSession(id, now(), WEB_CHAT), auditEntries: [], opts, lastActivityMs: now(),
-      resume: fresh(), socket: conn.ws, frames, ended: false, tail: Promise.resolve(), inFlight: 0,
+      resume: fresh(), socket: conn.ws, frames, ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0,
     };
     sessions.set(id, e);
     resumeIds.set(e.resume, id);
@@ -381,6 +404,12 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     // A socket a resume has replaced speaks for the session no more.
     if (entry.socket !== conn.ws) {
       send(conn.ws, null, { type: 'error', code: 'session_unknown', message: 'this chat goes on on another connection' });
+      return;
+    }
+    // A client that does not wait for its replies: told to, rather than queueing turn after turn.
+    if (entry.waiting >= CHAT_MAX_WAITING) {
+      entry.frames.write('in', { refused: 'busy' });
+      send(conn.ws, entry.frames, { type: 'error', code: 'busy', message: 'wait for the reply to what was sent' });
       return;
     }
     if (m.type === 'text') {

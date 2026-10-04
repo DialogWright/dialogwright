@@ -31,6 +31,17 @@ describe('chat config', () => {
     expect(() => loadConfig({ ...on, CHAT_IDLE_MS: '0' })).toThrow('CHAT_IDLE_MS must be a positive number of milliseconds, got "0"');
   });
 
+  it('holds at most CHAT_MAX_SESSIONS chats at once: 1000 unless set, a positive whole number', () => {
+    expect(loadConfig(on).chat?.maxSessions).toBe(1000);
+    expect(loadConfig({ ...on, CHAT_MAX_SESSIONS: '25' }).chat?.maxSessions).toBe(25);
+    expect(describeConfig(loadConfig({ ...on, CHAT_MAX_SESSIONS: '25' }))).toContain('chat on (https://www.example.com) up to 25 sessions');
+    expect(() => loadConfig({ ...on, CHAT_MAX_SESSIONS: '0' })).toThrow('CHAT_MAX_SESSIONS must be a positive integer, got "0"');
+    expect(() => loadConfig({ ...on, CHAT_MAX_SESSIONS: '2.5' })).toThrow('CHAT_MAX_SESSIONS must be a non-negative integer, got "2.5"');
+    expect(() => loadConfig({ ...on, CHAT_MAX_SESSIONS: 'many' })).toThrow('CHAT_MAX_SESSIONS must be a non-negative integer, got "many"');
+    // Off, it is not read.
+    expect(loadConfig({ ...base, CHAT_MAX_SESSIONS: 'many' }).chat).toBeUndefined();
+  });
+
   it('signs in with none by default, and takes jwt with its three settings', () => {
     expect(loadConfig(on).chat?.signIn).toEqual({ method: 'none' });
     const jwt = { ...on, CHAT_SIGNIN: 'jwt', CHAT_JWKS_URL: 'https://id.example.com/.well-known/jwks.json', CHAT_ISSUER: 'https://id.example.com', CHAT_AUDIENCE: 'chat-widget' };
