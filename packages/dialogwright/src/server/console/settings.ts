@@ -23,7 +23,27 @@ export interface ConsoleAuthSettings {
    * Default `.console-link/link.json` beside the trace folder.
    */
   linkFile: string;
+  /**
+   * CONSOLE_CLIENT_ADDRESS, default `auto`: where a request's address is read, for the sign-in's
+   * limits per address and the access log (server/console/auth.ts `clientAddressOf`).
+   */
+  clientAddress: ClientAddressSource;
 }
+
+/**
+ * Where a console request's address comes from (CONSOLE_CLIENT_ADDRESS):
+ *
+ * - `auto`, the default: Cloudflare's `cf-connecting-ip`, else the last `x-forwarded-for` entry, else the
+ *   socket's. Right for Cloudflare's tunnels; behind another tunnel a client can send its own
+ *   `cf-connecting-ip` and choose the address it is counted under (the limit for everyone still holds).
+ * - `cf-connecting-ip`: that header alone (Cloudflare's edge sets it, whatever the client sent), else the
+ *   socket's. For a Cloudflare tunnel, quick or named.
+ * - `x-forwarded-for`: the last entry of that header (the one the proxy in front added), else the socket's.
+ *   For ngrok, or another proxy that appends the address it saw.
+ * - `remote`: the socket's address alone, whatever the headers say. For a server reached with no proxy.
+ */
+export type ClientAddressSource = 'auto' | 'cf-connecting-ip' | 'x-forwarded-for' | 'remote';
+export const CLIENT_ADDRESS_SOURCES: readonly ClientAddressSource[] = ['auto', 'cf-connecting-ip', 'x-forwarded-for', 'remote'];
 
 type Env = Record<string, string | undefined>;
 
@@ -93,10 +113,16 @@ export function consoleAuthOf(env: Env, dashboard: boolean, cwd: string = proces
     // Never the value: a key that is wrong is still mostly a key.
     if (sessionKey === null) throw new Error(`CONSOLE_SESSION_KEY must be at least ${MIN_SESSION_KEY_BYTES} random bytes, written as hex or base64 (openssl rand -hex 32): the one set is not (${rawKey.length} characters)`);
   }
-  return { method: 'token', sessionKey, sessionHours, linkFile: consoleLinkFileOf(env, cwd) };
+  const rawSource = (env.CONSOLE_CLIENT_ADDRESS?.trim() || 'auto').toLowerCase();
+  const clientAddress = CLIENT_ADDRESS_SOURCES.find((s) => s === rawSource);
+  if (clientAddress === undefined) {
+    throw new Error(`CONSOLE_CLIENT_ADDRESS must be auto, cf-connecting-ip, x-forwarded-for or remote, got "${env.CONSOLE_CLIENT_ADDRESS}"`);
+  }
+  return { method: 'token', sessionKey, sessionHours, linkFile: consoleLinkFileOf(env, cwd), clientAddress };
 }
 
 /** The settings as describeConfig shows them: never the key. */
 export function describeConsoleAuth(s: ConsoleAuthSettings): string {
-  return `console sign-in (CONSOLE_AUTH=token, sessions ${s.sessionHours} h, ${s.sessionKey ? 'key from CONSOLE_SESSION_KEY' : 'key made at start'})`;
+  const from = s.clientAddress === 'auto' ? '' : `, addresses from ${s.clientAddress}`;
+  return `console sign-in (CONSOLE_AUTH=token, sessions ${s.sessionHours} h, ${s.sessionKey ? 'key from CONSOLE_SESSION_KEY' : 'key made at start'}${from})`;
 }

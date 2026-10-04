@@ -36,6 +36,7 @@ interface Rig {
   clock: { t: number };
   dir: string;
   linkFile: string;
+  bus: DashboardBus;
 }
 
 /** A server in token mode, with a clock the test moves and an audit it reads. */
@@ -61,13 +62,14 @@ async function rig(env: Record<string, string> = {}, routes: AppRoute[] = []): P
     trace: new TraceWriter(join(dir, `${callSid}.jsonl`)),
     frames: new FrameLog(join(dir, `${callSid}.frames.jsonl`)),
   }), 60_000);
-  const deps: HttpDeps = { config, store, tokens: new CallTokens(60_000), hints: '', log: () => {}, bus: new DashboardBus(), audit: sink, consoleAuth: auth, routes };
+  const bus = new DashboardBus();
+  const deps: HttpDeps = { config, store, tokens: new CallTokens(60_000), hints: '', log: () => {}, bus, audit: sink, consoleAuth: auth, routes };
   server = createServer(createRequestHandler(deps));
   await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
   const port = (server.address() as { port: number }).port;
   auth.start(port);
   writeFileSync(join(dir, 'CA9.jsonl'), JSON.stringify(TRACE) + '\n');
-  return { base: `http://127.0.0.1:${port}`, port, auth, audit, clock, dir, linkFile };
+  return { base: `http://127.0.0.1:${port}`, port, auth, audit, clock, dir, linkFile, bus };
 }
 
 interface Answer { status: number; headers: IncomingHttpHeaders; body: string }
@@ -312,6 +314,46 @@ describe('CONSOLE_AUTH=token: signing in', () => {
   });
 });
 
+describe('CONSOLE_AUTH=token: which address a request comes from (CONSOLE_CLIENT_ADDRESS)', () => {
+  /** The address the audit names for a refused sign-in sent with `headers` (each through a tunnel's Host). */
+  async function fromOf(r: Rig, headers: Record<string, string>): Promise<unknown> {
+    await raw(r.base, 'POST', '/dashboard/login', { host: 'demo.example.net', ...headers, ...FORM }, `code=${randomBytes(32).toString('hex')}`);
+    return r.audit.at(-1)!.detail.from;
+  }
+  const both = { 'cf-connecting-ip': '203.0.113.9', 'x-forwarded-for': '192.0.2.50, 198.51.100.7' };
+  const xffOnly = { 'x-forwarded-for': '192.0.2.50, 198.51.100.7' };
+  const cfOnly = { 'cf-connecting-ip': '203.0.113.9' };
+
+  it('auto (the default): cf-connecting-ip, else the last x-forwarded-for entry, else the socket', async () => {
+    const r = await rig();
+    expect(await fromOf(r, both)).toBe('203.0.113.9');
+    expect(await fromOf(r, xffOnly)).toBe('198.51.100.7');
+    expect(await fromOf(r, {})).toBe('127.0.0.1');
+  });
+
+  it('cf-connecting-ip: only Cloudflare\'s header; x-forwarded-for is not read, and without the header it is the socket', async () => {
+    const r = await rig({ CONSOLE_CLIENT_ADDRESS: 'cf-connecting-ip' });
+    expect(await fromOf(r, both)).toBe('203.0.113.9');
+    expect(await fromOf(r, xffOnly)).toBe('127.0.0.1');
+  });
+
+  it('x-forwarded-for: the last entry; a cf-connecting-ip a client sent through another tunnel is not read', async () => {
+    const r = await rig({ CONSOLE_CLIENT_ADDRESS: 'x-forwarded-for' });
+    expect(await fromOf(r, both)).toBe('198.51.100.7');
+    expect(await fromOf(r, cfOnly)).toBe('127.0.0.1');
+    // So rotating a made-up cf-connecting-ip does not dodge one address's limit.
+    for (let i = 0; i < 10; i++) await fromOf(r, { ...xffOnly, 'cf-connecting-ip': `192.0.2.${i}` });
+    const { code } = r.auth.mint();
+    expect((await raw(r.base, 'POST', '/dashboard/login', { host: 'demo.example.net', ...xffOnly, 'cf-connecting-ip': '192.0.2.99', ...FORM }, `code=${code}`)).status).toBe(429);
+  });
+
+  it('remote: the socket\'s address alone, whatever the headers say', async () => {
+    const r = await rig({ CONSOLE_CLIENT_ADDRESS: 'remote' });
+    expect(await fromOf(r, both)).toBe('127.0.0.1');
+    expect(await fromOf(r, xffOnly)).toBe('127.0.0.1');
+  });
+});
+
 describe('CONSOLE_AUTH=token: the headers', () => {
   it('every console answer carries the CSP, frame, referrer, cache and type headers, signed in or not', async () => {
     const r = await rig();
@@ -426,5 +468,186 @@ describe('CONSOLE_AUTH=token: an app\'s local-only pages', () => {
     const cookie = await signIn(r);
     expect((await raw(r.base, 'GET', '/chat', { ...TUNNEL, cookie })).status).toBe(404);
     expect((await raw(r.base, 'GET', '/chat')).body).toBe('chat');
+  });
+});
+
+/** An event stream read until the server ends it, or `ms` pass (then the test's own end). */
+function stream(base: string, path: string, headers: Record<string, string>): { text: () => string; ended: Promise<boolean>; opened: Promise<void>; stop: () => void } {
+  const url = new URL(base + path);
+  let text = '';
+  let opened!: () => void;
+  const openedP = new Promise<void>((r) => (opened = r));
+  let finish!: (byServer: boolean) => void;
+  const ended = new Promise<boolean>((r) => (finish = r));
+  const req = request({ host: url.hostname, port: url.port, path, method: 'GET', headers }, (res) => {
+    res.on('data', (c: Buffer) => { text += c.toString('utf8'); opened(); });
+    res.on('end', () => finish(true));
+    res.on('error', () => finish(true));
+  });
+  req.on('error', () => finish(false));
+  req.end();
+  return { text: () => text, ended, opened: openedP, stop: () => { req.destroy(); finish(false); } };
+}
+
+const CALL = { type: 'call_started', callSid: 'CA-REVIEW-7', from: '+15555550123', todayIso: '2026-10-04', thresholds: {} } as const;
+
+describe('CONSOLE_AUTH=token: what a session no longer signed in is sent', () => {
+  it('ends an open live feed once its session signs out, before the next event is sent', async () => {
+    const r = await rig();
+    const cookie = await signIn(r);
+    const feed = stream(r.base, '/dashboard/events', { ...TUNNEL, cookie });
+    await feed.opened;
+    expect((await raw(r.base, 'POST', '/dashboard/logout', { ...TUNNEL, cookie, origin: 'https://demo.example.net' })).status).toBe(303);
+    r.bus.publish(CALL as never);
+    const byServer = await Promise.race([feed.ended, new Promise<boolean>((res) => setTimeout(() => res(false), 2000))]);
+    feed.stop();
+    expect(byServer).toBe(true);
+    expect(feed.text()).not.toContain('CA-REVIEW-7');
+  });
+
+  it('ends an open live feed once its session expires', async () => {
+    const r = await rig({ CONSOLE_SESSION_HOURS: '1' });
+    const cookie = await signIn(r);
+    const feed = stream(r.base, '/dashboard/events', { ...TUNNEL, cookie });
+    await feed.opened;
+    r.clock.t += 3600 * 1000 + 1;
+    r.bus.publish(CALL as never);
+    const byServer = await Promise.race([feed.ended, new Promise<boolean>((res) => setTimeout(() => res(false), 2000))]);
+    feed.stop();
+    expect(byServer).toBe(true);
+    expect(feed.text()).not.toContain('CA-REVIEW-7');
+  });
+});
+
+describe('CONSOLE_AUTH=token: sign-in hardening', () => {
+  it('holds parallel attempts from one address to its limit: the count is checked again once each form is read', async () => {
+    const r = await rig();
+    const wrong = () => randomBytes(32).toString('hex');
+    // Every request's headers first, then (once all fifteen wait on their forms) every body.
+    const url = new URL(r.base);
+    const sent = Array.from({ length: 15 }, () => {
+      let status!: Promise<number>;
+      const req = request({ host: url.hostname, port: url.port, path: '/dashboard/login', method: 'POST', headers: { ...TUNNEL, ...FORM } });
+      status = new Promise((resolve, reject) => {
+        req.on('response', (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+        req.on('error', reject);
+      });
+      req.flushHeaders();
+      return { req, status };
+    });
+    await new Promise((res) => setTimeout(res, 100));
+    for (const { req } of sent) req.end(`code=${wrong()}`);
+    const statuses = await Promise.all(sent.map((s) => s.status));
+    expect(statuses.filter((s) => s === 403)).toHaveLength(10);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(5);
+  });
+
+  it('refuses a form a browser says came from another site, even with Origin null (a page under no-referrer)', async () => {
+    const r = await rig();
+    const { code } = r.auth.mint();
+    for (const site of ['cross-site', 'same-site']) {
+      expect((await raw(r.base, 'POST', '/dashboard/login', { ...TUNNEL, ...FORM, origin: 'null', 'sec-fetch-site': site }, `code=${code}`)).status, site).toBe(403);
+    }
+    // The console's own page: Origin null under its no-referrer policy, and same-origin.
+    expect((await raw(r.base, 'POST', '/dashboard/login', { ...TUNNEL, ...FORM, origin: 'null', 'sec-fetch-site': 'same-origin' }, `code=${code}`)).status).toBe(303);
+    const cookie = await signIn(r);
+    expect((await raw(r.base, 'POST', '/dashboard/logout', { ...TUNNEL, cookie, origin: 'null', 'sec-fetch-site': 'cross-site' })).status).toBe(403);
+    expect((await raw(r.base, 'GET', '/dashboard/traces', { ...TUNNEL, cookie })).status).toBe(200);
+  });
+
+  it('answers a form too large with 413, which the client receives', async () => {
+    const r = await rig();
+    const res = await raw(r.base, 'POST', '/dashboard/login', { ...TUNNEL, ...FORM }, `code=${'a'.repeat(8192)}`);
+    expect(res.status).toBe(413);
+  });
+
+  it('refuses a cookie whose expiry is further off than CONSOLE_SESSION_HOURS allows (the hours were lowered)', async () => {
+    const key = randomBytes(32).toString('hex');
+    const r = await rig({ CONSOLE_SESSION_KEY: key, CONSOLE_SESSION_HOURS: '24' });
+    const cookie = await signIn(r);
+    const fakeReq = (c: string) => ({ headers: { cookie: c }, socket: { remoteAddress: '127.0.0.1' } }) as never;
+    const env = { PUBLIC_HOST: 'demo.example.net', TWILIO_AUTH_TOKEN: 'authtok', HANDOFF_NUMBER: '+15551234567', CONSOLE_AUTH: 'token', CONSOLE_SESSION_KEY: key, CONSOLE_LINK_FILE: r.linkFile };
+    const same = new ConsoleAuth({ settings: loadConfig({ ...env, CONSOLE_SESSION_HOURS: '24' }).consoleAuth!, publicHost: 'demo.example.net', now: () => r.clock.t });
+    expect(same.sessionOf(fakeReq(cookie))).not.toBeNull();
+    const lowered = new ConsoleAuth({ settings: loadConfig({ ...env, CONSOLE_SESSION_HOURS: '2' }).consoleAuth!, publicHost: 'demo.example.net', now: () => r.clock.t });
+    expect(lowered.sessionOf(fakeReq(cookie))).toBeNull();
+  });
+});
+
+describe('CONSOLE_AUTH=token: sign-outs kept across a restart (CONSOLE_SESSION_KEY)', () => {
+  const env = (r: Rig, key: string) => ({ PUBLIC_HOST: 'demo.example.net', TWILIO_AUTH_TOKEN: 'authtok', HANDOFF_NUMBER: '+15551234567', CONSOLE_AUTH: 'token', CONSOLE_SESSION_KEY: key, CONSOLE_LINK_FILE: r.linkFile });
+  const fakeReq = (c: string) => ({ headers: { cookie: c }, socket: { remoteAddress: '127.0.0.1' } }) as never;
+
+  it('a signed-out cookie stays refused after a restart; one still signed in is not', async () => {
+    const key = randomBytes(32).toString('hex');
+    const r = await rig({ CONSOLE_SESSION_KEY: key });
+    const out = await signIn(r);
+    const kept = await signIn(r);
+    expect((await raw(r.base, 'POST', '/dashboard/logout', { ...TUNNEL, cookie: out, origin: 'https://demo.example.net' })).status).toBe(303);
+    const restarted = new ConsoleAuth({ settings: loadConfig(env(r, key)).consoleAuth!, publicHost: 'demo.example.net', now: () => r.clock.t });
+    expect(restarted.sessionOf(fakeReq(out))).toBeNull();
+    expect(restarted.sessionOf(fakeReq(kept))).not.toBeNull();
+  });
+
+  it('keeps them beside the link file, owner-only, as hashes with their expiry, never a session id or the cookie; expired ones are dropped', async () => {
+    const key = randomBytes(32).toString('hex');
+    const r = await rig({ CONSOLE_SESSION_KEY: key, CONSOLE_SESSION_HOURS: '1' });
+    const first = await signIn(r);
+    await raw(r.base, 'POST', '/dashboard/logout', { ...TUNNEL, cookie: first, origin: 'https://demo.example.net' });
+    const file = join(r.dir, 'private', 'signed-out.json');
+    if (process.platform !== 'win32') {
+      const { statSync } = await import('node:fs');
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+    }
+    const text = readFileSync(file, 'utf8');
+    const id = first.split('.')[1]!;
+    expect(text).not.toContain(id);
+    expect(text).not.toContain(first.slice(`${CONSOLE_COOKIE}=`.length));
+    const held = JSON.parse(text) as { v: number; sessions: Array<{ hash: string; expiresAt: string }> };
+    expect(held.v).toBe(1);
+    expect(held.sessions).toHaveLength(1);
+    expect(held.sessions[0]!.hash).toMatch(/^[0-9a-f]{64}$/);
+    // An hour on, the first has expired: the next sign-out's write leaves it out.
+    r.clock.t += 3600 * 1000 + 1;
+    const second = await signIn(r);
+    await raw(r.base, 'POST', '/dashboard/logout', { ...TUNNEL, cookie: second, origin: 'https://demo.example.net' });
+    const after = JSON.parse(readFileSync(file, 'utf8')) as typeof held;
+    expect(after.sessions).toHaveLength(1);
+    expect(after.sessions[0]!.hash).not.toBe(held.sessions[0]!.hash);
+  });
+
+  it('writes nothing without CONSOLE_SESSION_KEY, where a restart signs everyone out anyway', async () => {
+    const r = await rig();
+    const cookie = await signIn(r);
+    await raw(r.base, 'POST', '/dashboard/logout', { ...TUNNEL, cookie, origin: 'https://demo.example.net' });
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(join(r.dir, 'private', 'signed-out.json'))).toBe(false);
+  });
+
+  it('refuses to start from a sign-out file that is not one, or that others may write', async () => {
+    const key = randomBytes(32).toString('hex');
+    const r = await rig({ CONSOLE_SESSION_KEY: key });
+    const file = join(r.dir, 'private', 'signed-out.json');
+    const make = () => new ConsoleAuth({ settings: loadConfig(env(r, key)).consoleAuth!, publicHost: 'demo.example.net', now: () => r.clock.t });
+    writeFileSync(file, 'not json', { mode: 0o600 });
+    expect(make).toThrow(`${file} is not a sign-out file the server wrote`);
+    if (process.platform === 'win32') return;
+    const { chmodSync } = await import('node:fs');
+    writeFileSync(file, JSON.stringify({ v: 1, sessions: [] }));
+    chmodSync(file, 0o666);
+    expect(make).toThrow(`${file} can be written by others`);
+  });
+});
+
+describe('writeOwnerOnly', () => {
+  it('leaves no temporary file behind when the write fails', async () => {
+    const { mkdirSync, readdirSync } = await import('node:fs');
+    const { writeOwnerOnly } = await import('./auth');
+    const dir = mkdtempSync(join(tmpdir(), 'owner-only-'));
+    const folder = join(dir, '.console-link');
+    // A folder where the file should be: the rename fails.
+    mkdirSync(join(folder, 'link.json'), { recursive: true, mode: 0o700 });
+    expect(() => writeOwnerOnly(join(folder, 'link.json'), '{}')).toThrow();
+    expect(readdirSync(folder)).toEqual(['link.json']);
   });
 });

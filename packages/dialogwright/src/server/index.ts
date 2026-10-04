@@ -184,6 +184,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const tools = demoTools();
   // One audit chain for the process: every call's entries link into the same day file.
   const audit = new AuditLog(config.auditDir, now);
+  // CONSOLE_AUTH=token: the console's sign-in, whose first link is made once the server listens. Made
+  // before anything that would need closing, as it reads the sign-outs a run before kept and may refuse them.
+  const consoleAuth = config.consoleAuth && bus ? new ConsoleAuth({ settings: config.consoleAuth, publicHost: config.publicHost, audit, now, log }) : undefined;
   const store: SessionStore = new SessionStore(
     (callSid) => {
       const file = safeFileStem(callSid);
@@ -253,8 +256,6 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     sweepDisk();
   }
-  // CONSOLE_AUTH=token: the console's sign-in, whose first link is made once the server listens.
-  const consoleAuth = config.consoleAuth && bus ? new ConsoleAuth({ settings: config.consoleAuth, publicHost: config.publicHost, audit, now, log }) : undefined;
   const deps: HttpDeps = {
     config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
     ...(consoleAuth ? { consoleAuth } : {}),

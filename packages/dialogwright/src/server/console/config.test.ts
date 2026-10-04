@@ -28,6 +28,7 @@ describe('CONSOLE_AUTH', () => {
       sessionKey: null,
       sessionHours: DEFAULT_CONSOLE_SESSION_HOURS,
       linkFile: join(dirname(resolve('traces')), '.console-link', 'link.json'),
+      clientAddress: 'auto',
     });
     expect(DEFAULT_CONSOLE_SESSION_HOURS).toBe(12);
     expect(describeConfig(c)).toContain('console sign-in (CONSOLE_AUTH=token, sessions 12 h, key made at start)');
@@ -71,6 +72,19 @@ describe('CONSOLE_AUTH', () => {
     expect(consoleLinkFileOf({ TRACE_DIR: '/srv/dw/traces' }, '/elsewhere')).toBe('/srv/dw/.console-link/link.json');
     expect(consoleLinkFileOf({ CONSOLE_LINK_FILE: 'x/link.json' }, '/srv/app')).toBe('/srv/app/x/link.json');
     expect(consoleLinkFileOf({}, '/srv/app')).toBe('/srv/app/.console-link/link.json');
+  });
+
+  it('token: CONSOLE_CLIENT_ADDRESS says which header names a client\'s address, auto by default, and is checked', () => {
+    for (const source of ['auto', 'cf-connecting-ip', 'x-forwarded-for', 'remote'] as const) {
+      const c = loadConfig({ ...base, CONSOLE_AUTH: 'token', CONSOLE_CLIENT_ADDRESS: source });
+      expect(c.consoleAuth?.clientAddress).toBe(source);
+      if (source === 'auto') expect(describeConfig(c)).not.toContain('addresses from');
+      else expect(describeConfig(c)).toContain(`addresses from ${source}`);
+    }
+    expect(loadConfig({ ...base, CONSOLE_AUTH: 'token', CONSOLE_CLIENT_ADDRESS: ' X-Forwarded-For ' }).consoleAuth?.clientAddress).toBe('x-forwarded-for');
+    expect(() => loadConfig({ ...base, CONSOLE_AUTH: 'token', CONSOLE_CLIENT_ADDRESS: 'x-real-ip' })).toThrow('CONSOLE_CLIENT_ADDRESS must be auto, cf-connecting-ip, x-forwarded-for or remote, got "x-real-ip"');
+    // Not read in local mode.
+    expect(loadConfig({ ...base, CONSOLE_CLIENT_ADDRESS: 'x-real-ip' })).toEqual(loadConfig(base));
   });
 
   it('token: refuses DASHBOARD=off, with nothing to sign in to', () => {

@@ -153,16 +153,28 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
     if (head) { res.end(); return true; }
     res.write(': connected\n\n');
     res.write(`event: boot\ndata: ${JSON.stringify({ bootId: BOOT_ID })}\n\n`);
-    const off = deps.bus.subscribe((event) => {
+    let off: () => void = () => {};
+    let beat: ReturnType<typeof setInterval> | undefined;
+    const end = (): void => { off(); clearInterval(beat); };
+    // With a sign-in, the session is asked again before each write: a feed whose session has signed
+    // out or expired ends rather than send another event.
+    const stillSignedIn = (): boolean => {
+      if (!auth || auth.sessionOf(req) !== null) return true;
+      end();
+      res.end();
+      return false;
+    };
+    off = deps.bus.subscribe((event) => {
+      if (!stillSignedIn()) return;
       // A stalled viewer is dropped frames, not unbounded memory; the page notices the gap in
       // `seq` and shows a warning rather than reloading on its own (page.html's `es.onmessage`).
       if (res.writableLength > MAX_STREAM_BACKLOG) return;
       res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
     });
     // A comment line keeps a proxy (and ngrok) from closing an idle stream between calls.
-    const beat = setInterval(() => res.write(': hb\n\n'), HEARTBEAT_MS);
+    beat = setInterval(() => { if (stillSignedIn()) res.write(': hb\n\n'); }, HEARTBEAT_MS);
     beat.unref?.();
-    req.on('close', () => { off(); clearInterval(beat); });
+    req.on('close', end);
     return true;
   }
   if (path === '/dashboard/traces') {

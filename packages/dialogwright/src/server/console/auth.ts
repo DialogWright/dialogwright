@@ -1,10 +1,10 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { closeSync, lstatSync, mkdirSync, openSync, renameSync, rmSync, writeSync, chmodSync } from 'node:fs';
+import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync, chmodSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { basename, dirname, join } from 'node:path';
 import type { AuditSink } from '../../run/turn';
 import { isDirectLocalRequest, isLoopbackHost } from '../localOnly';
-import type { ConsoleAuthSettings } from './settings';
+import type { ClientAddressSource, ConsoleAuthSettings } from './settings';
 import { signInPage, type SignInNote } from './pages';
 
 /**
@@ -20,8 +20,11 @@ import { signInPage, type SignInNote } from './pages';
  * The session cookie. `dw_console=v1.<session id>.<expiry>.<HMAC-SHA256>`, signed with
  * CONSOLE_SESSION_KEY (so a session outlives a restart) or a key made when the process starts; HttpOnly,
  * SameSite=Strict, Path=/dashboard, Max-Age CONSOLE_SESSION_HOURS, and Secure except on a laptop
- * (PUBLIC_HOST a name for this machine) for a plain http request made on it. Signing out clears it and
- * refuses that session from then on.
+ * (PUBLIC_HOST a name for this machine) for a plain http request made on it. A cookie whose expiry is
+ * further off than CONSOLE_SESSION_HOURS allows (the hours were lowered since) is refused. Signing out
+ * clears it and refuses that session from then on, and ends a live feed it has open; with
+ * CONSOLE_SESSION_KEY, the sign-outs are kept beside the link file (`signed-out.json`, the SHA-256 of
+ * each session id with its expiry), so a restart does not let a signed-out cookie back in.
  *
  * Without a session, the console's page answers 302 to the sign-in page and everything else under
  * /dashboard (the live feed, the traces, the boot id, the view module) answers 401. The sign-in page
@@ -29,8 +32,12 @@ import { signInPage, type SignInNote } from './pages';
  * Content-Security-Policy, X-Frame-Options DENY, Referrer-Policy no-referrer, Cache-Control no-store and
  * nosniff.
  *
- * Failed sign-ins are limited: ten in a quarter of an hour from one address (the tunnel's
- * cf-connecting-ip, else the last x-forwarded-for, else the socket's), then a hundred in a quarter of an hour
+ * A sign-in or sign-out form is refused when it comes from another site's page: an Origin of another
+ * site, or Sec-Fetch-Site other than same-origin (which a browser sends whatever the page's policy).
+ *
+ * Failed sign-ins are limited: ten in a quarter of an hour from one address (read as
+ * CONSOLE_CLIENT_ADDRESS says: by default the tunnel's cf-connecting-ip, else the last x-forwarded-for,
+ * else the socket's), then a hundred in a quarter of an hour
  * through the tunnel for everyone; past either, an attempt is refused (429) before its code is looked
  * at. A request made on this machine is held only to its own address's limit, so an owner at the server
  * can always sign in.
@@ -56,6 +63,10 @@ export const LOGOUT_PATH = '/dashboard/logout';
 /** The local-only endpoint `pnpm console:link` posts to; its key goes in this header. */
 export const LINK_PATH = '/dashboard/link';
 export const LINK_KEY_HEADER = 'x-console-key';
+/** The file beside the link file that keeps sign-outs across a restart (with CONSOLE_SESSION_KEY). */
+export const SIGNED_OUT_FILE = 'signed-out.json';
+/** How far a cookie's expiry may run past now plus CONSOLE_SESSION_HOURS: the server's clock stepping back a little. */
+const EXPIRY_SLACK_MS = 5 * 60 * 1000;
 /** How long a sign-in link works. */
 export const CODE_TTL_MS = 10 * 60 * 1000;
 /** The window failed sign-ins are counted in, and how many from one address, and in all, it allows. */
@@ -130,6 +141,9 @@ const sha256 = (s: string): Buffer => createHash('sha256').update(s, 'utf8').dig
 /** A short hash, for a log or the audit: enough to tell two apart, nothing to sign in with. */
 const shortHash = (s: string, length = 8): string => createHash('sha256').update(s, 'utf8').digest('hex').slice(0, length);
 
+/** What a signed-out session is kept by, in memory and in the sign-out file: never its id. */
+const revocationKey = (id: string): string => createHash('sha256').update(`signed-out:${id}`, 'utf8').digest('hex');
+
 /** Whether two strings are equal, compared in constant time (their hashes, so their lengths do not show). */
 function sameSecret(given: string, expected: string): boolean {
   return timingSafeEqual(sha256(given), sha256(expected));
@@ -141,12 +155,16 @@ function header(req: IncomingMessage, name: string): string | undefined {
 }
 
 /**
- * The address a request came from: the tunnel's word for it, else the socket's. Cloudflare's
- * cf-connecting-ip first (its edge sets it, whatever the client sent), else the last x-forwarded-for
- * entry, the one the tunnel itself added (any before it are the client's own say).
+ * The address a request came from, read as CONSOLE_CLIENT_ADDRESS says (settings.ts
+ * `ClientAddressSource`): `auto` takes Cloudflare's cf-connecting-ip (its edge sets it, whatever the
+ * client sent), else the last x-forwarded-for entry (the one the tunnel itself added; any before it are
+ * the client's own say), else the socket's; `cf-connecting-ip` and `x-forwarded-for` take that header
+ * alone, else the socket's; `remote` the socket's alone.
  */
-function clientAddress(req: IncomingMessage): string {
-  const raw = header(req, 'cf-connecting-ip') ?? header(req, 'x-forwarded-for')?.split(',').at(-1) ?? req.socket.remoteAddress ?? '';
+export function clientAddressOf(req: IncomingMessage, source: ClientAddressSource = 'auto'): string {
+  const cf = source === 'auto' || source === 'cf-connecting-ip' ? header(req, 'cf-connecting-ip') : undefined;
+  const xff = source === 'auto' || source === 'x-forwarded-for' ? header(req, 'x-forwarded-for')?.split(',').at(-1) : undefined;
+  const raw = cf ?? xff ?? req.socket.remoteAddress ?? '';
   const a = raw.trim();
   // An address, not whatever a client put in a header: it reaches the audit and a map's keys.
   return /^[0-9A-Fa-f:.]{2,45}$/.test(a) ? a : 'unknown';
@@ -167,10 +185,9 @@ function readForm(req: IncomingMessage): Promise<URLSearchParams | null> {
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => {
       size += c.length;
-      if (size > MAX_FORM) {
-        resolve(null);
-        req.destroy();
-      } else chunks.push(c);
+      // Past the limit nothing more is kept: the caller answers 413 and closes the connection.
+      if (size > MAX_FORM) resolve(null);
+      else chunks.push(c);
     });
     req.on('end', () => resolve(new URLSearchParams(Buffer.concat(chunks).toString('utf8'))));
     req.on('error', reject);
@@ -204,11 +221,16 @@ export function writeOwnerOnly(file: string, content: string, platform: NodeJS.P
   const temp = join(dir, `.link-${randomBytes(8).toString('hex')}.tmp`);
   const fd = openSync(temp, 'wx', 0o600);
   try {
-    writeSync(fd, content);
-  } finally {
-    closeSync(fd);
+    try {
+      writeSync(fd, content);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(temp, file);
+  } catch (e) {
+    rmSync(temp, { force: true });
+    throw e;
   }
-  renameSync(temp, file);
 }
 
 /** What the link file holds: the current link (null once used), the server's port, and the key that mints a new one. */
@@ -230,8 +252,10 @@ export class ConsoleAuth implements ConsoleGate {
   private port = 0;
   private pending: { digest: Buffer; expiresAt: number; hash: string } | null = null;
   private retired: Array<{ digest: Buffer; reason: 'used' | 'expired' | 'replaced' }> = [];
-  /** Signed-out sessions, refused until they would have expired. */
+  /** Signed-out sessions by the SHA-256 of their id, refused until they would have expired. */
   private readonly revoked = new Map<string, number>();
+  /** Where the sign-outs are kept across a restart: only with CONSOLE_SESSION_KEY (else a restart signs everyone out). */
+  private readonly signedOutFile: string | null;
   /** Sessions whose first live feed has been recorded. */
   private readonly live = new Map<string, number>();
   private readonly failures = new Map<string, number[]>();
@@ -244,6 +268,8 @@ export class ConsoleAuth implements ConsoleGate {
     this.now = o.now ?? (() => Date.now());
     this.log = o.log ?? (() => {});
     this.audit = o.audit ?? null;
+    this.signedOutFile = o.settings.sessionKey ? join(dirname(o.settings.linkFile), SIGNED_OUT_FILE) : null;
+    this.loadSignedOut();
   }
 
   /** Where the link file is. */
@@ -295,7 +321,8 @@ export class ConsoleAuth implements ConsoleGate {
       const given = Buffer.from(mac, 'base64url');
       if (given.length !== expected.length || !timingSafeEqual(given, expected)) continue;
       const expiresAt = Number(exp) * 1000;
-      if (expiresAt <= now || this.revoked.has(id)) continue;
+      if (expiresAt <= now || expiresAt > now + this.o.settings.sessionHours * 3_600_000 + EXPIRY_SLACK_MS) continue;
+      if (this.revoked.has(revocationKey(id))) continue;
       return { id, hash: shortHash(`session:${id}`, 16), expiresAt };
     }
     return null;
@@ -348,7 +375,7 @@ export class ConsoleAuth implements ConsoleGate {
     if (method !== 'POST') return this.text(res, 405, 'method not allowed', { allow: 'GET, HEAD, POST' });
     if (!this.originOk(req)) return this.text(res, 403, 'a sign-in must come from the sign-in page');
     if (!(header(req, 'content-type') ?? '').startsWith('application/x-www-form-urlencoded')) return this.text(res, 415, 'a sign-in is sent as a form');
-    const from = clientAddress(req);
+    const from = this.addressOf(req);
     const local = isDirectLocalRequest(req, this.o.publicHost);
     const via = local ? 'local' : 'tunnel';
     const lock = this.locked(from, local);
@@ -357,7 +384,16 @@ export class ConsoleAuth implements ConsoleGate {
       return this.page(req, res, 429, { note: 'limited' });
     }
     const form = await readForm(req);
-    if (form === null) return this.text(res, 413, 'too large');
+    if (form === null) {
+      res.on('finish', () => req.destroy());
+      return this.text(res, 413, 'too large', { connection: 'close' });
+    }
+    // Again, now the form is read: attempts sent side by side all passed the first look before any failed.
+    const lockNow = this.locked(from, local);
+    if (lockNow !== null) {
+      this.noteLock(lockNow, from, via);
+      return this.page(req, res, 429, { note: 'limited' });
+    }
     const code = (form.get('code') ?? '').slice(0, 256);
     const verdict = this.redeem(code);
     if (verdict !== 'ok') {
@@ -385,8 +421,9 @@ export class ConsoleAuth implements ConsoleGate {
     const session = this.sessionOf(req);
     if (session) {
       this.note('console', { event: 'sign_out', session: session.hash });
-      this.revoked.set(session.id, session.expiresAt);
+      this.revoked.set(revocationKey(session.id), session.expiresAt);
       prune(this.revoked, (exp) => exp <= this.now());
+      this.saveSignedOut();
     }
     res.setHeader('set-cookie', `${CONSOLE_COOKIE}=; ${this.cookieAttributes(req)}; Max-Age=0`);
     this.redirect(res, `${LOGIN_PATH}?out=1`);
@@ -399,7 +436,7 @@ export class ConsoleAuth implements ConsoleGate {
     // pnpm console:link sends no Origin; a browser's page always does.
     const given = header(req, LINK_KEY_HEADER);
     if (header(req, 'origin') !== undefined || given === undefined || !sameSecret(given, this.linkKey)) {
-      this.note('console', { event: 'link_refused', from: clientAddress(req) });
+      this.note('console', { event: 'link_refused', from: this.addressOf(req) });
       return this.text(res, 403, 'the link file\'s key is needed: run pnpm console:link');
     }
     const made = this.mint('console:link');
@@ -409,6 +446,10 @@ export class ConsoleAuth implements ConsoleGate {
   }
 
   // ---------- codes, sessions, limits ----------
+
+  private addressOf(req: IncomingMessage): string {
+    return clientAddressOf(req, this.o.settings.clientAddress);
+  }
 
   private base(): string {
     return isLoopbackHost(this.o.publicHost) ? `http://localhost:${this.port}` : `https://${this.o.publicHost}`;
@@ -478,8 +519,14 @@ export class ConsoleAuth implements ConsoleGate {
 
   // ---------- answers ----------
 
-  /** A form post comes from this console's own page: no Origin, `null` (a page under no-referrer), or this server's own. */
+  /**
+   * A form post comes from this console's own page: Sec-Fetch-Site, when sent, is same-origin; and the
+   * Origin is absent, `null` (a page under no-referrer), or this server's own.
+   */
   private originOk(req: IncomingMessage): boolean {
+    // A browser says where a request came from, whatever the page's referrer policy; a page cannot change it.
+    const site = header(req, 'sec-fetch-site');
+    if (site !== undefined && site !== 'same-origin' && site !== 'none') return false;
     const origin = header(req, 'origin');
     if (origin === undefined || origin === 'null') return true;
     if (origin === `https://${this.o.publicHost}`) return true;
@@ -513,6 +560,44 @@ export class ConsoleAuth implements ConsoleGate {
 
   private note(callId: string, detail: Record<string, string | number | boolean | null>): void {
     this.audit?.append(callId, 'console', { type: 'console_access', detail });
+  }
+
+  /** Reads the sign-outs a run before this one kept; a file others may write, or one not the server's, is refused. */
+  private loadSignedOut(): void {
+    const file = this.signedOutFile;
+    if (file === null) return;
+    let text: string;
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw e;
+    }
+    if (process.platform !== 'win32') {
+      const st = lstatSync(file);
+      if (process.getuid && st.uid !== process.getuid()) throw new Error(`${file} belongs to another account: remove it, or run the server as its owner`);
+      if (st.mode & 0o022) throw new Error(`${file} can be written by others (mode ${(st.mode & 0o777).toString(8)}): it keeps who signed out; remove it (signed-out sessions then work until they expire) or chmod 600 ${file}`);
+    }
+    const now = this.now();
+    try {
+      const held = JSON.parse(text) as { v?: unknown; sessions?: unknown };
+      if (held.v !== 1 || !Array.isArray(held.sessions)) throw new Error('shape');
+      for (const s of held.sessions as Array<{ hash?: unknown; expiresAt?: unknown }>) {
+        const at = typeof s.expiresAt === 'string' ? Date.parse(s.expiresAt) : NaN;
+        if (typeof s.hash !== 'string' || !/^[0-9a-f]{64}$/.test(s.hash) || Number.isNaN(at)) throw new Error('entry');
+        if (at > now) this.revoked.set(s.hash, at);
+      }
+    } catch {
+      throw new Error(`${file} is not a sign-out file the server wrote: remove it (signed-out sessions then work until they expire, or change CONSOLE_SESSION_KEY to sign everyone out)`);
+    }
+    prune(this.revoked, (exp) => exp <= now);
+  }
+
+  /** Keeps the sign-outs that have not expired, for the next run (with CONSOLE_SESSION_KEY). */
+  private saveSignedOut(): void {
+    if (this.signedOutFile === null) return;
+    const sessions = [...this.revoked].map(([hash, at]) => ({ hash, expiresAt: new Date(at).toISOString() }));
+    writeOwnerOnly(this.signedOutFile, `${JSON.stringify({ v: 1, sessions }, null, 2)}\n`);
   }
 
   private writeLinkFile(url: string | null, expiresAt: number | null): void {
