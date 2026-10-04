@@ -78,13 +78,15 @@ describe('the review page\'s access', () => {
     const form = { host: `127.0.0.1:${server.port}`, 'content-type': 'application/x-www-form-urlencoded' };
     expect(await raw(server, { method: 'POST', path: '/reviewer', headers: { ...form, origin: 'https://evil.example' }, body: `token=${server.token}&by=A+B&owner=C` })).toMatchObject({ status: 403, body: 'a change must come from the review page itself\n' });
     expect(await raw(server, { method: 'POST', path: '/reviewer', headers: { ...form, 'content-type': 'application/json' }, body: '{}' })).toMatchObject({ status: 415 });
+    // The page's own form post, as a browser sends it under the page's referrer policy (an origin, never "null").
+    expect((await raw(server, { method: 'POST', path: '/reviewer', headers: { ...form, origin: `http://127.0.0.1:${server.port}` }, body: `token=${server.token}&by=A+B&owner=C` })).status).toBe(303);
     expect(await raw(server, { method: 'DELETE', path: `/${t}`, headers: form })).toMatchObject({ status: 405 });
   });
 
   it('serves pages that load nothing from elsewhere and are not cached, with every field labelled', async () => {
     const res = await raw(server, { path: `/?token=${server.token}`, headers: { host: `127.0.0.1:${server.port}` } });
     expect(res.headers['content-security-policy']).toMatch(/^default-src 'none'; style-src 'nonce-[^']+'; script-src 'nonce-[^']+'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'$/);
-    expect([res.headers['cache-control'], res.headers['referrer-policy'], res.headers['x-frame-options']]).toEqual(['no-store', 'no-referrer', 'DENY']);
+    expect([res.headers['cache-control'], res.headers['referrer-policy'], res.headers['x-frame-options']]).toEqual(['no-store', 'same-origin', 'DENY']);
     expect(res.body).not.toMatch(/https?:\/\/(?!127\.0\.0\.1)[^"' ]+\.(js|css)/);
     expect(res.body).toContain('<html lang="en">');
     expect(res.body).toContain('<main id="main">');

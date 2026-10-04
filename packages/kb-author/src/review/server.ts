@@ -27,7 +27,8 @@ import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, 
  *   it was opened (actions.ts seenOf: the file as it is on disk, with its source section's text), and
  *   the change is refused when it no longer matches ("changed since you opened it: reload").
  * - Its pages load nothing from anywhere else (a Content-Security-Policy says so), are not cached and
- *   send no Referer.
+ *   send a Referer to no other site (same-origin: under no-referrer a browser's own form post says
+ *   `Origin: null`).
  * - The Gaps tab (what callers asked that the knowledge base did not answer, from the traces) is read
  *   through the same token, and shows the callers' words as the traces recorded them.
  * - The operator console is not where it lives: the console has no access control until Phase 8,
@@ -159,7 +160,10 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
     res.writeHead(status, {
       'content-type': type,
       'cache-control': 'no-store',
-      'referrer-policy': 'no-referrer',
+      // same-origin, not no-referrer: under no-referrer a browser sends `Origin: null` with the page's
+      // own form posts, which the Origin check below would refuse. Nothing leaves for another site:
+      // a link off the page carries rel="noreferrer".
+      'referrer-policy': 'same-origin',
       'x-content-type-options': 'nosniff',
       'x-frame-options': 'DENY',
       'content-security-policy': `default-src 'none'; style-src 'nonce-${nonce ?? 'none'}'; script-src 'nonce-${nonce ?? 'none'}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
@@ -168,7 +172,7 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
   };
   const refuse = (res: ServerResponse, status: number, why: string): void => send(res, status, `${why}\n`, 'text/plain; charset=utf-8');
   const redirect = (res: ServerResponse, path: string): void => {
-    res.writeHead(303, { location: `${path}?token=${encodeURIComponent(token)}`, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+    res.writeHead(303, { location: `${path}?token=${encodeURIComponent(token)}`, 'cache-control': 'no-store', 'referrer-policy': 'same-origin' });
     res.end();
   };
 
