@@ -336,6 +336,33 @@ describe('kb:approve a draft', () => {
     expect(logOf(kb)).toEqual([]);
   });
 
+  it('refuses a draft with no excerpt, one too short to hold its answer to, and one missing a number its answer says', async () => {
+    const kb = kbCopy();
+    const pending = join(kb, 'pending/late-fees-junior-2025.yaml');
+    const go = () => approve(kb, 'late-fees-junior-2025', '--by', 'Jane Smith', '--owner', 'Patron Services');
+    writeFileSync(pending, DRAFT.replace('  excerpt: Junior cards are not charged late fees.\n', ''));
+    expect((await go()).err).toEqual(['late-fees-junior-2025: refused: a draft quotes the words of its source section that support it: add drafted.excerpt']);
+    writeFileSync(pending, DRAFT.replace('excerpt: Junior cards are not charged late fees.', 'excerpt: late fees.'));
+    expect((await go()).err).toEqual([
+      'late-fees-junior-2025: refused: its excerpt cannot hold its answer to its source',
+      '  its excerpt "late fees." is too short to hold the answer to: quote at least 4 words and 20 characters of the section',
+    ]);
+    // The adult fees: the answer's amounts are in the section, but not in the words it quotes.
+    const adult = DRAFT.replace('applies: { card: junior }', 'applies: { card: adult }').replace('effective: { from: 2025-01-01, to: 2025-12-31 }', 'effective: { from: 2024-01-01, to: 2024-12-31 }').replace('section: "3.2"', 'section: "3.1"').replace('There are no late fees on a junior card.', 'Late books on an adult card cost 25 cents a day, up to 5 dollars a book.');
+    writeFileSync(pending, adult.replace('excerpt: Junior cards are not charged late fees.', 'excerpt: An adult card is charged 25 cents for each day an item is overdue'));
+    expect((await go()).err).toEqual([
+      'late-fees-junior-2025: refused: its excerpt cannot hold its answer to its source',
+      '  its excerpt does not say 5, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes',
+    ]);
+    expect(existsSync(pending)).toBe(true);
+    expect(logOf(kb)).toEqual([]);
+    // kb:status says why it cannot be approved as it is.
+    expect((await bin(['kb:status', kb], kb)).out).toContain('    ! its excerpt does not say 5, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes');
+    // Quoting the whole sentence, with its amounts: approved.
+    writeFileSync(pending, adult.replace('excerpt: Junior cards are not charged late fees.', 'excerpt: An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.'));
+    expect((await go()).code).toBe(0);
+  });
+
   it('refuses a draft that would fail check (an overlap with a passage in force), or that has a passage\'s id', async () => {
     const kb = kbCopy();
     writeFileSync(join(kb, 'pending/late-fees-junior-2027.yaml'), DRAFT.replace('id: late-fees-junior-2025', 'id: late-fees-junior-2027').replace('effective: { from: 2025-01-01, to: 2025-12-31 }', 'effective: { from: 2027-01-01 }'));

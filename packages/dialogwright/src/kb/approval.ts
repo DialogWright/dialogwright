@@ -6,6 +6,7 @@ import { DEFAULT_LOCALE, loadAppFolder, loadKnowledgeFolder, parseKbFile, type L
 import { closest, formatProblem, positionOf, type DataPath, type Problem } from '../define/problems';
 import { PENDING_TOPICS_FILE, passageOf, sourceTextOf } from './folder';
 import { collapseWhitespace } from './hash';
+import { excerptProblems, NO_EXCERPT } from './excerpt';
 import { APPROVALS_LOG, approvalLogged, logLineOf, parseApprovalLog, type ApprovalLogLine } from './log';
 import { approveCommandFor, EDITED_WHAT, kbContentProblems, kbLinkProblems, kbStateProblems, type Locate } from './rules';
 import { KB_FILE_ID, type KbPassageYaml, type KbPendingYaml } from './schema';
@@ -32,8 +33,10 @@ import type { KbPassage, KnowledgeBase } from './types';
  * It refuses, writing nothing for that id: a `--by` that names no person (an assistant, a tool);
  * an id that is no passage or draft; a passage that would fail `pnpm check` for anything but its
  * approval (its file, its topic and source, its applies and dates, an overlap with another passage,
- * a locale the app does not speak, an intent that says it); a draft whose `drafted.excerpt` is not in
- * its source section word for word; a knowledge base that does not load. Edits keep the file's
+ * a locale the app does not speak, an intent that says it); a draft with no `drafted.excerpt`, or one
+ * not in its source section word for word, shorter than 4 words and 20 characters, or missing a
+ * number its answer says (./excerpt.ts, as kb:draft and kb:review hold it); a knowledge base that
+ * does not load. Edits keep the file's
  * comments and layout (the yaml library's Document). Each id is approved on its own, in the order
  * given, so one refused leaves the others as they are.
  */
@@ -290,7 +293,9 @@ function approveDraft(place: KbPlace, loaded: Loaded, id: string, pendingFile: s
   // The excerpt the drafter quoted is in the section, word for word.
   const excerpt = draft.drafted.excerpt;
   const sectionText = sourceTextOf(kb.sources, draft.source);
-  if (excerpt !== undefined && sectionText !== null && !excerptInSource(excerpt, sectionText)) {
+  // A draft is held to the words of its source it quotes: it has them (./excerpt.ts).
+  if (excerpt === undefined || collapseWhitespace(excerpt) === '') return { id, outcome: 'refused', reason: NO_EXCERPT, problems: [] };
+  if (sectionText !== null && !excerptInSource(excerpt, sectionText)) {
     return {
       id,
       outcome: 'refused',
@@ -298,6 +303,9 @@ function approveDraft(place: KbPlace, loaded: Loaded, id: string, pendingFile: s
       problems: ['quote the section exactly in drafted.excerpt (or correct source.section), then review the answer against it again'],
     };
   }
+  // Long enough to hold the answer to, and saying every number the answer says.
+  const weak = excerptProblems(excerpt, draft.answer);
+  if (weak.length > 0) return { id, outcome: 'refused', reason: 'its excerpt cannot hold its answer to its source', problems: weak };
 
   const { drafted: _drafted, ...fields } = draft;
   const yaml: KbPassageYaml = fields;
@@ -376,6 +384,7 @@ export function pendingDrafts(place: KbPlace, kb: KnowledgeBase | null): Pending
     const section = kb ? sourceTextOf(kb.sources, draft.source) : null;
     if (kb && section === null) problems.push(`its source, ${base}/sources/${draft.source.document}.yaml section "${draft.source.section}", is not there`);
     if (draft.drafted.excerpt !== undefined && section !== null && !excerptInSource(draft.drafted.excerpt, section)) problems.push(`its excerpt is not in ${base}/sources/${draft.source.document}.yaml section "${draft.source.section}" word for word`);
+    problems.push(...excerptProblems(draft.drafted.excerpt, draft.answer));
     return { id, file, draft, problems };
   });
 }
