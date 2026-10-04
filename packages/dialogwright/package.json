@@ -48,7 +48,8 @@
     "kb:index": "tsx src/define/cli.ts kb:index",
     "kb:bakeoff": "tsx src/define/cli.ts kb:bakeoff",
     "kb:approve": "tsx src/define/cli.ts kb:approve",
-    "kb:status": "tsx src/define/cli.ts kb:status"
+    "kb:status": "tsx src/define/cli.ts kb:status",
+    "audit:verify": "tsx src/audit/verifyCli.ts"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

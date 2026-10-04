@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http';
+import { applyEnvFile, envFilePathOf } from './envFile';
 import { join } from 'node:path';
 import { consoleExposure, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
 import { createRequestHandler } from './http';
@@ -316,16 +317,70 @@ export interface Sidecars {
 }
 
 /**
+ * A repeat of a stop signal this soon after the first is the same stop, delivered again: a terminal's
+ * Ctrl-C, and a service manager that signals every process of the service, reach pnpm, tsx and the
+ * server at once, and pnpm and tsx each pass a signal on too (tsx drops a copy its child already had,
+ * on a 30 ms wait). A person's second Ctrl-C comes later than this; it exits at once.
+ */
+export const SIGNAL_REPEAT_MS = 1_000;
+/** How long a crash waits for the server to close before the process exits anyway. */
+export const CRASH_CLOSE_MS = 3_000;
+
+/** An error as the log takes it: its stack (which names no setting), or what it is. */
+function described(err: unknown): string {
+  return err instanceof Error ? (err.stack ?? `${err.name}: ${err.message}`) : String(err);
+}
+
+/**
  * The process entry point, run by an app's launcher after it has registered the app. `start`, if
  * given, starts what the app runs beside the server, once the config has loaded.
+ *
+ * It reads a settings file first when ENV_FILE or `--env-file <path>` names one (envFile.ts; a
+ * variable already in the environment wins). A crash (an uncaught exception or an unhandled
+ * rejection) is logged with its stack and exits 1 after a short best-effort close, so the service
+ * manager restarts the process. The first SIGINT or SIGTERM stops the server; a second one exits at
+ * once, 130 for SIGINT and 143 for SIGTERM.
  */
 export async function main(start?: (config: ServerConfig) => Promise<Sidecars>): Promise<void> {
+  // What a crash closes, once there is something to close.
+  let closeOnCrash: (() => Promise<unknown>) | null = null;
+  let crashed = false;
+  const crash = (kind: string) => (err: unknown): void => {
+    console.error(`[server] fatal: ${kind}: ${described(err)}`);
+    if (crashed) return;
+    crashed = true;
+    // Set first: the deadline timer does not hold the process open, so it may end on its own before process.exit.
+    process.exitCode = 1;
+    const deadline = new Promise<void>((resolve) => setTimeout(resolve, CRASH_CLOSE_MS).unref());
+    void Promise.race([Promise.resolve().then(() => closeOnCrash?.()), deadline]).catch(() => {}).finally(() => process.exit(1));
+  };
+  process.on('uncaughtException', crash('uncaught exception'));
+  process.on('unhandledRejection', crash('unhandled rejection'));
   try {
+    const envFile = envFilePathOf(process.argv.slice(2), process.env);
+    if (envFile !== null) applyEnvFile(envFile, process.env);
     const config = loadConfig(process.env);
+    if (envFile !== null) console.log(`[server] settings from ${envFile} (a variable already in the environment wins over the file)`);
     console.log(`[server] ${describeConfig(config)}`);
     if (!config.signatureCheck) console.log('[server] WARNING: webhook signature validation is OFF');
     const sidecars = start ? await start(config) : {};
     const running = await startServer(config, sidecars.overrides ?? {});
+    closeOnCrash = () => Promise.allSettled([running.close(), sidecars.close?.()]);
+    let stoppedAt: number | null = null;
+    const stop = (signal: NodeJS.Signals): void => {
+      const at = Date.now();
+      if (stoppedAt === null) {
+        stoppedAt = at;
+        console.log(`[server] shutting down (${signal}; a second one stops at once)`);
+        void Promise.allSettled([running.close(), sidecars.close?.()]).then(() => process.exit(0));
+        return;
+      }
+      if (at - stoppedAt < SIGNAL_REPEAT_MS) return;
+      console.log(`[server] forced exit (${signal} while shutting down)`);
+      process.exit(signal === 'SIGINT' ? 130 : 143);
+    };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
     const base = publicBase(config, running.port);
     const webhooks = config.voiceProviders.map((id) => `${base}/voice/${id}`).join(', ');
     const legacy = config.voiceProviders.includes('twilio') ? ' (Twilio also on /voice)' : '';
@@ -333,12 +388,6 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
     const consoleBase = config.consoleLocalOnly ? localBase(running.port) : base;
     if (running.bus) console.log(`[server] console ${consoleBase}/dashboard`);
     for (const r of running.routes) console.log(`[server] ${r.label} ${(r.localOnly ? consoleBase : base)}${r.path}`);
-    const stop = () => {
-      console.log('[server] shutting down');
-      void Promise.allSettled([running.close(), sidecars.close?.()]).then(() => process.exit(0));
-    };
-    process.on('SIGINT', stop);
-    process.on('SIGTERM', stop);
   } catch (e) {
     console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
