@@ -374,6 +374,11 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       send(conn.ws, null, { type: 'error', code: 'session_unknown', message: 'that chat has ended' });
       return;
     }
+    // A socket a resume has replaced speaks for the session no more.
+    if (entry.socket !== conn.ws) {
+      send(conn.ws, null, { type: 'error', code: 'session_unknown', message: 'this chat goes on on another connection' });
+      return;
+    }
     if (m.type === 'text') {
       // A one-time code typed at the code prompt is masked before the frame log sees it, as a spoken one is (adapter.ts maskCodeFrame).
       const masked = entry.session.promptedFor === 'otp' ? maskSpokenCode(m.text, spokenCodeMinDigits(codeLengthOf(appOf(entry.session)))).text : m.text;

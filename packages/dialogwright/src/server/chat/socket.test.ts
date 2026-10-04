@@ -242,6 +242,21 @@ describe('the chat endpoint', () => {
     expect((e.received[1] as Extract<Msg, { type: 'ready' }>).session).not.toBe(ready.session);
   });
 
+  it('a second resume takes the chat over: the socket it replaced is closed', async () => {
+    const { url } = await start();
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const ready = c.received[0] as Extract<Msg, { type: 'ready' }>;
+    const d = await ChatClient.connect(url);
+    d.send({ type: 'start', v: 1, resume: ready.resume });
+    await d.until((r) => r.some((m) => m.type === 'ready'));
+    expect(await c.closed).toEqual({ code: 1000, reason: 'resumed elsewhere' });
+    d.send({ type: 'ping' });
+    await d.until((r) => r.some((m) => m.type === 'pong'));
+    expect(running!.chat!.liveCount()).toBe(1);
+  });
+
   it('closes after ten malformed messages, and tells a person who typed too much without counting it', async () => {
     const { url } = await start();
     const c = await ChatClient.connect(url);
