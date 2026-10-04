@@ -375,6 +375,22 @@ describe('turn', () => {
     expect(r.decision).toMatchObject({ promptId: 'anything_else', acks: [{ promptId: 'window_open', vars: { part: 'in the afternoon' } }] });
   });
 
+  it('walks the ladder when the caller only repeats a value the form already holds', () => {
+    // "tomorrow", again, at the time-of-day question: the day it fills is the day already held, so
+    // the turn answered nothing, and the question goes to its retry, its keypad rung and a person.
+    const tomorrowOnly: AnswerMap = { intentChange: ANSWERING, ...TOMORROW_MORNING, deliveryPart: choice({ none: 0.95, morning: 0.05 }) };
+    let r = say(atDeliveryDay().session, 'tomorrow', tomorrowOnly);
+    expect(r.decision).toMatchObject({ promptId: 'ask_deliveryPart' });
+    r = say(r.session, 'tomorrow', tomorrowOnly);
+    expect(r.decision).toMatchObject({ promptId: 'ask_deliveryPart_retry' });
+    expect(r.session.slots.deliveryPart!.attempts).toBe(1);
+    expect(r.session.slots.deliveryDay!.value).not.toBeNull();
+    r = say(r.session, 'tomorrow', tomorrowOnly);
+    expect(r.decision).toMatchObject({ promptId: 'ask_deliveryPart_dtmf' });
+    r = say(r.session, 'tomorrow', tomorrowOnly);
+    expect(r.decision).toMatchObject({ kind: 'handoff', reason: 'max-attempts' });
+  });
+
   it('asks which parcel when two are equally likely, offering both', () => {
     const r = say(atParcelSelect().session, 'the books one or maybe the lamp', {
       intentChange: ANSWERING, parcelChoice: choice({ parcel_7101: 0.48, parcel_7103: 0.42, none: 0.1 }),

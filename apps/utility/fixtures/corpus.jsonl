@@ -58,7 +58,7 @@
 {"id": "fd-01", "text": "next Friday", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "weekday", "firstDateWeekday": "friday"}}
 {"id": "fd-02", "text": "tomorrow", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "relative_day", "firstDateRelative": "tomorrow"}}
 {"id": "fd-03", "text": "the first of October", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "october", "firstDateDay": "1"}}
-{"id": "fd-04", "text": "I'm not sure, whenever works", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "knownGap": {"reason": "'whenever works' at the first-date prompt: the model reads count three (0.62), the value the form already holds, and no date; the engine counts the unchanged count as progress, so ask_firstDate is said again instead of its retry", "outcome": {"promptId": "ask_firstDate"}}}
+{"id": "fd-04", "text": "I'm not sure, whenever works", "intent": "none", "context": "set_up_plan", "prompted": "firstDate"}
 {"id": "fd-05", "text": "no wait, make it the twelfth of October", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "october", "firstDateDay": "12"}}
 {"id": "fd-06", "text": "the twentieth of November", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "november", "firstDateDay": "20"}}
 {"id": "fd-07", "text": "October eighteenth", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "october", "firstDateDay": "18"}}

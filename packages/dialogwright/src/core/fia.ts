@@ -31,7 +31,7 @@ export interface FillResult {
   events: FillEvent[];
   acks: Ack[];
   disambiguate: { slot: SlotId; a: SlotCandidate; b: SlotCandidate } | null;
-  /** true if any slot was filled, narrowed to a window, or needs disambiguation, or asked for help */
+  /** true if any slot was filled with a value it did not hold, narrowed to a new window, or needs disambiguation, or asked for help */
   progress: boolean;
   /** A help prompt to play in place of the question, for the slot the caller was just asked. */
   help: { slot: SlotId; promptId: string } | null;
@@ -181,14 +181,19 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         // and silent, but its readback is the form's final confirm rather than a confirm_<slot>
         // prompt of its own. A value already confirmed and spoken again unchanged stays
         // confirmed, so repeating it does not re-open the readback.
+        // Only a value the slot did not already hold is progress, as with a window below and a
+        // correction at the summary (correctingFill, turn.ts): a value spoken again unchanged (one
+        // the form holds, heard again in answer to another slot's question) answers nothing, and
+        // counting it would hold the prompted slot's `attempts` and re-ask its question forever.
         const policy = spec.spokenConfirm;
+        const unchanged = slot.value === outcome.value && slot.window === null;
         const keepConfirmed = slot.confirmed && slot.value === outcome.value;
         slot.value = outcome.value;
         slot.display = outcome.display;
         slot.confirmed = keepConfirmed || (policy === 'by-confidence' && outcome.confirm === 'none');
         slot.window = null;
         if (policy === 'by-confidence' && outcome.confirm === 'implicit') acks.push({ promptId: `ack_${spec.id}`, vars: { [spec.id]: outcome.display } });
-        progress = true;
+        if (!unchanged) progress = true;
         break;
       }
       case 'window': {

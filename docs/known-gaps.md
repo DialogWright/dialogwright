@@ -33,12 +33,11 @@ From the first recording (`jev-1.13.0`). The other differences that recording sh
 
 | Entry | Utterance | What happens | Caller impact | Category | Candidate fix |
 |---|---|---|---|---|---|
-| fd-04 | "I'm not sure, whenever works" at the first-date prompt | the model reads count three (0.62), the value the form already holds, and the engine counts an unchanged fill as progress | Asked the plain question again instead of its retry; repeated, the ladder would never reach the keypad or a person | Engine: progress | Count a fill that leaves the value unchanged as no progress, as the window and summary cases already do |
 | om-07 | "where can I check when power comes back" | outage_map 0.58 against ask_question 0.41; an informational answer needs 0.6 and has no confirm band | Hears `nomatch_open` and asks again | Threshold borderline | A confirm band for informational intents; the outage map's criteria could name restoration times (a re-recording) |
 | oh-05 | "are you open on Saturday" | answered, but the opener's over-answer also fills `firstDate` with the Saturday | None now; a later arrangement would read that day back at its summary | Over-answer on the opener | Clear the slots a turn filled for a form it did not enter |
 | rp-07 | "pardon" inside a form | repeat_prompt 0.44 against none 0.56 (confusedByPrompt 0.79) | Hears the question's retry instead of a replay: the question again, in other words | Terse | A bare "pardon", "sorry?" or "what?" is a repeat request (a code rule), or name them in the criteria (a re-recording) |
 
-Recorded run at the time of writing: corpus 152/156 matching plus these 4 allowed; scenarios 52/52 pass and match.
+Recorded run at the time of writing: corpus 153/156 matching plus these 3 allowed; scenarios 52/52 pass and match. `fd-04` (a value said again unchanged counted as progress) was closed in the engine: a fill that leaves a slot's value as it was is no longer progress, so the line now takes the retry, as its label says.
 
 ## How to close one
 
