@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
-import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, relayElement, xmlResponse } from './xml';
+import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, pauseVerb, relayElement, xmlResponse } from './xml';
 import type { Recognition } from '../../core/app/types';
 
 /**
@@ -81,7 +81,7 @@ export function twilioConnectDocument(o: StartDocumentOptions, paths: RelayPaths
     attrs.push(`ttsProvider="${escapeXml(o.ttsProvider)}"`, `voice="${escapeXml(o.voice)}"`);
   }
   const relay = relayElement(attrs, placed.children);
-  return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}${paths.action}">${relay}</Connect>`);
+  return xmlResponse(`${pauseVerb(o.pauseS)}<Connect action="https://${escapeXml(o.publicHost)}${paths.action}">${relay}</Connect>`);
 }
 
 /**

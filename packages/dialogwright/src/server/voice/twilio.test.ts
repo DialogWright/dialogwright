@@ -163,4 +163,11 @@ describe('the Twilio voice provider', () => {
     expect(twilioProvider.contentType).toBe('text/xml');
     expect(twilioProvider.id).toBe('twilio');
   });
+
+  it('pauses before it connects when asked (a planned restart: the restarted server takes the socket), and not otherwise', () => {
+    const doc = twilioProvider.startDocument({ ...START, pauseS: 5 });
+    expect(doc).toBe(twilioProvider.startDocument(START).replace('<Response><Connect', '<Response><Pause length="5"/><Connect'));
+    expect(connectRelayTwiml({ ...START, pauseS: 3 })).toContain('<Response><Pause length="3"/><Connect action="https://voice.example.com/cr-action">');
+    expect(twilioProvider.startDocument({ ...START, pauseS: 0 })).toBe(twilioProvider.startDocument(START));
+  });
 });

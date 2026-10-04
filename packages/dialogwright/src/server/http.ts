@@ -47,9 +47,18 @@ export interface HttpDeps {
   draining?: () => boolean;
   /**
    * Whether the drain's wait is over and the server is about to close (index.ts): a live call's reconnect
-   * is put through to the handoff number rather than back to a server that will not be there. Absent, never.
+   * is put through to the handoff number rather than back to a server that will not be there (with the
+   * memory store; with a durable one, see `handover`). Absent, never.
    */
   closing?: () => boolean;
+  /**
+   * A planned restart's handover (index.ts drain, SESSION_STORE=file with RESTART_PAUSE_S above 0), or
+   * null when there is none: a saved call's reconnect, while the server is closing, is answered with a
+   * document that pauses `pauseS` seconds before it connects, so the carrier's socket reaches the
+   * restarted server; `answered` is told of each callback, so the drain knows when every call has been
+   * handed over. Absent, never.
+   */
+  handover?: () => { readonly pauseS: number; answered(callId: string): void } | null;
   /** Live web chats, for `/health`'s `chat`; absent when the engine's chat is off, and `/health` then has no `chat`. */
   chatLive?: () => number;
   /** The trace and audit folders' sizes, for `/health`'s `disk`; absent when no retention is set, and `/health` then has no `disk`. */
@@ -382,7 +391,12 @@ export function decideAction(
       const token = deps.tokens.mint(callSid, provider.id);
       // The call goes on in the language it is in now, which a switch may have changed since it started.
       const locale = deps.app?.locales ? (entry.session.locale ?? deps.app.locales.default) : undefined;
-      return { document: start(connectOptions(deps, provider, token, locale)), note: `reconnect:${entry.reconnects}` };
+      // A planned restart: the carrier waits before it connects, so its socket reaches the restarted server
+      // (which loads the call at setup) and not this one, which turns sockets away until it stops listening.
+      const handover = deps.closing?.() && deps.store.durable ? (deps.handover?.() ?? null) : null;
+      const options = connectOptions(deps, provider, token, locale);
+      const document = start(handover !== null ? { ...options, pauseS: handover.pauseS } : options);
+      return { document, note: `reconnect:${entry.reconnects}${handover !== null ? ` after ${handover.pauseS} s` : ''}` };
     }
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
@@ -495,6 +509,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       const start = legacy ? connectRelayTwiml : undefined;
       const { document, note } = loaded === 'unreadable' ? decideUnreadable(deps, provider, callback, start) : decideAction(deps, provider, callback, start);
       deps.log(`${path} ${callback.callId || '?'} ${callback.sessionStatus ?? ''} -> ${note}`);
+      if (callback.callId) deps.handover?.()?.answered(callback.callId);
       reply(res, 200, provider.contentType, document);
     })().catch((e: unknown) => {
       deps.log(`http error: ${e instanceof Error ? e.message : String(e)}`);

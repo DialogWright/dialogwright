@@ -13,6 +13,8 @@ export interface ConnectOptions {
   /** TTS provider/voice for the segments that are not recorded clips; set both or neither. */
   ttsProvider?: string;
   voice?: string;
+  /** Seconds of silence before it connects (a planned restart's handover; StartDocumentOptions.pauseS). */
+  pauseS?: number;
 }
 
 /**

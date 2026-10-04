@@ -13,6 +13,15 @@ export function xmlResponse(body: string): string {
   return `${XML_HEAD}<Response>${body}</Response>`;
 }
 
+/**
+ * A `<Pause>` of `seconds` (StartDocumentOptions.pauseS), or nothing for none. A top-level verb in both
+ * carriers' documents (Twilio TwiML and Telnyx TeXML `<Pause length>`, whole seconds, at least 1), run
+ * before the verb that follows it.
+ */
+export function pauseVerb(seconds: number | undefined): string {
+  return seconds !== undefined && seconds > 0 ? `<Pause length="${Math.ceil(seconds)}"/>` : '';
+}
+
 /** A form-encoded body's fields; a repeated key keeps its last value, as the carriers send none. */
 export function formFields(body: string): Record<string, string> {
   return Object.fromEntries(new URLSearchParams(body));

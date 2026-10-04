@@ -22,9 +22,23 @@ describe('SESSION_STORE', () => {
   });
 
   it('takes file:<dir>, a folder as given (a relative one is from where the server runs), and says so at startup', () => {
-    expect(loadConfig({ ...base, SESSION_STORE: 'file:/var/lib/ivr/sessions' }).sessionStore).toEqual({ kind: 'file', dir: '/var/lib/ivr/sessions' });
-    expect(loadConfig({ ...base, SESSION_STORE: 'file:sessions' }).sessionStore).toEqual({ kind: 'file', dir: 'sessions' });
+    expect(loadConfig({ ...base, SESSION_STORE: 'file:/var/lib/ivr/sessions' }).sessionStore).toEqual({ kind: 'file', dir: '/var/lib/ivr/sessions', fsync: false, restartPauseS: 5 });
+    expect(loadConfig({ ...base, SESSION_STORE: 'file:sessions' }).sessionStore).toMatchObject({ kind: 'file', dir: 'sessions' });
     expect(describeConfig(loadConfig({ ...base, SESSION_STORE: 'file:sessions' }))).toContain('sessions file:sessions');
+  });
+
+  it('takes RESTART_PAUSE_S (default 5, 0 for none, at most 60) and SESSION_FSYNC (default off), and says them at startup', () => {
+    const file = { ...base, SESSION_STORE: 'file:sessions' };
+    expect(loadConfig({ ...file, RESTART_PAUSE_S: '0' }).sessionStore).toMatchObject({ restartPauseS: 0 });
+    expect(loadConfig({ ...file, RESTART_PAUSE_S: '12', SESSION_FSYNC: 'on' }).sessionStore).toMatchObject({ restartPauseS: 12, fsync: true });
+    expect(describeConfig(loadConfig(file))).toContain('sessions file:sessions (restart pause 5 s)');
+    expect(describeConfig(loadConfig({ ...file, RESTART_PAUSE_S: '0', SESSION_FSYNC: 'on' }))).toContain('sessions file:sessions (restart pause off, fsync on)');
+    expect(() => loadConfig({ ...file, RESTART_PAUSE_S: '61' })).toThrow('RESTART_PAUSE_S must be a whole number of seconds from 0 to 60, got "61"');
+    expect(() => loadConfig({ ...file, RESTART_PAUSE_S: '2.5' })).toThrow('RESTART_PAUSE_S must be a non-negative integer, got "2.5"');
+    expect(() => loadConfig({ ...file, SESSION_FSYNC: 'yes' })).toThrow('SESSION_FSYNC must be on or off, got "yes"');
+    // Checked with the memory store too, so a typo is found before the store is switched on.
+    expect(() => loadConfig({ ...base, SESSION_FSYNC: 'yes' })).toThrow('SESSION_FSYNC must be on or off, got "yes"');
+    expect('sessionStore' in loadConfig({ ...base, RESTART_PAUSE_S: '3', SESSION_FSYNC: 'on' })).toBe(false);
   });
 
   it('refuses anything else, saying what it takes', () => {

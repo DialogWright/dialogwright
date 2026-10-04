@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fork, type ChildProcess } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
@@ -18,6 +18,7 @@ import { defaultCorpusFile } from '../run/fixtures';
 import type { JevClient } from '../jev/types';
 import type { ServerMessage } from '../channel/chat/protocol';
 import { RESUMED_TEXT } from './adapter';
+import { FileCallStateStore } from './stores/file';
 import { testkitApp } from '../testing/testkit';
 import { serviceResultEvent } from '../channel/events';
 import type { ServiceResolveOptions } from '../core/app/types';
@@ -159,7 +160,12 @@ async function firstHalf(url: string, callSid: string): Promise<FakeRelay> {
 /** After the restart: the callback, the new socket, the line that says what happened, and the rest of the call. */
 async function secondHalf(base: string, provider: string, callSid: string): Promise<{ relay: FakeRelay; doc: string }> {
   const doc = await (await fetch(`${base}/cr-action/${provider}`, form(failed(provider, callSid)))).text();
-  const relay = await FakeRelay.connect(socketUrl(doc, base));
+  return { relay: await resumeAt(socketUrl(doc, base), callSid), doc };
+}
+
+/** The carrier's socket on the restarted server: the line that says what happened, and the rest of the call. */
+async function resumeAt(url: string, callSid: string): Promise<FakeRelay> {
+  const relay = await FakeRelay.connect(url);
   sockets.push(relay);
   relay.setup(callSid, 'VX-after');
   expect(await relay.waitForTexts(1)).toEqual([`${RESUMED_TEXT} ${ASK_DOB}`]);
@@ -170,7 +176,14 @@ async function secondHalf(base: string, provider: string, callSid: string): Prom
   const end = await relay.waitFor((m) => m.type === 'end');
   expect(end.handoffData).toBe('{"reasonCode":"completed","completed":["delivery_window"]}');
   relay.assertKnownTypes();
-  return { relay, doc };
+  return relay;
+}
+
+/** A callback's document for a planned restart's handover: a pause of `seconds`, then the carrier's own connect, and no person. */
+function expectPauseThenConnect(doc: string, provider: string, seconds: number): void {
+  expect(doc).toContain(`<Response><Pause length="${seconds}"/><Connect action="https://localhost/cr-action/${provider}">`);
+  expect(doc).toContain('<ConversationRelay');
+  expect(doc).not.toContain('<Dial>');
 }
 
 /** Every audit day file verifies, and the call's entries run from its start to its end in one chain. */
@@ -222,6 +235,47 @@ describe('a restart with the file session store', () => {
     expectTraceContinuous(dir, callSid);
   }, 40_000);
 
+  it('a value given after a restart is masked in the trace exactly as on a call with no restart', async () => {
+    // The same call with no restart (the memory store), for what each record must say.
+    const plain = folder();
+    const callSid = 'CA0000000000000000000000000000mask';
+    const live = await boot(settings(plain, { SESSION_STORE: 'memory' }));
+    const relay = await firstHalf(await answer(live.base, 'twilio', callSid), callSid);
+    relay.prompt(DOB);
+    await relay.waitForTexts(7);
+    relay.prompt("no, that's all");
+    await relay.waitFor((m) => m.type === 'end');
+    await live.server.close();
+
+    const dir = folder();
+    const first = await boot(settings(dir));
+    await firstHalf(await answer(first.base, 'twilio', callSid), callSid);
+    await first.server.close();
+    const second = await boot(settings(dir));
+    await secondHalf(second.base, 'twilio', callSid);
+    await second.server.close();
+
+    const records = (d: string): Record<string, unknown>[] => {
+      const file = readdirSync(join(d, 'traces')).find((f) => f.endsWith('.jsonl') && !f.endsWith('.frames.jsonl'))!;
+      return readFileSync(join(d, 'traces', file), 'utf8').trim().split('\n').map((l) => {
+        const { timing: _timing, ts: _ts, ...rest } = JSON.parse(l) as Record<string, unknown>;
+        return rest;
+      });
+    };
+    const want = records(plain);
+    const got = records(dir);
+    expect(got).toHaveLength(want.length);
+    // The birth date is given on the turn after the restart: its record, masked, is the live call's.
+    expect(got[3]).toEqual(want[3]);
+    expect(got).toEqual(want);
+    // Its slots masked: the account ID given before the restart and the birth date given after it.
+    const slots = got[3]!.slots as Record<string, { value: string }>;
+    expect(slots.accountId!.value).toBe('...1234');
+    expect(slots.dob!.value).toBe('••/••/1985');
+    expect(JSON.stringify(got)).not.toContain('55501234');
+    expect(JSON.stringify(got)).not.toContain('1985-04-12');
+  }, 20_000);
+
   it('Telnyx: the server closed mid-form; a new one resumes the call on its Telnyx callback', async () => {
     const dir = folder();
     const env = settings(dir, { VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY });
@@ -252,9 +306,9 @@ describe('a restart with the file session store', () => {
     await secondHalf(second.base, 'twilio', callSid);
   }, 20_000);
 
-  it('a planned restart: the drain stops taking connections and leaves the live call saved, not sent to a person; the new server resumes it', async () => {
+  it('a planned restart with RESTART_PAUSE_S=0: the drain stops taking connections and leaves the live call saved, not sent to a person; the new server resumes it', async () => {
     const dir = folder();
-    const first = await boot(settings(dir));
+    const first = await boot(settings(dir, { RESTART_PAUSE_S: '0' }));
     const callSid = 'CA0000000000000000000000000000plan';
     const relay = await firstHalf(await answer(first.base, 'twilio', callSid), callSid);
     await first.server.drain(0);
@@ -268,6 +322,129 @@ describe('a restart with the file session store', () => {
     const second = await boot(settings(dir));
     await secondHalf(second.base, 'twilio', callSid);
     expectAuditContinuous(dir, callSid);
+  }, 20_000);
+
+  it('Twilio, a planned restart (SIGTERM): the stopping server tells the carrier to wait and connect again, and the caller resumes on the restarted server with no one sent to a person', async () => {
+    const dir = folder();
+    const env = settings(dir, { DRAIN_MS: '0', RESTART_PAUSE_S: '4' });
+    const first = await bootChild(env);
+    const callSid = 'CA0000000000000000000000000000term';
+    const relay = await firstHalf(await answer(first.base, 'twilio', callSid), callSid);
+    let out = '';
+    first.child.stdout!.on('data', (c: Buffer) => (out += c.toString('utf8')));
+    const exited = new Promise<number | null>((r) => first.child.once('exit', (code) => r(code)));
+    first.child.kill('SIGTERM');
+    // Going away: the carrier calls back at once, and the stopping server is still there to answer.
+    expect((await relay.closed).code).toBe(1001);
+    const doc = await (await fetch(`${first.base}/cr-action/twilio`, form(failed('twilio', callSid)))).text();
+    expectPauseThenConnect(doc, 'twilio', 4);
+    // Every live call handed over: the server stops listening and exits, as a planned stop does.
+    expect(await exited).toBe(0);
+    expect(out).toContain('reconnect:1');
+    expect(out).toContain('the carrier is told to wait 4 s and connect again');
+    expect(out).not.toContain('dial:');
+    expect(storedCalls(dir)).toHaveLength(1);
+
+    // The restarted server takes the socket the pause led to: no callback reaches it first.
+    const second = await boot(env);
+    await resumeAt(socketUrl(doc, second.base), callSid);
+    expect(second.logs).toContain(`${callSid}: restored from the session store (turn 3, reconnect 1)`);
+    expect(second.server.store.get(callSid)!.session.slots.accountId!.value).toBe('55501234');
+    await second.server.store.settled();
+    expect(storedCalls(dir)).toEqual([]);
+    expectAuditContinuous(dir, callSid);
+    expectTraceContinuous(dir, callSid);
+  }, 40_000);
+
+  it('Telnyx, a planned restart: the same handover on its TeXML callback, and the caller resumes on the restarted server', async () => {
+    const dir = folder();
+    const env = settings(dir, { VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY });
+    const first = await boot(env);
+    const callSid = 'v2:telnyx-planned-restart';
+    const relay = await firstHalf(await answer(first.base, 'telnyx', callSid), callSid);
+    const drained = first.server.drain(0);
+    expect((await relay.closed).code).toBe(1001);
+    const doc = await (await fetch(`${first.base}/cr-action/telnyx`, form(failed('telnyx', callSid)))).text();
+    // The default pause: five seconds.
+    expectPauseThenConnect(doc, 'telnyx', 5);
+    await drained;
+    await expect(fetch(`${first.base}/health`)).rejects.toThrow();
+    await first.server.close();
+
+    const second = await boot(env);
+    await resumeAt(socketUrl(doc, second.base), callSid);
+    expect(second.server.store.get(callSid)!.session.slots.accountId!.value).toBe('55501234');
+    await second.server.store.settled();
+    expect(storedCalls(dir)).toEqual([]);
+    expectAuditContinuous(dir, callSid);
+    expectTraceContinuous(dir, callSid);
+  }, 20_000);
+
+  it('a planned restart: a carrier that connects while the stopping server still listens is refused, calls back, and is told to wait again; both calls resume on the restarted server', async () => {
+    const dir = folder();
+    const env = settings(dir, { RESTART_PAUSE_S: '3' });
+    const first = await boot(env);
+    const a = 'CA00000000000000000000000000000aaa';
+    const b = 'CA00000000000000000000000000000bbb';
+    const relayA = await firstHalf(await answer(first.base, 'twilio', a), a);
+    const relayB = await firstHalf(await answer(first.base, 'twilio', b), b);
+    const drained = first.server.drain(0);
+    expect((await relayA.closed).code).toBe(1001);
+    expect((await relayB.closed).code).toBe(1001);
+    const docA = await (await fetch(`${first.base}/cr-action/twilio`, form(failed('twilio', a)))).text();
+    expectPauseThenConnect(docA, 'twilio', 3);
+    // B has not called back yet, so this server still listens: A's carrier, connecting early, is turned away
+    // rather than put on a server about to stop.
+    await expect(FakeRelay.connect(socketUrl(docA, first.base))).rejects.toThrow('503');
+    expect(first.logs).toContain('upgrade refused: the server is restarting');
+    // The carrier calls back for the socket it could not open, and is told to wait again.
+    const againA = await (await fetch(`${first.base}/cr-action/twilio`, form(failed('twilio', a)))).text();
+    expectPauseThenConnect(againA, 'twilio', 3);
+    const docB = await (await fetch(`${first.base}/cr-action/twilio`, form(failed('twilio', b)))).text();
+    expectPauseThenConnect(docB, 'twilio', 3);
+    await drained;
+    await first.server.close();
+    expect(first.logs.filter((l) => l.includes('-> dial'))).toEqual([]);
+
+    const second = await boot(env);
+    // The first token was replaced by the second callback's: it opens nothing.
+    await expect(FakeRelay.connect(socketUrl(docA, second.base))).rejects.toThrow('401');
+    await resumeAt(socketUrl(againA, second.base), a);
+    await resumeAt(socketUrl(docB, second.base), b);
+    expect(second.server.store.get(a)!.reconnects).toBe(2);
+    expectAuditContinuous(dir, a);
+    expectAuditContinuous(dir, b);
+  }, 30_000);
+
+  it('a planned restart into a server that reads another session schema: the socket it takes is ended toward a person, never a fresh call', async () => {
+    const dir = folder();
+    const first = await boot(settings(dir));
+    const callSid = 'CA0000000000000000000000000000upgr';
+    const relay = await firstHalf(await answer(first.base, 'twilio', callSid), callSid);
+    const drained = first.server.drain(0);
+    await relay.closed;
+    const doc = await (await fetch(`${first.base}/cr-action/twilio`, form(failed('twilio', callSid)))).text();
+    await drained;
+    await first.server.close();
+    // The update raised SESSION_SCHEMA: the call on disk is in a shape the restarted server does not read.
+    const callsDir = join(dir, 'sessions', 'calls');
+    const [file] = readdirSync(callsDir);
+    const stored = JSON.parse(readFileSync(join(callsDir, file!), 'utf8'));
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(join(callsDir, file!), JSON.stringify({ ...stored, schema: 99 }));
+
+    const second = await boot(settings(dir));
+    const again = await FakeRelay.connect(socketUrl(doc, second.base));
+    sockets.push(again);
+    again.setup(callSid, 'VX-after');
+    const end = await again.waitFor((m) => m.type === 'end');
+    expect(JSON.parse(String(end.handoffData))).toEqual({ reasonCode: 'unreadable' });
+    expect(again.texts()).toEqual([]);
+    expect(second.logs).toContain(`${callSid}: not resumed: saved under session schema 99, and this server reads 1`);
+    // The carrier's callback with that handoff puts the caller through.
+    const dial = await (await fetch(`${second.base}/cr-action/twilio`, form({ ...failed('twilio', callSid), HandoffData: String(end.handoffData) }))).text();
+    expect(dial).toContain('<Dial>+15551234567</Dial>');
+    expect(second.server.store.get(callSid)).toBeUndefined();
   }, 20_000);
 
   it('a call saved under another session schema is put through to a person, with the reason in the log', async () => {
@@ -321,6 +498,7 @@ describe('a write and a service request across a restart', () => {
       asked.push({ server: 'first', params, opts });
       return new Promise(() => {});
     };
+    const saves = vi.spyOn(FileCallStateStore.prototype, 'save');
     const first = await boot(settings(dir));
     const callSid = 'CA0000000000000000000000000000svc1';
     const relay = await FakeRelay.connect(await answer(first.base, 'twilio', callSid));
@@ -350,6 +528,12 @@ describe('a write and a service request across a restart', () => {
     const saved = JSON.parse(readFileSync(join(callsDir, readdirSync(callsDir)[0]!), 'utf8'));
     expect(saved.pending).toMatchObject({ effect: { kind: 'service', service: 'depot' }, idempotencyKey: key });
     expect(saved.session.pendingService).toBe('depot');
+    // The turn that left the request saved it with its key: no save ever says the call waits on a
+    // service without saying which request, so a crash between the two cannot lose the request.
+    const waiting = saves.mock.calls.map(([c]) => c).filter((c) => c.session.pendingService === 'depot');
+    expect(waiting.length).toBeGreaterThan(0);
+    for (const c of waiting) expect(c.pending).toMatchObject({ idempotencyKey: key });
+    saves.mockRestore();
     await first.server.close();
 
     depot.resolve = async (params, opts) => {

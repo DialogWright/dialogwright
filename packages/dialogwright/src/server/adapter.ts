@@ -391,16 +391,11 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
  * so a call is never left ignoring its caller. The log lines' keys are `serviceAfterEnd` (replay
  * does not act on it) and `serviceWaitAbandoned` (replay clears the wait there, as here).
  */
-function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect, again?: PendingEffect): void {
-  // Recorded with its key before it is sent (saved with the call: SESSION_STORE=file), so a server that
-  // loads the call after a restart sends it again with the same key (`again`, then, with its scrub).
-  const pending: PendingEffect = again ?? {
-    effect,
-    idempotencyKey: serviceIdempotencyKey(entry.session, effect),
-    ...(scrubPartsOf(effect) ?? {}),
-  };
+function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect, pending: PendingEffect): void {
+  // Recorded with its key before it is sent: the turn that left it saved it with the call (turn, below;
+  // SESSION_STORE=file), so a server that loads the call after a restart sends it again with the same
+  // key (and its scrub). Sent after that save, since the request waits for the turn to finish.
   entry.pending = pending;
-  if (again === undefined) void deps.store.persist(entry.callSid);
   void enqueueUnsettled(deps, entry.callSid, async (e) => {
     const answer = await resolveService(appOf(e.session), effect, deps.serviceUrls, deps.serviceTimeoutMs, pending.idempotencyKey);
     // The caller hung up while the service was thinking: there is no one to tell.
@@ -424,6 +419,11 @@ function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect, again
     e.frames.write('log', { serviceWaitAbandoned: true });
     await deps.store.persist(e.callSid);
   });
+}
+
+/** The request a turn leaves for a service, with its key and its scrub as data: what is saved with the call. */
+function pendingOf(entry: CallEntry, effect: Effect): PendingEffect {
+  return { effect, idempotencyKey: serviceIdempotencyKey(entry.session, effect), ...(scrubPartsOf(effect) ?? {}) };
 }
 
 /** An effect's scrub as data, for a pending request saved with the call; null when it has none it can write down. */
@@ -477,11 +477,15 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     entry.session = run.result.session;
     // Kept on the call's own entry whether or not the console is on: the handoff summary reads it.
     entry.auditEntries.push(...run.audit);
+    const kind = run.result.decision.kind;
+    ending = kind === 'complete' || kind === 'handoff';
+    // Work handed to a downstream service: recorded with its key now, so the save below holds it.
+    const service = ending ? undefined : run.result.effects.find((e) => e.kind === 'service');
+    const pending = service ? pendingOf(entry, service) : undefined;
+    if (pending) entry.pending = pending;
     // Saved before what the turn says goes out (SESSION_STORE=file; nothing with the memory store), so a
     // restart after the caller heard a question resumes at that question.
     await deps.store.persist(entry.callSid);
-    const kind = run.result.decision.kind;
-    ending = kind === 'complete' || kind === 'handoff';
     if (run.result.decision.kind === 'handoff') {
       publish(deps, { type: 'handoff', callSid: entry.callSid, at: Date.now(), reason: run.result.decision.reason, number: maskNumber(deps.handoffNumber) });
       fireHandoffSummary(deps, entry);
@@ -491,9 +495,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // timer on its way in. Kept so a future path that arms and then ends cannot strand a timer.
     if (ending) clearNoInput(entry.callSid);
     const sent = await sendFrames(deps, entry, actionsToFrames(run.result.actions), run.result.decision);
-    const service = run.result.effects.find((e) => e.kind === 'service');
     // Work handed to a downstream service: its answer is the next turn, and it arms the wait itself.
-    if (service && !ending) queueService(deps, entry, service);
+    if (service && pending) queueService(deps, entry, service, pending);
     // A prompt restarts the wait - including the silence turn's own re-ask, which is how the
     // ladder walks itself. So does anything that left the caller still owing an answer: an
     // ignored digit mid-slot, a barge-in, a relay error frame. Those produce no frames of their
@@ -570,6 +573,19 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       return;
     }
     ctx.callSid = parsed.callSid;
+    // A call this server does not hold may have been saved by the one before it (SESSION_STORE=file): a
+    // planned restart's handover answered its carrier's callback there, so its socket comes here with no
+    // callback first. Loaded, it resumes; one saved in a shape this server cannot read is ended toward a
+    // person (the carrier's callback with that handoff dials HANDOFF_NUMBER), never begun again as a new
+    // call. With the memory store there is never one to load.
+    if (deps.store.get(parsed.callSid) === undefined && deps.store.durable) {
+      const loaded = await deps.store.restore(parsed.callSid, ctx.provider);
+      if (loaded === 'unreadable') {
+        await sendOne(socket, endFrame('unreadable'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
+        deps.tokens.revoke(parsed.callSid);
+        return;
+      }
+    }
     const existing = deps.store.get(parsed.callSid);
     if (existing) {
       // Masked at write time, not only when the dashboard reads it back: the setup frame carries
