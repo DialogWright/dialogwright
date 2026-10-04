@@ -10,6 +10,8 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { JevClientError, noulValue, type QuestionMap } from './types';
 import { VOICE_RELAY } from '../channel/caps';
 import { useTestkit } from '../testing/apps';
+import { defineSlot } from '../slots/defineSlot';
+import { testSlotContext } from '../testing/slots';
 
 useTestkit();
 
@@ -193,5 +195,46 @@ describe('FixtureStubClient', () => {
     const c = await ask('where is my parcel and also book a delivery window');
     expect((c.secondIntent as { choice: string }).choice).toBe('delivery_window');
     expect((a.secondIntent as { choice: string }).choice).toBe('none');
+  });
+});
+
+describe('a text slot\'s pick, answered from a corpus label naming the part', () => {
+  const ALDER = 'the power is out at 22 Alder Street and nothing works';
+  const place = defineSlot('place', { type: 'text', what: 'where the problem is', say: null, redact: 'none', pick: { what: 'the street address' } });
+  const entry = (labels: Record<string, string | boolean>): CorpusEntry => ({ id: 'pk', text: ALDER, intent: 'none', context: 'no_form', labels });
+  const ask = (labels: Record<string, string | boolean>, fallback = new HeuristicStubClient({ app: null })) =>
+    new FixtureStubClient([entry(labels)], { sharpness: 0.9, fallback, app: null }).ask({ state: { asr: { text: ALDER } } as never, questions: place.questions(testSlotContext(ALDER)) });
+
+  it('chooses the letter whose part the label names, case and spacing aside, and the slot fills with that part', async () => {
+    const { answers } = await ask({ placeGiven: true, placePick: '22  alder street' });
+    expect(answers.placePick).toMatchObject({ choice: 'b' });
+    expect(place.fill(answers, testSlotContext(ALDER))).toMatchObject({ kind: 'filled', value: '22 Alder Street' });
+    expect((await ask({ placeGiven: true, placePick: 'none' })).answers.placePick).toMatchObject({ choice: 'none' });
+    expect((await ask({ placeGiven: true, placePick: 'b' })).answers.placePick).toMatchObject({ choice: 'b' });
+  });
+
+  it('throws, naming the entry, on a part the question does not offer', async () => {
+    await expect(ask({ placeGiven: true, placePick: 'Alder Street' })).rejects.toThrow(
+      'corpus pk: label "Alder Street" for placePick is not one the question offers (a, b, c, d, e, none), nor the words of one: '
+        + 'a "the power is out at 22 Alder Street", b "22 Alder Street", c "nothing works", d "the power is out at 22 Alder Street and nothing works", '
+        + 'e "22 Alder Street and nothing works", none "None of these is the street address"',
+    );
+  });
+
+  it('prefers the part as said, and throws, naming the letters, on words that name two parts but for case', async () => {
+    const said = 'Elm Park and elm park';
+    const at = (label: string) =>
+      new FixtureStubClient([{ id: 'ep', text: said, intent: 'none', context: 'no_form', labels: { placeGiven: true, placePick: label } }], { sharpness: 0.9, fallback: new HeuristicStubClient({ app: null }), app: null })
+        .ask({ state: { asr: { text: said } } as never, questions: place.questions(testSlotContext(said)) });
+    expect(place.questions(testSlotContext(said)).placePick).toMatchObject({ criteria: { a: 'Elm Park', b: 'elm park', c: said } });
+    expect((await at('elm park')).answers.placePick).toMatchObject({ choice: 'b' });
+    expect((await at('Elm Park')).answers.placePick).toMatchObject({ choice: 'a' });
+    await expect(at('ELM PARK')).rejects.toThrow('corpus ep: label "ELM PARK" for placePick names the words of more than one choice (a, b); write them as said, or the letter');
+  });
+
+  it('the heuristic client answers none, so the value is the whole words', async () => {
+    const { answers } = await new HeuristicStubClient({ app: null }).ask({ state: { asr: { text: ALDER } } as never, questions: place.questions(testSlotContext(ALDER)) });
+    expect(answers.placePick).toMatchObject({ choice: 'none' });
+    expect(place.fill({ ...answers, placeGiven: { type: 'noul', noul: 0.9 } }, testSlotContext(ALDER))).toMatchObject({ value: ALDER });
   });
 });

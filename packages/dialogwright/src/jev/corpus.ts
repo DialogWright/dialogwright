@@ -74,7 +74,10 @@ export interface CorpusEntry {
    * What the utterance answers to a question that is neither the engine's nor read off a slot label,
    * by question id: a slot's own side question (e.g. whether the caller is unsure) or one of the
    * app's (App.questions; e.g. a part of the day). A choice or score question's label, or true or
-   * false for a yes-or-no question. The fixture stub answers from these first, and throws, naming
+   * false for a yes-or-no question. A choice's label may be named by its criterion's words instead,
+   * as a text slot's pick is (`placePick: 22 Alder Street`: the part picked, as said, whose letter the
+   * question offers it under; a label itself comes first, and words that match two criteria but for
+   * case must be written as said). The fixture stub answers from these first, and throws, naming
    * the entry, on a label the question cannot give; a question not asked in the entry's state never
    * reads its label.
    */

@@ -1128,12 +1128,93 @@
               "none"
             ]
           },
+          "pick": {
+            "type": "object",
+            "properties": {
+              "what": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                "description": "What the value is, as a noun phrase the pick question names (\"the street address\")."
+              },
+              "words": {
+                "description": "The joining words and prepositions by language tag (\"fr\", or \"fr-CA\" for one region, whose missing list is the language's), for a language with no built-in list or to replace one. Built in: English (\"and\", \"but\", \"so\", \"because\"; \"at\", \"on\", \"in\", \"near\", \"by\"), also read with no locale, and Spanish (\"y\", \"e\", \"pero\", \"porque\", \"así que\"; \"en\", \"cerca de\", \"junto a\"). A language with neither splits at punctuation only.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "joiners": {
+                      "description": "Words or phrases that join two clauses, where the words are split (\"et\", \"parce que\"). Replaces the built-in list of the language.",
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "allOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "[\\p{L}\\p{N}]"
+                          }
+                        ]
+                      }
+                    },
+                    "prepositions": {
+                      "description": "Words or phrases after which a clause's tail is offered too (\"au\", \"près de\"). Replaces the built-in list of the language.",
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "allOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "[\\p{L}\\p{N}]"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "The words of one language: either list left out is the built-in one."
+                }
+              }
+            },
+            "required": [
+              "what"
+            ],
+            "additionalProperties": false,
+            "description": "Pick the value out of the words. Code splits the caller's words into candidate parts (clauses, split at punctuation and at joining words, and each clause's tail after a preposition; then two clauses side by side joined as said, and that join's tails; each verbatim, at most 8), and a second question (`ids.pick`, default `<slot>Pick`) asks which of them is `pick.what`, by letter, or none of these. The value is the part chosen, as said; none, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. Default: off, the value is the whole words and only the one question is asked."
+          },
           "text": {
-            "description": "Text to say to the model in place of a default, word for word, by part: given.",
+            "description": "Text to say to the model in place of a default, word for word, by part: given, pick, pickNone.",
             "type": "object",
             "properties": {
               "given": {
                 "description": "The yes-or-no question that asks whether the caller gives the text, word for word.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "pick": {
+                "description": "With `pick`: the question that asks which of the candidate parts is the value; {what} is pick.what.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "pickNone": {
+                "description": "With `pick`: what the pick question's \"none\" label means, which keeps the whole words; {what} is pick.what.",
                 "type": "string",
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
@@ -1142,11 +1223,16 @@
             "additionalProperties": false
           },
           "ids": {
-            "description": "Question ids in place of the defaults (the slot's id followed by the part: given), to keep the ids an existing slot used.",
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given, pick), to keep the ids an existing slot used.",
             "type": "object",
             "properties": {
               "given": {
                 "description": "The id of the question that asks whether the caller gives the text.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "pick": {
+                "description": "The id of the question that asks which part of the caller's words is the value (with `pick`).",
                 "type": "string",
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               }
