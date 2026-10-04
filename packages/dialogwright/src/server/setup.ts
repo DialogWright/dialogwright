@@ -427,7 +427,12 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     );
     out('Then point the carrier at it:');
     for (const line of carrierSteps(carrier, webhook)) out(`  ${line}`);
-    out('Then call your number. While it runs, pnpm diagnose checks it end to end, through the tunnel.');
+    out(
+      flags.publicHost
+        ? `Then call your number. While it runs, pnpm diagnose --app ${short} checks it end to end, through the tunnel.`
+        : 'Then call your number. While it runs, the pnpm diagnose line pnpm start prints checks it end to end, through the tunnel.',
+    );
+    out(`To keep the settings elsewhere (outside the repository, for a machine that stays up), move the file and name it: ENV_FILE=<path> pnpm start --app ${short}`);
     return 0;
   }
   out('');

@@ -36,6 +36,17 @@ describe('quickTunnelHost', () => {
     expect(quickTunnelHost(lines.slice(0, 3).join('\n'))).toBeNull();
     expect(quickTunnelHost('INF Requesting new quick Tunnel on trycloudflare.com...')).toBeNull();
   });
+
+  it("never takes trycloudflare.com's own service address, which cloudflared names in its errors", () => {
+    const failed = 'ERR failed to request quick Tunnel: Post "https://api.trycloudflare.com/tunnel": dial tcp: lookup api.trycloudflare.com: no such host\n';
+    expect(quickTunnelHost(failed)).toBeNull();
+    expect(quickTunnelHost(`${failed}${fixture('cloudflared-quick-2024.txt')}`)).toBe('example-quiet-harbor-words.trycloudflare.com');
+  });
+
+  it('reads the hostname in upper case or in JSON logs too', () => {
+    expect(quickTunnelHost('|  HTTPS://Example-Quiet-Harbor-Words.TryCloudflare.com  |')).toBe('example-quiet-harbor-words.trycloudflare.com');
+    expect(quickTunnelHost('{"level":"info","message":"|  https://example-quiet-harbor-words.trycloudflare.com  |"}')).toBe('example-quiet-harbor-words.trycloudflare.com');
+  });
 });
 
 describe('waitForQuickTunnel', () => {

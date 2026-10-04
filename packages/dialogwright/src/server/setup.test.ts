@@ -95,6 +95,9 @@ describe('pnpm configure, answering its questions', () => {
     expect(said).toContain('pnpm start --app beta');
     expect(said).toContain('Send a TeXML Webhook to the URL');
     expect(said).toContain('https://<the hostname pnpm start prints>/voice/telnyx');
+    expect(said).toContain('ENV_FILE=<path> pnpm start --app beta');
+    // The offline check says the file it wrote is its owner's alone.
+    expect(said).toContain(`ok    ${file} is readable by its owner alone`);
   });
 
   it('asks again for a key that cannot be the carrier\'s, and for a number that is not E.164', async () => {

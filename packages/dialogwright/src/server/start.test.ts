@@ -113,6 +113,7 @@ describe('pnpm start', () => {
     expect(said).toContain(`https://${HOST}/voice/telnyx`);
     expect(said).toContain('It changes every time pnpm start runs');
     expect(said).toContain('Send a TeXML Webhook to the URL');
+    expect(said).toContain(`  PUBLIC_HOST=${HOST} pnpm diagnose --app alpha`);
     server!.exit(0);
     expect(await done).toBe(0);
     expect(tunnel!.signals).toEqual(['SIGTERM']);
@@ -138,6 +139,33 @@ describe('pnpm start', () => {
     expect(h.spawned).toHaveLength(1);
     expect(h.spawned[0]!.signals).toEqual(['SIGTERM']);
     expect(h.out.join('\n')).toContain('cloudflared gave no quick tunnel hostname within 0.2 seconds');
+    expect(h.out.join('\n')).toContain('no config.yml in ~/.cloudflared');
+  });
+
+  it('stops cloudflared on a stop that comes while the tunnel is still opening, and starts no server', async () => {
+    const { root } = workspace(PHONE);
+    const h = harness(root, { tunnelOutput: '2026-10-04T17:02:11Z INF Requesting new quick Tunnel on trycloudflare.com...\n' });
+    h.deps.tunnelTimeoutMs = 5_000;
+    const done = main([], h.deps);
+    await until(() => h.spawned.length === 1);
+    h.stop('SIGINT');
+    expect(await done).toBe(130);
+    expect(h.spawned).toHaveLength(1);
+    expect(h.spawned[0]!.signals).toEqual(['SIGTERM']);
+    expect(h.out.join('\n')).toContain('stopped before the tunnel was open');
+  });
+
+  it('takes a hangup (the terminal closed) as a stop, passed to the server as SIGTERM', async () => {
+    const { root } = workspace(PHONE);
+    const h = harness(root);
+    const done = main([], h.deps);
+    await until(() => h.spawned.length === 2);
+    const [tunnel, server] = h.spawned;
+    h.stop('SIGHUP');
+    expect(server!.signals).toEqual(['SIGTERM']);
+    server!.exit(0);
+    expect(await done).toBe(0);
+    expect(tunnel!.signals).toEqual(['SIGTERM']);
   });
 
   it('passes one stop to the server, a repeat at once being the same, and stops the tunnel only once the server has', async () => {
@@ -209,7 +237,7 @@ describe('pnpm start', () => {
     const { root, app } = workspace();
     const h = harness(root);
     expect(await main([], h.deps)).toBe(1);
-    expect(h.out.join('\n')).toContain(`no settings file at ${join(app, '.env')}: run pnpm configure first (or name one with --env-file)`);
+    expect(h.out.join('\n')).toContain(`no settings file at ${join(app, '.env')}: run pnpm configure first (or name one: ENV_FILE=<path> pnpm start)`);
   });
 
   it('takes a settings file named with --env-file or ENV_FILE, from where pnpm was run', async () => {
@@ -221,7 +249,9 @@ describe('pnpm start', () => {
       const done = main([...argv], h.deps);
       await until(() => h.spawned.length === 1);
       expect(h.spawned[0]!.options.env!.ENV_FILE).toBe(file);
-      expect(h.out.join('\n')).toContain('http://localhost:3100');
+      expect(h.out.join('\n')).toContain('the console, on this machine: http://localhost:3100/dashboard');
+      // No carrier reaches localhost: no webhook to paste.
+      expect(h.out.join('\n')).not.toContain('voice webhook');
       h.spawned[0]!.exit(0);
       await done;
     }

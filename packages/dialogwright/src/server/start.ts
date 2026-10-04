@@ -1,18 +1,19 @@
 import { spawn, type SpawnOptions } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { carrierSteps } from './carrierSteps';
 import { integer, type Env } from './config';
 import { readEnvFile } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { isLoopbackHost } from './localOnly';
-import { CLOUDFLARED_INSTALL, findOnPath, QUICK_TUNNEL_TIMEOUT_MS, waitForQuickTunnel, type TunnelProcess } from './tunnel';
+import { CLOUDFLARED_INSTALL, findOnPath, QUICK_TUNNEL_TIMEOUT_MS, QUICK_TUNNEL_TROUBLE, waitForQuickTunnel, type TunnelProcess } from './tunnel';
 import { chooseApp, workspaceApps, WORKSPACE_ROOT } from './workspace';
 
 /**
- * `pnpm start [--app <name>] [--env-file <path>] [--tunnel quick|named|none]`: an app's server with its
- * settings file (`<app>/.env`, which `pnpm configure` writes), and the tunnel the carrier reaches it by.
+ * `[ENV_FILE=<path>] pnpm start [--app <name>] [--tunnel quick|named|none]`: an app's server with its
+ * settings file (`<app>/.env`, which `pnpm configure` writes, unless ENV_FILE or `--env-file <path>` names
+ * another), and the tunnel the carrier reaches it by.
  *
  * - `quick`, the default when PUBLIC_HOST is unset (or `quick`): it starts `cloudflared tunnel --url
  *   http://localhost:<PORT>`, Cloudflare's quick tunnel, which needs no account; reads the hostname it is
@@ -22,10 +23,11 @@ import { chooseApp, workspaceApps, WORKSPACE_ROOT } from './workspace';
  * - `none`, the default when PUBLIC_HOST is set: the server alone, as `pnpm --filter <app> serve` with
  *   ENV_FILE set.
  *
- * The server runs as `pnpm --filter <app> serve` with ENV_FILE naming the file. A stop (Ctrl-C or SIGTERM)
- * is passed to the server once, and a second one later is passed again (which stops it at once, index.ts
- * main); cloudflared is stopped only once the server has, so live calls keep their way in while they drain.
- * If cloudflared stops on its own, the server is stopped too: no carrier can reach it.
+ * The server runs as `pnpm --filter <app> serve` with ENV_FILE naming the file. A stop (Ctrl-C, SIGTERM,
+ * or SIGHUP when the terminal closes, passed on as SIGTERM) is passed to the server once, and a second one
+ * later is passed again (which stops it at once, index.ts main); cloudflared is stopped only once the
+ * server has, so live calls keep their way in while they drain. A stop while the tunnel is still opening
+ * stops cloudflared. If cloudflared stops on its own, the server is stopped too: no carrier can reach it.
  */
 
 /** A process start runs: cloudflared, or the server. */
@@ -48,13 +50,13 @@ export interface StartDeps {
   spawn(command: string, args: readonly string[], options: SpawnOptions): StartChild;
   /** Signals a child and the processes it started (its process group). */
   signal(child: StartChild, signal: NodeJS.Signals): void;
-  /** Installs the handler for this process's own SIGINT and SIGTERM. */
+  /** Installs the handler for this process's own SIGINT, SIGTERM and SIGHUP. */
   onStop(handler: (signal: NodeJS.Signals) => void): void;
   now(): number;
   tunnelTimeoutMs?: number;
 }
 
-export const START_USAGE = 'usage: pnpm start [--app <name>] [--env-file <path>] [--tunnel quick|named|none]';
+export const START_USAGE = 'usage: [ENV_FILE=<path>] pnpm start [--app <name>] [--tunnel quick|named|none]   (ENV_FILE names a settings file other than <app>/.env)';
 const TUNNELS = ['quick', 'named', 'none'] as const;
 type Tunnel = (typeof TUNNELS)[number];
 
@@ -83,7 +85,7 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
   const named = flags.envFile ?? (deps.env.ENV_FILE?.trim() || undefined);
   const file = named === undefined ? join(app.dir, '.env') : isAbsolute(named) ? named : resolve(deps.invokedFrom, named);
   if (!existsSync(file)) {
-    deps.out(`no settings file at ${file}: run pnpm configure first (or name one with --env-file)`);
+    deps.out(`no settings file at ${file}: run pnpm configure first (or name one: ENV_FILE=<path> pnpm start)`);
     return 1;
   }
   const settings: Env = { ...readEnvFile(file) };
@@ -109,8 +111,19 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
   const carriers = (settings.VOICE_PROVIDERS ?? 'twilio').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   say(`${app.name}, settings from ${file}`);
 
-  // The quick tunnel, before the server: the server needs its hostname.
+  // The stop handler goes in before anything is started: a Ctrl-C while the tunnel opens stops cloudflared
+  // too (it runs in a process group of its own, which a terminal's Ctrl-C does not reach). A hangup (the
+  // terminal closed) is a stop like SIGTERM. Until the server runs, a stop ends the command.
   let cloudflared: StartChild | null = null;
+  let stoppedEarly: NodeJS.Signals | null = null;
+  let onStop = (signal: NodeJS.Signals): void => {
+    stoppedEarly ??= signal;
+    if (cloudflared !== null) deps.signal(cloudflared, 'SIGTERM');
+  };
+  deps.onStop((signal) => onStop(signal === 'SIGHUP' ? 'SIGTERM' : signal));
+  const stoppedCode = (signal: NodeJS.Signals) => (signal === 'SIGINT' ? 130 : 143);
+
+  // The quick tunnel, before the server: the server needs its hostname.
   let publicHost = host;
   if (tunnel === 'quick') {
     const bin = deps.which('cloudflared');
@@ -124,9 +137,19 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
     try {
       publicHost = await waitForQuickTunnel(cloudflared, deps.tunnelTimeoutMs ?? QUICK_TUNNEL_TIMEOUT_MS);
     } catch (e) {
-      say(e instanceof Error ? e.message : String(e));
+      if (stoppedEarly !== null) {
+        // The stop has signalled cloudflared already.
+        say('stopped before the tunnel was open');
+        return stoppedCode(stoppedEarly);
+      }
       deps.signal(cloudflared, 'SIGTERM');
+      say(e instanceof Error ? e.message : String(e));
+      for (const line of QUICK_TUNNEL_TROUBLE) deps.out(line);
       return 1;
+    }
+    if (stoppedEarly !== null) {
+      deps.signal(cloudflared, 'SIGTERM');
+      return stoppedCode(stoppedEarly);
     }
     // From now on only its errors are worth a line; the rest is read and dropped, so its pipe never fills.
     for (const stream of [cloudflared.stdout, cloudflared.stderr]) {
@@ -137,15 +160,18 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
   }
 
   const laptop = tunnel !== 'quick' && isLoopbackHost(publicHost);
-  const base = laptop ? `http://localhost:${port}` : `https://${publicHost}`;
-  if (tunnel === 'quick') say(`quick tunnel: https://${publicHost}`);
-  for (const c of carriers) say(`${c} voice webhook (POST): ${base}/voice/${c}`);
+  const base = `https://${publicHost}`;
+  if (tunnel === 'quick') say(`quick tunnel: ${base}`);
+  // A laptop's line is for the web chat and the console: no carrier reaches localhost, so no webhook to paste.
+  if (!laptop) for (const c of carriers) say(`${c} voice webhook (POST): ${base}/voice/${c}`);
   if (tunnel === 'quick') {
     deps.out('');
     for (const c of carriers) for (const line of carrierSteps(c, `${base}/voice/${c}`)) deps.out(line);
     deps.out('');
     deps.out('It changes every time pnpm start runs, so paste the new one each time. For a hostname that stays, use a named');
     deps.out('tunnel on your own domain and set PUBLIC_HOST (https://dialogwright.com/guides/home-server.html#tunnel).');
+    deps.out('To check it end to end through the tunnel, in another terminal while this runs:');
+    deps.out(`  ${named === undefined ? '' : `ENV_FILE=${file} `}PUBLIC_HOST=${publicHost} pnpm diagnose --app ${basename(app.dir)}`);
     deps.out('');
   } else if (tunnel === 'named') {
     say(`the named tunnel for ${publicHost} runs on its own (cloudflared tunnel run <name>, or its service)`);
@@ -185,14 +211,14 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
       }
       finish();
     });
-    deps.onStop((signal) => {
+    onStop = (signal) => {
       const at = deps.now();
       // A repeat at once is the same stop, passed on again by pnpm and tsx (index.ts SIGNAL_REPEAT_MS).
       if (firstStop !== null && at - firstStop < SIGNAL_REPEAT_MS) return;
       firstStop ??= at;
       if (!serverGone) deps.signal(server, signal);
       else if (cloudflared !== null && !tunnelGone) deps.signal(cloudflared, 'SIGTERM');
-    });
+    };
   });
 }
 
@@ -234,6 +260,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     onStop: (handler) => {
       process.on('SIGINT', handler);
       process.on('SIGTERM', handler);
+      process.on('SIGHUP', handler);
     },
     now: () => Date.now(),
   });

@@ -12,11 +12,20 @@ import type { Env } from './config';
  */
 
 /** The assigned hostname as cloudflared prints it. */
-const QUICK_HOST = /https:\/\/([a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com)\b/i;
+const QUICK_HOST = /https:\/\/([a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com)\b/gi;
+/**
+ * trycloudflare.com's own service names, which cloudflared prints in its errors (`failed to request quick
+ * Tunnel: Post "https://api.trycloudflare.com/tunnel"`): never a tunnel's hostname.
+ */
+const SERVICE_HOSTS = new Set(['api.trycloudflare.com', 'www.trycloudflare.com']);
 
 /** The quick tunnel's hostname in cloudflared's output so far, or null when it has not printed it yet. */
 export function quickTunnelHost(output: string): string | null {
-  return QUICK_HOST.exec(output)?.[1]?.toLowerCase() ?? null;
+  for (const m of output.matchAll(QUICK_HOST)) {
+    const host = m[1]!.toLowerCase();
+    if (!SERVICE_HOSTS.has(host)) return host;
+  }
+  return null;
 }
 
 /** How long start waits for cloudflared to print the hostname. */
@@ -87,6 +96,13 @@ export function findOnPath(command: string, env: Env): string | null {
   }
   return null;
 }
+
+/** What to look at when cloudflared gave no hostname. */
+export const QUICK_TUNNEL_TROUBLE: readonly string[] = [
+  'A quick tunnel needs an outbound connection to Cloudflare, and no config.yml in ~/.cloudflared (Cloudflare\'s quick',
+  'tunnels do not run with one there): move that file aside for now, or run your named tunnel and use --tunnel named.',
+  'Or start without a tunnel: pnpm start --tunnel none (on a laptop, or with a hostname you already have).',
+];
 
 /** What to do when cloudflared is not installed. */
 export const CLOUDFLARED_INSTALL: readonly string[] = [
