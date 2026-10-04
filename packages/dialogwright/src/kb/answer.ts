@@ -132,13 +132,14 @@ function resolvingAction(app: App, via: ToolName | undefined): ToolName | null {
 /**
  * The unavailable line, and a person offered in place of the form's answer, once per call: a caller
  * who has turned a person down on this call is not offered one again, and the form ends unanswered
- * (`refused`, uncounted). Declining the offer finishes the form (PendingConfirmation `after`).
+ * (`refused`, uncounted). Declining the offer finishes the form (PendingConfirmation `after`); a
+ * yes, plain or "yes, connect me to a person", is a handoff for a person (`why: 'no-answer'`: `live-agent`).
  */
 function unavailableCompletion(c: CompletionContext, promptId: string): Completion {
   const { s } = c;
   const acks: Ack[] = [...c.acks, { promptId, vars: {} }];
   if (s.transferDeclined) return { kind: 'refused', acks };
-  s.pendingConfirmation = s.form !== null ? { target: 'transfer', attempts: 0, after: s.form } : { target: 'transfer', attempts: 0 };
+  s.pendingConfirmation = s.form !== null ? { target: 'transfer', attempts: 0, after: s.form, why: 'no-answer' } : { target: 'transfer', attempts: 0, why: 'no-answer' };
   return { kind: 'decision', decision: offerTransfer(acks) };
 }
 
@@ -277,11 +278,13 @@ export function informationalAnswer(s: Session, tc: TurnContext, out: TurnOut, p
  * the caller was on, once per call. A caller who turned one down on this call, an offer already on
  * the table, or a downstream service's answer awaited: no offer (null), and the call resumes. The
  * question comes back once the offer is declined: the confirmation it displaced (`resume`) or the form loop.
+ * The offer says why it was made (`why: 'no-answer'`), so a yes is a handoff for a person
+ * (`live-agent`), not a frustrated caller's.
  */
 export function offerAfterUnavailable(s: Session, acks: Ack[]): Decision | null {
   if (s.transferDeclined || s.pendingConfirmation?.target === 'transfer' || s.pendingService !== null) return null;
   const displaced = s.pendingConfirmation;
-  s.pendingConfirmation = displaced !== null ? { target: 'transfer', attempts: 0, resume: displaced } : { target: 'transfer', attempts: 0 };
+  s.pendingConfirmation = displaced !== null ? { target: 'transfer', attempts: 0, resume: displaced, why: 'no-answer' } : { target: 'transfer', attempts: 0, why: 'no-answer' };
   s.promptedFor = 'confirm';
   return offerTransfer(acks);
 }

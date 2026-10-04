@@ -119,7 +119,7 @@ describe('no answer to give: the unavailable line, and a person offered once', (
     expect(calls(r)).toEqual(['findPassage(topic=late_fees) ALLOW: no passage (stale)']);
     expect(r.kb).toMatchObject({ passageId: 'late-fees-adult', fresh: false });
     expect(kbRows(r)).toEqual([expect.objectContaining({ detail: expect.objectContaining({ passageId: 'late-fees-adult', fresh: false }) })]);
-    expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0, after: 'ask_library' });
+    expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0, after: 'ask_library', why: 'no-answer' });
   });
 
   it('none in force on the day: the line and the offer; a yes is a person', () => {
@@ -130,6 +130,19 @@ describe('no answer to give: the unavailable line, and a person offered once', (
     expect(heard(c)).toContain('I\'m sorry, I don\'t have an answer to that I can give you right now. Would you like me to connect you to a librarian, or keep going?');
     const yes = say(c, 'yes please', { confirmsYes: noul(0.95), confirmsNo: noul(0.03) });
     expect(yes.decision.kind).toBe('handoff');
+  });
+
+  it('a yes to the offer is a request for a person, not a frustrated caller: plain, or "connect me to a person"', () => {
+    const offered = (): Call => {
+      const c = call(APP, { today: '2025-06-01' });
+      ask(c, 'card_renewal');
+      return c;
+    };
+    const handoffOf = (r: TurnResult) => ({ kind: r.decision.kind, reason: (r.decision as { reason?: string }).reason, promptId: (r.decision as { promptId?: string }).promptId });
+    // A plain yes: the confirmation gate.
+    expect(handoffOf(say(offered(), 'yes please', { confirmsYes: noul(0.95), confirmsNo: noul(0.03) }))).toEqual({ kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent' });
+    // "Yes, connect me to a person": the wants-human gate sees it first, and says the same.
+    expect(handoffOf(say(offered(), 'yes, connect me to a person', { confirmsYes: noul(0.95), confirmsNo: noul(0.03), wantsHuman: noul(0.95) }))).toEqual({ kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent' });
   });
 
   it('no facts on record: the same line and offer; declined, the form ends, and a second question with no answer is not offered a person again', () => {
@@ -182,12 +195,20 @@ describe('an informational intent that says a passage (intents.yaml passage:)', 
     const r = hours(c);
     expect(heard(c)).toBe('I\'m sorry, I don\'t have an answer to that I can give you right now. Would you like me to connect you to a librarian, or keep going?');
     expect(r.kb).toBeNull();
-    expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0 });
+    expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0, why: 'no-answer' });
     const no = say(c, 'no', { confirmsYes: noul(0.03), confirmsNo: noul(0.95) });
     expect(no.session.transferDeclined).toBe(true);
     expect(heard(c, no)).toContain('How can I help you today?');
     hours(c);
     expect(heard(c)).toBe('I\'m sorry, I don\'t have an answer to that I can give you right now. How can I help you today?');
+  });
+
+  it('a yes to the offer is a request for a person, not a frustrated caller\'s handoff', () => {
+    const c = call(APP, { today: '2025-06-01' });
+    hours(c);
+    const yes = say(c, 'yes please', { confirmsYes: noul(0.95), confirmsNo: noul(0.03) });
+    expect(yes.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent' });
+    expect(yes.audit.filter((a) => a.type === 'handoff')).toEqual([expect.objectContaining({ detail: expect.objectContaining({ reason: 'live-agent' }) })]);
   });
 
   it('a stale passage is withheld and recorded as not fresh', () => {
