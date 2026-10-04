@@ -196,7 +196,7 @@ function checkSlots(app: App, entry: CorpusEntry, slots: CorpusSlotLabels): void
   for (const key of Object.keys(slots)) if (!Object.hasOwn(app.slots, key)) throw new Error(`corpus ${entry.id}: unknown slot ${key}`);
   // In a form, the slots a turn can fill are that form's own, plus the identity factors while a
   // step-up is asking for them, and the new form's on a switch. Outside a form every slot listens
-  // (fia.ts activeSlots).
+  // but one that listens only in its form (SlotSpec.listen `form`; fia.ts activeSlots).
   const form = contextForm(entry.context, app);
   if (form !== null) {
     const allowed = new Set<string>(app.forms[form]!.slots);

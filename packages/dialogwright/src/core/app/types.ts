@@ -692,7 +692,9 @@ export interface App {
   /**
    * Slots that, like identity, outlast the form that filled them (e.g. the caller's own name and
    * birthday, so a second task on the call does not ask for them again). Every other slot of a
-   * form is emptied as it closes. Without it, none.
+   * form is emptied as it closes. Without it, none. Shorthand for `listen: 'call'` on each slot it
+   * names (SlotSpec.listen): a value said outside a form is kept too. A slot named here that sets
+   * another `listen` is refused (validateApp, `check`).
    *
    * A carried value pre-fills the next form that has the slot, as it was confirmed on the form that
    * filled it: the caller is not asked for it again, and hears it again only where that form has a

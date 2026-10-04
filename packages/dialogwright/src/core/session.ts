@@ -3,7 +3,7 @@ import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
 import type { Nomination } from '../kb/types';
 import { ANONYMOUS } from '../gate/principal';
-import { formOf } from './app/lookup';
+import { formOf, isCarried } from './app/lookup';
 import { appOf, defaultAppId, getApp } from './app/registry';
 import type { App } from './app/types';
 import type { Principal, ToolCall } from '../gate/types';
@@ -315,14 +315,14 @@ export function setForm(session: Session, form: FormId): Session {
 
 /**
  * The form is over, completed or abandoned: its business slots, its entry, its step-up and any
- * confirmation go. Identity stays for the rest of the call, the slots the app carries (App.carrySlots),
- * and the facts but for what the app clears (App.facts.onFormClosed: e.g. a parcel list, since the
- * call may just have filed a new report).
+ * confirmation go. Identity stays for the rest of the call, the slots the app carries (App.carrySlots,
+ * and a slot that listens for the call, SlotSpec.listen `call`), and the facts but for what the app
+ * clears (App.facts.onFormClosed: e.g. a parcel list, since the call may just have filed a new report).
  */
 export function closeForm(session: Session): Session {
   const app = appOf(session);
   if (session.form) {
-    for (const id of formOf(app, session.form).slots) if (!app.carrySlots?.includes(id)) session.slots[id] = emptySlot();
+    for (const id of formOf(app, session.form).slots) if (!isCarried(app, id)) session.slots[id] = emptySlot();
   }
   session.form = null;
   session.entered = null;

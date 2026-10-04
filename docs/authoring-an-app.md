@@ -91,7 +91,7 @@ prompts:
 - `brand` and `console` are what the operator console shows: the app's name, form and slot labels, the badge for each identity level, and the facts a tool call leaves.
 - `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech.
 - `wording` is the engine's own questions to the decision model, in the app's words (whom the caller is addressing, what counts as a hedge). Every string is sent to the model as written.
-- `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again).
+- `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again). It is shorthand for `listen: call` on each slot it names ([Where a slot listens](#where-a-slot-listens-listen)); a carried slot that says another `listen` is refused.
 - `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. The folder is relative to the app's package root, which is the folder its commands run in: the engine reads it from the working directory, and an app's `regress`, `cli` and `serve` scripts run in its package. It must stay inside the package, so an absolute path or one with `..` is refused. `check` then requires every intent to have examples there.
 - `prompts` holds what is said about prompts besides their text: which opening lines to use, which variables are always spoken by text to speech, the clips' vocabulary.
 
@@ -259,6 +259,7 @@ The rules, each checked by `defineApp` and `check` with the file and line:
 - **The order is the file's.** Outside a form the engine fills slots in that order, says their acknowledgements in it, asks the first slot that needs the caller to choose between two values, and lists the slots in it in the model's turn state and in a transfer's handoff. A form's own slots stay in the order forms.yaml gives. Without a slots.yaml, the order is whatever order `code.slots` was written in, which is easy to change unintentionally; with one, it is written down in one place, and a reorder shows in a diff.
 - **A type is a library type, an app type or `code`.** An app adds its own types with `slotTypes` in its code (`code.slotTypes: registerSlotType(myType)`); a name a built-in type has, and `code`, are refused. An unknown type names the closest one.
 - **A library slot's options are checked by its type**, strictly: a misspelt option is refused with the one meant, at its line in slots.yaml.
+- **Every slot takes `listen:`** beside its type's options: where it listens outside a form (`up-front`, the default, `form`, `anywhere` or `call`). Section 5, [Where a slot listens](#where-a-slot-listens-listen), says what each does and when to choose it.
 
 Without the file, every slot is the code's, as before. The file is part of the configuration hashes (section 9). An app that is not built from a folder gets the same rules from `defineSlots(source, codeSlots, types?)`, where `source` is the path of a slots.yaml or the same map as an object; it returns the slots in the file's order, or throws an `AppDefinitionError` listing every problem.
 
@@ -860,12 +861,40 @@ An app that is not built from a folder gets the same slots from code: `defineSlo
 
 ### Every slot listens on every turn
 
-The engine asks the questions of every slot the turn listens for, not only the one it just asked about: inside a form, the form's slots (and, while an anonymous caller is still to be verified, the identity factors); outside a form, every slot the app has. That is what lets a caller volunteer several details at once, and lets "what do I have out on card 5552 0417" fill the card on the opening turn. Outside a form, what is heard for a form's slot is kept only for the form the turn opens: the turn routes, the form opens and fills from what was said for it. A turn that opens no form (an informational answer, a declined offer of a person) keeps only what belongs to the call, the identity factors and the slots the app carries (`carrySlots`); a topic or a day said in an informational question is not kept for a form asked for later, which starts from what is said then. It is true of library slots and slots in code alike, and it has two consequences:
+The engine asks the questions of every slot the turn listens for, not only the one it just asked about: inside a form, the form's slots (and, while an anonymous caller is still to be verified, the identity factors); outside a form, every slot the app has but one that listens only in its form (`listen: form`, below). That is what lets a caller volunteer several details at once, and lets "what do I have out on card 5552 0417" fill the card on the opening turn. Outside a form, what is heard for a form's slot is kept only for the form the turn opens: the turn routes, the form opens and fills from what was said for it. A turn that opens no form (an informational answer, a declined offer of a person) keeps only what belongs to the call, the identity factors and the slots the app carries (`carrySlots`, or `listen: call`), and the slots that keep a value said anywhere (`listen: anywhere`); a topic or a day said in an informational question is not kept for a form asked for later, which starts from what is said then. It is true of library slots and slots in code alike, and it has two consequences:
 
 - A slot must give `absent` when the words say nothing about it. The library types do; a slot in code must.
 - Adding or changing a slot changes the model's request on every turn where it listens, because its questions are in the request and every slot's display is in the turn state. A recorded cassette then misses until it is recorded again, which calls the paid model and is a deliberate step (the clinic's README, "Recording the cassette").
 
-A per-slot `listen:` option, to narrow when a slot's questions are asked, is not built. Any non-default value would change the questions on most turns, so it belongs with a deliberate re-record, not with a type's options.
+### Where a slot listens: `listen`
+
+Every slot takes `listen:` beside its type's options: in slots.yaml, in `defineSlot`'s configuration, or on a slot written in code (`SlotSpec.listen`). It says what the slot does outside a form; inside a form that has the slot, it always listens.
+
+| `listen` | Its question, outside a form | A value said outside a form |
+|---|---|---|
+| `up-front` (the default) | asked | kept only when the turn enters a form that has the slot: values said up front with the request. A turn that opens no form keeps none. |
+| `form` | not sent | never taken: the form asks for it once it is open, even when it was said with the request |
+| `anywhere` | asked | kept whenever it is said, until a form that has the slot uses it and empties it as it closes |
+| `call` | asked | kept, and it outlasts every form, for the whole call |
+
+```yaml
+firstDate:
+  type: date
+  range: future
+  listen: form
+```
+
+When to choose each:
+
+- **`up-front`** suits most slots. "Book a delivery window for tomorrow morning" has its day and time of day taken with the request, and an informational question that mentions a day leaves nothing behind for a later form.
+- **`form`** is for a value whose words come up in other requests, to be heard only in answer to its own form. A payment arrangement's first payment date is one: "are you open on Saturday", a question about office hours, mentions a day, and the arrangement should never take it as the first payment. The slot's question is then not sent outside its form, and a date said with the request ("set up a payment plan starting Friday") is asked for again once the form is open.
+- **`anywhere`** is for a value a caller often gives before saying what they want, which a later form should not ask for again: a reference number said at the greeting, an order number said with a question. That is how every slot behaved before a value said outside a form was tied to the form the turn enters.
+- **`call`** is for a value that is the caller's rather than one task's: their name, their date of birth. It is what app.yaml's `carrySlots` does, and `carrySlots` is shorthand for it; a slot `carrySlots` names that says another `listen` is refused by `check`. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary.
+
+An identity factor (identity.yaml) listens as identity says: while an anonymous caller is still to be verified, inside a form and out, and it stays for the call. `listen` does not apply to it, and `check` refuses it there. An unknown value is refused with the near one (`change it to "anywhere"`).
+
+Any value but the default changes what the model is sent: `form` takes the slot's questions out of every turn outside a form, and `anywhere` and `call` keep values that then show in the turn state of later turns. A recorded cassette misses where they differ, so choose one with a deliberate re-record.
+
 ### Thresholds
 
 Compare the model's numbers against `ctx.thresholds`, by name, never against a number written in the slot. Thresholds can then be overridden for a run (`--threshold SLOT_DETECT=0.7`) and tuned by the sweep, and every slot moves together. The slot thresholds (their defaults are in `core/thresholds.ts`):

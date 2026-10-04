@@ -14,6 +14,8 @@ import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { framesOf } from '../testing/frames';
 import { useTestkit } from '../testing/apps';
 import { registerApp } from './app/registry';
+import type { SlotId } from './app/types';
+import type { SlotListen } from './slots/types';
 import { testkitApp } from '../testing/testkit';
 import { CUSTOMERS, STAFF } from '../testing/testkit/domain/data';
 import { parcelsFact, reportFact } from '../testing/testkit/domain/facts';
@@ -68,8 +70,8 @@ const TOMORROW_MORNING: AnswerMap = {
 };
 const WINDOW_OPENER = 'book a delivery window for tomorrow morning';
 
-function started(): Session {
-  return resolve(newSession('s', 0, VOICE_RELAY), startEvent(), null, tc).session;
+function started(app?: string): Session {
+  return resolve(newSession('s', 0, VOICE_RELAY, undefined, app), startEvent(), null, tc).session;
 }
 
 function say(session: Session, text: string, over: AnswerMap) {
@@ -615,9 +617,9 @@ function heuristicTurn(session: Session, text: string, over: AnswerMap = {}): Tu
   return resolve(session, speechEvent(text), heuristicAnswers(session, text, over), tc);
 }
 
-function runTurns(steps: Turn[]): TurnResult[] {
+function runTurns(steps: Turn[], app?: string): TurnResult[] {
   const out: TurnResult[] = [];
-  let session = started();
+  let session = started(app);
   for (const step of steps) {
     const r = typeof step === 'string' ? heuristicTurn(session, step)
       : 'dtmf' in step ? keys(session, step.dtmf)
@@ -628,7 +630,7 @@ function runTurns(steps: Turn[]): TurnResult[] {
   return out;
 }
 
-const afterTurns = (steps: Turn[]): TurnResult => runTurns(steps).at(-1)!;
+const afterTurns = (steps: Turn[], app?: string): TurnResult => runTurns(steps, app).at(-1)!;
 
 function afterTurnsAndDtmf(steps: Turn[], digit: string): TurnResult {
   return keys(afterTurns(steps).session, digit);
@@ -1508,5 +1510,114 @@ describe('words, typed or spoken', () => {
     const s = { ...started(), pendingService: 'depot' };
     expect(plan(s, textEvent(WORDS), tc).needsModel).toBe(false);
     expect(resolve(s, textEvent(WORDS), answers(), tc).decision).toEqual({ kind: 'ignore' });
+  });
+});
+
+/**
+ * Where a slot listens (SlotSpec.listen), turn by turn, on the testkit with its delivery window's
+ * slots (deliveryDay, deliveryPart) or its report's due date (expectedDate) set to each value.
+ */
+describe('where a slot listens', () => {
+  const withListen = (id: string, listen: Partial<Record<SlotId, SlotListen>>): string => {
+    const slots = { ...testkitApp.slots };
+    for (const [slot, value] of Object.entries(listen)) slots[slot] = { ...slots[slot]!, listen: value };
+    registerApp({ ...testkitApp, id, slots });
+    return id;
+  };
+  const WINDOW = { deliveryDay: 'up-front', deliveryPart: 'up-front' } as const;
+  const UP_FRONT = withListen('testkit-listen-up-front', WINDOW);
+  const FORM = withListen('testkit-listen-form', { deliveryDay: 'form', deliveryPart: 'form' });
+  const ANYWHERE = withListen('testkit-listen-anywhere', { deliveryDay: 'anywhere', deliveryPart: 'anywhere' });
+  const CALL = withListen('testkit-listen-call', { expectedDate: 'call' });
+  const ANYWHERE_DUE = withListen('testkit-listen-anywhere-due', { expectedDate: 'anywhere' });
+  const CAPABILITIES: Ack = { promptId: 'capabilities', vars: {} };
+  const ASKS = choice({ capabilities: 0.9, other: 0.06, none: 0.04 });
+  const ASIDE = 'what can you do, i need it tomorrow morning';
+  const WINDOW_QUESTIONS = ['deliveryDayMode', 'deliveryPart'];
+  const questionsAt = (session: Session, text: string): string[] => Object.keys(plan(session, speechEvent(text), tc).questions ?? {});
+  /** A missing-parcel report filed and closed: its summary's yes, then the depot's answer. */
+  const filed = (app?: string): Session => resolve(afterTurns([...HAPPY, 'yes'], app).session, serviceResultEvent('depot', { searchDays: 2 }), null, tc).session;
+  /** Identity after the window opener, then the window's first question or its completion. */
+  const throughIdentity = (session: Session): TurnResult => {
+    let r = identify(session);
+    if (r.session.promptedFor === 'otp') r = keys(r.session, '123456');
+    return r;
+  };
+
+  describe('up-front (the default)', () => {
+    for (const [name, app] of [['unset', undefined], ['written', UP_FRONT]] as const) {
+      it(`${name}: asks outside a form, and keeps a value only when the turn enters a form that has the slot`, () => {
+        expect(questionsAt(started(app), ASIDE)).toEqual(expect.arrayContaining(WINDOW_QUESTIONS));
+        const aside = say(started(app), ASIDE, { intent: ASKS, ...TOMORROW_MORNING });
+        expect(aside.decision).toMatchObject({ promptId: 'ask_intent', acks: [CAPABILITIES] });
+        expect(aside.session.slots.deliveryDay!.value).toBeNull();
+        expect(aside.session.slots.deliveryPart!.value).toBeNull();
+        const routed = say(started(app), WINDOW_OPENER, { intent: intent('delivery_window'), ...TOMORROW_MORNING });
+        expect(routed.session.slots.deliveryDay!.value).toBe('2026-09-19');
+        expect(routed.session.slots.deliveryPart!.value).toBe('morning');
+      });
+    }
+  });
+
+  describe('form', () => {
+    it('is not asked about outside a form, and is inside one that has it', () => {
+      expect(questionsAt(started(FORM), ASIDE)).not.toEqual(expect.arrayContaining(['deliveryPart']));
+      for (const id of questionsAt(started(FORM), ASIDE)) expect(id.startsWith('deliveryDay'), id).toBe(false);
+      const atDay = throughIdentity(say(started(FORM), 'i want to book a delivery window', { intent: intent('delivery_window') }).session);
+      expect(atDay.decision).toMatchObject({ promptId: 'ask_deliveryDay' });
+      expect(questionsAt(atDay.session, 'tomorrow morning')).toEqual(expect.arrayContaining(WINDOW_QUESTIONS));
+    });
+
+    it('takes nothing up front: the form it enters asks for what was said with the request', () => {
+      const routed = say(started(FORM), WINDOW_OPENER, { intent: intent('delivery_window'), ...TOMORROW_MORNING });
+      expect(routed.decision).toMatchObject({ promptId: 'ask_accountId' });
+      expect(routed.session.slots.deliveryDay!.value).toBeNull();
+      expect(routed.session.slots.deliveryPart!.value).toBeNull();
+      expect(throughIdentity(routed.session).decision).toMatchObject({ promptId: 'ask_deliveryDay' });
+      // The same on a yes to an unsure request: the form fills from the words it was asked with.
+      const unsure = say(started(FORM), WINDOW_OPENER, { intent: choice({ delivery_window: 0.5, none: 0.3, other: 0.2 }), ...TOMORROW_MORNING });
+      expect(unsure.decision).toMatchObject({ promptId: 'confirm_intent_explicit' });
+      const yes = say(unsure.session, 'yes', YES);
+      expect(yes.session.form).toBe('delivery_window');
+      expect(yes.session.slots.deliveryDay!.value).toBeNull();
+      expect(yes.session.slots.deliveryPart!.value).toBeNull();
+    });
+
+    it('keeps nothing from an informational answer either', () => {
+      const aside = say(started(FORM), ASIDE, { intent: ASKS, ...TOMORROW_MORNING });
+      expect(aside.session.slots.deliveryDay!.value).toBeNull();
+      expect(aside.session.slots.deliveryPart!.value).toBeNull();
+    });
+  });
+
+  describe('anywhere', () => {
+    it('keeps a value said outside a form with no form entered, and the form that has it does not ask again', () => {
+      const aside = say(started(ANYWHERE), ASIDE, { intent: ASKS, ...TOMORROW_MORNING });
+      expect(aside.decision).toMatchObject({ promptId: 'ask_intent', acks: [CAPABILITIES] });
+      expect(aside.session.slots.deliveryDay!.value).toBe('2026-09-19');
+      expect(aside.session.slots.deliveryPart!.value).toBe('morning');
+      const done = throughIdentity(say(aside.session, 'i want to book a delivery window', { intent: intent('delivery_window') }).session);
+      expect(done.decision).toMatchObject({ promptId: 'anything_else', acks: [{ promptId: 'identity_verified' }, { promptId: 'window_open' }] });
+    });
+
+    it('is cleared by the form that has it, as it closes', () => {
+      const s = filed(ANYWHERE_DUE);
+      expect(s.completed).toEqual(['report_missing']);
+      expect(s.slots.expectedDate!.value).toBeNull();
+    });
+  });
+
+  describe('call', () => {
+    it('keeps a value said outside a form, and outlasts the form that has it, as carrySlots does', () => {
+      const aside = say(started(CALL), 'what can you do, it was due last tuesday', {
+        intent: ASKS, expectedDateMode: choice({ weekday: 0.9, none: 0.1 }), expectedDateWeekday: choice({ tuesday: 0.9, none: 0.1 }),
+      });
+      expect(aside.session.slots.expectedDate!.value).toBe('2026-09-15');
+      const s = filed(CALL);
+      expect(s.completed).toEqual(['report_missing']);
+      expect(s.slots.expectedDate!.value).toBe('2026-09-15');
+      // Unset, the form empties it as it closes.
+      expect(filed().slots.expectedDate!.value).toBeNull();
+    });
   });
 });

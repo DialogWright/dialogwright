@@ -260,7 +260,7 @@ export const appSchema = z
       .record(identifier(), z.number({ error: 'must be a number' }).finite({ error: 'must be a finite number' }))
       .optional()
       .describe("The app's own named thresholds and their defaults (for example TIME_OF_DAY: 0.6), read where the engine's are. A name may not be one of the engine's. A run's --threshold NAME=VALUE overrides one."),
-    carrySlots: unique(identifier(), 'slot').optional().describe("Slots that, like identity, outlast the form that filled them (for example the caller's own name and birthday). Every other slot of a form is emptied as it closes. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary."),
+    carrySlots: unique(identifier(), 'slot').optional().describe("Slots that, like identity, outlast the form that filled them (for example the caller's own name and birthday). Every other slot of a form is emptied as it closes. Shorthand for listen: call on each (slots.yaml): a value said outside a form is kept too. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary."),
     fixtures: z
       .strictObject({
         dir: matching(

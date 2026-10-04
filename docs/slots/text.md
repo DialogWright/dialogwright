@@ -22,6 +22,7 @@ A slot of this type is written under its id in slots.yaml, with `type: text` and
 | `redact` | one of `length`, `none` | `length` | "length": the words leave the turn (the trace, a tool call's param) as their length only, and the display is kept. "none": as they are. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: given. |
 | `ids` | map | unset | Question ids in place of the defaults (the slot's id followed by the part: given), to keep the ids an existing slot used. |
+| `listen` | one of `up-front`, `form`, `anywhere`, `call` | `up-front` | Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). "form": asked and filled only while a form that has it is open; outside one its question is not sent. "anywhere": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. "call": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. |
 
 ### Text parts
 

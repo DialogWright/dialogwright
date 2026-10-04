@@ -61,6 +61,10 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 | `text` | `length` (`<38 chars>`) | the display, a stand-in |
 | `choice`, `date`, `record`, `topic` | none | the display |
 
+### Where a slot listens
+
+Every slot takes `listen:` beside its type's options, so each page lists it: `up-front` (the default: asked outside a form, and a value kept only when the turn enters a form that has the slot), `form` (asked only while its form is open), `anywhere` (a value said outside a form is kept whenever it is said) or `call` (kept for the whole call, as app.yaml's `carrySlots` keeps it). An identity factor takes none. Any value but the default changes what the model is sent on some turns, so it re-keys a recorded cassette there. When to choose each is in section 5 of the [authoring guide](../authoring-an-app.md#where-a-slot-listens-listen).
+
 ### Locales
 
 Every type reads and says en-US exactly as it did before there were locales. In a Spanish session (`es`, or any `es-*`) the types also read Spanish number words, names and dates and say values in Spanish formats, and a day-first keypad applies. `choice` options and a `text` slot's stand-in can be worded per locale in `locale/<tag>/slots.yaml`; a `topic` slot says a topic by the title the knowledge base gives that locale. The questions the model reads are never translated. See section 7 of the authoring guide and the "Notes" of each page.
@@ -72,5 +76,3 @@ Every type reads and says en-US exactly as it did before there were locales. In 
 | `otp` (a one-time code) | Identity owns the code path (how a code is sent and checked), and a spoken code must be masked, reissued and never traced. It arrives with identity and the named policy rules in Phase 4, so the slot and the gate agree on one design. |
 | `time-slot` (an appointment time) | An appointment time is asked by form state in the apps that have it today. Making it a slot would change every recorded request, so it waits for a deliberate re-record. |
 | Name spelling | Letter-by-letter capture is its own set of questions, left until an app needs it. |
-
-Also deferred is a per-slot `listen:` option. Every slot listens on every turn, which is what lets a caller volunteer several details in one breath. Narrowing that for one slot changes the questions asked on most turns, so any non-default value would re-key a recorded cassette. It will arrive with a deliberate re-record.

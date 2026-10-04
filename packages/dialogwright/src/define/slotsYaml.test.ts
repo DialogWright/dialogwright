@@ -252,6 +252,77 @@ describe('slots.yaml: the rules', () => {
   });
 });
 
+describe('slots.yaml: where a slot listens', () => {
+  const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
+  const withNote = (listen: string): string => NOTE_SLOTS.replace('  say: your note\n', `  say: your note\n  listen: ${listen}\n`);
+  /** The library with identity: three of its tools stand for the identity tools (nothing here calls them). */
+  const identity = (factor: string): string => [
+    '# yaml-language-server: $schema=../../../schemas/identity.schema.json',
+    'principals: { subject: patron }',
+    'levels:',
+    `  1: { name: verified, factors: [${factor}], verify: findHold }`,
+    '  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: findHold, verify: findHold }',
+    'attempts: 3',
+    '',
+  ].join('\n');
+
+  it('puts listen on the slot as written, and leaves it off when unset', () => {
+    for (const listen of ['up-front', 'form', 'anywhere', 'call'] as const) {
+      expect(defineApp(noteFolder(withNote(listen)), libraryCode).slots.note!.listen).toBe(listen);
+    }
+    expect('listen' in defineApp(noteFolder(NOTE_SLOTS), libraryCode).slots.note!).toBe(false);
+  });
+
+  it('keeps listen on a slot a locale words', () => {
+    const dir = noteFolder(withNote('form'));
+    writeFileSync(join(dir, 'locale/es/slots.yaml'), `${read('locale/es/slots.yaml').trimEnd()}\nnote:\n  say: su nota\n`);
+    const note = defineApp(dir, libraryCode).slots.note!;
+    expect(note.listen).toBe('form');
+    expect((note as ReturnType<typeof defineSlot>).wording).toBeDefined();
+  });
+
+  it('takes listen in code as in the file: defineSlot and defineSlots', () => {
+    expect(defineSlot('note', { type: 'text', what: 'a note', listen: 'anywhere' }).listen).toBe('anywhere');
+    const slots = defineSlots({ book: { type: 'code' }, branch: { type: 'code' }, card: { type: 'code' }, note: { type: 'text', what: 'a note', listen: 'call' } }, libraryCode.slots);
+    expect(slots.note!.listen).toBe('call');
+    expect(() => defineSlot('note', { type: 'text', what: 'a note', listen: 'always' })).toThrow('note.listen');
+  });
+
+  it('refuses a value it does not have, offering the near one', () => {
+    expect(problems(noteFolder(withNote('anywere')))).toEqual([
+      'slots.yaml:8:11  note.listen  "listen" is "anywere", which is not allowed here; it must be one of "up-front", "form", "anywhere", "call"  ->  change it to "anywhere"',
+    ]);
+    expect(problems(noteFolder(withNote('upfront')))[0]).toContain('->  change it to "up-front"');
+  });
+
+  it('refuses a carried slot (app.yaml carrySlots) that says it listens other than for the call', () => {
+    const carried = (listen: string): string => {
+      const dir = noteFolder(withNote(listen));
+      writeFileSync(join(dir, 'app.yaml'), read('app.yaml').replace('id: library', 'id: library-note').replace('carrySlots: [branch]', 'carrySlots: [branch, note]'));
+      return dir;
+    };
+    expect(problems(carried('form'))).toEqual([
+      'slots.yaml:8:11  note.listen  the slot "note" is in app.yaml\'s carrySlots, which keeps it for the whole call (listen: call), but it says listen: form  ->  delete "listen" (carrySlots already makes it call), or take "note" out of carrySlots in app.yaml',
+    ]);
+    expect(problems(carried('up-front'))).toHaveLength(1);
+    expect(problems(carried('anywhere'))).toHaveLength(1);
+    expect(defineApp(carried('call'), libraryCode).slots.note!.listen).toBe('call');
+  });
+
+  it('refuses listen on an identity factor, in the file or in the code', () => {
+    const dir = noteFolder(withNote('form'));
+    writeFileSync(join(dir, 'identity.yaml'), identity('note'));
+    expect(problems(dir).filter((line) => line.includes('listen'))).toEqual([
+      'slots.yaml:8:11  note.listen  the slot "note" is an identity factor (identity.yaml), which listens while the caller is still to be verified and stays for the call, so listen does not apply to it  ->  delete "listen"',
+    ]);
+    const code = folder({ 'identity.yaml': identity('card') });
+    const cardSlot = defineSlot('card', { ...(libraryCode.slots.card as ReturnType<typeof defineSlot>).config as object, type: 'digits', listen: 'anywhere' });
+    expect(problems(code, { ...libraryCode, slots: { ...libraryCode.slots, card: cardSlot } }).filter((line) => line.includes('listen'))).toEqual([
+      'app.ts  code.slots.card.listen  the slot "card" is an identity factor (identity.yaml), which listens while the caller is still to be verified and stays for the call, so listen does not apply to it  ->  delete "listen" from app.ts (code.slots.card)',
+    ]);
+  });
+});
+
 describe('slots.yaml: the app\'s own slot types', () => {
   const memo = defineSlotType({ type: 'memo', options: textType.options as z.ZodType<any>, build: (id, o) => textType.build(id, o), examples: [] });
 

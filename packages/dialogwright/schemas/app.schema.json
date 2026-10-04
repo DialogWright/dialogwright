@@ -674,7 +674,7 @@
       }
     },
     "carrySlots": {
-      "description": "Slots that, like identity, outlast the form that filled them (for example the caller's own name and birthday). Every other slot of a form is emptied as it closes. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary.",
+      "description": "Slots that, like identity, outlast the form that filled them (for example the caller's own name and birthday). Every other slot of a form is emptied as it closes. Shorthand for listen: call on each (slots.yaml): a value said outside a form is kept too. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary.",
       "type": "array",
       "items": {
         "type": "string",

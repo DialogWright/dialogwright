@@ -1,5 +1,5 @@
 import type { App, FormDef, FormId, IdentityConfig, SlotId, ToolDef, ToolName } from './types';
-import type { SlotSpec } from '../slots/types';
+import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 
 /** An app's form by id; an id the app does not define is a bug, named in the error. */
@@ -37,6 +37,25 @@ const NO_IDENTITY: IdentityConfig = Object.freeze({
 /** An app's identity config: its own (App.identity), or NO_IDENTITY for an app without one. */
 export function identityOf(app: App): IdentityConfig {
   return app.identity ?? NO_IDENTITY;
+}
+
+/**
+ * Where a slot listens outside a form (SlotSpec.listen): `call` for a slot app.yaml carries
+ * (App.carrySlots, shorthand for it), else the slot's own, else `up-front`. Null for an identity
+ * factor, which listens as identity says (fia.ts activeSlots) whatever the slot sets.
+ */
+export function listenOf(app: App, id: SlotId): SlotListen | null {
+  if (identityOf(app).factorSlots.includes(id)) return null;
+  if (app.carrySlots?.includes(id)) return 'call';
+  return app.slots[id]?.listen ?? 'up-front';
+}
+
+/**
+ * Whether a slot outlasts the form that filled it (session.ts closeForm): one app.yaml carries
+ * (App.carrySlots, an identity factor among them), or one that listens for the call.
+ */
+export function isCarried(app: App, id: SlotId): boolean {
+  return app.carrySlots?.includes(id) === true || listenOf(app, id) === 'call';
 }
 
 /** How many digits a one-time code has where the identity gives none (IdentityConfig.codeLength). */

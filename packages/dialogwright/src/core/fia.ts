@@ -1,7 +1,7 @@
 import { isAnonymous } from '../gate/types';
 import type { AnswerMap } from '../jev/types';
 import type { SlotCandidate, SlotContext, SlotOutcome, SlotPartial, SlotSpec } from './slots/types';
-import { formOf, identityOf, slotSpecOf } from './app/lookup';
+import { formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { SlotId } from './app/types';
 import { missingSlots, requiredSlots, type PendingConfirmation, type Session } from './session';
@@ -59,6 +59,8 @@ export interface FillOptions {
  *   asks the model for an account ID or birth date, and no slot keeps one.
  * parcelSelect stays on outside a form: its question is asked only when a parcel number is said or the
  * parcels are known, and "my mother's parcel, it's 7101" on the opener has to reach the gate as said.
+ * Outside a form, a slot that listens only in its form (SlotSpec.listen `form`) is not asked: its
+ * question is not sent until a form that has it is open.
  */
 export function activeSlots(session: Session): SlotSpec[] {
   // At the code prompt nothing is asked of or filled from what the caller says: a spoken turn
@@ -71,27 +73,34 @@ export function activeSlots(session: Session): SlotSpec[] {
     const form = formOf(app, session.form).slots.map((id) => slotSpecOf(app, id));
     return collectsIdentity ? [...factorSlots.map((id) => slotSpecOf(app, id)), ...form.filter((spec) => !factorSlots.includes(spec.id))] : form;
   }
-  return Object.values(app.slots).filter((spec) => collectsIdentity || !factorSlots.includes(spec.id));
+  return Object.values(app.slots).filter((spec) => (factorSlots.includes(spec.id) ? collectsIdentity : listenOf(app, spec.id) !== 'form'));
 }
 
 /**
  * The slots a turn fills from what it heard: those it listens for (activeSlots), but outside a form
- * only the ones that belong to the call rather than to a form: the identity factors (where the turn
- * listens for them) and the slots the app carries from one form to the next (App.carrySlots).
+ * only those a value said there is kept for: the identity factors (where the turn listens for them),
+ * the slots the app carries from one form to the next (App.carrySlots, or SlotSpec.listen `call`),
+ * and the slots that keep a value said anywhere (SlotSpec.listen `anywhere`).
  *
- * Outside a form the model is asked about every slot, so that the form a turn routes to hears what
- * was said for it: enterForm opens the form and then fills it, from this list as it stands inside
- * the form. A turn that opens no form (an informational answer, a declined transfer) would otherwise
- * keep values said for no form at all: the topic of the question just answered, a day in it ("are
- * you open on Saturday"). Left filled, a form asked for later would skip its question and read that
- * value back as the caller's answer. A form starts from what is said once it is asked for.
+ * Outside a form the model is asked about every slot but those that listen only in their form, so
+ * that the form a turn routes to hears what was said for it: enterForm opens the form and then fills
+ * it, from this list as it stands inside the form (the default, SlotSpec.listen `up-front`). A turn
+ * that opens no form (an informational answer, a declined transfer) would otherwise keep values said
+ * for no form at all: the topic of the question just answered, a day in it ("are you open on
+ * Saturday"). Left filled, a form asked for later would skip its question and read that value back
+ * as the caller's answer. A form starts from what is said once it is asked for, unless the slot
+ * says it keeps a value said anywhere.
  */
 export function slotsToFill(session: Session): SlotSpec[] {
   const listening = activeSlots(session);
   if (session.form) return listening;
   const app = appOf(session);
   const callSlots = new Set<SlotId>([...identityOf(app).factorSlots, ...(app.carrySlots ?? [])]);
-  return listening.filter((spec) => callSlots.has(spec.id));
+  return listening.filter((spec) => {
+    if (callSlots.has(spec.id)) return true;
+    const listen = listenOf(app, spec.id);
+    return listen === 'anywhere' || listen === 'call';
+  });
 }
 
 /**

@@ -93,6 +93,23 @@ export interface SlotPrompt {
   vars?: readonly string[];
 }
 
+/**
+ * Where a slot listens outside a form: whether the model is asked its question there, and whether a
+ * value said there is kept (SlotSpec.listen). Inside a form that has the slot it always listens.
+ * - `up-front` (the default): asked outside a form, and kept only when the turn enters a form that
+ *   has the slot: values said up front with the request ("book a window for tomorrow morning").
+ * - `form`: asked and filled only while a form that has it is open. Outside one its question is
+ *   not sent, and nothing is taken up front.
+ * - `anywhere`: asked outside a form, and a value said there is kept whenever it is said, until a
+ *   form that has the slot uses it and clears it as it closes.
+ * - `call`: as `anywhere`, and kept for the whole call, across forms (App.carrySlots).
+ * An identity factor listens as identity says, whatever this is (fia.ts activeSlots).
+ */
+export type SlotListen = 'up-front' | 'form' | 'anywhere' | 'call';
+
+/** Every SlotListen value, in the order the docs list them. */
+export const SLOT_LISTEN_VALUES: readonly SlotListen[] = ['up-front', 'form', 'anywhere', 'call'];
+
 export interface SlotSpec {
   id: SlotId;
   /**
@@ -130,6 +147,12 @@ export interface SlotSpec {
    * them, and no turn retrieves for it.
    */
   nominates?: boolean;
+  /**
+   * Where the slot listens outside a form (SlotListen): `up-front`, `form`, `anywhere` or `call`.
+   * Absent: `up-front`. A slot app.yaml carries (App.carrySlots) listens as `call`; an identity
+   * factor listens as identity says, and may not set it.
+   */
+  listen?: SlotListen;
   /** Questions this slot adds to the turn schema. */
   questions(ctx: SlotContext): QuestionMap;
   /** Interpret the answers to those questions. */
