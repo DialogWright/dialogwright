@@ -131,7 +131,8 @@ export interface NominateInput {
 
 /**
  * Nominates topics for what a caller said. An app may give its own (App.knowledge.retriever, from
- * its code's `knowledge.retriever`). runTurn calls it once per turn, before the turn is planned, only
+ * its code's `knowledge.retriever`); an app with a kb/ folder that gives none gets the engine's
+ * (./keyword.ts KeywordRetriever). runTurn calls it once per turn, before the turn is planned, only
  * when the app has a knowledge base, the turn has words, and a slot that reads nominations
  * (SlotSpec.nominates) is listening; its nominations reach that turn's questions and fill
  * (SlotContext.nominated). It is given a budget (run/retrieve.ts RETRIEVE_BUDGET_MS): one that throws,
@@ -179,15 +180,17 @@ export interface TopicCatalog {
 
 /**
  * An app's knowledge (App.knowledge), in one of two shapes:
- * - a knowledge base (an app folder's kb/, which defineApp loads, or defineKnowledge), and the
- *   retriever its code gives, if any (none: nothing is nominated). Its topics are kb/topics.yaml's.
+ * - a knowledge base (an app folder's kb/, which defineApp loads, or defineKnowledge), and its
+ *   retriever: the code's, or the engine's default (./keyword.ts KeywordRetriever), which defineApp
+ *   and defineKnowledge set. An App written by hand without one nominates nothing. Its topics are
+ *   kb/topics.yaml's.
  * - for an app that resolves its answers in its own code (no kb/): the topics its retriever can
  *   nominate (`topics`, each with its title), and that retriever, which it must give.
  * A topic slot is built with the topics of either (topicCatalog), and runTurn nominates for either.
  */
 export type AppKnowledge = KbKnowledge | CodeKnowledge;
 
-/** Knowledge with a knowledge base (an app folder's kb/, or defineKnowledge), and the retriever its code gives, if any. */
+/** Knowledge with a knowledge base (an app folder's kb/, or defineKnowledge), and its retriever (the code's, or the engine's default). */
 export interface KbKnowledge {
   readonly kb: KnowledgeBase;
   readonly retriever?: Retriever;

@@ -14,6 +14,7 @@ import { loadAppFolder, loadKnowledgeFolder } from '../define/load';
 import { formatProblem } from '../define/problems';
 import { approvalHashOf, sourceHashOf } from './hash';
 import { resolvePassage } from './resolve';
+import { KeywordRetriever } from './keyword';
 import type { KnowledgeBase, Retriever } from './types';
 import { probeContexts } from '../core/app/probeQuestions';
 
@@ -125,7 +126,9 @@ describe('the knowledge base folder: a valid one', () => {
     expect(await check(dir)).toEqual([]);
     const app = defineApp(dir, CODE);
     expect(Object.keys(app.knowledge!.kb!.passages)).toHaveLength(7);
-    expect(app.knowledge!.retriever).toBeUndefined();
+    // No retriever in the code: the engine's default, keywords alone.
+    expect(app.knowledge!.retriever).toBeInstanceOf(KeywordRetriever);
+    expect(app.knowledge!.retriever!.id).toBe('keyword');
     expect(() => validateApp(app)).not.toThrow();
   });
 
@@ -453,16 +456,14 @@ describe('a topic slot and the knowledge it reads', () => {
     expect(asked?.type === 'choice' && Object.keys(asked.criteria)).toEqual(['opening_hours', 'card_renewal', 'late_fees', 'none']);
   });
 
-  it('check refuses a topic slot in an app without a kb/ folder, or without a retriever: it would never ask', async () => {
+  it('check refuses a topic slot in an app without a kb/ folder (it would never ask); with one, the engine\'s retriever nominates when the code gives none', async () => {
     const plain = temp();
     cpSync(LIBRARY_DIR, plain, { recursive: true, filter: (src) => !src.endsWith('.ts') });
     writeFileSync(join(plain, 'slots.yaml'), SLOTS_YAML);
     expect((await check(plain, libraryCode)).filter((l) => l.includes('nominates'))).toEqual([
       'slots.yaml:5:1  subject  the slot "subject" asks about the topics retrieval nominates, but the app has no knowledge base (kb/), so it would never ask  ->  add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/), or give the slot another type',
     ]);
-    expect((await check(appFolder({ 'slots.yaml': SLOTS_YAML }))).filter((l) => l.includes('nominates'))).toEqual([
-      'slots.yaml:5:1  subject  the slot "subject" asks about the topics retrieval nominates, but the code gives no retriever, so nothing is nominated and it would never ask  ->  give a retriever in app.ts (code.knowledge.retriever): an object with an id and nominate({ text, locale, todayIso })',
-    ]);
+    expect((await check(appFolder({ 'slots.yaml': SLOTS_YAML }))).filter((l) => l.includes('nominates'))).toEqual([]);
     expect((await check(appFolder({ 'slots.yaml': SLOTS_YAML }), { ...CODE, knowledge: { retriever } })).filter((l) => l.includes('nominates'))).toEqual([]);
   });
 

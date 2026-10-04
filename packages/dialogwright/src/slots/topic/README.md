@@ -4,7 +4,7 @@ Which of the knowledge base's topics the caller asks about: the opening hours, t
 
 The model does not see every topic. Before the turn is planned, the app's retriever nominates a few topics for the caller's words (`SlotContext.nominated`, best first), and the slot asks one question over those alone: which of these does the caller ask about, or none? A turn that nominates nothing asks nothing, so a call that never asks a general question pays nothing for the knowledge base. The slot opts in to retrieval (`nominates`): while it listens, a turn with words runs the retriever once.
 
-Reach for it when the app answers general questions from approved passages. It needs the app's knowledge: a `kb/` folder with a retriever in the code (`code.knowledge.retriever`), or, for an app that is not a folder, `App.knowledge` with the topics its retriever nominates. For a fixed list the caller chooses from as part of a task, use `choice`.
+Reach for it when the app answers general questions from approved passages. It needs the app's knowledge: a `kb/` folder, whose topics the engine's retriever nominates (by their keywords) unless the code gives its own (`code.knowledge.retriever`), or, for an app that is not a folder, `App.knowledge` with the topics its retriever nominates. For a fixed list the caller chooses from as part of a task, use `choice`.
 
 ## Options
 
@@ -63,5 +63,5 @@ subject:
 
 - Retrieval floors, caps and the retriever change what the question offers, and so the model's request: sweep them offline on paraphrase sets, never by re-recording a cassette.
 - The nominations ride on the turn: the questions and the fill see the same ones, and a caller of `plan()` or `resolve()` without `runTurn` passes them on the context (`TurnContext.knowledge`).
-- `pnpm check` refuses a topic slot in an app with no `kb/`, or with no retriever, since it would never ask.
+- `pnpm check` refuses a topic slot in an app with no `kb/`, since it would never ask.
 - Run its checks with `pnpm --filter dialogwright test slots/topic`.

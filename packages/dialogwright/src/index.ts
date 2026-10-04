@@ -73,6 +73,9 @@ export { topicCatalog } from './kb/catalog';
 export type { TurnKnowledge } from './core/knowledge';
 export { RETRIEVE_BUDGET_MS } from './run/retrieve';
 export type { RetrievalRecord } from './trace/types';
+// The engine's retrievers (the default for an app with a kb/ whose code gives none): keyword, BM25 with phrases.
+export { KeywordRetriever } from './kb/keyword';
+export type { KeywordRetrieverOptions } from './kb/keyword';
 
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
 // What the author of a slot type uses is in 'dialogwright/slot-kit'; the conformance kit is in
