@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=1920"><title>{{name}} · virtual agent console</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{name}} · virtual agent console</title>
 <style>
   :root {
     --bg:#0d1016; --panel:#141922; --panel-2:#1a202b; --border:#262e3b; --border-2:#323b4b;
@@ -49,6 +49,7 @@
   .totals { display:flex; gap:18px; color:var(--muted); }
   .totals b { color:var(--text); font-weight:600; font-family:var(--mono); font-size:.95em; }
   .actions { display:flex; gap:8px; margin-left:auto; }
+  .actions form { display:contents; }
   .controls { display:flex; gap:8px; align-items:center; }
   button, select, input { font:inherit; font-size:.93em; background:#1f2632; color:var(--text); border:1px solid var(--border-2); border-radius:7px; padding:5px 12px; cursor:pointer; }
   button:hover { border-color:#46526a; }
@@ -283,6 +284,33 @@
      banner stays full-strength; the rows and header beneath it dim, but stay legible. */
   .discarded-banner { margin:0 0 .7em; padding:.5em .7em; border-radius:8px; background:var(--fail-bg); color:#ffb3ba; font-size:.82em; font-weight:600; line-height:1.35; }
   .perception.discarded .jevhead, .perception.discarded .grp, .perception.discarded .row, .perception.discarded .decision { opacity:.55; }
+
+  /* ---------- a phone (CONSOLE_AUTH=token opens the console from one) ----------
+     Up to 820px wide the two columns stack and the page scrolls as a whole; the header and the replay
+     bar wrap, so Sign out stays on screen; the audit and perception lists scroll sideways inside their
+     own boxes; and buttons are a finger's height. Wider than that, nothing here applies. */
+  @media (max-width: 820px) {
+    header, body.presenter header { height:auto; min-height:56px; flex-wrap:wrap; white-space:normal; gap:8px 12px; padding:8px 12px; }
+    .brand .title span { display:none; }
+    .totals { flex-wrap:wrap; gap:4px 12px; }
+    .actions { flex-wrap:wrap; margin-left:0; }
+    .controls { flex-wrap:wrap; }
+    .replaybar, body.presenter .replaybar { height:auto; flex-wrap:wrap; padding:8px 12px; gap:8px; }
+    .replaybar .hint { display:none; }
+    #trace, body.presenter .replaybar #trace { max-width:100%; }
+    main, body.replay main, body.presenter main, body.presenter.replay main { grid-template-columns:minmax(0,1fr); height:auto; padding:12px; gap:12px; }
+    .right { overflow:visible; padding-right:0; }
+    #conversation { max-height:70vh; }
+    .now-main { flex-wrap:wrap; white-space:normal; }
+    .stages { grid-template-columns:repeat(auto-fill, minmax(6.5em, 1fr)); }
+    .sline { grid-template-columns:5.2em minmax(0,1fr); }
+    .alist { overflow-x:auto; }
+    .alist .arow { min-width:30em; }
+    .perception { overflow-x:auto; }
+    .perception .row { grid-template-columns:minmax(0,9.5em) minmax(2.5em,1fr) minmax(0,7.5em); }
+    button, select { min-height:40px; padding:8px 14px; }
+    .convtabs button, .toggle { min-height:36px; }
+  }
 
   /* No motion for a viewer who asked for none: the accents simply do not play. */
   @media (prefers-reduced-motion: reduce) {

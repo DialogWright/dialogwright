@@ -30,7 +30,8 @@
     "configure": "tsx packages/dialogwright/src/server/setup.ts",
     "start": "tsx packages/dialogwright/src/server/start.ts",
     "service": "tsx packages/dialogwright/src/server/serviceFile.ts",
-    "fallback": "tsx packages/dialogwright/src/server/fallback.ts"
+    "fallback": "tsx packages/dialogwright/src/server/fallback.ts",
+    "console:link": "tsx packages/dialogwright/src/server/console/linkCli.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.0"

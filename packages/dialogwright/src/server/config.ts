@@ -9,6 +9,7 @@ import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 import { checkJwksUrl } from './chat/jwks';
 import { isLoopbackHost } from './localOnly';
+import { consoleAuthOf, describeConsoleAuth, type ConsoleAuthSettings } from './console/settings';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -131,6 +132,11 @@ export interface ServerConfig {
    * The Twilio webhooks are unaffected (src/server/localOnly.ts).
    */
   consoleLocalOnly: boolean;
+  /**
+   * CONSOLE_AUTH=token: the console is served through the tunnel too, behind a sign-in
+   * (server/console/auth.ts). Absent for CONSOLE_AUTH=local, the default: today's local-only rule.
+   */
+  consoleAuth?: ConsoleAuthSettings;
   /**
    * CHAT=on|off, default off: whether the engine serves its own web chat on `/chat`. Absent when off,
    * so a deployment without chat has exactly the config it had before chat existed.
@@ -304,6 +310,7 @@ export function loadConfig(env: Env): ServerConfig {
   const telnyxTranscriptionProvider = recognizerName(env, 'TELNYX_TRANSCRIPTION_PROVIDER', 'deepgram');
   const chat = chatOf(env, publicHost);
   const widget = widgetOf(env);
+  const consoleAuth = consoleAuthOf(env, dash === 'on');
   return {
     port,
     publicHost,
@@ -342,6 +349,7 @@ export function loadConfig(env: Env): ServerConfig {
     ...sessionStoreOf(env),
     ...(chat ? { chat } : {}),
     ...(widget ? { widget } : {}),
+    ...(consoleAuth ? { consoleAuth } : {}),
   };
 }
 
@@ -478,6 +486,12 @@ function listed(items: readonly string[]): string {
  */
 export function consoleExposure(c: ServerConfig, paths: readonly string[] = ['/dashboard']): string {
   const laptop = isLoopbackHost(c.publicHost);
+  if (c.consoleAuth) {
+    // The console signs in; an app's local-only pages keep CONSOLE_LOCAL_ONLY's rule.
+    const own = paths.filter((p) => p !== '/dashboard');
+    const pages = own.length === 0 ? '' : c.consoleLocalOnly ? `; ${listed(own)} local only, 404 through ${laptop ? 'any tunnel' : 'the tunnel'}` : `; ${listed(own)} PUBLIC (CONSOLE_LOCAL_ONLY=off)`;
+    return `console: /dashboard behind sign-in on ${publicBase(c, c.port)}/dashboard (CONSOLE_AUTH=token); pnpm console:link prints a sign-in link${pages}`;
+  }
   if (c.consoleLocalOnly) {
     return `console: ${listed(paths)} local only (${localBase(c.port)}); 404 through ${laptop ? 'any tunnel' : `the tunnel on ${c.publicHost}`}`;
   }
@@ -522,7 +536,7 @@ export function describeConfig(c: ServerConfig): string {
     `jev timeout ${c.jevTimeoutMs} ms`,
     `screen ${c.screen}`,
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
-    `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
+    c.consoleAuth ? describeConsoleAuth(c.consoleAuth) : `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,
     `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}`,
     `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,

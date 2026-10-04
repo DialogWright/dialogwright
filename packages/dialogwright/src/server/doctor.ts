@@ -17,7 +17,8 @@ import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } 
  *
  *   1. the config loads, with the server's own messages;
  *   2. PUBLIC_HOST resolves and https://PUBLIC_HOST/health answers within five seconds (through the tunnel);
- *   3. https://PUBLIC_HOST/dashboard answers 404 (the console is not public);
+ *   3. https://PUBLIC_HOST/dashboard answers 404 (the console is not public); with CONSOLE_AUTH=token, it
+ *      sends a browser with no cookie to the sign-in page (302) and the console's data answers 401;
  *   4. each enabled carrier's secret has the right shape, and signatures are checked;
  *   5. the model: which one and from where, and its key variable set (no request is made); a stub is a warning;
  *   6. HANDOFF_NUMBER is not a 555 number;
@@ -28,9 +29,9 @@ import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } 
  *  10. with SESSION_STORE=file:<dir> (and only then, after the folders), its folder can be written, is not
  *      on a temporary filesystem a reboot empties, and is not readable by others.
  *
- * It calls no carrier and no model: the only requests are DNS, two GETs to the server's own address,
- * and one HEAD with no key and no body to a host the setup already relies on, for its clock; none with
- * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
+ * It calls no carrier and no model: the only requests are DNS, two GETs to the server's own address
+ * (three with CONSOLE_AUTH=token), and one HEAD with no key and no body to a host the setup already
+ * relies on, for its clock; none with --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
 export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'folders' | 'store' | 'space' | 'clock';
@@ -188,9 +189,11 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
     }
   }
 
-  // 3. The console is not public.
+  // 3. The console is not public: with CONSOLE_AUTH=token, it asks for sign-in and gives nothing without one.
   if (health === null) {
     results.push({ id: 'console', status: 'skip', message: "whether the console is public: not asked, as the server's health was not" });
+  } else if (config.consoleAuth) {
+    results.push(await signInCheck(base, deps));
   } else {
     try {
       const res = await deps.fetch(`${base}/dashboard`, { signal: AbortSignal.timeout(ASK_MS), redirect: 'manual' });
@@ -392,6 +395,40 @@ export function clockSources(config: ServerConfig, laptop: boolean): string[] {
     }
   }
   return [...new Set(urls)];
+}
+
+/**
+ * Check 3 with CONSOLE_AUTH=token: through the tunnel, https://PUBLIC_HOST/dashboard must send a browser
+ * with no cookie to the sign-in page (302 to /dashboard/login), never the console, and the console's data
+ * (its trace list) must answer 401.
+ */
+async function signInCheck(base: string, deps: DoctorDeps): Promise<CheckResult> {
+  const PUBLIC_FIX = 'restart the server with these settings (CONSOLE_AUTH=token): anyone could watch calls';
+  let page: Response;
+  try {
+    page = await deps.fetch(`${base}/dashboard`, { signal: AbortSignal.timeout(ASK_MS), redirect: 'manual' });
+  } catch (e) {
+    return { id: 'console', status: 'warn', message: `${base}/dashboard did not answer (${messageOf(e)})`, fix: 'run pnpm diagnose again' };
+  }
+  if (page.status === 404) {
+    return { id: 'console', status: 'warn', message: `${base}/dashboard answered 404: the running server keeps the console local, though CONSOLE_AUTH is token here`, fix: 'restart the server to take CONSOLE_AUTH=token' };
+  }
+  const location = page.headers.get('location') ?? '';
+  if (page.status !== 302 || location !== '/dashboard/login') {
+    return page.status === 200
+      ? { id: 'console', status: 'fail', message: `${base}/dashboard answered 200 without a sign-in: the console is public`, fix: PUBLIC_FIX }
+      : { id: 'console', status: 'fail', message: `${base}/dashboard answered ${page.status}${location ? ` to ${location}` : ''}, not the sign-in page`, fix: PUBLIC_FIX };
+  }
+  let data: Response;
+  try {
+    data = await deps.fetch(`${base}/dashboard/traces`, { signal: AbortSignal.timeout(ASK_MS), redirect: 'manual' });
+  } catch (e) {
+    return { id: 'console', status: 'warn', message: `${base}/dashboard/traces did not answer (${messageOf(e)})`, fix: 'run pnpm diagnose again' };
+  }
+  if (data.status !== 401) {
+    return { id: 'console', status: 'fail', message: `${base}/dashboard/traces answered ${data.status} without a sign-in: the calls are public`, fix: PUBLIC_FIX };
+  }
+  return { id: 'console', status: 'ok', message: 'the console asks for sign-in through the tunnel (CONSOLE_AUTH=token): /dashboard goes to /dashboard/login, and its data answers 401' };
 }
 
 /** One check as a line: its status, what it found, and the fix. */

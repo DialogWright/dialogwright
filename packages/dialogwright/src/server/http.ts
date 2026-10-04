@@ -11,7 +11,8 @@ import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
 import { maskNumber, redactDeep } from './dashboard/events';
 import type { AuditSink } from '../run/turn';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
-import { isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly';
+import { CONSOLE_PATHS, isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly';
+import { ConsoleAuth } from './console/auth';
 import type { CallbackParams, RelayLanguage, StartDocumentOptions, VoiceProvider, WebhookRequest } from './voice/provider';
 import { providerForPath, voiceProviders } from './voice/registry';
 import { twilioCallbackParams, twilioProvider } from './voice/twilio';
@@ -63,6 +64,12 @@ export interface HttpDeps {
   chatLive?: () => number;
   /** The trace and audit folders' sizes, for `/health`'s `disk`; absent when no retention is set, and `/health` then has no `disk`. */
   disk?: () => { traceBytes: number; auditBytes: number };
+  /**
+   * The console's sign-in, for CONSOLE_AUTH=token (index.ts makes it, and its first link once the server
+   * listens). Read only when config.consoleAuth is set; absent then, one is made here, with no link until
+   * something mints one. With CONSOLE_AUTH=local it is never used.
+   */
+  consoleAuth?: ConsoleAuth;
 }
 
 const MAX_BODY = 64 * 1024;
@@ -408,7 +415,11 @@ export function decideAction(
 export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const routes = deps.routes ?? [];
   validateRoutes(routes);
-  const localOnly = localOnlyPaths(routes);
+  const settings = deps.config.consoleAuth;
+  const auth = settings ? (deps.consoleAuth ?? new ConsoleAuth({ settings, publicHost: deps.config.publicHost, audit: deps.audit ?? null, log: deps.log })) : undefined;
+  // With CONSOLE_AUTH=token the console is served through the tunnel behind its sign-in; an app's
+  // local-only pages keep CONSOLE_LOCAL_ONLY's rule either way.
+  const localOnly = auth ? localOnlyPaths(routes).filter((p) => !CONSOLE_PATHS.includes(p)) : localOnlyPaths(routes);
   const enabled = voiceProviders(deps.config.voiceProviders);
   return (req, res) => {
     void (async () => {
@@ -418,7 +429,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         reply(res, 404, 'text/plain', 'not found');
         return;
       }
-      if (deps.bus && handleDashboardRequest(req, res, { bus: deps.bus, traceDir: deps.config.traceDir, enabled: deps.config.dashboard })) return;
+      if (deps.bus && handleDashboardRequest(req, res, { bus: deps.bus, traceDir: deps.config.traceDir, enabled: deps.config.dashboard, ...(auth ? { auth } : {}) })) return;
       // Before the webhooks: an app's page authenticates its own way (a portal token), not with Twilio's signature.
       // A route is handed only the paths that are its own, by the matcher the local-only guard used above.
       for (const route of routes) {

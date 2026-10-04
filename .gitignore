@@ -9,6 +9,8 @@ packages/*/audit/
 # A file session store (SESSION_STORE=file:sessions): what callers said, kept between turns
 /sessions/
 apps/*/sessions/
+# The console's sign-in link file (CONSOLE_AUTH=token): a one-time link and the key that makes one
+.console-link/
 .env
 .env.*
 !.env.example

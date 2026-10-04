@@ -171,6 +171,49 @@ describe('pnpm diagnose', () => {
       const results = await runDoctor({ env: { ...goodEnv(dir), CONSOLE_LOCAL_ONLY: 'off' }, cwd: dir }, deps({ dashboard: new Response('<html>', { status: 200 }) }));
       expect(byId(results, 'console')).toMatchObject({ status: 'fail', message: 'https://ivr.example.com/dashboard answered 200: the console is public', fix: 'set CONSOLE_LOCAL_ONLY=on (the default): anyone could watch calls' });
     });
+
+    /** deps(), with the console's own paths answered as `answers` says (by the end of the URL). */
+    function consoleDeps(answers: Record<string, Response | Error>): DoctorDeps & { seen: Seen } {
+      const d = deps();
+      const inner = d.fetch;
+      d.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const answer = Object.entries(answers).find(([end]) => url.endsWith(end))?.[1];
+        if (answer === undefined) return inner(input, init);
+        d.seen.fetched.push(url);
+        expect(init?.redirect).toBe('manual');
+        if (answer instanceof Error) throw answer;
+        return answer;
+      }) as typeof fetch;
+      return d;
+    }
+    const signIn = () => new Response(null, { status: 302, headers: { location: '/dashboard/login' } });
+    const refused = () => new Response('sign in first: /dashboard/login', { status: 401 });
+
+    it('with CONSOLE_AUTH=token, passes when the page sends to sign in and its data asks for one', async () => {
+      const dir = tempDir();
+      const d = consoleDeps({ '/dashboard': signIn(), '/dashboard/traces': refused() });
+      const results = await runDoctor({ env: { ...goodEnv(dir), CONSOLE_AUTH: 'token' }, cwd: dir }, d);
+      expect(byId(results, 'console')).toMatchObject({ status: 'ok', message: 'the console asks for sign-in through the tunnel (CONSOLE_AUTH=token): /dashboard goes to /dashboard/login, and its data answers 401' });
+      expect(d.seen.fetched).toContain('https://ivr.example.com/dashboard/traces');
+    });
+
+    it('with CONSOLE_AUTH=token, fails when the page or its data answers without a sign-in', async () => {
+      const dir = tempDir();
+      const env = { ...goodEnv(dir), CONSOLE_AUTH: 'token' };
+      const page = await runDoctor({ env, cwd: dir }, consoleDeps({ '/dashboard': new Response('<html>', { status: 200 }), '/dashboard/traces': refused() }));
+      expect(byId(page, 'console')).toMatchObject({ status: 'fail', message: 'https://ivr.example.com/dashboard answered 200 without a sign-in: the console is public', fix: 'restart the server with these settings (CONSOLE_AUTH=token): anyone could watch calls' });
+      const data = await runDoctor({ env, cwd: dir }, consoleDeps({ '/dashboard': signIn(), '/dashboard/traces': new Response('[]', { status: 200 }) }));
+      expect(byId(data, 'console')).toMatchObject({ status: 'fail', message: 'https://ivr.example.com/dashboard/traces answered 200 without a sign-in: the calls are public' });
+      const elsewhere = await runDoctor({ env, cwd: dir }, consoleDeps({ '/dashboard': new Response(null, { status: 302, headers: { location: 'https://elsewhere.example.org/' } }), '/dashboard/traces': refused() }));
+      expect(byId(elsewhere, 'console').status).toBe('fail');
+    });
+
+    it('with CONSOLE_AUTH=token, warns when the running server still keeps the console local (404)', async () => {
+      const dir = tempDir();
+      const results = await runDoctor({ env: { ...goodEnv(dir), CONSOLE_AUTH: 'token' }, cwd: dir }, consoleDeps({ '/dashboard': new Response('not found', { status: 404 }) }));
+      expect(byId(results, 'console')).toMatchObject({ status: 'warn', message: 'https://ivr.example.com/dashboard answered 404: the running server keeps the console local, though CONSOLE_AUTH is token here', fix: 'restart the server to take CONSOLE_AUTH=token' });
+    });
   });
 
   describe('4. the carrier', () => {

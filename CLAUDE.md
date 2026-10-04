@@ -63,6 +63,7 @@ pnpm configure [--app <name>]   # asks, and writes <app>/.env (mode 600): a lapt
 pnpm audit:verify <audit folder>   # each audit day file's hash chain; exit 1 at the first break
 ENV_FILE=<path> pnpm service <launchd|systemd> --app <name> [--label <label>] [--out <file>]   # a service file with this machine's paths; prints the install commands, runs none
 pnpm fallback --provider <twilio|telnyx> --number <E.164> [--message "..."] --out <file>   # the document a carrier plays when it cannot reach the server; host it elsewhere, paste its URL where it says
+[ENV_FILE=<path>] pnpm console:link [--app <name>]   # with CONSOLE_AUTH=token: a new one-time sign-in link for the console (the one before it stops working), printed on the server's machine
 ```
 
 `pnpm check` prints one line per problem, `file:line:column  path  message  ->  fix`, and exits 1 when there is any. Act on the fix text.

@@ -329,10 +329,11 @@
       <section id="console" aria-labelledby="console-title">
         <h2 id="console-title">8. The console behind single sign-on</h2>
         <p>
-          Today the console is kept off the internet by <code>CONSOLE_LOCAL_ONLY</code>: it answers only a request made on the server's own
-          machine. Across instances it becomes its own role (<code>--role console</code>), internal only, behind single sign-on or a VPN,
-          reading the shared stores. The design adds console sign-in with roles (viewer, supervisor, admin) and an access log, in the audit
-          store, of who replayed which call.
+          On one machine the console is kept off the internet by <code>CONSOLE_LOCAL_ONLY</code>, or opened to its one owner through
+          the tunnel by <code>CONSOLE_AUTH=token</code>'s one-time sign-in link, with each sign-in and replay in the audit. Across
+          instances it becomes its own role (<code>--role console</code>), internal only, behind single sign-on or a VPN, reading the
+          shared stores. The design adds roles (viewer, supervisor, admin) to the sign-in, and the
+          access log of who replayed which call goes to the shared audit store.
         </p>
       </section>
 
