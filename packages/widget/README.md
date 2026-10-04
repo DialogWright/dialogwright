@@ -2,6 +2,69 @@
 
 The DialogWright web chat widget: a small script a site embeds to talk to a DialogWright chat endpoint (`/chat`, served by the engine when `CHAT=on`). It has no runtime dependencies and carries no engine code; it speaks the chat wire (`packages/dialogwright/src/channel/chat/protocol.ts`) and nothing else.
 
+## Embedding the widget
+
+One script tag, its options as `data-*` attributes:
+
+```html
+<script src="https://cdn.example.com/dialogwright-widget.js"
+        data-endpoint="wss://chat.example.com/chat"
+        data-title="Help" data-position="bottom-left"></script>
+```
+
+Or from code, for the options only code can give (a sign-in token, what a transfer does):
+
+```html
+<script src="https://cdn.example.com/dialogwright-widget.js"></script>
+<script>
+  DialogWright.mount({
+    endpoint: 'wss://chat.example.com/chat',
+    getToken: async () => mySite.idToken(),
+    onTransfer: (reason) => mySite.openLiveChat(reason),
+  });
+</script>
+```
+
+The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`.
+
+| Option | `data-` attribute | Default | What it does |
+|---|---|---|---|
+| `endpoint` | `data-endpoint` | required | The chat endpoint, `wss://host/chat`. |
+| `locale` | `data-locale` | the page's `<html lang>`, else none | The language asked for; the server answers in the app's closest one. |
+| `title` | `data-title` | "Chat with us" | The panel's heading. |
+| `strings` | `data-strings` (JSON) | English | Any of the widget's words (below). |
+| `position` | `data-position` | `bottom-right` | `bottom-right`, `bottom-left`, or `inline` (inside `container`, always open). |
+| `container` | `data-container` (a CSS selector) | none | Where an `inline` widget goes. |
+| `startOpen` | `data-start-open` | `false` | Open the panel, and connect, on load. Otherwise the widget connects when it is first opened, so a page view that never chats opens no chat. |
+| `getToken` | (code only) | none | The site's sign-in token, or null; with it, the panel offers sign-in. |
+| `onTransfer` | (code only) | the panel says `transferred` | What a transfer does on this site (open a live chat, show a number). |
+| `backoffMs` | (code only) | `[500, 1000, 2000, 5000]` | Delays between reconnect attempts. |
+
+An option it cannot read (an unknown position, a word it does not have, `data-strings` that is not JSON) is warned about in the console and the default is used; a missing `endpoint`, or an `inline` widget without a container on the page, is an error.
+
+**Words.** Every word the widget shows is a key of `strings` (`src/strings.ts`): `open`, `close`, `title`, `log`, `message`, `placeholder`, `send`, `you`, `agent`, `signIn`, `signedIn`, `signInFailed`, `connecting`, `reconnecting`, `restarted`, `unavailable`, `wait`, `tooLong`, `ended`, `transferred`, `error`. The agent's lines are the app's own, in the chat's language; the server's error messages are never shown.
+
+**Look.** The widget renders into a shadow root on a `dialogwright-chat` element, so a site's CSS cannot break it and it cannot break the site. Theme it with custom properties on that element:
+
+```css
+dialogwright-chat {
+  --dw-accent: #0a7c55;   /* buttons, focus ring */
+  --dw-bg: #ffffff;       /* panel */
+  --dw-fg: #1d1d1f;       /* text */
+  --dw-user-bg: #e3f4ec;  /* the person's lines */
+  --dw-agent-bg: #f1f1f3; /* the agent's lines */
+  --dw-radius: 8px;
+  --dw-font: Georgia, serif;
+  --dw-z: 1000;           /* stacking order */
+}
+```
+
+Colours a site leaves unset follow the visitor's light or dark scheme.
+
+**Accessibility.** The conversation is an `aria-live="polite"` log; each agent line carries `lang` from the chat's language, so a screen reader pronounces it right; every control is labelled (with the site's words); Enter sends and Shift+Enter starts a new line; Escape closes the panel and returns focus to the launcher; the tab order is launcher, message box, send, sign-in, close; motion is used only when the visitor has not asked for less.
+
+**Safety.** The panel is built with `createElement`, and every line goes in as text: a line from the server can never become markup.
+
 ## The client
 
 `createChatClient` is the widget without a page: a site that wants its own interface uses it alone.
