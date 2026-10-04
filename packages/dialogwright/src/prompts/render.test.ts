@@ -146,8 +146,15 @@ describe('decisionToActions', () => {
   it('transfers a handoff with its reason, what was done and queued, and the slots collected', () => {
     expect(decisionToActions(app, {
       kind: 'handoff', reason: 'needs-human', promptId: 'handoff_needs_human', acks: [{ promptId: 'depot_unavailable', vars: {} }],
-      completed: ['track_parcel'], queued: ['report_missing'], slots: { accountId: '5550 1234' },
-    })).toEqual([say('depot_unavailable', {}, false), say('handoff_needs_human', {}, false), transferAction('needs-human', ['track_parcel'], ['report_missing'], { accountId: '5550 1234' })]);
+      completed: ['track_parcel'], queued: ['report_missing'], slots: { expectedDate: 'Wednesday, September 16' },
+    })).toEqual([say('depot_unavailable', {}, false), say('handoff_needs_human', {}, false), transferAction('needs-human', ['track_parcel'], ['report_missing'], { expectedDate: 'Wednesday, September 16' })]);
+  });
+
+  it('transfers only what the app\'s handoff data lets go: an identity factor is left out by default', () => {
+    expect(decisionToActions(app, {
+      kind: 'handoff', reason: 'needs-human', promptId: 'handoff_needs_human', acks: [],
+      completed: [], queued: [], slots: { accountId: '...1234', dob: 'verified', expectedDate: 'Wednesday, September 16' },
+    }).at(-1)).toEqual(transferAction('needs-human', [], [], { expectedDate: 'Wednesday, September 16' }));
   });
 
   it('says a clip-backed prompt as one line of parts', () => {
@@ -249,9 +256,9 @@ describe('completion and chaining', () => {
   });
 
   it('speaks acks before a handoff and reports completed forms', () => {
-    const frames = decisionToFrames(app, { kind: 'handoff', reason: 'needs-human', promptId: 'handoff_needs_human', acks: [{ promptId: 'depot_unavailable', vars: {} }], completed: ['track_parcel'], queued: [], slots: { accountId: '5550 1234' } });
+    const frames = decisionToFrames(app, { kind: 'handoff', reason: 'needs-human', promptId: 'handoff_needs_human', acks: [{ promptId: 'depot_unavailable', vars: {} }], completed: ['track_parcel'], queued: [], slots: { expectedDate: 'Wednesday, September 16' } });
     expect(frames.map((f) => (f.type === 'text' ? f.token : f.type))).toEqual(['The depot will be in touch with next steps.', 'This one needs a specialist. Connecting you now.', 'end']);
-    expect(frames.at(-1)).toEqual({ type: 'end', handoffData: '{"reasonCode":"needs-human","completed":["track_parcel"],"slots":{"accountId":"5550 1234"}}' });
+    expect(frames.at(-1)).toEqual({ type: 'end', handoffData: '{"reasonCode":"needs-human","completed":["track_parcel"],"slots":{"expectedDate":"Wednesday, September 16"}}' });
   });
 
   it('reports intents the call never started in the handoff data', () => {

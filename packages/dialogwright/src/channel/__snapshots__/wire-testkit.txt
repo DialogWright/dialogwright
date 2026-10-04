@@ -118,7 +118,7 @@
 10 {"type":"text","token":"What day was it due?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 11 {"type":"text","token":"Let me make sure I have this right. You're reporting a parcel that was due Wednesday, September 16, and I have your description. Shall I file the report?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 12 {"type":"text","token":"Our records show a parcel delivered to you that day, so I'm connecting you with someone who can check.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
-12 {"type":"end","handoffData":"{\"reasonCode\":\"delivered\",\"slots\":{\"accountId\":\"...1234\",\"dob\":\"verified\",\"missingNote\":\"your description\",\"expectedDate\":\"Wednesday, September 16\"}}"}
+12 {"type":"end","handoffData":"{\"reasonCode\":\"delivered\",\"slots\":{\"missingNote\":\"your description\",\"expectedDate\":\"Wednesday, September 16\"}}"}
 # report-change-date
 0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 1 {"type":"text","token":"Sure, I can help you report a missing parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
@@ -180,7 +180,7 @@
 5 {"type":"text","token":"For your security I need one more check. I've texted a six-digit code to the phone ending in 0101. Please enter it on your keypad.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 6 {"type":"text","token":"I didn't hear anything.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
 6 {"type":"text","token":"Let me connect you with a support specialist who can help.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
-6 {"type":"end","handoffData":"{\"reasonCode\":\"max-attempts\",\"slots\":{\"accountId\":\"...1234\",\"dob\":\"verified\"}}"}
+6 {"type":"end","handoffData":"{\"reasonCode\":\"max-attempts\"}"}
 # frustration-offer-yes
 0 {"type":"text","token":"Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}

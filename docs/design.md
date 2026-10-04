@@ -369,7 +369,7 @@ Server-made events never come off a wire.
 |---|---|
 | `say` | `parts` (text for the channel's own voice or display, or a recorded clip's URL) and `interruptible` |
 | `end` | `completed`: the business done |
-| `transfer` | `reason`, `completed`, `queued`, and the collected `slots`, for the person taking over |
+| `transfer` | `reason`, `completed`, `queued`, and the collected `slots`, for the person taking over, as app.yaml's `handoff.data` lets them leave the engine: by default no identity factor, and a redacted slot only masked. On a phone call they are the relay's `end` frame's `handoffData`, which the carrier holds and posts back; a chat's transfer sends none |
 | `send_digits` | Key tones to play on the line |
 | `set_language` | Speech and recognition languages |
 

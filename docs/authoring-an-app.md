@@ -92,6 +92,17 @@ prompts:
 - `brand` and `console` are what the operator console shows: the app's name, form and slot labels, the badge for each identity level, and the facts a tool call leaves.
 - `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech. An app can also say, per locale, which voice and recognizer each carrier uses and which hints it hears, and which number a call starts in which locale (`voice.locales`, `voice.numbers`): see [13.3](#133-languages-on-the-phone).
 - `wording` is the engine's own questions to the decision model, in the app's words (whom the caller is addressing, what counts as a hedge). Every string is sent to the model as written.
+- `handoff` is the handoff: the note's words about the app's domain (who it is for, the identity line by level, refusals and reasons in words), and `data`, what a transfer hands the channel of the slots the call collected. On a phone call that is the relay's `end` frame, which the carrier (Twilio, Telnyx) holds and posts back on its action callback, so it leaves the engine; a chat's transfer sends its reason only, never a collected value. The default keeps verification factors off the carrier: an identity factor slot (identity.yaml) is left out, a slot with a `redact` setting goes masked as the trace masks it (`...1234`, `••/••/1980`, a statement's stand-in), and any other slot goes as it is. `data.slots` says which go (`all`, the default; `none`; or a list), and `data.send` says, by slot, how one goes in place of its default: `omit`, `masked` or `as-is`. An app whose human desk needs a value in the clear names it:
+
+  ```yaml
+  handoff:
+    data:
+      slots: [accountId, missingNote]   # only these go
+      send:
+        accountId: masked               # a factor, sent by its last four rather than left out
+  ```
+
+  `pnpm check` refuses a slot that is not one, a slot listed twice, a listed identity factor with no `send` (it would still be left out), a `send` for a slot that is never sent, and `masked` for a slot with no `redact` (or `handoff: last4` or `verified`), which would send it as it is; `validateApp` refuses the same for an app built in code.
 - `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again). It is shorthand for `listen: call` on each slot it names ([Where a slot listens](#where-a-slot-listens-listen)); a carried slot that says another `listen` is refused.
 - `unsureIntent` says what an intent the model is unsure of gets, for every intent that does not say: `confirm` (the default) or `no-match` ([When the model is unsure](#when-the-model-is-unsure-unsure), under intents.yaml).
 - `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. The folder is relative to the app's package root, which is the folder its commands run in: the engine reads it from the working directory, and an app's `regress`, `cli` and `serve` scripts run in its package. It must stay inside the package, so an absolute path or one with `..` is refused. `check` then requires every intent to have examples there.
@@ -1150,7 +1161,7 @@ Where it applies: a tool call's param with the same name as the slot, as the gat
 
 What `redact` does not cover is the caller's words. The transcript (the speech event, the turn's text, and the questions the model was asked, whose span labels are the caller's words) is kept in the trace as said, so a trace is sensitive. The audit log holds only the masked calls. The model itself sees each slot's display in its turn state.
 
-`handoff` says what a transfer to a person hands over for the slot (`HandoffDecision.slots`, which the transfer sends on to the channel). Without it, the slot's display. `last4`: the last four digits. `verified`: only whether the caller was verified (`verified` or `not verified`), never the value, which needs an identity.yaml. `redact` does not change what a transfer hands over (only the trace's copy of it), so an identifier needs both, as the card has. Only filled slots are handed over, and a form's slots are emptied when it completes, unless app.yaml's `carrySlots` names them.
+`handoff` says what a transfer to a person hands over for the slot (`HandoffDecision.slots`). Without it, the slot's display. `last4`: the last four digits. `verified`: only whether the caller was verified (`verified` or `not verified`), never the value, which needs an identity.yaml. Only filled slots are handed over, and a form's slots are emptied when it completes, unless app.yaml's `carrySlots` names them. What the transfer then sends on to the channel is app.yaml's `handoff.data` ([app.yaml](#appyaml)): by default an identity factor is left out, a slot with a `redact` setting goes masked as the trace masks it, and any other slot goes as its `handoff` setting says. So `redact` also masks what a transfer sends, unless app.yaml names the slot `as-is`.
 
 ### Partial values
 
@@ -2008,6 +2019,7 @@ The same app answers on the phone, through Twilio, Telnyx or both, and on the we
 | Twilio's recognizer | `TWILIO_TRANSCRIPTION_PROVIDER`, `TWILIO_SPEECH_MODEL` (env) | `Deepgram`, and `flux` with Deepgram (no model with another provider) | When the app's default locale is not English (flux hears English), or to try another model. |
 | Telnyx's recognizer | `TELNYX_TRANSCRIPTION_PROVIDER` (env) | Telnyx's own default | To name `deepgram`, `google` or `telnyx`. |
 | Reconnects after a dropped relay | `RECONNECT_LIMIT` (env) | `2` | Fewer to hand a troubled call to a person sooner. |
+| What a transfer hands the carrier | `handoff.data` (app.yaml): `slots` (`all`, `none` or a list), `send` by slot (`omit`, `masked`, `as-is`) | no identity factor; a redacted slot masked; any other slot as it is | When the person taking the call needs a value in the clear (name it `as-is`), or fewer values on the carrier. |
 | The language a call starts in | `voice.numbers` (app.yaml): number called to locale | the app's default locale | A number per language. |
 | A locale's languages on the phone | `voice.locales.<tag>.tts`, `.transcription` (app.yaml) | the locale's tag | When the carrier needs a regional tag (`es` spoken as `es-US`, heard as `es-MX`). |
 | A locale's voice, per carrier | `voice.locales.<tag>.voices.<carrier>` (app.yaml): a name, or for Twilio `{ voice, provider }` | the deployment's voice for the default locale; the carrier's default for any other | For every locale besides the default, so it is not read by the carrier's default voice. |

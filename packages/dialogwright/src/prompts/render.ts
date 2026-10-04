@@ -4,6 +4,7 @@ import { endAction, sayAction, transferAction, type Action, type Say, type SayPa
 import { isPauseOnly, joinSpoken, segmentTemplate, stripLeadingPause, ttsOnly, VAR } from './segments';
 import { vocabularyClipId } from './clips';
 import { speechLanguagesOf } from '../core/locale';
+import { handoffDataSlots } from '../handoff/data';
 
 export interface PromptEntry {
   text: string;
@@ -133,11 +134,13 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
         endAction(decision.completed),
       ];
     case 'handoff':
-      // Same reasoning as 'complete': the call is ending, so nothing here is interruptible.
+      // Same reasoning as 'complete': the call is ending, so nothing here is interruptible. The
+      // transfer carries what the app's handoff data option lets leave the engine (handoff/data.ts):
+      // by default no identity factor, and a redacted slot only masked.
       return [
         ...decision.acks.map((a) => say(a.promptId, a.vars, false)),
         say(decision.promptId, {}, false),
-        transferAction(decision.reason, decision.completed, decision.queued, decision.slots),
+        transferAction(decision.reason, decision.completed, decision.queued, handoffDataSlots(app, decision.slots)),
       ];
   }
 }

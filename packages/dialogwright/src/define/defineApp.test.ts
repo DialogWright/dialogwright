@@ -214,6 +214,36 @@ describe('defineApp: what an unsure intent gets (app.yaml unsureIntent, intents.
   });
 });
 
+describe('defineApp: what a transfer hands the channel (app.yaml handoff.data)', () => {
+  const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
+  const withData = (lines: string): string => `${read('app.yaml')}\nhandoff:\n  data:\n${lines}`;
+
+  it('leaves it off the App unless written, and puts it on as written', () => {
+    expect(libraryApp.handoff).toBeUndefined();
+    const app = defineApp(folder({ 'app.yaml': withData('    slots: [card, book]\n    send:\n      card: as-is\n') }), libraryCode);
+    expect(app.handoff).toEqual({ data: { slots: ['card', 'book'], send: { card: 'as-is' } } });
+  });
+
+  it('refuses a way of sending a slot that is not one of the three', () => {
+    expect(problems(libraryCode, folder({ 'app.yaml': withData('    send:\n      card: clear\n') }))).toEqual([
+      'app.yaml:35:13  handoff.data.send.card  "card" is "clear", which is not allowed here; it must be one of "omit", "masked", "as-is"  ->  use one of "omit", "masked", "as-is"',
+    ]);
+  });
+
+  it('refuses a slot that is not one, and masked for a slot with nothing to mask it by', () => {
+    expect(problems(libraryCode, folder({ 'app.yaml': withData('    slots: [card, bok, branch]\n    send:\n      branch: masked\n') }))).toEqual([
+      'app.yaml:34:19  handoff.data.slots[1]  slot "bok" is not defined  ->  rename it to "book", or add it to the app\'s slots in app.ts (code.slots.bok)',
+      'app.yaml:36:15  handoff.data.send.branch  the slot "branch" has no redact setting (or handoff: last4 or verified), so masked would send it as it is  ->  give the slot a redact setting, or write as-is to send it in the clear',
+    ]);
+  });
+
+  it('refuses a send for a slot that is never sent', () => {
+    expect(problems(libraryCode, folder({ 'app.yaml': withData('    slots: none\n    send:\n      card: masked\n') }))).toEqual([
+      'app.yaml:36:13  handoff.data.send.card  the slot "card" is never sent, since slots is none  ->  delete "card" from send, or list the slots to send',
+    ]);
+  });
+});
+
 describe('defineApp: the folder and the code must name the same things', () => {
   const { complete } = libraryCode.forms.renew_loan!;
 

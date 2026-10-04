@@ -67,7 +67,7 @@ export const nameOptions = z.strictObject({
   handoff: z
     .enum(['display', 'verified'])
     .default('display')
-    .describe('What a transfer to a person hands over: the name as its "display", or only whether the caller was "verified", never the name.'),
+    .describe('What a transfer to a person hands over: the name as its "display", or only whether the caller was "verified", never the name. app.yaml\'s handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.'),
   text: NAME_PARTS.schema,
   ids: NAME_QUESTIONS.schema,
 });
