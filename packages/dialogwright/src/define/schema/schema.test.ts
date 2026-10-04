@@ -5,7 +5,7 @@ import { parse } from 'yaml';
 import type { ZodType } from 'zod';
 import { SCHEMAS, FILE_KINDS, FILE_NAMES, type FileKind } from './index';
 import { SCHEMAS_DIR } from './generate';
-import { jsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
+import { jsonSchemas, kbJsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
 import { slotsSchema } from './slots';
 
 const FIXTURE = join(__dirname, '..', '__fixtures__', 'valid');
@@ -122,7 +122,7 @@ describe('mistakes get a precise error', () => {
 
   it('an informational intent without a prompt, a missing control intent and a repeated menu digit are each named', () => {
     expect(issuesOf('intents', 'intents:\n  info: { criteria: c, label: l, kind: informational }\nmenu:\n  - { digit: "1", intent: info }\n  - { digit: "1", intent: info }\n')).toEqual([
-      { path: 'intents.info', code: 'custom', message: 'an informational intent plays a prompt, and this one names none' },
+      { path: 'intents.info', code: 'custom', message: 'an informational intent plays a prompt or says a passage, and this one names neither' },
       { path: 'intents', code: 'custom', message: 'the control intent "agent" is missing: the engine reads it by name' },
       { path: 'intents', code: 'custom', message: 'the control intent "repeat_prompt" is missing: the engine reads it by name' },
       { path: 'menu.1.digit', code: 'custom', message: 'keypad digit "1" is assigned twice' },
@@ -193,6 +193,17 @@ describe('the JSON Schemas', () => {
   it('schemas/locale-slots.schema.json is up to date (run: pnpm --filter dialogwright schemas)', () => {
     const committed = readFileSync(join(SCHEMAS_DIR, 'locale-slots.schema.json'), 'utf8');
     expect(committed, 'schemas/locale-slots.schema.json is stale: run `pnpm --filter dialogwright schemas` and commit the result').toBe(serializeSchema(localeSlotsJsonSchema()));
+  });
+
+  for (const [name, schema] of Object.entries(kbJsonSchemas())) {
+    it(`schemas/${name}.schema.json is up to date (run: pnpm --filter dialogwright schemas)`, () => {
+      const committed = readFileSync(join(SCHEMAS_DIR, `${name}.schema.json`), 'utf8');
+      expect(committed, `schemas/${name}.schema.json is stale: run \`pnpm --filter dialogwright schemas\` and commit the result`).toBe(serializeSchema(schema));
+    });
+  }
+
+  it('the knowledge base has a JSON Schema for each kind of file it reads', () => {
+    expect(Object.keys(kbJsonSchemas()).sort()).toEqual(['kb-locale-topics', 'kb-passage', 'kb-pending', 'kb-settings', 'kb-source', 'kb-topics']);
   });
 
   it('slots.yaml: the outer shape is a map of ids to maps with a type, and each type\'s options are the type\'s to check', () => {

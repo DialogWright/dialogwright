@@ -1,0 +1,112 @@
+# Examples of the `topic` slot type: configurations, and what a caller might say to each.
+# `topics` are the app's knowledge topics the slot is built with (each topic's id and title, and its
+# titles by locale); `context.nominated` are the topics the app's retriever nominated for the words,
+# best first, which the question offers; `answers` are the model's answers to the slot's question, by
+# question id (a slot reads the answers, not the words); `expect` is the outcome the slot must give.
+# The conformance kit runs every utterance here, and the type's docs page shows them.
+
+- name: help desk
+  about: The defaults, on a help desk's four topics. Only a topic the question offered fills, and two the model cannot tell apart are asked about.
+  slot: subject
+  topics:
+    - { id: opening_hours, title: Opening hours, titles: { es: Horario de apertura } }
+    - { id: returns, title: Returns and refunds, titles: { es: Devoluciones y reembolsos } }
+    - { id: parking, title: Parking, titles: { es: Aparcamiento } }
+    - { id: late_fees, title: Late fees, titles: { es: Recargos por retraso } }
+  config: {}
+  utterances:
+    - text: when do you open on saturday
+      context:
+        nominated:
+          - { topic: opening_hours, title: Opening hours, score: 2 }
+          - { topic: parking, title: Parking, score: 1 }
+      answers:
+        subjectTopic: { choice: { opening_hours: 0.9, parking: 0.04, none: 0.06 } }
+      expect: { kind: filled, value: opening_hours, display: opening hours, confirm: none, displays: { es: horario de apertura } }
+    - text: is there a fee if i bring it back late
+      context:
+        prompted: true
+        nominated:
+          - { topic: returns, title: Returns and refunds, score: 2 }
+          - { topic: late_fees, title: Late fees, score: 2 }
+      answers:
+        subjectTopic: { choice: { late_fees: 0.85, returns: 0.1, none: 0.05 } }
+      expect: { kind: filled, value: late_fees, display: late fees }
+    - text: can i bring a book back
+      context:
+        nominated:
+          - { topic: returns, title: Returns and refunds, score: 2 }
+          - { topic: late_fees, title: Late fees, score: 1 }
+      answers:
+        subjectTopic: { choice: { returns: 0.5, late_fees: 0.42, none: 0.08 } }
+      expect: { kind: disambiguate }
+    - text: where can i leave the car
+      context:
+        nominated:
+          - { topic: parking, title: Parking, score: 1 }
+      answers:
+        subjectTopic: { choice: { parking: 0.52, none: 0.48 } }
+      expect: { kind: absent }
+    - text: where can i park
+      context:
+        nominated:
+          - { topic: parking, title: Parking, score: 2 }
+      answers:
+        subjectTopic: { choice: { returns: 0.9, none: 0.1 } }
+      expect: { kind: absent }
+    - text: what about my dog
+      context:
+        prompted: true
+        nominated: []
+      expect: { kind: invalid, reason: no_topic, raw: "" }
+    - text: hello there
+      expect: { kind: absent }
+
+- name: any topic of the knowledge
+  about: Any topic the app's knowledge has fills, not only one offered on that turn; at most two are offered; the model's pick is read alone; the slot keeps its own words, id and miss reason.
+  slot: subject
+  topics:
+    - { id: opening_hours, title: Opening hours, titles: { es: Horario de apertura } }
+    - { id: parking, title: Parking, titles: { es: Aparcamiento } }
+    - { id: late_fees, title: Late fees, titles: { es: Recargos por retraso } }
+  config:
+    accept: catalog
+    cap: 2
+    disambiguate: false
+    fillAt: SLOT_CHOICE_CONFIRM
+    criterion: "The caller wants to know about {title}"
+    missReason: no_subject
+    text:
+      instructions: Read asr.text. Which subject does the caller ask about?
+      none: Names no subject
+    ids:
+      choice: subjectChoice
+  utterances:
+    - text: do you have parking, and are you open late
+      context:
+        nominated:
+          - { topic: parking, title: Parking, score: 3 }
+          - { topic: opening_hours, title: Opening hours, score: 2 }
+          - { topic: late_fees, title: Late fees, score: 1 }
+      answers:
+        subjectChoice: { choice: { parking: 0.48, opening_hours: 0.47, none: 0.05 } }
+      expect: { kind: filled, value: parking, display: parking, displays: { es: aparcamiento } }
+    - text: and what do late books cost
+      answers:
+        subjectChoice: { choice: { late_fees: 0.8, none: 0.2 } }
+      expect: { kind: filled, value: late_fees, display: late fees }
+    - text: i just wanted to say thanks
+      context:
+        prompted: true
+        nominated:
+          - { topic: opening_hours, title: Opening hours, score: 1 }
+      answers:
+        subjectChoice: { choice: { none: 0.9, opening_hours: 0.1 } }
+      expect: { kind: invalid, reason: no_subject, raw: "" }
+    - text: is parking free
+      context:
+        nominated:
+          - { topic: parking, title: Parking, score: 2 }
+      answers:
+        subjectChoice: { choice: { not_a_topic: 0.9, none: 0.1 } }
+      expect: { kind: absent }

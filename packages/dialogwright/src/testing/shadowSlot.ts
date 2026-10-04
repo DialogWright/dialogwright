@@ -20,7 +20,9 @@ import type { SlotCandidate, SlotContext, SlotOutcome, SlotPartial, SlotSpec } f
  * - the declared fields, once, when the shadow is made: id, spokenConfirm, redact, handoff, detect,
  *   valueKind, partialPromptId, whether there is a keypad and its length, whether there is a
  *   partialVars. Not the declarations a hand-written spec need not make (questionIds, prompts): the
- *   shadow carries the legacy spec's, and the candidate's are the conformance kit's to prove.
+ *   shadow carries the legacy spec's, and the candidate's are the conformance kit's to prove. Nor
+ *   `nominates`: a hand-written slot may retrieve in its own code where its library replacement
+ *   reads the engine's nominations; the shadow reads them when either side does.
  * A method that throws is compared by its message. On a difference the harness throws a
  * ShadowMismatchError naming the slot, the method, the inputs and both results; in `report` mode it
  * records the difference in a ShadowReport instead and carries on with the legacy result.
@@ -141,6 +143,10 @@ export function shadowSlot(legacy: SlotSpec, candidate: SlotSpec, options: Shado
 
   const spec: SlotSpec = {
     ...pick(legacy),
+    // Either side reading nominated topics makes the turn retrieve for the shadow, so both see the
+    // same nominations: a hand-written slot that retrieves in its own code beside the library topic
+    // slot that replaces it (which the engine retrieves for), or the other way round.
+    ...(legacy.nominates === true || candidate.nominates === true ? { nominates: true } : {}),
     questions(ctx) {
       return compare('questions', () => contextSummary(ctx), () => legacy.questions(ctx), () => candidate.questions(ctx), (a, b) => canonicalJson(a) === canonicalJson(b));
     },
@@ -307,6 +313,7 @@ function contextSummary(ctx: SlotContext): string {
   if (ctx.window !== null) parts.push(`window ${json(ctx.window)}`);
   if (ctx.records.length > 0) parts.push(`${ctx.records.length} records`);
   if (ctx.locale !== undefined) parts.push(`locale ${ctx.locale}`);
+  if (ctx.nominated !== undefined) parts.push(`nominated ${ctx.nominated.length === 0 ? 'none' : ctx.nominated.map((n) => n.topic).join(',')}`);
   return parts.join(' · ');
 }
 

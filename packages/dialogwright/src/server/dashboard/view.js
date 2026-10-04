@@ -415,11 +415,19 @@ function gateViewOf(e, turnIndex) {
   };
 }
 
-/** The knowledge-base source card: field names the console shows, mapped from KbSource (core/lifecycle.ts). */
+/**
+ * The knowledge-base source card: field names the console shows, mapped from KbSource
+ * (core/lifecycle.ts). Whom it answered is one "fact: value" line per fact, sorted. A record
+ * written before the record had `applies` (with a `plan` of its own) shows none: the console never
+ * reads the deprecated field. Absent fields are null, so the card can leave their lines out.
+ */
 function sourceOf(kb) {
+  const applies = Object.keys(kb.applies ?? {}).sort().map((k) => `${k}: ${kb.applies[k]}`);
   return {
     passageId: kb.passageId, document: kb.document, section: kb.section, version: kb.version,
-    effective: kb.effectiveFrom, approved: kb.approvedOn, fresh: kb.fresh,
+    effective: kb.effectiveFrom, effectiveTo: kb.effectiveTo ?? null,
+    approved: kb.approvedOn ?? null, approvedBy: kb.approvedBy ?? null, fresh: kb.fresh,
+    applies, locale: kb.locale ?? null, sourceHash: kb.sourceHash ?? null, approvalHash: kb.approvalHash ?? null,
   };
 }
 

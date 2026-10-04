@@ -3,7 +3,8 @@ import type { AnswerMap, QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotContext } from './slots/types';
-import { informationalPrompt, intentLabel, isFormIntent } from './app/intents';
+import { informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
+import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { formOf, identityOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, Completion, FormId, SlotId, SummaryMove } from './app/types';
@@ -23,6 +24,8 @@ import type { AuditDraft } from '../audit/types';
 import { decisionToActions, spokenText, type RenderContext } from '../prompts/render';
 import { saidCode } from './spokenCode';
 import { matchLocale, slotLocaleOf } from './locale';
+import type { TurnKnowledge } from './knowledge';
+import type { Nomination } from '../kb/types';
 
 export interface TurnContext {
   nowMs: number;
@@ -59,6 +62,14 @@ export interface TurnContext {
    * the answer is in: the caller had not yet heard what the answer's turn asks. Unset, false.
    */
   duringService?: boolean;
+  /**
+   * What retrieval nominated for this turn's words (core/knowledge.ts TurnKnowledge), run once by
+   * runTurn before the turn is planned, and only when a topic slot is listening (topicsListening):
+   * plan() and resolve() hand the same nominations to every slot's questions and fill
+   * (SlotContext.nominated). Absent on every other turn and for an app without a knowledge base; a
+   * caller that plans or resolves without runTurn passes it to give a turn nominations.
+   */
+  knowledge?: TurnKnowledge;
 }
 
 /**
@@ -193,7 +204,22 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
     // The session's language, only for an app that declares locales: any other app's slots see the
     // context they always have.
     ...withLocale(locale),
+    // What retrieval nominated, only on a turn it ran for: any other turn's slots see the context
+    // they always have.
+    ...(tc.knowledge !== undefined ? { nominated: tc.knowledge.nominated } : {}),
   };
+}
+
+/**
+ * The turn context for a slot context built from words other than this turn's (an intent confirmed
+ * by a yes fills from what was said before it): this turn's nominations, retrieved for the yes, do not
+ * describe those words, so they are replaced by the ones retrieved for the words themselves on their
+ * own turn (`nominated`, kept with the pending confirmation), or dropped when none were.
+ */
+function knowledgeOfWords(tc: TurnContext, nominated: readonly Nomination[] | undefined): TurnContext {
+  const { knowledge: _, ...rest } = tc;
+  if (nominated !== undefined) return { ...rest, knowledge: { nominated } };
+  return tc.knowledge === undefined ? tc : rest;
 }
 
 const withLocale = (locale: string | undefined): { locale?: string } => (locale === undefined ? {} : { locale });
@@ -544,6 +570,15 @@ function screenRow(screen: ScreenResult, t: Thresholds): GateRow {
   return { gate: 'screen', value: screen.value, threshold: t.SCREEN_FIRE, passed: !screen.fired, outcome, decided: screen.fired };
 }
 
+/**
+ * What an informational intent says: its prompt, or its knowledge-base passage (resolved and
+ * recorded by kb/answer.ts informationalAnswer: the answer, or the unavailable line).
+ */
+function informed(s: Session, io: TurnIO, informs: Informs): InformationalAnswer {
+  if (informs.passage !== undefined) return informationalAnswer(s, io.tc, io.out, informs.passage);
+  return { ack: { promptId: informs.promptId, vars: {} }, answered: true };
+}
+
 type TransferConfirmation = Extract<PendingConfirmation, { target: 'transfer' }>;
 
 /**
@@ -749,9 +784,13 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       return { decision: { kind: 'replay', text: s.lastPromptText }, events: [] };
     case 'inform': {
       // The answer plays as an ack in front of the question the caller was on. What else the
-      // breath carried still fills, as on the queue verdict; no attempt counter moves.
+      // breath carried still fills, as on the queue verdict; no attempt counter moves. A passage
+      // that could not be said is followed by the offer of a person, once per call (kb/answer.ts).
       const fill = fillSlots(s, answers, ctx, activeSlots(s));
-      return { decision: resume(s, io, [{ promptId: verdict.promptId, vars: {} }, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
+      const said = informed(s, io, verdict);
+      const acks = [said.ack, ...fill.acks];
+      const offer = said.answered ? null : offerAfterUnavailable(s, acks);
+      return { decision: offer ?? resume(s, io, acks, fill.disambiguate, fill.help), events: fill.events };
     }
     case 'confirmed': {
       const pc = s.pendingConfirmation!;
@@ -772,13 +811,15 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         return { decision: completeForm(s, pc.form, [...acks, ...fill.acks], io), events: fill.events };
       }
       // The offer was accepted: the transfer the caller was offered is the one they get. One made
-      // for a question there was no answer to is not a frustrated caller's.
-      if (pc.target === 'transfer') return { decision: handoff(s, pc.after !== undefined ? 'live-agent' : 'frustrated'), events: [] };
+      // for a question there was no answer to (a form's completion, or an informational intent's
+      // passage: `why: 'no-answer'`) is not a frustrated caller's.
+      if (pc.target === 'transfer') return { decision: handoff(s, pc.why === 'no-answer' || pc.after !== undefined ? 'live-agent' : 'frustrated'), events: [] };
       if (pc.intent === 'agent') return { decision: handoff(s, 'live-agent'), events: [] };
       if (pc.intent === 'done') return { decision: goodbye(s), events: [] };
       if (!isFormIntent(io.app, pc.intent)) return { decision: failAttempt(s, 'intent', io), events: [] };
       // Fill from what the caller originally said, not from the "yes"; the form hears the yes too.
-      return enterForm(s, pc.intent, pc.answers, slotContext(s, pc.text, io.tc), io, undefined, answers);
+      // Its topic slot reads the topics nominated for those words, not this turn's (for the yes).
+      return enterForm(s, pc.intent, pc.answers, slotContext(s, pc.text, knowledgeOfWords(io.tc, pc.nominated)), io, undefined, answers);
     }
     case 'rejected': {
       const pc = s.pendingConfirmation!;
@@ -879,7 +920,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
     }
     case 'route':
       if (verdict.confirm === 'explicit') {
-        s.pendingConfirmation = { target: 'intent', intent: verdict.intent, answers, text: ctx.text };
+        // The words' nominations go with them, for the form the yes opens (only when retrieval ran).
+        s.pendingConfirmation = { target: 'intent', intent: verdict.intent, answers, text: ctx.text, ...(ctx.nominated !== undefined ? { nominated: ctx.nominated } : {}) };
         return { decision: prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, verdict.intent) }, [], ['yes', 'no']), events: [] };
       }
       // "No, that's all" at "anything else?": the call ends with the goodbye alone.
@@ -936,8 +978,11 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     if (option.intent === 'agent') return { decision: handoff(s, 'live-agent'), rows: [] };
     // An informational intent's key plays its line as the spoken intent does (the inform verdict):
     // an ack in front of the question the caller was on, here the keypad menu, its rung intact.
-    const informs = informationalPrompt(io.app, option.intent);
-    if (informs !== undefined) return { decision: resume(s, io, [{ promptId: informs, vars: {} }]), rows: [] };
+    const informs = informationOf(io.app, option.intent);
+    if (informs !== undefined) {
+      const said = informed(s, io, informs);
+      return { decision: (said.answered ? null : offerAfterUnavailable(s, [said.ack])) ?? resume(s, io, [said.ack]), rows: [] };
+    }
     if (!isFormIntent(io.app, option.intent)) return { decision: { kind: 'ignore' }, rows: [] };
     setForm(s, option.intent);
     return { decision: continueForm(s, io, [ackIntent(s, option.intent)], null), rows: [] };

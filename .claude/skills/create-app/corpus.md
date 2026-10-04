@@ -41,6 +41,7 @@ Each library slot asks the model questions with ids built from the slot's id. A 
 | `name` | `xGiven`: `true`; `xSpan`: the words that are the name, as a span (`"morgan ellis"`). | [name](../../../docs/slots/name.md) |
 | `text` | `xGiven`: `true` (the value is the whole turn's words). | [text](../../../docs/slots/text.md) |
 | `record` | `xChoice`: the record's label, `labelPrefix` and its key (`"record_7101"` by default). | [record](../../../docs/slots/record.md) |
+| `topic` | `xTopic`: a nominated topic's id (`"opening_hours"`), asked only when the app's retriever nominates topics for the line. | [topic](../../../docs/slots/topic.md) |
 
 A span label must be one of the spans the engine finds in the text, or the regression stops with `span "..." is not a candidate span of the text`. The regression's day is Friday 2026-09-18, so "tomorrow" is 2026-09-19 and "Friday" (ahead) is 2026-09-25.
 

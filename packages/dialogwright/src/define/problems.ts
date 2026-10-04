@@ -1,6 +1,6 @@
 import { isMap, isScalar, isSeq, type Document, type LineCounter, type Node } from 'yaml';
 import type { ZodIssue } from 'zod';
-import { fixForPattern } from './schema/index';
+import { fixForPattern } from './schema/common';
 import type { JsonSchema } from './schema/json';
 
 /**

@@ -14,6 +14,16 @@
     "verify": "pnpm typecheck && pnpm test",
     "policy:matrix": "pnpm --filter dialogwright policy:matrix",
     "policy:card": "pnpm --filter dialogwright policy:card",
-    "app:diagram": "pnpm --filter dialogwright app:diagram"
+    "app:diagram": "pnpm --filter dialogwright app:diagram",
+    "kb:model": "pnpm --filter dialogwright kb:model",
+    "kb:index": "pnpm --filter dialogwright kb:index",
+    "kb:bakeoff": "pnpm --filter dialogwright kb:bakeoff",
+    "kb:approve": "pnpm --filter dialogwright kb:approve",
+    "kb:status": "pnpm --filter dialogwright kb:status",
+    "kb:ingest": "pnpm --filter @dialogwright/kb-author kb:ingest",
+    "kb:draft": "pnpm --filter @dialogwright/kb-author kb:draft",
+    "kb:review": "pnpm --filter @dialogwright/kb-author kb:review",
+    "kb:refresh": "pnpm --filter @dialogwright/kb-author kb:refresh",
+    "kb:gaps": "pnpm --filter @dialogwright/kb-author kb:gaps"
   }
 }

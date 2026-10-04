@@ -4,8 +4,10 @@
  * public API stays the engine's. The shadow harness runs a replacement slot beside the slot it
  * replaces and fails on any difference (shadowSlot.ts); `isCassetteMiss` tells a replayed turn the
  * cassette had no answer for; the slot conformance kit runs the checks any slot type must pass over
- * its examples (src/slots/conformance). The policy's safety net: gate-event goldens write every
- * gate decision of a regression run (gateEvents.ts), and the gate grid crosses every tool with every
+ * its examples (src/slots/conformance). Goldens are written from one run of an app's corpus and
+ * scenarios as `regress` runs them, each turn kept whole (goldenRuns.ts), so an app can write its
+ * own (the knowledge its answers were read from, say) from the same turns. The policy's safety net:
+ * gate-event goldens write every gate decision of a regression run (gateEvents.ts), and the gate grid crosses every tool with every
  * kind of principal, subject and fact, the legacy evaluator (evaluateCall, exported here as test
  * support) as its reference (gateGrid.ts); the
  * shadow gate runs an app's gate beside that reference on every call of a grid or a whole run and
@@ -22,10 +24,16 @@ export {
 } from './shadowSlot';
 export type { ShadowMethod, ShadowMismatch, ShadowMode, ShadowOptions, ShadowReport } from './shadowSlot';
 export { isCassetteMiss } from '../jev/cassette';
+// Retrievers for a test of a topic slot or a knowledge app: one that nominates exactly what it is
+// given, and one that nominates by plain keywords (retrievers.ts).
+export { fixedRetriever, keywordRetriever } from './retrievers';
+export type { FixedNominations, KeywordRetrieverOptions, KeywordTopic } from './retrievers';
 export {
   runSlotConformance, slotConformanceChecks, ConformanceError, CHECK_IDS, CHECK_ABOUT, kitContext, answersOf, quietAnswers, KIT_TODAY,
 } from '../slots/conformance/index';
 export type { CheckId, ConformanceCheck, SlotConformanceOptions, TestRegistrar } from '../slots/conformance/index';
+export { goldenRuns } from './goldenRuns';
+export type { GoldenClient, GoldenRunOptions, GoldenRuns, GoldenSection } from './goldenRuns';
 export { gateEventGolden, gateEventLines } from './gateEvents';
 export type { GateEventGolden, GateEventGoldenOptions, GateGoldenClient } from './gateEvents';
 export {

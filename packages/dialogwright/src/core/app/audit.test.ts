@@ -5,6 +5,8 @@ import { serviceResultEvent } from '../../channel/events';
 import { VOICE_RELAY } from '../../channel/caps';
 import { auditDrafts } from '../audit';
 import { newSession } from '../session';
+import type { KbSource } from '../lifecycle';
+import { kbAuditRow } from '../../kb/record';
 import { registerApp } from './registry';
 import type { ServiceDef, App } from './types';
 
@@ -36,9 +38,17 @@ const hooked: App = {
   services: { scout, rival: { ...scout, audit: () => ({ type: 'rival_answer', detail: {} }) } },
 };
 
+// A tool that resolves a passage records the answer with the engine's row (kb/record.ts kbAuditRow).
+const answering: App = {
+  ...bare,
+  id: 'audit-answering',
+  tools: { ...bare.tools, lookUp: { run: () => ({ value: null, summary: 'found' }), audit: ({ call, summary, kb }) => [{ type: 'tool_result', detail: { tool: call.tool, summary } }, ...(kb ? [kbAuditRow(kb)] : [])] } },
+};
+
 beforeAll(() => {
   registerApp(bare);
   registerApp(hooked);
+  registerApp(answering);
 });
 
 /** A gate event that allowed `tool`, as the audit reads one. */
@@ -46,9 +56,9 @@ function ran(tool: string, summary: string, ref?: string) {
   return { decision: { call: { tool, params: { a: '1' } }, verdict: 'ALLOW' as const, rules: [] }, summary, ...(ref !== undefined ? { ref } : {}) };
 }
 
-function drafts(appId: string, gateEvents: ReturnType<typeof ran>[], event = serviceResultEvent('scout', null), pendingService: string | null = null) {
+function drafts(appId: string, gateEvents: ReturnType<typeof ran>[], event = serviceResultEvent('scout', null), pendingService: string | null = null, kb: KbSource | null = null) {
   const s = { ...newSession('a', 0, VOICE_RELAY, undefined, appId), pendingService };
-  return auditDrafts({ before: s, after: s, event, decision: { kind: 'ignore' }, gateEvents, kb: null, screen: null, quarantined: false });
+  return auditDrafts({ before: s, after: s, event, decision: { kind: 'ignore' }, gateEvents, kb, screen: null, quarantined: false });
 }
 
 describe('audit rows from the app', () => {
@@ -63,6 +73,18 @@ describe('audit rows from the app', () => {
   it('a tool\'s own audit hook gives its rows in place of the summary', () => {
     const rows = drafts('audit-hooked', [ran('lookUp', 'looked', 'r9')]).filter((d) => d.type !== 'gate');
     expect(rows).toEqual([{ type: 'looked_up', detail: { tool: 'lookUp', summary: 'looked', ref: 'r9' } }]);
+  });
+
+  it('a tool\'s hook is given the turn\'s knowledge record, and kbAuditRow records it', () => {
+    const kb: KbSource = {
+      passageId: 'terms-2026', topic: 'terms', version: '2026.1', applies: { tier: 'standard' }, locale: 'en-US', document: 'Terms', section: '2',
+      effectiveFrom: '2026-01-01', approvedBy: 'legal', approvedOn: '2025-12-15', sourceHash: '18345c153386', approvalHash: '7ae3662c7794', fresh: true,
+    };
+    expect(drafts('audit-answering', [ran('lookUp', 'found')], undefined, null, kb).filter((d) => d.type !== 'gate')).toEqual([
+      { type: 'tool_result', detail: { tool: 'lookUp', summary: 'found' } },
+      { type: 'kb_answer', detail: { passageId: 'terms-2026', version: '2026.1', fresh: true, locale: 'en-US', sourceHash: '18345c153386', approvalHash: '7ae3662c7794' } },
+    ]);
+    expect(drafts('audit-answering', [ran('lookUp', 'found')]).filter((d) => d.type !== 'gate')).toEqual([{ type: 'tool_result', detail: { tool: 'lookUp', summary: 'found' } }]);
   });
 
   it('an awaited agent\'s answer is recorded by the agent\'s own row; none for an agent the app lacks or when nothing was awaited', () => {

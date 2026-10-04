@@ -7,6 +7,7 @@ import {
   noInputArmed,
   handleSocketClose,
   handleSocketMessage,
+  loggedFrame,
   MALFORMED_LIMIT,
   newConnectionContext,
   spokenDigits as spokenDigitsBy,
@@ -20,6 +21,8 @@ import { loadConfig } from './config';
 import { DashboardBus } from './dashboard/bus';
 import type { DashboardEvent } from './dashboard/events';
 import { makeObserver } from './dashboard/observer';
+import { turnScrubber } from '../trace/redact';
+import { textFrame } from '../channel/relay/frames';
 import { CallTokens } from './tokens';
 import { FrameLog } from './frameLog';
 import { newSession } from '../core/session';
@@ -1731,3 +1734,22 @@ describe('a downstream service after a filed report', () => {
     expect(said.join(' ')).not.toMatch(/approved|10,000|Ignore previous/);
   });
 });
+
+describe('the frame log: a line that reads a redacted slot back', () => {
+  it('logs a text frame with the slot\'s value, display and digits masked, as the wire spelled them out; the frame sent is as said', () => {
+    const session = { ...newSession('CA1', 0, VOICE_RELAY), slots: { ...newSession('CA1', 0, VOICE_RELAY).slots, accountId: { ...newSession('CA1', 0, VOICE_RELAY).slots.accountId!, value: '55501234', display: '5550 1234' } } };
+    const scrub = turnScrubber(session, null, 'length', testkitApp);
+    for (const said of ['I have your account number as 5550 1234.', 'I have your account number as 55501234.']) {
+      const wire = textFrame(spokenDigits(said), true);
+      expect(wire.token).toMatch(/5 5 5 0, 1 2 3 4|5 5 5 0 1 2 3 4/);
+      expect(loggedFrame(wire, scrub)).toEqual({ ...wire, token: 'I have your account number as ...1234.' });
+    }
+    // A readback pending, and a decision's variables, are sources too; a line without the value is as it was.
+    const pending = turnScrubber({ ...newSession('CA1', 0, VOICE_RELAY), pendingConfirmation: { target: 'slot', slot: 'dob', value: '1985-04-12', display: 'April 12th, 1985' } }, null, 'length', testkitApp);
+    expect(loggedFrame(textFrame('Your birth date is April 12th, 1985?', true), pending)).toMatchObject({ token: 'Your birth date is ••/••/1985?' });
+    const byVars = turnScrubber(newSession('CA1', 0, VOICE_RELAY), { kind: 'prompt', promptId: 'x', vars: { accountId: '5550 1234' }, acks: [] }, 'length', testkitApp);
+    expect(loggedFrame(textFrame('That is 5550 1234.', true), byVars)).toMatchObject({ token: 'That is ...1234.' });
+    expect(loggedFrame(textFrame('Your parcel 4471 is on its way.', true), scrub)).toMatchObject({ token: 'Your parcel 4471 is on its way.' });
+  });
+});
+

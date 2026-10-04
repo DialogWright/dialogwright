@@ -29,10 +29,49 @@ export interface GateEvent {
   ref?: string;
 }
 
-/** The knowledge-base passage an answer was read from, for the console. */
+/**
+ * The knowledge record: the passage an answer was read from (or withheld, when `fresh` is false),
+ * as a turn reports it (TurnOut.kb). It is written to the trace, handed to a tool's audit hook
+ * (ToolAuditInput.kb) and shown on the console's source card; it is never part of what the model
+ * is asked, nor of a regression outcome. An app with a `kb/` folder builds it with `kbSourceOf`,
+ * and records it with `kbAuditRow` (kb/record.ts).
+ *
+ * The hashes are short: the first 12 hex characters (KB_SHORT_HASH) of the SHA-256 digests the
+ * approval recorded, enough to tell one approval from another in a trace or an audit row; the full
+ * digests stay in the passage's own file.
+ */
 export interface KbSource {
-  passageId: string; topic: string; plan: string; document: string; section: string; version: string;
-  effectiveFrom: string; effectiveTo: string | null; approvedBy: string; approvedOn: string; fresh: boolean;
+  passageId: string;
+  topic: string;
+  version: string;
+  /**
+   * Who the passage answered: for each fact it depends on, the caller's value, as the gated tool
+   * read it from the system of record (e.g. `{ card: 'junior' }`). Empty when it depends on none.
+   */
+  applies: Record<string, string>;
+  /** The passage's language tag, where the app gives one. */
+  locale?: string;
+  /** The source document and section the answer was drawn from. */
+  document: string;
+  section: string;
+  /** The days it is in force (ISO dates, both inclusive); no `effectiveTo`: open-ended. */
+  effectiveFrom: string;
+  effectiveTo?: string;
+  /** Who approved it and on what day; absent when it has no approval. */
+  approvedBy?: string;
+  approvedOn?: string;
+  /** The approval's digest of the source section's text, short (KB_SHORT_HASH hex characters). */
+  sourceHash?: string;
+  /** The approval's digest of everything it covers (kb/hash.ts approvalHashOf), short. */
+  approvalHash?: string;
+  /** Whether it may be said: approved, and nothing it was approved over has changed since. */
+  fresh: boolean;
+  /**
+   * @deprecated Phase 6: one fact a passage depended on, from before `applies`. Use
+   * `applies: { plan }` instead. Kept for one release so an app that still sets it compiles; the
+   * engine never reads or shows it, and the next release removes it.
+   */
+  plan?: string;
 }
 
 /**

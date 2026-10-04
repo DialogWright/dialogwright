@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { SlotOutcome, SlotPartial, SlotPrompt, SlotSpec } from '../core/slots/types';
+import type { CatalogTopic, Nomination, TopicCatalog } from '../kb/types';
 
 /**
  * The slot library's contract. A slot type turns validated options into a SlotSpec, so the engine
@@ -17,6 +18,17 @@ export type BuiltSlotSpec = SlotSpec & { questionIds: readonly string[]; prompts
  * parsed them.
  */
 export type SlotWording<W = unknown> = Readonly<Record<string, W>>;
+
+/**
+ * What an app gives every slot it builds, beside the slot's own options and wording: what a type may
+ * need of the app as a whole. Today, its knowledge's topics (`catalog`, kb/catalog.ts topicCatalog),
+ * which a slot that fills with a topic (the `topic` type) says by title and accepts; defineApp gives
+ * it from the folder's kb/, and an app that is not a folder passes its knowledge to defineSlots. A
+ * type that needs none of it ignores it.
+ */
+export interface SlotBuildEnv {
+  readonly catalog?: TopicCatalog;
+}
 
 /** A built-in or contributed slot type. `O` is its options as parsed (defaults applied); `W` its wording for one locale, as parsed. */
 export interface SlotType<O = unknown, W = unknown> {
@@ -41,10 +53,11 @@ export interface SlotType<O = unknown, W = unknown> {
   /**
    * The slot, from its id, its parsed options and, when any locale gives some, its wording by locale
    * (read with parts/locale.ts wordingFor, at fill and display time, from the locale the fill's
-   * context or the display call names). Must declare `questionIds` and `prompts`, and ask the same
-   * questions whatever the wording.
+   * context or the display call names), and what the app gives every slot (SlotBuildEnv: its
+   * knowledge's topics). Must declare `questionIds` and `prompts`, and ask the same questions
+   * whatever the wording.
    */
-  build(id: string, options: O, wording?: SlotWording<W>): BuiltSlotSpec;
+  build(id: string, options: O, wording?: SlotWording<W>, env?: SlotBuildEnv): BuiltSlotSpec;
   /**
    * Configurations with starter utterances (a type keeps them in its examples.yaml), which the docs
    * show and the conformance kit runs. Read when first asked for, not when the type is imported.
@@ -89,6 +102,11 @@ export interface SlotExample {
   keypad?: readonly SlotKeypadExample[];
   /** The slot's wording by locale tag, as a locale's slots.yaml writes it (`{ es: { options: { north: Norte } } }`), for a type that takes any. */
   wording?: Readonly<Record<string, unknown>>;
+  /**
+   * The app's knowledge topics the slot is built with (SlotBuildEnv.catalog), for a type that reads
+   * them (`topic`): each topic's id and title, and its titles by locale. Absent: built with none.
+   */
+  topics?: readonly CatalogTopic[];
 }
 
 /**
@@ -118,6 +136,12 @@ export interface ExampleContext {
   records?: readonly unknown[];
   /** The app's records by name (SlotContext.sources), for a slot that names its list. */
   sources?: Readonly<Record<string, readonly unknown[]>>;
+  /**
+   * The topics retrieval nominated for the words (SlotContext.nominated), best first, for a slot
+   * that reads them. Like the records, they go with the words: the kit gives them to every context
+   * it tries those words in, asked or not.
+   */
+  nominated?: readonly Nomination[];
 }
 
 /** The outcome an utterance should give: its kind, and any of its fields to compare exactly. */

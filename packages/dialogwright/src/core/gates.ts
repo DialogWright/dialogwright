@@ -1,5 +1,5 @@
 import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from '../jev/types';
-import { informationalPrompt, isFormIntent } from './app/intents';
+import { informationOf, isFormIntent, type Informs } from './app/intents';
 import { formOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, Intent, SlotId } from './app/types';
@@ -41,7 +41,8 @@ export type Verdict =
   | ({ kind: 'confirm_unanswered'; queue?: FormId } & Frustrated)
   | ({ kind: 'change_slot'; slot: SlotId; queue?: FormId } & Frustrated)
   | { kind: 'replay' }
-  | ({ kind: 'inform'; promptId: string } & Frustrated)
+  /** An informational intent: its prompt (`promptId`) or its knowledge-base passage (`passage`) is said, and the call resumes. */
+  | ({ kind: 'inform' } & Informs & Frustrated)
   /** A form to enter, or 'done': the caller is finished and the call ends with the goodbye. */
   | ({ kind: 'route'; intent: FormId | 'done'; confirm: 'none' | 'implicit' | 'explicit'; queue?: FormId } & Frustrated)
   | ({ kind: 'queue'; intent: FormId } & Frustrated)
@@ -156,11 +157,15 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   // 4. wants human. At the transfer offer this gate sees the yes before the confirmation gate
   // does -- "yes, connect me" is an explicit request for a person -- so the reason has to say
   // which transfer it is: the caller is accepting the one we offered a frustrated caller, not
-  // asking out of the blue, and `frustrated` is what plays the line the offer promised.
+  // asking out of the blue, and `frustrated` is what plays the line the offer promised. An offer
+  // made because there was no answer to give (`why: 'no-answer'`) was not for a frustrated caller:
+  // accepting it is a request for a person, `live-agent`, as the confirmation gate's yes is.
   {
     const v = noulValue(answers, 'wantsHuman');
     const passed = !atLeast(v, t.GATE_WANTS_HUMAN);
-    const reason = session.pendingConfirmation?.target === 'transfer' ? 'frustrated' : 'live-agent';
+    const pc = session.pendingConfirmation;
+    const forNoAnswer = pc?.target === 'transfer' && pc.why === 'no-answer';
+    const reason = pc?.target === 'transfer' && !forNoAnswer ? 'frustrated' : 'live-agent';
     const row = { gate: 'wantsHuman', value: v, threshold: t.GATE_WANTS_HUMAN, passed, outcome: passed ? 'pass' : 'handoff', decided: false };
     passed ? rows.push(row) : decide(row, { kind: 'handoff', reason });
   }
@@ -252,7 +257,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   const second = ranked[1];
   const label = top.label as Intent;
   const activeForm = session.form;
-  const informPromptId = informationalPrompt(app, label);
+  const informs = informationOf(app, label);
 
   let routeVerdict: Verdict | null = null;
   let outcome: string;
@@ -264,7 +269,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   if (activeForm === null) {
     if (label === 'agent' && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'handoff', reason: 'live-agent' }; outcome = 'agent'; }
     else if (label === 'repeat_prompt' && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'replay' }; outcome = 'replay'; }
-    else if (informPromptId !== undefined && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'inform', promptId: informPromptId }; outcome = 'inform'; }
+    else if (informs !== undefined && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'inform', ...informs }; outcome = 'inform'; }
     else if (isRoutable(app, label) && atLeast(top.p, t.INTENT_ROUTE)) { routeVerdict = { kind: 'route', intent: label, confirm: 'none' }; outcome = 'route'; }
     // Every form entry is acknowledged now, so this band no longer earns the
     // caller a different turn from a plain route -- only the dropped second task below and the
@@ -291,7 +296,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
 
     if (label === 'agent' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'handoff', reason: 'live-agent' }; outcome = 'agent'; }
     else if (label === 'repeat_prompt' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'replay' }; outcome = 'replay'; }
-    else if (informPromptId !== undefined && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'inform', promptId: informPromptId }; outcome = 'inform'; }
+    else if (informs !== undefined && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'inform', ...informs }; outcome = 'inform'; }
     else if (mode === 'answering') { routeVerdict = { kind: 'proceed' }; outcome = 'answering'; }
     else if (mode === 'adding') {
       // Adding keeps the task in hand, so that task is not what is added. What the model gives it

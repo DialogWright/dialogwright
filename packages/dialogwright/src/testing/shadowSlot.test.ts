@@ -220,6 +220,12 @@ describe('shadowSlot', () => {
     expect(shadowSlot(legacy, { ...rebuilt(), questionIds: ['parcelCodeGiven', 'parcelCodeSpan'] }).questionIds).toBeUndefined();
   });
 
+  it('reads nominated topics when either side does, and does not compare the opt-in', () => {
+    expect(shadowSlot(legacy, rebuilt()).nominates).toBeUndefined();
+    expect(shadowSlot(legacy, { ...rebuilt(), nominates: true }).nominates).toBe(true);
+    expect(shadowSlot({ ...legacy, nominates: true }, rebuilt()).nominates).toBe(true);
+  });
+
   it('compares a method that throws by its message, and rethrows the legacy error', () => {
     const boom = (): never => { throw new Error('boom'); };
     const both = shadowSlot({ ...legacy, display: boom }, { ...rebuilt(), display: boom });

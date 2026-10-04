@@ -8,9 +8,11 @@ Pre-release; APIs will change. The package ships TypeScript source. Requires Nod
 
 - [CLAUDE.md](CLAUDE.md): the three roles, the layout, the commands and the rules.
 - [The create-app skill](.claude/skills/create-app/SKILL.md): building an app from a one-paragraph description, step by step, with a worksheet, verified patterns (identity, a one-time code, delegates, confirmed writes, range rules) and the corpus format. It starts from the scaffold, `pnpm create-app <name>` (add `--identity` for an app that verifies callers), which writes an app under `apps/<name>` that passes `pnpm check`, its tests and its regression as created, with a `CLAUDE.md` of its own.
-- [Authoring an app](docs/authoring-an-app.md): the folder, each YAML file with an example, policy and identity in full (section 3: the rules, the identity ladder, redaction, what is recorded, testing the policy, the policy card, CODEOWNERS), what stays in TypeScript, how to write a slot (library types first, code second), how `pnpm check` reports problems, locales, configuration hashes.
+- [Authoring an app](docs/authoring-an-app.md): the folder, each YAML file with an example, policy and identity in full (section 3: the rules, the identity ladder, redaction, what is recorded, testing the policy, the policy card, CODEOWNERS), what stays in TypeScript, how to write a slot (library types first, code second), how `pnpm check` reports problems, locales, configuration hashes, and (section 12) the knowledge base.
+- [The knowledge base](docs/authoring-an-app.md#12-the-knowledge-base): answers to general questions from short approved passages, chosen by meaning and spoken word for word (never generated): the `kb/` folder (kb.yaml, topics, passages, sources, locales, drafts, the log of approvals, the retrieval index), how a call uses it (nominate, select, resolve, speak; the retrieval budget), the `topic` slot, answers through the gate (a form's `answers:`, `kbAnswerTool`, facts read by code, account lines), informational passages, approval and staleness, building one from documents, retrieval settings, testing and what is recorded.
+- [kb-author](packages/kb-author/README.md): the authoring tool, `@dialogwright/kb-author`: ingest a folder or a website into sources, draft passages with a model (the author's own key, never in CI), review them on a local page where a person approves, refresh the sources, rank the gaps.
 - [Design](docs/design.md): the idea, the roles, how policy and identity work, testing, the numbered roadmap.
-- [Contributing](CONTRIBUTING.md): rules, pull requests, "Adding a slot type" and "Adding a built-in policy rule".
+- [Contributing](CONTRIBUTING.md): rules, pull requests, "Adding a slot type", "Adding a built-in policy rule", "Adding a retriever or an embedder" and "Adding an extraction format".
 - [apps/clinic](apps/clinic/README.md): the example app to learn from (a fictional clinic's appointment line; no keys needed).
 - [apps/utility](apps/utility/README.md): the second example app, a fictional electric utility's line built by an AI coding assistant from one paragraph: identity, a one-time code, delegates, confirmed writes, range rules and a policy card (no keys needed; no recording yet).
 - [Trials](docs/trials/README.md): two fresh assistants, given one paragraph each and the create-app skill, built a working app (about 15 and 11 minutes, by their own count); the logs say what each stumble was and what it changed.
@@ -19,7 +21,7 @@ Pre-release; APIs will change. The package ships TypeScript source. Requires Nod
 
 A slot is one value a form collects. Most slots are configuration: name a type in the app's `slots.yaml` and give it options. The model never writes the value; code turns its answers into one. Each page lists every option with its type and default, the default question text, the outcomes, the prompts it needs, and starter examples.
 
-- [Index of slot types](docs/slots/README.md): which type to use, and the types not built yet (`otp`, `topic`, `time-slot`).
+- [Index of slot types](docs/slots/README.md): which type to use, and the types not built yet (`otp`, `time-slot`).
 - [digits](docs/slots/digits.md): a number of a fixed shape (an account, a card, a tracking number).
 - [choice](docs/slots/choice.md): one of a fixed list, with an advanced tier for names that sound alike.
 - [date](docs/slots/date.md): a calendar day, ahead or back, with optional spans such as "next week".
@@ -27,6 +29,7 @@ A slot is one value a form collects. Most slots are configuration: name a type i
 - [name](docs/slots/name.md): the caller's own name.
 - [record](docs/slots/record.md): one of the app's own records, chosen by what the caller says of it.
 - [text](docs/slots/text.md): the caller's own words, kept as said.
+- [topic](docs/slots/topic.md): which of the knowledge base's topics the caller asks about, chosen among those retrieval nominates.
 
 ## Policy and identity
 
@@ -34,7 +37,7 @@ A slot is one value a form collects. Most slots are configuration: name a type i
 
 ## Schemas
 
-- `packages/dialogwright/schemas/*.schema.json`: the JSON Schema of every YAML file in an app folder (`app`, `intents`, `forms`, `prompts`, `policy`, `identity`, `slots`, `locale-slots`). Generated from the zod schemas; never edit by hand. Every YAML file names its schema on its first line.
+- `packages/dialogwright/schemas/*.schema.json`: the JSON Schema of every YAML file in an app folder (`app`, `intents`, `forms`, `prompts`, `policy`, `identity`, `slots`, `locale-slots`, and for a `kb/` folder `kb-settings`, `kb-topics`, `kb-locale-topics`, `kb-passage`, `kb-source`, `kb-pending`). Generated from the zod schemas; never edit by hand. Every YAML file names its schema on its first line.
 
 ## Commands
 
@@ -48,4 +51,5 @@ A slot is one value a form collects. Most slots are configuration: name a type i
 - `pnpm --filter dialogwright exec tsx src/define/cli.ts policy:convert <absolute folder>`: convert a policy.yaml or identity.yaml in the old table shape to the current one.
 - `pnpm --filter dialogwright slot-docs`: regenerate the slot type pages after a type's options, README or examples change.
 - `pnpm --filter dialogwright test slots/<type>`: run a slot type's tests, including the conformance kit.
+- `pnpm kb:ingest <folder | file | url> --dir <app folder> [--depth N]`: documents or a website into `kb/sources/<doc>.yaml`, by section with provenance. `pnpm kb:draft [app folder]`: draft passages into `kb/pending` with a model (`ANTHROPIC_API_KEY`, the author's own, from the environment or `.env`; refuses in CI; every draft must quote its source section word for word; nothing pending is ever said). `pnpm kb:review [app folder]`: the review page on 127.0.0.1 with a one-time token, where a person approves, edits or rejects. `pnpm kb:approve <id...> --by "<name>"` and `pnpm kb:status [dir]`: approve a passage or draft (only a person does), and list passages by state. `pnpm kb:refresh [app folder]`: read the sources again and withhold what changed. `pnpm kb:gaps [app folder] [--traces <path>]`: what callers asked that nothing answered, ranked. `pnpm kb:model`, `pnpm kb:index [dir]`, `pnpm kb:bakeoff <dir> --paraphrases <file> [--sweep]`: the embedding model, the committed index of topic vectors, and the retrieval bake-off with the floor and cap sweep.
 - `pnpm --filter @dialogwright/example-clinic cli --client heuristic`: a text console for the clinic, with no keys.

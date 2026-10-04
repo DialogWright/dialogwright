@@ -1,0 +1,41 @@
+# Paraphrases of the library knowledge base's topics (./kb): what a caller says about each topic in
+# words other than its own title, keywords and example questions, and, under none, what a caller says
+# that no topic answers. pnpm kb:bakeoff reads it (recall at the cap, candidates, the floor and cap
+# sweep), and the retrieval tests (kb/keyword.test.ts, kb/hybrid.test.ts) hold each retriever's
+# nominations for every line to a golden (./nominations.golden.json).
+opening_hours:
+  - What time do you close tonight?
+  - Is the library open on Saturday mornings?
+  - When do you guys open in the morning?
+  - What are your hours this week?
+  - Are you closed on public holidays?
+  - How late can I come in today?
+  - Is the branch open right now?
+  - What time does the building shut on Fridays?
+card_renewal:
+  - My library card ran out, can I get it extended?
+  - How do I renew my card?
+  - My card isn't valid anymore.
+  - Can I extend my card for another year?
+  - The card stopped working because it is out of date.
+  - How do I get my card renewed online?
+  - I need a new expiry date on my card.
+  - My card expired last month.
+late_fees:
+  - I returned a book late, what do I owe?
+  - How much do you charge for overdue DVDs?
+  - Do I have any fines on my account?
+  - What is the penalty if I keep a book too long?
+  - Is there a charge for returning things after the due date?
+  - How much are the late charges?
+  - I brought the books back a week late.
+  - Why do I have to pay for a late return?
+none:
+  - I want to talk to a person.
+  - Can you book a meeting room for me?
+  - Where do I park?
+  - Do you have the new mystery novel?
+  - I'd like to donate some books.
+  - What's the weather like?
+  - Can I print something there?
+  - My name is Ann Lee.

@@ -31,9 +31,14 @@
             "description": "form: starts the form of the same id in forms.yaml. informational: plays its promptId and resumes. control: the engine's own (agent, repeat_prompt, done, other, none)."
           },
           "promptId": {
-            "description": "For an informational intent, the prompt played (an id in prompts.yaml).",
+            "description": "For an informational intent, the prompt played (an id in prompts.yaml). An informational intent names this or `passage`, not both.",
             "type": "string",
             "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "passage": {
+            "description": "For an informational intent, in place of promptId: a passage of the knowledge base (an id in kb/passages), said word for word through the kb_answer line. No retrieval and no gate: the passage in force today for its topic, in the call's language, for every caller (it has no applies). When none can be said, the kb_unavailable line is said and a person offered, once per call.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
           }
         },
         "required": [

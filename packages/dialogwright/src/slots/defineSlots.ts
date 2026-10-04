@@ -6,7 +6,15 @@ import { problemsOfIssues, type Problem } from '../define/problems';
 import { slotsSchema, SLOTS_FILE } from '../define/schema/slots';
 import { resolveSlots, type SlotsFileSource } from './resolveSlots';
 import { BUILT_IN_SLOT_TYPES } from './registry';
+import { topicCatalog } from '../kb/catalog';
+import type { AppKnowledge } from '../kb/types';
 import type { SlotTypes } from './types';
+
+/** What defineSlots builds the slots with beyond their configuration. */
+export interface DefineSlotsOptions {
+  /** The app's knowledge (App.knowledge): a `topic` slot is built with its topics. */
+  knowledge?: AppKnowledge;
+}
 
 /**
  * The slots of an app that is not a folder (so there is no `defineApp` to read a slots.yaml): the
@@ -14,7 +22,8 @@ import type { SlotTypes } from './types';
  * lines) or the slots as an object already parsed (a map of slot id to `{ type, ...options }`; its
  * problems name paths but have no line). `codeSlots` are the slots the code writes: each must be
  * listed as `{ type: code }`, and none may also be a library slot. `types` adds the app's own slot
- * types to the built-in ones (`registerSlotType`).
+ * types to the built-in ones (`registerSlotType`). `options.knowledge` is the app's knowledge
+ * (App.knowledge, the same object): a `topic` slot is built with its topics (topicCatalog).
  *
  * Returns the slots by id in the order the source lists them, which is the order the app's `slots`
  * should have (fill and acknowledgement order, and which slot is offered what the caller said when
@@ -23,7 +32,12 @@ import type { SlotTypes } from './types';
  *   const slots = defineSlots('src/slots.yaml', { pickupDate: pickupDateSlot });
  *   const app: App = { ..., slots };
  */
-export function defineSlots(source: string | Record<string, unknown>, codeSlots: Record<string, SlotSpec>, types: SlotTypes = BUILT_IN_SLOT_TYPES): Record<string, SlotSpec> {
+export function defineSlots(
+  source: string | Record<string, unknown>,
+  codeSlots: Record<string, SlotSpec>,
+  types: SlotTypes = BUILT_IN_SLOT_TYPES,
+  options: DefineSlotsOptions = {},
+): Record<string, SlotSpec> {
   let file: string;
   let configs: Record<string, Record<string, unknown>> | null;
   let at: SlotsFileSource | undefined;
@@ -44,7 +58,11 @@ export function defineSlots(source: string | Record<string, unknown>, codeSlots:
     }
   }
   if (configs !== null) {
-    const resolved = resolveSlots({ configs, codeSlots, types, file, ...(at ? { source: at } : {}), inCode: (...segs) => `code${segs.map((s) => `.${s}`).join('')}` });
+    const catalog = options.knowledge !== undefined ? topicCatalog(options.knowledge) : undefined;
+    const resolved = resolveSlots({
+      configs, codeSlots, types, file, ...(at ? { source: at } : {}), ...(catalog !== undefined ? { catalog } : {}),
+      inCode: (...segs) => `code${segs.map((s) => `.${s}`).join('')}`,
+    });
     problems.push(...resolved.problems);
     if (problems.length === 0) return resolved.slots;
   }

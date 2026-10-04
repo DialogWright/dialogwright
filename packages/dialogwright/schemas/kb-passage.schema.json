@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+      "description": "The passage id, the same as its file name without .yaml."
+    },
+    "topic": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "description": "The topic it answers (an id in kb/topics.yaml)."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The passage's own version (\"2026.1\"), recorded with every answer."
+    },
+    "locale": {
+      "description": "Its language tag. Default: the app's default locale under kb/passages, the folder's under kb/locale/<tag>/passages.",
+      "type": "string",
+      "minLength": 1
+    },
+    "applies": {
+      "description": "Which callers it answers: for each fact in kb.yaml's applies, a value or a list of values. A fact left out means any value. Default: every caller.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+          },
+          {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+            }
+          }
+        ]
+      }
+    },
+    "effective": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "The first day it is in force."
+        },
+        "to": {
+          "description": "The last day it is in force (inclusive). Default: open-ended.",
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      },
+      "required": [
+        "from"
+      ],
+      "additionalProperties": false,
+      "description": "The days it is in force, both inclusive."
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "description": "The source document: a file name in kb/sources, without .yaml."
+        },
+        "section": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The section of that document the answer is drawn from (a key under its sections)."
+        }
+      },
+      "required": [
+        "document",
+        "section"
+      ],
+      "additionalProperties": false,
+      "description": "Where the answer comes from. Its text is hashed at approval."
+    },
+    "answer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The approved answer, said word for word: fixed text with no variables, short enough to say in one breath."
+    },
+    "approval": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Who owns the content (a team)."
+        },
+        "approvedBy": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Who approved it."
+        },
+        "on": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "The day it was approved."
+        },
+        "sourceHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the source section's text at approval (its words, whitespace collapsed). A changed source makes the passage stale."
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of everything approved: the passage's id, locale and version, its topic and the topic's title, the answer, applies, effective dates, the source text and the account line. An edit after approval makes it differ."
+        }
+      },
+      "required": [
+        "owner",
+        "approvedBy",
+        "on",
+        "sourceHash",
+        "hash"
+      ],
+      "additionalProperties": false,
+      "description": "Who approved the passage, when, and the hashes of what they approved. Written by pnpm kb:approve, which also logs it in kb/approvals.jsonl; pnpm check refuses an approval with no line there."
+    },
+    "translates": {
+      "description": "For a passage in another locale, the default-locale passage it translates (same topic).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    }
+  },
+  "required": [
+    "id",
+    "topic",
+    "version",
+    "effective",
+    "source",
+    "answer"
+  ],
+  "additionalProperties": false,
+  "description": "kb/passages/<id>.yaml: one approved answer.",
+  "title": "DialogWright kb/passages/<id>.yaml"
+}

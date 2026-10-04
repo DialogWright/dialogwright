@@ -9,6 +9,7 @@ import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, topLevelOf } from './lookup';
 import { principalProblems } from './principals';
 import type { App, ConfigHashes } from './types';
+import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
 
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
@@ -81,6 +82,48 @@ export function validateApp(app: App): void {
     // The combined hash is the files' own, so a call_started row's lines and its combined hash cannot disagree.
     if (hashes.app !== combinedConfigHash(files)) fail("configHashes' combined hash is not the hash of its files' hashes");
   }
+  if (app.knowledge !== undefined) {
+    // The shape defineApp builds (kb/folder.ts); the rules over its content are kb/rules.ts's, which defineApp and check run.
+    const knowledge: unknown = app.knowledge;
+    if (typeof knowledge !== 'object' || knowledge === null) return fail('knowledge is not an object');
+    const { kb, retriever, topics: listed } = knowledge as { kb?: unknown; retriever?: unknown; topics?: unknown };
+    if (kb !== undefined) {
+      if (listed !== undefined) fail("knowledge has both a knowledge base (kb) and topics of its own: a knowledge base's topics are kb/topics.yaml's");
+      if (typeof kb !== 'object' || kb === null) return fail('knowledge has no knowledge base (kb)');
+      const base = kb as Partial<Record<keyof KnowledgeBase, unknown>>;
+      for (const part of ['settings', 'topics', 'passages', 'sources'] as const) {
+        if (typeof base[part] !== 'object' || base[part] === null) return fail(`knowledge's kb has no ${part}`);
+      }
+      const { settings, topics, passages } = kb as KnowledgeBase;
+      if (typeof settings.action !== 'string' || !Object.hasOwn(app.tools, settings.action)) fail(`knowledge's action "${String(settings.action)}" is not a tool`);
+      for (const [id, p] of Object.entries(passages)) if (!Object.hasOwn(topics, p.topic)) fail(`knowledge passage "${id}" answers the topic "${p.topic}", which the knowledge base does not have`);
+      for (const topic of Object.values(topics)) {
+        if (topic.accountLine && !Object.hasOwn(app.tools, topic.accountLine.from)) fail(`knowledge topic "${topic.id}"'s account line reads from "${topic.accountLine.from}", which is not a tool`);
+      }
+    } else {
+      // An app that resolves its answers in its own code: the topics its retriever nominates, and the retriever.
+      if (!Array.isArray(listed)) return fail('knowledge has neither a knowledge base (kb) nor a list of topics');
+      const seen = new Set<string>();
+      for (const [i, t] of (listed as unknown[]).entries()) {
+        const topic = t as Partial<CatalogTopic> | null;
+        if (typeof topic !== 'object' || topic === null || typeof topic.id !== 'string' || topic.id === '' || typeof topic.title !== 'string' || topic.title.trim() === '') {
+          fail(`knowledge's topic ${i} has no id and title`);
+          continue;
+        }
+        if (seen.has(topic.id)) fail(`knowledge's topic "${topic.id}" is listed twice`);
+        seen.add(topic.id);
+      }
+      if (retriever === undefined) fail('knowledge without a knowledge base (kb) has no retriever, so nothing would nominate its topics');
+    }
+    if (retriever !== undefined && (typeof retriever !== 'object' || retriever === null || typeof (retriever as { nominate?: unknown }).nominate !== 'function')) fail("knowledge's retriever has no nominate function");
+    else if (retriever !== undefined && (typeof (retriever as { id?: unknown }).id !== 'string' || (retriever as { id: string }).id.trim() === '')) fail("knowledge's retriever has no id");
+  }
+  // A slot that reads nominated topics needs knowledge to nominate them: without it, it would never ask.
+  if (app.knowledge === undefined) {
+    for (const [id, spec] of Object.entries(app.slots)) {
+      if (spec?.nominates === true) fail(`slot "${id}" asks about the topics retrieval nominates, but the app has no knowledge`);
+    }
+  }
   for (const [name, value] of Object.entries(app.thresholds ?? {})) {
     if (Object.hasOwn(DEFAULT_THRESHOLDS, name)) fail(`threshold "${name}" is one of the engine's`);
     if (typeof value !== 'number' || !Number.isFinite(value)) fail(`threshold "${name}" is not a number`);
@@ -94,7 +137,14 @@ export function validateApp(app: App): void {
   for (const { digit, intent } of app.menu) if (!Object.hasOwn(app.intents, intent)) fail(`menu digit "${digit}" has unknown intent "${intent}"`);
   for (const [id, def] of Object.entries(app.intents)) {
     if (def.kind === 'form' && !Object.hasOwn(app.forms, id)) fail(`form intent "${id}" has no form`);
-    if (def.kind === 'informational' && !def.promptId) fail(`informational intent "${id}" has no promptId`);
+    if (def.kind === 'informational' && !def.promptId && def.passage === undefined) fail(`informational intent "${id}" has no promptId or passage`);
+    if (def.passage !== undefined) {
+      if (def.kind !== 'informational') fail(`intent "${id}" names a passage, but only an informational intent says one`);
+      if (def.promptId !== undefined) fail(`informational intent "${id}" has both a promptId and a passage`);
+      const kb = app.knowledge?.kb;
+      if (!kb) fail(`informational intent "${id}" says the passage "${def.passage}", but the app has no knowledge base`);
+      else if (!Object.hasOwn(kb.passages, def.passage)) fail(`informational intent "${id}" says the passage "${def.passage}", which the knowledge base does not have`);
+    }
   }
   for (const id of Object.keys(app.forms)) {
     if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') fail(`form "${id}" has no form intent`);

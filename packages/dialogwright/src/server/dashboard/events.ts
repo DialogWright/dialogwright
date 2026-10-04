@@ -4,7 +4,7 @@ import type { TraceRecord } from '../../trace/types';
 import type { Thresholds } from '../../core/thresholds';
 import type { FrameLogLine } from '../frameLog';
 import type { AuditEntry } from '../../audit/types';
-import { redactHandoffData, redactRecordSlots } from '../../trace/redact';
+import { consoleKbSource, redactHandoffData, redactRecordSlots } from '../../trace/redact';
 
 interface Base { callSid: string; at: number }
 
@@ -108,7 +108,10 @@ export function redactDeep(value: unknown, depth = 0): unknown {
  * the console shows the caller's words; the audit log never has them.
  */
 export function redactRecord(record: TraceRecord): TraceRecord {
-  return { ...redactRecordSlots(record, 'keep'), event: redactDeep(record.event) as TraceRecord['event'] };
+  const slots = redactRecordSlots(record, 'keep');
+  // Whom a passage answered (the caller's facts) only as policy.yaml's audit: declares each fact.
+  const kb = slots.kb ? { kb: consoleKbSource(slots.kb) } : {};
+  return { ...slots, ...kb, event: redactDeep(slots.event) as TraceRecord['event'] };
 }
 
 /**

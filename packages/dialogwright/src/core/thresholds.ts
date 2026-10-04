@@ -32,6 +32,9 @@ export const DEFAULT_THRESHOLDS = {
   SLOT_CHOICE_CONFIRM: 0.45,
   SLOT_CHOICE_MARGIN: 0.15,
   SLOT_HELP: 0.6,
+  // knowledge: a topic slot with `disambiguate` asks which of two topics when the model's top two are
+  // both topics it may fill and closer than this (slots/topic/fill.ts)
+  KB_TOPIC_MARGIN: 0.15,
   // confirmations and menus
   CONFIRM_YES: 0.7,
   CONFIRM_NO: 0.7,

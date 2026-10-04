@@ -1,6 +1,7 @@
 import type { FormId, Intent, SlotId } from './app/types';
 import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
+import type { Nomination } from '../kb/types';
 import { ANONYMOUS } from '../gate/principal';
 import { formOf } from './app/lookup';
 import { appOf, defaultAppId, getApp } from './app/registry';
@@ -49,6 +50,12 @@ export type PendingConfirmation =
        */
       answers: Readonly<AnswerMap>;
       text: string;
+      /**
+       * The topics retrieval nominated for that utterance (SlotContext.nominated), when it ran on its
+       * turn: the confirmed form fills from those words, so its topic slot reads their nominations,
+       * not the yes turn's. Absent when retrieval did not run (and for every app without knowledge).
+       */
+      nominated?: readonly Nomination[];
     }
   | { target: 'slot'; slot: SlotId; value: string; display: string }
   /**
@@ -82,6 +89,13 @@ export type PendingConfirmation =
        * answer that was not there is never looked up again.
        */
       after?: FormId;
+      /**
+       * Why the offer was made, when it was not for a frustrated caller: `no-answer`, the knowledge
+       * base had no answer to give (kb/answer.ts: a form's completion, or an informational intent's
+       * passage). A yes to it, plain or "yes, connect me to a person", is a handoff for a person
+       * (`live-agent`), not a frustrated caller's: the caller asked a question we could not answer.
+       */
+      why?: 'no-answer';
     };
 
 /** The user spoke over our line: the part of it that had played (never the user's words), and how far in (UserInterrupt). */

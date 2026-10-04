@@ -3,8 +3,8 @@ import { CONSTRAINTS, EXCLUDED, gridFor, parseOnly, SWEEPABLE, violated } from '
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 
 describe('sweep space', () => {
-  it('lists the twenty-three sweepable thresholds and no fixed ones', () => {
-    expect(SWEEPABLE).toHaveLength(23);
+  it('lists the twenty-four sweepable thresholds and no fixed ones', () => {
+    expect(SWEEPABLE).toHaveLength(24);
     expect(SWEEPABLE).not.toContain('MAX_ATTEMPTS');
     expect(SWEEPABLE).not.toContain('STUB_SHARPNESS');
     expect(SWEEPABLE).not.toContain('JEV_TIMEOUT_MS');
@@ -32,7 +32,7 @@ describe('sweep space', () => {
     expect(Object.keys(EXCLUDED)).toEqual(['GATE_WANTS_HUMAN', 'SCREEN_FIRE']);
     expect(EXCLUDED.GATE_WANTS_HUMAN).toMatch(/safety change/);
     expect(EXCLUDED.SCREEN_FIRE).toMatch(/safety change/);
-    expect(parseOnly(undefined)).toHaveLength(21);
+    expect(parseOnly(undefined)).toHaveLength(22);
     expect(parseOnly(undefined)).not.toContain('GATE_WANTS_HUMAN');
     expect(parseOnly(undefined)).not.toContain('SCREEN_FIRE');
     expect(parseOnly('GATE_WANTS_HUMAN')).toEqual(['GATE_WANTS_HUMAN']);

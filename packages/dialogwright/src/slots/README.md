@@ -22,7 +22,7 @@ A slot type (`SlotType<O>` in `types.ts`) is:
 |---|---|
 | `type` | Its name, as an app writes it: lower case letters, digits and hyphens. |
 | `options` | A strict zod object (`z.strictObject`) for its options, each described with `.describe(...)`. Strict, so a misspelt option is refused instead of silently ignored. |
-| `build(id, options)` | The `SlotSpec`, from the slot's id and its parsed options. It must declare `questionIds` (every question id it may ask) and `prompts` (every line it may lead to beyond `ask_<slot>` and `ask_<slot>_retry`). |
+| `build(id, options, wording?, env?)` | The `SlotSpec`, from the slot's id and its parsed options (and its wording by locale, and what the app gives every slot: `env.catalog`, its knowledge's topics, which the `topic` type reads). It must declare `questionIds` (every question id it may ask) and `prompts` (every line it may lead to beyond `ask_<slot>` and `ask_<slot>_retry`). |
 | `examples` | Configurations with starter utterances, read from the type's `examples.yaml` the first time they are asked for. |
 | `describe` | A summary and notes for the type's docs page. |
 
@@ -121,7 +121,7 @@ A slot reads the model's answers, not the caller's words, so an example gives bo
       expect: { kind: absent }
 ```
 
-An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso`, `records` or `sources`. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `raw`, `retryPromptId` and `promptId`, and `displays: { <tag>: ... }`, the display the same answers give in another locale (`displays: { es: "su nota" }`). A type with a keypad rung adds `keypad: [{ digits, locale?, expect: { value, display? } | null }]` (`locale`: the keys are pressed in that locale, as a day-first date is in Spanish). An example of a type that takes a locale's wording may add `wording: { <tag>: ... }`, written as a locale's slots.yaml writes it; the kit builds the slot with it, checks every display in that locale, and checks the questions are the same as without it.
+An answer is `{ noul: p }`, `{ choice: { <label>: p, ... } }` or `{ score: { <level>: p, ... } }`. `context` sets `prompted`, `current`, `locale`, `window`, `todayIso`, `records`, `sources` or `nominated` (the topics retrieval nominated for the words, `{ topic, title, score, via? }` each, which go with the words into every context the kit tries them in, as the records do). An example of a type that reads the app's knowledge topics gives them as `topics: [{ id, title, titles? }]`, and its slot is built with them. `expect` gives the outcome's `kind` and any of `value`, `display`, `confirm`, `reason`, `raw`, `retryPromptId` and `promptId`, and `displays: { <tag>: ... }`, the display the same answers give in another locale (`displays: { es: "su nota" }`). A type with a keypad rung adds `keypad: [{ digits, locale?, expect: { value, display? } | null }]` (`locale`: the keys are pressed in that locale, as a day-first date is in Spanish). An example of a type that takes a locale's wording may add `wording: { <tag>: ... }`, written as a locale's slots.yaml writes it; the kit builds the slot with it, checks every display in that locale, and checks the questions are the same as without it.
 
 ## Locales
 

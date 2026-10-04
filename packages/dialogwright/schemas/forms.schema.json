@@ -32,6 +32,7 @@
             "description": "The prompt (an id in prompts.yaml) that reads the filled form back for a yes, or null for a form with no summary (it completes as soon as its slots are full)."
           },
           "hooks": {
+            "description": "The code hooks this form uses, written in the app's TypeScript; \"complete\" is required, unless the form `answers` from the knowledge base (its completion is then the engine's). entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), confirmedParams (the values a confirmed write sends, for the gate's confirmed rule), complete (runs when the form is full and confirmed), onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), onSummaryRead (looks at what the summary is about to name).",
             "type": "array",
             "items": {
               "type": "string",
@@ -46,8 +47,37 @@
                 "keepsSlot",
                 "onSummaryRead"
               ]
+            }
+          },
+          "answers": {
+            "description": "The form says an answer from the knowledge base, and its completion is the engine's: the answer resolved through the gate for the topic in `slot`, said word for word with the topic's account line where it has one, or the unavailable line and a person offered, once per call. A form with `answers` has no \"complete\" hook.",
+            "type": "object",
+            "properties": {
+              "slot": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "description": "The form's topic slot: its value is the topic the caller asked about."
+              },
+              "via": {
+                "description": "The gated action that resolves the answer (a tool in the code, with an action in policy.yaml, returning an answer or why there is none). Default: kb/kb.yaml's action.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "answer": {
+                "description": "The prompt the answer is said through; its text says {answer}. Default: kb_answer.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "unavailable": {
+                "description": "The prompt said when there is no answer to give, before a person is offered. Default: kb_unavailable.",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
             },
-            "description": "The code hooks this form uses, written in the app's TypeScript; \"complete\" is required. entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), confirmedParams (the values a confirmed write sends, for the gate's confirmed rule), complete (runs when the form is full and confirmed), onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), onSummaryRead (looks at what the summary is about to name)."
+            "required": [
+              "slot"
+            ],
+            "additionalProperties": false
           },
           "calls": {
             "description": "The actions (tools) this form's hooks call through the gate: its entry call and the calls its completion makes. Declare it for every form or for none (an empty list for a form that calls nothing): the app map draws each form to its actions, and `check` reports an action that no form reaches and the identity flow does not call.",
@@ -60,11 +90,10 @@
         },
         "required": [
           "slots",
-          "summaryPromptId",
-          "hooks"
+          "summaryPromptId"
         ],
         "additionalProperties": false,
-        "description": "One form: the slots it collects, the summary it reads back, the code hooks it uses, and the actions it calls."
+        "description": "One form: the slots it collects, the summary it reads back, the code hooks it uses (or the knowledge answer it says), and the actions it calls."
       },
       "description": "Every form, by id. Each id must also be a form intent in intents.yaml."
     }

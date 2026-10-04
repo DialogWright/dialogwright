@@ -1,6 +1,7 @@
 import type { AnswerMap, QuestionMap } from '../../jev/types';
 import type { Thresholds } from '../thresholds';
 import type { SlotId } from '../app/types';
+import type { Nomination } from '../../kb/types';
 
 /**
  * A slot's own pending narrowing: part of a value heard, the rest still owed (e.g. a date of birth: a
@@ -47,6 +48,15 @@ export interface SlotContext {
    * or absent.
    */
   locale?: string;
+  /**
+   * The knowledge-base topics the app's retriever nominated for this turn's words, best first
+   * (TurnContext.knowledge): what a slot that reads nominations (SlotSpec.nominates) asks about and
+   * fills from. Present only on a turn the retrieval step ran for (an app with a knowledge base, words,
+   * and such a slot listening); empty when the retriever nominated nothing, failed, was late, or the
+   * app gives none. Absent on every other turn, and for every app without a knowledge base, so their
+   * slots see the context they always have.
+   */
+  nominated?: readonly Nomination[];
 }
 
 export interface SlotCandidate {
@@ -112,6 +122,14 @@ export interface SlotSpec {
    * entry in the prompt manifest (no slot uses this today, so none is there); by-confidence: the fill outcome
    * decides; summary: a spoken fill is neither acked nor read back; the final confirm covers it */
   spokenConfirm: 'always' | 'by-confidence' | 'summary';
+  /**
+   * The slot reads the topics retrieval nominates (SlotContext.nominated): while it is active, a turn
+   * with words runs the app's knowledge retriever once, before the turn is planned (run/turn.ts), and
+   * the turn's questions and fill see what it nominated. Only an app with a knowledge base
+   * (App.knowledge) has nominations; elsewhere the slot sees none. Absent: the slot does not read
+   * them, and no turn retrieves for it.
+   */
+  nominates?: boolean;
   /** Questions this slot adds to the turn schema. */
   questions(ctx: SlotContext): QuestionMap;
   /** Interpret the answers to those questions. */

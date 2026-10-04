@@ -11,6 +11,8 @@ import { digitsType } from '../digits/index';
 import { nameType } from '../name/index';
 import { recordType } from '../record/index';
 import { textType } from '../text/index';
+import { topicType } from '../topic/index';
+import { kitContext } from './turns';
 import type { BuiltSlotSpec, SlotExample, SlotType } from '../types';
 import { CHECK_IDS, ConformanceError, slotConformanceChecks, type CheckId, type SlotConformanceOptions } from './checks';
 import { runSlotConformance } from './run';
@@ -103,6 +105,13 @@ describe('the correct toy, and the built-in types', () => {
     expect(failing(dateType, { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(nameType, { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(recordType, { locales: ['en-US', 'es'] })).toEqual([]);
+    expect(failing(topicType, { locales: ['en-US', 'es'] })).toEqual([]);
+  });
+
+  it('gives a slot the topics nominated for each utterance\'s words, as its context says', () => {
+    const nominated = [{ topic: 'parking', title: 'Parking', score: 1, via: 'keyword' as const }];
+    expect(kitContext('where can i park', { nominated }).nominated).toEqual(nominated);
+    expect('nominated' in kitContext('where can i park')).toBe(false);
   });
 });
 

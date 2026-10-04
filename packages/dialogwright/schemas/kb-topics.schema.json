@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "propertyNames": {
+    "type": "string",
+    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+  },
+  "additionalProperties": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The topic in a few words, as a caller would recognise it (\"Opening hours\"). Retrieval reads it, and the topic question offers it."
+      },
+      "keywords": {
+        "description": "Words and phrases that name the topic exactly (codes, product names). Retrieval matches them as phrases.",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "asks": {
+        "description": "Example questions a caller asks about the topic, in their words. Retrieval reads them, and the paraphrase tests start from them.",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "risk": {
+        "default": "regulated",
+        "description": "regulated: only an approved passage is ever said. low: a later release may let an app answer the long tail in generated wording grounded in approved passages. Default regulated.",
+        "type": "string",
+        "enum": [
+          "regulated",
+          "low"
+        ]
+      },
+      "accountLine": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The line said after the answer, from the caller's own data: its variables ({balance}) are fields of the tool's result, which the tool declares (ToolDef.fields)."
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+            "description": "The tool that reads the caller's data, a gated read with its own action in policy.yaml. When the gate refuses it, or it finds nothing, the answer is said without this line."
+          }
+        },
+        "required": [
+          "text",
+          "from"
+        ],
+        "additionalProperties": false,
+        "description": "A line from the caller's own data, said after the approved answer."
+      }
+    },
+    "required": [
+      "title"
+    ],
+    "additionalProperties": false,
+    "description": "One topic of the knowledge base."
+  },
+  "description": "kb/topics.yaml: the topics callers ask about, by id.",
+  "title": "DialogWright kb/topics.yaml"
+}

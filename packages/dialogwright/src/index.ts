@@ -47,13 +47,69 @@ export type { LoadedConfig, LoadResult } from './define/load';
 export { formatProblem } from './define/problems';
 export type { Problem } from './define/problems';
 
+// The knowledge base (an app folder's kb/, App.knowledge): approved passages, resolved for the
+// caller and the day and said word for word; defineKnowledge for an app that is not a folder.
+export { defineKnowledge, knowledgeProblems } from './define/defineKnowledge';
+export type { DefineKnowledgeOptions, KnowledgeProblemsOptions } from './define/defineKnowledge';
+export { loadKnowledgeFolder } from './define/load';
+export type { KnowledgeFolder } from './define/load';
+export { resolvePassage } from './kb/resolve';
+export type { ResolveInput } from './kb/resolve';
+export { approvalHashOf, collapseWhitespace, sourceHashOf } from './kb/hash';
+export type { ApprovedContent } from './kb/hash';
+// Authoring the knowledge base (pnpm kb:approve and kb:status, and the @dialogwright/kb-author tools that
+// draft, review and refresh it): approving one passage or draft as the command does, and what waits.
+export { APPROVALS_LOG, approveOne, excerptInSource, formatApproveResult, notAPerson, pendingDrafts, placeOf as kbPlaceOf, proposedTopics, readApprovalLog } from './kb/approval';
+export { approvalLogged, parseApprovalLog } from './kb/log';
+// What a draft's excerpt must be (kb:approve, and kb:draft and kb:review hold a draft to the same rules).
+export { excerptProblems, MIN_EXCERPT_CHARS, MIN_EXCERPT_WORDS, NO_EXCERPT, numbersIn, numbersNotInExcerpt } from './kb/excerpt';
+export type { ApprovalLogLine, ApproveOptions, ApproveResult, KbPlace, PendingDraft, ProposedTopic } from './kb/approval';
+export { PENDING_TOPICS_FILE } from './kb/folder';
+export { parseKbFile } from './define/load';
+export { KB_KINDS } from './kb/schema';
+export type { KbKind, KbPassageYaml, KbPendingYaml, KbSourceYaml, KbTopicsYaml } from './kb/schema';
+// The knowledge record a turn reports (TurnOut.kb): written to the trace, given to a tool's audit hook, shown on the console.
+export { KB_SHORT_HASH, kbAuditRow, kbSourceOf, shortHash } from './kb/record';
+export type { KbSourceOptions } from './kb/record';
+export type { KbSource } from './core/lifecycle';
+export type * from './kb/types';
+// Speaking an answer: a form's knowledge completion (forms.yaml `answers:`, or a `complete` hook that
+// delegates to kbCompletion), the resolving tool of an app with a kb/ folder, and their lines.
+export { KB_ANSWER_PROMPT, KB_ANSWER_VAR, KB_TOPIC_PARAM, KB_UNAVAILABLE_PROMPT, kbAnswerTool, kbCompletion, readKbAnswer } from './kb/answer';
+export type { KbAnswerToolOptions, KbCompletionOptions } from './kb/answer';
+// Retrieval in the turn: a topic slot (SlotSpec.nominates) makes runTurn nominate before it plans,
+// within a budget; what it did is the trace's `retrieval`.
+export { isTopicSlot } from './core/knowledge';
+export { topicCatalog } from './kb/catalog';
+export type { TurnKnowledge } from './core/knowledge';
+export { RETRIEVE_BUDGET_MS } from './run/retrieve';
+export type { RetrievalRecord } from './trace/types';
+// The engine's retrievers (the default for an app with a kb/ whose code gives none): keyword, BM25 with phrases.
+export { KeywordRetriever } from './kb/keyword';
+export type { KeywordRetrieverOptions } from './kb/keyword';
+// Dense retrieval over a vector index, and hybrid (keyword and dense, fused): the default for an app whose kb.yaml names an embedder.
+export { DenseRetriever, HybridRetriever, RRF_K, defaultRetriever, fuse } from './kb/hybrid';
+export type { DefaultRetrieverKind, DefaultRetrieverOptions, DenseOptions, HybridOptions } from './kb/hybrid';
+// The static embedder, its pinned model, an in-memory vector index, and the index file (kb/.index/<embedder>.json).
+export { StaticEmbedder } from './kb/embed/static';
+export type { StaticModelParts } from './kb/embed/static';
+export { MemoryVectorIndex } from './kb/embed/memory';
+export type { Embedder, EmbedderInfo, TopicField, VectorEntry, VectorHit, VectorIndex } from './kb/embed/types';
+export { DEFAULT_EMBEDDER, POTION_BASE_8M, STATIC_MODELS, MODEL_DIR_ENV, ModelError, downloadModel, loadPinnedModel, modelDir, modelPresent } from './kb/embed/model';
+export type { PinnedModel } from './kb/embed/model';
+export { buildIndex, parseIndex, serializeIndex, indexHashOf } from './kb/vectorIndex';
+export type { BuiltIndex, KbIndexData, KbIndexRead } from './kb/vectorIndex';
+// The retrieval bake-off (pnpm kb:bakeoff): recall at the cap and candidates on a paraphrase file.
+export { bakeoff, parseParaphrases } from './kb/bakeoff';
+export type { BakeoffResult, Paraphrases } from './kb/bakeoff';
+
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
 // What the author of a slot type uses is in 'dialogwright/slot-kit'; the conformance kit is in
 // 'dialogwright/testing'.
 export { defineSlot, defineSlots, buildSlot, SlotConfigError, isSlotConfigError, BUILT_IN_SLOT_TYPES, registerSlotType } from './slots/index';
 export type {
-  BuildSlotOptions, BuildSlotResult, SlotSource, SlotType, SlotTypes, LibrarySlotSpec,
-  BirthdateOptions, ChoiceOptions, ChoiceOption, DateOptions, DigitsOptions, NameOptions, RecordOptions, TextOptions,
+  BuildSlotOptions, BuildSlotResult, DefineSlotOptions, DefineSlotsOptions, SlotSource, SlotType, SlotTypes, SlotBuildEnv, LibrarySlotSpec,
+  BirthdateOptions, ChoiceOptions, ChoiceOption, DateOptions, DigitsOptions, NameOptions, RecordOptions, TextOptions, TopicOptions,
 } from './slots/index';
 
 // The channel model: what the engine hears (events), what it does (actions), what a channel can do (caps).

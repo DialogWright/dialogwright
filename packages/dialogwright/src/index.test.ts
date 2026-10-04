@@ -22,6 +22,11 @@ describe('the package entry', () => {
       'candidateSpans', 'candidateWordSpans', 'atLeast',
       // the slot library
       'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType',
+      // the knowledge base
+      'defineKnowledge', 'knowledgeProblems', 'loadKnowledgeFolder', 'resolvePassage', 'approvalHashOf', 'sourceHashOf', 'collapseWhitespace', 'approveOne', 'kbPlaceOf', 'pendingDrafts', 'proposedTopics', 'excerptInSource', 'notAPerson', 'APPROVALS_LOG', 'readApprovalLog', 'parseApprovalLog', 'approvalLogged', 'PENDING_TOPICS_FILE', 'parseKbFile', 'kbSourceOf', 'kbAuditRow', 'shortHash', 'KB_SHORT_HASH',
+      'isTopicSlot', 'RETRIEVE_BUDGET_MS',
+      'KeywordRetriever', 'DenseRetriever', 'HybridRetriever', 'defaultRetriever', 'StaticEmbedder', 'MemoryVectorIndex', 'POTION_BASE_8M', 'loadPinnedModel', 'buildIndex', 'bakeoff',
+      'kbCompletion', 'kbAnswerTool', 'readKbAnswer', 'KB_ANSWER_PROMPT', 'KB_UNAVAILABLE_PROMPT', 'KB_ANSWER_VAR', 'KB_TOPIC_PARAM',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
       'buildQuestions', 'ENGINE_QUESTION_IDS', 'buildTurnState', 'FixtureStubClient', 'HeuristicStubClient', 'digitSpanLabel', 'dobParts', 'saysDob', 'saysExplicitYear',
@@ -41,7 +46,7 @@ describe('the package entry', () => {
     expect(entry.loadAppFolder).toBe((await import('./define/load')).loadAppFolder);
     expect(entry.defineSlot).toBe((await import('./slots/defineSlot')).defineSlot);
     expect(entry.defineSlots).toBe((await import('./slots/defineSlots')).defineSlots);
-    expect(Object.keys(entry.BUILT_IN_SLOT_TYPES).sort()).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'record', 'text']);
+    expect(Object.keys(entry.BUILT_IN_SLOT_TYPES).sort()).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'record', 'text', 'topic']);
     expect(entry.BUILT_IN_SLOT_TYPES.text).toBe((await import('./slots/text/index')).textType);
     expect(entry.defineSlot('note', { type: 'text', what: 'a note' }).type).toBe('text');
     // the library's types are exported with the functions that take them

@@ -86,15 +86,25 @@ export interface GateView {
   turnIndex: number;
 }
 
-/** The knowledge-base passage the latest answer came from. */
+/** The knowledge-base passage the latest answer came from (core/lifecycle.ts KbSource, as the card shows it). */
 export interface SourceView {
   passageId: string;
   document: string;
   section: string;
   version: string;
+  /** The first day it is in force, and the last (null: open-ended). */
   effective: string;
-  approved: string;
+  effectiveTo: string | null;
+  /** The day it was approved and by whom (null: no approval). */
+  approved: string | null;
+  approvedBy: string | null;
   fresh: boolean;
+  /** Whom it answered, one "fact: value" line per fact, sorted by fact. */
+  applies: string[];
+  locale: string | null;
+  /** The approval's short digests (12 hex characters), of the source text and of everything approved. */
+  sourceHash: string | null;
+  approvalHash: string | null;
 }
 
 /**

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../../../schemas/kb-topics.schema.json
+opening_hours:
+  title: Opening hours
+  keywords: [opening hours, open, closed, hours]
+  asks:
+    - When are you open?
+    - Are you open on Sunday?
+  risk: low
+card_renewal:
+  title: Renewing a library card
+  keywords: [renew my card, card renewal, expired card]
+  asks:
+    - My card expired, how do I renew it?
+late_fees:
+  title: Late fees
+  keywords: [late fee, overdue, fine]
+  asks:
+    - How much is the fee for a late book?
+  accountLine:
+    text: Your card has {balance} in late fees right now.
+    from: getFees

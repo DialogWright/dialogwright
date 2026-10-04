@@ -13,7 +13,7 @@ import type { CallEntry, SessionStore, SocketLike } from './sessions';
 import type { CallTokens } from './tokens';
 import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactDeep, type DashboardEvent } from './dashboard/events';
-import { redactHandoffData } from '../trace/redact';
+import { redactHandoffData, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
@@ -21,7 +21,7 @@ import type { HandoffWording, SpokenDigitRule } from '../core/app/types';
 import type { Effect } from '../core/lifecycle';
 import { summarizeHandoff as summarizeHandoffDefault, type SummaryOptions } from '../handoff/summary';
 import type { AuditEntry } from '../audit/types';
-import { carryScrub } from '../core/recording';
+import { carryScrub, type Scrub } from '../core/recording';
 
 /** Spoken when a turn throws, so a failure is a retry rather than dead air. */
 export const TURN_ERROR_TEXT = 'Sorry, something went wrong on my end. Please say that again.';
@@ -317,26 +317,32 @@ function sendOne(socket: SocketLike, frame: OutboundFrame, timeoutMs: number): P
  * again here, at write time, the way the trace writer masks it, so the file can never hold an
  * identity value whatever a future decision puts in it.
  */
-function loggedFrame(frame: OutboundFrame): OutboundFrame {
-  return frame.type === 'end' ? { ...frame, handoffData: redactHandoffData(frame.handoffData, 'length') } : frame;
+export function loggedFrame(frame: OutboundFrame, scrub: Scrub | null): OutboundFrame {
+  if (frame.type === 'end') return { ...frame, handoffData: redactHandoffData(frame.handoffData, 'length') };
+  // A text frame says our line, which may read a redacted slot back (a readback, a summary): its
+  // raw value, display and digits as the wire spells them out are masked as the trace masks them.
+  if (frame.type === 'text' && scrub !== null) return { ...frame, token: scrub(frame.token) };
+  return frame;
 }
 
-async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundFrame[]): Promise<OutboundFrame[]> {
+async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundFrame[], decision: unknown = null): Promise<OutboundFrame[]> {
   const log = deps.log;
   const timeoutMs = deps.sendTimeoutMs ?? SEND_TIMEOUT_MS;
   const sent: OutboundFrame[] = [];
+  // Built from the session as it is now (its slots and readback) and the decision the frames say.
+  const scrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session));
   for (const original of frames) {
     // The frame log records what actually went out, digit spacing and all.
     const frame: OutboundFrame = original.type === 'text' ? { ...original, token: spokenDigits(original.token, appOf(entry.session).voice?.spokenDigits) } : original;
     const socket = entry.socket;
     if (!socket) {
       log(`${entry.callSid}: no socket, dropped ${frame.type}`);
-      entry.frames.write('log', { dropped: loggedFrame(frame) });
+      entry.frames.write('log', { dropped: loggedFrame(frame, scrub) });
       continue;
     }
     try {
       await sendOne(socket, frame, timeoutMs);
-      entry.frames.write('out', loggedFrame(frame));
+      entry.frames.write('out', loggedFrame(frame, scrub));
       sent.push(frame);
     } catch (err) {
       const info = describe(err);
@@ -435,7 +441,7 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // Defensive: nothing can be armed here today, because whatever drove this turn cleared the
     // timer on its way in. Kept so a future path that arms and then ends cannot strand a timer.
     if (ending) clearNoInput(entry.callSid);
-    const sent = await sendFrames(deps, entry, actionsToFrames(run.result.actions));
+    const sent = await sendFrames(deps, entry, actionsToFrames(run.result.actions), run.result.decision);
     const service = run.result.effects.find((e) => e.kind === 'service');
     // Work handed to a downstream service: its answer is the next turn, and it arms the wait itself.
     if (service && !ending) queueService(deps, entry, service);

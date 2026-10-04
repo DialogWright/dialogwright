@@ -4,6 +4,7 @@ import type { Decision } from '../decision';
 import type { Session, SessionFacts } from '../session';
 import type { TurnContext } from '../turn';
 import type { KbSource, TurnOut } from '../lifecycle';
+import type { AppKnowledge } from '../../kb/types';
 import type { Thresholds } from '../thresholds';
 import type { AnswerMap, QuestionMap } from '../../jev/types';
 import type { ServiceResult } from '../../channel/events';
@@ -22,10 +23,19 @@ export interface IntentDef {
   criteria: string;
   /** Spoken label ("track a parcel"), used in acknowledgements and confirmations. */
   label: string;
-  /** form: starts a form; informational: plays its prompt and resumes; control: agent, repeat, done, other, none. */
+  /** form: starts a form; informational: plays its prompt (or says its passage) and resumes; control: agent, repeat, done, other, none. */
   kind: 'form' | 'informational' | 'control';
-  /** For informational intents, the prompt played. */
+  /** For informational intents, the prompt played. An informational intent has this or `passage`, not both. */
   promptId?: string;
+  /**
+   * For informational intents, in place of `promptId`: a passage of the app's knowledge base
+   * (App.knowledge.kb), said word for word. No retrieval and no gate (general information, said to
+   * anyone): the passage in force today for its topic, in the call's language, is resolved with no
+   * facts (a passage an informational intent names applies to every caller), and said through the
+   * `kb_answer` line; when none can be said (none in force, stale, no translation) the
+   * `kb_unavailable` line is said and a person offered, once per call (kb/answer.ts).
+   */
+  passage?: string;
 }
 
 export interface FormDef {
@@ -800,6 +810,13 @@ export interface App {
    * them (src/run/fixtures.ts). Without it the harness has no fixtures to run against and says so.
    */
   fixtures?: AppFixtures;
+  /**
+   * The app's knowledge base (an app folder's kb/, which defineApp loads; ../../kb/types.ts), and its
+   * retriever (its code's, or the engine's default, kb/hybrid.ts): short approved passages, resolved for the caller and the day
+   * (kb/resolve.ts resolvePassage) and said word for word. Without it the app answers no general
+   * questions from passages, and every turn is exactly as it was before knowledge bases.
+   */
+  knowledge?: AppKnowledge;
   /**
    * The content hashes of the configuration the app was built from (an app folder's YAML; defineApp
    * sets them). The engine records them once per call, in the call_started audit row, and puts the

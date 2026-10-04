@@ -3,6 +3,7 @@ import { slotTypeJsonSchema } from '../../slots/defineSlot';
 import { BUILT_IN_SLOT_TYPES } from '../../slots/registry';
 import type { SlotTypes } from '../../slots/types';
 import { slotTypeWordingJsonSchema } from '../../slots/wording';
+import { KB_KINDS } from '../../kb/schema';
 import { CODE_SLOT_TYPE } from './slots';
 import { FILE_KINDS, SCHEMAS, type FileKind } from './index';
 
@@ -71,6 +72,16 @@ export function localeSlotsJsonSchema(types: SlotTypes = BUILT_IN_SLOT_TYPES): J
     propertyNames: { pattern: '^[A-Za-z][A-Za-z0-9_]*$' },
     additionalProperties: { anyOf: branches, description: 'One slot\'s wording in this locale.' },
   };
+}
+
+/**
+ * The knowledge base's JSON Schemas (kb/kb.yaml, kb/topics.yaml, a passage, a source document, a
+ * locale's topics.yaml), keyed by the name each is written under: schemas/<name>.schema.json.
+ */
+export function kbJsonSchemas(): Record<string, JsonSchema> {
+  return Object.fromEntries(
+    Object.values(KB_KINDS).map((def) => [def.jsonName, { ...(z.toJSONSchema(def.schema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: `DialogWright ${def.title}` }]),
+  );
 }
 
 /** A JSON Schema as it is written to schemas/<kind>.schema.json: two-space indent and a final newline. */

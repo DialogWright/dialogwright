@@ -22,6 +22,7 @@
     "./testing": "./src/testing/index.ts",
     "./slot-kit": "./src/slots/kit.ts",
     "./policy": "./src/define/policyEntry.ts",
+    "./kb/onnx": "./src/kb/onnx.ts",
     "./*.js": "./src/*.js",
     "./*.json": "./src/*.json",
     "./*": "./src/*.ts",
@@ -42,7 +43,12 @@
     "create-app": "tsx src/define/cli.ts create-app",
     "policy:matrix": "tsx src/define/cli.ts policy:matrix",
     "policy:card": "tsx src/define/cli.ts policy:card",
-    "app:diagram": "tsx src/define/cli.ts app:diagram"
+    "app:diagram": "tsx src/define/cli.ts app:diagram",
+    "kb:model": "tsx src/define/cli.ts kb:model",
+    "kb:index": "tsx src/define/cli.ts kb:index",
+    "kb:bakeoff": "tsx src/define/cli.ts kb:bakeoff",
+    "kb:approve": "tsx src/define/cli.ts kb:approve",
+    "kb:status": "tsx src/define/cli.ts kb:status"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",
@@ -50,6 +56,14 @@
     "ws": "^8.18.0",
     "yaml": "^2.9",
     "zod": "^4.6"
+  },
+  "peerDependencies": {
+    "@huggingface/transformers": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22",

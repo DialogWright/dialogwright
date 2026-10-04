@@ -1,0 +1,49 @@
+{
+  "name": "@dialogwright/kb-author",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Builds a DialogWright knowledge base from a folder of documents or a website: extraction by section with provenance, a polite crawler, drafting with a pluggable drafter, a local review page, and refresh.",
+  "license": "Apache-2.0",
+  "homepage": "https://dialogwright.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DialogWright/dialogwright.git",
+    "directory": "packages/kb-author"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "bin": {
+    "dialogwright-kb": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "kb:ingest": "tsx src/cli.ts kb:ingest",
+    "kb:draft": "tsx src/cli.ts kb:draft",
+    "kb:review": "tsx src/cli.ts kb:review",
+    "kb:refresh": "tsx src/cli.ts kb:refresh",
+    "kb:gaps": "tsx src/cli.ts kb:gaps"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "dialogwright": "workspace:*",
+    "linkedom": "^0.18.13",
+    "mammoth": "^1.13.0",
+    "unpdf": "^1.8.1",
+    "yaml": "^2.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

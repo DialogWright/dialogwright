@@ -4,7 +4,7 @@ Pull requests are welcome. Thank you for helping.
 
 ## Build and test
 
-Node 22.19 or later and pnpm are required.
+Node 22.19 or later and pnpm are required. Record cassettes under the major in `.nvmrc` (22): the Unicode tables behind the engine's text handling come with Node and can change between majors, which changes a recorded request's text (see the authoring guide's fixtures).
 
 ```sh
 pnpm install
@@ -21,6 +21,7 @@ pnpm --filter dialogwright regress:testkit
 - No private data or real personal information in code, tests or fixtures. Use the 555 phone range and invented names.
 - Policy belongs in the gate, never in tool code. A tool does its job; the gate decides whether it may run.
 - A model never writes a regulated line. It only chooses among approved ones.
+- A knowledge base's answers are approved text, said word for word. Only a person approves a passage, a drafting tool only proposes one, and no key for a model is ever committed or used in CI or a test.
 - Do not regenerate a regression baseline or snapshot to make a test pass. If output changed, understand why first.
 
 ## Adding a slot type
@@ -105,6 +106,38 @@ The built-in rules (`identity`, `scope`, `role`, `confirmed`, `attempts`, `field
 **The card.** Write the rule's sentence on the policy card in the words a reviewer who does not read YAML would use, with its parameters: "no later than 30 days from today", not `notAfter: today+30`. A reviewer reads this and nothing else. Add the rule to an app's test policy where it can be seen, and look at the diff of its `POLICY.md`, `policy.matrix` and `APP-MAP.md` (`pnpm policy:card`, `pnpm policy:matrix`, `pnpm app:diagram`): the diff is part of the review.
 
 **Docs and the rest.** Regenerate the schemas (`pnpm --filter dialogwright schemas`); add the rule to the table in section 3.3 of the authoring guide with an example (a YAML block there is built by `define/docPolicyBlocks.test.ts`, so it cannot drift), to design.md §6, to the rule lists in CLAUDE.md, llms.txt and the README, and to `BUILT_IN_RULES`. The rule's name is recorded in the audit: never reuse one of the old ids `R0` to `R7`. Before you open the pull request: `pnpm verify`, `pnpm check` and both regressions, as above, with no decision of an existing app changed.
+
+## Adding a retriever or an embedder
+
+Retrieval decides which few topics the decision model is asked about, so it is held to more than finding the right one: it must give the same answer every time, quickly, on any machine, because its nominations shape the model's request and a recorded call replays only if they do not move. Read [the knowledge base section of the guide](docs/authoring-an-app.md#12-the-knowledge-base) first, and `packages/dialogwright/src/kb/hybrid.ts` (the default retriever, and the model to copy) and `kb/embed/types.ts`.
+
+**A retriever** is an object with an `id` (its name in the trace), an optional `indexHash` and `nominate({ text, locale, todayIso })`, which returns `{ topic, title, score, via }` entries, best first, in the order that ties are broken by (topic id), at most the knowledge base's cap, sync or async (`Retriever` in `kb/types.ts`). An app gives its own as `code.knowledge.retriever`; one that belongs in the engine goes beside `keyword.ts` and `hybrid.ts` and is chosen in `defaultRetriever`.
+
+- **Deterministic.** The same words, locale, day and knowledge base give the same nominations in the same order with the same scores. Round scores (`kb/score.ts`), break ties by topic id, and read no clock or randomness. The engine runs it once per turn before the model is asked, within a fixed 150 ms budget (`RETRIEVE_BUDGET_MS`); a retriever that throws, answers with something that is not a list, or is late nominates nothing, which the trace records. It must not rely on that: it should be quick and should not call out by default.
+- **Neutral and read-only.** It reads the knowledge base it was given (`RetrievalKb`: topics with their wording by locale) and nothing else, and it never writes. It reads a topic in the caller's locale, falling back to the default's wording, as `kb/words.ts` does.
+- **Tests.** Beside it, a test of what it nominates and what it does not (words that name no topic, greetings, the cap, a locale), and a golden of its nominations for every line of the fixture paraphrase set (`kb/__fixtures__/paraphrases.yaml`, `nominations.golden.json`), as `keyword.test.ts` and `hybrid.test.ts` do. Add it to the bake-off (`kb/commands.ts`) and say in the pull request what `pnpm kb:bakeoff <fixture kb> --paraphrases <file> --sweep` reports: recall at the cap, candidates per question and per question about nothing, and speed. A retriever that does not beat the keyword one on recall at the same candidates has no reason to be the default.
+- **A database's vector search** is not a retriever but a `VectorIndex` (`search({ vector, limit, floor })`): pass it to `DenseRetriever` and `HybridRetriever` as `makeIndex`, and the retriever above it does not change. Phase 8's pgvector is this.
+
+**An embedder** turns texts into vectors (`Embedder` in `kb/embed/types.ts`: `id`, `revision`, `sha256`, `dim` and `embed(texts)`). Its vectors are written to a committed index (`kb/.index/<id>.json`, by `pnpm kb:index`), so it must be deterministic: the same text, the same bits, on every machine.
+
+- **A static model** (a Model2Vec model of the same file layout as `potion-base-8M`) is added to `STATIC_MODELS` in `kb/embed/model.ts`, pinned: its repository, the exact revision, the SHA-256 of every file it reads, its dimension, its licence (it must allow redistribution of a download, and be compatible with Apache-2.0) and the floor the bake-off recommends. Weights are never vendored: `pnpm kb:model` downloads them once, checks each hash, and keeps them in the cache, and a call never downloads anything. Pin a golden checksum of a sentence's vector, so a change in any bit shows (`kb/embed/embed.test.ts` does this for `potion-base-8M`).
+- **Any other embedder** goes behind a subpath and, when it needs a package of its own, an optional peer dependency, imported only when it is asked for, as `dialogwright/kb/onnx` is: the engine must install and run without it. Say what it costs (install size, speed, whether its last bits vary between CPUs, which would move a topic near the floor in or out of the nominations between machines) and what the bake-off reports against the static model.
+- **Neutral words and invented data** in everything you add: fixtures, paraphrases and tests use the library's topics or topics of your own, in neutral vocabulary, with invented names.
+
+Before you open the pull request: `pnpm verify`, `pnpm check` and both regressions, and the clinic's recorded run (`pnpm --filter @dialogwright/example-clinic regress --client recorded`) with no new miss: an app without a `kb/` must be unchanged.
+
+## Adding an extraction format
+
+The authoring tool, `packages/kb-author`, reads documents into sources (`pnpm kb:ingest`); a format is one file under `src/extract/` that turns a document's bytes into sections. Read the package's README (the formats table and "What a source file holds") and `src/sections.ts` first. `markdown.ts` is the simplest to copy.
+
+- **The shape.** The extractor returns an `ExtractedDocument`: an optional `title` and `sections`, each with an `id` (the slug of its heading path, `late-fees` or `shifts/training`, so it stays put when a section is added elsewhere), an optional `heading`, its `text`, and for a format with pages its `page` and `lastPage`. Use `cleanText` and the helpers in `sections.ts`: paragraphs are kept (a blank line between them), whitespace is collapsed inside each one, and invisible characters are dropped. Approvals hash the text with whitespace collapsed, so a re-wrapped paragraph is not a change and a changed word is.
+- **Deterministic.** The same bytes give the same sections, in document order, with the same ids. Re-ingesting an unchanged document must not rewrite its file.
+- **Safe.** Never run anything the document holds (no scripts, macros or embedded code, no network, no external entities), never read a path the document names, and bound what you read (the size, the number of pages and of sections). A document that cannot be read is reported and skipped, never a crash; one that has no text (a scanned page) says that it needs OCR.
+- **Registered.** Add the format to `Format`, its extensions to `EXTENSIONS` and its case to `extract()` in `src/extract/index.ts`, and the formats table in the package's README. A website's pages and linked documents reach it through the same table.
+- **Dependencies** stay out of the engine and are few: prefer pure JavaScript, check the licence is compatible with Apache-2.0, and list the package, its licence and its size in the README's dependency table. A native or very large dependency needs a reason in the pull request.
+- **Tests.** A small fictional document of the format in `src/__fixtures__/folder/` (invented names, nothing real) and a test in `extract.test.ts` of what it reads: headings, nested headings, lists, tables, what it drops, and a malformed file. The extractor never makes a network call, and no test of any kind makes a drafting call: drafting uses a fake in tests.
+
+Run `pnpm --filter @dialogwright/kb-author typecheck` and `pnpm --filter @dialogwright/kb-author test`, then `pnpm verify` and `pnpm check`.
 
 ## Pull requests
 

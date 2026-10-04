@@ -8,6 +8,9 @@ import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { DEFAULT_ROLE_PERSON_REASON, personReasons } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES } from './schema/index';
+import { kbLinkProblems, kbStateProblems } from '../kb/rules';
+import { withoutFallbackWarnings } from '../kb/fallback';
+import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProblems } from './knowledgeUse';
 
 /**
  * `dialogwright check`: everything that can be wrong with an app folder, found in one pass.
@@ -26,6 +29,13 @@ import { FILE_NAMES, FOLDER_FILES } from './schema/index';
  *  - every line of another locale is a line prompts.yaml has, and uses no variable the
  *    prompts.yaml line lacks (the code fills the default line's variables, and no others);
  *  - every intent has examples in the app's corpus, when app.yaml names a fixtures directory;
+ *  - the knowledge base, when the folder has a kb/ (../kb/rules.ts): what it names in policy.yaml
+ *    (crossLink checks it against the code when it runs; without the code, this does against
+ *    policy.yaml), and what changes with time and review: every passage approved and fresh, and a
+ *    passage in force today for every topic and every combination of the applies domain;
+ *  - the knowledge answers the folder says (./knowledgeUse.ts): a form's `answers:` and an
+ *    informational intent's `passage:`, their lines in every locale, and the passage an intent
+ *    says approved and fresh;
  *  - every prompt is `mode: fixed`: the schema allows no other mode, and refuses one with a message
  *    that says so (see the load tests), so there is nothing more to check here.
  *
@@ -185,6 +195,8 @@ export interface CheckOptions {
   code?: AppCode;
   /** The directory app.yaml's `fixtures.dir` is relative to. Default: the nearest folder above the app folder with a package.json, else the working directory. */
   fixturesRoot?: string;
+  /** The day the knowledge base must have a passage in force on, as an ISO date. Default: today (UTC). */
+  todayIso?: string;
 }
 
 export interface CheckResult {
@@ -226,6 +238,14 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
+  if (config.knowledge) {
+    if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));
+    problems.push(...kbStateProblems(config.knowledge, options.todayIso ?? new Date().toISOString().slice(0, 10), locate));
+  }
+  // Forms that answer from the knowledge base, and intents that say a passage: crossLink holds them
+  // to the code when it ran; without it, to the folder alone. A passage an intent says must be fresh.
+  if (!linked) problems.push(...knowledgeUseProblems(config, locate));
+  problems.push(...knowledgeUseStateProblems(config, locate));
   return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
 }
 
@@ -258,7 +278,8 @@ async function loadCode(dir: string): Promise<Found> {
   if (!file) return {};
   let module: Record<string, unknown>;
   try {
-    module = (await import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href)) as Record<string, unknown>;
+    // Check is independent of the model cache: the app's default retriever falling back is not said here (../kb/fallback.ts).
+    module = (await withoutFallbackWarnings(() => import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href))) as Record<string, unknown>;
   } catch (error) {
     // By its brand, not instanceof: the module may have reached defineApp through another copy of this one.
     if (isAppDefinitionError(error) && error.problems.length > 0 && error.problems.every(isProblem)) {
@@ -342,6 +363,8 @@ function referencesOf(config: LoadedConfig): Reference[] {
   for (const [id, form] of Object.entries(config.forms.forms)) {
     if (form.summaryPromptId !== null) refs.push({ id: form.summaryPromptId, file: 'forms.yaml', path: ['forms', id, 'summaryPromptId'] });
   }
+  // The lines a knowledge answer is said through: a form's answers (kb_answer and kb_unavailable, or its own) and an intent's passage.
+  for (const { id, file, path } of knowledgePromptReferences(config)) refs.push({ id, file, path });
   const identity = identityParts(config);
   if (identity?.failedPromptId !== undefined) refs.push({ id: identity.failedPromptId, file: 'identity.yaml', path: identity.failedPath });
   for (const [which, id] of Object.entries(config.app.prompts?.greetings ?? {})) {

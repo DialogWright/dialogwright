@@ -210,7 +210,7 @@ describe('loadAppFolder: problems', () => {
     ]);
   });
 
-  it('forms.yaml: a typo in a required key (reported once, as the rename), a number where text goes, a missing hooks list and a misspelled hook', () => {
+  it('forms.yaml: a typo in a required key (reported once, as the rename), a number where text goes, a form with no hooks and no answers, and a misspelled hook', () => {
     const result = loadCase('forms-mistakes');
     expect(result.config).toBeNull();
     // summaryPrompId is the required summaryPromptId misspelt: the rename is the one fix, so
@@ -236,9 +236,9 @@ describe('loadAppFolder: problems', () => {
         file: 'forms.yaml',
         line: 6,
         column: 3,
-        path: 'forms.cancel.hooks',
-        message: 'required key "hooks" is missing under forms.cancel',
-        fix: `add "hooks:" (a list) under forms.cancel. The code hooks this form uses, written in the app's TypeScript; "complete" is required.`
+        path: 'forms.cancel',
+        message: 'every form needs a "complete" hook: it says what the form does once its slots are full',
+        fix: `add "hooks: [complete]" and write the function in the app's code, or "answers:" for a form that says an answer from the knowledge base`
       },
       {
         file: 'forms.yaml',
@@ -315,8 +315,8 @@ describe('loadAppFolder: problems', () => {
         line: 6,
         column: 3,
         path: 'intents.capabilities',
-        message: 'an informational intent plays a prompt, and this one names none',
-        fix: 'add "promptId: <id>" naming the prompt in prompts.yaml that this intent plays'
+        message: 'an informational intent plays a prompt or says a passage, and this one names neither',
+        fix: 'add "promptId: <id>" naming the prompt in prompts.yaml that this intent plays, or "passage: <id>" naming a passage in kb/passages'
       },
       {
         file: 'intents.yaml',
