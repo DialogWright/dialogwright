@@ -148,6 +148,16 @@ export interface ServerConfig {
    * Optional in the type only, for a config made by hand before it existed: loadConfig always sets it.
    */
   drainMs?: number;
+  /**
+   * TRACE_RETENTION_DAYS, unset by default (every trace kept, as before): trace files and their frame
+   * logs last written more than this many days ago are deleted (server/retention.ts). Absent when unset.
+   */
+  traceRetentionDays?: number;
+  /**
+   * AUDIT_RETENTION_DAYS, unset by default (every audit day kept: the audit is a record): audit day
+   * files more than this many days old are deleted, never today's. Absent when unset.
+   */
+  auditRetentionDays?: number;
 }
 
 /** How long a stopping server waits for live calls and chats, unless DRAIN_MS says otherwise. */
@@ -295,9 +305,20 @@ export function loadConfig(env: Env): ServerConfig {
     handoffSummary: handoffSummarySwitch === 'on',
     consoleLocalOnly: localOnlySwitch === 'on',
     drainMs: integer(env, 'DRAIN_MS', DEFAULT_DRAIN_MS),
+    ...retentionOf(env, 'TRACE_RETENTION_DAYS', 'traceRetentionDays'),
+    ...retentionOf(env, 'AUDIT_RETENTION_DAYS', 'auditRetentionDays'),
     ...(chat ? { chat } : {}),
     ...(widget ? { widget } : {}),
   };
+}
+
+/** A retention in days, as `{ [key]: days }`, or nothing when the variable is unset. */
+function retentionOf<K extends 'traceRetentionDays' | 'auditRetentionDays'>(env: Env, name: string, key: K): { [k in K]?: number } {
+  const raw = env[name]?.trim();
+  if (raw === undefined || raw === '') return {};
+  const days = integer(env, name, 0);
+  if (days <= 0) throw new Error(`${name} must be a positive whole number of days, got "${env[name]}"`);
+  return { [key]: days } as { [k in K]?: number };
 }
 
 /** WIDGET and, when it is on, WIDGET_FILE; undefined when it is off (WIDGET_FILE is then not read). */
@@ -448,6 +469,8 @@ export function describeConfig(c: ServerConfig): string {
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
     `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,
+    `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}`,
+    `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,
     `clips ${c.clips ? 'on' : 'OFF (all TTS)'}`,
     `anthropic key ${mask(c.anthropicApiKey)}`,
     c.handoffSummary ? `handoff note on${c.anthropicApiKey ? '' : ' (no key: none generated)'}` : 'handoff note OFF',

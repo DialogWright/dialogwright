@@ -29,6 +29,7 @@ import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoute
 import { localOnlyPaths } from './localOnly';
 import { VOICE_RELAY } from '../channel/caps';
 import { CHAT_PATH, chatEndpoint, type ChatEndpoint } from './chat/socket';
+import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
 
 export interface RunningServer {
   server: Server;
@@ -96,6 +97,8 @@ export interface ServerOverrides {
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
 const EVICT_EVERY_MS = 60 * 1000;
+/** How often the idle sweep also sweeps old traces and audit days, when a retention is set. */
+const RETENTION_EVERY_MS = 60 * 60 * 1000;
 /**
  * How long close() waits for turns already in flight before it terminates the sockets anyway. It is
  * not the drain: DRAIN_MS (config.ts) is how long a stopping server waits for whole calls to end.
@@ -222,10 +225,31 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       },
     })
     : undefined;
+  // Retention, when TRACE_RETENTION_DAYS or AUDIT_RETENTION_DAYS is set: a sweep now and once an hour after.
+  const retention: RetentionSettings = {
+    traceDir: config.traceDir, auditDir: config.auditDir, traceDays: config.traceRetentionDays, auditDays: config.auditRetentionDays,
+  };
+  const retaining = config.traceRetentionDays !== undefined || config.auditRetentionDays !== undefined;
+  let retentionAt = now();
+  const sweepDisk = (): void => {
+    retentionAt = now();
+    const inUse = new Set(store.liveCallSids().map(safeFileStem));
+    const r = sweepRetention(retention, { now: retentionAt, inUse });
+    log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days`);
+  };
+  if (retaining) {
+    const kept = (days: number | undefined) => (days === undefined ? 'forever' : `${days} days`);
+    log(`retention: traces kept ${kept(config.traceRetentionDays)}, audit days kept ${kept(config.auditRetentionDays)}`);
+    if (config.auditRetentionDays !== undefined) {
+      log(`WARNING: AUDIT_RETENTION_DAYS=${config.auditRetentionDays}: audit day files older than ${config.auditRetentionDays} days are deleted, which ends the record for those days`);
+    }
+    sweepDisk();
+  }
   const deps: HttpDeps = {
     config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
     draining: () => draining,
     ...(chat ? { chatLive: () => chat.liveCount() } : {}),
+    ...(retaining ? { disk: diskUsageCache(config.traceDir, config.auditDir, now) } : {}),
   };
   const server = createServer(createRequestHandler(deps));
   if (chatSettings) {
@@ -276,6 +300,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     chat?.sweep();
     const swept = tokens.evictExpired();
     if (swept) log(`swept ${swept} expired call tokens`);
+    if (retaining && now() - retentionAt >= RETENTION_EVERY_MS) sweepDisk();
   };
   const evictor = setInterval(sweep, EVICT_EVERY_MS);
   evictor.unref();

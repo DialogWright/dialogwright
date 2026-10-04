@@ -47,6 +47,8 @@ export interface HttpDeps {
   draining?: () => boolean;
   /** Live web chats, for `/health`'s `chat`; absent when the engine's chat is off, and `/health` then has no `chat`. */
   chatLive?: () => number;
+  /** The trace and audit folders' sizes, for `/health`'s `disk`; absent when no retention is set, and `/health` then has no `disk`. */
+  disk?: () => { traceBytes: number; auditBytes: number };
 }
 
 const MAX_BODY = 64 * 1024;
@@ -365,7 +367,8 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       if ((req.method === 'GET' || req.method === 'HEAD') && path === '/health') {
         // Liveness: the process answers. `sessions` is what is live; `retained` is ended calls still
         // inside their grace period, which are memory but not callers. `chat` is there when the chat
-        // is on, and `draining` while the server is stopping, so a body is what it was before either.
+        // is on, `draining` while the server is stopping, and `disk` when a retention is set, so a
+        // body is what it was before them for a deployment that sets none.
         const live = deps.store.liveCount();
         const body = JSON.stringify({
           ok: true,
@@ -373,6 +376,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           retained: deps.store.size() - live,
           ...(deps.chatLive ? { chat: deps.chatLive() } : {}),
           ...(deps.draining?.() ? { draining: true } : {}),
+          ...(deps.disk ? { disk: deps.disk() } : {}),
         });
         answerJson(req, res, 200, body);
         return;
