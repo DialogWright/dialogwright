@@ -44,7 +44,7 @@ export function actionsToFrames(actions: readonly Action[]): OutboundFrame[] {
     switch (a.type) {
       case 'say':
         return a.parts.map((p) => ('text' in p
-          ? textFrame(p.text, a.interruptible)
+          ? textFrame(p.text, a.interruptible, a.lang)
           : { type: 'play', source: p.audio, loop: 1, preemptible: false, interruptible: a.interruptible }));
       case 'end':
         return [endFrame('completed', a.completed)];

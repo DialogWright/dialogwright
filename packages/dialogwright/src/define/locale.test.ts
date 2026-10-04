@@ -134,8 +134,8 @@ describe('a line in a locale', () => {
   it('is spoken by TTS where it is the locale\'s own: the clips are recordings of the default\'s lines', () => {
     const ctx: RenderContext = { clips: new Map(recordableClips(libraryApp).map((c) => [c.id, `${c.id}.mp3`])), audioBase: 'https://h/audio/' };
     const decision = prompt('ask_intent', 'intent');
-    expect(decisionToActions(libraryApp, decision, ctx)).toEqual([{ type: 'say', parts: [{ audio: 'https://h/audio/ask_intent.0.mp3' }], interruptible: true }]);
-    expect(decisionToActions(libraryApp, decision, ctx, 'es')).toEqual([{ type: 'say', parts: [{ text: '¿En qué puedo ayudarle hoy?' }], interruptible: true }]);
+    expect(decisionToActions(libraryApp, decision, ctx)).toEqual([{ type: 'say', parts: [{ audio: 'https://h/audio/ask_intent.0.mp3' }], interruptible: true, lang: 'en-US' }]);
+    expect(decisionToActions(libraryApp, decision, ctx, 'es')).toEqual([{ type: 'say', parts: [{ text: '¿En qué puedo ayudarle hoy?' }], interruptible: true, lang: 'es' }]);
   });
 });
 

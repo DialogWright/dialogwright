@@ -17,6 +17,14 @@ describe('actionsToFrames', () => {
     expect(frames).toEqual([textFrame('one', false), play('https://x/a.mp3', false), textFrame('two', false)]);
   });
 
+  it('gives a text frame the language of its line, and en-US to a line with none', () => {
+    const frames = actionsToFrames([
+      { type: 'say', parts: [{ text: 'Hola' }], interruptible: true, lang: 'es-US' },
+      { type: 'say', parts: [{ text: 'Hello' }], interruptible: true },
+    ]);
+    expect(frames.map((f) => (f.type === 'text' ? f.lang : null))).toEqual(['es-US', 'en-US']);
+  });
+
   it('keeps the interruptible flag on audio parts too', () => {
     expect(actionsToFrames([sayAction([{ audio: 'u' }], true)])).toEqual([play('u', true)]);
   });

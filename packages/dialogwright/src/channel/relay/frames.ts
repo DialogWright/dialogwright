@@ -123,8 +123,9 @@ export function serviceResultFrame(service: string, result: unknown, note?: unkn
   return note ? { type: 'service_result', service, result, note } : { type: 'service_result', service, result };
 }
 
-export function textFrame(token: string, interruptible: boolean): TextFrame {
-  return { type: 'text', token, last: true, lang: DEFAULT_LANG, interruptible, preemptible: false };
+/** A line's words for the relay's voice, in `lang` (the line's own, Say.lang), en-US when it has none. */
+export function textFrame(token: string, interruptible: boolean, lang: string = DEFAULT_LANG): TextFrame {
+  return { type: 'text', token, last: true, lang, interruptible, preemptible: false };
 }
 
 export function endFrame(

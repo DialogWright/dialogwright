@@ -6,8 +6,13 @@
 /** Part of a line: words for the channel's own voice or display, or a recorded clip's URL. */
 export type SayPart = { text: string } | { audio: string };
 
-/** One line, in order of its parts. `interruptible`: the user may speak over it. */
-export interface Say { type: 'say'; parts: SayPart[]; interruptible: boolean }
+/**
+ * One line, in order of its parts. `interruptible`: the user may speak over it. `lang`: the
+ * language its words are in (a BCP 47 tag), set by the renderer for an app that declares locales;
+ * a channel that speaks passes it to its voice. Absent on a line with no language of its own (every
+ * line of an app without locales), which a speech channel says in its default language.
+ */
+export interface Say { type: 'say'; parts: SayPart[]; interruptible: boolean; lang?: string }
 /** The session is over and its business done. */
 export interface End { type: 'end'; completed: string[] }
 /** Hand the session to a person, with why and what was done, still queued, and collected. */
@@ -19,8 +24,8 @@ export interface SetLanguage { type: 'set_language'; tts: string; transcription:
 
 export type Action = Say | End | Transfer | SendDigits | SetLanguage;
 
-export function sayAction(parts: SayPart[], interruptible: boolean): Say {
-  return { type: 'say', parts, interruptible };
+export function sayAction(parts: SayPart[], interruptible: boolean, lang?: string): Say {
+  return lang === undefined ? { type: 'say', parts, interruptible } : { type: 'say', parts, interruptible, lang };
 }
 export function endAction(completed: readonly string[] = []): End {
   return { type: 'end', completed: [...completed] };

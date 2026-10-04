@@ -55,6 +55,16 @@ export function handoffPromptId(reason: string): string {
 }
 
 /**
+ * The language a line in `locale` is said in (Say.lang): the locale, else the app's default, for an
+ * app that declares locales (App.locales). An app without locales gives its lines no language, so
+ * they map to the relay's en-US text frames exactly as they always have: that is what keeps every
+ * golden of an app without locales unchanged.
+ */
+export function lineLang(app: App, locale?: string): string | undefined {
+  return app.locales ? (locale ?? app.locales.default) : undefined;
+}
+
+/**
  * One prompt as a line: clips where they exist, TTS text otherwise, adjacent text merged. A line in
  * a locale's own words is spoken whole by TTS: the clips are recordings of the default locale's.
  */
@@ -62,7 +72,8 @@ export function promptSay(app: App, promptId: string, vars: Record<string, strin
   const { entry, localized } = localePromptEntry(app, promptId, locale);
   const segments = segmentTemplate(promptId, entry.text);
   // A line that carries data is spoken whole by TTS, even when clips are on.
-  if (!ctx || localized || ttsOnly(app, segments)) return sayAction([{ text: renderTemplate(entry.text, vars) }], interruptible);
+  const lang = lineLang(app, locale);
+  if (!ctx || localized || ttsOnly(app, segments)) return sayAction([{ text: renderTemplate(entry.text, vars) }], interruptible, lang);
   const parts: SayPart[] = [];
   let pieces: string[] = [];
   const flush = (): void => {
@@ -91,7 +102,7 @@ export function promptSay(app: App, promptId: string, vars: Record<string, strin
     else pieces.push(value);
   }
   flush();
-  return sayAction(parts, interruptible);
+  return sayAction(parts, interruptible, lang);
 }
 
 /** What a decision asks the channel to do, in order, its lines in `locale` (promptEntry). */
@@ -102,7 +113,7 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
     case 'hold':
       return [];
     case 'replay':
-      return [sayAction([{ text: decision.text }], true)];
+      return [sayAction([{ text: decision.text }], true, lineLang(app, locale))];
     case 'prompt': {
       const actions: Action[] = decision.acks.map((a) => say(a.promptId, a.vars, promptEntry(app, a.promptId, locale).interruptible));
       actions.push(say(decision.promptId, decision.vars, promptEntry(app, decision.promptId, locale).interruptible));

@@ -10,7 +10,10 @@ import { mockCodeVerifier } from '../core/tools';
 import { spokenText } from '../prompts/render';
 import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap, QuestionMap } from '../jev/types';
-import { libraryApp, LibrarySystems } from './fixture/app';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Action } from '../channel/actions';
+import { libraryApp, LibrarySystems, LIBRARY_DIR } from './fixture/app';
 
 /**
  * A whole call to the library line in Spanish (session.start asks for es): the card number said in
@@ -104,5 +107,23 @@ describe('a call in Spanish', () => {
     const hold = say(fresh, 'is my hold for The River Atlas in', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
     const branch = say(hold, 'North', { branch: choice({ north: 0.92, none: 0.08 }) }, t).turn;
     expect(heard(branch)).toBe('Good news, The River Atlas is waiting for you at the North branch. Is there anything else I can help with?');
+  });
+});
+
+describe('the language each line is said in', () => {
+  /** The fixture's Spanish tag, as its locale/ folder names it. */
+  const SPANISH = readdirSync(join(LIBRARY_DIR, 'locale')).find((d) => d.startsWith('es'))!;
+  const langs = (actions: readonly Action[]): Array<string | undefined> => actions.flatMap((a) => (a.type === 'say' ? [a.lang] : []));
+
+  it('says a Spanish call\'s lines in the Spanish tag', () => {
+    const start = resolve(newSession('library-lang-es', 0, VOICE_RELAY, ANONYMOUS, libraryApp.id), startEvent({}, 'es'), null, tc());
+    expect(langs(start.actions).length).toBeGreaterThan(0);
+    expect(new Set(langs(start.actions))).toEqual(new Set([SPANISH]));
+  });
+
+  it('says a call in the default locale in the app\'s locale:', () => {
+    const start = resolve(newSession('library-lang-en', 0, VOICE_RELAY, ANONYMOUS, libraryApp.id), startEvent(), null, tc());
+    expect(new Set(langs(start.actions))).toEqual(new Set([libraryApp.locales!.default]));
+    expect(libraryApp.locales!.default).toBe('en-US');
   });
 });
