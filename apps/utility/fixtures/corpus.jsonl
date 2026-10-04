@@ -83,7 +83,7 @@
 {"id": "om-04", "text": "is there a website that shows outages", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
 {"id": "om-05", "text": "can I see the outages online", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
 {"id": "om-06", "text": "what's the web address for outages", "intent": "outage_map", "context": "no_form"}
-{"id": "om-07", "text": "where can I check when power comes back", "intent": "outage_map", "context": "no_form", "knownGap": {"reason": "'when power comes back': outage_map 0.58 against ask_question 0.41, below the 0.6 an informational answer needs (it has no confirm band), so nomatch_open instead of the outage map", "outcome": {"promptId": "nomatch_open", "acks": [], "verdict": "intent_failed"}}}
+{"id": "om-07", "text": "where can I check when power comes back", "intent": "outage_map", "context": "no_form", "knownGap": {"reason": "'when power comes back': outage_map 0.58 against ask_question 0.41, below the 0.6 an informational answer is said at, so the caller is asked whether they want the outage map (confirm_intent_explicit, the band a form gets) before it is said", "outcome": {"promptId": "confirm_intent_explicit", "acks": [], "verdict": "route"}}}
 {"id": "om-08", "text": "actually, is there a map of outages I can look at", "intent": "outage_map", "context": "report_outage"}
 {"id": "oh-01", "text": "when are you open", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-02", "text": "hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}

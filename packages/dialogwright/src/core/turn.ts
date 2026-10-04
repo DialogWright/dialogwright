@@ -818,6 +818,14 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (pc.target === 'transfer') return { decision: handoff(s, pc.why === 'no-answer' || pc.after !== undefined ? 'live-agent' : 'frustrated'), events: [] };
       if (pc.intent === 'agent') return { decision: handoff(s, 'live-agent'), events: [] };
       if (pc.intent === 'done') return { decision: goodbye(s), events: [] };
+      // An informational intent the model was unsure of (gates.ts, `inform_explicit`): the yes says
+      // it, as the inform verdict does, and the call goes back to the intent question. Nothing fills:
+      // the yes opens no form.
+      const informs = informationOf(io.app, pc.intent);
+      if (informs !== undefined) {
+        const said = informed(s, io, informs);
+        return { decision: (said.answered ? null : offerAfterUnavailable(s, [said.ack])) ?? resume(s, io, [said.ack]), events: [] };
+      }
       if (!isFormIntent(io.app, pc.intent)) return { decision: failAttempt(s, 'intent', io), events: [] };
       // Fill from what the caller originally said, not from the "yes"; the form hears the yes too.
       // Its topic slot reads the topics nominated for those words, not this turn's (for the yes).

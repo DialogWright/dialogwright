@@ -1098,6 +1098,25 @@ describe('capabilities', () => {
     expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_dob', acks: [CAPABILITIES] });
   });
 
+  it('asks whether the caller wants the answer when it is unsure, says it on a yes, and counts nothing', () => {
+    const UNSURE = choice({ capabilities: 0.55, other: 0.25, none: 0.2 });
+    let r = say(started(), 'so what is this exactly', { intent: UNSURE });
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_intent_explicit', target: 'intent', vars: { intentLabel: 'hear what I can do' }, options: ['yes', 'no'] });
+    expect(r.session.pendingConfirmation).toMatchObject({ target: 'intent', intent: 'capabilities' });
+    r = say(r.session, 'yes', YES);
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', target: 'intent', acks: [CAPABILITIES] });
+    expect(r.session.pendingConfirmation).toBeNull();
+    expect(r.session.intentAttempts).toBe(0);
+    expect(r.session.form).toBeNull();
+  });
+
+  it('takes a no to the unsure answer as a form\'s: the intent question again, counted', () => {
+    let r = say(started(), 'so what is this exactly', { intent: choice({ capabilities: 0.55, other: 0.25, none: 0.2 }) });
+    r = say(r.session, 'no', NO);
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_open', target: 'intent', acks: [] });
+    expect(r.session.intentAttempts).toBe(1);
+  });
+
   it('keeps nothing the greeting\'s answer said for a form it did not enter: the form starts from what is said when it is asked for', () => {
     let r = say(started(), 'what can you do, i need it tomorrow morning', { intent: ASKS, ...TOMORROW_MORNING });
     expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [CAPABILITIES] });

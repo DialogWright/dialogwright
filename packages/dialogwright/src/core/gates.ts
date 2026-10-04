@@ -43,8 +43,12 @@ export type Verdict =
   | { kind: 'replay' }
   /** An informational intent: its prompt (`promptId`) or its knowledge-base passage (`passage`) is said, and the call resumes. */
   | ({ kind: 'inform' } & Informs & Frustrated)
-  /** A form to enter, or 'done': the caller is finished and the call ends with the goodbye. */
-  | ({ kind: 'route'; intent: FormId | 'done'; confirm: 'none' | 'implicit' | 'explicit'; queue?: FormId } & Frustrated)
+  /**
+   * A form to enter, or 'done': the caller is finished and the call ends with the goodbye. Or an
+   * informational intent the model is unsure of, always with `confirm: 'explicit'`: the caller is
+   * asked whether they want it, and its answer is said on a yes (turn.ts, the confirmed intent).
+   */
+  | ({ kind: 'route'; intent: FormId | 'done' | Intent; confirm: 'none' | 'implicit' | 'explicit'; queue?: FormId } & Frustrated)
   | ({ kind: 'queue'; intent: FormId } & Frustrated)
   | ({ kind: 'disambiguate_intent'; a: Intent; b: Intent } & Frustrated)
   | ({ kind: 'intent_failed' } & Frustrated)
@@ -276,6 +280,12 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     // 'route_implicit' debug label still tell the two apart.
     else if (isRoutable(app, label) && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'route', intent: label, confirm: 'implicit' }; outcome = 'route_implicit'; }
     else if (isRoutable(app, label) && atLeast(top.p, t.INTENT_EXPLICIT)) { routeVerdict = { kind: 'route', intent: label, confirm: 'explicit' }; outcome = 'route_explicit'; }
+    // An informational intent gets the band a form gets: read at INTENT_IMPLICIT or more it is said
+    // (above), and below that, down to INTENT_EXPLICIT, the caller is asked whether that is what they
+    // want rather than told the words were not understood. A yes says it; a no is the intent question
+    // again, as for a form. Only outside a form: inside one it needs INTENT_SWITCH as before, since a
+    // question there would stand in for the one the form is asking.
+    else if (informs !== undefined && atLeast(top.p, t.INTENT_EXPLICIT)) { routeVerdict = { kind: 'route', intent: label, confirm: 'explicit' }; outcome = 'inform_explicit'; }
     else { routeVerdict = { kind: 'intent_failed' }; outcome = 'failed'; }
     // A hedged request is confirmed however sure the model is which request it is.
     if (tentative && routeVerdict.kind === 'route' && routeVerdict.confirm !== 'explicit') {

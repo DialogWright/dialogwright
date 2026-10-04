@@ -33,7 +33,7 @@ From the first recording (`jev-1.13.0`). The other differences that recording sh
 
 | Entry | Utterance | What happens | Caller impact | Category | Candidate fix |
 |---|---|---|---|---|---|
-| om-07 | "where can I check when power comes back" | outage_map 0.58 against ask_question 0.41; an informational answer needs 0.6 and has no confirm band | Hears `nomatch_open` and asks again | Threshold borderline | A confirm band for informational intents; the outage map's criteria could name restoration times (a re-recording) |
+| om-07 | "where can I check when power comes back" | outage_map 0.58 against ask_question 0.41; an informational answer is said at 0.6, and below it is confirmed, as a form is | Asked "Just to check, do you want to hear where the outage map is?" before hearing it (before the confirm band: `nomatch_open`) | Threshold borderline | The outage map's criteria could name restoration times (a re-recording) |
 | rp-07 | "pardon" inside a form | repeat_prompt 0.44 against none 0.56 (confusedByPrompt 0.79) | Hears the question's retry instead of a replay: the question again, in other words | Terse | A bare "pardon", "sorry?" or "what?" is a repeat request (a code rule), or name them in the criteria (a re-recording) |
 
 Recorded run at the time of writing: corpus 154/156 matching plus these 2 allowed; scenarios 52/52 pass and match. Two gaps of the first recording were closed in the engine: `fd-04` (a value said again unchanged counted as progress; a fill that leaves a slot's value as it was is no longer progress, so the line now takes the retry, as its label says) and `oh-05` (the opener's over-answer filled `firstDate`; a turn that opens no form now keeps only the call's slots, so the Saturday is not kept).
