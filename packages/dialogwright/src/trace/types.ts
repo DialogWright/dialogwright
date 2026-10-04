@@ -1,6 +1,6 @@
 import type { SessionEvent } from '../channel/events';
 import type { Action } from '../channel/actions';
-import type { AnswerMap, AnswerSource, QuestionMap } from '../jev/types';
+import type { AnsweredBy, AnswerMap, AnswerSource, QuestionMap } from '../jev/types';
 import type { TurnState } from '../core/state';
 import type { GateRow } from '../core/gates';
 import type { Decision } from '../core/decision';
@@ -85,6 +85,13 @@ export interface TraceRecord {
    * record's `audit`). Absent for an app without hashes, and in records written before them.
    */
   configHash?: string;
+  /**
+   * What answers the call's asks (JevClient.answeredBy): the provider, the model id, and whether it
+   * is TypeSafe's Jev (`official`), whose probabilities the thresholds were measured on. Only on the
+   * session start's record, so a run says what answered it; absent for a stub, which asks no model,
+   * and in records written before it.
+   */
+  answeredBy?: AnsweredBy;
   /**
    * Added later: the injection screen's reading of this turn (null when it was not asked), and
    * whether it quarantined the turn. A quarantined record keeps `answers` for debugging, but nothing

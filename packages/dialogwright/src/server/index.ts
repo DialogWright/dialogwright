@@ -13,7 +13,7 @@ import { makeObserver } from './dashboard/observer';
 import { defaultAppId, getApp } from '../core/app/registry';
 import { newSession } from '../core/session';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
-import { buildClient } from '../run/client';
+import { buildClient, modelHeader } from '../run/client';
 import { localDateIso } from '../run/clock';
 import type { JevClient } from '../jev/types';
 import { TraceWriter } from '../trace/writer';
@@ -89,7 +89,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // The one threshold the phone line sets from its environment: the ask budget is a property of the
   // deployment's network and the day's question count, not of the dialogue policy.
   const thresholds = { ...DEFAULT_THRESHOLDS, JEV_TIMEOUT_MS: config.jevTimeoutMs };
-  const client = overrides.client ?? buildClient(config.jevClient, undefined, thresholds);
+  const client = overrides.client ?? buildClient(config.jevClient, undefined, thresholds, undefined, config.jevProvider ?? undefined);
+  // Which model answers, and once, for a model that is not Jev, that the thresholds were measured on Jev.
+  for (const line of modelHeader(config.jevClient, config.jevProvider)) log(line);
   // Wall-clock date in the configured zone: a caller at 8pm Pacific means today, not tomorrow.
   const todayIso = () => config.todayOverride ?? localDateIso(now(), config.timezone);
 

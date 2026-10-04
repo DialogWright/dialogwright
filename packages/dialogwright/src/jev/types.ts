@@ -81,8 +81,21 @@ export interface JevResponse {
   source: AnswerSource;
 }
 
+/**
+ * What answers a client's asks (jev/provider.ts): the provider, the model id it is sent, and whether
+ * it is TypeSafe's Jev, whose probabilities the thresholds were measured on. Written to the trace's
+ * session start (TraceRecord.answeredBy).
+ */
+export interface AnsweredBy {
+  provider: string;
+  model: string;
+  official: boolean;
+}
+
 export interface JevClient {
   ask(req: JevRequest): Promise<JevResponse>;
+  /** The model behind a live or recorded client; a stub, which asks no model, has none. */
+  readonly answeredBy?: AnsweredBy;
   /**
    * Open the connection to the model ahead of the first ask, so a call's first turn does not pay
    * for TCP and TLS setup. Best effort: it resolves whether or not the connection opened, and a

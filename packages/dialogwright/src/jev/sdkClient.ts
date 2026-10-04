@@ -1,8 +1,9 @@
 import { TypeSafeClient } from '@typesafe-ai/sdk';
 import { Agent, fetch as undiciFetch } from 'undici';
+import type { JevProvider } from './provider';
 import {
   JevClientError,
-  type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question, type QuestionMap,
+  type AnsweredBy, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question, type QuestionMap,
 } from './types';
 
 /** Pinned: aliases move between releases and thresholds are calibrated per version. */
@@ -28,6 +29,13 @@ export function keepAliveFetch(ms: number = KEEP_ALIVE_MS): typeof fetch {
 }
 
 export interface SdkJevClientOptions {
+  /**
+   * Where the model is and which one is asked (jev/provider.ts resolveJevProvider). Its base URL,
+   * key and model are handed to the SDK explicitly, so the SDK reads none of its own variables: a
+   * custom endpoint with no key of its own is sent an empty one, never TYPESAFE_API_KEY. Left out,
+   * the SDK's defaults (TypeSafe, TYPESAFE_API_KEY) and the pinned JEV_MODEL, as tests construct it.
+   */
+  endpoint?: JevProvider;
   apiKey?: string;
   timeoutMs: number;
   maxRetries?: number;
@@ -105,12 +113,17 @@ function convert(q: Question, a: RawAnswer, id: string): AnswerMap[string] {
 export class SdkJevClient implements JevClient {
   private readonly client: TypeSafeClient;
   private readonly fetchImpl: typeof fetch;
+  private readonly model: string;
+  readonly answeredBy: AnsweredBy;
 
   constructor(private readonly opts: SdkJevClientOptions) {
     this.fetchImpl = opts.fetch ?? keepAliveFetch(opts.keepAliveMs);
+    const endpoint = opts.endpoint;
+    this.model = endpoint?.model ?? JEV_MODEL;
+    this.answeredBy = { provider: endpoint?.provider ?? 'typesafe', model: this.model, official: endpoint?.official ?? true };
     this.client = new TypeSafeClient({
-      apiKey: opts.apiKey,
-      defaultModel: JEV_MODEL,
+      ...(endpoint ? { apiKey: endpoint.apiKey ?? '', baseURL: endpoint.baseURL } : { apiKey: opts.apiKey }),
+      defaultModel: this.model,
       timeout: opts.timeoutMs,
       retry: { maxRetries: opts.maxRetries ?? 1 },
       fetch: this.fetchImpl,
@@ -122,9 +135,9 @@ export class SdkJevClient implements JevClient {
    * the time the caller answers the greeting. As many, in parallel, as a turn sends requests at once
    * (`connections`, default one: core/screen.ts requestsPerTurn): with the injection screen asked
    * separately a turn sends perception's and the screen's together, and on HTTP/1.1 each needs a
-   * connection of its own; inline it sends one. The base
-   * URL answers 404, which costs nothing and is not an error here; any failure is swallowed, since
-   * an ask simply opens its own.
+   * connection of its own; inline it sends one. It is a reachability check, not a health check:
+   * any HTTP answer will do (TypeSafe's base URL answers 404, and a gateway's path prefix may too),
+   * the status is never read, and any failure is swallowed, since an ask simply opens its own.
    */
   async warm(connections = 1): Promise<void> {
     await Promise.all(Array.from({ length: Math.max(1, connections) }, () => this.head()));
@@ -143,7 +156,7 @@ export class SdkJevClient implements JevClient {
     const started = performance.now();
     try {
       const result = await this.client.systemOne(
-        { state: req.state as never, questions: toSdkQuestions(req.questions) as never, model: JEV_MODEL },
+        { state: req.state as never, questions: toSdkQuestions(req.questions) as never, model: this.model },
         { signal: req.signal, timeout: req.timeoutMs ?? this.opts.timeoutMs },
       );
       const raw = result as unknown as { model: string; answers: Record<string, RawAnswer>; usage: { input_tokens: number; output_tokens: number } };

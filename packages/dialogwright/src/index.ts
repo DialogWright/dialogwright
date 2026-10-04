@@ -144,7 +144,7 @@ export type { JevClient } from './jev/types';
 
 // The model's answers: what an app's own questions (App.questions) ask, and how its hooks and slot
 // parsers read what came back (a choice's ranked labels, a yes-or-no's value).
-export type { Answer, AnswerMap, ChoiceAnswer, NoulAnswer, ScoreAnswer, Question, QuestionMap, Ranked } from './jev/types';
+export type { AnsweredBy, Answer, AnswerMap, ChoiceAnswer, NoulAnswer, ScoreAnswer, Question, QuestionMap, Ranked } from './jev/types';
 export { isChoice, isNoul, isScore, noulValue, rankProbabilities, topMargin } from './jev/types';
 
 // Decisions a completion or hook may return, and the lines it may say before them.
@@ -211,6 +211,8 @@ export { loadCorpus, parseCorpus, normalizeText } from './jev/corpus';
 export type { CorpusEntry, CorpusContext, KnownGap, PinnedOutcome, AnswerOverride } from './jev/corpus';
 export { buildClient, buildThresholds, CLIENT_KINDS } from './run/client';
 export type { ClientKind } from './run/client';
+export { resolveJevProvider, JEV_PROVIDERS } from './jev/provider';
+export type { JevProvider, JevProviderName } from './jev/provider';
 export { defaultCorpusFile, scenariosDir } from './run/fixtures';
 export { loadScenarios } from './harness-text/runner';
 export type { Outcome, Scenario, ScenarioStep, ScenarioExpectation } from './harness-text/runner';

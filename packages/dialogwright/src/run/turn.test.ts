@@ -477,3 +477,23 @@ describe('a portal sign-in', () => {
     expect(JSON.stringify(run.record.event)).not.toContain(CUSTOMERS[0]!.phoneLast4);
   });
 });
+
+describe('runTurn: what answered', () => {
+  const answeredBy = { provider: 'custom', model: 'open-jev-7b', official: false };
+  const named: JevClient = { answeredBy, ask: (req: JevRequest) => opts.client.ask(req) };
+
+  it('records the provider and model on the session start, and only there', async () => {
+    const greeted = await runTurn(newSession('s', 0, VOICE_RELAY), startEvent(), { ...opts, client: named });
+    expect(greeted.record.answeredBy).toEqual(answeredBy);
+    const next = await runTurn(greeted.result.session, speechEvent('cancel my appointment'), { ...opts, client: named });
+    expect(next.record.answeredBy).toBeUndefined();
+  });
+
+  it('records the same field for an official provider, and nothing for a stub, which asks no model', async () => {
+    const official = { provider: 'openrouter', model: 'typesafe/jev-1.13', official: true };
+    const run = await runTurn(newSession('s', 0, VOICE_RELAY), startEvent(), { ...opts, client: { answeredBy: official, ask: (req: JevRequest) => opts.client.ask(req) } });
+    expect(run.record.answeredBy).toEqual(official);
+    const stub = await runTurn(newSession('s', 0, VOICE_RELAY), startEvent(), opts);
+    expect('answeredBy' in stub.record).toBe(false);
+  });
+});

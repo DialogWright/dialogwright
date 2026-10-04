@@ -677,6 +677,7 @@ export function reduce(events, opts) {
         // configuration hash only once a turn of an app built from a folder names one.
         delete v.locale;
         delete v.configHash;
+        delete v.answeredBy;
         break;
       case 'asked': {
         live();
@@ -695,6 +696,8 @@ export function reduce(events, opts) {
         if (typeof r.locale === 'string') v.locale = r.locale;
         // The configuration the call runs under, which only an app with hashes (App.configHashes) records.
         if (typeof r.configHash === 'string') v.configHash = r.configHash;
+        // What answers the call (TraceRecord.answeredBy), on the session start of a call a model answers.
+        if (r.answeredBy && typeof r.answeredBy.model === 'string') v.answeredBy = { ...r.answeredBy };
         const consulted = r.questions !== null && r.questions !== undefined;
         // An interrupt or a relay error resolves to `ignore`: the record repeats the last turn's
         // index, says nothing, and asks for nothing. It must not be counted as a turn or blank

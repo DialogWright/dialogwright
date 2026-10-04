@@ -255,6 +255,8 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       : event;
   const record = buildTraceRecord({
     result, event: traced, questions: p.questions, response, error, screenUsage: screenResponse?.usage ?? null,
+    // What answers the call, on its first record only, and only from a client that asks a model.
+    answeredBy: event.type === 'session.start' ? opts.client.answeredBy ?? null : null,
     // Retrieval's time only on a turn a retriever ran; its total then counts from before it.
     timing: retrieved?.ms != null
       ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - tr }

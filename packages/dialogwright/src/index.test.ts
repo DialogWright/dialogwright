@@ -31,6 +31,8 @@ describe('the package entry', () => {
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
       'buildQuestions', 'ENGINE_QUESTION_IDS', 'buildTurnState', 'FixtureStubClient', 'HeuristicStubClient', 'digitSpanLabel', 'dobParts', 'saysDob', 'saysExplicitYear',
       'loadCorpus', 'parseCorpus', 'normalizeText', 'buildClient', 'buildThresholds', 'defaultCorpusFile', 'scenariosDir', 'loadScenarios',
+      // where the decision model is reached
+      'resolveJevProvider', 'JEV_PROVIDERS',
       'readBaseline', 'REGRESS_TODAY', 'runAll',
     ]) expect(typeof (entry as Record<string, unknown>)[name], name).not.toBe('undefined');
   });
