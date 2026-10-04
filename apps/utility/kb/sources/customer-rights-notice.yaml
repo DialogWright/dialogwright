@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Your Rights as a Residential Customer
+provenance:
+  file: docs-src/documents/customer-rights-notice.pdf
+  retrieved: 2026-10-04
+sections:
+  intro:
+    text: Example Power & Light sends this notice to every residential customer once a year and when service starts.
+    page: 1
+  disputing-a-bill:
+    heading: Disputing a bill
+    text: If you believe your bill is wrong, call us at 555-0100 or write to us within 30 days of the bill date. While we review your dispute, you need to pay only the part of the bill you do not dispute, and your service will not be disconnected for the amount in dispute.
+    page: 1
+  medical-certificates:
+    heading: Medical certificates
+    text: If a doctor certifies that a disconnection would be a serious risk to the health of someone in your home, disconnection is postponed for 30 days. A certificate may be renewed twice in any 12 months.
+    page: 1
+  appeals:
+    heading: Appeals
+    text: If you are not satisfied with how we resolve your dispute, you may ask the State Utility Commission to review it. Its consumer line is 555-0175.
+    page: 2
+  your-privacy:
+    heading: Your privacy
+    text: We do not share your account information with anyone outside Example Power & Light without your consent, except as the law requires.
+    page: 2

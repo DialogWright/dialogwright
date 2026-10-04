@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../packages/dialogwright/schemas/kb-topics.schema.json
+# The topics callers ask about, by id. Retrieval reads each topic's title, keywords and example
+# questions (asks) to nominate a few for what a caller says; the topic question then asks the
+# decision model which one, if any, they mean. The words callers use in other ways are in
+# fixtures/kb/paraphrases.yaml, held out from the asks here so the bake-off measures recall on words
+# retrieval has not seen. After any change here, run pnpm kb:index apps/utility and commit kb/.index.
+outage_credit:
+  title: Outage credits
+  keywords: [outage credit, credit for an outage, long outage, compensation]
+  asks:
+    - Do I get a credit when my power is out for a long time?
+    - How much is the outage credit?
+    - Will I be compensated for the outage?
+  # Said after the approved answer, for a verified customer only: the last outage on the caller's
+  # own account, read through the gated getOutageHistory (level 1, their own account). Refused, or
+  # with no outage on record, the answer is said without it.
+  accountLine:
+    text: The last outage on record for your account was on {lastOutageDay}, and it lasted {lastOutageHours} hours.
+    from: getOutageHistory
+outage_map:
+  title: The outage map
+  keywords: [outage map, map of outages, restoration time]
+  asks:
+    - Where can I see a map of outages?
+    - Is there a website that shows when power will be back?
+  risk: low
+office_hours:
+  title: Office hours
+  keywords: [office hours, customer office, opening hours]
+  asks:
+    - When is your office open?
+    - What time does the customer office close?
+  risk: low
+payment_options:
+  title: Ways to pay a bill
+  keywords: [pay my bill, ways to pay, pay online, autopay, automatic payment, pay by phone, pay in person]
+  asks:
+    - How can I pay my bill?
+    - Can I pay online?
+    - Is there a fee to pay by phone?
+budget_billing:
+  title: Budget billing
+  keywords: [budget billing, equal monthly payments, same bill every month, levelized billing]
+  asks:
+    - What is budget billing?
+    - Can my bill be the same amount every month?
+seasonal_assistance:
+  title: Help paying winter heating bills
+  keywords: [Winter Warmth, assistance program, energy assistance, low income, help with my bill, heating season]
+  asks:
+    - Is there a program to help me pay my bill this winter?
+    - Do you have assistance for low income households?
+    - How do I apply for Winter Warmth?
+disconnection:
+  title: Notice before a disconnection
+  keywords: [disconnection, disconnect, shut off, shutoff notice, cut off]
+  asks:
+    - Will you shut off my power if I can't pay?
+    - How much notice do I get before a disconnection?
+reconnection:
+  title: Getting service reconnected
+  keywords: [reconnect, reconnection, reconnection fee, turn my power back on, restore service]
+  asks:
+    - How soon is my power turned back on after I pay?
+    - Is there a fee to reconnect service?
+start_stop_service:
+  title: Starting or stopping service
+  keywords: [start service, stop service, moving, move in, move out, new account, final bill]
+  asks:
+    - I'm moving, how do I stop my service?
+    - How do I start electric service at my new home?
+residential_rates:
+  title: Residential electricity rates
+  keywords: [rate, rates, price per kilowatt-hour, kilowatt-hour, customer charge, rate schedule]
+  asks:
+    - What do you charge per kilowatt-hour?
+    - What is the monthly customer charge?
+late_fees:
+  title: Late payment charges
+  keywords: [late fee, late charge, late payment charge, penalty, paid late]
+  asks:
+    - Is there a fee if I pay my bill late?
+    - How much is the late charge?
+bill_dispute:
+  title: Disputing a bill
+  keywords: [dispute, disputed bill, wrong bill, billing error, overcharged, complaint]
+  asks:
+    - I think my bill is wrong, what can I do?
+    - How do I dispute a charge on my bill?

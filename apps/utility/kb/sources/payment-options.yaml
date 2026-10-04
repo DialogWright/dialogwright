@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Payment options and plans
+provenance:
+  file: docs-src/website/payment-options.html
+  retrieved: 2026-10-04
+sections:
+  ways-to-pay:
+    heading: Ways to pay
+    text: You can pay online at www.example.com/pay, by automatic payment from a bank account, by phone at 555-0100, by mail, or in person at our customer office. There is no fee for any of these ways to pay.
+  automatic-payments:
+    heading: Automatic payments
+    text: With automatic payments, your bill is paid from your bank account on its due date each month. Sign up online or on the back of your paper bill.
+  payment-arrangements:
+    heading: Payment arrangements
+    text: If you cannot pay your balance all at once, you can split it into two, three, four or six payments. The first payment must be made within 30 days. Customers can set up an arrangement by phone after verifying their account.

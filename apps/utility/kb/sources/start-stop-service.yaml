@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Start, stop or move service
+provenance:
+  file: docs-src/website/start-stop-service.html
+  retrieved: 2026-10-04
+sections:
+  starting-or-stopping-service:
+    heading: Starting or stopping service
+    text: To start or stop service, apply online at www.example.com/start or call 555-0100 at least 3 business days before your move-in or move-out date. When you stop service, your final bill is mailed to your new address within 10 days.
+  deposits:
+    heading: Deposits
+    text: A deposit of up to 150 dollars may be required to start service if you have not had an account with us in the last two years. It is returned with interest after 12 months of on-time payments.
+  moving-within-our-area:
+    heading: Moving within our area
+    text: If you are moving within our service area, one request stops service at your old address and starts it at your new one.

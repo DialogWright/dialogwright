@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Budget billing
+provenance:
+  file: docs-src/website/budget-billing.html
+  retrieved: 2026-10-04
+sections:
+  how-budget-billing-works:
+    heading: How budget billing works
+    text: Budget billing spreads your yearly electricity costs into equal monthly payments, so your bill is the same each month. We review your payment every six months and adjust it if your use has changed.
+  who-can-enroll:
+    heading: Who can enroll
+    text: Any residential customer with no past-due balance can enroll. Sign up online at www.example.com/budget or by calling 555-0100.
+  settling-up-once-a-year:
+    heading: Settling up once a year
+    text: Once a year, in the month you enrolled, any difference between what you paid and what you used is credited to or added to your bill.

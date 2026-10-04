@@ -1,0 +1,102 @@
+# Paraphrases of Example Power & Light's knowledge base topics (kb/topics.yaml): what callers say
+# about each topic in words other than its title, keywords and example questions, which retrieval
+# never sees, and, under none, what callers say that no topic answers. pnpm kb:bakeoff reads it:
+#
+#   pnpm kb:bakeoff apps/utility --paraphrases apps/utility/fixtures/kb/paraphrases.yaml --sweep
+#
+# and src/kb.test.ts holds the default retriever's recall on it (at least 95 percent at the cap).
+outage_credit:
+  - We had no electricity for two days, do I get anything back?
+  - Is there a refund on my bill for the blackout last week?
+  - My lights were out over a day, do you take money off my bill?
+  - Do you pay customers when the power stays off a long time?
+  - What do I get for losing power for 30 hours?
+  - Am I owed something for the outage on Tuesday?
+  - The power was out all weekend, is there any money back for that?
+outage_map:
+  - Where can I check if my neighborhood is affected?
+  - Is there an online page that shows where the power is out?
+  - How do I find out when the lights are expected back on?
+  - Can I look up the outages near me on the internet?
+  - Where do I see how many people are without electricity?
+  - Is there a live view of current outages?
+office_hours:
+  - What days can I come in to see someone?
+  - Are you open on the weekend?
+  - What time do you open in the morning?
+  - Can I visit the office on Saturday?
+  - When does your building on Main Street close?
+  - Until what time can I walk in today?
+payment_options:
+  - What are the different ways I can send you money?
+  - Do you take credit cards over the phone?
+  - Can I have the bill taken out of my checking account?
+  - Where do I mail my payment?
+  - Can I drop off a payment at your office?
+  - Is it free to pay on your website?
+  - How do I set up recurring payments?
+budget_billing:
+  - Can I spread my costs out evenly over the year?
+  - My winter bills are huge, can I average them out?
+  - I want to pay the same thing each month instead of it going up and down.
+  - Do you have a plan that smooths out the bills?
+  - How does the averaged payment plan work?
+  - Can I sign up for a flat monthly amount?
+seasonal_assistance:
+  - I can't afford to heat my house, is there any help?
+  - Are there grants for families struggling with energy costs?
+  - Do you give credits to people on a fixed income in the cold months?
+  - I lost my job and need help with the electric bill this winter.
+  - Is there financial aid for utility bills?
+  - What help is there for seniors who can't pay for heat?
+disconnection:
+  - Are you going to turn off my electricity?
+  - I'm behind on my bill, when would you cut my service?
+  - Do you warn people before you stop their power?
+  - Can you shut my power off without telling me?
+  - How long before you turn the lights off for an unpaid bill?
+  - Will I get a letter before you stop my electricity?
+reconnection:
+  - I paid what I owed, when does my electricity come back on?
+  - My service was cut off, how do I get it back?
+  - How long does it take to turn the power back on after paying?
+  - What does it cost to get my electricity restored after a shutoff?
+  - Do I have to pay extra to have the power switched back on?
+  - When will you restore my account after I catch up on payments?
+start_stop_service:
+  - I just bought a house, how do I get the electricity in my name?
+  - I'm leaving my apartment next week, what do I need to do?
+  - How do I transfer my account to a new address?
+  - Can I cancel my electric service?
+  - We're moving out of town, how do we close the account?
+  - How much notice do you need to set up power at a new place?
+residential_rates:
+  - How much does electricity cost per unit?
+  - What's the price of power right now?
+  - Why is my bill so high, what are you charging?
+  - What's the fixed monthly fee on my bill?
+  - How much more does power cost in the summer?
+  - What is the rate for homes?
+late_fees:
+  - What happens if I miss my due date?
+  - Do you charge interest when I'm behind?
+  - I'm a few days past due, will it cost me more?
+  - Is there a penalty for paying after the due date?
+  - How much extra do I owe if the bill is overdue?
+  - Will you add a charge if my payment is late?
+bill_dispute:
+  - My bill is way higher than usual and I think it's a mistake.
+  - I was charged for something I didn't use, how do I contest it?
+  - Who do I talk to if I disagree with my statement?
+  - Can I challenge the amount on my invoice?
+  - The meter reading on my bill can't be right.
+  - Do I have to pay a charge I'm questioning?
+none:
+  - Do you install solar panels?
+  - Can I get a rebate for a new heat pump?
+  - What's the weather going to be tomorrow?
+  - Do you sell natural gas?
+  - Can I talk to my neighbor's account manager?
+  - Who won the game last night?
+  - Can you trim the tree near my house?
+  - I want to apply for a job at the utility.

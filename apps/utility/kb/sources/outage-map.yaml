@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Outage map
+provenance:
+  file: docs-src/website/outage-map.html
+  retrieved: 2026-10-04
+sections:
+  where-to-find-the-map:
+    heading: Where to find the map
+    text: The outage map at www.example.com/outages shows current outages, the number of customers affected, and the estimated time power will be restored. It is updated every 15 minutes.
+  estimated-restoration-times:
+    heading: Estimated restoration times
+    text: Restoration times are estimates. They are updated as crews reach the site and assess the damage.
+  if-your-outage-is-not-on-the-map:
+    heading: If your outage is not on the map
+    text: The map shows the outages we know about. If your power is out and your street is not on the map, report it by calling 555-0100 at any time, day or night.

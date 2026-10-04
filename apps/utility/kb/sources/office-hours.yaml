@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Office hours and contact
+provenance:
+  file: docs-src/website/office-hours.html
+  retrieved: 2026-10-04
+sections:
+  customer-office:
+    heading: Customer office
+    text: Our customer office at 100 Main Street is open Monday through Friday, from 8 a.m. to 5 p.m., and is closed on weekends and public holidays. Outages can be reported by phone at any time, day or night.
+  customer-service-by-phone:
+    heading: Customer Service by phone
+    text: Customer Service answers at 555-0100 Monday through Friday from 7 a.m. to 7 p.m. The same number takes outage reports every day of the year.
+  by-mail:
+    heading: By mail
+    text: Example Power & Light, PO Box 5550, Example City. Payments sent by mail should arrive at least 5 days before the due date.
