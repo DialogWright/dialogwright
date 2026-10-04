@@ -10,7 +10,7 @@ Example Power & Light is a DialogWright app: a voice and chat agent whose dialog
 - `src/app.ts`: the tools and the form hooks, joined to the folder by `defineApp`. `src/data.ts`: the fixture accounts and property managers behind the stub tools.
 - `kb/`: the knowledge base. `kb.yaml` (the resolving action and retrieval), `topics.yaml` (after a change, `pnpm kb:index apps/utility`), `sources/` (read from `docs-src/` by `pnpm kb:ingest`), `pending/` (drafts, never said) and `passages/` with `approvals.jsonl` (written only by a person's approval: `pnpm kb:review apps/utility` or `pnpm kb:approve --by "<a person>"`). Never write a passage's `approval` by hand, and never approve as anything but the person who reviewed it.
 - `docs-src/`: the fictional documents the knowledge base is built from. A change there is a change to a source: run `pnpm kb:refresh apps/utility`, and the passages it withholds go back to review.
-- `fixtures/`: `corpus.jsonl` (labelled utterances, every intent has some), `scenarios/` (scripted calls), `expected/` (the stub baseline) and `kb/paraphrases.yaml` (what retrieval is measured on).
+- `fixtures/`: `corpus.jsonl` (labelled utterances, every intent has some), `scenarios/` (scripted calls), `expected/` (the stub baseline), `recorded/` (the cassette of the real decision model's answers) and `kb/paraphrases.yaml` (what retrieval is measured on).
 
 ## Commands
 
@@ -22,13 +22,14 @@ pnpm --filter @dialogwright/example-utility typecheck
 pnpm --filter @dialogwright/example-utility test
 pnpm --filter @dialogwright/example-utility regress      # the stub regression: prints "no changes", then a summary
 pnpm --filter @dialogwright/example-utility regress --scenario <id>  # one scripted call, turn by turn (--corpus <id>: one corpus line)
+pnpm --filter @dialogwright/example-utility regress --client recorded   # the replay of the recorded cassette
 ```
 
 `pnpm check` prints one line per problem, `file:line:column  path  message  ->  fix`. Act on the fix text.
 
 ## Before committing
 
-Run `pnpm check`, then this app's typecheck, tests and `regress`, then the root checks (`pnpm verify` and the other apps' regressions). Never regenerate the baseline or a snapshot to make something pass: a changed output is a finding to explain. The one exception is this app's first baseline, made once with `regress --update` and reviewed in full. Never run `regress --client record`: recording calls a paid API and is for the owner of the app to do.
+Run `pnpm check`, then this app's typecheck, tests, `regress` (expects `no changes`) and `regress --client recorded` (expects exit 0, no cassette misses, and only the known gaps listed in docs/known-gaps.md), then the root checks (`pnpm verify` and the other apps' regressions). Never regenerate the baseline or a snapshot to make something pass: a changed output is a finding to explain. The one exception is this app's first baseline, made once with `regress --update` and reviewed in full. Never run `regress --client record`: recording calls a paid API and is for the owner of the app to do. A change to the words in the YAML (a criterion, a label, a line, a question a slot sends), or a new corpus line or spoken step, is a request the cassette does not have, so the replay then reports cassette misses until the cassette is recorded again; that is a finding to raise, not something to paper over.
 
 ## Rules for this app
 
