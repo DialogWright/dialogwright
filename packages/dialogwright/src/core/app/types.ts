@@ -267,7 +267,7 @@ export interface IdentityConfig {
    * The token claim that carries the subject's id, for a channel that signs in with a token (the
    * engine's web chat, server/chat/signin.ts): identity.yaml's `signIn.claim`. Without it, `sub`. The
    * id it carries is looked up with principals.subjectPrincipal at signInLevel; an app that maps
-   * claims some other way sets PrincipalDirectory.fromClaims.
+   * token claims some other way sets PrincipalDirectory.fromClaims.
    */
   signInClaim?: string;
   /**
@@ -947,15 +947,15 @@ export interface PrincipalDirectory {
   /** The principal a delegate signs in as (e.g. depot staff by id). Read for a scenario's or corpus entry's `as`. */
   delegatePrincipal?(id: string): Party | null;
   /**
-   * The principal a verified sign-in token's claims name, for an app that maps claims its own way:
-   * a delegate (a staff member signing in to the chat), a subject by a claim the identity's
-   * `signIn.claim` cannot express, or null to fall back to that rule (the claim's id, through
+   * The principal the token claims of a verified sign-in name, for an app that maps token claims its own way:
+   * a delegate (someone on staff signing in to the chat), a subject by a token claim the identity's
+   * `signIn.claim` cannot express, or null to fall back to that rule (the id in the token claim, through
    * subjectPrincipal). Read by the engine's web chat (server/chat/signin.ts), first, for every token it
-   * has verified. The claims come from the site's identity provider, signed, but are still the app's to
+   * has verified. The token claims come from the site's identity provider, signed, but are still the app's to
    * check (a role, a tenant). What it returns is checked as the harness checks a principal: a subject
    * at the sign-in level, or a delegate of the declared kind and roles.
    */
-  fromClaims?(claims: Readonly<Record<string, unknown>>): Party | null;
+  fromClaims?(payload: Readonly<Record<string, unknown>>): Party | null;
 }
 
 /** One of the app's subjects who may sign in through a portal, as the chat shows them once signed in. */

@@ -66,7 +66,7 @@ function keysOf(body: unknown): Map<string, KeyObject> {
     if (typeof jwk !== 'object' || jwk === null) continue;
     const k = jwk as Record<string, unknown>;
     if (typeof k.kid !== 'string' || k.kid === '' || (k.use !== undefined && k.use !== 'sig')) continue;
-    // Only the public parts are read: a private member, should a provider publish one, is not.
+    // Only the public parts are read: a private field, should a provider publish one, is not.
     const { d: _d, p: _p, q: _q, dp: _dp, dq: _dq, qi: _qi, ...pub } = k;
     try {
       out.set(k.kid, createPublicKey({ key: pub as never, format: 'jwk' }));

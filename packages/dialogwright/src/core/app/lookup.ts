@@ -71,7 +71,7 @@ export const CODE_LENGTHS = { min: 4, max: 8 } as const;
 
 /**
  * A token claim's name, as identity.yaml's `signIn.claim` and IdentityConfig.signInClaim give it:
- * printable characters without spaces (`sub`, `account_id`, a namespaced `https://example.com/claims/account`).
+ * printable characters without spaces (`sub`, `account_id`, a namespaced `https://example.com/account`).
  */
 export const SIGN_IN_CLAIM = /^[!-~]{1,200}$/;
 

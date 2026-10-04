@@ -14,23 +14,23 @@ const IDENTITY = {
 describe('signIn.claim', () => {
   it('is read into IdentityConfig.signInClaim, and absent unless written', () => {
     expect(compileIdentity(identitySchema.parse({ ...IDENTITY, signIn: { level: 1, claim: 'account_id' } })).identity).toMatchObject({ signInLevel: 1, signInClaim: 'account_id' });
-    expect(compileIdentity(identitySchema.parse({ ...IDENTITY, signIn: { level: 1, claim: 'https://example.com/claims/account' } })).identity.signInClaim).toBe('https://example.com/claims/account');
+    expect(compileIdentity(identitySchema.parse({ ...IDENTITY, signIn: { level: 1, claim: 'https://example.com/account' } })).identity.signInClaim).toBe('https://example.com/account');
     const plain = compileIdentity(identitySchema.parse({ ...IDENTITY, signIn: { level: 1 } })).identity;
     expect(plain.signInLevel).toBe(1);
     expect('signInClaim' in plain).toBe(false);
   });
 
-  it('is a claim name: printable, no spaces, not empty', () => {
-    for (const claim of ['', 'account id', 'x'.repeat(201)]) {
-      expect(identitySchema.safeParse({ ...IDENTITY, signIn: { level: 1, claim } }).success, JSON.stringify(claim)).toBe(false);
+  it('is a token claim name: printable, no spaces, not empty', () => {
+    for (const name of ['', 'account id', 'x'.repeat(201)]) {
+      expect(identitySchema.safeParse({ ...IDENTITY, signIn: { level: 1, claim: name } }).success, JSON.stringify(name)).toBe(false);
     }
   });
 
-  it('is refused in code without a sign-in level, or when it is not a claim name', () => {
+  it('is refused in code without a sign-in level, or when it is not a token claim name', () => {
     const identity = testkitApp.identity!;
-    expect(() => validateApp({ ...testkitApp, id: 'claim-a', identity: { ...identity, signInClaim: 'account_id' } })).not.toThrow();
+    expect(() => validateApp({ ...testkitApp, id: 'sign-in-a', identity: { ...identity, signInClaim: 'account_id' } })).not.toThrow();
     const { signInLevel: _level, ...noSignIn } = identity;
-    expect(() => validateApp({ ...testkitApp, id: 'claim-b', identity: { ...noSignIn, signInClaim: 'account_id' } })).toThrow('identity signInClaim "account_id" needs a signInLevel');
-    expect(() => validateApp({ ...testkitApp, id: 'claim-c', identity: { ...identity, signInClaim: 'account id' } })).toThrow('identity signInClaim "account id" is not a claim name');
+    expect(() => validateApp({ ...testkitApp, id: 'sign-in-b', identity: { ...noSignIn, signInClaim: 'account_id' } })).toThrow('identity signInClaim "account_id" needs a signInLevel');
+    expect(() => validateApp({ ...testkitApp, id: 'sign-in-c', identity: { ...identity, signInClaim: 'account id' } })).toThrow('identity signInClaim "account id" is not a token claim name');
   });
 });

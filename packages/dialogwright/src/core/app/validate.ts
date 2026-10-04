@@ -261,7 +261,7 @@ export function validateApp(app: App): void {
     // A sign-in proves the top of the ladder: below it, a chat would be walked into the keypad code it does not have.
     if (signInLevel !== undefined && signInLevel !== top) fail(`identity signInLevel ${String(signInLevel)} is not the top of the ladder (${top})`);
     if (signInClaim !== undefined) {
-      if (typeof signInClaim !== 'string' || !SIGN_IN_CLAIM.test(signInClaim)) fail(`identity signInClaim ${JSON.stringify(signInClaim)} is not a claim name (printable characters without spaces, at most 200)`);
+      if (typeof signInClaim !== 'string' || !SIGN_IN_CLAIM.test(signInClaim)) fail(`identity signInClaim ${JSON.stringify(signInClaim)} is not a token claim name (printable characters without spaces, at most 200)`);
       if (signInLevel === undefined) fail(`identity signInClaim ${JSON.stringify(signInClaim)} needs a signInLevel: an app that takes no sign-in reads no token`);
     }
     if (levelNames !== undefined) {
