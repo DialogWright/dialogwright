@@ -72,6 +72,7 @@ describe('kb:ingest', () => {
       [['kb:ingest', 'http://h.test/', '--depth', 'x'], 2, /--depth must be a whole number, 0 or more/],
       [['kb:ingest', 'docs', '--dir'], 2, /--dir needs a value/],
       [['kb:ingest', 'docs', '--fast'], 2, /--fast is not an option/],
+      [['kb:ingest', 'docs', '--allow-private'], 2, /--allow-private is for a url only/],
       [['kb:other'], 2, /unknown command kb:other/],
       [['kb:ingest', 'nowhere'], 1, /nowhere is not there/],
       [['kb:ingest', 'docs', '--dir', 'docs'], 1, /is not an app folder/],
@@ -119,5 +120,18 @@ describe('kb:ingest <url>', () => {
       `  4 requests; robots.txt: ${new URL(site.origin).host} read`,
     ]);
     expect(clock.waits).toEqual([2000, 2000, 2000]);
+  });
+
+  it('reads a site on a private network only with --allow-private', async () => {
+    const clock = fakeClock();
+    const refused = scratch({ sleep: clock.sleep, now: clock.now });
+    const from = site.requests.length;
+    expect(await main(['kb:ingest', `${site.origin}/`, '--depth', '0'], refused.io)).toBe(1);
+    expect(refused.err).toEqual([`kb:ingest: ${site.origin}/ is not crawled: 127.0.0.1 is not a public address (loopback): the crawler reads only public addresses (--allow-private reads a private network)`]);
+    expect(site.requests.length).toBe(from);
+    const allowed = scratch({ sleep: clock.sleep, now: clock.now });
+    expect(await main(['kb:ingest', `${site.origin}/`, '--depth', '0', '--allow-private'], allowed.io)).toBe(0);
+    expect(allowed.out[0]).toBe(`${site.origin}/: 1 document read into kb/sources: 1 added, 0 changed, 0 unchanged; 9 skipped`);
+    expect(site.requests.slice(from).map((r) => r.path)).toEqual(['/robots.txt', '/']);
   });
 });

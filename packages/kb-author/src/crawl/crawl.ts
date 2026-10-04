@@ -2,6 +2,7 @@ import { extractDocx } from '../extract/docx';
 import { extractHtmlDocument, parseHtml, type HtmlDocument } from '../extract/html';
 import { extractPdf } from '../extract/pdf';
 import type { ExtractedDocument } from '../sections';
+import { checkedAddress, NetworkRefusal, publicFetch, type Resolver } from './net';
 import { ALLOW_ALL, DISALLOW_ALL, parseRobots, type Robots } from './robots';
 import { canonicalUrl, extensionOf, globToRegExp, hostOf, included, neverFetched } from './url';
 
@@ -22,6 +23,10 @@ import { canonicalUrl, extensionOf, globToRegExp, hostOf, included, neverFetched
  * - fetches pages (HTML) and documents (PDF, DOCX); a link to an image, a stylesheet, an archive or
  *   the like is not fetched, and a response of another type is dropped unread;
  * - follows a redirect (up to 5) only where a link could go: the same host, allowed by robots.txt;
+ *   robots.txt's own redirects too, each hop checked (one off the host leaves the host uncrawled);
+ * - reads only public addresses (./net.ts): every host is resolved, and refused when it is on a
+ *   loopback, private, link-local or other non-public network, unless `allowPrivate`; the connection
+ *   goes to the address checked, so a second DNS answer cannot move it;
  * - stops reading a response over `maxBytes` (20 MB) or slower than `timeoutMs` (30 seconds).
  *
  * `include` globs (./url.ts) narrow what is fetched beyond the start page: `/help/**`, `*.pdf`.
@@ -43,7 +48,14 @@ export interface CrawlOptions {
   allowHosts?: readonly string[];
   /** The User-Agent header. */
   userAgent: string;
-  /** The fetch to use (a test's wrapper). Default: the global fetch. */
+  /** Read hosts on private networks too (`--allow-private`). Default: public addresses only (./net.ts). */
+  allowPrivate?: boolean;
+  /** How host names are resolved (a test's resolver). Default: the system's. */
+  resolve?: Resolver;
+  /**
+   * The fetch to use (a test's scripted site). Default: ./net.ts's, which checks and pins each host's
+   * address. A fetch given here takes the network's place, and its checks with it.
+   */
   fetch?: typeof globalThis.fetch;
   /** Waits (a test's fake clock). Default: a timer. */
   sleep?: (ms: number) => Promise<void>;
@@ -182,7 +194,17 @@ export async function crawl(options: CrawlOptions): Promise<CrawlResult> {
   if (!Number.isInteger(options.depth) || options.depth < 0) throw new CrawlError('the depth must be a whole number, 0 or more');
   const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
   const rateMs = options.rateMs ?? DEFAULT_RATE_MS;
-  const doFetch = options.fetch ?? globalThis.fetch;
+  const net = { ...(options.allowPrivate ? { allowPrivate: true } : {}), ...(options.resolve ? { resolve: options.resolve } : {}) };
+  const doFetch = options.fetch ?? publicFetch(net);
+  if (!options.fetch) {
+    // The start is checked before anything is asked of it: a private address is refused up front.
+    try {
+      await checkedAddress(new URL(start).hostname.replace(/^\[(.*)\]$/, '$1'), net);
+    } catch (error) {
+      if (error instanceof NetworkRefusal) throw new CrawlError(`${start} is not crawled: ${error.message}`);
+      throw error;
+    }
+  }
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const now = options.now ?? Date.now;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -231,7 +253,25 @@ export async function crawl(options: CrawlOptions): Promise<CrawlResult> {
     const known = robotsByHost.get(host);
     if (known) return known;
     const robotsUrl = new URL('/robots.txt', url).href;
-    const res = await request(robotsUrl, 'follow');
+    // Its redirects are followed one hop at a time, each checked as a page's are: on the hosts the crawl may read, at most 5.
+    let res: Response | null = null;
+    for (let hop = 0, at = robotsUrl; ; hop += 1) {
+      res = await request(at, 'manual');
+      if (!res || res.status < 300 || res.status >= 400 || !res.headers.has('location')) break;
+      await res.body?.cancel();
+      const next = canonicalUrl(res.headers.get('location')!, at);
+      const refused =
+        hop + 1 > MAX_REDIRECTS ? `more than ${MAX_REDIRECTS} redirects`
+        : next === undefined ? 'redirects to a URL that is not http or https'
+        : !hosts.has(hostOf(next)) ? `redirects off the host, to ${next}`
+        : null;
+      if (refused !== null || next === undefined) {
+        skip(robotsUrl, `${refused ?? 'redirects nowhere'}: the host is not crawled`);
+        res = null;
+        break;
+      }
+      at = next;
+    }
     let robots: Robots;
     let outcome: CrawlResult['robots'][number]['outcome'];
     if (res && res.status >= 200 && res.status < 300) {

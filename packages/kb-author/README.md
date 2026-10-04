@@ -14,7 +14,7 @@ It is a pipeline of five commands:
 
 ```sh
 pnpm kb:ingest <folder | file | url> [--dir <app folder>] [--dry-run] [--json]
-pnpm kb:ingest https://example.org/help/ --dir apps/my-app --depth 2 [--include '/help/**'] [--include '*.pdf'] [--max-pages 50] [--rate 1000] [--allow-host docs.example.org]
+pnpm kb:ingest https://example.org/help/ --dir apps/my-app --depth 2 [--include '/help/**'] [--include '*.pdf'] [--max-pages 50] [--rate 1000] [--allow-host docs.example.org] [--allow-private]
 ```
 
 `--dir` is the app folder (or its `kb/` folder); without it, the folder the command is run in, when that is an app folder. Relative paths are from where you run it. It prints one line per document, `added`, `changed` (with each section added `+`, changed `~` or removed `-`) or `unchanged`, then what it skipped and why. `--dry-run` writes nothing; `--json` prints the report as JSON. Exit codes: 0 done, 1 a problem, 2 a command line not understood.
@@ -69,7 +69,8 @@ A folder is read recursively in name order. Hidden entries and `node_modules` ar
 - One request at a time, at least `--rate` ms apart to a host (default 1000, at least 100), and at most `--max-pages` pages and documents (default 50).
 - `--depth` is how many links from the start page (default 1; 0 reads the start page alone), breadth first. It follows only `<a href>` links to http(s) URLs, canonical (the fragment dropped), and fetches each URL once, so links that go round are read once.
 - It fetches pages and documents (PDF, DOCX); a link to an image, a stylesheet, an archive and the like is not fetched, and a response of another type is dropped unread. `--include` globs over the URL path narrow what is fetched beyond the start page (`/help/**`; `*.pdf` matches the last segment).
-- It follows a redirect (up to 5) only where a link could go. No cookies, credentials or forms; responses over 20 MB or 30 seconds are dropped. Its User-Agent is `dialogwright-kb-ingest/<version> (+https://github.com/DialogWright/dialogwright)`.
+- It follows a redirect (up to 5) only where a link could go: on the hosts it may read, and allowed by robots.txt. robots.txt's own redirects are followed the same way, one hop at a time, each checked; one off the host leaves that host uncrawled. No cookies, credentials or forms; responses over 20 MB or 30 seconds are dropped.
+- It reads only public addresses. Every host is resolved before each request and refused when any of its addresses is loopback, private (RFC 1918), link-local (169.254.0.0/16, where cloud metadata services answer, and fe80::/10), unspecified, shared (carrier-grade NAT, 100.64.0.0/10), unique local (fc00::/7), multicast or reserved, or an IPv6 address that carries one of these (IPv4-mapped `::ffff:127.0.0.1`, NAT64, 6to4). The connection is made to the address that was checked (the socket's lookup is pinned to it), so a second DNS answer cannot move it. `--allow-private` lifts the check, for a site on your own network; a start page on a private address is refused without it, before anything is asked of it. Its User-Agent is `dialogwright-kb-ingest/<version> (+https://github.com/DialogWright/dialogwright)`.
 
 A crawled page's id is the slug of its URL path (`/services/hours.html` is `services-hours`, `/` is `index`), with its host first when it is not the start's.
 
