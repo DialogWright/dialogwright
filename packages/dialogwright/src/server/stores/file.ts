@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { CallTokens, type TokenEntry } from '../tokens';
 import type { CallStateStore, ChatStateStore, StoredCall, StoredChat } from './types';
 
@@ -18,11 +18,19 @@ import type { CallStateStore, ChatStateStore, StoredCall, StoredChat } from './t
  * does. A token is kept only as its SHA-256: nothing in the folder opens a socket.
  *
  * A write goes to a temporary file in the same folder and is renamed over the old one, which is atomic
- * on one filesystem, so a crash mid-write leaves the last whole save. It is not flushed to the disk on
- * every turn (that would add the disk's latency to every reply): a process that stops or crashes loses
- * nothing, a power cut may lose the last few seconds. A file that cannot be read or is not a store's
- * (a hand edit, a disk error) is logged once and skipped, never a crash.
+ * on one filesystem, so a crash mid-write leaves the last whole save. By default it is not flushed to
+ * the disk (that would add the disk's latency to every reply): a process that stops or crashes loses
+ * nothing, a power cut may lose the last few seconds. SESSION_FSYNC=on flushes each file and then its
+ * folder before the save is done (FileStoreOptions.fsync). A file that cannot be read or is not a
+ * store's (a hand edit, a disk error, a power cut mid-write) is logged once and skipped, never a crash;
+ * a save that fails (a full disk) throws to its caller, which logs it and lets the call go on.
  */
+
+/** How the file stores write. */
+export interface FileStoreOptions {
+  /** Flush each save to the disk, and then its folder, before it is done (SESSION_FSYNC=on); default off. */
+  fsync?: boolean;
+}
 
 /** A file name for an id: its safe characters, for a person reading the folder, and a hash, so two ids never share one. */
 export function storeFileStem(id: string): string {
@@ -37,11 +45,25 @@ function ownFolder(dir: string, always: boolean): void {
   if (made || always) chmodSync(dir, 0o700);
 }
 
-/** Write `body` to `file` whole or not at all: a temporary file (mode 600) beside it, renamed over it. */
-export function writeAtomic(file: string, body: string): void {
+/**
+ * Write `body` to `file` whole or not at all: a temporary file (mode 600) beside it, renamed over it.
+ * With `fsync`, the temporary file is flushed to the disk before the rename and the folder after it,
+ * so the save outlives a power cut too.
+ */
+export function writeAtomic(file: string, body: string, o: FileStoreOptions = {}): void {
   const tmp = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   try {
-    writeFileSync(tmp, body, { mode: 0o600, flag: 'wx' });
+    if (o.fsync === true) {
+      const fd = openSync(tmp, 'wx', 0o600);
+      try {
+        writeFileSync(fd, body);
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+    } else {
+      writeFileSync(tmp, body, { mode: 0o600, flag: 'wx' });
+    }
     renameSync(tmp, file);
   } catch (err) {
     try {
@@ -51,12 +73,36 @@ export function writeAtomic(file: string, body: string): void {
     }
     throw err;
   }
+  if (o.fsync === true) syncFolder(dirname(file));
 }
 
-/** A temporary file left by a process that stopped mid-write: no writer is coming back for it. */
+/** Flush a folder's entries (a rename in it) to the disk; a filesystem that cannot is left as it is. */
+function syncFolder(dir: string): void {
+  let fd: number;
+  try {
+    fd = openSync(dir, 'r');
+  } catch {
+    return;
+  }
+  try {
+    fsyncSync(fd);
+  } catch {
+    // Some filesystems refuse a folder's flush; the file itself is on the disk.
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** The name writeAtomic gives a temporary file: `<name>.json.<pid>.<hex>.tmp`. */
+const OWN_TEMPORARY = /\.json\.\d+\.[0-9a-f]+\.tmp$/;
+
+/**
+ * A temporary file left by a process that stopped mid-write: no writer is coming back for it. Only the
+ * store's own, by their name: the folder may be shared with other things, whose files are theirs.
+ */
 function sweepTemporary(dir: string): void {
   for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.tmp')) continue;
+    if (!OWN_TEMPORARY.test(name)) continue;
     try {
       unlinkSync(join(dir, name));
     } catch {
@@ -96,6 +142,11 @@ function chatProblem(v: unknown): string | null {
 class RecordFolder<T> {
   /** Files already reported unreadable, so each is logged once, not on every sweep. */
   private readonly reported = new Set<string>();
+  /**
+   * The id in each file as `ids` last read it, with the file's size and time then: a file unchanged
+   * since is not read again, so listing many calls every minute costs a look at each, not a parse.
+   */
+  private readonly listed = new Map<string, { mtimeMs: number; size: number; id: string }>();
 
   constructor(
     readonly dir: string,
@@ -103,6 +154,7 @@ class RecordFolder<T> {
     private readonly problem: (v: unknown) => string | null,
     private readonly idOf: (v: T) => string,
     private readonly log: (line: string) => void,
+    private readonly options: FileStoreOptions = {},
   ) {
     ownFolder(dir, true);
     sweepTemporary(dir);
@@ -150,7 +202,7 @@ class RecordFolder<T> {
   }
 
   save(id: string, v: T): void {
-    writeAtomic(this.fileOf(id), JSON.stringify(v));
+    writeAtomic(this.fileOf(id), JSON.stringify(v), this.options);
   }
 
   remove(id: string): void {
@@ -159,6 +211,40 @@ class RecordFolder<T> {
     } catch (err) {
       if ((err as { code?: string }).code !== 'ENOENT') throw err;
     }
+  }
+
+  /** The id of every record in the folder, reading only the files that changed since the last time. */
+  ids(): string[] {
+    const out: string[] = [];
+    const names = readdirSync(this.dir)
+      .filter((name) => name.endsWith('.json'))
+      .sort();
+    for (const name of names) {
+      const file = join(this.dir, name);
+      let mtimeMs: number;
+      let size: number;
+      try {
+        ({ mtimeMs, size } = statSync(file));
+      } catch {
+        continue;
+      }
+      const seen = this.listed.get(name);
+      if (seen !== undefined && seen.mtimeMs === mtimeMs && seen.size === size) {
+        out.push(seen.id);
+        continue;
+      }
+      const v = this.read(file);
+      if (v === null) {
+        this.listed.delete(name);
+        continue;
+      }
+      const id = this.idOf(v);
+      this.listed.set(name, { mtimeMs, size, id });
+      out.push(id);
+    }
+    const present = new Set(names);
+    for (const name of this.listed.keys()) if (!present.has(name)) this.listed.delete(name);
+    return out;
   }
 
   all(): T[] {
@@ -175,8 +261,8 @@ class RecordFolder<T> {
 export class FileCallStateStore implements CallStateStore {
   private readonly folder: RecordFolder<StoredCall>;
 
-  constructor(dir: string, log: (line: string) => void = () => {}) {
-    this.folder = new RecordFolder<StoredCall>(dir, 'call', callProblem, (c) => c.callId, log);
+  constructor(dir: string, log: (line: string) => void = () => {}, options: FileStoreOptions = {}) {
+    this.folder = new RecordFolder<StoredCall>(dir, 'call', callProblem, (c) => c.callId, log, options);
   }
 
   load(callId: string): StoredCall | null {
@@ -192,15 +278,15 @@ export class FileCallStateStore implements CallStateStore {
   }
 
   list(): string[] {
-    return this.folder.all().map((c) => c.callId);
+    return this.folder.ids();
   }
 }
 
 export class FileChatStateStore implements ChatStateStore {
   private readonly folder: RecordFolder<StoredChat>;
 
-  constructor(dir: string, log: (line: string) => void = () => {}) {
-    this.folder = new RecordFolder<StoredChat>(dir, 'chat', chatProblem, (c) => c.id, log);
+  constructor(dir: string, log: (line: string) => void = () => {}, options: FileStoreOptions = {}) {
+    this.folder = new RecordFolder<StoredChat>(dir, 'chat', chatProblem, (c) => c.id, log, options);
   }
 
   load(id: string): StoredChat | null {
@@ -221,7 +307,7 @@ export class FileChatStateStore implements ChatStateStore {
   }
 
   list(): string[] {
-    return this.folder.all().map((c) => c.id);
+    return this.folder.ids();
   }
 }
 
@@ -248,7 +334,13 @@ function tokenProblem(v: unknown): string | null {
  * and is given another).
  */
 export class FileTokens extends CallTokens {
-  constructor(private readonly file: string, ttlMs: number, now: () => number = Date.now, private readonly log: (line: string) => void = () => {}) {
+  constructor(
+    private readonly file: string,
+    ttlMs: number,
+    now: () => number = Date.now,
+    private readonly log: (line: string) => void = () => {},
+    private readonly options: FileStoreOptions = {},
+  ) {
     super(ttlMs, now);
     this.readBack();
   }
@@ -282,7 +374,7 @@ export class FileTokens extends CallTokens {
   private writeOut(): void {
     const body: TokenFile = { v: 1, tokens: [...this.byCall].map(([callId, e]) => ({ callId, hash: e.hash, provider: e.provider, expiresAt: e.expiresAt })) };
     try {
-      writeAtomic(this.file, JSON.stringify(body));
+      writeAtomic(this.file, JSON.stringify(body), this.options);
     } catch (err) {
       // The token is live in this process either way; only a restart before the next write would lose it.
       this.log(`sessions: could not write ${this.file}: ${err instanceof Error ? err.message : String(err)}`);
@@ -330,15 +422,15 @@ export function openToOthers(dir: string): boolean {
  * there keeps its mode, since it may be shared with other things; what the store writes in it is 600,
  * and calls/ and chats/ are 700 whatever the folder is.
  */
-export function openFileStores(dir: string, o: { tokenTtlMs: number; now?: () => number; log?: (line: string) => void }): FileStores {
+export function openFileStores(dir: string, o: { tokenTtlMs: number; now?: () => number; log?: (line: string) => void } & FileStoreOptions): FileStores {
   const log = o.log ?? (() => {});
   ownFolder(dir, false);
   sweepTemporary(dir);
   if (openToOthers(dir)) log(`sessions: WARNING: ${dir} can be read by others than its owner; calls/ and chats/ in it cannot (mode 700)`);
   return {
     dir,
-    calls: new FileCallStateStore(join(dir, 'calls'), log),
-    chats: new FileChatStateStore(join(dir, 'chats'), log),
-    tokens: new FileTokens(join(dir, 'tokens.json'), o.tokenTtlMs, o.now, log),
+    calls: new FileCallStateStore(join(dir, 'calls'), log, { fsync: o.fsync === true }),
+    chats: new FileChatStateStore(join(dir, 'chats'), log, { fsync: o.fsync === true }),
+    tokens: new FileTokens(join(dir, 'tokens.json'), o.tokenTtlMs, o.now, log, { fsync: o.fsync === true }),
   };
 }

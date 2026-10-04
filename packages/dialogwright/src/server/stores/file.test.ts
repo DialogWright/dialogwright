@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runStoreContract, contractCall, contractChat } from '../../testing/storeContract';
@@ -103,6 +103,14 @@ describe('the file stores', () => {
     expect(readdirSync(dir).sort()).toEqual(['calls', 'chats']);
   });
 
+  it("never sweep a temporary file it did not write, in a folder it shares with other things", () => {
+    const dir = temp();
+    writeFileSync(join(dir, 'notes.tmp'), 'mine');
+    writeFileSync(join(dir, 'build.1234.tmp'), 'mine');
+    openFileStores(dir, { tokenTtlMs: 60_000 });
+    expect(readdirSync(dir).sort()).toEqual(['build.1234.tmp', 'calls', 'chats', 'notes.tmp']);
+  });
+
   it('skip a file that is not JSON or not a call, logging it once, and never throw', () => {
     const dir = temp();
     const logs: string[] = [];
@@ -144,5 +152,29 @@ describe('the file stores', () => {
     const again = new FileTokens(join(dir, 'tokens.json'), 60_000, () => now);
     again.mint('CA0002');
     expect(JSON.parse(readFileSync(join(dir, 'tokens.json'), 'utf8')).tokens.map((t: { callId: string }) => t.callId)).toEqual(['CA0002']);
+  });
+
+  it('list many calls without reading again a file that has not changed since the last list', () => {
+    const dir = temp();
+    const calls = new FileCallStateStore(dir);
+    for (let i = 0; i < 50; i++) calls.save(contractCall(`CA${String(i).padStart(4, '0')}`));
+    const file = join(dir, `${storeFileStem('CA0007')}.json`);
+    const at = new Date('2026-09-18T10:00:00Z');
+    utimesSync(file, at, at);
+    expect(calls.list()).toHaveLength(50);
+    // A file whose size and time are as they were is not read again: its id is the one its name was made from.
+    const { size } = statSync(file);
+    writeFileSync(file, 'x'.repeat(size));
+    utimesSync(file, at, at);
+    expect(calls.list()).toContain('CA0007');
+    // One that changed is read again (and this one is no longer a call), and one removed is gone.
+    writeFileSync(file, 'x'.repeat(size + 1));
+    calls.remove('CA0008');
+    calls.save(contractCall('CA9999'));
+    const listed = calls.list();
+    expect(listed).toHaveLength(49);
+    expect(listed).not.toContain('CA0007');
+    expect(listed).not.toContain('CA0008');
+    expect(listed).toContain('CA9999');
   });
 });
