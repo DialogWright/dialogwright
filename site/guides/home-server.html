@@ -95,26 +95,54 @@
 <pre data-copy><code>git clone https://github.com/DialogWright/dialogwright.git
 cd dialogwright
 pnpm install
-pnpm check</code></pre>
-        <p>Talk to the clinic example in a text console:</p>
-<pre data-copy><code>pnpm --filter @dialogwright/example-clinic cli --client heuristic</code></pre>
-        <p>Or run the utility example's server on your laptop and chat with it in a browser, through the same engine a call uses:</p>
-<pre data-copy><code>pnpm --filter @dialogwright/widget build
-PUBLIC_HOST=localhost TWILIO_AUTH_TOKEN=unused HANDOFF_NUMBER=+15551234567 \
-  CHAT=on CHAT_ALLOWED_ORIGINS=http://localhost:3000 CHAT_SIGNIN=mock WIDGET=on \
-  pnpm --filter @dialogwright/example-utility serve</code></pre>
+pnpm --filter @dialogwright/widget build
+pnpm configure --app utility --mode try
+pnpm start --app utility</code></pre>
         <p>
-          Then open <code>http://localhost:3000/chat-demo</code> (a fictional account page with the chat widget on it) and
+          <code>pnpm configure</code> asks which app and how to try it (the flags above answer for the utility example, on this
+          computer) and writes the app's settings to <code>apps/utility/.env</code>: the server on <code>localhost</code>, the web
+          chat and its widget on, no model. <code>pnpm start</code> runs the app's server with that file. Then open
+          <code>http://localhost:3000/chat-demo</code> (a fictional account page with the chat widget on it) and
           <code>http://localhost:3000/dashboard</code> (the operator console, showing the chat as it happens). Both exist
           only on this machine. The <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/README.md#try-the-web-chat-on-your-laptop">utility's README</a>
-          says what to try.
+          says what to try. Ctrl-C stops it.
         </p>
+        <p>The same server by hand, with its settings on the command line instead of in a file:</p>
+<pre data-copy><code>PUBLIC_HOST=localhost TWILIO_AUTH_TOKEN=unused HANDOFF_NUMBER=+15551234567 \
+  CHAT=on CHAT_ALLOWED_ORIGINS=http://localhost:3000 CHAT_SIGNIN=mock WIDGET=on \
+  pnpm --filter @dialogwright/example-utility serve</code></pre>
+        <p>Or talk to the clinic example in a text console, with no server at all:</p>
+<pre data-copy><code>pnpm --filter @dialogwright/example-clinic cli --client heuristic</code></pre>
         <p>
           With one key you can hear the real model in the same console:
           <code>pnpm --filter @dialogwright/example-clinic cli --client jev</code> with <code>TYPESAFE_API_KEY</code> set
           (or another provider, <a href="#accounts">section 3</a>). To build your own app, run
           <code>pnpm create-app myline</code> and read
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md">Authoring an app</a>.
+        </p>
+
+        <h3>Then a phone line, the same evening</h3>
+        <p>
+          With a carrier account and a number (Telnyx or Twilio), a decision model key (<a href="#accounts">section 3</a>) and
+          <code>cloudflared</code> installed (<code>brew install cloudflared</code> on a Mac; <a href="#tunnel">section 6</a>):
+        </p>
+<pre data-copy><code>pnpm configure --app utility --force
+pnpm start --app utility</code></pre>
+        <p>
+          This time choose a phone line. <code>pnpm configure</code> asks for the carrier and its key, the model and its key, and
+          the number a call goes to for a person. A key is read with the echo off (or taken from the environment variable of its
+          own name, never from a flag) and written only to the app's <code>.env</code>, readable by you alone; the command prints
+          its length, never the key, and sends it nowhere. It then checks the file (<code>pnpm diagnose --offline</code>) and
+          says where to paste the webhook in the carrier's console. <code>pnpm start</code> opens a Cloudflare quick tunnel,
+          which needs no account, starts the server with the tunnel's hostname, and prints the webhook URL
+          (<code>https://&lt;words&gt;.trycloudflare.com/voice/telnyx</code>): paste it into your number
+          (<a href="#carrier">section 7</a>) and call. While it runs, <code>pnpm diagnose --app utility</code> in another
+          terminal checks it end to end (<a href="#checking">section 8</a>).
+        </p>
+        <p>
+          The hostname changes every time <code>pnpm start</code> runs, so the webhook does too: fine for an evening, wrong for a
+          line people rely on. The sections below make it permanent: a machine that stays on, the settings outside the
+          repository, a named tunnel, and a service that starts it at boot.
         </p>
       </section>
 
@@ -345,9 +373,13 @@ chmod 700 ~/ivr</code></pre>
       <section id="configuration" aria-labelledby="configuration-title">
         <h2 id="configuration-title">5. Configuration</h2>
         <p>
-          The server reads only its environment; it does not read a <code>.env</code> file itself. Keep the settings in
-          <code>~/ivr/myline.env</code>, outside the repository and readable by you alone; you load it into a shell, and
-          the service loads it the same way. The values below are made up. The variables, their defaults and their checks
+          The server reads its environment and, when <code>ENV_FILE</code> (or <code>--env-file &lt;path&gt;</code>) names one,
+          a settings file; a variable already in the environment wins over the file. <code>pnpm configure</code> writes one in
+          the app's folder. For a line that stays up, keep it outside the repository instead, in <code>~/ivr/myline.env</code>,
+          readable by you alone, and name it: <code>pnpm start --env-file ~/ivr/myline.env</code> and
+          <code>pnpm diagnose --env-file ~/ivr/myline.env</code> read it, and the service file (<a href="#running">section 9</a>)
+          names it the same way. Write it by hand from the example below, or move the one <code>pnpm configure</code> wrote
+          (<code>mv apps/myline/.env ~/ivr/myline.env</code>). The values below are made up. The variables, their defaults and their checks
           are the server's own (<code>packages/dialogwright/src/server/config.ts</code>): it refuses to start, naming the
           variable, when one is missing or malformed.
         </p>
@@ -452,7 +484,12 @@ TIMEZONE=America/Chicago
         </p>
 
         <h3>To try it: a quick tunnel, no account</h3>
-        <p>In one terminal:</p>
+        <p>
+          <code>pnpm start</code> does this for you when <code>PUBLIC_HOST</code> is unset (or with <code>--tunnel quick</code>):
+          it starts <code>cloudflared</code>, reads the hostname it is given, starts the server with it, prints the webhook URL,
+          and stops the tunnel only once the server has finished its calls. Without <code>cloudflared</code> it says how to
+          install it. By hand, in one terminal:
+        </p>
 <pre data-copy><code>cloudflared tunnel --url http://localhost:3000</code></pre>
         <p>
           It prints a random <code>https://&lt;words&gt;.trycloudflare.com</code> address. Put that hostname (without
@@ -610,7 +647,17 @@ cloudflared tunnel run myline</code></pre>
               machine and through the tunnel:</p>
 <pre data-copy><code>curl -s http://localhost:3000/health
 curl -s https://ivr.example.com/health</code></pre>
-            <p>Both print <code>{"ok":true,"sessions":0,"retained":0}</code>: the calls live now, and the ended ones still held for a minute.</p>
+            <p>Both print <code>{"ok":true,"sessions":0,"retained":0}</code>: the calls live now, and the ended ones still held for a
+              minute. <code>/health</code> says the process is up; <code>/ready</code> says whether it takes new calls
+              (<code>{"ready":true}</code>, or 503 while it drains before a stop).</p>
+          </li>
+          <li>
+            <p>Or let <code>pnpm diagnose</code> check all of it, and more, one line each with its fix: the settings load, the
+              hostname resolves and <code>/health</code> answers through the tunnel, the console is a 404 there, the carrier's
+              secret has its shape, the model and its key variable, the handoff number is not a 555 number, the folders can be
+              written with space to spare, and the clock is right (Telnyx refuses a webhook whose signature is more than five
+              minutes off). It calls no carrier and no model.</p>
+<pre data-copy><code>cd ~/dialogwright &amp;&amp; pnpm diagnose --app myline --env-file ~/ivr/myline.env</code></pre>
           </li>
           <li>
             <p>The console is not public. This prints <code>404</code>:</p>
@@ -630,7 +677,7 @@ curl -s https://ivr.example.com/health</code></pre>
               model answered, what the gate decided, how long each step took), and <code>&lt;call&gt;.frames.jsonl</code>, every frame in
               and out. The audit folder has one hash-chained file per UTC day; check the chains:</p>
 <pre data-copy><code>ls -lt ~/ivr/data/traces | head
-cd ~/dialogwright &amp;&amp; pnpm --filter dialogwright exec tsx src/audit/verifyCli.ts ~/ivr/data/audit</code></pre>
+cd ~/dialogwright &amp;&amp; pnpm audit:verify ~/ivr/data/audit</code></pre>
           </li>
         </ol>
         <p>
@@ -766,9 +813,13 @@ sudo systemctl restart myline                # or: launchctl kickstart -k gui/$(
 
         <h3>What to watch</h3>
         <ul>
-          <li><strong>Disk.</strong> Nothing deletes old traces: two files per call, kept until you remove them. Check
-            <code>du -sh ~/ivr/data/*</code> now and then. The traces are what <code>pnpm kb:gaps</code> reads to find the
-            questions your knowledge base did not answer, so archive them before you prune them.</li>
+          <li><strong>Disk.</strong> Unless you say otherwise, nothing deletes old traces: two files per call, kept until you
+            remove them. <code>TRACE_RETENTION_DAYS=30</code> deletes traces and frame logs last written more than 30 days ago,
+            swept at startup and once an hour, and <code>/health</code> then reports <code>disk</code>
+            (<code>traceBytes</code>, <code>auditBytes</code>) for a monitor. <code>AUDIT_RETENTION_DAYS</code> does the same
+            for audit days, which ends the record for those days: keep them as long as you must keep the record. The traces are
+            what <code>pnpm kb:gaps</code> reads to find the questions your knowledge base did not answer, so archive them
+            before they go.</li>
           <li><strong>The output.</strong> Errors and restarts show there first.</li>
           <li><strong>Slow turns.</strong> Each trace record carries its timing (<code>timing.askMs</code>, <code>timing.totalMs</code>).
             A model request slower than <code>JEV_TIMEOUT_MS</code> plays the slow-turn line and keeps the question open.</li>
@@ -795,10 +846,11 @@ sudo systemctl restart myline                # or: launchctl kickstart -k gui/$(
       <section id="coming" aria-labelledby="coming-title">
         <h2 id="coming-title">11. What is coming</h2>
         <p>
-          Phase 8 is production: store interfaces with production implementations, resume across instances, idempotent writes,
-          readiness and drain, a <code>docker compose</code> stack, a reference deployment and console access control. For one
-          machine the piece that matters most is a session store that outlives the process, so an update no longer drops a call.
-          Until then, update when the line is quiet. When one machine is no longer enough, the same app folder is designed to
+          Phase 8 is a machine you own, run for months. Its first part is here: <code>pnpm configure</code>,
+          <code>pnpm start</code> with a quick tunnel, settings files, readiness and a drain, retention, <code>pnpm diagnose</code>
+          and service files. Next for one machine is a session store that outlives the process, so a restart no longer drops a
+          call; then writes that are never done twice after a crash, carrier fallback documents, and console sign-in. Until the
+          store, update when the line is quiet. When one machine is no longer enough, the same app folder is designed to
           run on many servers.
         </p>
         <p class="links">

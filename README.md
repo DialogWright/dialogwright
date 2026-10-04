@@ -57,6 +57,19 @@ pnpm diagnose --app <name>                   # what is misconfigured in an app's
 
 Requires Node 22.19 or later and pnpm.
 
+### Answer a real phone call in an hour
+
+On your own laptop, with two keys: a carrier's (Telnyx or Twilio, with a number) and a decision model's (TypeSafe, OpenRouter or the Vercel AI Gateway; or none, with a compatible model on your own machine). Nothing else needs an account: the tunnel the carrier reaches you through is Cloudflare's quick tunnel, which needs only `cloudflared` installed (`brew install cloudflared` on a Mac).
+
+```sh
+pnpm install
+pnpm configure      # asks which app, how to try it, the carrier and its key, the model and its key, and the number for a person; writes apps/<app>/.env
+pnpm start          # opens a quick tunnel, starts the server with that .env, and prints the webhook URL to paste into your number
+pnpm diagnose       # while it runs: reachable through the tunnel, the console private, the keys the right shape, the clock right
+```
+
+`pnpm configure` reads a key with the echo off and writes it only to `apps/<app>/.env`, readable by you alone (mode 600) and git-ignored; it prints a key's length, never the key, and sends it nowhere. It says where to paste the webhook in the carrier's console. To try it first with no keys at all, choose "on this computer": the web chat and the console on `localhost`. A quick tunnel's address changes every run; for one that stays, and for a machine that keeps the line up (it starts at boot, drains live calls before it stops, keeps its disk in check), see [running your own IVR on a machine you own](https://dialogwright.com/guides/home-server.html). The commands are `pnpm configure`, not `pnpm setup`, and `pnpm diagnose`, not `pnpm doctor`: those two names are pnpm's own commands.
+
 ## Design and guides
 
 - [docs/authoring-an-app.md](docs/authoring-an-app.md): build an app, including its policy and identity, its knowledge base (section 12) and its channels (section 13).

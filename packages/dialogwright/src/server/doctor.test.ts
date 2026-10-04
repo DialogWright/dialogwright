@@ -248,6 +248,6 @@ describe('pnpm diagnose', () => {
 
   it('is a script at the repository root', () => {
     const root = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
-    expect(root.scripts.diagnose).toBe('pnpm --filter dialogwright diagnose');
+    expect(root.scripts.diagnose).toBe('tsx packages/dialogwright/src/server/doctor.ts');
   });
 });

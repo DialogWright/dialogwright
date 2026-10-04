@@ -31,11 +31,9 @@ function chain(): string {
 }
 
 describe('pnpm audit:verify', () => {
-  it('is a script at the repository root, which runs the engine package\'s own', () => {
+  it('is a script at the repository root', () => {
     const root = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
-    const engine = JSON.parse(readFileSync(join(ROOT, 'packages/dialogwright/package.json'), 'utf8')) as { scripts: Record<string, string> };
-    expect(root.scripts['audit:verify']).toBe('pnpm --filter dialogwright audit:verify');
-    expect(engine.scripts['audit:verify']).toBe('tsx src/audit/verifyCli.ts');
+    expect(root.scripts['audit:verify']).toBe('tsx packages/dialogwright/src/audit/verifyCli.ts');
   });
 
   it('exits 0 on a whole chain', () => {

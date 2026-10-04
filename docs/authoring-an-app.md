@@ -22,6 +22,7 @@ Two apps in this repository are the examples, and the snippets below are copied 
 11. [Walkthroughs](#11-walkthroughs)
 12. [The knowledge base](#12-the-knowledge-base)
 13. [Channels](#13-channels)
+14. [Running it](#14-running-it)
 
 ## 1. The folder
 
@@ -2174,3 +2175,25 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`, and, for `getT
 **Theming.** The panel renders in a shadow root on a `dialogwright-chat` element, so a site's CSS cannot break it; it is themed with CSS custom properties on that element: `--dw-accent`, `--dw-accent-fg`, `--dw-bg`, `--dw-fg`, `--dw-user-bg`, `--dw-agent-bg`, `--dw-radius`, `--dw-font` and `--dw-z`. Colours a site leaves unset follow the visitor's light or dark scheme.
 
 **Behaviour.** A dropped chat reconnects after each step of `backoffMs` and resumes, for as long as the page is open unless `maxReconnects` says otherwise; what is typed meanwhile is sent once it is back. A chat that never starts (an origin the server refuses, an endpoint it cannot reach, a full server) is tried once per step of `backoffMs`, then the panel says `unavailable`, with no loop. A chat whose session has ended starts afresh (`restarted`), signed in again with the site's token if it was signed in. A site that wants its own interface uses the client alone, `createChatClient`. The package's [README](../packages/widget/README.md) has the events, the words and the accessibility notes.
+
+## 14. Running it
+
+An app's server is `pnpm --filter <app> serve`, configured by its environment. On a machine you own, four commands at the repository root do the rest; each prints what it does, and none sends a key anywhere.
+
+```sh
+pnpm configure [--app <name>]                # asks, and writes <app>/.env (mode 600): a laptop with no keys, or a phone line
+pnpm start [--app <name>] [--tunnel quick|named|none]   # the server with that file; quick opens a tunnel that needs no account
+pnpm diagnose [--app <name>] [--offline]     # what is misconfigured, one line per check with its fix
+pnpm audit:verify <audit folder>             # each audit day's hash chain, exit 1 at the first break
+```
+
+`pnpm configure` asks for a key with the echo off, or takes it from the environment variable of its own name, never from a flag; `--non-interactive` with `--mode`, `--carrier`, `--model` and `--handoff` answers every question for a script. `pnpm start` opens Cloudflare's quick tunnel when `PUBLIC_HOST` is unset (`cloudflared` must be installed; its hostname changes every run, so it prints the webhook URL to paste each time), runs the server alone when `PUBLIC_HOST` is set, and stops the tunnel only after the server has drained. The full guide to a machine that keeps a line up is the website's [running your own IVR](https://dialogwright.com/guides/home-server.html).
+
+| Choice | Where it is set | Default | When to choose otherwise |
+|---|---|---|---|
+| A settings file read at startup | `ENV_FILE` (env) or `--env-file <path>` | none: the environment alone | Always on a machine you own (`pnpm start` sets it). A variable already in the environment wins over the file. |
+| How long a stopping server waits for live calls | `DRAIN_MS` (env) | `30000` | Longer for long calls; `0` to close at once. A service manager's stop timeout must be longer than it. |
+| How long traces and frame logs are kept | `TRACE_RETENTION_DAYS` (env) | unset: forever | To keep the disk in check. Archive what `pnpm kb:gaps` should still read first. |
+| How long audit day files are kept | `AUDIT_RETENTION_DAYS` (env) | unset: forever (the audit is a record) | Only as long as the record must be kept; deleting a day ends its record. |
+
+A stopping server (SIGTERM, or Ctrl-C) first drains: `GET /ready` answers 503, a new call is put through to `HANDOFF_NUMBER`, a new chat is told `busy`, and live calls and chats go on until they end or `DRAIN_MS` passes; then it closes. A second signal stops it at once (exit 130 or 143). `GET /health` stays 200 while the process runs: it counts live calls (`sessions`), and adds `chat` with the chat on, `draining` while it drains, and `disk` (`traceBytes`, `auditBytes`) when a retention is set. A crash (an uncaught exception or an unhandled rejection) is logged with its stack and exits 1, for the service manager to restart it.

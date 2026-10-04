@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { applyEnvFile, envFilePathOf } from './envFile';
+import { SIGNAL_REPEAT_MS } from './signals';
 import { join } from 'node:path';
 import { consoleExposure, DEFAULT_DRAIN_MS, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
 import { createRequestHandler, type HttpDeps } from './http';
@@ -414,13 +415,7 @@ export interface Sidecars {
   close?(): Promise<void>;
 }
 
-/**
- * A repeat of a stop signal this soon after the first is the same stop, delivered again: a terminal's
- * Ctrl-C, and a service manager that signals every process of the service, reach pnpm, tsx and the
- * server at once, and pnpm and tsx each pass a signal on too (tsx drops a copy its child already had,
- * on a 30 ms wait). A person's second Ctrl-C comes later than this; it exits at once.
- */
-export const SIGNAL_REPEAT_MS = 1_000;
+export { SIGNAL_REPEAT_MS } from './signals';
 /** How long a crash waits for the server to close before the process exits anyway. */
 export const CRASH_CLOSE_MS = 3_000;
 

@@ -57,6 +57,10 @@ pnpm kb:review [app folder] [--port N] [--traces <path|glob>]   # the review pag
 pnpm kb:refresh [app folder]             # read every source again from its provenance; lists passages withheld and sections nothing cites
 pnpm kb:gaps [app folder] [--traces <path|glob>] [--since YYYY-MM-DD] [--out gaps.md] [--json]   # rank what callers asked that the knowledge base did not answer, from the traces, with the fix for each
 pnpm --filter dialogwright test slots/<type>   # a slot type's tests, including the conformance kit
+pnpm configure [--app <name>]   # asks, and writes <app>/.env (mode 600): a laptop with no keys, or a phone line; a key is read with the echo off or from its own environment variable, never a flag
+pnpm start [--app <name>] [--tunnel quick|named|none]   # the app's server with its .env (ENV_FILE); quick, the default with PUBLIC_HOST unset, opens a Cloudflare quick tunnel (no account)
+pnpm diagnose [--app <name>] [--offline]   # what is misconfigured, one line per check with its fix; calls no carrier or model
+pnpm audit:verify <audit folder>   # each audit day file's hash chain; exit 1 at the first break
 ```
 
 `pnpm check` prints one line per problem, `file:line:column  path  message  ->  fix`, and exits 1 when there is any. Act on the fix text.

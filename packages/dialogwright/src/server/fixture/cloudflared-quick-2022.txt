@@ -1,0 +1,14 @@
+2026-10-04T17:05:40Z INF Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. (The rest of this notice is left out here.) https://www.cloudflare.com/website-terms/
+2026-10-04T17:05:40Z INF Requesting new quick Tunnel on trycloudflare.com...
+2026-10-04T17:05:41Z INF +--------------------------------------------------------------------------------------------+
+2026-10-04T17:05:41Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |
+2026-10-04T17:05:41Z INF |  https://sample-river-lantern-test.trycloudflare.com                                       |
+2026-10-04T17:05:41Z INF +--------------------------------------------------------------------------------------------+
+2026-10-04T17:05:41Z INF Version 2022.10.3
+2026-10-04T17:05:41Z INF GOOS: linux, GOVersion: go1.19.3, GoArch: amd64
+2026-10-04T17:05:41Z INF Settings: map[no-autoupdate:true protocol:quic url:http://localhost:3000]
+2026-10-04T17:05:41Z INF cloudflared will not automatically update when run from the shell. To enable auto-updates, run cloudflared as a service: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/run-tunnel/as-a-service/
+2026-10-04T17:05:41Z INF Generated Connector ID: 00000000-5555-4000-8000-000000000003
+2026-10-04T17:05:41Z INF Initial protocol quic
+2026-10-04T17:05:41Z INF Starting metrics server on 127.0.0.1:41117/metrics
+2026-10-04T17:05:42Z INF Connection 00000000-5555-4000-8000-000000000004 registered connIndex=0 ip=192.0.2.21 location=example02
