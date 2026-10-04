@@ -115,6 +115,14 @@ describe('decisionToActions', () => {
     expect(decisionToActions(app, { kind: 'hold' })).toEqual([]);
   });
 
+  it('gives no line a language in an app without locales, so its text frames stay en-US as before', () => {
+    const actions = [
+      ...decisionToActions(app, { kind: 'replay', text: 'What is your account ID?' }),
+      ...decisionToActions(app, { kind: 'handoff', reason: 'live-agent', promptId: handoffPromptId('live-agent'), acks: [], completed: [], queued: [], slots: {} }),
+    ];
+    expect(actions.filter((a) => a.type === 'say' && 'lang' in a)).toEqual([]);
+  });
+
   it('says a replay\'s words again, interruptible', () => {
     expect(decisionToActions(app, { kind: 'replay', text: 'What is your account ID?' })).toEqual([sayAction([{ text: 'What is your account ID?' }], true)]);
   });

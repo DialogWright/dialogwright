@@ -18,6 +18,8 @@ import { DashboardBus } from './dashboard/bus';
 import { validateRoutes, type AppRoute } from './appRoutes';
 import { VOICE_RELAY } from '../channel/caps';
 import { useTestkit } from '../testing/apps';
+import type { App } from '../core/app/types';
+import { libraryApp } from '../define/fixture/app';
 
 useTestkit();
 
@@ -277,6 +279,121 @@ describe('routes by voice provider', () => {
   });
 });
 
+/** The library fixture (en-US and es) with a voice block that names its languages, voices and a Spanish number. */
+const SPANISH_NUMBER = '+15555550142';
+const bilingual: App = {
+  ...libraryApp,
+  voice: {
+    ...libraryApp.voice,
+    numbers: { [SPANISH_NUMBER]: 'es' },
+    locales: {
+      'en-US': { voices: { twilio: 'en-US-Journey-O', telnyx: 'Telnyx.Ultra.Callie' } },
+      es: {
+        tts: 'es-US', transcription: 'es-MX', voices: { twilio: 'es-US-Journey-F', telnyx: 'Telnyx.Ultra.Asher' }, hints: ['renovar', 'reserva'],
+        recognition: { twilio: { provider: 'Google', model: 'telephony' }, telnyx: { provider: 'google' } },
+      },
+    },
+  },
+};
+
+describe('a call\'s languages (voice.numbers, voice.locales)', () => {
+  it('starts a call to the listed number in its locale, with every language the call may switch to', async () => {
+    const base = await listen({ ...deps({ TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' }), app: bilingual });
+    const r = await post(base, '/voice/twilio', { CallSid: 'CA1', From: '+15555550100', To: SPANISH_NUMBER });
+    expect(r.text).toContain(
+      'hints="renovar, reserva, zero, oh, one, two, three, four, five, six, seven, eight, nine, double" ' +
+        'ttsLanguage="es-US" transcriptionLanguage="es-MX">' +
+        '<Language code="en-US" ttsProvider="Google" voice="en-US-Journey-O" transcriptionProvider="Deepgram" speechModel="flux"/>' +
+        '<Language code="es-US" ttsProvider="Google" voice="es-US-Journey-F" transcriptionProvider="Google" speechModel="telephony"/>' +
+        '<Parameter name="locale" value="es"/></ConversationRelay>',
+    );
+    // The languages' voices and recognizers differ, so the relay element names none for either to inherit.
+    expect(r.text).toContain(`" partialPrompts="true"`);
+    expect(r.text).not.toContain('" transcriptionProvider="Deepgram" speechModel="flux" partialPrompts');
+    // The legacy /voice names the same languages.
+    expect((await post(base, '/voice', { CallSid: 'CA2', To: SPANISH_NUMBER })).text).toContain('<Parameter name="locale" value="es"/>');
+  });
+
+  it('starts any other call in the default locale, with the app\'s voice for it and the app\'s hints', async () => {
+    const base = await listen({ ...deps({ TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' }), app: bilingual });
+    for (const params of [{ CallSid: 'CA1', To: '+15555550100' }, { CallSid: 'CA2' }] as Array<Record<string, string>>) {
+      const r = await post(base, '/voice/twilio', params);
+      expect(r.text).toContain('hints="depot, parcel" ttsLanguage="en-US" transcriptionLanguage="en-US"><Language code="en-US" ttsProvider="Google" voice="en-US-Journey-O" ');
+      expect(r.text).toContain('<Parameter name="locale" value="en-US"/>');
+      expect(r.text).not.toContain('en-US-Neural2-F');
+    }
+  });
+
+  it('gives the default locale the deployment\'s voice when the app names none, and another locale the carrier\'s default', async () => {
+    const app: App = { ...libraryApp, voice: { ...libraryApp.voice, numbers: { [SPANISH_NUMBER]: 'es' } } };
+    const base = await listen({ ...deps({ TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' }), app });
+    const en = await post(base, '/voice/twilio', { CallSid: 'CA1' });
+    const languages = '<Language code="en-US" ttsProvider="Google" voice="en-US-Neural2-F" transcriptionProvider="Deepgram" speechModel="flux"/><Language code="es"/>';
+    expect(en.text).toContain(`ttsLanguage="en-US" transcriptionLanguage="en-US">${languages}<Parameter name="locale" value="en-US"/>`);
+    const es = await post(base, '/voice/twilio', { CallSid: 'CA2', To: SPANISH_NUMBER });
+    expect(es.text).toContain(`hints="depot, parcel" ttsLanguage="es" transcriptionLanguage="es">${languages}<Parameter name="locale" value="es"/>`);
+  });
+
+  it('writes a one-locale en-US app\'s documents byte for byte as an app without locales, on every path', async () => {
+    const oneLocale: App = { ...libraryApp, locales: { default: 'en-US', prompts: {} } };
+    const before = await listen(deps({ TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' }));
+    const without = await Promise.all(['/voice/twilio', '/voice'].map(async (path) => (await post(before, path, { CallSid: 'CA1', To: SPANISH_NUMBER })).text.replace(/token=[0-9a-f]+/, '')));
+    await new Promise<void>((r) => server!.close(() => r()));
+    const after = await listen({ ...deps({ TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' }), app: oneLocale });
+    const withApp = await Promise.all(['/voice/twilio', '/voice'].map(async (path) => (await post(after, path, { CallSid: 'CA1', To: SPANISH_NUMBER })).text.replace(/token=[0-9a-f]+/, '')));
+    expect(withApp).toEqual(without);
+    expect(withApp[0]).not.toContain('Language');
+  });
+
+  it('gives the default locale the deployment\'s recognizer, another locale the carrier\'s default, and the app\'s wherever it names one', async () => {
+    const env = { TWILIO_TRANSCRIPTION_PROVIDER: 'Deepgram', TWILIO_SPEECH_MODEL: 'nova-3-general' };
+    const app: App = { ...libraryApp, voice: { ...libraryApp.voice, numbers: { [SPANISH_NUMBER]: 'es' } } };
+    const base = await listen({ ...deps(env), app });
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1', To: SPANISH_NUMBER })).text).toContain(
+      'transcriptionLanguage="es"><Language code="en-US" transcriptionProvider="Deepgram" speechModel="nova-3-general"/><Language code="es"/>',
+    );
+    await new Promise<void>((r) => server!.close(() => r()));
+    // An app that gives its default locale `{}` asks for the carrier's default there too.
+    const own: App = { ...app, voice: { ...app.voice, locales: { 'en-US': { recognition: { twilio: {} } }, es: { recognition: { twilio: { model: 'nova-2-general' } } } } } };
+    const again = await listen({ ...deps(env), app: own });
+    const doc = (await post(again, '/voice/twilio', { CallSid: 'CA2' })).text;
+    expect(doc).toContain('transcriptionLanguage="en-US"><Language code="en-US"/><Language code="es" speechModel="nova-2-general"/>');
+    expect(doc).not.toContain('transcriptionProvider=');
+  });
+
+  it('names a one-locale app\'s language, voice and recognizer on the relay element when its default is not en-US', async () => {
+    const spanishOnly: App = { ...libraryApp, locales: { default: 'es', prompts: {} } };
+    const base = await listen({ ...deps({ TTS_PROVIDER: 'Google', TTS_VOICE: 'es-US-Neural2-A', TWILIO_SPEECH_MODEL: 'nova-3-general' }), app: spanishOnly });
+    const r = await post(base, '/voice/twilio', { CallSid: 'CA1' });
+    expect(r.text).toContain('" transcriptionProvider="Deepgram" speechModel="nova-3-general" partialPrompts="true"');
+    expect(r.text).toContain('ttsLanguage="es" transcriptionLanguage="es" ttsProvider="Google" voice="es-US-Neural2-A"><Language code="es"/><Parameter name="locale" value="es"/></ConversationRelay>');
+  });
+
+  it('keeps a one-locale en-US app\'s documents those of an app without locales with the recognizer set, and names it', async () => {
+    const env = { TWILIO_TRANSCRIPTION_PROVIDER: 'Google', TWILIO_SPEECH_MODEL: 'telephony' };
+    const oneLocale: App = { ...libraryApp, locales: { default: 'en-US', prompts: {} } };
+    const before = await listen(deps(env));
+    const without = (await post(before, '/voice/twilio', { CallSid: 'CA1' })).text.replace(/token=[0-9a-f]+/, '');
+    await new Promise<void>((r) => server!.close(() => r()));
+    const after = await listen({ ...deps(env), app: oneLocale });
+    const withApp = (await post(after, '/voice/twilio', { CallSid: 'CA1' })).text.replace(/token=[0-9a-f]+/, '');
+    expect(withApp).toBe(without);
+    expect(withApp).toContain('" transcriptionProvider="Google" speechModel="telephony" partialPrompts="true"');
+  });
+
+  it('reconnects a call in the language it is in now, not the one it started in', async () => {
+    const d = { ...deps(), app: bilingual };
+    const base = await listen(d);
+    d.store.create('CA1', { send: () => {}, close: () => {} }).session.locale = 'es';
+    const r = await post(base, '/cr-action/twilio', { CallSid: 'CA1', To: '+15555550100', CallStatus: 'in-progress', SessionStatus: 'failed' });
+    expect(r.text).toContain(
+      'ttsLanguage="es-US" transcriptionLanguage="es-MX"><Language code="en-US" voice="en-US-Journey-O" transcriptionProvider="Deepgram" speechModel="flux"/>' +
+        '<Language code="es-US" voice="es-US-Journey-F" transcriptionProvider="Google" speechModel="telephony"/>',
+    );
+    expect(r.text).toContain('<Parameter name="locale" value="es"/>');
+  });
+});
+
 describe('Telnyx webhooks', () => {
   // A key pair made here: Telnyx signs with the private half, the server is configured with the public one.
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
@@ -362,6 +479,17 @@ describe('Telnyx webhooks', () => {
     const again = await postTelnyx(base, '/cr-action/telnyx', 'CallSid=v2%3Aabc&CallStatus=in-progress&SessionStatus=failed');
     expect(again.text).toContain(' voice="Telnyx.Ultra.Callie"/>');
     expect(again.text).not.toContain('en-US-Neural2-F');
+  });
+
+  it('starts a Telnyx call in the locale of the number called, with the app\'s Telnyx voices', async () => {
+    const base = await listen({ ...deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY, TELNYX_VOICE: 'Telnyx.NaturalHD.astra' }), app: bilingual });
+    const r = await postTelnyx(base, '/voice/telnyx', `CallSid=v2%3Aabc&To=${encodeURIComponent(SPANISH_NUMBER)}`);
+    expect(r.text).toContain(
+      'language="es-US"><Language code="en-US" voice="Telnyx.Ultra.Callie"/><Language code="es-US" voice="Telnyx.Ultra.Asher" transcriptionProvider="google"/>' +
+        '<Parameter name="locale" value="es"/></ConversationRelay>',
+    );
+    expect(r.text).not.toContain('ttsProvider=');
+    expect(r.text).not.toContain('astra');
   });
 
   it('sends Telnyx no voice when only the Twilio voice is set', async () => {

@@ -374,6 +374,140 @@ describe('defineApp: the locales an App has', () => {
   });
 });
 
+describe('defineApp: the voice on the phone, by locale and by number called (voice.locales, voice.numbers)', () => {
+  const APP_YAML = readFileSync(join(LIBRARY_DIR, 'app.yaml'), 'utf8');
+  /** The library's app.yaml with `lines` added to its voice block (they start at line 23). */
+  const withVoice = (...lines: string[]): string => {
+    const text = APP_YAML.replace('      spell: lead\n', `      spell: lead\n${lines.join('\n')}\n`);
+    expect(text).not.toBe(APP_YAML);
+    return folder({ 'app.yaml': text });
+  };
+
+  it('loads a voice block that names each locale\'s languages, voices and hints, and the locale a number starts in', () => {
+    const dir = withVoice(
+      '  numbers:',
+      '    "+15555550142": es',
+      '  locales:',
+      '    en-US:',
+      '      voices: { twilio: en-US-Journey-O, telnyx: Telnyx.Ultra.Callie }',
+      '    es:',
+      '      tts: es-US',
+      '      transcription: es-MX',
+      '      voices: { twilio: es-US-Journey-F, telnyx: Telnyx.Ultra.Asher }',
+      '      hints: [renovar, reserva, sucursal]',
+    );
+    const app = defineApp(dir, libraryCode);
+    expect(app.voice?.numbers).toEqual({ '+15555550142': 'es' });
+    expect(app.voice?.locales).toEqual({
+      'en-US': { voices: { twilio: 'en-US-Journey-O', telnyx: 'Telnyx.Ultra.Callie' } },
+      es: { tts: 'es-US', transcription: 'es-MX', voices: { twilio: 'es-US-Journey-F', telnyx: 'Telnyx.Ultra.Asher' }, hints: ['renovar', 'reserva', 'sucursal'] },
+    });
+    expect(undefinedKeys(app.voice)).toEqual([]);
+    // Without them, the voice is as it was.
+    expect(Object.keys(libraryApp.voice!)).toEqual(['hints', 'spokenDigits']);
+  });
+
+  it('voice: a locale the app does not have, under voice.locales', () => {
+    expect(problems(libraryCode, withVoice('  locales:', '    fr-CA:', '      tts: fr-CA'))).toEqual([
+      'app.yaml:24:5  voice.locales.fr-CA  "fr-CA" is not a locale of this app  ->  add locale/fr-CA/ or use one of en-US, es',
+    ]);
+  });
+
+  it('voice: a number that starts a call in a locale the app does not have', () => {
+    expect(problems(libraryCode, withVoice('  numbers:', '    "+15555550142": fr'))).toEqual([
+      'app.yaml:24:21  voice.numbers["+15555550142"]  "fr" is not a locale of this app  ->  add locale/fr/ or use one of en-US, es',
+    ]);
+  });
+
+  it('voice: a number that is not E.164', () => {
+    expect(loadProblems(withVoice('  numbers:', '    "555-0142": es'))).toEqual([
+      'app.yaml:24:5  voice.numbers["555-0142"]  the key "555-0142" must be an E.164 number like +15555550142  ->  write the number with + and the country code, in quotes ("+15555550142")',
+    ]);
+  });
+
+  it('voice: a voice for a provider the engine does not know', () => {
+    expect(problems(libraryCode, withVoice('  locales:', '    es:', '      voices: { twilio: es-US-Journey-F, acme: Clara }'))).toEqual([
+      'app.yaml:25:42  voice.locales.es.voices.acme  unknown voice provider "acme"  ->  use twilio or telnyx',
+    ]);
+  });
+
+  it('loads a locale\'s recognizer per carrier, a field it leaves out being the carrier\'s default', () => {
+    const dir = withVoice(
+      '  locales:',
+      '    es:',
+      '      recognition:',
+      '        twilio: { provider: Google, model: telephony }',
+      '        telnyx: { provider: google }',
+      '    en-US:',
+      '      recognition: { twilio: {} }',
+    );
+    const app = defineApp(dir, libraryCode);
+    expect(app.voice?.locales).toEqual({
+      es: { recognition: { twilio: { provider: 'Google', model: 'telephony' }, telnyx: { provider: 'google' } } },
+      'en-US': { recognition: { twilio: {} } },
+    });
+  });
+
+  it('voice: a recognizer for a provider the engine does not know', () => {
+    expect(problems(libraryCode, withVoice('  locales:', '    es:', '      recognition:', '        twilo: { model: telephony }'))).toEqual([
+      'app.yaml:26:9  voice.locales.es.recognition.twilo  unknown voice provider "twilo"  ->  rename it to "twilio", or use twilio or telnyx',
+    ]);
+  });
+
+  it('voice: a recognizer\'s provider and model are plain names, and it has no other key', () => {
+    expect(loadProblems(withVoice('  locales:', '    es:', '      recognition:', '        twilio: { provider: "Deep gram", speechModel: flux }'))).toEqual([
+      expect.stringMatching(/^app\.yaml:26:29 {2}voice\.locales\.es\.recognition\.twilio\.provider {2}"Deep gram" is not a recognizer name/),
+      expect.stringMatching(/^app\.yaml:26:42 {2}voice\.locales\.es\.recognition\.twilio\.speechModel {2}/),
+    ]);
+  });
+
+  it('voice: tts and transcription must be language tags', () => {
+    expect(loadProblems(withVoice('  locales:', '    es:', '      tts: Spanish', '      transcription: es_MX'))).toEqual([
+      expect.stringMatching(/^app\.yaml:25:12 {2}voice\.locales\.es\.tts {2}"Spanish" is not a language tag like "en-US" or "fr" {2}-> {2}write a language tag/),
+      expect.stringMatching(/^app\.yaml:26:22 {2}voice\.locales\.es\.transcription {2}"es_MX" is not a language tag like "en-US" or "fr" {2}-> {2}write a language tag/),
+    ]);
+  });
+});
+
+describe('defineApp: an intent that switches the call\'s language (intents.yaml locale:)', () => {
+  const INTENTS = readFileSync(join(LIBRARY_DIR, 'intents.yaml'), 'utf8');
+  const withIntents = (from: string, to: string): string => {
+    expect(INTENTS).toContain(from);
+    return folder({ 'intents.yaml': INTENTS.replace(from, to) });
+  };
+
+  it('an informational intent may name a locale with its line, or a locale alone', () => {
+    const app = defineApp(withIntents('    promptId: hours\n', '    promptId: hours\n    locale: es\n'), libraryCode);
+    expect(app.intents.hours).toEqual({ criteria: libraryApp.intents.hours!.criteria, label: 'hear the opening hours', kind: 'informational', promptId: 'hours', locale: 'es' });
+    const alone = defineApp(withIntents('    promptId: hours\n', '    locale: es\n'), libraryCode);
+    expect(alone.intents.hours).toEqual({ criteria: libraryApp.intents.hours!.criteria, label: 'hear the opening hours', kind: 'informational', locale: 'es' });
+    expect(Object.keys(libraryApp.intents.hours!)).not.toContain('locale');
+  });
+
+  it('locale: naming a locale the app does not have', () => {
+    expect(problems(libraryCode, withIntents('    promptId: hours\n', '    promptId: hours\n    locale: fr\n'))).toEqual([
+      'intents.yaml:20:13  intents.hours.locale  "fr" is not a locale of this app  ->  add locale/fr/ or use one of en-US, es',
+    ]);
+  });
+
+  it('locale: on a form or control intent is refused', () => {
+    expect(loadProblems(withIntents('    kind: form\n', '    kind: form\n    locale: es\n'))).toEqual([
+      'intents.yaml:7:13  intents.renew_loan.locale  locale is for an informational intent, and this one is of kind form  ->  delete "locale", or make the intent kind: informational',
+    ]);
+  });
+
+  it('locale: with a passage is refused: the switch says a prompt', () => {
+    expect(loadProblems(withIntents('    promptId: hours\n', '    passage: opening-hours\n    locale: es\n'))).toContain(
+      'intents.yaml:20:13  intents.hours.locale  an informational intent that switches the language says a prompt, not a passage  ->  delete the passage, and name the line said in the new language with promptId',
+    );
+  });
+});
+
+/** The problems loading the folder finds, before the code is looked at. */
+function loadProblems(dir: string): string[] {
+  return loadAppFolder(dir).problems.map(formatProblem);
+}
+
 describe('defineApp: a folder that does not load', () => {
   it('throws the loader\'s problems, unchanged, without looking at the code', () => {
     const forms = readFileSync(join(LIBRARY_DIR, 'forms.yaml'), 'utf8').replace('summaryPromptId: confirm_renew', 'summaryPrompId: confirm_renew');

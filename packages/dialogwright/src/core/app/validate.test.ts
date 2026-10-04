@@ -157,6 +157,26 @@ describe('validateApp', () => {
     expect(() => validateApp(app)).toThrow(/capabilities.*promptId/);
   });
 
+  it('names a language switch the app cannot make: a locale it does not speak, on a form intent, or with a passage', () => {
+    const app = copy();
+    app.intents.spanish = { criteria: 'x', label: 'x', kind: 'informational', locale: 'es' };
+    expect(() => validateApp(app)).toThrow(/spanish.*"es", which the app does not speak/);
+    app.intents.spanish = { criteria: 'x', label: 'x', kind: 'informational', locale: 'en-US' };
+    expect(() => validateApp(app)).not.toThrow();
+    app.intents.track_parcel = { ...testkitApp.intents.track_parcel!, locale: 'en-US' };
+    expect(() => validateApp(app)).toThrow(/track_parcel.*only an informational intent switches the language/);
+  });
+
+  it('names a voice block that names a locale the app does not speak, or a carrier the engine does not know', () => {
+    expect(() => validateApp({ ...copy(), voice: { numbers: { '+15555550142': 'es' } } })).toThrow(/voice\.numbers.*"es"/);
+    expect(() => validateApp({ ...copy(), voice: { locales: { es: {} } } })).toThrow(/voice\.locales.*"es"/);
+    expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { voices: { acme: 'x' } } } } })).toThrow(/unknown voice provider "acme"/);
+    expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { voices: { twilio: 'x' } } } } })).not.toThrow();
+    expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { recognition: { acme: {} } } } } })).toThrow(/recognition names the unknown voice provider "acme"/);
+    expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { recognition: { twilio: { model: 'flux"/>' } } } } } })).toThrow(/recognition\.twilio\.model "flux"\/>" is not a recognizer name/);
+    expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { recognition: { twilio: { provider: 'Google', model: 'telephony' } } } } } })).not.toThrow();
+  });
+
   it.each(['agent', 'repeat_prompt'])('requires the control intent %s', (id) => {
     const app = copy();
     delete app.intents[id];

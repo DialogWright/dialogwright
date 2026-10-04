@@ -3,6 +3,7 @@ import type { Decision } from '../core/decision';
 import { endAction, sayAction, transferAction, type Action, type Say, type SayPart } from '../channel/actions';
 import { isPauseOnly, joinSpoken, segmentTemplate, stripLeadingPause, ttsOnly, VAR } from './segments';
 import { vocabularyClipId } from './clips';
+import { speechLanguagesOf } from '../core/locale';
 
 export interface PromptEntry {
   text: string;
@@ -55,6 +56,19 @@ export function handoffPromptId(reason: string): string {
 }
 
 /**
+ * The language a line in `locale` is said in (Say.lang), for an app that declares locales
+ * (App.locales): the language the voice speaks that locale in (app.yaml voice.locales.<tag>.tts),
+ * which is the locale's own tag unless the app names another; without a locale, the default's. It is
+ * what a start document's languages are named by (server/http.ts connectOptions), so a text frame
+ * names one of them. An app without locales gives its lines no language, so they map to the relay's
+ * en-US text frames exactly as they always have: that is what keeps every golden of an app without
+ * locales unchanged.
+ */
+export function lineLang(app: App, locale?: string): string | undefined {
+  return app.locales ? speechLanguagesOf(app, locale ?? app.locales.default).tts : undefined;
+}
+
+/**
  * One prompt as a line: clips where they exist, TTS text otherwise, adjacent text merged. A line in
  * a locale's own words is spoken whole by TTS: the clips are recordings of the default locale's.
  */
@@ -62,7 +76,8 @@ export function promptSay(app: App, promptId: string, vars: Record<string, strin
   const { entry, localized } = localePromptEntry(app, promptId, locale);
   const segments = segmentTemplate(promptId, entry.text);
   // A line that carries data is spoken whole by TTS, even when clips are on.
-  if (!ctx || localized || ttsOnly(app, segments)) return sayAction([{ text: renderTemplate(entry.text, vars) }], interruptible);
+  const lang = lineLang(app, locale);
+  if (!ctx || localized || ttsOnly(app, segments)) return sayAction([{ text: renderTemplate(entry.text, vars) }], interruptible, lang);
   const parts: SayPart[] = [];
   let pieces: string[] = [];
   const flush = (): void => {
@@ -91,7 +106,7 @@ export function promptSay(app: App, promptId: string, vars: Record<string, strin
     else pieces.push(value);
   }
   flush();
-  return sayAction(parts, interruptible);
+  return sayAction(parts, interruptible, lang);
 }
 
 /** What a decision asks the channel to do, in order, its lines in `locale` (promptEntry). */
@@ -102,7 +117,7 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
     case 'hold':
       return [];
     case 'replay':
-      return [sayAction([{ text: decision.text }], true)];
+      return [sayAction([{ text: decision.text }], true, lineLang(app, locale))];
     case 'prompt': {
       const actions: Action[] = decision.acks.map((a) => say(a.promptId, a.vars, promptEntry(app, a.promptId, locale).interruptible));
       actions.push(say(decision.promptId, decision.vars, promptEntry(app, decision.promptId, locale).interruptible));

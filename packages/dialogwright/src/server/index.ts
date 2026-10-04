@@ -168,7 +168,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   validateRoutes(routes);
   if (bus || routes.some((r) => r.localOnly)) log(consoleExposure(config, localOnlyPaths(routes)));
   for (const warning of mounted.warnings ?? []) log(`WARNING: ${warning}`);
-  const deps = { config, store, tokens, hints: buildHints(getApp(defaultAppId())), log, bus, audit, routes };
+  const app = getApp(defaultAppId());
+  const deps = { config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app };
 
   const server = createServer(createRequestHandler(deps));
   const wss = attachWebSocketServer(

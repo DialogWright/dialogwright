@@ -7,6 +7,8 @@
  * (src/testing/voiceConformance.ts); nothing in the core changes.
  */
 
+import type { Recognition } from '../../core/app/types';
+
 /** A webhook as it arrived: its path with query, headers lower-cased, and the raw body. */
 export interface WebhookRequest {
   readonly url: string;
@@ -43,6 +45,38 @@ export interface StartDocumentOptions {
    */
   readonly ttsProvider?: string;
   readonly voice?: string;
+  /**
+   * The carrier's own speech recognizer (config.ts recognitionFor), for a document that names no
+   * language. Absent, Twilio's is Deepgram flux, as it was before the recognizer could be set, and
+   * Telnyx's is its own default.
+   */
+  readonly recognition?: Recognition;
+  /**
+   * The language the call starts in, for an app that names its languages (server/http.ts
+   * connectOptions); absent, the document names none and the carrier speaks its default (en-US), as
+   * before languages. When present, `voice`, `ttsProvider` and `recognition` above are not used:
+   * each language carries its own (xml.ts placeLanguages says where they are written), and a
+   * language with none of its own gets the carrier's default, never another language's.
+   */
+  readonly language?: RelayLanguage;
+  /** Every language the call may switch to (set_language), each with its voice; absent or empty, none named. */
+  readonly languages?: readonly RelayLanguage[];
+  /** Custom parameters the relay hands back on its setup frame; `locale` is the one the engine reads (SessionStart.locale). */
+  readonly parameters?: Readonly<Record<string, string>>;
+}
+
+/** One language as a start document names it: what the voice speaks, what is heard, and the voice. */
+export interface RelayLanguage {
+  /** The language the voice speaks, a language tag: what a text frame's `lang` names (Say.lang). */
+  readonly tts: string;
+  /** The language speech is recognized in, a language tag. */
+  readonly transcription: string;
+  /** The voice, in the carrier's own names; absent for the carrier's default voice for this language. */
+  readonly voice?: string;
+  /** The voice's TTS provider, for a carrier that names it apart from the voice (Twilio's TTS_PROVIDER). */
+  readonly ttsProvider?: string;
+  /** The speech recognizer for this language; absent or empty, the carrier's default for it. */
+  readonly recognition?: Recognition;
 }
 
 export interface VoiceProvider {

@@ -22,6 +22,15 @@ export function localesOf(app: App): string[] {
   return app.locales ? [app.locales.default, ...Object.keys(app.locales.prompts)] : [DEFAULT_LOCALE];
 }
 
+/**
+ * How a speech channel speaks and hears one of the app's locales: the languages app.yaml's
+ * voice.locales.<tag> names (tts, transcription), each the tag itself where it names none.
+ */
+export function speechLanguagesOf(app: App, locale: string): { tts: string; transcription: string } {
+  const own = app.voice?.locales && Object.hasOwn(app.voice.locales, locale) ? app.voice.locales[locale] : undefined;
+  return { tts: own?.tts ?? locale, transcription: own?.transcription ?? locale };
+}
+
 /** The language subtag of a tag: `es` for `es-US`, lower case. */
 const languageOf = (tag: string): string => tag.split('-')[0]!.toLowerCase();
 

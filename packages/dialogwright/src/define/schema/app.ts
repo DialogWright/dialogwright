@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { checkAlways, identifier, matching, name, text, textMap, unique } from './common';
+import { checkAlways, identifier, localeTag, matching, name, text, textMap, unique } from './common';
+import { RECOGNIZER_NAME } from '../../channel/voiceProviders';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
@@ -159,10 +160,50 @@ const spokenDigitRule = z
   }))
   .describe('One rule for how identifier digits are spelled out for text-to-speech on the wire. Only what goes out is rewritten: the session text, the trace and the manifest keep the readable form.');
 
+/** A speech recognizer's provider or model, in the carrier's own names. */
+const recognizerName = () =>
+  matching(RECOGNIZER_NAME, 'is not a recognizer name: it must start with a letter or digit and use only letters, digits, dots, hyphens and underscores', 'write the name as the carrier\'s documentation spells it, for example "Deepgram" or "nova-3-general"');
+
+/** One carrier's speech recognizer for a locale (voice.locales.<tag>.recognition.<provider>). */
+const recognition = z
+  .strictObject({
+    provider: recognizerName().optional().describe('The speech recognition provider, as the carrier names it (Twilio: Deepgram or Google; Telnyx: deepgram, google or telnyx). Twilio\'s transcriptionProvider, Telnyx\'s transcriptionProvider.'),
+    model: recognizerName().optional().describe('The provider\'s speech model (Twilio\'s speechModel: nova-3-general, telephony; Telnyx takes one on <Language> only). Left out, the provider\'s default.'),
+  })
+  .describe('The speech recognizer on one carrier. A field left out is the carrier\'s default, never the deployment\'s; {} asks for the carrier\'s default recognizer.');
+
+/** One locale's speech settings on the phone (voice.locales.<tag>). */
+const voiceLocale = z
+  .strictObject({
+    tts: localeTag().optional().describe('The language the voice speaks this locale in (a language tag). Default: the locale\'s tag.'),
+    transcription: localeTag().optional().describe('The language speech is recognized in for this locale (a language tag). Default: the locale\'s tag.'),
+    voices: z
+      .record(identifier(), text())
+      .optional()
+      .describe('The voice for this locale, by voice provider id (twilio, telnyx): each carrier names its voices its own way. It wins over the deployment\'s voice for that carrier (TTS_VOICE, TELNYX_VOICE). Default: the deployment\'s voice for the default locale, else the carrier\'s default voice.'),
+    hints: z.array(text()).optional().describe('Words the speech recognizer should expect in this locale, in place of voice.hints.'),
+    recognition: z
+      .record(identifier(), recognition)
+      .optional()
+      .describe(
+        'The speech recognizer for this locale, by voice provider id (twilio, telnyx). It wins over the deployment\'s (TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER). ' +
+          'Default: the deployment\'s for the default locale, else the carrier\'s default, since a deployment\'s model may hear one language only (Twilio\'s default, Deepgram flux, is for English).',
+      ),
+  })
+  .describe('How the phone speaks and hears one locale.');
+
 const voice = z
   .strictObject({
     hints: z.array(text()).optional().describe('Words the speech recognizer should expect (ConversationRelay hints), before the engine\'s number words.'),
     spokenDigits: z.array(spokenDigitRule).optional().describe('How digits that are identifiers are spelled out for text-to-speech, tried in order.'),
+    numbers: z
+      .record(matching(/^\+\d{8,15}$/, 'must be an E.164 number like +15555550142', 'write the number with + and the country code, in quotes ("+15555550142")'), localeTag())
+      .optional()
+      .describe('The locale a call starts in, by the number called (E.164, in quotes). A number not listed starts in the app\'s default locale. Each locale must be one of the app\'s.'),
+    locales: z
+      .record(localeTag(), voiceLocale)
+      .optional()
+      .describe('Per-locale speech settings for the phone, keyed by the app\'s locale tags: the languages the voice speaks and hears, a voice per carrier, recognition hints. A locale not listed speaks and hears its own tag with the carrier\'s default voice.'),
   })
   .describe("The phone line's speech settings for the app.");
 
@@ -248,7 +289,7 @@ export const appSchema = z
   .strictObject({
     id: matching(/^[a-z][a-z0-9_-]*$/, 'is not a valid app id: it must be lowercase, starting with a letter, with only letters, digits, hyphens and underscores', 'rename it, for example "my-app" or "parcels"')
       .describe('The app\'s id (for example "clinic"): lowercase letters, digits, hyphens and underscores. It names the app in the registry and, by default, its browser storage.'),
-    locale: matching(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/, 'is not a language tag like "en-US" or "fr"', 'write a language tag: a lowercase language ("en", "fr") optionally followed by a region ("en-US", "pt-BR")')
+    locale: localeTag()
       .optional()
       .describe('The default locale of prompts.yaml, as a language tag ("en-US"). Other locales\' prompts go in locale/<tag>/prompts.yaml. Default "en-US".'),
     brand: brand.optional(),

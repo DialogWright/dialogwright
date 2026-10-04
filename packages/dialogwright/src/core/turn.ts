@@ -2,7 +2,7 @@ import { isAnonymous, isParty } from '../gate/types';
 import type { AnswerMap, QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
-import type { SlotContext } from './slots/types';
+import type { SlotCandidate, SlotContext } from './slots/types';
 import { informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
@@ -23,7 +23,7 @@ import { auditDrafts } from './audit';
 import type { AuditDraft } from '../audit/types';
 import { decisionToActions, spokenText, type RenderContext } from '../prompts/render';
 import { saidCode } from './spokenCode';
-import { matchLocale, slotLocaleOf } from './locale';
+import { matchLocale, slotLocaleOf, speechLanguagesOf } from './locale';
 import type { TurnKnowledge } from './knowledge';
 import type { Nomination } from '../kb/types';
 
@@ -142,6 +142,8 @@ interface TurnIO {
   app: App;
   tc: TurnContext;
   out: TurnOut;
+  /** What the channel is asked to do before the turn's lines (a language switch's set_language), in order. */
+  prefix: Action[];
 }
 
 export interface Plan {
@@ -570,13 +572,59 @@ function screenRow(screen: ScreenResult, t: Thresholds): GateRow {
   return { gate: 'screen', value: screen.value, threshold: t.SCREEN_FIRE, passed: !screen.fired, outcome, decided: screen.fired };
 }
 
+/** What an informational intent said, as acks in front of the question the call resumes on, and whether it answered. */
+interface Informed {
+  readonly acks: Ack[];
+  readonly answered: boolean;
+}
+
 /**
  * What an informational intent says: its prompt, or its knowledge-base passage (resolved and
- * recorded by kb/answer.ts informationalAnswer: the answer, or the unavailable line).
+ * recorded by kb/answer.ts informationalAnswer: the answer, or the unavailable line). One that
+ * names a locale switches the call to it first (switchLocale), so its prompt, if any, and every
+ * line after it are said in the new locale.
  */
-function informed(s: Session, io: TurnIO, informs: Informs): InformationalAnswer {
-  if (informs.passage !== undefined) return informationalAnswer(s, io.tc, io.out, informs.passage);
-  return { ack: { promptId: informs.promptId, vars: {} }, answered: true };
+function informed(s: Session, io: TurnIO, informs: Informs): Informed {
+  if (informs.passage !== undefined) {
+    const said: InformationalAnswer = informationalAnswer(s, io.tc, io.out, informs.passage);
+    return { acks: [said.ack], answered: said.answered };
+  }
+  if (informs.locale !== undefined) switchLocale(s, io, informs.locale);
+  return { acks: informs.promptId !== undefined ? [{ promptId: informs.promptId, vars: {} }] : [], answered: true };
+}
+
+/**
+ * The call goes on in `target`, one of the app's locales (an intent's IntentDef.locale): the
+ * session's locale changes, and a channel with speech is asked first to speak and hear it
+ * (set_language, with the languages app.yaml's voice.locales names, each the tag where it names
+ * none), so the turn's lines are spoken, and the caller's next words heard, in it. The locale the
+ * call is already in changes nothing; an app without locales has none to switch to.
+ */
+function switchLocale(s: Session, io: TurnIO, target: string): void {
+  if (!io.app.locales || target === s.locale) return;
+  s.locale = target;
+  if (s.caps.speech) io.prefix.push({ type: 'set_language', ...speechLanguagesOf(io.app, target) });
+  // A value already held is said in the new locale too: a fill's display is its slot's display(value,
+  // locale) (the slot conformance kit's `display` check), so it is formatted again in the new one.
+  const locale = slotLocaleOf(s);
+  const shown = (id: SlotId, value: string): string => slotSpecOf(io.app, id).display(value, locale);
+  for (const [id, slot] of Object.entries(s.slots)) if (slot.value !== null && Object.hasOwn(io.app.slots, id)) slot.display = shown(id, slot.value);
+  const pc = s.pendingConfirmation;
+  if (pc?.target === 'slot' && Object.hasOwn(io.app.slots, pc.slot)) pc.display = shown(pc.slot, pc.value);
+}
+
+/**
+ * A fill's acks and its disambiguation formatted again in the session's locale, after a switch in the
+ * same breath (switchLocale): the caller's words were heard in the old language, and every line the
+ * turn says, these included, is said in the new one. A fill's ack names only its own slot (`ack_<slot>`).
+ */
+function inLocaleOf(s: Session, io: TurnIO, fill: FillResult): Pick<FillResult, 'acks' | 'disambiguate'> {
+  const locale = slotLocaleOf(s);
+  const shown = (id: SlotId, c: SlotCandidate): SlotCandidate => ({ ...c, display: slotSpecOf(io.app, id).display(c.value, locale) });
+  return {
+    acks: fill.acks.map((a) => ({ ...a, vars: Object.fromEntries(Object.entries(a.vars).map(([k, v]) => [k, Object.hasOwn(io.app.slots, k) ? (s.slots[k]?.display ?? v) : v])) })),
+    disambiguate: fill.disambiguate && { ...fill.disambiguate, a: shown(fill.disambiguate.slot, fill.disambiguate.a), b: shown(fill.disambiguate.slot, fill.disambiguate.b) },
+  };
 }
 
 type TransferConfirmation = Extract<PendingConfirmation, { target: 'transfer' }>;
@@ -794,10 +842,13 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // No attempt counter moves. A passage that could not be said is followed by the offer of a
       // person, once per call (kb/answer.ts).
       const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+      const before = s.locale;
       const said = informed(s, io, verdict);
-      const acks = [said.ack, ...fill.acks];
+      // A switch in the same breath: what was heard in the old language is said in the new one.
+      const { acks: filled, disambiguate } = s.locale === before ? fill : inLocaleOf(s, io, fill);
+      const acks = [...said.acks, ...filled];
       const offer = said.answered ? null : offerAfterUnavailable(s, acks);
-      return { decision: offer ?? resume(s, io, acks, fill.disambiguate, fill.help), events: fill.events };
+      return { decision: offer ?? resume(s, io, acks, disambiguate, fill.help), events: fill.events };
     }
     case 'confirmed': {
       const pc = s.pendingConfirmation!;
@@ -829,7 +880,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       const informs = informationOf(io.app, pc.intent);
       if (informs !== undefined) {
         const said = informed(s, io, informs);
-        return { decision: (said.answered ? null : offerAfterUnavailable(s, [said.ack])) ?? resume(s, io, [said.ack]), events: [] };
+        return { decision: (said.answered ? null : offerAfterUnavailable(s, said.acks)) ?? resume(s, io, said.acks), events: [] };
       }
       if (!isFormIntent(io.app, pc.intent)) return { decision: failAttempt(s, 'intent', io), events: [] };
       // Fill from what the caller originally said, not from the "yes"; the form hears the yes too.
@@ -997,7 +1048,7 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     const informs = informationOf(io.app, option.intent);
     if (informs !== undefined) {
       const said = informed(s, io, informs);
-      return { decision: (said.answered ? null : offerAfterUnavailable(s, [said.ack])) ?? resume(s, io, [said.ack]), rows: [] };
+      return { decision: (said.answered ? null : offerAfterUnavailable(s, said.acks)) ?? resume(s, io, said.acks), rows: [] };
     }
     if (!isFormIntent(io.app, option.intent)) return { decision: { kind: 'ignore' }, rows: [] };
     setForm(s, option.intent);
@@ -1124,7 +1175,9 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
 function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap | null, turnContext: TurnContext, error: TurnError | null, screen: ScreenResult | null): Omit<TurnResult, 'audit'> {
   const s = cloneSession(session);
   const tc = appTurnContext(appOf(s), turnContext);
-  const io: TurnIO = { app: appOf(s), tc, out: newTurnOut() };
+  const io: TurnIO = { app: appOf(s), tc, out: newTurnOut(), prefix: [] };
+  // The turn's actions: what it asks first (a language switch), then its decision's lines in the session's locale, as it is now.
+  const act = (decision: Decision): Action[] => [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale)];
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
   const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false });
   if (s.ended) return { ...base(), decision: { kind: 'ignore' }, actions: [] };
@@ -1144,7 +1197,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       if (event.locale !== undefined && io.app.locales) s.locale = matchLocale(io.app, event.locale) ?? io.app.locales.default;
       const decision = greeting(s);
       bookkeep(s, decision, 'setup');
-      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
+      return { ...base(), decision, actions: act(decision) };
     }
     case 'user.key': {
       // The prompt moved between the digit's arrival and this turn: a digit recorded as part of the
@@ -1159,7 +1212,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const { decision: handled, rows } = handleDtmf(s, event.digit, io);
       const decision = readSummary(s, handled, io);
       bookkeep(s, decision, label);
-      return { ...base(), rows, decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
+      return { ...base(), rows, decision, actions: act(decision) };
     }
     case 'user.interrupt':
       // Barge-in is state, not a turn: the next speech turn reports it to the model.
@@ -1177,7 +1230,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const ack = onResult(appContext(s, tc, io.out), event.service, event.result);
       const decision = readSummary(s, s.form ? finishForm(s, s.form, [ack], io) : prompt('anything_else', 'intent', {}, [ack]), io);
       bookkeep(s, decision, 'service_result');
-      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
+      return { ...base(), decision, actions: act(decision) };
     }
     case 'auth.signed_in': {
       // Only the customer chat server makes this, after the portal's sign-in; the relay never produces
@@ -1210,7 +1263,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       s.stepUp = null;
       const decision = readSummary(s, parked ? continueForm(s, io, acks, null) : prompt('signin_ready', 'intent', {}, acks), io);
       bookkeep(s, decision, 'signed_in');
-      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
+      return { ...base(), decision, actions: act(decision) };
     }
     case 'user.silence': {
       const decision = readSummary(s, handleSilence(s, io), io);
@@ -1218,7 +1271,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // Silence resolves whatever was prompted; a stale barge-in marker does not carry into
       // the next turn, same as a real one.
       s.lastInterrupt = null;
-      return { ...base(), decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
+      return { ...base(), decision, actions: act(decision) };
     }
     case 'user.speech':
     case 'user.text': {
@@ -1229,14 +1282,14 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
         const decision = readSummary(s, quarantine(s), io);
         bookkeep(s, decision, 'screen');
         s.lastInterrupt = null;
-        return { ...base(), turnState, rows: screened, decision, actions: decisionToActions(io.app, decision, tc.render, s.locale), quarantined: true };
+        return { ...base(), turnState, rows: screened, decision, actions: act(decision), quarantined: true };
       }
       if (error || answers === null) {
         const decision = handleFailure(s);
         bookkeep(s, decision, 'error');
         // The turn state above already reported the barge-in, failed ask or not.
         s.lastInterrupt = null;
-        return { ...base(), turnState, rows: screened, decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
+        return { ...base(), turnState, rows: screened, decision, actions: act(decision) };
       }
       s.consecutiveFailures = 0;
       const ctx = slotContext(s, event.text, tc);
@@ -1251,7 +1304,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       bookkeep(s, decision, verdict.kind);
       // The barge-in has now been reported to the model; it does not carry into the next turn.
       s.lastInterrupt = null;
-      return { ...base(), turnState, rows: [...screened, ...rows], verdict, fillEvents: events, decision, actions: decisionToActions(io.app, decision, tc.render, s.locale) };
+      return { ...base(), turnState, rows: [...screened, ...rows], verdict, fillEvents: events, decision, actions: act(decision) };
     }
   }
 }

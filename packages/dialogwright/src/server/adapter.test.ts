@@ -50,6 +50,7 @@ import type { ServiceDef } from '../core/app/types';
 import { ANONYMOUS } from '../gate/principal';
 import { serviceResultEvent } from '../channel/events';
 import { useTestkit } from '../testing/apps';
+import { libraryApp } from '../define/fixture/app';
 import { defaultCorpusFile } from '../run/fixtures';
 import { VOICE_RELAY } from '../channel/caps';
 
@@ -369,6 +370,24 @@ describe('adapter', () => {
     expect(texts(sock2).at(-1)).toBe("And what's your date of birth?");
     expect(d.store.get('CA1')?.session.form).toBe('report_missing');
     expect(d.store.get('CA1')?.session.slots.accountId!.value).toBe('55501234');
+  });
+
+  it('replays the last line in the language the call is in, and en-US for an app without locales', async () => {
+    registerApp(libraryApp);
+    const d = deps();
+    const sock = fakeSocket();
+    await handleSocketMessage(d, sock, newConnectionContext(d.tokens.mint('CA1'), sock), setupMsg('CA1'));
+    const entry = d.store.get('CA1')!;
+    entry.session = { ...entry.session, appId: libraryApp.id, locale: 'es', lastPromptText: '¿En qué puedo ayudarle?' };
+    const sock2 = fakeSocket();
+    await handleSocketMessage(d, sock2, newConnectionContext(d.tokens.mint('CA1'), sock2), setupMsg('CA1', 'VX2'));
+    expect(sock2.sent).toEqual([expect.objectContaining({ type: 'text', token: '¿En qué puedo ayudarle?', lang: 'es' })]);
+    // The testkit has no locales: its replay is en-US, as before.
+    const sock3 = fakeSocket();
+    await handleSocketMessage(d, sock3, newConnectionContext(d.tokens.mint('CA2'), sock3), setupMsg('CA2'));
+    const sock4 = fakeSocket();
+    await handleSocketMessage(d, sock4, newConnectionContext(d.tokens.mint('CA2'), sock4), setupMsg('CA2', 'VX3'));
+    expect(sock4.sent).toEqual([expect.objectContaining({ type: 'text', lang: 'en-US' })]);
   });
 
   it('a late close from a replaced socket does not detach the live one', async () => {

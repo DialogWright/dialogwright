@@ -31,6 +31,14 @@ export const identifier = () =>
     'rename it using only letters, digits and underscores, starting with a letter (for example "ask_name" or "patientId")',
   );
 
+/** A language tag, as app.yaml's `locale:` and a locale/<tag>/ folder name one ("en-US", "fr", "pt-BR"). */
+export const localeTag = () =>
+  matching(
+    /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/,
+    'is not a language tag like "en-US" or "fr"',
+    'write a language tag: a lowercase language ("en", "fr") optionally followed by a region ("en-US", "pt-BR")',
+  );
+
 /** A name that is only ever a label or a code (a purpose, a role, a rule, a handoff reason, an audit row type): hyphens and dots are allowed too. */
 export const name = () =>
   matching(

@@ -433,6 +433,88 @@
             "additionalProperties": false,
             "description": "One rule for how identifier digits are spelled out for text-to-speech on the wire. Only what goes out is rewritten: the session text, the trace and the manifest keep the readable form."
           }
+        },
+        "numbers": {
+          "description": "The locale a call starts in, by the number called (E.164, in quotes). A number not listed starts in the app's default locale. Each locale must be one of the app's.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^\\+\\d{8,15}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+          }
+        },
+        "locales": {
+          "description": "Per-locale speech settings for the phone, keyed by the app's locale tags: the languages the voice speaks and hears, a voice per carrier, recognition hints. A locale not listed speaks and hears its own tag with the carrier's default voice.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "tts": {
+                "description": "The language the voice speaks this locale in (a language tag). Default: the locale's tag.",
+                "type": "string",
+                "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+              },
+              "transcription": {
+                "description": "The language speech is recognized in for this locale (a language tag). Default: the locale's tag.",
+                "type": "string",
+                "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+              },
+              "voices": {
+                "description": "The voice for this locale, by voice provider id (twilio, telnyx): each carrier names its voices its own way. It wins over the deployment's voice for that carrier (TTS_VOICE, TELNYX_VOICE). Default: the deployment's voice for the default locale, else the carrier's default voice.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "hints": {
+                "description": "Words the speech recognizer should expect in this locale, in place of voice.hints.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "recognition": {
+                "description": "The speech recognizer for this locale, by voice provider id (twilio, telnyx). It wins over the deployment's (TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER). Default: the deployment's for the default locale, else the carrier's default, since a deployment's model may hear one language only (Twilio's default, Deepgram flux, is for English).",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "description": "The speech recognition provider, as the carrier names it (Twilio: Deepgram or Google; Telnyx: deepgram, google or telnyx). Twilio's transcriptionProvider, Telnyx's transcriptionProvider.",
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                    },
+                    "model": {
+                      "description": "The provider's speech model (Twilio's speechModel: nova-3-general, telephony; Telnyx takes one on <Language> only). Left out, the provider's default.",
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "The speech recognizer on one carrier. A field left out is the carrier's default, never the deployment's; {} asks for the carrier's default recognizer."
+                }
+              }
+            },
+            "additionalProperties": false,
+            "description": "How the phone speaks and hears one locale."
+          }
         }
       },
       "additionalProperties": false,

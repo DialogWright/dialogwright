@@ -1,5 +1,5 @@
 import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
-import { escapeXml, formFields, xmlResponse } from './xml';
+import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, relayElement, xmlResponse } from './xml';
 import { verifyTelnyxSignature } from './telnyxSignature';
 
 /**
@@ -20,6 +20,15 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *    also takes `handoffData`.
  * 3. `hints` is not a documented attribute; it is sent so recognition gets the app's words if Telnyx
  *    honours it, on the understanding that TeXML ignores an attribute it does not know.
+ * 4. For an app that names its languages, the call's language is the documented `language`
+ *    attribute (one tag for speech and recognition), and the languages it may switch to and the
+ *    `locale` custom parameter are `<Language code voice>` and `<Parameter name value>` children, in
+ *    the shape Twilio documents. A live call should confirm Telnyx reads the children, the text
+ *    frames' `lang` and the `language` frame (set_language) the same way.
+ * 5. The recognizer: the documented `transcriptionProvider` attribute (TELNYX_TRANSCRIPTION_PROVIDER,
+ *    or a locale's own); a model only on `<Language>`, the one element Telnyx documents
+ *    `speechModel` on. A child inheriting what it leaves out from the relay element is assumed to
+ *    work as Twilio documents it.
  * The conformance fixtures (__fixtures__/telnyx) say which of their entries are documented and which assumed.
  */
 
@@ -72,14 +81,22 @@ function parse(req: WebhookRequest): CallbackParams | null {
  * (config.ts voiceFor), never Twilio's TTS_VOICE, whose names Telnyx does not know.
  */
 function startDocument(o: StartDocumentOptions): string {
+  const placed = placeLanguages(o, { ttsProvider: false, relayModel: false });
   const attrs = [
     `url="wss://${escapeXml(o.publicHost)}/conversation/telnyx?token=${escapeXml(o.token)}"`,
     'dtmfDetection="true"',
     'interruptible="any"',
     `hints="${escapeXml(o.hints)}"`,
+    // The relay element takes a recognizer's provider, not its model (a model goes on <Language>).
+    ...recognitionAttrs(o.language ? placed.recognition : (o.recognition ?? {}), false),
   ];
-  if (o.voice) attrs.push(`voice="${escapeXml(o.voice)}"`);
-  return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx"><ConversationRelay ${attrs.join(' ')}/></Connect>`);
+  if (o.language) {
+    // One language for speech and recognition alike; its voice here only when every language has it (placeLanguages).
+    attrs.push(attr('language', o.language.tts));
+    if (placed.voice.voice !== undefined) attrs.push(attr('voice', placed.voice.voice));
+  } else if (o.voice) attrs.push(`voice="${escapeXml(o.voice)}"`);
+  const relay = relayElement(attrs, placed.children);
+  return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx">${relay}</Connect>`);
 }
 
 export const telnyxProvider: VoiceProvider = {

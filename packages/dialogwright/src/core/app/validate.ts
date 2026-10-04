@@ -12,6 +12,7 @@ import type { App, ConfigHashes } from './types';
 import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
 import { SLOT_LISTEN_VALUES } from '../slots/types';
+import { RECOGNIZER_NAME, VOICE_PROVIDER_IDS } from '../../channel/voiceProviders';
 
 /** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
 const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
@@ -152,9 +153,29 @@ export function validateApp(app: App): void {
   }
   for (const slot of Object.keys(change?.text ?? {})) if (!(change?.order ?? []).includes(slot)) fail(`wording's changeSlot text has slot "${slot}", which is not in its order`);
   for (const { digit, intent } of app.menu) if (!Object.hasOwn(app.intents, intent)) fail(`menu digit "${digit}" has unknown intent "${intent}"`);
+  // The locales the app speaks (core/locale.ts localesOf, written out here: that module reads the registry, which reads this one).
+  const speaks = app.locales ? [app.locales.default, ...Object.keys(app.locales.prompts)] : ['en-US'];
+  for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) if (!speaks.includes(tag)) fail(`voice.numbers starts ${number} in the locale "${tag}", which the app does not speak`);
+  for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {
+    if (!speaks.includes(tag)) fail(`voice.locales names the locale "${tag}", which the app does not speak`);
+    for (const provider of Object.keys(settings.voices ?? {})) if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) fail(`voice.locales.${tag}.voices names the unknown voice provider "${provider}"`);
+    for (const [provider, r] of Object.entries(settings.recognition ?? {})) {
+      if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) fail(`voice.locales.${tag}.recognition names the unknown voice provider "${provider}"`);
+      // The names go into a carrier's start document: a plain name only, as app.yaml's schema requires.
+      for (const field of ['provider', 'model'] as const) {
+        const v = r[field];
+        if (v !== undefined && !RECOGNIZER_NAME.test(v)) fail(`voice.locales.${tag}.recognition.${provider}.${field} "${v}" is not a recognizer name (letters, digits, dots, hyphens and underscores)`);
+      }
+    }
+  }
   for (const [id, def] of Object.entries(app.intents)) {
     if (def.kind === 'form' && !Object.hasOwn(app.forms, id)) fail(`form intent "${id}" has no form`);
-    if (def.kind === 'informational' && !def.promptId && def.passage === undefined) fail(`informational intent "${id}" has no promptId or passage`);
+    if (def.kind === 'informational' && !def.promptId && def.passage === undefined && def.locale === undefined) fail(`informational intent "${id}" has no promptId, passage or locale`);
+    if (def.locale !== undefined) {
+      if (def.kind !== 'informational') fail(`intent "${id}" switches to the locale "${def.locale}", but only an informational intent switches the language`);
+      if (def.passage !== undefined) fail(`informational intent "${id}" switches the language and says a passage: a switch says a prompt`);
+      if (!speaks.includes(def.locale)) fail(`intent "${id}" switches to the locale "${def.locale}", which the app does not speak`);
+    }
     if (def.passage !== undefined) {
       if (def.kind !== 'informational') fail(`intent "${id}" names a passage, but only an informational intent says one`);
       if (def.promptId !== undefined) fail(`informational intent "${id}" has both a promptId and a passage`);

@@ -1,16 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { ANONYMOUS } from '../gate/principal';
-import { VOICE_RELAY } from '../channel/caps';
-import { speechEvent, startEvent } from '../channel/events';
+import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
+import { keyEvents, speechEvent, startEvent, textEvent } from '../channel/events';
 import { registerApp } from '../core/app/registry';
 import { newSession } from '../core/session';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { plan, resolve, type TurnContext, type TurnResult } from '../core/turn';
 import { mockCodeVerifier } from '../core/tools';
-import { spokenText } from '../prompts/render';
+import { promptSay, spokenText } from '../prompts/render';
 import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap, QuestionMap } from '../jev/types';
-import { libraryApp, LibrarySystems } from './fixture/app';
+import { appendFileSync, cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll } from 'vitest';
+import type { Action } from '../channel/actions';
+import { libraryApp, libraryCode, LibrarySystems, LIBRARY_DIR } from './fixture/app';
+import { defineApp } from './defineApp';
 
 /**
  * A whole call to the library line in Spanish (session.start asks for es): the card number said in
@@ -104,5 +110,174 @@ describe('a call in Spanish', () => {
     const hold = say(fresh, 'is my hold for The River Atlas in', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
     const branch = say(hold, 'North', { branch: choice({ north: 0.92, none: 0.08 }) }, t).turn;
     expect(heard(branch)).toBe('Good news, The River Atlas is waiting for you at the North branch. Is there anything else I can help with?');
+  });
+});
+
+describe('the language each line is said in', () => {
+  /** The fixture's Spanish tag, as its locale/ folder names it. */
+  const SPANISH = readdirSync(join(LIBRARY_DIR, 'locale')).find((d) => d.startsWith('es'))!;
+  const langs = (actions: readonly Action[]): Array<string | undefined> => actions.flatMap((a) => (a.type === 'say' ? [a.lang] : []));
+
+  it('says a Spanish call\'s lines in the Spanish tag', () => {
+    const start = resolve(newSession('library-lang-es', 0, VOICE_RELAY, ANONYMOUS, libraryApp.id), startEvent({}, 'es'), null, tc());
+    expect(langs(start.actions).length).toBeGreaterThan(0);
+    expect(new Set(langs(start.actions))).toEqual(new Set([SPANISH]));
+  });
+
+  it('says a line in the language the voice speaks its locale in, where voice.locales names one', () => {
+    const app = { ...libraryApp, voice: { ...libraryApp.voice, locales: { [SPANISH]: { tts: 'es-US', transcription: 'es-MX' } } } };
+    expect(promptSay(app, 'goodbye', {}, false, null, SPANISH).lang).toBe('es-US');
+    expect(promptSay(app, 'goodbye', {}, false, null).lang).toBe('en-US');
+  });
+
+  it('says a call in the default locale in the app\'s locale:', () => {
+    const start = resolve(newSession('library-lang-en', 0, VOICE_RELAY, ANONYMOUS, libraryApp.id), startEvent(), null, tc());
+    expect(new Set(langs(start.actions))).toEqual(new Set([libraryApp.locales!.default]));
+    expect(libraryApp.locales!.default).toBe('en-US');
+  });
+});
+
+describe('switching language mid-call (an informational intent with locale:)', () => {
+  const scratch: string[] = [];
+  afterAll(() => {
+    for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * The library's folder with a `spanish` intent that switches the call to es (key 9 on the menu),
+   * its line in both locales, and `voice` written under app.yaml's voice block; the app's id is `id`.
+   */
+  function switchApp(id: string, voice: string[] = []) {
+    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-switch-'));
+    scratch.push(dir);
+    cpSync(LIBRARY_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+    const appYaml = readFileSync(join(dir, 'app.yaml'), 'utf8').replace('id: library', `id: ${id}`).replace('      spell: lead\n', `      spell: lead\n${voice.map((l) => `${l}\n`).join('')}`);
+    writeFileSync(join(dir, 'app.yaml'), appYaml);
+    const intents = readFileSync(join(dir, 'intents.yaml'), 'utf8')
+      .replace('\nmenu:\n', [
+        '  spanish:',
+        '    kind: informational',
+        '    label: continue in Spanish',
+        '    criteria: The caller asks to continue in Spanish, or says they speak Spanish',
+        '    locale: es',
+        '    promptId: switched_to_spanish',
+        '',
+        'menu:',
+        '  - digit: "9"',
+        '    intent: spanish',
+        '',
+      ].join('\n'));
+    writeFileSync(join(dir, 'intents.yaml'), intents);
+    appendFileSync(join(dir, 'prompts.yaml'), '  switched_to_spanish:\n    text: Of course, we will continue in Spanish.\n    interruptible: false\n');
+    appendFileSync(join(dir, 'locale', 'es', 'prompts.yaml'), '  switched_to_spanish:\n    text: Muy bien, seguimos en español.\n    interruptible: false\n');
+    const app = defineApp(dir, libraryCode);
+    registerApp(app);
+    return app;
+  }
+
+  const plain = switchApp('library-switch');
+  const mexican = switchApp('library-switch-mx', ['  locales:', '    es:', '      tts: es-US', '      transcription: es-MX']);
+  const ASK_INTENT_ES = '¿En qué puedo ayudarle hoy?';
+  const lines = (r: TurnResult) => r.actions.map((a) => (a.type === 'say' ? { lang: a.lang, text: a.parts.map((p) => ('text' in p ? p.text : '')).join(' ') } : a));
+
+  it('switches a voice call to Spanish: set_language first, then the line and the resumed question in Spanish', () => {
+    const t = tc();
+    const start = resolve(newSession('switch-voice', 0, VOICE_RELAY, ANONYMOUS, plain.id), startEvent(), null, t);
+    expect(start.session.locale).toBe('en-US');
+    const switched = say(start, 'can we do this in Spanish', { intent: choice({ spanish: 0.95, none: 0.05 }) }, t).turn;
+    expect(switched.session.locale).toBe('es');
+    expect(lines(switched)).toEqual([
+      { type: 'set_language', tts: 'es', transcription: 'es' },
+      { lang: 'es', text: 'Muy bien, seguimos en español.' },
+      { lang: 'es', text: ASK_INTENT_ES },
+    ]);
+    // The call goes on in Spanish.
+    const loans = say(switched, 'quiero saber qué tengo prestado', { intent: choice({ check_loans: 0.95, none: 0.05 }) }, t).turn;
+    expect(heard(loans)).toBe('Claro, puedo ayudarle a check your loans. ¿Cuál es el número de su tarjeta de la biblioteca?');
+    expect(loans.actions.some((a) => a.type === 'set_language')).toBe(false);
+  });
+
+  it('carries the locale\'s own languages from voice.locales to set_language and the lines', () => {
+    const t = tc();
+    const start = resolve(newSession('switch-mx', 0, VOICE_RELAY, ANONYMOUS, mexican.id), startEvent(), null, t);
+    const switched = say(start, 'en español por favor', { intent: choice({ spanish: 0.95, none: 0.05 }) }, t).turn;
+    expect(lines(switched)).toEqual([
+      { type: 'set_language', tts: 'es-US', transcription: 'es-MX' },
+      { lang: 'es-US', text: 'Muy bien, seguimos en español.' },
+      { lang: 'es-US', text: ASK_INTENT_ES },
+    ]);
+  });
+
+  it('switches on the keypad menu key and after a confirmed unsure reading alike', () => {
+    const t = tc();
+    const start = resolve(newSession('switch-key', 0, VOICE_RELAY, ANONYMOUS, plain.id), startEvent(), null, t);
+    const onMenu = { ...start, session: { ...start.session, menuActive: true } };
+    const key = resolve(onMenu.session, keyEvents('9')[0]!, null, t);
+    expect(key.session.locale).toBe('es');
+    expect(key.actions[0]).toEqual({ type: 'set_language', tts: 'es', transcription: 'es' });
+
+    const unsure = say(start, 'maybe Spanish', { intent: choice({ spanish: 0.5, none: 0.5 }) }, t).turn;
+    expect(unsure.session.locale).toBe('en-US');
+    const said = (r: TurnResult): string => spokenText(plain, r.decision, r.session.locale);
+    expect(said(unsure)).toBe('Just to check, do you want to continue in Spanish? Yes or no.');
+    const yes = say(unsure, 'yes', { confirmsYes: noul(0.95), confirmsNo: noul(0.05) }, t).turn;
+    expect(yes.session.locale).toBe('es');
+    expect(lines(yes)[0]).toEqual({ type: 'set_language', tts: 'es', transcription: 'es' });
+    expect(said(yes)).toBe(`Muy bien, seguimos en español. ${ASK_INTENT_ES}`);
+  });
+
+  it('switches inside a form: the question it was on is asked again in Spanish, and the form goes on', () => {
+    const t = tc();
+    const start = resolve(newSession('switch-form', 0, VOICE_RELAY, ANONYMOUS, plain.id), startEvent(), null, t);
+    const hold = say(start, 'is my hold for The River Atlas in', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
+    expect(spokenText(plain, hold.decision, hold.session.locale)).toBe('Sure, I can help you check a hold. Which branch is the hold at, North or Riverside?');
+    const switched = say(hold, 'can we do this in Spanish', { intent: choice({ spanish: 0.95, none: 0.05 }), intentChange: choice({ answering: 0.05, adding: 0.9, replacing: 0.05 }) }, t).turn;
+    expect(switched.session.locale).toBe('es');
+    expect(lines(switched)).toEqual([
+      { type: 'set_language', tts: 'es', transcription: 'es' },
+      { lang: 'es', text: 'Muy bien, seguimos en español.' },
+      { lang: 'es', text: '¿En qué sucursal está la reserva, Norte o Ribera?' },
+    ]);
+    // The book was heard in English, and is said in Spanish now (its slot's display in es).
+    const branch = say(switched, 'en la sucursal Norte', { branch: choice({ north: 0.92, none: 0.08 }) }, t).turn;
+    expect(lines(branch)).toEqual([
+      { lang: 'es', text: 'Buenas noticias, El atlas del río le espera en la sucursal Norte.' },
+      { lang: 'es', text: '¿Hay algo más en que pueda ayudarle?' },
+    ]);
+  });
+
+  it('says a value heard in the breath that switches in the new language, with every line of the turn', () => {
+    const t = tc();
+    const start = resolve(newSession('switch-breath', 0, VOICE_RELAY, ANONYMOUS, plain.id), startEvent(), null, t);
+    const hold = say(start, 'is my hold for The River Atlas in', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
+    const both = say(hold, 'the North branch, and can we do this in Spanish', {
+      intent: choice({ spanish: 0.95, none: 0.05 }), intentChange: choice({ answering: 0.05, adding: 0.9, replacing: 0.05 }), branch: choice({ north: 0.92, none: 0.08 }),
+    }, t).turn;
+    expect(both.session.locale).toBe('es');
+    expect(both.session.slots.branch?.display).toBe('Norte');
+    expect(lines(both)[0]).toEqual({ type: 'set_language', tts: 'es', transcription: 'es' });
+    expect(lines(both).slice(1).map((l) => ('text' in l ? l.text : l))).toEqual([
+      'Muy bien, seguimos en español.',
+      'Buenas noticias, El atlas del río le espera en la sucursal Norte.',
+      '¿Hay algo más en que pueda ayudarle?',
+    ]);
+  });
+
+  it('switches a chat\'s lines to Spanish without set_language', () => {
+    const t = tc();
+    const start = resolve(newSession('switch-chat', 0, WEB_CHAT, ANONYMOUS, plain.id), startEvent(), null, t);
+    const event = textEvent('can we do this in Spanish');
+    const switched = resolve(start.session, event, { ...BASE, intent: choice({ spanish: 0.95, none: 0.05 }) }, t);
+    expect(switched.session.locale).toBe('es');
+    expect(switched.actions.some((a) => a.type === 'set_language')).toBe(false);
+    expect(lines(switched)).toEqual([{ lang: 'es', text: 'Muy bien, seguimos en español.' }, { lang: 'es', text: ASK_INTENT_ES }]);
+  });
+
+  it('says the line and changes nothing else when the call is already in that language', () => {
+    const t = tc();
+    const start = resolve(newSession('switch-already', 0, VOICE_RELAY, ANONYMOUS, plain.id), startEvent({}, 'es'), null, t);
+    const again = say(start, 'en español', { intent: choice({ spanish: 0.95, none: 0.05 }) }, t).turn;
+    expect(again.session.locale).toBe('es');
+    expect(lines(again)).toEqual([{ lang: 'es', text: 'Muy bien, seguimos en español.' }, { lang: 'es', text: ASK_INTENT_ES }]);
   });
 });

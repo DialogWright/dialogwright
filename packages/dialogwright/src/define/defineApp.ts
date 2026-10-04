@@ -1,6 +1,6 @@
 import type {
   App, AppBrand, AppLocales, ConsoleConfig, FormDef, FormId, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
-  PromptManifestEntry, RoleAccess, SlotId, SpokenDigitRule, ToolDef, ToolName, VoiceConfig,
+  PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale,
 } from '../core/app/types';
 import { SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
@@ -27,6 +27,7 @@ import { defaultRetriever } from '../kb/hybrid';
 import { warnFallback } from '../kb/fallback';
 import { KB_ANSWER_PROMPT, KB_UNAVAILABLE_PROMPT, kbCompletion } from '../kb/answer';
 import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
+import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -267,6 +268,11 @@ function withLocaleWording(linked: LinkedSlots, config: LoadedConfig, types: Slo
   return { ...linked, slots, problems: [...linked.problems, ...problems] };
 }
 
+/** "a", "a or b", "a, b or c". */
+function orList(items: readonly string[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(', ')} or ${items.at(-1)!}` : items.join('');
+}
+
 /** ", or rename it to "x"" when a known name is close enough to be what was meant. */
 function renameHint(word: string, known: readonly string[]): string {
   const guess = closest(word, known);
@@ -321,8 +327,15 @@ export function crossLink(
     }
   };
 
+  /** A locale the folder names (an intent's switch, app.yaml's voice) that is not one the app speaks. */
+  const appLocales = [config.defaultLocale, ...Object.keys(config.prompts).filter((l) => l !== config.defaultLocale)];
+  const localeNamed = (file: string, path: DataPath, tag: string, atKey = false): void => {
+    if (!appLocales.includes(tag)) yaml(file, path, `"${tag}" is not a locale of this app`, `add locale/${tag}/ or use one of ${appLocales.join(', ')}`, atKey);
+  };
+
   // intents.yaml
   for (const [id, def] of Object.entries(intents)) {
+    if (def.locale !== undefined) localeNamed('intents.yaml', ['intents', id, 'locale'], def.locale);
     if (def.kind === 'form' && !has(forms, id)) {
       yaml('intents.yaml', ['intents', id], `intent "${id}" is a form intent, but forms.yaml has no form "${id}"`, `add "${id}:" under forms in forms.yaml (its slots, summaryPromptId and hooks), or change this intent's kind`);
     }
@@ -575,6 +588,19 @@ export function crossLink(
     }
   }
 
+  // app.yaml's voice: every locale it names is one the app speaks, and every carrier one the engine knows.
+  for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) localeNamed('app.yaml', ['voice', 'numbers', number], tag);
+  for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {
+    localeNamed('app.yaml', ['voice', 'locales', tag], tag, true);
+    for (const key of ['voices', 'recognition'] as const) {
+      for (const provider of Object.keys(settings[key] ?? {})) {
+        if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) {
+          yaml('app.yaml', ['voice', 'locales', tag, key, provider], `unknown voice provider "${provider}"`, `${renameHint(provider, VOICE_PROVIDER_IDS)}use ${orList(VOICE_PROVIDER_IDS)}`, true);
+        }
+      }
+    }
+  }
+
   // The code alone
   for (const [id, spec] of Object.entries(code.slots ?? {})) {
     if (spec?.id !== id) inTs(['slots', id], `the slot spec filed under "${id}" has the id "${String(spec?.id)}"`, `file it under ${codePath('slots', String(spec?.id))}, or give it the id "${id}"`);
@@ -713,6 +739,7 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
   const intent: IntentDef = { criteria: def.criteria, label: def.label, kind: def.kind };
   put(intent, 'promptId', def.promptId);
   put(intent, 'passage', def.passage);
+  put(intent, 'locale', def.locale);
   put(intent, 'unsure', def.unsure);
   return intent;
 }
@@ -734,9 +761,24 @@ function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks |
 }
 
 function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {
-  const config: { hints?: readonly string[]; spokenDigits?: readonly SpokenDigitRule[] } = {};
+  const config: { -readonly [K in keyof VoiceConfig]: VoiceConfig[K] } = {};
   put(config, 'hints', voice.hints);
   put(config, 'spokenDigits', voice.spokenDigits?.map(({ pattern, spell }) => ({ pattern: new RegExp(pattern, 'g'), spell })));
+  put(config, 'numbers', voice.numbers);
+  put(config, 'locales', voice.locales === undefined ? undefined : Object.fromEntries(Object.entries(voice.locales).map(([tag, l]) => {
+    const one: { -readonly [K in keyof VoiceLocale]: VoiceLocale[K] } = {};
+    put(one, 'tts', l.tts);
+    put(one, 'transcription', l.transcription);
+    put(one, 'voices', l.voices);
+    put(one, 'hints', l.hints);
+    put(one, 'recognition', l.recognition === undefined ? undefined : Object.fromEntries(Object.entries(l.recognition).map(([provider, r]) => {
+      const each: { -readonly [K in keyof Recognition]: Recognition[K] } = {};
+      put(each, 'provider', r.provider);
+      put(each, 'model', r.model);
+      return [provider, each];
+    })));
+    return [tag, one];
+  })));
   return config;
 }
 
