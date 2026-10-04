@@ -2211,7 +2211,7 @@ pnpm configure --app utility --mode try
 pnpm start --app utility
 ```
 
-`pnpm configure` asks which app and whether to try it on this computer or make a phone line (the flags above answer both). Trying it writes `apps/utility/.env` with the server on `localhost`, the web chat and its widget on, and no model (`JEV_CLIENT=heuristic`: the app understands by its own labelled examples and keywords, enough to walk every path). `pnpm start` runs the server with that file and no tunnel, since `PUBLIC_HOST` is `localhost`. Open `http://localhost:3000/dashboard`, the console, to watch each call and chat, and, for an app with a chat page (the utility's is `/chat-demo`), the page with the widget on it. Both answer only on this machine. With no server at all, `pnpm --filter <app> cli --client heuristic` is a text console.
+`pnpm configure` asks which app and whether to try it on this computer or make a phone line (the flags above answer both). Trying it writes `apps/utility/.env` with the server on `localhost`, the web chat on (and its widget, once it is built with `pnpm --filter @dialogwright/widget build`), and no model (`JEV_CLIENT=heuristic`: the app understands by its own labelled examples and keywords, enough to walk every path). `pnpm start` runs the server with that file and no tunnel, since `PUBLIC_HOST` is `localhost`. Open `http://localhost:3000/dashboard`, the console, to watch each call and chat, and, for an app with a chat page (the utility's is `/chat-demo`), the page with the widget on it. Both answer only on this machine. With no server at all, `pnpm --filter <app> cli --client heuristic` is a text console.
 
 ### 14.2 A phone line: configure
 
