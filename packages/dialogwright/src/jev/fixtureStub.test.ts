@@ -214,7 +214,22 @@ describe('a text slot\'s pick, answered from a corpus label naming the part', ()
   });
 
   it('throws, naming the entry, on a part the question does not offer', async () => {
-    await expect(ask({ placeGiven: true, placePick: 'Alder Street' })).rejects.toThrow(/corpus pk: label "Alder Street" for placePick is not one the question offers \(a, b, c, d, e, none\)/);
+    await expect(ask({ placeGiven: true, placePick: 'Alder Street' })).rejects.toThrow(
+      'corpus pk: label "Alder Street" for placePick is not one the question offers (a, b, c, d, e, none), nor the words of one: '
+        + 'a "the power is out at 22 Alder Street", b "22 Alder Street", c "nothing works", d "the power is out at 22 Alder Street and nothing works", '
+        + 'e "22 Alder Street and nothing works", none "None of these is the street address"',
+    );
+  });
+
+  it('prefers the part as said, and throws, naming the letters, on words that name two parts but for case', async () => {
+    const said = 'Elm Park and elm park';
+    const at = (label: string) =>
+      new FixtureStubClient([{ id: 'ep', text: said, intent: 'none', context: 'no_form', labels: { placeGiven: true, placePick: label } }], { sharpness: 0.9, fallback: new HeuristicStubClient({ app: null }), app: null })
+        .ask({ state: { asr: { text: said } } as never, questions: place.questions(testSlotContext(said)) });
+    expect(place.questions(testSlotContext(said)).placePick).toMatchObject({ criteria: { a: 'Elm Park', b: 'elm park', c: said } });
+    expect((await at('elm park')).answers.placePick).toMatchObject({ choice: 'b' });
+    expect((await at('Elm Park')).answers.placePick).toMatchObject({ choice: 'a' });
+    await expect(at('ELM PARK')).rejects.toThrow('corpus ep: label "ELM PARK" for placePick names the words of more than one choice (a, b); write them as said, or the letter');
   });
 
   it('the heuristic client answers none, so the value is the whole words', async () => {
