@@ -97,6 +97,11 @@ describe('pnpm console:link', () => {
     expect(await s.run([], { CONSOLE_LINK_FILE: 'private/link.json' })).toBe(0);
   });
 
+  it('is the workspace\'s pnpm console:link', () => {
+    const root = JSON.parse(readFileSync(new URL('../../../../../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> };
+    expect(root.scripts['console:link']).toBe('tsx packages/dialogwright/src/server/console/linkCli.ts');
+  });
+
   it('answers a command line it does not understand with its usage', async () => {
     const s = await setup('', false);
     expect(await s.run(['--rotate'])).toBe(2);
