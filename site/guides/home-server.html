@@ -136,8 +136,9 @@ pnpm start --app utility</code></pre>
           says where to paste the webhook in the carrier's console. <code>pnpm start</code> opens a Cloudflare quick tunnel,
           which needs no account, starts the server with the tunnel's hostname, and prints the webhook URL
           (<code>https://&lt;words&gt;.trycloudflare.com/voice/telnyx</code>): paste it into your number
-          (<a href="#carrier">section 7</a>) and call. While it runs, <code>pnpm diagnose --app utility</code> in another
-          terminal checks it end to end (<a href="#checking">section 8</a>).
+          (<a href="#carrier">section 7</a>) and call. It also prints a <code>pnpm diagnose</code> line with the tunnel's
+          hostname: run it in another terminal while the server runs, and it checks the line end to end
+          (<a href="#checking">section 8</a>).
         </p>
         <p>
           The hostname changes every time <code>pnpm start</code> runs, so the webhook does too: fine for an evening, wrong for a
@@ -373,12 +374,14 @@ chmod 700 ~/ivr</code></pre>
       <section id="configuration" aria-labelledby="configuration-title">
         <h2 id="configuration-title">5. Configuration</h2>
         <p>
-          The server reads its environment and, when <code>ENV_FILE</code> (or <code>--env-file &lt;path&gt;</code>) names one,
-          a settings file; a variable already in the environment wins over the file. <code>pnpm configure</code> writes one in
-          the app's folder. For a line that stays up, keep it outside the repository instead, in <code>~/ivr/myline.env</code>,
-          readable by you alone, and name it: <code>pnpm start --env-file ~/ivr/myline.env</code> and
-          <code>pnpm diagnose --env-file ~/ivr/myline.env</code> read it, and the service file (<a href="#running">section 9</a>)
-          names it the same way. Write it by hand from the example below, or move the one <code>pnpm configure</code> wrote
+          The server reads its environment and, when <code>ENV_FILE</code> names one, a settings file; a variable already in
+          the environment wins over the file. <code>pnpm configure</code> writes one in the app's folder. For a line that stays
+          up, keep it outside the repository instead, in <code>~/ivr/myline.env</code>, readable by you alone, and name it:
+          <code>ENV_FILE=~/ivr/myline.env pnpm start --app myline</code> and
+          <code>ENV_FILE=~/ivr/myline.env pnpm diagnose --app myline</code> read it, and the service file
+          (<a href="#running">section 9</a>) names it the same way. (<code>--env-file &lt;path&gt;</code> works too where pnpm
+          passes it on, but some pnpm builds read a <code>--env-file</code> themselves, and fail on a relative path before the
+          command starts, so <code>ENV_FILE=</code> is the form to use.) Write it by hand from the example below, or move the one <code>pnpm configure</code> wrote
           (<code>mv apps/myline/.env ~/ivr/myline.env</code>). The values below are made up. The variables, their defaults and their checks
           are the server's own (<code>packages/dialogwright/src/server/config.ts</code>): it refuses to start, naming the
           variable, when one is missing or malformed.
@@ -655,9 +658,11 @@ curl -s https://ivr.example.com/health</code></pre>
             <p>Or let <code>pnpm diagnose</code> check all of it, and more, one line each with its fix: the settings load, the
               hostname resolves and <code>/health</code> answers through the tunnel, the console is a 404 there, the carrier's
               secret has its shape, the model and its key variable, the handoff number is not a 555 number, the folders can be
-              written with space to spare, and the clock is right (Telnyx refuses a webhook whose signature is more than five
-              minutes off). It calls no carrier and no model.</p>
-<pre data-copy><code>cd ~/dialogwright &amp;&amp; pnpm diagnose --app myline --env-file ~/ivr/myline.env</code></pre>
+              written with space to spare, the settings file is yours alone, and the clock is right against the carrier's (Telnyx
+              refuses a webhook whose signature is more than five minutes off). It sends no key anywhere and calls no carrier or
+              model API: its requests are to your own hostname, and one <code>HEAD</code> to the carrier's API host to read the
+              time it answers with.</p>
+<pre data-copy><code>cd ~/dialogwright &amp;&amp; ENV_FILE=~/ivr/myline.env pnpm diagnose --app myline</code></pre>
           </li>
           <li>
             <p>The console is not public. This prints <code>404</code>:</p>
@@ -700,14 +705,15 @@ cd ~/dialogwright &amp;&amp; pnpm audit:verify ~/ivr/data/audit</code></pre>
         <p>
           A stop sends SIGTERM to pnpm, which passes it to the server and waits. The server drains: <code>/ready</code> answers
           503, a new call is put through to <code>HANDOFF_NUMBER</code>, a new chat is told it is busy, and live calls go on
-          until they end or <code>DRAIN_MS</code> passes (30 seconds by default); then it closes what is left and exits. The
-          service gives a stop <code>DRAIN_MS</code> and ten seconds more before it kills anything. A second signal stops the
-          server at once. A crash is logged with its stack and exits 1, and the service manager starts it again.
+          until they end or <code>DRAIN_MS</code> passes (30 seconds by default); a call still going then is put through to
+          <code>HANDOFF_NUMBER</code>, and the server exits. The service gives a stop <code>DRAIN_MS</code> and ten seconds more
+          before it kills anything. A second signal stops the server at once. A crash is logged with its stack and exits 1
+          after a short close, and the service manager starts it again.
         </p>
 
         <h3>macOS: a launchd agent</h3>
 <pre data-copy><code>cd ~/dialogwright
-pnpm service launchd --app myline --env-file ~/ivr/myline.env --label com.example.myline</code></pre>
+ENV_FILE=~/ivr/myline.env pnpm service launchd --app myline --label com.example.myline</code></pre>
         <p>It writes <code>~/Library/LaunchAgents/com.example.myline.plist</code> from this template, its values filled in:</p>
         <figure>
           <figcaption><code>packages/dialogwright/templates/service/launchd.plist</code></figcaption>
@@ -773,7 +779,7 @@ launchctl bootout gui/$(id -u)/com.example.myline                               
 
         <h3>Linux: a systemd user unit</h3>
 <pre data-copy><code>cd ~/dialogwright
-pnpm service systemd --app myline --env-file ~/ivr/myline.env --label myline</code></pre>
+ENV_FILE=~/ivr/myline.env pnpm service systemd --app myline --label myline</code></pre>
         <p>It writes <code>~/.config/systemd/user/myline.service</code> from this template:</p>
         <figure>
           <figcaption><code>packages/dialogwright/templates/service/systemd.service</code></figcaption>
@@ -801,10 +807,15 @@ TimeoutStopSec={{stopSeconds}}
 [Install]
 WantedBy=default.target</code></pre>
         </figure>
-        <p>and prints:</p>
+        <p>
+          and prints the commands below. A systemd user service runs only while you are logged in: systemd starts it at your
+          first login and stops it when your last session ends, an ssh session too. For a line that starts at boot and stays
+          up with no one logged in, turn on lingering for your user once, with <code>loginctl enable-linger</code> (some systems
+          ask for sudo; <code>loginctl show-user "$USER" --property=Linger</code> says <code>yes</code> when it is on).
+        </p>
 <pre data-copy><code>systemctl --user daemon-reload
 systemctl --user enable --now myline   # start now, and at every login
-loginctl enable-linger "$USER"         # and at boot, before anyone logs in
+loginctl enable-linger "$USER"         # and at boot, with no one logged in (once)
 systemctl --user status myline         # running or not
 journalctl --user -u myline -f         # its output
 systemctl --user restart myline        # restart: live calls get DRAIN_MS to finish
@@ -817,7 +828,7 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
         <p>
           On either system, a wrong setting shows as a restart every ten seconds, with the variable named in the output
           (<code>missing required environment variable TELNYX_PUBLIC_KEY (VOICE_PROVIDERS includes telnyx)</code>):
-          run <code>pnpm diagnose --env-file ~/ivr/myline.env</code> first.
+          run <code>ENV_FILE=~/ivr/myline.env pnpm diagnose --app myline</code> first.
         </p>
       </section>
 
@@ -827,8 +838,9 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
         <p>
           DialogWright is pre-release and its APIs change, so update on purpose, and note the commit you last ran well
           (<code>git rev-parse --short HEAD</code>) so you can go back. An update restarts the server: it stops taking new calls
-          and gives live ones <code>DRAIN_MS</code> to finish, but a call still going after that is dropped (the server does not
-          keep its calls across a restart yet), so check <code>/health</code> says <code>"sessions":0</code> first.
+          and gives live ones <code>DRAIN_MS</code> to finish, but a call still going after that is put through to
+          <code>HANDOFF_NUMBER</code> rather than carried on (the server does not keep its calls across a restart yet), so check
+          <code>/health</code> says <code>"sessions":0</code> first.
         </p>
 <pre data-copy><code>cd ~/dialogwright
 git pull

@@ -124,7 +124,7 @@ Where the decision model reads a corpus line differently from its label and the 
 
 ## Running it
 
-`pnpm --filter @dialogwright/example-utility serve` starts the phone line and the operator console. It needs `PUBLIC_HOST`, `TWILIO_AUTH_TOKEN` and `HANDOFF_NUMBER` (a 555 number is fine for local use; see `.env.example`), and runs on the stub client unless `JEV_CLIENT` says otherwise. It reads a settings file when `ENV_FILE` (or `--env-file <path>`) names one, such as this folder's `.env`; a variable already in the environment wins over the file. At the repository root, `pnpm configure --app utility` asks and writes this folder's `.env` (mode 600), and `pnpm start --app utility` runs the server with it, through a quick tunnel when `PUBLIC_HOST` is unset.
+`pnpm --filter @dialogwright/example-utility serve` starts the phone line and the operator console. It needs `PUBLIC_HOST`, `TWILIO_AUTH_TOKEN` and `HANDOFF_NUMBER` (a 555 number is fine for local use; see `.env.example`), and runs on the stub client unless `JEV_CLIENT` says otherwise. It reads a settings file when `ENV_FILE=<path>` names one, such as this folder's `.env`; a variable already in the environment wins over the file. At the repository root, `pnpm configure --app utility` asks and writes this folder's `.env` (mode 600), and `pnpm start --app utility` runs the server with it, through a quick tunnel when `PUBLIC_HOST` is unset.
 
 ## Try the web chat on your laptop
 

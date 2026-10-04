@@ -80,7 +80,7 @@ PORT=3200 PUBLIC_HOST=clinic.example.test TWILIO_AUTH_TOKEN=x HANDOFF_NUMBER=+15
   HANDOFF_SUMMARY=off CONSOLE_LOCAL_ONLY=off pnpm --filter @dialogwright/example-clinic serve
 ```
 
-The operator console is then at `http://localhost:3200/dashboard`, branded for the practice. The server also reads a settings file when `ENV_FILE` (or `--env-file <path>`) names one: `ENV_FILE=$PWD/apps/clinic/.env pnpm --filter @dialogwright/example-clinic serve`. A variable already in the environment wins over the file. `pnpm configure --app clinic` asks and writes that file (mode 600), and `pnpm start --app clinic` runs the server with it, through a quick tunnel when `PUBLIC_HOST` is unset.
+The operator console is then at `http://localhost:3200/dashboard`, branded for the practice. The server also reads a settings file when `ENV_FILE=<path>` names one: `ENV_FILE=$PWD/apps/clinic/.env pnpm --filter @dialogwright/example-clinic serve`. A variable already in the environment wins over the file. `pnpm configure --app clinic` asks and writes that file (mode 600), and `pnpm start --app clinic` runs the server with it, through a quick tunnel when `PUBLIC_HOST` is unset.
 
 ## Recording the cassette
 
