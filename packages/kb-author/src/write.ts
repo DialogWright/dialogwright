@@ -21,10 +21,20 @@ import { distinct, type ExtractedSection } from './sections';
  *   folding, and nothing taken from the clock but the date.
  */
 
+/** The settings of the crawl that read a page, kept in its provenance so a refresh can crawl the same way. */
+export interface CrawlProvenance {
+  start: string;
+  depth: number;
+  include?: string[];
+  allowHosts?: string[];
+  maxPages?: number;
+  rateMs?: number;
+}
+
 /** A document read, ready to be written. */
 export interface SourceInput {
-  /** Where it came from: its URL, or its file's path from the app folder (forward slashes). */
-  provenance: { url: string } | { file: string };
+  /** Where it came from: its URL (and the crawl that read it), or its file's path from the app folder (forward slashes). */
+  provenance: { url: string; crawl?: CrawlProvenance } | { file: string };
   /** Its title. */
   title: string;
   /** Its id when no source file already has its provenance: a slug of its path. */
@@ -68,7 +78,7 @@ export const MAX_SOURCE_BYTES = 1024 * 1024;
 export interface Existing {
   id: string;
   key: string | undefined;
-  data: { document?: unknown; provenance?: { url?: unknown; file?: unknown; retrieved?: unknown }; sections?: Record<string, { heading?: unknown; text?: unknown; page?: unknown; lastPage?: unknown }> } | null;
+  data: { document?: unknown; provenance?: { url?: unknown; file?: unknown; retrieved?: unknown; crawl?: unknown }; sections?: Record<string, { heading?: unknown; text?: unknown; page?: unknown; lastPage?: unknown }> } | null;
 }
 
 /** A provenance as one string, to compare. */
@@ -131,6 +141,13 @@ function sectionChanges(previous: Existing['data'], next: readonly ExtractedSect
   return out;
 }
 
+/** A value as JSON with its keys sorted, to compare. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value !== null && typeof value === 'object') return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
 /** Plans the writing of `inputs` into `sourcesDir`: each document's id, status, section changes and text. Nothing is written. */
 export function planSources(inputs: readonly SourceInput[], options: { sourcesDir: string; today: string }): DocumentChange[] {
   const existing = existingSources(options.sourcesDir);
@@ -153,7 +170,9 @@ export function planSources(inputs: readonly SourceInput[], options: { sourcesDi
     const previous = mine && mine.id === id ? mine.data : null;
     const sections = sectionChanges(previous, input.sections);
     const sameOrder = previous?.sections !== undefined && Object.keys(previous.sections).join('\n') === input.sections.map((s) => s.id).join('\n');
-    const same = previous !== null && previous.document === input.title && sameOrder && sections.every((s) => s.status === 'unchanged');
+    const { retrieved: _retrieved, ...before } = previous?.provenance ?? {};
+    const sameProvenance = canonical(before) === canonical(input.provenance);
+    const same = previous !== null && previous.document === input.title && sameOrder && sameProvenance && sections.every((s) => s.status === 'unchanged');
     const change: DocumentChange = { id, file: `sources/${id}.yaml`, title: input.title, provenance: input.provenance, status: previous === null ? 'added' : same ? 'unchanged' : 'changed', sections };
     if (change.status === 'unchanged') return change;
     const yaml = sourceYaml({ title: input.title, provenance: input.provenance, retrieved: options.today, sections: input.sections }, schemaPath);

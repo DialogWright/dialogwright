@@ -4,7 +4,7 @@ import { crawl, type CrawlOptions, type CrawlResult } from './crawl/crawl';
 import { hostOf } from './crawl/url';
 import { EXTENSIONS, extract, formatOfName } from './extract/index';
 import { slugOf } from './sections';
-import { existingSources, planSources, writeSources, type DocumentChange, type SourceInput } from './write';
+import { existingSources, planSources, writeSources, type CrawlProvenance, type DocumentChange, type SourceInput } from './write';
 
 /**
  * `kb:ingest`'s work: read a folder, a file or a website into sections (./extract, ./crawl), and
@@ -158,6 +158,16 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
     const startHost = hostOf(result.requests[0]?.url ?? options.input);
     const hosts = new Set([startHost, ...(options.crawl.allowHosts ?? []).map((h) => h.toLowerCase())]);
     inputs = [];
+    // The crawl's settings, kept with each page so kb:refresh can crawl the same way.
+    const c = options.crawl;
+    const crawled: CrawlProvenance = {
+      start: options.input,
+      depth: c.depth,
+      ...(c.include && c.include.length > 0 ? { include: [...c.include] } : {}),
+      ...(c.allowHosts && c.allowHosts.length > 0 ? { allowHosts: [...c.allowHosts] } : {}),
+      ...(c.maxPages !== undefined ? { maxPages: c.maxPages } : {}),
+      ...(c.rateMs !== undefined ? { rateMs: c.rateMs } : {}),
+    };
     const skipped: IngestReport['skipped'] = result.skipped.map((s) => ({ what: s.url, reason: s.reason }));
     for (const d of result.documents) {
       if (d.document.sections.length === 0) {
@@ -166,7 +176,7 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
       }
       const u = new URL(d.url);
       const name = u.pathname.split('/').filter(Boolean).pop() ?? u.host;
-      inputs.push({ provenance: { url: d.url }, title: d.document.title ?? titleFromName(name.replace(/\.[^.]*$/, '')), ...idsOfUrl(d.url, startHost), sections: d.document.sections });
+      inputs.push({ provenance: { url: d.url, crawl: crawled }, title: d.document.title ?? titleFromName(name.replace(/\.[^.]*$/, '')), ...idsOfUrl(d.url, startHost), sections: d.document.sections });
     }
     report = { input: options.input, kind: 'site', documents: [], skipped, notSeen: [], crawl: { requests: result.requests, robots: result.robots } };
     mine = (p) => {

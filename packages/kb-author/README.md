@@ -2,7 +2,12 @@
 
 Builds a DialogWright knowledge base from documents. This package is for authoring only: an app never imports it, and the runtime package (`dialogwright`) carries none of its dependencies.
 
-It reads the sources: a folder of PDF, DOCX, HTML, Markdown and text files, or a website crawled politely to a link depth. Each document becomes `kb/sources/<doc>.yaml`, its text by section with where it came from, which is what a passage is approved against. Drafting passages from the sources, reviewing them and refreshing the sources follow in the same package.
+It is a pipeline of four commands:
+
+1. **`pnpm kb:ingest`** reads the sources: a folder of PDF, DOCX, HTML, Markdown and text files, or a website crawled politely to a link depth. Each document becomes `kb/sources/<doc>.yaml`, its text by section with where it came from, which is what a passage is approved against.
+2. **`pnpm kb:draft`** gives the sections to a drafter (Claude, with your own key; a fake in tests), checks every draft it proposes, and writes those that pass to `kb/pending`, which is never said.
+3. **`pnpm kb:review`** serves a review page on this machine, where a person approves, edits then approves, or rejects each draft, and accepts or merges each topic a draft proposes.
+4. **`pnpm kb:refresh`** reads every source again; a passage whose section changed is withheld until a person approves it again in the review page.
 
 ## Ingesting
 
@@ -67,6 +72,74 @@ A folder is read recursively in name order. Hidden entries and `node_modules` ar
 
 A crawled page's id is the slug of its URL path (`/services/hours.html` is `services-hours`, `/` is `index`), with its host first when it is not the start's.
 
+A crawled page's provenance keeps the crawl's settings (`crawl: { start, depth, include, allowHosts, maxPages, rateMs }`, those given), so `kb:refresh` crawls the same way.
+
+## Drafting
+
+```sh
+pnpm kb:draft [app folder] [--source <doc>]... [--topic-hint "<what to cover>"]... [--model <id>] [--all] [--dry-run] [--json]
+```
+
+A drafter is pluggable: `{ id, draft({ source, existingTopics, locale, maxAnswerChars, applies, topicHints }): Promise<Draft[]> }`, where a `Draft` is `{ topic, answer, excerpt, section, applies?, effective? }` and `topic` is a topic id `topics.yaml` has, or a new topic proposed as `{ id, title, keywords?, asks? }`. kb:draft gives it, document by document, the sections nothing cites yet (no passage, pending draft or rejected draft; `--all` for every section), with the knowledge base's topics (and those already proposed), its language, `maxAnswerChars` and `applies`.
+
+- **The Claude drafter** (`ClaudeDrafter`) calls the Messages API with Node's fetch (no SDK), asking for JSON held to a schema (structured outputs). Its default model is `claude-haiku-4-5`; `--model` takes another (`claude-sonnet-5-5`). The prompt asks for one or two short spoken sentences within `maxAnswerChars`, each with the words of its section that support it copied exactly, no variables, and nothing the document does not say. A long document is sent in parts of whole sections. The key is read from `ANTHROPIC_API_KEY` when a request is made (kb:draft loads `.env` from where it is run when the variable is not set), sent only in the `x-api-key` header, and never logged or written; an error from the API is reported without it. Drafted passages record `drafted.by: kb:draft claude <model>`.
+- **It never runs in CI**: kb:draft refuses when `CI` is set. No test makes a real call; the one live test is skipped unless `ANTHROPIC_API_KEY` is set and `DIALOGWRIGHT_LIVE_DRAFT=1`.
+- **Every draft is checked** before it is written, and a draft that fails is reported with why and never written:
+
+| Check | Refused as |
+| --- | --- |
+| the section is in the source | `section "9.9" is not a section of kb/sources/patron-guide.yaml` |
+| the excerpt is there, word for word (whitespace aside) | `its excerpt is not in kb/sources/patron-guide.yaml section "3.1" word for word` |
+| the answer is short | `its answer is 487 characters, over the 400 kb.yaml allows (maxAnswerChars): a spoken answer is one or two short sentences` |
+| the answer is fixed text | `its answer has a brace: an answer is fixed text, said word for word, with no variables` |
+| the topic is an id, and a new one has a title | `its topic "room_hire" is not in kb/topics.yaml, and it proposes no title for a new one` |
+| applies and dates are ones kb.yaml allows | `its applies gives card "senior", which kb.yaml's applies does not list for card (adult, junior)` |
+| it is not a repeat | `it repeats the answer of the passage "opening-hours"` |
+
+- A draft that passes is written to `kb/pending/<id>.yaml` (its id from its topic and applies, made distinct), in dialogwright's draft format: the passage's fields, `effective.from` the day it was drafted unless the source gives dates, and `drafted: { by, on, excerpt }`. A topic it proposes is added to `kb/pending/topics.yaml` (topics.yaml's format), never to `topics.yaml`; `pnpm check` and the engine never read either.
+
+## Reviewing
+
+```sh
+pnpm kb:review [app folder] [--port N]
+```
+
+It starts a small server and prints its URL. The page lists the proposed topics, the drafts waiting and the passages withheld (their source changed, they were edited, or never approved). A draft is shown beside its source section with its excerpt marked; a passage withheld after its source changed, beside a word diff of the section as it was approved against the section now. The page asks once who is reviewing (a person's name, which kb:approve's own check holds to, and the team that owns the content), then offers:
+
+- **Approve**: dialogwright's kb:approve itself (`--by` the reviewer, `--owner` the team for a draft; a passage keeps its owner).
+- **Edit, then approve**: the answer, `applies`, the dates, and a draft's excerpt. The edit is checked as kb:draft checks a draft, and the excerpt must still be in the section word for word; a refused edit or approval leaves the file as it was.
+- **Reject** (a draft): it moves to `kb/rejected/<id>.yaml` with `rejected: { by, on, reason }`, a record kept in the repository; kb:draft passes over the sections a rejected draft cites.
+- **A proposed topic**: accept it into `topics.yaml` (renamed if you give another id; the drafts that name it follow) or merge it into a topic `topics.yaml` has (its drafts re-pointed). A draft of a proposed topic is approved after its topic. When `kb.yaml` names an embedder, run `pnpm kb:index` after accepting topics.
+
+Its access, and why it is not in the operator console: the console has no access control until Phase 8, and its tunnel carries the public's requests, so the review page is a separate local server instead.
+
+- It listens on 127.0.0.1 alone (a free port unless `--port`) and answers only a loopback peer whose `Host` is that address and port (so a page elsewhere cannot reach it through a name that resolves to 127.0.0.1).
+- A random 32-byte token, new each time it starts, is in the URL it prints. Every request, reading or writing, must carry it (the `token` query parameter, a form's `token` field, or an `x-review-token` header), compared in constant time; without it the answer is 403. A change must be a form POST, and from the page itself when the browser sends an Origin.
+- Its pages load nothing from anywhere else (a Content-Security-Policy with a nonce for its one style and one script), are not cached, send no Referer and cannot be framed. They read without JavaScript, and the actions are plain forms (the script only asks before a reject). Every field has a label, there is a skip link, and the diff and the excerpt are announced to a screen reader.
+
+**The approved text, for the diff.** An approval hashes its section's text; to show what changed, kb:approve now also keeps that text in its `kb/approvals.jsonl` line (`sourceText`). The review page takes the last line for the passage whose `sourceHash` is the passage's approval's, so the text is the one approved, checked by its hash, from a log that is only appended to and is committed with the knowledge base. A passage approved before this has no text kept, and the page says to read the source's git history instead.
+
+## Refreshing
+
+```sh
+pnpm kb:refresh [app folder] [--dry-run] [--json]
+```
+
+It reads every source in `kb/sources` again from its provenance: a file from the app folder, a crawled page through its crawl (once per crawl, with the settings recorded), a page with no crawl recorded on its own. It writes the documents that changed, and nothing else, then reports:
+
+```
+kb:refresh kb: 2 reads (1 document): 0 added, 1 changed, 0 unchanged
+  changed   faq: ~ borrowing/lost-cards
+  not read  patron-guide: its file patron-guide.pdf is not there (the source is left as it is)
+withheld, their section changed (1): callers are not given them until a person approves them again
+  lost-cards  lost_cards  kb/sources/faq.yaml section "borrowing/lost-cards"
+sections no passage or draft cites (4): draft them with pnpm kb:draft --source faq
+  faq: intro, borrowing, borrowing/how-long-can-i-keep-a-book, borrowing/returns
+next: pnpm kb:review shows each withheld passage beside what changed in its section
+```
+
+A passage whose section changed is withheld by the engine itself (its approval's `sourceHash` no longer matches); one whose section is gone is withheld and listed apart, to point at the section that says it now or delete. A source written by hand, or whose file is gone, is left as it is. Exit codes: 0 done, 1 a source that could not be read again because of an error, 2 a command line not understood.
+
 ## Determinism and re-ingesting
 
 The same input gives the same bytes: sections in document order, keys in a fixed order, no line folding, nothing from the clock but the date. A document whose title, provenance and sections (ids, order, headings, and text hashes) are unchanged is not rewritten, so its file and its `retrieved` date stay as they were; a changed document is written with today's date. A document keeps its id from run to run by its provenance; a new one whose slug another document has takes the slug with its extension (`faq-md`), then a number. A source file with other provenance, or none (written by hand), is never overwritten. Sources from the same folder or host that a run did not read are listed as not read this time and left as they are.
@@ -83,6 +156,8 @@ The same input gives the same bytes: sections in document order, keys in a fixed
 
 Their own dependencies are MIT, ISC, BSD-2-Clause, BSD-3-Clause, `MIT AND Zlib` (pako) and `MIT OR GPL-3.0-or-later` (jszip, used under MIT).
 
+Drafting, reviewing and refreshing add none: the Claude drafter uses Node's fetch, and the review page Node's http and crypto.
+
 ## Tests
 
-`pnpm --filter @dialogwright/kb-author test`. The fixtures under `src/__fixtures__` are fictional: a folder (a three-page patron guide PDF with headings, a two-page notice PDF without, a volunteer handbook DOCX, HTML, Markdown and text) and a small website with a robots.txt, served by a local `node:http` server on 127.0.0.1. Nothing reaches the network: the crawler's fetch in the tests refuses any other host, and its clock is fake, so the rate limit is tested without waiting.
+`pnpm --filter @dialogwright/kb-author test`. The fixtures under `src/__fixtures__` are fictional: a folder (a three-page patron guide PDF with headings, a two-page notice PDF without, a volunteer handbook DOCX, HTML, Markdown and text) and a small website with a robots.txt, served by a local `node:http` server on 127.0.0.1. Nothing reaches the network: the crawler's fetch in the tests refuses any other host, and its clock is fake, so the rate limit is tested without waiting. The pipeline's test (`src/pipeline.test.ts`) runs it end to end on dialogwright's own library app with the fake drafter: a PDF ingested, drafted (good drafts written, a bad excerpt, an over-long answer, a variable and a repeat refused), reviewed over HTTP with the token (a name given, topics accepted and merged, a draft approved, one edited then approved, one rejected), and the approved passages said on a call by the app's knowledge completion; then a source changed, refreshed, its passage withheld, the diff shown, approved again and said. The Claude drafter's request is tested against a mocked fetch.

@@ -95,7 +95,13 @@ export interface KbSourceDocument {
   readonly id: string;
   /** Its title. */
   readonly document: string;
-  readonly provenance?: { readonly url?: string; readonly file?: string; readonly retrieved?: string };
+  readonly provenance?: {
+    readonly url?: string;
+    readonly file?: string;
+    readonly retrieved?: string;
+    /** For a page read by a crawl: its settings, which a refresh crawls with again. */
+    readonly crawl?: { readonly start: string; readonly depth: number; readonly include?: readonly string[]; readonly allowHosts?: readonly string[]; readonly maxPages?: number; readonly rateMs?: number };
+  };
   /** Its sections by id; a paged document's say the pages they are on (provenance only, never hashed). */
   readonly sections: Readonly<Record<string, { readonly heading?: string; readonly text: string; readonly page?: number; readonly lastPage?: number }>>;
 }

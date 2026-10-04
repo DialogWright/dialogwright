@@ -19,7 +19,7 @@ To start a new app, run `pnpm create-app <name>` (add `--identity` for one that 
 - `packages/dialogwright`: the engine. Its `testkit` is the engine's own test fixture, not a template for apps.
 - `packages/dialogwright/schemas/*.schema.json`: the JSON Schemas of the app folder's YAML files. They are generated from the zod schemas in `packages/dialogwright/src/define/schema/`; never edit them by hand. Run `pnpm --filter dialogwright schemas` after changing a zod schema (a test fails when they are stale).
 - `packages/dialogwright/src/slots/`: the slot library, one folder per slot type (options schema, questions, fill, display, tests, examples, README). `docs/slots/*.md` are generated from it; never edit them by hand.
-- `packages/kb-author`: `@dialogwright/kb-author`, the knowledge base's authoring tools (`pnpm kb:ingest`: documents and websites into `kb/sources`). Authoring only: an app never imports it, and its dependencies stay out of the engine.
+- `packages/kb-author`: `@dialogwright/kb-author`, the knowledge base's authoring tools (`pnpm kb:ingest`: documents and websites into `kb/sources`; `kb:draft`: drafts into `kb/pending`; `kb:review`: the local review page; `kb:refresh`: the sources read again). Authoring only: an app never imports it, and its dependencies stay out of the engine. Drafting calls a model with the author's own key, on their machine: never in CI or a test.
 - `apps/*`: example apps. `apps/clinic` is the one to learn from. Each is a folder (app.yaml, intents.yaml, forms.yaml, prompts.yaml, policy.yaml, optional identity.yaml and locale/, and the generated POLICY.md, policy.matrix and APP-MAP.md) with its code in `src/app.ts`, and a `CLAUDE.md` of its own.
 - `packages/dialogwright/templates/`: the files `pnpm create-app` copies (`app/`, and `app-identity/` for what `--identity` changes). Edit them as real files; a test scaffolds both and runs check, typecheck, the app's tests and its regression, and the three read-back commands, which must change nothing. Each variant ships its `policy.matrix`, `POLICY.md` and `APP-MAP.md` with `{{name}}` and `{{display}}` in their titles: after changing a template's policy, forms or tools, scaffold that variant into a scratch folder, run the three commands there, and copy the pages back with the name and display put back as tokens.
 - `packages/dialogwright/src/define/fixture/`: a tiny app folder (a library, with a Spanish locale) that the engine's own tests build.
@@ -48,6 +48,9 @@ pnpm kb:model                 # download the pinned embedding model (potion-base
 pnpm kb:index [dir...]        # write a knowledge base's vector index (kb/.index/<embedder>.json) after its topics change; commit it
 pnpm kb:bakeoff <dir> --paraphrases <file> [--sweep]   # compare the retrievers on paraphrases offline; pick kb.yaml's floor and cap here
 pnpm kb:ingest <folder | file | url> --dir <app folder> [--depth N] [--include <glob>] [--dry-run]   # documents or a website into kb/sources/<doc>.yaml, by section with provenance (packages/kb-author)
+pnpm kb:draft [app folder] [--source <doc>] [--topic-hint <text>] [--model <id>]   # drafts from the sources into kb/pending with Claude (ANTHROPIC_API_KEY, the author's; refuses in CI); each checked, never said
+pnpm kb:review [app folder] [--port N]   # the review page on 127.0.0.1 with a one-time token: approve, edit then approve, reject; accept or merge proposed topics
+pnpm kb:refresh [app folder]             # read every source again from its provenance; lists passages withheld and sections nothing cites
 pnpm --filter dialogwright test slots/<type>   # a slot type's tests, including the conformance kit
 ```
 

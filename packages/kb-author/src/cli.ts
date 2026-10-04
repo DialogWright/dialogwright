@@ -6,18 +6,20 @@ import { CrawlError, DEFAULT_MAX_PAGES, DEFAULT_RATE_MS } from './crawl/crawl';
 import type { Drafter } from './draft/drafter';
 import { draftCommand } from './draft/command';
 import { formatReport, ingest, IngestError, isUrl } from './ingest';
-import { reviewCommand } from './review/command';
 import { todayUtc } from './args';
+import { refreshCommand } from './refresh/command';
+import { reviewCommand } from './review/command';
 
 /**
- * The authoring commands (the `dialogwright-kb` bin; the workspace's `pnpm kb:ingest`, `kb:draft` and
- * `kb:review`):
+ * The authoring commands (the `dialogwright-kb` bin; the workspace's `pnpm kb:ingest`, `kb:draft`,
+ * `kb:review` and `kb:refresh`):
  *
  *   kb:ingest <folder | file | url> [--dir <app folder>] [--depth N] [--include <glob>]...
  *             [--max-pages M] [--rate <ms>] [--allow-host <host>]... [--dry-run] [--json]
  *   kb:draft [dir] [--source <doc>]... [--topic-hint <text>]... [--model <id>] [--all] [--dry-run] [--json]
  *             (./draft/command.ts)
  *   kb:review [dir] [--port N]       (./review/command.ts)
+ *   kb:refresh [dir] [--dry-run] [--json]   (./refresh/command.ts)
  *
  * It reads a folder (recursively), a file or a website into sections and writes each document to
  * the app's kb/sources/<doc>.yaml, saying what was added, changed and unchanged. `--dir` is the app
@@ -176,7 +178,8 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'kb:ingest') return ingestCommand(rest, io);
   if (command === 'kb:draft') return draftCommand(rest, io);
   if (command === 'kb:review') return reviewCommand(rest, io);
-  io.err(`unknown command ${command ?? '(none)'}: the commands are kb:ingest, kb:draft and kb:review\n${USAGE}`);
+  if (command === 'kb:refresh') return refreshCommand(rest, io);
+  io.err(`unknown command ${command ?? '(none)'}: the commands are kb:ingest, kb:draft, kb:review and kb:refresh\n${USAGE}`);
   return 2;
 }
 

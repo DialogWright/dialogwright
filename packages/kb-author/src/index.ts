@@ -2,8 +2,8 @@
  * @dialogwright/kb-author: building a DialogWright knowledge base from documents. It reads sources (a
  * folder of PDF, DOCX, HTML, Markdown and text files, or a website crawled politely to a link depth)
  * into `kb/sources/<doc>.yaml` with each document's sections and provenance; drafts passages from
- * them with a pluggable drafter into `kb/pending`; and serves a local review page where a person
- * approves, edits or rejects each draft.
+ * them with a pluggable drafter into `kb/pending`; serves a local review page where a person approves,
+ * edits or rejects each draft; and refreshes the sources, withholding a passage whose source changed.
  */
 
 export { ingest, formatReport, IngestError, isUrl, MAX_FILE_BYTES } from './ingest';
@@ -22,7 +22,7 @@ export { extractDocx } from './extract/docx';
 export { sectionsOf, slugOf } from './sections';
 export type { Block, ExtractedDocument, ExtractedSection } from './sections';
 export { planSources, writeSources, sourceYaml, MAX_SOURCE_BYTES } from './write';
-export type { DocumentChange, SectionChange, SectionStatus, SourceInput } from './write';
+export type { CrawlProvenance, DocumentChange, SectionChange, SectionStatus, SourceInput } from './write';
 export { DraftError } from './draft/drafter';
 export type { Draft, DraftRequest, Drafter, ProposedTopic, TopicSummary } from './draft/drafter';
 export { ClaudeDrafter, DEFAULT_DRAFT_MODEL } from './draft/claude';
@@ -37,5 +37,6 @@ export { acceptTopic, approve, editAndApprove, mergeTopic, reject, reviewState }
 export type { ActionResult, Edits, Reviewer, ReviewState } from './review/actions';
 export { startReviewServer } from './review/server';
 export type { ReviewServer, ReviewServerOptions } from './review/server';
-
+export { refreshKb, formatRefreshReport } from './refresh/refresh';
+export type { RefreshOptions, RefreshReport } from './refresh/refresh';
 export { main, ingestCommand, USER_AGENT, VERSION } from './cli';

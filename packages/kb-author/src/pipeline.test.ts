@@ -1,13 +1,15 @@
-import { cpSync, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkApp, defineApp, formatProblem, loadKnowledgeFolder, registerApp } from 'dialogwright';
 import { ask, call, cleanScratch, codeFor, folder, heard, TODAY } from 'dialogwright/kb/__fixtures__/libraryKbApp';
 import { afterAll, describe, expect, it } from 'vitest';
-import { FOLDER } from './__fixtures__/server';
+import { FOLDER, fakeClock, guardedFetch } from './__fixtures__/server';
+import { main, type Io } from './cli';
 import { draftKb } from './draft/draft';
 import { FakeDrafter, type FakeRule } from './draft/fake';
 import { ingest } from './ingest';
 import { findKb, type KbPlace } from './kbPlace';
+import { acceptTopic, approve } from './review/actions';
 import { startReviewServer, type ReviewServer } from './review/server';
 
 /**
@@ -15,7 +17,8 @@ import { startReviewServer, type ReviewServer } from './review/server';
  * Library's folder into the library app's knowledge base (dialogwright's own fixture app), drafted,
  * checked, reviewed in the review page over HTTP (a name given, a topic accepted, a draft approved,
  * one edited then approved, one rejected, a topic merged), and the approved passages spoken by the
- * app's knowledge completion on a call.
+ * app's knowledge completion on a call; then a refresh after the source changes, which withholds a
+ * passage until the review page shows the change and a person approves it again.
  */
 
 afterAll(cleanScratch);
@@ -218,5 +221,84 @@ describe('the pipeline: ingest, draft, review, speak', () => {
     const renewing = call(app);
     ask(renewing, 'item_renewals');
     expect(heard(renewing)).toContain('You can renew most items twice, online or at any branch desk, unless someone has placed a hold on them.');
+  });
+});
+
+describe('refreshing the sources', () => {
+  it('withholds a passage whose section changed, shows the change in the review page, and speaks it again once a person approves it', async () => {
+    const { dir, place } = scratchApp('kb-author-refresh');
+    const kbDir = place.kbDir;
+    await ingest({ input: join(dir, 'docs', 'faq.md'), appDir: dir, kbDir, today: TODAY });
+    const rule: FakeRule = {
+      document: 'faq',
+      section: 'borrowing/lost-cards',
+      topic: { id: 'lost_cards', title: 'A lost card', keywords: ['lost card'] },
+      answer: 'Report a lost card at any branch desk. A replacement is free.',
+      excerpt: 'Report a lost card at any branch desk; a replacement is free.',
+    };
+    await draftKb({ place, drafter: new FakeDrafter([rule]), today: TODAY, sources: ['faq'] });
+    const reviewer = { by: 'Sam Lee', owner: 'Branch Services' };
+    expect(acceptTopic(place, 'lost_cards', reviewer)).toMatchObject({ ok: true });
+    expect(approve(place, 'lost-cards', reviewer, TODAY)).toMatchObject({ ok: true });
+
+    const app1 = defineApp(dir, codeFor(dir));
+    Object.assign(app1, { id: 'kb-author-refresh-1' });
+    registerApp(app1);
+    const first = call(app1);
+    ask(first, 'lost_cards');
+    expect(heard(first)).toContain('Report a lost card at any branch desk. A replacement is free.');
+
+    // The source changes; a refresh re-reads it, writes only the source, and says what that means.
+    const faq = join(dir, 'docs', 'faq.md');
+    writeFileSync(faq, readFileSync(faq, 'utf8').replace('a replacement is free', 'a replacement costs 1 dollar'));
+    const out: string[] = [];
+    // No request leaves the machine: the fixture's one page on the web is refused, and said so.
+    const clock = fakeClock();
+    const io: Io = { out: (l) => out.push(l), err: (l) => out.push(l), cwd: dir, today: () => TODAY, fetch: guardedFetch('http://127.0.0.1:9').fetch, sleep: clock.sleep, now: clock.now };
+    expect(await main(['kb:refresh'], io)).toBe(0);
+    expect(out).toEqual([
+      'kb:refresh kb: 2 reads (1 document): 0 added, 1 changed, 0 unchanged',
+      '  changed   faq: ~ borrowing/lost-cards',
+      '  not read  fee-schedule-2025: not read again this time (see what was skipped); the source is left as it is',
+      '  not read  patron-guide: its file patron-guide.pdf is not there (the source is left as it is)',
+      "  skipped   https://library.example/robots.txt: could not be fetched (the crawler asked for https://library.example/robots.txt, off the fixture's host)",
+      '  skipped   https://library.example/fees-2025: disallowed by robots.txt',
+      'withheld, their section changed (1): callers are not given them until a person approves them again',
+      '  lost-cards  lost_cards  kb/sources/faq.yaml section "borrowing/lost-cards"',
+      'sections no passage or draft cites (4): draft them with pnpm kb:draft --source faq',
+      '  faq: intro, borrowing, borrowing/how-long-can-i-keep-a-book, borrowing/returns',
+      'next: pnpm kb:review shows each withheld passage beside what changed in its section',
+    ]);
+    expect(loadKnowledgeFolder(kbDir).kb!.passages['lost-cards']!.freshness).toBe('source-changed');
+    // The app as it starts now (it reads its knowledge base when it is built): the passage is withheld.
+    const app2 = defineApp(dir, codeFor(dir));
+    Object.assign(app2, { id: 'kb-author-refresh-2' });
+    registerApp(app2);
+    const withheld = call(app2);
+    ask(withheld, 'lost_cards');
+    expect(heard(withheld)).toContain("I'm sorry, I don't have an answer to that I can give you right now.");
+
+    // The review page shows the passage beside the change; edited and approved again, it is said.
+    const server = await startReviewServer({ place, today: () => TODAY });
+    const web = client(server);
+    try {
+      const home = (await web.get('/')).text;
+      expect(home).toContain('Passages withheld from callers (1)');
+      expect(home).toContain('its source section changed');
+      const page = (await web.get('/passage/lost-cards')).text;
+      expect(page).toContain('What changed in the section since it was approved');
+      expect(page).toContain('Report a lost card at any branch desk; a replacement <del><span class="sr">removed: </span>is free.</del><ins><span class="sr">added: </span>costs 1 dollar.</ins>');
+      await web.post('/reviewer', { by: 'Sam Lee', owner: 'Branch Services', back: '/' });
+      await web.post('/passage/lost-cards/edit', { answer: 'Report a lost card at any branch desk. A replacement costs 1 dollar.', from: TODAY, to: '' });
+      expect(flashOf((await web.get('/')).text)).toMatch(/^ok: edited, then lost-cards: approved \(version 2026\.1\) by Sam Lee for Branch Services/);
+    } finally {
+      await server.close();
+    }
+    const app3 = defineApp(dir, codeFor(dir));
+    Object.assign(app3, { id: 'kb-author-refresh-3' });
+    registerApp(app3);
+    const after = call(app3);
+    ask(after, 'lost_cards');
+    expect(heard(after)).toContain('Report a lost card at any branch desk. A replacement costs 1 dollar.');
   });
 });

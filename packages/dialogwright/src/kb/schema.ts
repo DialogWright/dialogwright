@@ -203,6 +203,17 @@ export const kbSourceSchema = z
         url: text().optional().describe('Where it was read from on the web.'),
         file: text().optional().describe('The file it was read from.'),
         retrieved: isoDate().optional().describe('The day it was read.'),
+        crawl: z
+          .strictObject({
+            start: text().describe('The page the crawl started from.'),
+            depth: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(0, { error: 'must be 0 or more' }).describe('How many links from the start page it read.'),
+            include: z.array(text()).optional().describe('The globs over URL paths it was narrowed to.'),
+            allowHosts: z.array(text()).optional().describe('Other hosts it could read.'),
+            maxPages: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('The most pages it read.'),
+            rateMs: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('The least time between two requests to a host, in milliseconds.'),
+          })
+          .optional()
+          .describe('For a page read by a crawl (pnpm kb:ingest <url>): the crawl\'s settings, which pnpm kb:refresh crawls with again.'),
       })
       .optional()
       .describe('Where the text came from.'),

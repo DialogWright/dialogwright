@@ -22,6 +22,7 @@
     "kb:status": "pnpm --filter dialogwright kb:status",
     "kb:ingest": "pnpm --filter @dialogwright/kb-author kb:ingest",
     "kb:draft": "pnpm --filter @dialogwright/kb-author kb:draft",
-    "kb:review": "pnpm --filter @dialogwright/kb-author kb:review"
+    "kb:review": "pnpm --filter @dialogwright/kb-author kb:review",
+    "kb:refresh": "pnpm --filter @dialogwright/kb-author kb:refresh"
   }
 }
