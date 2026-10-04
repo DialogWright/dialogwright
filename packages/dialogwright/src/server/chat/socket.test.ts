@@ -10,6 +10,8 @@ import { loadConfig } from '../config';
 import { useTestkit } from '../../testing/apps';
 import { testkitApp } from '../../testing/testkit/index';
 import { registerApp, resetAppsForTest } from '../../core/app/registry';
+import { libraryApp } from '../../define/fixture/app';
+import { lineLang, promptText } from '../../prompts/render';
 import { loadScenarios, runScenario } from '../../harness-text/runner';
 import { scenariosDir, defaultCorpusFile } from '../../run/fixtures';
 import { loadCorpus } from '../../jev/corpus';
@@ -471,5 +473,38 @@ describe('a delegate signing in to the chat (principals.fromClaims)', () => {
     c.send({ type: 'sign_in', token: 'mock:taylor' });
     await c.until((r) => r.length > n);
     expect(c.received[n]).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (a delegate signs in as the chat starts)' });
+  });
+});
+
+describe('a chat asks for its language', () => {
+  beforeAll(() => {
+    // The engine's library fixture, which speaks Spanish beside its default (define/fixture/locale/es).
+    resetAppsForTest();
+    registerApp(libraryApp);
+  });
+  afterAll(() => {
+    useTestkit();
+  });
+
+  it('start { locale } opens the chat in the app\'s matching language, each line saying its language', async () => {
+    const { url } = await start({}, { client: new HeuristicStubClient({ todayIso: '2026-09-18' }) });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, locale: 'es-MX' });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    expect(c.received[0]).toMatchObject({ type: 'ready', locale: 'es' });
+    const line = c.received[1] as Extract<Msg, { type: 'say' }>;
+    // A chat's greeting (greeting_chat), in the locale's own words.
+    expect(line).toEqual({ type: 'say', text: promptText(libraryApp, 'greeting_chat', {}, 'es'), lang: lineLang(libraryApp, 'es') });
+    expect(line.text).toMatch(/^Hola/);
+  });
+
+  it('a language the app does not speak gets its default', async () => {
+    const { url } = await start({}, { client: new HeuristicStubClient({ todayIso: '2026-09-18' }) });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, locale: 'fr' });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    expect(c.received[0]).toMatchObject({ type: 'ready', locale: 'en-US' });
+    expect(c.received[1]).toMatchObject({ type: 'say', lang: 'en-US' });
+    expect((c.received[1] as Extract<Msg, { type: 'say' }>).text).toBe(promptText(libraryApp, 'greeting_chat', {}, 'en-US'));
   });
 });

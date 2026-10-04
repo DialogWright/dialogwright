@@ -288,6 +288,13 @@ export interface Scenario {
   id: string;
   /** A delegate id the app lists (e.g. "taylor", "morgan"): the scenario is a delegate's chat signed in as them, not a call. "web" is the subjects' web chat, anonymous until a `signIn` step. */
   as?: string;
+  /**
+   * The language the call or chat asks to start in (a language tag, e.g. "es"), as a channel's start
+   * asks for one (a phone number's locale, a chat's `start.locale`): the session speaks the app's
+   * matching locale (core/locale.ts matchLocale), its default where it has none. Without it the
+   * scenario starts in the app's default, as it always has.
+   */
+  locale?: string;
   steps: ScenarioStep[];
   expect: ScenarioExpectation;
   /**
@@ -342,7 +349,7 @@ export async function runScenario(scenario: Scenario, opts: RunOptions): Promise
   const runs: TurnRun[] = [];
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(opts)(), scenario.as);
-  const setup = await runTurn(session, startEvent(), o);
+  const setup = await runTurn(session, startEvent({}, scenario.locale), o);
   runs.push(setup);
   stepOf.push(-1);
   session = setup.result.session;
@@ -411,6 +418,7 @@ function isValidScenario(s: unknown): s is Scenario {
     typeof (s as Scenario).id === 'string' &&
     Array.isArray((s as Scenario).steps) &&
     typeof (s as Scenario).expect === 'object' && (s as Scenario).expect !== null &&
+    ((s as Scenario).locale === undefined || (typeof (s as Scenario).locale === 'string' && (s as Scenario).locale !== '')) &&
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null)
   );
 }
@@ -422,7 +430,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       seen.add(s.id);
       out.push(s);
