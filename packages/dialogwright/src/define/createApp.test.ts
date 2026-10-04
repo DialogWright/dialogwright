@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -122,7 +122,8 @@ describe('createApp', () => {
     }
     const tsconfig = JSON.parse(readFileSync(join(dir, 'tsconfig.json'), 'utf8')) as { extends: string };
     expect(existsSync(resolve(dir, tsconfig.extends))).toBe(true);
-    expect(resolve(dir, tsconfig.extends)).toBe(join(REPO_ROOT, 'tsconfig.base.json'));
+    // Compared as real paths: under a symlinked folder (macOS's /tmp is /private/tmp) the same file has two spellings.
+    expect(realpathSync(resolve(dir, tsconfig.extends))).toBe(realpathSync(join(REPO_ROOT, 'tsconfig.base.json')));
   });
 
   it('uses --display for the greeting and the console, and finds the workspace folder under apps/', () => {
