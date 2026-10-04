@@ -49,7 +49,9 @@ function deps(overrides: Record<string, string> = {}, audioDir?: string): HttpDe
 
 async function listen(d: HttpDeps): Promise<string> {
   server = createServer(createRequestHandler(d));
-  await new Promise<void>((r) => server!.listen(0, r));
+  // On 127.0.0.1, the address the tests dial: on every address the operating system may hand out a port
+  // another process holds on 127.0.0.1 alone, and the request would reach that process (index.ts ServerOverrides.host).
+  await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
   const port = (server.address() as { port: number }).port;
   return `http://127.0.0.1:${port}`;
 }

@@ -1,5 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { mkdtempSync, readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -65,7 +67,7 @@ function makeConfig(extra: Record<string, string> = {}) {
 
 async function start(client?: JevClient, overrides: Omit<ServerOverrides, 'client' | 'log'> = {}) {
   const { traceDir, config } = makeConfig();
-  running = await startServer(config, { client, log: () => {}, ...overrides });
+  running = await startServer(config, { host: '127.0.0.1', client, log: () => {}, ...overrides });
   return { traceDir, base: `http://127.0.0.1:${running.port}`, ws: `ws://127.0.0.1:${running.port}/conversation` };
 }
 
@@ -114,7 +116,7 @@ describe('server end to end', () => {
     writeFileSync(join(audioDir, 'greeting.0.wav'), Buffer.from('RIFFdata'));
     const { config } = makeConfig({ AUDIO_DIR: audioDir });
     const logs: string[] = [];
-    running = await startServer(config, { log: (line) => logs.push(line) });
+    running = await startServer(config, { host: '127.0.0.1', log: (line) => logs.push(line) });
     const base = `http://127.0.0.1:${running.port}`;
     const ws = `ws://127.0.0.1:${running.port}/conversation`;
     const token = running.tokens.mint('CA1');
@@ -149,7 +151,7 @@ describe('server end to end', () => {
     writeFileSync(join(audioDir, 'recorded.json'), 'not json');
     const { config } = makeConfig({ AUDIO_DIR: audioDir });
     const logs: string[] = [];
-    running = await startServer(config, { log: (line) => logs.push(line) });
+    running = await startServer(config, { host: '127.0.0.1', log: (line) => logs.push(line) });
     expect(logs.some((l) => l.startsWith('audio: ignoring unreadable recorded.json:'))).toBe(true);
     const ws = `ws://127.0.0.1:${running.port}/conversation`;
     const token = running.tokens.mint('CA1');
@@ -249,10 +251,26 @@ describe('server end to end', () => {
     expect((await again.waitForTexts(1, 10_000)).length).toBeGreaterThanOrEqual(1);
   }, 15_000);
 
+  it('listens on the address it is given, the one the tests dial, so a port another listener holds there is never its', async () => {
+    const { config } = makeConfig();
+    running = await startServer(config, { log: () => {}, host: '127.0.0.1' });
+    expect(running.server.address()).toMatchObject({ address: '127.0.0.1', port: running.port });
+    // Another process's server on 127.0.0.1 (an IDE's, say): a server on every address could still be
+    // given its port, and a request to 127.0.0.1 would reach the other one; on 127.0.0.1 it cannot.
+    const other = createServer((_req, res) => res.end('someone else'));
+    await new Promise<void>((r) => other.listen(0, '127.0.0.1', r));
+    try {
+      const { config: same } = makeConfig({ PORT: String((other.address() as AddressInfo).port) });
+      await expect(startServer(same, { log: () => {}, host: '127.0.0.1' })).rejects.toThrow(/EADDRINUSE/);
+    } finally {
+      await new Promise<void>((r) => other.close(() => r()));
+    }
+  });
+
   it('reports a port in use as a clean error', async () => {
     await start();
     const { config } = makeConfig({ PORT: String(running!.port) });
-    await expect(startServer(config, { log: () => {} })).rejects.toThrow(/EADDRINUSE/);
+    await expect(startServer(config, { host: '127.0.0.1', log: () => {} })).rejects.toThrow(/EADDRINUSE/);
   });
 
   it('runs the worked example over the socket and ends the call', async () => {
@@ -341,7 +359,7 @@ describe('server end to end', () => {
 
   it('answers 404 on /dashboard when the dashboard is off', async () => {
     const { config } = makeConfig({ DASHBOARD: 'off', PORT: '0' });
-    running = await startServer(config, { log: () => {} });
+    running = await startServer(config, { host: '127.0.0.1', log: () => {} });
     const base = `http://127.0.0.1:${running.port}`;
     expect((await fetch(`${base}/dashboard`)).status).toBe(404);
     expect((await fetch(`${base}/dashboard/traces`)).status).toBe(404);
@@ -376,7 +394,7 @@ describe('server end to end', () => {
     // handler, so the sweep itself is the only place that can end an evicted call for the page.
     let clock = 0;
     const { config } = makeConfig({ SESSION_TTL_MS: '50', PORT: '0' });
-    running = await startServer(config, { log: () => {}, now: () => clock });
+    running = await startServer(config, { host: '127.0.0.1', log: () => {}, now: () => clock });
     const token = running.tokens.mint('CA1');
     const relay = await FakeRelay.connect(`ws://127.0.0.1:${running.port}/conversation?token=${token}`);
     relay.setup('CA1');
@@ -396,7 +414,7 @@ describe('server end to end', () => {
   it('does not publish an ended for a call that had already ended when it was evicted', async () => {
     let clock = 0;
     const { config } = makeConfig({ SESSION_TTL_MS: '50', PORT: '0' });
-    running = await startServer(config, { log: () => {}, now: () => clock });
+    running = await startServer(config, { host: '127.0.0.1', log: () => {}, now: () => clock });
     const token = running.tokens.mint('CA1');
     const relay = await FakeRelay.connect(`ws://127.0.0.1:${running.port}/conversation?token=${token}`);
     relay.setup('CA1');
@@ -416,7 +434,7 @@ describe('server end to end', () => {
   it('appends an audit call_ended for a live call the sweep evicts, the one end no turn or webhook sees', async () => {
     let clock = 0;
     const { config } = makeConfig({ SESSION_TTL_MS: '50', PORT: '0' });
-    running = await startServer(config, { log: () => {}, now: () => clock });
+    running = await startServer(config, { host: '127.0.0.1', log: () => {}, now: () => clock });
     const token = running.tokens.mint('CA1');
     const relay = await FakeRelay.connect(`ws://127.0.0.1:${running.port}/conversation?token=${token}`);
     relay.setup('CA1');
@@ -433,7 +451,7 @@ describe('server end to end', () => {
   it('appends no audit call_ended for a call that had already ended when it was evicted', async () => {
     let clock = 0;
     const { config } = makeConfig({ SESSION_TTL_MS: '50', PORT: '0' });
-    running = await startServer(config, { log: () => {}, now: () => clock });
+    running = await startServer(config, { host: '127.0.0.1', log: () => {}, now: () => clock });
     const token = running.tokens.mint('CA1');
     const relay = await FakeRelay.connect(`ws://127.0.0.1:${running.port}/conversation?token=${token}`);
     relay.setup('CA1');
@@ -451,7 +469,7 @@ describe('server end to end', () => {
 
   it('has no bus when the dashboard is off', async () => {
     const { config } = makeConfig({ DASHBOARD: 'off', PORT: '0' });
-    running = await startServer(config, { log: () => {} });
+    running = await startServer(config, { host: '127.0.0.1', log: () => {} });
     expect(running.bus).toBeUndefined();
   });
 
@@ -484,7 +502,7 @@ describe('server end to end', () => {
     writeFileSync(join(audioDir, 'greeting.0.wav'), Buffer.from('RIFFdata'));
     const { config } = makeConfig({ AUDIO_DIR: audioDir, CLIPS: 'off' });
     const logs: string[] = [];
-    running = await startServer(config, { log: (line) => logs.push(line) });
+    running = await startServer(config, { host: '127.0.0.1', log: (line) => logs.push(line) });
     const token = running.tokens.mint('CA1');
     const relay = await FakeRelay.connect(`ws://127.0.0.1:${running.port}/conversation?token=${token}`);
     relay.setup('CA1');
@@ -507,7 +525,7 @@ describe('server end to end', () => {
     writeFileSync(join(audioDir, 'greeting.0.wav'), wavOfMs(200));
     const { config } = makeConfig({ AUDIO_DIR: audioDir });
     const logs: string[] = [];
-    running = await startServer(config, { log: (line) => logs.push(line), noInputMs: 50 });
+    running = await startServer(config, { host: '127.0.0.1', log: (line) => logs.push(line), noInputMs: 50 });
     expect(logs.some((l) => l === 'no-input: 50 ms after playback (1 clip durations)')).toBe(true);
     const token = running.tokens.mint('CA12');
     const relay = await FakeRelay.connect(`ws://127.0.0.1:${running.port}/conversation?token=${token}`);
@@ -733,7 +751,7 @@ describe('the relay socket by voice provider', () => {
   it("ties a call's token to its carrier: a Telnyx call's token opens no Twilio socket, and a Twilio call's none of Telnyx's", async () => {
     const telnyxKey = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
     const { config } = makeConfig({ VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: telnyxKey });
-    running = await startServer(config, { log: () => {} });
+    running = await startServer(config, { host: '127.0.0.1', log: () => {} });
     const base = `http://127.0.0.1:${running.port}`;
     const ws = base.replace('http', 'ws');
     const tokenOf = async (path: string, callSid: string): Promise<string> => {
@@ -764,7 +782,7 @@ describe('startup: what answers', () => {
     const { config } = makeConfig({ CLIPS: 'off', ...extra });
     const lines: string[] = [];
     const stub: JevClient = { ask: () => Promise.reject(new Error('not asked')) };
-    running = await startServer(config, { client: stub, log: (l) => lines.push(l) });
+    running = await startServer(config, { host: '127.0.0.1', client: stub, log: (l) => lines.push(l) });
     return lines;
   }
 

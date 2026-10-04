@@ -49,6 +49,12 @@ export interface ServerOverrides {
   client?: JevClient;
   now?: () => number;
   log?: (line: string) => void;
+  /**
+   * The address to listen on; left out, every address, as a deployment needs. Tests give the address
+   * they dial (127.0.0.1): on every address the operating system may hand out a port that another
+   * process holds on 127.0.0.1 alone, and a request to 127.0.0.1 would then reach that process.
+   */
+  host?: string;
   /** Tests use a short deadline so a connection that never sends setup does not hold the suite open. */
   setupTimeoutMs?: number;
   /** Tests use a short grace period to prove the end-close backstop fires without waiting 30 seconds. */
@@ -253,10 +259,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     await new Promise<void>((resolve, reject) => {
       const onError = (err: Error) => reject(err);
       server.once('error', onError);
-      server.listen(config.port, () => {
+      const listening = (): void => {
         server.removeListener('error', onError);
         resolve();
-      });
+      };
+      if (overrides.host === undefined) server.listen(config.port, listening);
+      else server.listen(config.port, overrides.host, listening);
     });
   } catch (err) {
     clearInterval(evictor);

@@ -140,7 +140,7 @@ function makeConfig(extra: Record<string, string> = {}) {
 async function start(extra: Record<string, string> = {}, overrides: Omit<ServerOverrides, 'log'> = {}) {
   const config = makeConfig(extra);
   const logs: string[] = [];
-  running = await startServer(config, { client: stub, log: (line) => logs.push(line), ...overrides });
+  running = await startServer(config, { host: '127.0.0.1', client: stub, log: (line) => logs.push(line), ...overrides });
   return { config, logs, url: `ws://127.0.0.1:${running.port}/chat` };
 }
 
