@@ -13,6 +13,26 @@ const base = { PUBLIC_HOST: 'demo.ngrok.app', TWILIO_AUTH_TOKEN: 'tok', HANDOFF_
 /** The paths CONSOLE_LOCAL_ONLY guards once an app's two chats are mounted (localOnly.ts localOnlyPaths). */
 const CONSOLE_PATHS = ['/dashboard', '/staff', '/portal'];
 
+describe('SESSION_STORE', () => {
+  it('is memory unless it says otherwise, and the config is then as it always was', () => {
+    expect('sessionStore' in loadConfig(base)).toBe(false);
+    expect('sessionStore' in loadConfig({ ...base, SESSION_STORE: 'memory' })).toBe(false);
+    expect('sessionStore' in loadConfig({ ...base, SESSION_STORE: ' MEMORY ' })).toBe(false);
+    expect(describeConfig(loadConfig(base))).not.toContain('sessions');
+  });
+
+  it('takes file:<dir>, a folder as given (a relative one is from where the server runs), and says so at startup', () => {
+    expect(loadConfig({ ...base, SESSION_STORE: 'file:/var/lib/ivr/sessions' }).sessionStore).toEqual({ kind: 'file', dir: '/var/lib/ivr/sessions' });
+    expect(loadConfig({ ...base, SESSION_STORE: 'file:sessions' }).sessionStore).toEqual({ kind: 'file', dir: 'sessions' });
+    expect(describeConfig(loadConfig({ ...base, SESSION_STORE: 'file:sessions' }))).toContain('sessions file:sessions');
+  });
+
+  it('refuses anything else, saying what it takes', () => {
+    expect(() => loadConfig({ ...base, SESSION_STORE: 'file:' })).toThrow('SESSION_STORE must be memory or file:<dir>, got "file:"');
+    expect(() => loadConfig({ ...base, SESSION_STORE: 'redis://localhost:6379' })).toThrow('SESSION_STORE must be memory or file:<dir>, got "redis://localhost:6379"');
+  });
+});
+
 describe('loadConfig', () => {
   it('applies defaults', () => {
     const c = loadConfig(base);

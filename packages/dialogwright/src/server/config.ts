@@ -158,6 +158,19 @@ export interface ServerConfig {
    * files more than this many days old are deleted, never today's. Absent when unset.
    */
   auditRetentionDays?: number;
+  /**
+   * SESSION_STORE, default memory (absent here, as before it existed): where calls, chats and relay
+   * tokens are kept between turns (server/stores). `file:<dir>` keeps them in a folder on this machine
+   * (server/stores/file.ts), so a restart resumes a call whose carrier calls back after it; a relative
+   * folder is from where the server runs, as TRACE_DIR is.
+   */
+  sessionStore?: SessionStoreSetting;
+}
+
+/** Where sessions are kept when it is not the process's memory. */
+export interface SessionStoreSetting {
+  kind: 'file';
+  dir: string;
 }
 
 /** How long a stopping server waits for live calls and chats, unless DRAIN_MS says otherwise. */
@@ -307,9 +320,19 @@ export function loadConfig(env: Env): ServerConfig {
     drainMs: integer(env, 'DRAIN_MS', DEFAULT_DRAIN_MS),
     ...retentionOf(env, 'TRACE_RETENTION_DAYS', 'traceRetentionDays'),
     ...retentionOf(env, 'AUDIT_RETENTION_DAYS', 'auditRetentionDays'),
+    ...sessionStoreOf(env),
     ...(chat ? { chat } : {}),
     ...(widget ? { widget } : {}),
   };
+}
+
+/** SESSION_STORE as `{ sessionStore }`, or nothing for memory (unset, or `memory`). */
+function sessionStoreOf(env: Env): { sessionStore?: SessionStoreSetting } {
+  const raw = env.SESSION_STORE?.trim() ?? '';
+  if (raw === '' || raw.toLowerCase() === 'memory') return {};
+  const dir = raw.startsWith('file:') ? raw.slice('file:'.length).trim() : '';
+  if (dir === '') throw new Error(`SESSION_STORE must be memory or file:<dir>, got "${env.SESSION_STORE}"`);
+  return { sessionStore: { kind: 'file', dir } };
 }
 
 /** A retention in days, as `{ [key]: days }`, or nothing when the variable is unset. */
@@ -471,6 +494,7 @@ export function describeConfig(c: ServerConfig): string {
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,
     `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}`,
     `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,
+    ...(c.sessionStore ? [`sessions file:${c.sessionStore.dir}`] : []),
     `clips ${c.clips ? 'on' : 'OFF (all TTS)'}`,
     `anthropic key ${mask(c.anthropicApiKey)}`,
     c.handoffSummary ? `handoff note on${c.anthropicApiKey ? '' : ' (no key: none generated)'}` : 'handoff note OFF',

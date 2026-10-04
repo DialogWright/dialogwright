@@ -6,6 +6,9 @@ apps/*/traces/
 apps/*/audit/
 packages/*/traces/
 packages/*/audit/
+# A file session store (SESSION_STORE=file:sessions): what callers said, kept between turns
+/sessions/
+apps/*/sessions/
 .env
 .env.*
 !.env.example

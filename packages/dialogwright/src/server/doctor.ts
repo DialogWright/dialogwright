@@ -1,6 +1,7 @@
-import { accessSync, constants, existsSync, realpathSync, statfsSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, realpathSync, statfsSync, statSync } from 'node:fs';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, type Env, type ServerConfig } from './config';
 import { readEnvFile } from './envFile';
@@ -23,14 +24,16 @@ import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } 
  *   7. the trace and audit folders can be written, and 8. there is more than a gigabyte free;
  *   9. this machine's clock is within a minute of another machine's: the Date that the carrier's API host
  *      (or else the model provider's) answers a HEAD with. Not PUBLIC_HOST's: through a tunnel that is
- *      this machine's own clock, passed back.
+ *      this machine's own clock, passed back;
+ *  10. with SESSION_STORE=file:<dir> (and only then, after the folders), its folder can be written, is not
+ *      on a temporary filesystem a reboot empties, and is not readable by others.
  *
  * It calls no carrier and no model: the only requests are DNS, two GETs to the server's own address,
  * and one HEAD with no key and no body to a host the setup already relies on, for its clock; none with
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'folders' | 'space' | 'clock';
+export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'folders' | 'store' | 'space' | 'clock';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -47,6 +50,8 @@ export interface DoctorDeps {
   now(): number;
   /** Bytes free to this user on the disk `dir` is on, or null when that cannot be told. */
   freeBytes(dir: string): number | null;
+  /** Whether `dir` is on a temporary filesystem a reboot empties; onTemporaryFilesystem when absent. */
+  temporary?(dir: string): boolean;
 }
 
 export const defaultDoctorDeps: DoctorDeps = {
@@ -265,6 +270,9 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
       : { id: 'folders', status: 'ok', message: `traces in ${traceDir}, audit in ${auditDir}` },
   );
 
+  // 10. The session store's folder, when there is one (the memory store has none to check).
+  if (config.sessionStore) results.push(storeCheck(resolve(o.cwd, config.sessionStore.dir), deps.temporary ?? onTemporaryFilesystem));
+
   // 8. The space.
   const free = [traceDir, auditDir].map((d) => deps.freeBytes(nearestExisting(d))).filter((n): n is number => n !== null);
   if (free.length === 0) results.push({ id: 'space', status: 'skip', message: 'the free space could not be read' });
@@ -316,6 +324,56 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
     }
   }
   return results;
+}
+
+/** The folders a reboot empties, or this machine's temporary folder: where a session store is lost. */
+const TEMPORARY_ROOTS = ['/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp', '/dev/shm', '/run'];
+
+/** The real path of `dir`, or of the nearest folder above it that exists, with the rest as written. */
+function realOf(dir: string): string {
+  const at = nearestExisting(dir);
+  let real = at;
+  try {
+    real = realpathSync(at);
+  } catch {
+    // As written.
+  }
+  return join(real, dir.slice(at.length));
+}
+
+/** The mount points of tmpfs and ramfs filesystems on Linux (from /proc/mounts); none elsewhere. */
+function memoryMounts(): string[] {
+  try {
+    return readFileSync('/proc/mounts', 'utf8').split('\n').flatMap((line) => {
+      const [, mount, type] = line.split(' ');
+      return mount !== undefined && (type === 'tmpfs' || type === 'ramfs') ? [mount] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Whether `dir` is under a temporary folder (this machine's, /tmp and the like) or, on Linux, a tmpfs mount. */
+export function onTemporaryFilesystem(dir: string): boolean {
+  const real = realOf(resolve(dir));
+  const under = (root: string): boolean => root !== '/' && (real === root || real.startsWith(root.endsWith(sep) ? root : root + sep));
+  return [...TEMPORARY_ROOTS, realOf(tmpdir()), ...memoryMounts()].some(under);
+}
+
+/** Check 10: SESSION_STORE's folder can be written, outlives a reboot, and is its owner's alone. */
+function storeCheck(dir: string, temporary: (dir: string) => boolean): CheckResult {
+  if (!writable(dir)) return { id: 'store', status: 'fail', message: `SESSION_STORE folder ${dir} cannot be written`, fix: 'make it writable by the user the server runs as, or point SESSION_STORE elsewhere' };
+  if (temporary(dir)) {
+    return {
+      id: 'store', status: 'warn', message: `SESSION_STORE folder ${dir} is on a temporary filesystem: a reboot empties it, and the calls in it with it`,
+      fix: 'point SESSION_STORE at a folder that outlives a reboot, beside the app (file:sessions)',
+    };
+  }
+  if (existsSync(dir)) {
+    const mode = statSync(dir).mode & 0o777;
+    if ((mode & 0o077) !== 0) return { id: 'store', status: 'warn', message: `SESSION_STORE folder ${dir} can be read by others than its owner (mode ${mode.toString(8)})`, fix: `chmod 700 ${dir}` };
+  }
+  return { id: 'store', status: 'ok', message: `sessions in ${dir}: a restart resumes the calls under way (a carrier that calls back while no server listens needs its fallback document: pnpm fallback)` };
 }
 
 /**

@@ -56,9 +56,10 @@
         and a tunnel that can be had without signing up for anything.
       </p>
       <div class="banner">
-        <p><strong>Pre-release.</strong> DialogWright runs as a single process today, and its sessions live in that
-          process's memory: restarting the server drops any call in progress. A tunnel can blip and a call
-          reconnects; the server cannot restart and keep its calls. Phase 8 of the
+        <p><strong>Pre-release.</strong> DialogWright runs as a single process on one machine. By default its sessions
+          live in that process's memory, and restarting the server drops any call in progress; with
+          <code>SESSION_STORE=file:sessions</code> (<a href="#configuration">section 5</a>) they are saved on the machine,
+          and a restarted server resumes a call when the carrier calls back. Phase 8 of the
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>
           adds the production pieces.</p>
         <p>A personal line (answering your own number, screening, taking a message, sending urgent calls to your mobile)
@@ -429,6 +430,9 @@ CONSOLE_LOCAL_ONLY=on
 # Where calls are written. Defaults: traces and audit, inside the app's folder.
 TRACE_DIR=/Users/alex/ivr/data/traces
 AUDIT_DIR=/Users/alex/ivr/data/audit
+# Where live calls and chats are kept between turns, so a restart resumes them.
+# Default memory (a restart ends them).
+SESSION_STORE=file:/Users/alex/ivr/data/sessions
 # The zone "today" is read in. Default: this machine's zone.
 TIMEZONE=America/Chicago
 
@@ -464,6 +468,12 @@ TIMEZONE=America/Chicago
           <dd>The console (<code>/dashboard</code>) answers only a request made on this machine; through the tunnel it is a 404.</dd>
           <dt><code>TRACE_DIR</code>, <code>AUDIT_DIR</code></dt>
           <dd>Absolute paths keep the call data out of the repository, in one place to back up.</dd>
+          <dt><code>SESSION_STORE=file:&lt;dir&gt;</code></dt>
+          <dd>For a machine that stays up, always. Each live call is saved after every turn (a chat too, and the relay
+            tokens, as hashes) in a folder only you can read; when the server restarts, for an update, a reboot or a crash, and
+            the carrier calls back for a call, the server loads it and the caller hears "Sorry, I lost you for a moment." and the
+            question they were on, with what they had said still there. Unset, the calls are in memory and a restart ends them.
+            Keep it on a disk that outlives a reboot (not <code>/tmp</code>): <code>pnpm diagnose</code> checks.</dd>
           <dt><code>WIDGET_FILE</code></dt>
           <dd>The default is the widget in your app's own <code>node_modules</code>, which a new app does not have (the utility
             does); name the built file instead.</dd>
@@ -601,7 +611,8 @@ cloudflared tunnel run myline</code></pre>
         <p>
           When a tunnel drops a call's socket, the carrier calls <code>/cr-action</code> and the call reconnects, up to
           <code>RECONNECT_LIMIT</code> times (default 2), then goes to a person with an apology. That works because the
-          server still holds the call; a restart of the server does not, and ends it. Whichever tunnel you use, the server
+          server still holds the call. A restart of the server ends it, unless the call was saved
+          (<code>SESSION_STORE=file:</code>) and the carrier's callback reaches the restarted server. Whichever tunnel you use, the server
           tells a tunnelled request from one made on the machine by the headers a proxy adds and by the <code>Host</code> it
           names, so the console stays off the internet.
         </p>
@@ -706,10 +717,24 @@ cd ~/dialogwright &amp;&amp; pnpm audit:verify ~/ivr/data/audit</code></pre>
           A stop sends SIGTERM to pnpm, which passes it to the server and waits. The server drains: <code>/ready</code> answers
           503, a new call is put through to <code>HANDOFF_NUMBER</code>, a new chat is told it is busy, and live calls go on
           until they end or <code>DRAIN_MS</code> passes (30 seconds by default); a call still going then is put through to
-          <code>HANDOFF_NUMBER</code>, and the server exits. The service gives a stop <code>DRAIN_MS</code> and ten seconds more
+          <code>HANDOFF_NUMBER</code>, and the server exits. With <code>SESSION_STORE=file:</code> it is not: the server stops
+          listening and leaves the call saved, and the carrier's callback reaches the server the service starts next, which
+          resumes it. The service gives a stop <code>DRAIN_MS</code> and ten seconds more
           before it kills anything. A second signal stops the server at once. A crash is logged with its stack and exits 1
           after a short close, and the service manager starts it again.
         </p>
+
+        <h3 id="fallback">When the server is down: the carrier's fallback</h3>
+        <p>
+          A carrier calls back the moment a call's socket drops. If no server is listening then (the seconds a restart takes,
+          a reboot, a crash), the callback fails, and the carrier turns to the number's fallback, a document you host somewhere
+          other than this machine. <code>pnpm fallback</code> writes one that apologizes and puts the caller through to
+          <code>HANDOFF_NUMBER</code>, and says where to paste its URL; host the file anywhere that stays up when your machine
+          does not (a static page on GitHub Pages or Cloudflare Pages, object storage). Set it once per number: with it, a
+          caller reaches a person whenever the server cannot answer; without it, they hear the carrier's own error.
+        </p>
+<pre data-copy><code>pnpm fallback --provider telnyx --number +15555550123 --out fallback.xml
+# Telnyx: the TeXML application's fallback URL. Twilio (--provider twilio): the number's "Primary handler fails" URL.</code></pre>
 
         <h3>macOS: a launchd agent</h3>
 <pre data-copy><code>cd ~/dialogwright
@@ -838,9 +863,11 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
         <p>
           DialogWright is pre-release and its APIs change, so update on purpose, and note the commit you last ran well
           (<code>git rev-parse --short HEAD</code>) so you can go back. An update restarts the server: it stops taking new calls
-          and gives live ones <code>DRAIN_MS</code> to finish, but a call still going after that is put through to
-          <code>HANDOFF_NUMBER</code> rather than carried on (the server does not keep its calls across a restart yet), so check
-          <code>/health</code> says <code>"sessions":0</code> first.
+          and gives live ones <code>DRAIN_MS</code> to finish. With <code>SESSION_STORE=file:</code> a call still going after that
+          is saved and resumed by the restarted server when its carrier calls back (and put through by the
+          <a href="#fallback">fallback</a> when it calls back before the server is up); with the memory store it is put through
+          to <code>HANDOFF_NUMBER</code>, so check <code>/health</code> says <code>"sessions":0</code> first. A session saved by
+          a version whose session shape differs is not resumed: that caller is put through to a person.
         </p>
 <pre data-copy><code>cd ~/dialogwright
 git pull
@@ -855,7 +882,8 @@ systemctl --user restart myline              # or: launchctl kickstart -k gui/$(
         <h3>Backing up</h3>
         <p>
           What is yours and not in git: <code>~/ivr/myline.env</code> (your keys: back it up only somewhere encrypted), the traces
-          and audit folders, and <code>~/.cloudflared/</code> (a named tunnel's credentials). The audit files are append-only and
+          and audit folders, and <code>~/.cloudflared/</code> (a named tunnel's credentials). The sessions folder needs no backup:
+          it holds only the calls under way. The audit files are append-only and
           chained: copy them, never edit them, since an edit breaks every later link.
         </p>
 
@@ -883,8 +911,8 @@ systemctl --user restart myline              # or: launchctl kickstart -k gui/$(
             callers said. Reach it from elsewhere over SSH, never by turning this off.</li>
           <li><strong>No port opened on the router.</strong> The tunnel connects out. Turn on the machine's firewall: the server
             needs no incoming connection from the network, only from <code>cloudflared</code> on the same machine.</li>
-          <li><strong>The traces hold what callers said.</strong> Treat the data folder as personal data, kept on this machine and in
-            encrypted backups.</li>
+          <li><strong>The traces hold what callers said</strong>, and so does the sessions folder while a call is live. Treat the
+            data folder as personal data, kept on this machine and in encrypted backups.</li>
           <li><strong>Keep the machine updated.</strong></li>
           <li>Building a line for a small business (a law office's, say)? Its callers are the business's clients: ask what it must
             keep, for how long, and who may read it, before the first call.</li>
@@ -896,10 +924,10 @@ systemctl --user restart myline              # or: launchctl kickstart -k gui/$(
         <p>
           Phase 8 is a machine you own, run for months. Its first part is here: <code>pnpm configure</code>,
           <code>pnpm start</code> with a quick tunnel, settings files, readiness and a drain, retention, <code>pnpm diagnose</code>
-          and service files. Next for one machine is a session store that outlives the process, so a restart no longer drops a
-          call; then writes that are never done twice after a crash, carrier fallback documents, and console sign-in. Until the
-          store, update when the line is quiet. When one machine is no longer enough, the same app folder is designed to
-          run on many servers.
+          and service files. Its second part is here too: a session store that outlives the process, so a restart no longer
+          drops a call, writes a service can tell apart when a call resumed after a crash sends one again, and carrier fallback
+          documents. Next is console sign-in. When one machine is no longer enough, the same app folder is designed to run on
+          many servers.
         </p>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">The roadmap</a>

@@ -1,4 +1,6 @@
-import type { Session } from '../core/session';
+import { SESSION_SCHEMA, type Session } from '../core/session';
+import { appOf } from '../core/app/registry';
+import type { CallStateStore, StoredCall } from './stores/types';
 import type { RunOptions } from '../run/turn';
 import type { TraceWriter } from '../trace/writer';
 import type { FrameLog } from './frameLog';
@@ -34,6 +36,8 @@ export interface CallEntry extends CallResources {
    * (src/server/http.ts). What the handoff summary (src/handoff/summary.ts) reads.
    */
   auditEntries: AuditEntry[];
+  /** The carrier the call came in on (server/voice/registry.ts), when the adapter named it: what a saved call is resumed for. */
+  provider?: string;
 }
 
 export type CallFactory = (callSid: string) => CallResources;
@@ -48,15 +52,50 @@ export const ENDED_GRACE_MS = 60_000;
 /** Nothing legitimate keeps one phone call alive this long; past it the entry is a leak. */
 export const DEFAULT_SESSION_MAX_AGE_MS = 7_200_000;
 
+/** Where a SessionStore saves its calls, and where it says what it could not do. */
+export interface SessionStoreOptions {
+  /**
+   * Where each call is saved after every turn, and loaded from when a call this server does not hold
+   * calls back (SESSION_STORE=file:<dir>, server/stores/file.ts). Absent or null (SESSION_STORE=memory,
+   * the default), nowhere: the entry here is the call's only copy, as it always was.
+   */
+  state?: CallStateStore | null;
+  log?: (line: string) => void;
+}
+
+/** What `restore` found: the call already here, loaded from the store, nothing to resume, or a call saved in a shape this server cannot read. */
+export type RestoreResult = 'held' | 'restored' | 'none' | 'unreadable';
+
+/**
+ * The calls this server holds, with what is live about each (its socket, its turn queue). With a call
+ * store (SessionStoreOptions.state) it also saves each call after every turn (persist), forgets it
+ * when it ends or is evicted, and loads one it does not hold when its carrier calls back for it after
+ * a restart (restore), so the call goes on where it was.
+ */
 export class SessionStore {
   private readonly calls = new Map<string, CallEntry>();
+  private readonly state: CallStateStore | null;
+  private readonly log: (line: string) => void;
+  /** Each call's saves and removals, in order, so a slow store never writes an older save over a newer one. */
+  private readonly writes = new Map<string, Promise<void>>();
+  /** Calls loaded from the store whose carrier has not yet reconnected: the first line they hear says they were lost for a moment. */
+  private readonly restored = new Set<string>();
 
   constructor(
     private readonly factory: CallFactory,
     private readonly ttlMs: number,
     private readonly now: () => number = Date.now,
     private readonly maxAgeMs: number = DEFAULT_SESSION_MAX_AGE_MS,
-  ) {}
+    options: SessionStoreOptions = {},
+  ) {
+    this.state = options.state ?? null;
+    this.log = options.log ?? ((line) => console.log(`[server] ${line}`));
+  }
+
+  /** Whether calls are saved somewhere that outlives this process (a call store was given). */
+  get durable(): boolean {
+    return this.state !== null;
+  }
 
   get(callSid: string): CallEntry | undefined {
     return this.calls.get(callSid);
@@ -84,7 +123,8 @@ export class SessionStore {
     return sids;
   }
 
-  create(callSid: string, socket: SocketLike): CallEntry {
+  /** A new call, on `provider`'s socket (default Twilio's, as the legacy path is). */
+  create(callSid: string, socket: SocketLike, provider?: string): CallEntry {
     if (this.calls.has(callSid)) throw new Error(`session for ${callSid} already exists`);
     const entry: CallEntry = {
       ...this.factory(callSid),
@@ -98,9 +138,167 @@ export class SessionStore {
       tail: Promise.resolve(),
       inFlight: 0,
       auditEntries: [],
+      ...(provider !== undefined ? { provider } : {}),
     };
     this.calls.set(callSid, entry);
     return entry;
+  }
+
+  /** Run `write` after the call's earlier saves and removals; a failure is logged, never thrown. */
+  private queueWrite(callSid: string, what: string, write: (state: CallStateStore) => unknown): Promise<void> {
+    const state = this.state;
+    if (state === null) return Promise.resolve();
+    const run = (this.writes.get(callSid) ?? Promise.resolve())
+      .then(() => write(state))
+      .then(() => undefined, (err: unknown) => this.log(`${callSid}: could not ${what}: ${err instanceof Error ? err.message : String(err)}`));
+    this.writes.set(callSid, run);
+    void run.then(() => {
+      if (this.writes.get(callSid) === run) this.writes.delete(callSid);
+    });
+    return run;
+  }
+
+  /**
+   * Save the call as it is now (after a turn, a reconnect): its session, its counters and its audit
+   * entries. A call that has ended is forgotten instead. Without a call store, nothing.
+   */
+  persist(callSid: string): Promise<void> {
+    const e = this.calls.get(callSid);
+    if (!e || this.state === null) return Promise.resolve();
+    if (e.ended || e.session.ended) return this.forget(callSid);
+    const call: StoredCall = {
+      callId: callSid,
+      provider: e.provider ?? 'twilio',
+      schema: SESSION_SCHEMA,
+      session: e.session,
+      reconnects: e.reconnects,
+      createdAtMs: e.createdAtMs,
+      lastActivityMs: e.lastActivityMs,
+      auditTail: [...e.auditEntries],
+    };
+    return this.queueWrite(callSid, 'save the session', (state) => state.save(call));
+  }
+
+  /** Remove the call from the store (it ended, or it is past its time). */
+  private forget(callSid: string): Promise<void> {
+    this.restored.delete(callSid);
+    return this.queueWrite(callSid, 'remove the saved session', (state) => state.remove(callSid));
+  }
+
+  /** Every save and removal queued so far, done. */
+  async settled(): Promise<void> {
+    await Promise.all([...this.writes.values()]);
+  }
+
+  /** Whether a saved call is within its idle time and its cap at `now` (read from the stored counters, whatever its schema). */
+  private inTime(c: StoredCall, now: number): boolean {
+    return now - c.lastActivityMs < this.ttlMs && now - c.createdAtMs < this.maxAgeMs;
+  }
+
+  /** Whether a saved call may still go on at `now`: in time, and not over. */
+  private resumable(c: StoredCall, now: number): boolean {
+    return this.inTime(c, now) && !c.session.ended;
+  }
+
+  /**
+   * Load a call this server does not hold from the store, for its carrier's callback (`provider`, the
+   * callback's path): 'restored' when it can go on, with no socket until the carrier reconnects;
+   * 'held' when this server already has it; 'none' when there is nothing to resume (never saved, ended,
+   * past its time, or saved for another carrier); 'unreadable' when it was saved under another
+   * SESSION_SCHEMA (or for an app this server does not run), which is then forgotten: its caller is
+   * put through to a person (http.ts).
+   */
+  async restore(callId: string, provider: string): Promise<RestoreResult> {
+    if (this.calls.has(callId)) return 'held';
+    if (this.state === null) return 'none';
+    let c: StoredCall | null;
+    try {
+      c = await this.state.load(callId);
+    } catch (err) {
+      this.log(`${callId}: could not load the saved session: ${err instanceof Error ? err.message : String(err)}`);
+      return 'none';
+    }
+    if (c === null) return 'none';
+    // Loaded while another callback for it did the same.
+    if (this.calls.has(callId)) return 'held';
+    if (c.schema !== SESSION_SCHEMA) {
+      this.log(`${callId}: not resumed: saved under session schema ${c.schema}, and this server reads ${SESSION_SCHEMA}`);
+      await this.forget(callId);
+      return 'unreadable';
+    }
+    try {
+      appOf(c.session);
+    } catch {
+      this.log(`${callId}: not resumed: saved for the app "${String(c.session.appId)}", which this server does not run`);
+      await this.forget(callId);
+      return 'unreadable';
+    }
+    if (c.provider !== provider) {
+      this.log(`${callId}: not resumed: saved for ${c.provider}, and the callback is from ${provider}`);
+      return 'none';
+    }
+    const now = this.now();
+    if (!this.resumable(c, now)) {
+      await this.forget(callId);
+      return 'none';
+    }
+    const entry: CallEntry = {
+      ...this.factory(callId),
+      session: c.session,
+      callSid: callId,
+      socket: null,
+      reconnects: c.reconnects,
+      createdAtMs: c.createdAtMs,
+      lastActivityMs: now,
+      ended: false,
+      endedAtMs: null,
+      tail: Promise.resolve(),
+      inFlight: 0,
+      auditEntries: [...c.auditTail],
+      provider: c.provider,
+    };
+    this.calls.set(callId, entry);
+    this.restored.add(callId);
+    this.log(`${callId}: restored from the session store (turn ${c.session.turnIndex}, reconnect ${c.reconnects})`);
+    return 'restored';
+  }
+
+  /** Whether the call was restored and has not reconnected since; true once, at its reconnect. */
+  takeRestored(callSid: string): boolean {
+    return this.restored.delete(callSid);
+  }
+
+  /**
+   * Forget the calls saved before a restart that this server never took back (their carrier never
+   * called back) once they are past their time, and return them, so the caller can record their end.
+   * Without a call store, none.
+   */
+  async sweepStored(): Promise<StoredCall[]> {
+    if (this.state === null) return [];
+    const gone: StoredCall[] = [];
+    let ids: readonly string[];
+    try {
+      ids = await this.state.list();
+    } catch (err) {
+      this.log(`could not list the saved sessions: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+    const now = this.now();
+    for (const id of ids) {
+      if (this.calls.has(id)) continue;
+      let c: StoredCall | null;
+      try {
+        c = await this.state.load(id);
+      } catch {
+        continue;
+      }
+      // One saved under another schema is kept as long as any call: its callback puts the caller through to a person.
+      const keep = c !== null && (c.schema === SESSION_SCHEMA ? this.resumable(c, now) : this.inTime(c, now));
+      if (c === null || this.calls.has(id) || keep) continue;
+      await this.forget(id);
+      gone.push(c);
+    }
+    return gone;
   }
 
   attach(callSid: string, socket: SocketLike): CallEntry | undefined {
@@ -168,6 +366,7 @@ export class SessionStore {
       if (!e.ended) e.endedAtMs = this.now();
       e.ended = true;
       e.lastActivityMs = this.now();
+      if (this.state !== null) void this.forget(callSid);
     }
   }
 
@@ -192,6 +391,7 @@ export class SessionStore {
       }
       if (e.socket) e.socket.close(1000, expired ? 'session expired' : 'session evicted');
       this.calls.delete(sid);
+      if (this.state !== null) void this.forget(sid);
       gone.push(sid);
     }
     return gone;

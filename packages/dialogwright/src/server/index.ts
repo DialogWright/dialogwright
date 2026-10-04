@@ -1,13 +1,14 @@
 import { createServer, type Server } from 'node:http';
 import { applyEnvFile, envFilePathOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
-import { join } from 'node:path';
+import { join, resolve as resolvePath } from 'node:path';
 import { consoleExposure, DEFAULT_DRAIN_MS, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
 import { createRequestHandler, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, type AdapterDeps } from './adapter';
 import { SessionStore } from './sessions';
 import { CallTokens } from './tokens';
+import { openFileStores } from './stores/file';
 import { FrameLog } from './frameLog';
 import { buildHints } from './hints';
 import { DashboardBus } from './dashboard/bus';
@@ -183,6 +184,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const tools = demoTools();
   // One audit chain for the process: every call's entries link into the same day file.
   const audit = new AuditLog(config.auditDir, now);
+  // SESSION_STORE=file:<dir>: calls, chats and relay tokens saved in a folder, so a restart resumes a
+  // call whose carrier calls back. Unset (memory), nothing is saved, as it always was.
+  const files = config.sessionStore ? openFileStores(resolvePath(config.sessionStore.dir), { tokenTtlMs: TOKEN_TTL_MS, now, log }) : null;
+  if (files) log(`sessions: file:${files.dir} (calls, chats and relay tokens are saved after every turn, and a restart resumes them)`);
   const store: SessionStore = new SessionStore(
     (callSid) => {
       const file = safeFileStem(callSid);
@@ -198,8 +203,23 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     config.sessionTtlMs,
     now,
     config.sessionMaxAgeMs,
+    { state: files?.calls ?? null, log },
   );
-  const tokens = new CallTokens(TOKEN_TTL_MS, now);
+  const tokens: CallTokens = files?.tokens ?? new CallTokens(TOKEN_TTL_MS, now);
+  /**
+   * The calls saved before a restart whose carrier never called back, forgotten once past their time:
+   * the one end of such a call nothing else sees, so it is recorded here, as the idle sweep records an
+   * evicted call's.
+   */
+  const sweepSaved = (): void => {
+    void store.sweepStored().then((gone) => {
+      for (const c of gone) {
+        log(`${c.callId}: saved before a restart and never called back; forgotten`);
+        audit.append(c.callId, c.session.channel, { type: 'call_ended', detail: { reason: 'evicted' } });
+      }
+    });
+  };
+  if (files) sweepSaved();
   // The app's pages share the phone line's client, book of business, audit chain and console.
   const mounted = overrides.routes?.({
     config, client, thresholds, todayIso, tools, audit, bus, traceDir: config.traceDir, serviceUrls, log, now,
@@ -219,7 +239,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     ? chatEndpoint({
       settings: chatSettings, now, log, audit, bus, serviceUrls,
       anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
-      startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch,
+      startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: files?.chats ?? null,
       resources: (id, sessions) => {
         const file = safeFileStem(id);
         const trace = new TraceWriter(join(config.traceDir, `${file}.jsonl`));
@@ -306,6 +326,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     for (const r of routes) r.sweep?.();
     chat?.sweep();
+    if (files) sweepSaved();
     const swept = tokens.evictExpired();
     if (swept) log(`swept ${swept} expired call tokens`);
     if (retaining && now() - retentionAt >= RETENTION_EVERY_MS) sweepDisk();
@@ -331,6 +352,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     throw err;
   }
   const port = (server.address() as { port: number }).port;
+  /** Stop taking new connections (those open go on); the same promise however often it is asked. */
+  let stopped: Promise<void> | null = null;
+  const stopListening = (): Promise<void> => (stopped ??= new Promise<void>((resolve) => server.close(() => resolve())));
 
   return {
     server,
@@ -372,10 +396,27 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         log('drained: no calls or chats left');
         return;
       }
+      closing = true;
+      if (store.durable) {
+        // The calls are saved (SESSION_STORE=file), so none is put through to a person: this server stops
+        // taking connections first, then closes the calls' sockets as going away. Each carrier calls back
+        // at once; the restarted server, when it is listening by then, loads the call and resumes it; while
+        // no server is, the callback fails and the carrier's fallback document (pnpm fallback) puts the
+        // caller through to the handoff number.
+        log(`drain: ${ms} ms passed with ${plural(calls(), 'call')} and ${plural(chats(), 'chat')} live; the sessions are saved: the server stops listening, and the carrier calls the restarted server back`);
+        void stopListening();
+        const live = [...wss.clients];
+        for (const c of live) c.close(1001, 'server restarting');
+        await Promise.race([
+          Promise.allSettled(live.map((c) => new Promise<void>((resolve) => (c.readyState === c.CLOSED ? resolve() : c.once('close', () => resolve()))))),
+          new Promise<void>((resolve) => setTimeout(resolve, GOING_AWAY_MS).unref()),
+        ]);
+        await store.settled();
+        return;
+      }
       log(`drain: ${ms} ms passed with ${plural(calls(), 'call')} and ${plural(chats(), 'chat')} live; closing them`);
       // Going away, not an error: the carrier posts its action callback for each, and this server, about
       // to close, answers it with the handoff number (http.ts decideAction), so the caller reaches a person.
-      closing = true;
       const open = [...wss.clients];
       for (const c of open) c.close(1001, 'server restarting');
       if (open.length) {
@@ -406,6 +447,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       draining = true;
       closing = true;
       clearInterval(evictor);
+      // With the calls saved, a carrier's callback belongs to the restarted server: none is taken here.
+      if (store.durable) void stopListening();
       // Let turns that are already running finish (and flush their frames) before the sockets go away.
       const tails = [...store.tails(), ...routes.flatMap((r) => r.tails?.() ?? []), ...(chat?.tails() ?? [])];
       if (tails.length) {
@@ -423,7 +466,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       // `server.close` only stops new connections and then waits for the idle ones; an open SSE
       // stream is never idle, so a connected dashboard page would hold shutdown open forever.
       server.closeAllConnections();
-      await new Promise<void>((resolve) => wss.close(() => server.close(() => resolve())));
+      await new Promise<void>((resolve) => wss.close(() => resolve()));
+      await stopListening();
+      // What the last turns saved is on disk before the process goes.
+      await Promise.all([store.settled(), chat?.settled?.()]);
     },
   };
 }

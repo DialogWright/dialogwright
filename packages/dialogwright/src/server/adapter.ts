@@ -17,12 +17,27 @@ import { redactHandoffData, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
-import { lineLang } from '../prompts/render';
+import { lineLang, promptText } from '../prompts/render';
 import type { HandoffWording, SpokenDigitRule } from '../core/app/types';
 import type { Effect } from '../core/lifecycle';
 import { summarizeHandoff as summarizeHandoffDefault, type SummaryOptions } from '../handoff/summary';
 import type { AuditEntry } from '../audit/types';
 import { carryScrub, type Scrub } from '../core/recording';
+
+/**
+ * Said first when a call comes back after its server restarted (SESSION_STORE=file), before the
+ * question the caller was last asked: the engine's line, unless the app's prompts.yaml has one called
+ * `resumed` (said in the call's language where its locale has the line). The engine's line is English: an
+ * app in another language gives its own.
+ */
+export const RESUMED_TEXT = 'Sorry, I lost you for a moment.';
+
+/** The line a call resumed after a restart hears first: the app's `resumed` prompt, or RESUMED_TEXT. */
+export function resumedLine(session: Session): string {
+  const app = appOf(session);
+  // A locale's own line is a translation of prompts.yaml's (check refuses one prompts.yaml lacks).
+  return Object.hasOwn(app.prompts.manifest, 'resumed') ? promptText(app, 'resumed', {}, session.locale) : RESUMED_TEXT;
+}
 
 /** Spoken when a turn throws, so a failure is a retry rather than dead air. */
 export const TURN_ERROR_TEXT = 'Sorry, something went wrong on my end. Please say that again.';
@@ -394,6 +409,7 @@ function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect): void
     }
     e.session = { ...e.session, pendingService: null };
     e.frames.write('log', { serviceWaitAbandoned: true });
+    await deps.store.persist(e.callSid);
   });
 }
 
@@ -434,6 +450,9 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     entry.session = run.result.session;
     // Kept on the call's own entry whether or not the console is on: the handoff summary reads it.
     entry.auditEntries.push(...run.audit);
+    // Saved before what the turn says goes out (SESSION_STORE=file; nothing with the memory store), so a
+    // restart after the caller heard a question resumes at that question.
+    await deps.store.persist(entry.callSid);
     const kind = run.result.decision.kind;
     ending = kind === 'complete' || kind === 'handoff';
     if (run.result.decision.kind === 'handoff') {
@@ -546,19 +565,24 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
         previous.close(1000, 'replaced by reconnect');
       }
       const entry = deps.store.attach(parsed.callSid, socket) ?? existing;
-      entry.frames.write('log', { resumed: true, sessionId: parsed.sessionId });
+      // A call loaded from the session store after a restart (SESSION_STORE=file): its caller heard
+      // nothing for a moment, and is told so before the question is asked again.
+      const restarted = deps.store.takeRestored(parsed.callSid);
+      entry.frames.write('log', { resumed: true, sessionId: parsed.sessionId, ...(restarted ? { afterRestart: true } : {}) });
+      if (restarted) deps.log(`${parsed.callSid}: resumed after a restart`);
       publish(deps, { type: 'reconnect', callSid: parsed.callSid, at: Date.now(), attempt: entry.reconnects });
       await deps.store.enqueue(parsed.callSid, async (e) => {
-        if (!e.session.lastPromptText) return;
+        const again = restarted ? [resumedLine(e.session), e.session.lastPromptText].filter(Boolean).join(' ') : e.session.lastPromptText;
+        if (!again) return;
         // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
-        const sent = await sendFrames(deps, e, [textFrame(e.session.lastPromptText, true, lineLang(appOf(e.session), e.session.locale))]);
+        const sent = await sendFrames(deps, e, [textFrame(again, true, lineLang(appOf(e.session), e.session.locale))]);
         // The replay is a question the caller has to answer, so it starts a wait of its own; the
         // reconnect is not a turn, so nothing else would.
         armNoInput(deps, e, sent);
       });
       return;
     }
-    const entry = deps.store.create(parsed.callSid, socket);
+    const entry = deps.store.create(parsed.callSid, socket, ctx.provider);
     entry.frames.write('in', redactDeep(parsed));
     // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
     publish(deps, {

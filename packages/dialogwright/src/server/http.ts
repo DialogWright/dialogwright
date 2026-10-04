@@ -275,6 +275,31 @@ function callIsLive(params: CallbackParams): boolean | undefined {
 }
 
 /**
+ * Whether a callback asks for the call to go on (decideAction's branch c): no handoff data, and the
+ * call live in the carrier's words, or, where it says nothing of the call, the relay's session failed.
+ */
+function wantsReconnect(params: CallbackParams): boolean {
+  if (!isBlank(params.handoffData) || params.sessionStatus === 'completed') return false;
+  return callIsLive(params) ?? params.sessionStatus?.trim().toLowerCase() === 'failed';
+}
+
+/**
+ * The callback's answer for a call `restore` found saved in a shape this server cannot read (another
+ * SESSION_SCHEMA): a callback that would reconnect it puts the caller through to a person instead;
+ * anything else is decideAction's (which, holding no such call, hangs up).
+ */
+function decideUnreadable(
+  deps: HttpDeps,
+  provider: VoiceProvider,
+  params: CallbackParams,
+  start?: (o: StartDocumentOptions) => string,
+): { document: string; note: string } {
+  if (!wantsReconnect(params)) return decideAction(deps, provider, params, start);
+  deps.tokens.revoke(params.callId);
+  return { document: provider.apologizeAndDialDocument(deps.config.handoffNumber), note: 'dial:unreadable' };
+}
+
+/**
  * The legacy Twilio `<Connect action>` decision on Twilio's raw form fields, a reconnect answered at the
  * legacy socket path. Kept for existing callers; the webhook itself calls decideAction.
  */
@@ -311,9 +336,7 @@ export function decideAction(
   // or dialed. A callback that says nothing of the call's status (callIsLive undefined) goes on to a
   // reconnect only when the relay reports its session failed, and (c) then reconnects only a call
   // the engine still holds live; anything else hangs up.
-  const live = callIsLive(params);
-  const reconnectable = live ?? params.sessionStatus?.trim().toLowerCase() === 'failed';
-  if (params.sessionStatus === 'completed' || !reconnectable) {
+  if (!wantsReconnect(params)) {
     // Read before `end`, and published only for a call that was still live: this branch is the
     // one place that knows a socket close was a hangup rather than the reconnect branch below,
     // so it is the dashboard's only producer of `ended{hangup}`. A call that ended on its own
@@ -342,9 +365,11 @@ export function decideAction(
   // if we're under the limit, otherwise hand off to a human.
   const entry = deps.store.get(callSid);
   if (entry && !entry.ended) {
-    if (deps.closing?.()) {
-      // The drain has closed this call's socket and the server is about to go: a reconnect would reach
-      // nothing, so the caller is put through to a person.
+    // The drain has closed this call's socket and the server is about to go: with the call only in this
+    // process's memory, a reconnect would reach nothing, so the caller is put through to a person. With
+    // a store that outlives the process (SESSION_STORE=file), the call is saved and a reconnect is what
+    // it gets, as anywhere else: its token is saved too, and the restarted server takes the socket.
+    if (deps.closing?.() && !deps.store.durable) {
       deps.store.end(callSid);
       deps.tokens.revoke(callSid);
       return { document: provider.apologizeAndDialDocument(deps.config.handoffNumber), note: 'dial:closing' };
@@ -352,6 +377,8 @@ export function decideAction(
     if (entry.reconnects < deps.config.reconnectLimit) {
       deps.store.detach(callSid);
       entry.reconnects += 1;
+      // Saved with its new count, so a restart before the socket comes back does not hand out another.
+      void deps.store.persist(callSid);
       const token = deps.tokens.mint(callSid, provider.id);
       // The call goes on in the language it is in now, which a switch may have changed since it started.
       const locale = deps.app?.locales ? (entry.session.locale ?? deps.app.locales.default) : undefined;
@@ -458,10 +485,15 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       // An action callback that names no call is still answered, as it always was: the legacy path
       // decides it on Twilio's fields as before providers, a provider's own path hangs up.
       const callback: CallbackParams = params ?? (legacy ? twilioCallbackParams(formFields(body)) : { callId: '', raw: {} });
+      // A call this server does not hold may have been saved by the one before it (SESSION_STORE=file):
+      // loaded first, so a reconnect resumes it and a hangup records its end. With the memory store
+      // (the default) there is never one to load.
+      const loaded = callback.callId ? await deps.store.restore(callback.callId, provider.id) : 'none';
       // Masked at write time: Twilio's form post spells the caller's number four different ways
       // (From/To/Caller/Called), and the frame log must never hold the whole thing on disk.
       deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...callback.raw }));
-      const { document, note } = decideAction(deps, provider, callback, legacy ? connectRelayTwiml : undefined);
+      const start = legacy ? connectRelayTwiml : undefined;
+      const { document, note } = loaded === 'unreadable' ? decideUnreadable(deps, provider, callback, start) : decideAction(deps, provider, callback, start);
       deps.log(`${path} ${callback.callId || '?'} ${callback.sessionStatus ?? ''} -> ${note}`);
       reply(res, 200, provider.contentType, document);
     })().catch((e: unknown) => {
