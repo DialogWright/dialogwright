@@ -31,6 +31,7 @@ import { localOnlyPaths } from './localOnly';
 import { VOICE_RELAY } from '../channel/caps';
 import { CHAT_PATH, chatEndpoint, type ChatEndpoint } from './chat/socket';
 import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
+import { ConsoleAuth } from './console/auth';
 
 export interface RunningServer {
   server: Server;
@@ -252,8 +253,11 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     sweepDisk();
   }
+  // CONSOLE_AUTH=token: the console's sign-in, whose first link is made once the server listens.
+  const consoleAuth = config.consoleAuth && bus ? new ConsoleAuth({ settings: config.consoleAuth, publicHost: config.publicHost, audit, now, log }) : undefined;
   const deps: HttpDeps = {
     config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
+    ...(consoleAuth ? { consoleAuth } : {}),
     draining: () => draining,
     closing: () => closing,
     ...(chat ? { chatLive: () => chat.liveCount() } : {}),
@@ -331,6 +335,16 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     throw err;
   }
   const port = (server.address() as { port: number }).port;
+  try {
+    consoleAuth?.start(port);
+  } catch (err) {
+    // A link file that cannot be written safely is a setting to fix, not a console without a way in.
+    clearInterval(evictor);
+    chat?.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => wss.close(() => server.close(() => resolve())));
+    throw err;
+  }
 
   return {
     server,
@@ -424,6 +438,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       // stream is never idle, so a connected dashboard page would hold shutdown open forever.
       server.closeAllConnections();
       await new Promise<void>((resolve) => wss.close(() => server.close(() => resolve())));
+      consoleAuth?.stop();
     },
   };
 }
@@ -521,7 +536,7 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
     const legacy = config.voiceProviders.includes('twilio') ? ' (Twilio also on /voice)' : '';
     console.log(`[server] listening on ${running.port}; voice webhook ${webhooks}${legacy}`);
     const consoleBase = config.consoleLocalOnly ? localBase(running.port) : base;
-    if (running.bus) console.log(`[server] console ${consoleBase}/dashboard`);
+    if (running.bus) console.log(config.consoleAuth ? `[server] console ${base}/dashboard (sign in: pnpm console:link prints a link)` : `[server] console ${consoleBase}/dashboard`);
     for (const r of running.routes) console.log(`[server] ${r.label} ${(r.localOnly ? consoleBase : base)}${r.path}`);
   } catch (e) {
     console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
