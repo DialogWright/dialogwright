@@ -118,7 +118,7 @@
         "hash": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
-          "description": "SHA-256 of everything approved: topic, answer, applies, effective dates, the source text and the account line. An edit after approval makes it differ."
+          "description": "SHA-256 of everything approved: the passage's id, locale and version, its topic and the topic's title, the answer, applies, effective dates, the source text and the account line. An edit after approval makes it differ."
         }
       },
       "required": [
@@ -129,7 +129,7 @@
         "hash"
       ],
       "additionalProperties": false,
-      "description": "Who approved the passage, when, and the hashes of what they approved. Written by pnpm kb:approve."
+      "description": "Who approved the passage, when, and the hashes of what they approved. Written by pnpm kb:approve, which also logs it in kb/approvals.jsonl; pnpm check refuses an approval with no line there."
     },
     "translates": {
       "description": "For a passage in another locale, the default-locale passage it translates (same topic).",

@@ -1,4 +1,4 @@
-import { collapseWhitespace, excerptInSource, type KnowledgeBase } from 'dialogwright';
+import { collapseWhitespace, excerptInSource, excerptProblems, type KnowledgeBase } from 'dialogwright';
 import type { Draft, ProposedTopic } from './drafter';
 
 /**
@@ -8,7 +8,11 @@ import type { Draft, ProposedTopic } from './drafter';
  * answer says what its excerpt says is the person's half.
  *
  * - The section is one the source has.
- * - The excerpt is in that section word for word (whitespace aside), and is not empty.
+ * - The excerpt is in that section word for word (whitespace aside), and holds to kb:approve's own
+ *   rules for an excerpt (dialogwright's kb/excerpt.ts excerptProblems): long enough to hold the
+ *   answer to (at least 4 words and 20 characters), and every number the answer says in figures is
+ *   in it, compared as numbers (`$5.00` and `5`, `9:00` and `9`, `1,000` and `1000` are alike, and
+ *   the excerpt's numbers written as words, `sixty` or `twenty-five`, count).
  * - The answer is not empty, is no longer than kb.yaml's maxAnswerChars, and has no braces (an
  *   answer is fixed text, never a template).
  * - The topic is a valid id; one topics.yaml does not have is a new topic, which the draft must
@@ -62,11 +66,15 @@ export function draftProblems(draft: Draft, ctx: DraftContext): string[] {
   if (!source) problems.push(`its source document "${ctx.document}" is not in ${base}/sources`);
   else if (!section) problems.push(`section "${draft.section}" is not a section of ${where}`);
   const excerpt = typeof draft.excerpt === 'string' ? draft.excerpt : '';
+  const answer = typeof draft.answer === 'string' ? collapseWhitespace(draft.answer) : '';
+  // Said as the review page's edit says it (every excerpt problem starts "its excerpt"); kb:approve's own words for it are for the file.
   if (collapseWhitespace(excerpt) === '') problems.push('its excerpt is empty: a draft quotes the words of the section that support it');
-  else if (section && !excerptInSource(excerpt, section.text)) problems.push(`its excerpt is not in ${where} section "${draft.section}" word for word`);
+  else {
+    if (section && !excerptInSource(excerpt, section.text)) problems.push(`its excerpt is not in ${where} section "${draft.section}" word for word`);
+    problems.push(...excerptProblems(excerpt, answer));
+  }
 
   // The answer.
-  const answer = typeof draft.answer === 'string' ? collapseWhitespace(draft.answer) : '';
   const max = kb.settings.maxAnswerChars;
   if (answer === '') problems.push('its answer is empty');
   else {

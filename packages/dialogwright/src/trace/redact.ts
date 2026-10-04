@@ -2,7 +2,7 @@ import { maskId } from '../gate/principal';
 import type { SlotState } from '../core/session';
 import type { SlotSpec } from '../core/slots/types';
 import type { App, AuditMask } from '../core/app/types';
-import { recordedValue } from '../core/recording';
+import { recordedValue, spokenValuesScrubber, type Scrub } from '../core/recording';
 import { defaultAppOrNull } from '../core/app/registry';
 import { IDENTITY_UNVERIFIED, IDENTITY_VERIFIED } from '../core/decision';
 import type { TraceRecord } from './types';
@@ -14,7 +14,8 @@ import type { TraceRecord } from './types';
  * would otherwise carry the whole identifier and factor. Every function here is idempotent, so a
  * record the trace writer already redacted can go through the dashboard's redaction again.
  *
- * What this masks is the slot FIELDS, not the caller's words. The transcript (the speech or text event,
+ * What this masks is the slot FIELDS, and what our own lines said of them (the say actions' text, an
+ * interruption's `heard`), not the caller's words. The transcript (the speech or text event,
  * the turn state's text, the questions the model was asked) is kept as spoken, so an identifier or
  * birth date said aloud is in the trace as said: the trace is PHI-bearing and stays apart from the
  * audit log, which carries no identity value at all (core/audit.ts).
@@ -180,16 +181,132 @@ function redactEffects(app: Slots, effects: TraceRecord['effects'], mode: Statem
   });
 }
 
-/** Every place a record carries a redacted slot's value, masked; nothing else is changed. */
+/** A redacted slot's raw text and how it is shown, for the scrub of what was said (null: not one to look for). */
+function spokenEntry(app: Slots, slot: string, raw: unknown, mode: StatementMode, display: boolean): { raw: string; shown: string; lastFour: boolean } | null {
+  const rule = ruleOf(app, slot);
+  if (rule === undefined || typeof raw !== 'string' || raw === '') return null;
+  // A statement is shown in full on the live console, and its display is a stand-in ("your description"), never the words.
+  if (rule === 'length' && (mode === 'keep' || display)) return null;
+  const shown = maskValue(app, slot, raw, mode) ?? raw;
+  return { raw, shown, lastFour: rule !== 'last4' };
+}
+
+/**
+ * The scrub of what a session's lines said aloud, built from the redacted slots it holds (each
+ * slot's value and display, and a pending readback's): each raw value, its last-four form (for a
+ * slot not shown by its last four) and its digits however spaced or grouped (core/recording.ts
+ * spokenValuesScrubber), replaced by the slot's masked form. Null when there is nothing to look for.
+ */
+export function slotsScrubber(
+  slots: Readonly<Record<string, { readonly value?: unknown; readonly display?: unknown } | null | undefined>> | null | undefined,
+  pending: { readonly target: string; readonly slot?: string; readonly value?: unknown; readonly display?: unknown } | null | undefined,
+  mode: StatementMode,
+  app: Slots = defaultAppOrNull(),
+  more: Iterable<readonly [slot: string, text: unknown]> = [],
+  options: { readonly cutOff?: boolean } = {},
+): Scrub | null {
+  const entries: { raw: string; shown: string; lastFour: boolean }[] = [];
+  const add = (slot: string, raw: unknown, display: boolean): void => {
+    const e = spokenEntry(app, slot, raw, mode, display);
+    if (e) entries.push(e);
+  };
+  if (isObject(slots)) {
+    for (const [id, st] of Object.entries(slots)) {
+      if (!isObject(st)) continue;
+      add(id, st.value, false);
+      add(id, st.display, true);
+    }
+  }
+  if (isObject(pending) && pending.target === 'slot' && typeof pending.slot === 'string') {
+    add(pending.slot, pending.value, false);
+    add(pending.slot, pending.display, true);
+  }
+  for (const [slot, text] of more) add(slot, text, true);
+  return spokenValuesScrubber(entries, options);
+}
+
+/** The raw texts a turn carries of its redacted slots beside its slots and readback: its decision's variables and a handoff's or a transfer's collected slots. */
+function decisionTexts(decision: unknown, actions: unknown): [string, unknown][] {
+  const out: [string, unknown][] = [];
+  const vars = (v: unknown): void => {
+    if (isObject(v)) for (const [k, x] of Object.entries(v)) out.push([k, x]);
+  };
+  if (isObject(decision)) {
+    vars(decision.vars);
+    vars(decision.slots);
+    if (Array.isArray(decision.acks)) for (const a of decision.acks) if (isObject(a)) vars(a.vars);
+  }
+  if (Array.isArray(actions)) for (const a of actions) if (isObject(a) && a.type === 'transfer') vars(a.slots);
+  return out;
+}
+
+/** The scrub of what a record's turn said aloud (slotsScrubber over the record's slots, readback and decision), or null. */
+export function recordScrubber(record: TraceRecord, mode: StatementMode, app: Slots = defaultAppOrNull(), options: { readonly cutOff?: boolean } = {}): Scrub | null {
+  return slotsScrubber(record.slots, record.pendingConfirmation ?? null, mode, app, decisionTexts(record.decision, record.actions), options);
+}
+
+/** The scrub of what a turn said aloud, from the session after it and its decision (the frame log's: server/adapter.ts), or null. */
+export function turnScrubber(session: { readonly slots: TraceRecord['slots']; readonly pendingConfirmation: TraceRecord['pendingConfirmation'] }, decision: unknown, mode: StatementMode, app: Slots = defaultAppOrNull()): Scrub | null {
+  return slotsScrubber(session.slots, session.pendingConfirmation ?? null, mode, app, decisionTexts(decision, []));
+}
+
+/** A decision's variables and its acks' (each text), scrubbed: a variable not named for its slot may still hold its value. */
+function scrubVars(d: TraceRecord['decision'], scrub: Scrub | null): TraceRecord['decision'] {
+  if (scrub === null || !isObject(d)) return d;
+  const vars = (v: unknown): unknown => (isObject(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, typeof x === 'string' ? scrub(x) : x])) : v);
+  const out: Record<string, unknown> = { ...d };
+  if ('vars' in d) out.vars = vars(d.vars);
+  if ('acks' in d && Array.isArray(d.acks)) out.acks = d.acks.map((a) => (isObject(a) ? { ...a, vars: vars(a.vars) } : a));
+  return out as TraceRecord['decision'];
+}
+
+/** A say action's text parts, scrubbed. */
+function scrubSay(action: unknown, scrub: Scrub): unknown {
+  if (!isObject(action) || action.type !== 'say' || !Array.isArray(action.parts)) return action;
+  return { ...action, parts: action.parts.map((p: unknown) => (isObject(p) && typeof p.text === 'string' ? { ...p, text: scrub(p.text) } : p)) };
+}
+
+/**
+ * Every place a record carries a redacted slot's value, masked; nothing else is changed. That
+ * includes what the turn said aloud: the say actions' text, and the part of our line a caller's
+ * interruption heard (the event's `heard`, our words, never the caller's), scrubbed of each
+ * redacted slot's raw value, display and digits however spaced (recordScrubber).
+ */
 export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app: Slots = defaultAppOrNull()): TraceRecord {
+  const scrub = recordScrubber(record, mode, app);
   const out: TraceRecord = { ...record, slots: redactSlots(record.slots, mode, app), turnState: redactTurnState(record.turnState, mode, app) };
+  // What an interruption heard of our line was cut off as it was said: a value's first digits are masked too.
+  const cut = isObject(record.event) && record.event.type === 'user.interrupt' && typeof record.event.heard === 'string' ? recordScrubber(record, mode, app, { cutOff: true }) : null;
+  if (cut !== null && record.event.type === 'user.interrupt') out.event = { ...record.event, heard: cut(record.event.heard) };
   const pc = record.pendingConfirmation;
   if (pc && pc.target === 'slot') out.pendingConfirmation = { ...pc, value: maskValue(app, pc.slot, pc.value, mode) ?? pc.value, display: maskValue(app, pc.slot, pc.display, mode) ?? pc.display };
-  out.decision = redactDecision(app, record.decision, mode);
+  out.decision = scrubVars(redactDecision(app, record.decision, mode), scrub);
   if (record.effects !== undefined) out.effects = redactEffects(app, record.effects, mode);
   // A transfer hands over what the call collected, identity slots included.
   if (Array.isArray(record.actions)) {
-    out.actions = record.actions.map((a) => (isObject(a) && a.type === 'transfer' && isObject(a.slots) ? { ...a, slots: redactCollected(app, a.slots, mode) } : a));
+    out.actions = record.actions.map((a) => {
+      if (isObject(a) && a.type === 'transfer' && isObject(a.slots)) return { ...a, slots: redactCollected(app, a.slots, mode) };
+      return scrub === null ? a : (scrubSay(a, scrub) as typeof a);
+    });
   }
   return out;
 }
+
+/**
+ * A knowledge record (TurnOut.kb, KbSource) as the unauthenticated console shows it: whom the
+ * passage answered (`applies`, the caller's facts read from their record) only as policy.yaml's
+ * `audit:` declares each fact (a fact it does not declare, or declares secret, is left out), as a
+ * tool's params are recorded. Everything else of the record (the passage, its version and hashes)
+ * is the knowledge base's, and stays.
+ */
+export function consoleKbSource<K extends { readonly applies?: Readonly<Record<string, string>> }>(kb: K, app: Slots = defaultAppOrNull()): K {
+  if (!isObject(kb) || !isObject(kb.applies)) return kb;
+  const applies: Record<string, string> = {};
+  for (const [fact, v] of Object.entries(kb.applies)) {
+    const declared = typeof v === 'string' ? auditOf(app, fact) : undefined;
+    const shown = declared === undefined ? null : recordedValue(declared, v as string);
+    if (shown !== null) applies[fact] = shown;
+  }
+  return { ...kb, applies };
+}
+

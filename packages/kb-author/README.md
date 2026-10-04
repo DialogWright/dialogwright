@@ -14,7 +14,7 @@ It is a pipeline of five commands:
 
 ```sh
 pnpm kb:ingest <folder | file | url> [--dir <app folder>] [--dry-run] [--json]
-pnpm kb:ingest https://example.org/help/ --dir apps/my-app --depth 2 [--include '/help/**'] [--include '*.pdf'] [--max-pages 50] [--rate 1000] [--allow-host docs.example.org]
+pnpm kb:ingest https://example.org/help/ --dir apps/my-app --depth 2 [--include '/help/**'] [--include '*.pdf'] [--max-pages 50] [--rate 1000] [--allow-host docs.example.org] [--allow-private]
 ```
 
 `--dir` is the app folder (or its `kb/` folder); without it, the folder the command is run in, when that is an app folder. Relative paths are from where you run it. It prints one line per document, `added`, `changed` (with each section added `+`, changed `~` or removed `-`) or `unchanged`, then what it skipped and why. `--dry-run` writes nothing; `--json` prints the report as JSON. Exit codes: 0 done, 1 a problem, 2 a command line not understood.
@@ -60,7 +60,7 @@ sections:
 | Markdown (`.md`, `.markdown`) | a light reader: ATX and setext headings, lists, fenced code; inline markup stripped to its words | at `#` to `###` |
 | Text (`.txt`) | paragraphs between blank lines | one section |
 
-A folder is read recursively in name order. Hidden entries and `node_modules` are passed over, links are not followed, and any other file is listed as skipped. A scanned PDF has no text layer and is skipped with a note that it needs OCR first.
+A folder is read recursively in name order. Hidden entries and `node_modules` are passed over, links are not followed, and any other file is listed as skipped. A scanned PDF has no text layer and is skipped with a note that it needs OCR first. A file over 50 MB is not read. A DOCX is a zip, so its zip is checked before it is opened: its entries may hold at most 50 MB uncompressed in all and number at most 10,000, and each is inflated with its output capped at the size it declares, so a zip bomb, or an entry that holds more than it says, is refused unread. A PDF of more than 500 pages is refused before a page is read, and pdf.js opens every PDF with code evaluation off (`isEvalSupported: false`; the pdf.js it bundles evaluates nothing at all).
 
 ## The crawler
 
@@ -69,7 +69,8 @@ A folder is read recursively in name order. Hidden entries and `node_modules` ar
 - One request at a time, at least `--rate` ms apart to a host (default 1000, at least 100), and at most `--max-pages` pages and documents (default 50).
 - `--depth` is how many links from the start page (default 1; 0 reads the start page alone), breadth first. It follows only `<a href>` links to http(s) URLs, canonical (the fragment dropped), and fetches each URL once, so links that go round are read once.
 - It fetches pages and documents (PDF, DOCX); a link to an image, a stylesheet, an archive and the like is not fetched, and a response of another type is dropped unread. `--include` globs over the URL path narrow what is fetched beyond the start page (`/help/**`; `*.pdf` matches the last segment).
-- It follows a redirect (up to 5) only where a link could go. No cookies, credentials or forms; responses over 20 MB or 30 seconds are dropped. Its User-Agent is `dialogwright-kb-ingest/<version> (+https://github.com/DialogWright/dialogwright)`.
+- It follows a redirect (up to 5) only where a link could go: on the hosts it may read, and allowed by robots.txt. robots.txt's own redirects are followed the same way, one hop at a time, each checked; one off the host leaves that host uncrawled. No cookies, credentials or forms; responses over 20 MB or 30 seconds are dropped.
+- It reads only public addresses. Every host is resolved before each request and refused when any of its addresses is loopback, private (RFC 1918), link-local (169.254.0.0/16, where cloud metadata services answer, and fe80::/10), unspecified, shared (carrier-grade NAT, 100.64.0.0/10), unique local (fc00::/7), multicast or reserved, or an IPv6 address that carries one of these (IPv4-mapped `::ffff:127.0.0.1`, NAT64, 6to4). The connection is made to the address that was checked (the socket's lookup is pinned to it), so a second DNS answer cannot move it. `--allow-private` lifts the check, for a site on your own network; a start page on a private address is refused without it, before anything is asked of it. Its User-Agent is `dialogwright-kb-ingest/<version> (+https://github.com/DialogWright/dialogwright)`.
 
 A crawled page's id is the slug of its URL path (`/services/hours.html` is `services-hours`, `/` is `index`), with its host first when it is not the start's.
 
@@ -91,6 +92,8 @@ A drafter is pluggable: `{ id, draft({ source, existingTopics, locale, maxAnswer
 | --- | --- |
 | the section is in the source | `section "9.9" is not a section of kb/sources/patron-guide.yaml` |
 | the excerpt is there, word for word (whitespace aside) | `its excerpt is not in kb/sources/patron-guide.yaml section "3.1" word for word` |
+| the excerpt is long enough to hold the answer to: at least 4 words and 20 characters | `its excerpt "overdue" is too short to hold the answer to: quote at least 4 words and 20 characters of the section` |
+| every number in the answer (an amount, a time, a date, a count in figures) is in the excerpt, compared as numbers (`$5.00` is `5`, `9:00` is `9`, `1,000` is `1000`; the excerpt's `sixty` or `twenty-five` count) | `its excerpt does not say 50, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes` |
 | the answer is short | `its answer is 487 characters, over the 400 kb.yaml allows (maxAnswerChars): a spoken answer is one or two short sentences` |
 | the answer is fixed text | `its answer has a brace: an answer is fixed text, said word for word, with no variables` |
 | the topic is an id, and a new one has a title | `its topic "room_hire" is not in kb/topics.yaml, and it proposes no title for a new one` |
@@ -105,29 +108,32 @@ A drafter is pluggable: `{ id, draft({ source, existingTopics, locale, maxAnswer
 pnpm kb:review [app folder] [--port N] [--traces <path|glob>]...
 ```
 
-It starts a small server and prints its URL. The page lists the proposed topics, the drafts waiting and the passages withheld (their source changed, they were edited, or never approved). A draft is shown beside its source section with its excerpt marked; a passage withheld after its source changed, beside a word diff of the section as it was approved against the section now. The page asks once who is reviewing (a person's name, which kb:approve's own check holds to, and the team that owns the content), then offers:
+It starts a small server and prints its URL. The page lists the proposed topics, the drafts waiting and the passages withheld (their source changed, they were edited, or never approved). A draft is shown beside its source section with its excerpt marked; a passage withheld after its source changed, beside a word diff of the section as it was approved against the section now. The page asks each browser once who is reviewing (a person's name, which kb:approve's own check holds to, and the team that owns the content), then offers:
 
 - **Approve**: dialogwright's kb:approve itself (`--by` the reviewer, `--owner` the team for a draft; a passage keeps its owner).
 - **Edit, then approve**: the answer, `applies`, the dates, and a draft's excerpt. The edit is checked as kb:draft checks a draft, and the excerpt must still be in the section word for word; a refused edit or approval leaves the file as it was.
 - **Reject** (a draft): it moves to `kb/rejected/<id>.yaml` with `rejected: { by, on, reason }`, a record kept in the repository; kb:draft passes over the sections a rejected draft cites.
-- **A proposed topic**: accept it into `topics.yaml` (renamed if you give another id; the drafts that name it follow) or merge it into a topic `topics.yaml` has (its drafts re-pointed). A draft of a proposed topic is approved after its topic. When `kb.yaml` names an embedder, run `pnpm kb:index` after accepting topics.
+- **A proposed topic**: accept it into `topics.yaml` with its title as you write it (a topic's title is said to callers: the topic question offers it, so the page asks you to review it; at most 80 characters, no braces), renamed if you give another id (the drafts that name it follow), or merge it into a topic `topics.yaml` has (its drafts re-pointed). A draft of a proposed topic is approved after its topic. When `kb.yaml` names an embedder, run `pnpm kb:index` after accepting topics.
 - **The Gaps tab** (`/gaps`, linked in the header): the ranked list `kb:gaps` prints (below), read from the traces each time it is opened (`--traces` as for kb:gaps; by default `$TRACE_DIR`, else the app's `traces/`, else `./traces`). Each group links from its fixes to where they are done: a stale passage to its withheld page (while it is withheld), a topic to its page (the topic's keywords and asks, its passages with their state, and the drafts that answer it), and "draft from" to a page listing every sample of the callers' words and the sections nothing cites that read as relevant, with the `pnpm kb:draft` command to draft from them (the page runs nothing; drafting uses your key on your command line). It shows the callers' words as the traces recorded them, behind the same token.
 
 Its access, and why it is not in the operator console: the console has no access control until Phase 8, and its tunnel carries the public's requests, so the review page is a separate local server instead.
 
 - It listens on 127.0.0.1 alone (a free port unless `--port`) and answers only a loopback peer whose `Host` is that address and port (so a page elsewhere cannot reach it through a name that resolves to 127.0.0.1).
 - A random 32-byte token, new each time it starts, is in the URL it prints. Every request, reading or writing, must carry it (the `token` query parameter, a form's `token` field, or an `x-review-token` header), compared in constant time; without it the answer is 403. A change must be a form POST, and from the page itself when the browser sends an Origin.
+- Who is reviewing is kept per browser. Once a request has shown the token, the page sets a session cookie: a random id signed with a key made when the server starts, `HttpOnly`, `SameSite=Strict`, named for its port (`dw-review-<port>`). The reviewer's name and team, and the outcome of their last change, belong to that session alone; another browser with the token is asked who it is, and a cookie whose signature does not hold starts a new session.
+- What a reviewer saw is what they approve. Every form that changes a draft, a passage or a topic carries a hash of what its page showed when it was opened (the draft's or passage's file as it is on disk with its source section's text, or the proposed topic), and the change is refused when the file or the section changed since: "changed since you opened it: reload the page and review it again".
+- Every id in its URLs names a draft, a passage or a topic, checked against the knowledge base's id patterns before anything is read; each file an action reads, writes or moves must be in `kb/pending`, `kb/rejected`, `kb/passages` or `kb/locale/<tag>/passages` (its real path, links followed). The reviewer form comes back only to a path of the page's own.
 - Its pages load nothing from anywhere else (a Content-Security-Policy with a nonce for its one style and one script), are not cached, send no Referer and cannot be framed. They read without JavaScript, and the actions are plain forms (the script only asks before a reject). Every field has a label, there is a skip link, and the diff and the excerpt are announced to a screen reader.
 
-**The approved text, for the diff.** An approval hashes its section's text; to show what changed, kb:approve now also keeps that text in its `kb/approvals.jsonl` line (`sourceText`). The review page takes the last line for the passage whose `sourceHash` is the passage's approval's, so the text is the one approved, checked by its hash, from a log that is only appended to and is committed with the knowledge base. A passage approved before this has no text kept, and the page says to read the source's git history instead.
+**The approved text, for the diff.** An approval hashes its section's text; to show what changed, kb:approve now also keeps that text in its `kb/approvals.jsonl` line (`sourceText`). The review page takes the last line for the passage whose `sourceHash` is the passage's approval's and whose text hashes to it, so the text is the one approved, checked by its hash, from a log that is only appended to and is committed with the knowledge base. A passage approved before this has no text kept, and the page says to read the source's git history instead.
 
 ## Refreshing
 
 ```sh
-pnpm kb:refresh [app folder] [--dry-run] [--json]
+pnpm kb:refresh [app folder] [--allow-private] [--dry-run] [--json]
 ```
 
-It reads every source in `kb/sources` again from its provenance: a file from the app folder, a crawled page through its crawl (once per crawl, with the settings recorded), a page with no crawl recorded on its own. It writes the documents that changed, and nothing else, then reports:
+It reads every source in `kb/sources` again from its provenance: a file from the app folder, a crawled page through its crawl (once per crawl, with the settings recorded), a page with no crawl recorded on its own. A source file is text anyone with the repository can edit, so what it names is held to bounds: a file is read only when its real path (links followed) is a file inside the app folder, and a `../` path, an absolute path, a link out of the folder or a folder is refused and reported as failed; a URL is read only when it is http(s), through the crawler, so a host on a private network is refused unless `--allow-private`. Before it asks any website it prints the hosts the sources name (`kb:refresh: asking library.example (the hosts the sources were read from)`). It writes the documents that changed, and nothing else, then reports:
 
 ```
 kb:refresh kb: 2 reads (1 document): 0 added, 1 changed, 0 unchanged

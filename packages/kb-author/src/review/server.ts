@@ -1,9 +1,10 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import type { KbPlace } from 'dialogwright';
-import { acceptTopic, approve, approvedSectionText, draftReviewProblems, editAndApprove, mergeTopic, reject, reviewerProblem, reviewState, type ActionResult, type Edits, type Reviewer } from './actions';
+import { acceptTopic, approve, approvedSectionText, draftReviewProblems, editAndApprove, KB_FILE_ID, mergeTopic, reject, reviewerProblem, reviewState, seenOf, type ActionResult, type Edits, type Reviewer } from './actions';
+import { TOPIC_ID } from '../draft/validate';
 import { reportFromFiles, NO_NEAR_TOPIC } from '../gaps/report';
 import { gapGroupPage, gapsPage, kbTopicPage, type GapsView } from './gapPages';
 import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, type PageContext } from './pages';
@@ -18,6 +19,13 @@ import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, 
  *   reading or writing, must carry the token (the `token` query parameter, the form field of a
  *   POST, or an `x-review-token` header), compared in constant time; without it the answer is 403.
  *   A POST must also come from the page itself when the browser says where it comes from (Origin).
+ * - Who is reviewing is kept per browser: once a request has shown the token, the page sets a session
+ *   cookie (random, signed with a key made when it starts, HttpOnly, SameSite=Strict, named for its
+ *   port), and the reviewer's name and team, and the outcome of their last change, belong to that
+ *   session alone. Another browser with the token is asked who it is.
+ * - Every form that changes a draft, a passage or a topic carries a hash of what the page showed when
+ *   it was opened (actions.ts seenOf: the file as it is on disk, with its source section's text), and
+ *   the change is refused when it no longer matches ("changed since you opened it: reload").
  * - Its pages load nothing from anywhere else (a Content-Security-Policy says so), are not cached and
  *   send no Referer.
  * - The Gaps tab (what callers asked that the knowledge base did not answer, from the traces) is read
@@ -56,6 +64,24 @@ export interface ReviewServer {
 
 const LOOPBACK = new Set(['127.0.0.1', '::ffff:127.0.0.1']);
 const MAX_BODY = 64 * 1024;
+/** The most sessions kept; the oldest is dropped past it. */
+const MAX_SESSIONS = 256;
+
+/** One browser's review: who is reviewing, and the outcome of its last change, to show once. */
+interface Session {
+  reviewer: Reviewer | null;
+  flash: ActionResult | null;
+}
+
+/** A request's cookies, by name. */
+function cookiesOf(req: IncomingMessage): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const part of (req.headers.cookie ?? '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq > 0) out.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim());
+  }
+  return out;
+}
 
 /** Whether two strings are equal, compared in constant time (their hashes, so their lengths do not show). */
 export function sameToken(given: string, token: string): boolean {
@@ -96,12 +122,38 @@ function editsOf(form: URLSearchParams, facts: readonly string[]): Edits {
   };
 }
 
+/**
+ * Where the reviewer form comes back to: a path of this page's own, else the list. It starts with one
+ * slash and has only path characters after it: no second slash or backslash at its start (which a
+ * browser reads as another host), no backslash anywhere, no query and no scheme.
+ */
+export function backTo(back: string | null): string {
+  return back !== null && /^\/(?![/\\])[A-Za-z0-9_.~%/-]*$/.test(back) ? back : '/';
+}
+
 export async function startReviewServer(options: ReviewServerOptions): Promise<ReviewServer> {
   const { place } = options;
   const token = options.token ?? randomBytes(32).toString('base64url');
-  let reviewer: Reviewer | null = null;
-  let flash: ActionResult | null = null;
+  const key = randomBytes(32);
+  const sessions = new Map<string, Session>();
   let port = 0;
+  const sign = (id: string): string => createHmac('sha256', key).update(id).digest('base64url');
+
+  /** The request's session, from its signed cookie; a new one (and its cookie set) when it has none that holds. */
+  const sessionFor = (req: IncomingMessage, res: ServerResponse): Session => {
+    const name = `dw-review-${port}`;
+    const [id, mac] = (cookiesOf(req).get(name) ?? '').split('.');
+    if (id && mac && sameToken(mac, sign(id))) {
+      const known = sessions.get(id);
+      if (known) return known;
+    }
+    const fresh = randomBytes(24).toString('base64url');
+    const session: Session = { reviewer: null, flash: null };
+    sessions.set(fresh, session);
+    if (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value!);
+    res.setHeader('set-cookie', `${name}=${fresh}.${sign(fresh)}; Path=/; HttpOnly; SameSite=Strict`);
+    return session;
+  };
 
   const send = (res: ServerResponse, status: number, body: string, type = 'text/html; charset=utf-8', nonce?: string): void => {
     res.writeHead(status, {
@@ -140,51 +192,66 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
     const given = form?.get('token') ?? url.searchParams.get('token') ?? (typeof header === 'string' ? header : null);
     if (given === null || !sameToken(given, token)) return refuse(res, 403, 'the review page needs the token it printed when it started: open the URL it printed');
 
+    const session = sessionFor(req, res);
     const nonce = randomBytes(16).toString('base64');
-    const ctx = (path: string): PageContext => {
-      const c: PageContext = { token, nonce, label: place.label, reviewer, flash, path };
-      flash = null;
+    const ctx = (path: string, seen?: string | null): PageContext => {
+      const c: PageContext = { token, nonce, label: place.label, reviewer: session.reviewer, flash: session.flash, path, ...(seen ? { seen } : {}) };
+      session.flash = null;
       return c;
     };
-    const parts = url.pathname.split('/').filter((p) => p !== '').map(decodeURIComponent);
+    let parts: string[];
+    try {
+      parts = url.pathname.split('/').filter((p) => p !== '').map(decodeURIComponent);
+    } catch {
+      return refuse(res, 404, 'no such page');
+    }
+    // An id from the URL names a draft, a passage or a topic, never a path: one that is not an id is not there.
+    const [kindOf, idOf] = parts;
+    if (idOf !== undefined && (((kindOf === 'draft' || kindOf === 'passage') && !KB_FILE_ID.test(idOf)) || (kindOf === 'topic' && !TOPIC_ID.test(idOf)))) {
+      return method === 'POST' ? refuse(res, 404, 'no such action') : send(res, 404, notFoundPage(ctx(url.pathname), `${url.pathname} is not waiting for review.`), undefined, nonce);
+    }
     const today = options.today();
 
     if (method === 'POST' && form) {
       const [kind, id, action] = parts;
       const done = (result: ActionResult, back: string): void => {
-        flash = result;
+        session.flash = result;
         redirect(res, back);
       };
+      const reviewer = session.reviewer;
+      // What the reviewer saw when they opened the page: a form without it is out of date.
+      const seen = form.get('seen') ?? '';
       if (kind === 'reviewer' && parts.length === 1) {
         const candidate = { by: (form.get('by') ?? '').trim(), owner: (form.get('owner') ?? '').trim() };
         const problem = reviewerProblem(candidate);
-        if (problem === null) reviewer = candidate;
-        const back = form.get('back') ?? '/';
-        return done(problem === null ? { ok: true, message: `reviewing as ${candidate.by} for ${candidate.owner}` } : { ok: false, message: problem, problems: [] }, back.startsWith('/') && !back.startsWith('//') ? back : '/');
+        if (problem === null) session.reviewer = candidate;
+        return done(problem === null ? { ok: true, message: `reviewing as ${candidate.by} for ${candidate.owner}` } : { ok: false, message: problem, problems: [] }, backTo(form.get('back')));
       }
       if (id === undefined || action === undefined || parts.length !== 3) return refuse(res, 404, 'no such action');
       const facts = Object.keys(reviewState(place).kb?.settings.applies ?? {});
       if (kind === 'draft' || kind === 'passage') {
         if (action === 'approve') {
-          const result = approve(place, id, reviewer, today);
+          const result = approve(place, id, reviewer, today, seen);
           return done(result, result.ok ? '/' : `/${kind}/${encodeURIComponent(id)}`);
         }
         if (action === 'edit') {
-          const result = editAndApprove(place, id, editsOf(form, facts), reviewer, today);
+          const result = editAndApprove(place, id, editsOf(form, facts), reviewer, today, seen);
           return done(result, result.ok ? '/' : `/${kind}/${encodeURIComponent(id)}`);
         }
         if (action === 'reject' && kind === 'draft') {
-          const result = reject(place, id, form.get('reason') ?? '', reviewer, today);
+          const result = reject(place, id, form.get('reason') ?? '', reviewer, today, seen);
           return done(result, result.ok ? '/' : `/draft/${encodeURIComponent(id)}`);
         }
       }
       if (kind === 'topic') {
         if (action === 'accept') {
-          const result = acceptTopic(place, id, reviewer, form.get('as') ?? undefined);
+          const as = form.get('as');
+          const title = form.get('title');
+          const result = acceptTopic(place, id, reviewer, { ...(as !== null ? { as } : {}), ...(title !== null ? { title } : {}), seen });
           return done(result, result.ok ? '/' : `/topic/${encodeURIComponent(id)}`);
         }
         if (action === 'merge') {
-          const result = mergeTopic(place, id, form.get('into') ?? '', reviewer);
+          const result = mergeTopic(place, id, form.get('into') ?? '', reviewer, seen);
           return done(result, result.ok ? '/' : `/topic/${encodeURIComponent(id)}`);
         }
       }
@@ -197,15 +264,15 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
     const [kind, id] = parts;
     if (parts.length === 2 && kind === 'draft') {
       const d = state.drafts.find((x) => x.id === id);
-      if (d) return send(res, 200, draftPage(ctx(url.pathname), state.kb, d, problemsOf(d), state.proposed.find((t) => t.id === d.draft?.topic)), undefined, nonce);
+      if (d) return send(res, 200, draftPage(ctx(url.pathname, seenOf(place, state, 'draft', d.id)), state.kb, d, problemsOf(d), state.proposed.find((t) => t.id === d.draft?.topic)), undefined, nonce);
     }
     if (parts.length === 2 && kind === 'passage' && state.kb) {
       const w = state.withheld.find((x) => x.passage.id === id);
-      if (w) return send(res, 200, passagePage(ctx(url.pathname), state.kb, w, approvedSectionText(place, w.passage)), undefined, nonce);
+      if (w) return send(res, 200, passagePage(ctx(url.pathname, seenOf(place, state, 'passage', w.passage.id)), state.kb, w, approvedSectionText(place, w.passage)), undefined, nonce);
     }
     if (parts.length === 2 && kind === 'topic' && state.kb) {
       const t = state.proposed.find((x) => x.id === id);
-      if (t) return send(res, 200, topicPage(ctx(url.pathname), state.kb, t, state.drafts.filter((d) => d.draft?.topic === t.id)), undefined, nonce);
+      if (t) return send(res, 200, topicPage(ctx(url.pathname, seenOf(place, state, 'topic', t.id)), state.kb, t, state.drafts.filter((d) => d.draft?.topic === t.id)), undefined, nonce);
       if (typeof id === 'string' && Object.hasOwn(state.kb.topics, id)) return send(res, 200, kbTopicPage(ctx(url.pathname), state.kb, id, state.withheld, state.drafts.filter((d) => d.draft?.topic === id)), undefined, nonce);
     }
     if (kind === 'gaps' && (parts.length === 1 || parts.length === 2)) {

@@ -3,6 +3,7 @@ import type { ToolName } from '../core/app/types';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 import type { KbKnowledge, Retriever } from '../kb/types';
 import { defaultRetriever } from '../kb/hybrid';
+import { warnFallback } from '../kb/fallback';
 import { AppDefinitionError, codePath } from './defineApp';
 import { loadConfigFile, loadKnowledgeFolder, DEFAULT_LOCALE } from './load';
 import { declaredFields } from './policyFile';
@@ -72,6 +73,8 @@ function load(dir: string, options: KnowledgeProblemsOptions, state: boolean): {
   const parent = dirname(dir);
   const shown = parent === '.' ? problems : problems.map((p) => (p.file.startsWith(`${folder.base}/`) || p.file === folder.base ? { ...p, file: `${parent}/${p.file}` } : p));
   const knowledge = kb && shown.length === 0 ? { kb, retriever: options.retriever ?? defaultRetriever(kb).retriever } : null;
+  // A default that fell back to keywords although kb.yaml names an embedder is said, with the fix (../kb/fallback.ts).
+  if (knowledge && !state) warnFallback(knowledge.retriever, `the knowledge base in ${dir}`);
   return { knowledge, problems: shown };
 }
 

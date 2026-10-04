@@ -123,7 +123,19 @@ export interface KnowledgeBase {
    * the default retriever reads its vectors (./hybrid.ts defaultRetriever).
    */
   readonly index?: KbIndexRead;
+  /**
+   * The log of approvals (kb/approvals.jsonl, ./log.ts) as read: each line's id, hash and where it
+   * came from, or why it could not be read. Present when the loader reads the folder from disk;
+   * `pnpm check` holds every approval to a line of the same id and hash (./rules.ts). A knowledge
+   * base built in code has none, and its approvals are not held to a log.
+   */
+  readonly approvalLog?: KbApprovalLogRead;
 }
+
+/** kb/approvals.jsonl as the loader read it: its lines (none when there is no log), or why it could not be read. */
+export type KbApprovalLogRead =
+  | { readonly file: string; readonly lines: readonly { readonly id: string; readonly hash: string; readonly from: string }[] }
+  | { readonly file: string; readonly invalid: string };
 
 /** Where a nomination came from: keyword retrieval, dense (embedding) retrieval, or an app's own retriever. */
 export type NominationVia = 'keyword' | 'dense' | 'app';
@@ -151,7 +163,8 @@ export interface NominateInput {
  * (SlotSpec.nominates) is listening; its nominations reach that turn's questions and fill
  * (SlotContext.nominated). It is given a budget (run/retrieve.ts RETRIEVE_BUDGET_MS): one that throws,
  * returns something that is not a list of nominations, or is not back in time nominates nothing, and
- * the turn goes on without it. It must be deterministic (the same words, locale and day, the same
+ * the turn goes on without it. Only a promise can be late: a synchronous nominate runs to its end
+ * whatever it takes, so one that may be slow must return a promise. It must be deterministic (the same words, locale and day, the same
  * nominations, in the same order): its nominations shape the model's request, which a cassette replays by.
  */
 export interface Retriever {

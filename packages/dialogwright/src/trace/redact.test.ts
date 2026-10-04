@@ -83,3 +83,42 @@ describe('redact', () => {
     expect(redactRecordSlots(ended, 'length').actions).toEqual([endAction(['track_parcel'])]);
   });
 });
+
+describe('what a turn said aloud', () => {
+  /** A record whose turn said `text`, with the testkit's slots and a readback of the account ID pending. */
+  const said = (text: string, extra: Partial<TraceRecord> = {}): TraceRecord =>
+    ({ ...record(), decision: { kind: 'prompt', promptId: 'confirm_slot', vars: { accountId: '5550 1234' }, acks: [], target: 'confirm', options: [] }, actions: [sayAction([{ text }], true)], ...extra }) as unknown as TraceRecord;
+  const text = (r: TraceRecord): string => (r.actions[0] as { parts: { text: string }[] }).parts[0]!.text;
+
+  it('masks a redacted slot read back in the say text: its value, its display, and its digits however spaced', () => {
+    for (const line of ['I have 5550 1234. Is that right?', 'I have 55501234. Is that right?', 'I have 5 5 5 0, 1 2 3 4. Is that right?', 'I have 5550-1234. Is that right?']) {
+      expect(text(redactRecordSlots(said(line), 'length')), line).toBe('I have ...1234. Is that right?');
+    }
+    expect(text(redactRecordSlots(said('Born April 12th, 1985, or 1985-04-12?'), 'length'))).toBe('Born ••/••/1985, or ••/••/1985?');
+    // A statement: by its length in the trace, as said on the live console; a slot with no redact setting, as said.
+    const note = 'You said: a small brown box left at the side gate. Expected Tuesday, September 15.';
+    expect(text(redactRecordSlots(said(note), 'length'))).toBe('You said: <39 chars>. Expected Tuesday, September 15.');
+    expect(text(redactRecordSlots(said(note), 'keep'))).toBe(note);
+    // Twice is the same as once.
+    const r = redactRecordSlots(said('I have 5550 1234. Is that right?'), 'length');
+    expect(redactRecordSlots(r, 'length')).toEqual(r);
+  });
+
+  it('masks a value only the readback or the decision carries, and the part of our line an interruption heard', () => {
+    const pending = { target: 'slot', slot: 'accountId', value: '55509876', display: '5550 9876' } as TraceRecord['pendingConfirmation'];
+    const r = redactRecordSlots(said('I have 5550 9876. Is that right?', { slots: {} as TraceRecord['slots'], pendingConfirmation: pending }), 'length');
+    expect(text(r)).toBe('I have ...9876. Is that right?');
+    const interrupted = redactRecordSlots(said('', { event: { type: 'user.interrupt', heard: 'I have 5 5 5 0, 1 2', afterMs: 900 } }), 'length');
+    // Cut off mid-number: the digits heard so far are the start of the value, and are masked too.
+    expect(interrupted.event).toEqual({ type: 'user.interrupt', heard: 'I have ...1234', afterMs: 900 });
+    const early = redactRecordSlots(said('', { event: { type: 'user.interrupt', heard: 'I have 5 5', afterMs: 400 } }), 'length');
+    expect(early.event).toEqual({ type: 'user.interrupt', heard: 'I have 5 5', afterMs: 400 });
+    const whole = redactRecordSlots(said('', { event: { type: 'user.interrupt', heard: 'I have 5 5 5 0, 1 2 3 4, is', afterMs: 900 } }), 'length');
+    expect(whole.event).toEqual({ type: 'user.interrupt', heard: 'I have ...1234, is', afterMs: 900 });
+  });
+
+  it('leaves a line with no redacted value, and words a value only resembles, as they are', () => {
+    const line = 'Your parcel 5550 is due on 2026-09-15; call 555 0123.';
+    expect(text(redactRecordSlots(said(line), 'length'))).toBe(line);
+  });
+});

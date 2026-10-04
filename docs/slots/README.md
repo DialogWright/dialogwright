@@ -36,7 +36,7 @@ Each type has a page with every option, its default, the default question text, 
 | [`name`](name.md) | The caller's own name | The caller says who they are. `exclude` lists words that never belong to the caller's name, such as the names of people discussed on the call. |
 | [`record`](record.md) | One of the app's own records, found by a tool and chosen by what the caller says of it | The list differs from caller to caller: their parcels, orders or bookings. The slot takes the record's key, never anything the model wrote. |
 | [`text`](text.md) | The caller's own words, kept as said | The value is free text no list holds and no code can check: a description, a note, a reason. A summary reads it back by a stand-in. |
-| [`topic`](topic.md) | Which of the knowledge base's topics the caller asks about | The app answers general questions from approved passages. The app's retriever nominates a few topics for the caller's words, the question offers only those, and a turn that nominates none asks nothing. |
+| [`topic`](topic.md) | Which of the knowledge base's topics the caller asks about | The app answers general questions from approved passages. The app's retriever nominates a few topics for the caller's words, the question offers only those, and a turn that nominates none asks nothing. The answer is never the slot's: its value is a topic id, and the form's completion finds the approved passage and says it word for word ([the knowledge base](../authoring-an-app.md#12-the-knowledge-base)). |
 
 When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or contribute a type: see [Adding a slot type](../../CONTRIBUTING.md#adding-a-slot-type).
 
@@ -47,7 +47,7 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 - One of a short list you write in the YAML: `choice`. One of a list a tool returns for this caller: `record`.
 - The caller's own name: `name`. A name picked from a list (a provider, a branch): `choice`.
 - Anything said in the caller's own words: `text`. If the words can be checked, use the type made for them.
-- A general question the app answers from its knowledge base: `topic`, which needs the app's knowledge (a `kb/` folder and a retriever).
+- A general question the app answers from its knowledge base: `topic`, which needs the app's knowledge (a `kb/` folder and a retriever; [the guide's section 12](../authoring-an-app.md#12-the-knowledge-base) says how a form answers from it). It chooses among a few topics a retriever nominated for this turn, so it has no list to write; use `choice` for a fixed list the caller picks from as part of a task.
 
 ### Defaults for sensitive values
 

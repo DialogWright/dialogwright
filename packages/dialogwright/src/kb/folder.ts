@@ -1,9 +1,10 @@
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from '../define/problems';
 import { approvalHashOf, canonicalApplies, collapseWhitespace, sourceHashOf } from './hash';
 import type { KbKind, KbLocaleTopicsYaml, KbPassageYaml, KbSettingsYaml, KbSourceYaml, KbTopicsYaml } from './schema';
-import type { KbFreshness, KbPassage, KbSourceDocument, KbTopic, KbTopicWording, KnowledgeBase } from './types';
+import type { KbApprovalLogRead, KbFreshness, KbPassage, KbSourceDocument, KbTopic, KbTopicWording, KnowledgeBase } from './types';
 import { STATIC_MODELS } from './embed/model';
 import { indexFileOf, indexHashOf, MAX_INDEX_BYTES, parseIndex, type KbIndexRead } from './vectorIndex';
+import { APPROVALS_LOG, MAX_APPROVALS_LOG_BYTES, parseApprovalLog } from './log';
 
 /**
  * Reads an app's `kb/` folder into a KnowledgeBase (./types.ts). The files and what each holds are
@@ -16,7 +17,8 @@ import { indexFileOf, indexHashOf, MAX_INDEX_BYTES, parseIndex, type KbIndexRead
  * sources/ hold one .yaml file each, named by its id; locale/<tag>/ holds a locale's topics.yaml and
  * passages/; pending/ holds drafts, which are never read (only their names, so a draft cannot take
  * an approved passage's id), and pending/topics.yaml the topics drafts propose; rejected/ holds the
- * drafts a reviewer rejected, never read; approvals.jsonl is the log of approvals, for people, never read;
+ * drafts a reviewer rejected, never read; approvals.jsonl is the log of approvals, read as data (never
+ * hashed into the configuration) so `check` can hold each approval to its line (./log.ts);
  * hidden entries (.index/, .DS_Store) are skipped. Anything else is a problem. Every file read is hashed into the app's configuration hashes by `io.parse`.
  *
  * The rules across files (references, a passage for every caller, overlaps, approvals) are ./rules.ts's; the loader runs
@@ -65,7 +67,7 @@ const KB_ENTRIES: Readonly<Record<string, 'file' | 'dir'>> = {
   pending: 'dir',
   // Drafts a reviewer rejected, each with why (pnpm kb:review): a record for people, never read here.
   rejected: 'dir',
-  // Every approval, appended by pnpm kb:approve: a record for people, never read here.
+  // Every approval, appended by pnpm kb:approve: read as data, for check to hold each approval to its line (./log.ts).
   'approvals.jsonl': 'file',
 };
 
@@ -239,6 +241,7 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
   }
   const sortedSources = Object.fromEntries(Object.keys(sources).sort().map((id) => [id, sources[id]!]));
   const index = readIndex(base, settings.retrieval.embedder, io);
+  const approvalLog = readLog(base, io);
   return {
     settings: { action: settings.action, applies: settings.applies, localeFallback: settings.localeFallback, maxAnswerChars: settings.maxAnswerChars, retrieval: settings.retrieval },
     defaultLocale,
@@ -246,7 +249,22 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
     passages: built,
     sources: sortedSources,
     ...(index ? { index } : {}),
+    ...(approvalLog ? { approvalLog } : {}),
   };
+}
+
+/**
+ * The log of approvals (kb/approvals.jsonl, ./log.ts), read as data when the io reads data: each
+ * line's id, hash and where it came from (none when there is no log), or why it could not be read.
+ * Its problems are not the loader's: `check` reports them (./rules.ts kbStateProblems).
+ */
+function readLog(base: string, io: KbFolderIo): KbApprovalLogRead | undefined {
+  if (!io.readData) return undefined;
+  const file = `${base}/${APPROVALS_LOG}`;
+  const read = io.readData(file, MAX_APPROVALS_LOG_BYTES);
+  if (read.kind === 'missing') return { file, lines: [] };
+  if (read.kind === 'problem') return { file, invalid: read.problem.message };
+  return { file, lines: parseApprovalLog(read.text).map((l) => ({ id: l.id, hash: l.hash, from: l.from })) };
 }
 
 /**
@@ -282,6 +300,12 @@ export function accountLineTextOf(topic: KbTopic | undefined, locale: string, de
   return topic.accountLine.text;
 }
 
+/** A topic's own title in a locale other than the default (kb/locale/<tag>/topics.yaml), or null where that locale gives none. */
+export function localeTitleOf(topic: KbTopic | undefined, locale: string): string | null {
+  if (!topic) return null;
+  return Object.entries(topic.locales).find(([tag]) => tag.toLowerCase() === locale.toLowerCase())?.[1]?.title ?? null;
+}
+
 /**
  * A passage as loaded: applies made canonical, the answer's whitespace collapsed, and its hashes and
  * freshness taken. `file` is its path as problems name it. pnpm kb:approve builds a draft this way to
@@ -291,9 +315,22 @@ export function passageOf(yaml: KbPassageYaml, locale: string, file: string, top
   const sourceText = sourceTextOf(sources, yaml.source);
   const topic = Object.hasOwn(topics, yaml.topic) ? topics[yaml.topic] : undefined;
   const effective = yaml.effective.to === undefined ? { from: yaml.effective.from } : { from: yaml.effective.from, to: yaml.effective.to };
+  const inDefault = locale.toLowerCase() === defaultLocale.toLowerCase();
   const current = {
     sourceHash: sourceText === null ? null : sourceHashOf(sourceText),
-    hash: approvalHashOf({ topic: yaml.topic, answer: yaml.answer, applies: yaml.applies, effective, sourceText: sourceText ?? '', accountLineText: accountLineTextOf(topic, locale, defaultLocale) }),
+    hash: approvalHashOf({
+      id: yaml.id,
+      locale: inDefault ? null : locale,
+      version: yaml.version,
+      topic: yaml.topic,
+      title: topic?.title ?? null,
+      localeTitle: inDefault ? null : localeTitleOf(topic, locale),
+      answer: yaml.answer,
+      applies: yaml.applies,
+      effective,
+      sourceText: sourceText ?? '',
+      accountLineText: accountLineTextOf(topic, locale, defaultLocale),
+    }),
   };
   const approval = yaml.approval;
   const freshness: KbFreshness = !approval ? 'unapproved' : current.sourceHash !== approval.sourceHash ? 'source-changed' : current.hash !== approval.hash ? 'edited' : 'fresh';

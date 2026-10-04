@@ -14,12 +14,13 @@ import type { Embedder } from './embed/types';
  * changes a recorded request. Retrieval rounds scores to a millionth (kb/score.ts), which absorbs
  * most of that, not all. Use it through HybridRetriever (kb/hybrid.ts) with an index built by it:
  *
- *   const embedder = await OnnxEmbedder.create();
+ *   const embedder = await OnnxEmbedder.create({ revision: '<the commit of the model repository, 40 hex>' });
  *   const built = await buildIndex(kb, embedder);
  *   const retriever = new HybridRetriever(kb, { embedder, vectors: built.data, floor: ONNX_DEFAULT_FLOOR, indexHash: built.hash });
  *
  * The model is fetched by the package into its own cache when `create` first runs (not while a call
- * is answered: create it when the app starts). Its identity in an index is its name, revision,
+ * is answered: create it when the app starts), at the revision given, which must be a commit (no
+ * default: a branch moves under a committed index). Its identity in an index is its name, revision,
  * precision and pooling (`sha256` hashes those, not the files' bytes).
  */
 
@@ -31,6 +32,9 @@ export const ONNX_DEFAULT_MODEL = 'Xenova/bge-small-en-v1.5';
 
 /** A starting floor for bge-small's cosine similarities (its unrelated sentences sit higher than a static model's); sweep it with pnpm kb:bakeoff --sweep. */
 export const ONNX_DEFAULT_FLOOR = 0.7;
+
+/** A model repository's commit, as a revision must be pinned: 40 hex characters. */
+export const PINNED_REVISION = /^[0-9a-f]{40}$/;
 
 /** The ONNX package is not installed (or did not load). */
 export class OnnxUnavailableError extends Error {
@@ -70,8 +74,12 @@ export async function onnxAvailable(): Promise<boolean> {
 export interface OnnxEmbedderOptions {
   /** The model's Hugging Face id. Default ONNX_DEFAULT_MODEL. */
   model?: string;
-  /** Its revision (pin a commit for a reproducible index). Default "main". */
-  revision?: string;
+  /**
+   * The model repository's commit to load: 40 hex characters, required. A branch ("main") moves, and
+   * a model that changed under a committed index would nominate other topics than the ones it was
+   * built with, which changes recorded requests; so there is no default.
+   */
+  revision: string;
   /** The weights' precision. Default fp32. */
   dtype?: 'fp32' | 'fp16' | 'q8';
   /** How token vectors become one: the [CLS] token's (bge) or their mean. Default cls. */
@@ -102,10 +110,13 @@ export class OnnxEmbedder implements Embedder {
   }
 
   /** Loads the model (fetching it into the package's cache the first time, unless localOnly). */
-  static async create(options: OnnxEmbedderOptions = {}): Promise<OnnxEmbedder> {
+  static async create(options: OnnxEmbedderOptions): Promise<OnnxEmbedder> {
+    const revision = options?.revision;
+    if (typeof revision !== 'string' || !PINNED_REVISION.test(revision)) {
+      throw new Error(`the ONNX embedder needs a pinned revision: the commit of the model's repository to load (40 hex characters), not ${revision === undefined ? 'none' : JSON.stringify(revision)}; a branch such as "main" moves, and an index built by one model would be read by another`);
+    }
     const mod = await loadTransformers();
     const model = options.model ?? ONNX_DEFAULT_MODEL;
-    const revision = options.revision ?? 'main';
     const dtype = options.dtype ?? 'fp32';
     const pooling = options.pooling ?? 'cls';
     if (mod.env) {

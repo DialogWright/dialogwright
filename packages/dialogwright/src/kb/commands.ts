@@ -17,8 +17,8 @@ import { buildIndex, INDEX_DIR, parseIndex } from './vectorIndex';
  *   kb:model [id...]                                 download the pinned static models into the cache (./embed/model.ts)
  *   kb:index [dir...]                                write each knowledge base's vector index (./vectorIndex.ts)
  *   kb:bakeoff <dir> --paraphrases <file> [--sweep]  compare the retrievers on a paraphrase file (./bakeoff.ts)
- *   kb:approve <id...> --by "<name>" [--owner "<team>"] [--dir <app>]
- *                                                    approve passages and drafts (./approval.ts)
+ *   kb:approve <id...> --by "<name>" [--owner "<team>"] [--dir <app>] [--yes]
+ *                                                    approve passages and drafts (./approval.ts), confirmed at a terminal
  *   kb:status [dir...]                               the passages by state, the drafts, and the fix for each (./approval.ts)
  *
  * A `dir` is an app folder with a kb/, or a knowledge base folder itself (one with kb.yaml). With
@@ -36,6 +36,31 @@ export interface KbIo {
   embedderFor?: (model: PinnedModel) => Promise<Embedder>;
   /** Today, as an ISO date: the day an approval is recorded on. Default: today (UTC). */
   today?: () => string;
+  /**
+   * Asks the person at the terminal kb:approve's question, true for a yes (a test's, in place of
+   * the terminal). Default: the question on stderr and the answer read from stdin, when stdin is a
+   * terminal (`isTTY`); without one, kb:approve refuses unless given --yes.
+   */
+  confirm?: (question: string) => Promise<boolean>;
+  /** Whether stdin is a terminal a person answers at. Default: process.stdin.isTTY. */
+  isTTY?: boolean;
+}
+
+/** The question on stderr, the answer from stdin: yes for "y" or "yes", in any case; anything else is no. */
+async function terminalConfirm(question: string): Promise<boolean> {
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return /^y(es)?$/i.test((await rl.question(question)).trim());
+  } finally {
+    rl.close();
+  }
+}
+
+/** Whether `CI` is set the way CI services set it (any value but empty, 0 or false). */
+function inCi(env: NodeJS.ProcessEnv): boolean {
+  const v = env.CI?.trim().toLowerCase();
+  return v !== undefined && v !== '' && v !== '0' && v !== 'false';
 }
 
 /** A knowledge base folder found from a dir: the folder, how problems name it, and the knowledge base (or the problems loading it). */
@@ -161,11 +186,11 @@ export async function kbIndexCommand(args: readonly string[], io: KbIo, discover
   return failed ? 1 : 0;
 }
 
-/** `kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today date]`: each retriever's recall, candidates and latency. */
+/** `kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today date] [--onnx-revision commit]`: each retriever's recall, candidates and latency (onnx only with its package and a pinned revision). */
 export async function kbBakeoffCommand(args: readonly string[], io: KbIo): Promise<number> {
-  const parsed = parseArgs(args, { values: ['--paraphrases', '--locale', '--today'], flags: ['--sweep'] });
+  const parsed = parseArgs(args, { values: ['--paraphrases', '--locale', '--today', '--onnx-revision'], flags: ['--sweep'] });
   if (typeof parsed === 'string' || parsed.positional.length !== 1 || parsed.values['--paraphrases'] === undefined) {
-    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and --paraphrases <file>'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD]`);
+    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and --paraphrases <file>'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD] [--onnx-revision <commit>]`);
     return 2;
   }
   const dir = resolve(io.cwd, parsed.positional[0]!);
@@ -203,13 +228,16 @@ export async function kbBakeoffCommand(args: readonly string[], io: KbIo): Promi
   } else io.out(`static, hybrid: skipped, ${model.id} is not in the cache (run pnpm kb:model)`);
   try {
     const onnx = await import('./onnx');
-    if (await onnx.onnxAvailable()) {
-      const embedder = await onnx.OnnxEmbedder.create();
+    const revision = parsed.values['--onnx-revision'];
+    if (!(await onnx.onnxAvailable())) io.out(`onnx: skipped, ${onnx.ONNX_PACKAGE} is not installed`);
+    else if (revision === undefined) io.out(`onnx: skipped, no --onnx-revision (the commit of ${onnx.ONNX_DEFAULT_MODEL} to load: a model is always pinned)`);
+    else {
+      const embedder = await onnx.OnnxEmbedder.create({ revision });
       const built = await buildIndex(kb, embedder);
       const d = new DenseRetriever(kb, { embedder, vectors: built.data, floor: onnx.ONNX_DEFAULT_FLOOR, cap });
       runs.push({ name: `onnx (floor ${onnx.ONNX_DEFAULT_FLOOR})`, retriever: d }, { name: 'onnx hybrid', retriever: new HybridRetriever(kb, { embedder, vectors: built.data, floor: onnx.ONNX_DEFAULT_FLOOR, cap, keyword }) });
       dense.push({ name: embedder.id, dense: d });
-    } else io.out(`onnx: skipped, ${onnx.ONNX_PACKAGE} is not installed`);
+    }
   } catch (error) {
     io.out(`onnx: skipped (${error instanceof Error ? error.message : String(error)})`);
   }
@@ -236,15 +264,22 @@ function placesFrom(io: KbIo, discover: () => string[]): KbPlace[] | string {
   return places.length > 0 ? places : 'no knowledge base found: the working directory is not an app folder with a kb/, and no app folder has a kb/kb.yaml';
 }
 
-const APPROVE_USAGE = 'usage: dialogwright kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]';
+const APPROVE_USAGE = 'usage: dialogwright kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>] [--yes]';
 
 /**
- * `kb:approve <id...> --by "<name>" [--owner "<team>"] [--dir <app>]`: approves each passage or draft
- * (./approval.ts), saying what it did with each. Exit 0 when each is approved (or already was), 1
- * when any is refused, 2 for a command line not understood (no id, no --by, a --by that names no person).
+ * `kb:approve <id...> --by "<name>" [--owner "<team>"] [--dir <app>] [--yes]`: approves each passage
+ * or draft (./approval.ts), saying what it did with each. An approval is a person's, so before it
+ * writes anything it asks the person at the terminal to confirm, once per run: the ids, the
+ * approver and the team, and that they read each answer against its source section (a yes is "y"
+ * or "yes"). Without a terminal (stdin is not one: a script, a pipe, an assistant's shell) it
+ * refuses, unless `--yes` confirms on the command line; `--yes` is refused in CI (`CI` set), where
+ * no person is at the command, and like every run it is refused for a `--by` that names no person.
+ * Exit 0 when each is approved (or already was), 1 when any is refused or the confirmation is not a
+ * yes (nothing written), 2 for a command line not understood (no id, no --by, a --by that names no
+ * person, --yes in CI, no terminal and no --yes).
  */
-export function kbApproveCommand(args: readonly string[], io: KbIo, discover: () => string[]): number {
-  const parsed = parseArgs(args, { values: ['--by', '--owner', '--dir'], flags: [] });
+export async function kbApproveCommand(args: readonly string[], io: KbIo, discover: () => string[]): Promise<number> {
+  const parsed = parseArgs(args, { values: ['--by', '--owner', '--dir'], flags: ['--yes'] });
   if (typeof parsed === 'string' || parsed.positional.length === 0 || parsed.values['--by'] === undefined) {
     io.err(`dialogwright kb:approve: ${typeof parsed === 'string' ? parsed : parsed.positional.length === 0 ? 'name the passages or drafts to approve, by id' : '--by is required: the name of the person who reviewed the passages against their sources and approves them'}\n${APPROVE_USAGE}`);
     return 2;
@@ -253,6 +288,16 @@ export function kbApproveCommand(args: readonly string[], io: KbIo, discover: ()
   const why = notAPerson(by);
   if (why) {
     io.err(`dialogwright kb:approve: ${why}\n${APPROVE_USAGE}`);
+    return 2;
+  }
+  const yes = parsed.flags.has('--yes');
+  if (yes && inCi(io.env ?? process.env)) {
+    io.err('dialogwright kb:approve: --yes is refused in CI (CI is set): an approval is a person\'s, confirmed by them at their own terminal, and no person is at a CI job\'s command');
+    return 2;
+  }
+  const confirm = yes ? null : io.confirm ?? ((io.isTTY ?? process.stdin.isTTY === true) ? terminalConfirm : null);
+  if (!yes && confirm === null) {
+    io.err('dialogwright kb:approve: stdin is not a terminal, so no one can confirm the approval: run it at your own terminal, or confirm on the command line with --yes (refused in CI)');
     return 2;
   }
   let place: KbPlace;
@@ -271,10 +316,19 @@ export function kbApproveCommand(args: readonly string[], io: KbIo, discover: ()
     }
     place = found[0]!;
   }
+  const owner = parsed.values['--owner'];
+  if (confirm !== null) {
+    const ids = parsed.positional;
+    const question = `Approve ${ids.length === 1 ? ids[0] : `${ids.length} passages (${ids.join(', ')})`} in ${place.label} as ${by.trim()}${owner !== undefined ? ` for ${owner.trim()}` : ''}? You have read ${ids.length === 1 ? 'its answer' : 'each answer'} against its source section and answer for it. [y/N] `;
+    if (!(await confirm(question))) {
+      io.err('dialogwright kb:approve: not confirmed: nothing approved, nothing written');
+      return 1;
+    }
+  }
   const today = (io.today ?? (() => new Date().toISOString().slice(0, 10)))();
   let refused = false;
   for (const id of parsed.positional) {
-    const result = approveOne(place, id, { by, ...(parsed.values['--owner'] !== undefined ? { owner: parsed.values['--owner'] } : {}), today });
+    const result = approveOne(place, id, { by, ...(owner !== undefined ? { owner } : {}), today });
     const lines = formatApproveResult(result, place.label);
     if (result.outcome === 'refused') {
       refused = true;

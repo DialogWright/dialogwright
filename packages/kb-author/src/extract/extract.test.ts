@@ -1,12 +1,72 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { crc32, deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { FOLDER } from '../__fixtures__/server';
-import { extractDocx } from './docx';
+import { checkDocxZip, DocxLimitError, extractDocx, MAX_DOCX_ENTRIES, MAX_DOCX_UNCOMPRESSED_BYTES } from './docx';
 import { extractHtml } from './html';
 import { extract, formatOfName } from './index';
 import { extractMarkdown, extractText, stripInline } from './markdown';
-import { blocksOfLines, extractPdf } from './pdf';
+import { blocksOfLines, extractPdf, MAX_PDF_PAGES, PDF_OPEN_OPTIONS, PdfLimitError } from './pdf';
+
+/** A zip of `entries` (deflated), each with the size its headers declare (by default its own). */
+function zipOf(entries: { name: string; data: Buffer; declared?: number }[]): Uint8Array {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const e of entries) {
+    const name = Buffer.from(e.name, 'utf8');
+    const data = deflateRawSync(e.data);
+    const crc = crc32(e.data);
+    const size = e.declared ?? e.data.length;
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(size, 22);
+    local.writeUInt16LE(name.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(size, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, name, data);
+    centrals.push(central, name);
+    offset += 30 + name.length + data.length;
+  }
+  const dir = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(dir.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return new Uint8Array(Buffer.concat([...locals, dir, end]));
+}
+
+/** A PDF of `pages` empty pages, written out by hand with its cross-reference table. */
+function pdfOf(pages: number): Uint8Array {
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Count ${pages} /Kids [${Array.from({ length: pages }, (_, i) => `${i + 3} 0 R`).join(' ')}] >>`];
+  for (let i = 0; i < pages; i += 1) objects.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] >>');
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((o, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((n) => `${String(n).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(out);
+}
 
 const bytes = (name: string): Uint8Array => new Uint8Array(readFileSync(join(FOLDER, name)));
 const text = (name: string): string => readFileSync(join(FOLDER, name), 'utf8');
@@ -132,6 +192,45 @@ describe('DOCX', () => {
       { id: 'shifts/training', heading: 'Training', text: 'Shift leads attend a second training session each spring.' },
       { id: 'contacts', heading: 'Contacts', text: 'Ask the volunteer coordinator at the main branch for any change to your shifts.' },
     ]);
+  });
+});
+
+describe('extraction limits', () => {
+  it('checks a DOCX\'s zip before it is opened: what it holds in all, and each entry no larger than it says', async () => {
+    expect(MAX_DOCX_UNCOMPRESSED_BYTES).toBe(50 * 1024 * 1024);
+    expect(MAX_DOCX_ENTRIES).toBe(10_000);
+    // The fixture passes, and so does a small zip under the cap.
+    expect(() => checkDocxZip(bytes('volunteer-handbook.docx'))).not.toThrow();
+    // A zip bomb: 4 MB of zeros in a few kilobytes, declared as it is, over a 1 MB cap.
+    const zeros = Buffer.alloc(4 * 1024 * 1024);
+    const bomb = zipOf([{ name: '[Content_Types].xml', data: Buffer.from('<Types/>') }, { name: 'word/document.xml', data: zeros }]);
+    expect(bomb.length).toBeLessThan(10 * 1024);
+    expect(() => checkDocxZip(bomb, 1024 * 1024)).toThrow(new DocxLimitError('its entries hold over 1 MB uncompressed (a zip bomb, or a document too large to read)'));
+    await expect(extractDocx(bomb, { maxBytes: 1024 * 1024 })).rejects.toThrow(DocxLimitError);
+    // One that lies: its headers say 100 bytes, and it inflates to 4 MB.
+    const liar = zipOf([{ name: 'word/document.xml', data: zeros, declared: 100 }]);
+    expect(() => checkDocxZip(liar, 1024 * 1024)).toThrow(new DocxLimitError('its zip entry word/document.xml holds more than it says (100 bytes): a zip bomb'));
+    // Not a zip at all.
+    expect(() => checkDocxZip(new TextEncoder().encode('not a zip'))).toThrow(new DocxLimitError('it is not a zip (a DOCX is one)'));
+  });
+
+  it('a folder\'s DOCX that is a zip bomb is skipped with why, not read', async () => {
+    const zeros = Buffer.alloc(51 * 1024 * 1024);
+    const bomb = zipOf([{ name: 'word/document.xml', data: zeros }]);
+    await expect(extract('docx', bomb)).rejects.toThrow('its entries hold over 50 MB uncompressed (a zip bomb, or a document too large to read)');
+  });
+
+  it('refuses a PDF of more than 500 pages before it reads a page, and opens every PDF with code evaluation off', async () => {
+    expect(MAX_PDF_PAGES).toBe(500);
+    const many = pdfOf(501);
+    expect(many.length).toBeLessThan(64 * 1024);
+    await expect(extractPdf(many)).rejects.toThrow(new PdfLimitError('it has 501 pages, over the 500 read'));
+    await expect(extractPdf(pdfOf(3), { maxPages: 2 })).rejects.toThrow(new PdfLimitError('it has 3 pages, over the 2 read'));
+    expect((await extractPdf(pdfOf(3))).pages).toBe(3);
+    expect(PDF_OPEN_OPTIONS).toEqual({ isEvalSupported: false });
+    // The pdf.js unpdf bundles evaluates no code at all: no Function constructor, no eval.
+    const bundle = readFileSync(fileURLToPath(new URL('../../node_modules/unpdf/dist/pdfjs.mjs', import.meta.url)), 'utf8');
+    expect(bundle).not.toMatch(/new Function\(|\beval\(/);
   });
 });
 

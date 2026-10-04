@@ -24,6 +24,7 @@ import { kbLinkProblems } from '../kb/rules';
 import type { Retriever } from '../kb/types';
 import { kbCatalog } from '../kb/catalog';
 import { defaultRetriever } from '../kb/hybrid';
+import { warnFallback } from '../kb/fallback';
 import { KB_ANSWER_PROMPT, KB_UNAVAILABLE_PROMPT, kbCompletion } from '../kb/answer';
 import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
 
@@ -669,7 +670,11 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'fixtures', a.fixtures);
   // The knowledge base, with the code's retriever when it gives one, else the engine's default:
   // hybrid when kb.yaml names an embedder whose index and weights are there, else keywords alone.
-  if (config.knowledge) app.knowledge = { kb: config.knowledge, retriever: code.knowledge?.retriever ?? defaultRetriever(config.knowledge).retriever };
+  // A default that fell back to keywords although kb.yaml names an embedder is said, with the fix (../kb/fallback.ts).
+  if (config.knowledge) {
+    app.knowledge = { kb: config.knowledge, retriever: code.knowledge?.retriever ?? defaultRetriever(config.knowledge).retriever };
+    warnFallback(app.knowledge.retriever, `app "${app.id}"`);
+  }
   // The folder's content hashes: what the engine records on each call (call_started, the trace).
   app.configHashes = config.hashes;
   return app as App;

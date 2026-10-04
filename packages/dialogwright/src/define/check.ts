@@ -9,6 +9,7 @@ import { DEFAULT_ROLE_PERSON_REASON, personReasons } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES } from './schema/index';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
+import { withoutFallbackWarnings } from '../kb/fallback';
 import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProblems } from './knowledgeUse';
 
 /**
@@ -277,7 +278,8 @@ async function loadCode(dir: string): Promise<Found> {
   if (!file) return {};
   let module: Record<string, unknown>;
   try {
-    module = (await import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href)) as Record<string, unknown>;
+    // Check is independent of the model cache: the app's default retriever falling back is not said here (../kb/fallback.ts).
+    module = (await withoutFallbackWarnings(() => import(/* @vite-ignore */ pathToFileURL(resolve(dir, file)).href))) as Record<string, unknown>;
   } catch (error) {
     // By its brand, not instanceof: the module may have reached defineApp through another copy of this one.
     if (isAppDefinitionError(error) && error.problems.length > 0 && error.problems.every(isProblem)) {

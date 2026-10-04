@@ -5,12 +5,12 @@ description: Use when building a new DialogWright app from a plain-language desc
 
 # Create an app from a description
 
-You are given a paragraph and asked to build an app. This skill is the procedure, from the paragraph to a green app in `apps/<name>`, in eight steps. Do them in order; each step ends with something you can check.
+You are given a paragraph and asked to build an app. This skill is the procedure, from the paragraph to a green app in `apps/<name>`, in eight steps, with one more (step 6b) when callers ask questions that documents answer. Do them in order; each step ends with something you can check.
 
 Three supporting files sit next to this one:
 
 - [worksheet.md](worksheet.md): the template for the app's design worksheet (`apps/<name>/DESIGN.md`), with the final checklist you tick.
-- [patterns.md](patterns.md): the YAML and TypeScript for each feature a paragraph usually asks for (verification, a one-time code, delegates, confirmed writes, bounds on a date or an amount, refusals and handoffs, informational answers, policy tests), each tried in a running app, and the known gaps with their workarounds.
+- [patterns.md](patterns.md): the YAML and TypeScript for each feature a paragraph usually asks for (verification, a one-time code, delegates, confirmed writes, bounds on a date or an amount, refusals and handoffs, informational answers, a knowledge form, policy tests), each tried in a running app, and the known gaps with their workarounds.
 - [corpus.md](corpus.md): how to write corpus lines and scripted calls, including how to label each slot type's questions.
 
 ## Before you start
@@ -20,14 +20,16 @@ Read these first; the rest of this skill assumes them:
 1. [CLAUDE.md](../../../CLAUDE.md): the three roles and the rules.
 2. [docs/authoring-an-app.md](../../../docs/authoring-an-app.md) (long: read it a section at a time, from its contents list): sections 1 and 2 (the folder and each file), 3 (policy and identity: [the built-in rules, including the range rules](../../../docs/authoring-an-app.md#33-the-built-in-rules), [the identity ladder](../../../docs/authoring-an-app.md#36-the-identity-ladder) and [what is recorded](../../../docs/authoring-an-app.md#39-what-is-recorded-audit-and-the-rule-names)), 4 (what stays in TypeScript), 6 (the form hooks) and 7 (`pnpm check`). Skim section 5 (slots); the type pages cover it.
 3. [docs/slots/README.md](../../../docs/slots/README.md): the slot types and "Which type?".
+4. Only if callers ask questions that documents answer: [section 12 of the authoring guide](../../../docs/authoring-an-app.md#12-the-knowledge-base), the knowledge base, before step 6b.
 
 The rules you keep, whatever the paragraph says:
 
 - **Never put policy in tool code.** A tool does the work. Who may call it, at what identity level, with what confirmation and within what bounds is `policy.yaml` and `identity.yaml`, decided by the gate before the tool runs.
-- **Never let a model write a regulated line.** Every line a caller hears is in `prompts.yaml`, word for word. The model only answers typed questions. Information answers are fixed lines too (there is no knowledge base yet).
+- **Never let a model write a regulated line.** Every line a caller hears is in `prompts.yaml`, word for word. The model only answers typed questions. Information answers are fixed lines too, or passages of a knowledge base that people approved: either way word for word.
 - **Fictional data only.** Invented names, invented streets, the 555 phone range, `example.com` web addresses. Nothing real, nothing private.
 - **Do not change `packages/dialogwright`.** If the framework is in your way, see "When something doesn't fit" at the end.
 - **Never run `regress --client record`.** Recording calls a paid API; it is for the app's owner to do later.
+- **Never approve a passage of a knowledge base, and never use a model key.** Only a person approves what callers will hear, after reading it against its source: you do not run `pnpm kb:approve`, you do not write an `approval` or a hash, and you do not edit `kb/approvals.jsonl`. You do not run `pnpm kb:draft` either, since it calls a model with the owner's own key, which you never handle and never put in a file. Step 6b says what you do instead.
 
 ## Step 1: The worksheet
 
@@ -42,6 +44,7 @@ The worksheet lists:
 - **Confirmation**: which writes are read back for a yes before they happen, and exactly which values the caller confirms.
 - **Bounds**: dates that must fall in a range, amounts that must stay under a limit, and where each bound comes from (today, a fixed date, a record).
 - **Informational answers**: the fixed line for each.
+- **Knowledge**: the questions callers ask that a document answers (not a task, a general question), the documents that answer them, whether an answer is the same for every caller, and whether a line from the caller's own data follows it.
 - **What goes to a person**: on request (always), after failed verification, by a role, by a bound.
 - **Gaps**: anything the paragraph asks for that you are not sure the framework does. Fill this in as you go.
 
@@ -58,6 +61,7 @@ Add the mapping to the worksheet:
 - **Each tool to its `params`, and each param to how it is recorded.** A tool lists the params its calls carry (`params: ['accountId', 'service']` on the tool in `src/app.ts`, `params: []` for none). A param named after a slot with a redact setting (a `digits` slot is `last4`, a `birthdate` is hidden, a `text` slot is `length`) is recorded as the slot says. Every other param is declared by name under `audit:` in `policy.yaml`, one of `last4`, `mask`, `length`, `secret` or `keep`. Choose by what the value is: an identifier `last4`, free words `length` (or `secret` if they must not be kept at all), a plain choice from a short list, a day or an amount `keep`. A value you keep that a person said in their own words (a street address read back as said) is a privacy trade-off: write it in the worksheet's choices. See [patterns.md](patterns.md#what-is-recorded-params-and-audit).
 - **Each confirmed write to its `confirmed` fields.** An app has one list of confirmed fields, shared by every action with a `confirmed` rule: see [patterns.md](patterns.md#confirmed-writes).
 - **Each form to its hooks**: `complete` always; `entry` (and `onEntry`) when the form needs a verified caller; `principalEntry` when delegates use it; `confirmedParams` for a confirmed write; `onSummaryRead` when the read-back names a value no slot holds.
+- **Each knowledge row to a topic, and each answer to a passage** (only when the worksheet has knowledge rows): a topic is an id, a title, keywords and example questions in `kb/topics.yaml`; a form with a `topic` slot and `answers:` says it; an answer that is one fixed line for everyone with no question to ask may be an informational intent's `passage:`. The facts an answer depends on (the caller's plan, say) are `applies`, read by code from the system of record, never from what the caller said. See [patterns.md](patterns.md#a-knowledge-form) and step 6b.
 - **Each form to the actions it calls** (`calls` in `forms.yaml`): its entry call and the calls its hooks make through the gate, `calls: []` for one that calls none. The engine never reads it; the app map draws each form to its actions with it, and `pnpm check` reports an action no form reaches. Declare it for every form or for none.
 
 Decide now whether the app needs `--identity`: it does if any action is above level 0.
@@ -154,6 +158,17 @@ Never run `--update` again. When the review finds a wrong outcome, fix the app o
 
 Add the app's regression to CI: `- run: pnpm --filter @dialogwright/example-<name> regress` in `.github/workflows/ci.yml`, after the clinic's. Commit `pnpm-lock.yaml` with the app: CI installs from it, frozen.
 
+## Step 6b: A knowledge base from documents (only when the worksheet has knowledge rows)
+
+Callers ask general questions a document answers: when are you open, what is the late fee. The answers are short passages that a person approves, chosen by meaning and said word for word. The pipeline is ingest, draft, a person reviews and approves, and the last step is never yours: **you never approve a passage.** Do these, in this order, once the app is green and its baseline is made (step 6), as additions to it. Step 7 then reads the new action back with the rest of the policy.
+
+1. **Write the folder's settings and topics.** `kb/kb.yaml` (the resolving `action`, and `applies` if an answer depends on the caller), `kb/topics.yaml` (each topic with its title, keywords and example questions in a caller's words). Section 12 of the authoring guide has each file with an example.
+2. **Ingest the documents.** `pnpm kb:ingest <the documents' folder> --dir apps/<name>` reads PDF, DOCX, HTML, Markdown and text files into `kb/sources/<doc>.yaml` by section. For a website, only the address the paragraph names, with `--dry-run` first and a small `--depth`. Read each source: a section you cannot read as the document's own words (a scanned page, a menu that was picked up) is a finding for the worksheet.
+3. **Draft, without a key.** Do not run `pnpm kb:draft`: it calls a model with the owner's own key. Write each draft by hand into `kb/pending/<id>.yaml` in the draft format (the passage's fields, no `approval`, and `drafted: { by: <an AI coding assistant, and which>, on: <today>, excerpt: <the words of the section that support the answer, copied exactly> }`). The answer is one or two short spoken sentences with no `{variable}`, drawn only from that excerpt; if the document does not say it, no passage. The owner, who has a key, may run `kb:draft` instead.
+4. **Wire the form** (or the informational intent): the pattern is [a knowledge form](patterns.md#a-knowledge-form): a `topic` slot, a form with `answers:`, the resolving tool with the facts read by code, `topic: keep` under `audit`, the three lines in every locale, `answer` in `prompts.dataVars`. Add the knowledge rows' paraphrases (`fixtures/kb/paraphrases.yaml`, eight or more for each topic, in other words than the topic's keywords, and a `none:` list) and the recall test.
+5. **Stop at the person.** Until each draft is approved, no topic has a passage in force: `pnpm check` reports it (a topic without an approved passage), and a call that asks the topic hears the unavailable line and is offered a person. That is the check doing its job, and it is the one thing you leave red. Do not approve to silence it, do not move a draft into `kb/passages/`, do not take the topic out. Write in the worksheet, under the knowledge rows, which drafts await approval and the two commands: `pnpm kb:review apps/<name>` (the review page, on that machine; they read each draft beside its source section and approve, edit or reject it) and `pnpm kb:approve <id...> --by "<their name>"`. Leave the knowledge form's corpus lines and scripted calls to after the approval, since the baseline records what a call hears, and say so.
+6. **After the person approves** (in this session, or when the owner returns): run `pnpm check` (it should be ok), write the corpus lines and scripted calls for the knowledge form (corpus.md's `topic` row has the labels), read their transcripts, add their baseline entries by hand as step 6 describes, and list them in the worksheet.
+
 ## Step 7: Read the policy back
 
 Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write. The scaffold ships the example's read back: `testing.policyMatrix` in `src/app.ts`, the three pages beside `policy.yaml`, and their tests in `src/app.test.ts` ("the policy read back"), so from the first change to the policy, the forms or the tools those tests fail until the pages are written again. Make `testing.policyMatrix` your app's callers and records ([patterns.md](patterns.md#testing-the-policy): a principal per delegate role, the subject at each level), keep the tests, then write the policy matrix, the policy card and the app map:
@@ -166,11 +181,11 @@ pnpm app:diagram apps/<name>       # APP-MAP.md: the intents, the keypad menu, e
 
 `apps/<name>/policy.matrix` lists, under each action, what the gate decides for each kind of caller (anonymous, the subject at each level, each delegate role, a role the policy does not name, ...) and why, then each custom rule's examples. Read it beside the worksheet's "Who may do what", cell by cell: every allowed, refused and to-a-person cell should be there, decided by the rule you expect. Then check each bound at its edges with the per-action test. Read `POLICY.md` against the paragraph itself, sentence by sentence: each thing the paragraph says a caller may or may not do should be a line of the card (the level, the factors, each rule in words, what each role gets), and each line of the card should come from the paragraph or from a choice in the worksheet. Read the card's "What is recorded" table beside the worksheet's per-param column: each value an action is sent should be recorded as you chose (an identifier by its last four, nothing kept that a person said in their own words unless you chose it). Read `APP-MAP.md` for what the policy does not hold: every intent reaches a form or a line, every key on the menu goes where you meant, every form reaches its actions, and nothing is listed under "Dangling references". Write what the reading found in the worksheet.
 
-Fix every mismatch in the YAML (or in the worksheet, if you misread the paragraph), write the three pages again, read their diffs, and run step 6's commands again. Once they are right, they are goldens like the baseline (the tests compare them with what the app generates): rewrite them only for a change you meant.
+A knowledge form's resolving action and its account line's reads are in the matrix like any action: read them too (an anonymous caller may be allowed the general answer and refused the line from their own data). Fix every mismatch in the YAML (or in the worksheet, if you misread the paragraph), write the three pages again, read their diffs, and run step 6's commands again. Once they are right, they are goldens like the baseline (the tests compare them with what the app generates): rewrite them only for a change you meant.
 
 ## Step 8: The final checklist
 
-Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#final-checklist)), in the worksheet itself. In short: every intent has corpus lines and a scenario; every action has a policy entry, a row in `policy.matrix` and a line in `POLICY.md` you have read, and its bounds tested at their edges; identity matches the paragraph; nothing private or real; `pnpm check`, `pnpm verify` and every app's regression green; the README describes the app and keeps the recording steps the scaffold wrote; the gaps are written up. Then commit, with the worksheet.
+Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#final-checklist)), in the worksheet itself. In short: every intent has corpus lines and a scenario; every action has a policy entry, a row in `policy.matrix` and a line in `POLICY.md` you have read, and its bounds tested at their edges; identity matches the paragraph; nothing private or real; `pnpm check`, `pnpm verify` and every app's regression green; the README describes the app and keeps the recording steps the scaffold wrote; the gaps are written up; and, if there is a knowledge base, every draft is either approved by a person or listed in the worksheet as awaiting one, with `pnpm check`'s approval findings the only ones left. Then commit, with the worksheet.
 
 ## When something doesn't fit
 

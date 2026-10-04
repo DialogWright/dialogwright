@@ -94,7 +94,7 @@ describe('a form that answers from the knowledge base (forms.yaml answers:)', ()
   it('says in another language the passage in that language, and the account line in it', () => {
     const answer = 'Los libros atrasados con una tarjeta de adulto cuestan 25 centavos al día, hasta 5 dólares por libro.';
     const sourceText = 'An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.';
-    const hash = approvalHashOf({ topic: 'late_fees', answer, applies: { card: ['adult'] }, effective: { from: '2026-01-01' }, sourceText, accountLineText: 'Su tarjeta tiene {balance} en multas ahora mismo.' });
+    const hash = approvalHashOf({ id: 'late-fees-adult-es', locale: 'es', version: '2026.1', topic: 'late_fees', title: 'Late fees', localeTitle: 'Multas por retraso', answer, applies: { card: ['adult'] }, effective: { from: '2026-01-01' }, sourceText, accountLineText: 'Su tarjeta tiene {balance} en multas ahora mismo.' });
     const app = libraryKbApp('library-kb-es', {
       'kb/locale/es/passages/late-fees-adult-es.yaml': [
         'id: late-fees-adult-es', 'topic: late_fees', 'version: "2026.1"', 'applies: { card: adult }', 'effective: { from: 2026-01-01 }',
@@ -120,7 +120,7 @@ describe('no answer to give: the unavailable line, and a person offered once', (
     expect(calls(r)).toEqual(['findPassage(topic=late_fees) ALLOW: no passage (stale)']);
     expect(r.kb).toMatchObject({ passageId: 'late-fees-adult', fresh: false });
     expect(kbRows(r)).toEqual([expect.objectContaining({ detail: expect.objectContaining({ passageId: 'late-fees-adult', fresh: false }) })]);
-    expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0, after: 'ask_library' });
+    expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0, after: 'ask_library', why: 'no-answer' });
   });
 
   it('none in force on the day: the line and the offer; a yes is a person', () => {
@@ -131,6 +131,19 @@ describe('no answer to give: the unavailable line, and a person offered once', (
     expect(heard(c)).toContain('I\'m sorry, I don\'t have an answer to that I can give you right now. Would you like me to connect you to a librarian, or keep going?');
     const yes = say(c, 'yes please', { confirmsYes: noul(0.95), confirmsNo: noul(0.03) });
     expect(yes.decision.kind).toBe('handoff');
+  });
+
+  it('a yes to the offer is a request for a person, not a frustrated caller: plain, or "connect me to a person"', () => {
+    const offered = (): Call => {
+      const c = call(APP, { today: '2025-06-01' });
+      ask(c, 'card_renewal');
+      return c;
+    };
+    const handoffOf = (r: TurnResult) => ({ kind: r.decision.kind, reason: (r.decision as { reason?: string }).reason, promptId: (r.decision as { promptId?: string }).promptId });
+    // A plain yes: the confirmation gate.
+    expect(handoffOf(say(offered(), 'yes please', { confirmsYes: noul(0.95), confirmsNo: noul(0.03) }))).toEqual({ kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent' });
+    // "Yes, connect me to a person": the wants-human gate sees it first, and says the same.
+    expect(handoffOf(say(offered(), 'yes, connect me to a person', { confirmsYes: noul(0.95), confirmsNo: noul(0.03), wantsHuman: noul(0.95) }))).toEqual({ kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent' });
   });
 
   it('no facts on record: the same line and offer; declined, the form ends, and a second question with no answer is not offered a person again', () => {
@@ -183,12 +196,20 @@ describe('an informational intent that says a passage (intents.yaml passage:)', 
     const r = hours(c);
     expect(heard(c)).toBe('I\'m sorry, I don\'t have an answer to that I can give you right now. Would you like me to connect you to a librarian, or keep going?');
     expect(r.kb).toBeNull();
-    expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0 });
+    expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0, why: 'no-answer' });
     const no = say(c, 'no', { confirmsYes: noul(0.03), confirmsNo: noul(0.95) });
     expect(no.session.transferDeclined).toBe(true);
     expect(heard(c, no)).toContain('How can I help you today?');
     hours(c);
     expect(heard(c)).toBe('I\'m sorry, I don\'t have an answer to that I can give you right now. How can I help you today?');
+  });
+
+  it('a yes to the offer is a request for a person, not a frustrated caller\'s handoff', () => {
+    const c = call(APP, { today: '2025-06-01' });
+    hours(c);
+    const yes = say(c, 'yes please', { confirmsYes: noul(0.95), confirmsNo: noul(0.03) });
+    expect(yes.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent' });
+    expect(yes.audit.filter((a) => a.type === 'handoff')).toEqual([expect.objectContaining({ detail: expect.objectContaining({ reason: 'live-agent' }) })]);
   });
 
   it('a stale passage is withheld and recorded as not fresh', () => {
@@ -277,7 +298,7 @@ describe('check: a folder\'s knowledge answers', () => {
     const found = await lines('kb-c4', { 'kb/passages/opening-hours.yaml': (t) => t.replace('closed on Sunday', 'closed on Sundays') });
     expect(found).toEqual([
       'intents.yaml:19:14  intents.hours.passage  intent "hours" says the passage "opening-hours", which was edited after approval, so the caller hears that there is no answer and is offered a person  ->  review kb/passages/opening-hours.yaml (pnpm kb:status shows what changed), then pnpm kb:approve opening-hours --by "<your name>"',
-      'kb/passages/opening-hours.yaml:13:9  approval.hash  passage "opening-hours" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve opening-hours --by "<your name>"',
+      'kb/passages/opening-hours.yaml:13:9  approval.hash  passage "opening-hours" was edited after approval (its answer, id, locale, version, applies, dates, topic, its topic\'s title or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve opening-hours --by "<your name>"',
     ]);
   });
 

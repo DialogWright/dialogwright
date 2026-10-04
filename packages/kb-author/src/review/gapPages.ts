@@ -105,7 +105,7 @@ export function kbTopicPage(ctx: PageContext, kb: KnowledgeBase, topicId: string
   const rows = passages
     .map((p) => {
       const w = held.get(p.id);
-      const state = w ? `<span class="chip warn">withheld</span> <a href="${href(ctx, `/passage/${encodeURIComponent(p.id)}`)}">review</a>` : '<span class="chip pass">approved</span>';
+      const state = w ? `<span class="chip warn">${w.why === 'unlogged' ? 'approved outside kb:approve' : 'withheld'}</span> <a href="${href(ctx, `/passage/${encodeURIComponent(p.id)}`)}">review</a>` : '<span class="chip pass">approved</span>';
       return `<tr><td class="mono">${esc(p.id)}</td><td>${esc(p.locale)}</td><td>${esc(Object.entries(p.applies).map(([k, v]) => `${k}: ${v.join(', ')}`).join('; ') || 'every caller')}</td><td>from ${esc(p.effective.from)}${p.effective.to ? ` to ${esc(p.effective.to)}` : ', open-ended'}</td><td>${state}</td></tr>`;
     })
     .join('');

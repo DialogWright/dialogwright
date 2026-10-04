@@ -1,6 +1,6 @@
 # Authoring an app
 
-This guide is for a developer, or an AI coding assistant, who is building a DialogWright app or changing one. It says what an app is made of, what goes in each file, how policy and identity are written, tested and reviewed, what stays in TypeScript and why, how to write a slot, how `pnpm check` finds mistakes, and how locales and configuration hashes work. Read [CLAUDE.md](../CLAUDE.md) first for the rules (the gate decides, a model never writes a regulated line, an app imports only from `'dialogwright'`).
+This guide is for a developer, or an AI coding assistant, who is building a DialogWright app or changing one. It says what an app is made of, what goes in each file, how policy and identity are written, tested and reviewed, what stays in TypeScript and why, how to write a slot, how `pnpm check` finds mistakes, how locales and configuration hashes work, and how an app answers general questions from a knowledge base of approved passages. Read [CLAUDE.md](../CLAUDE.md) first for the rules (the gate decides, a model never writes a regulated line, an app imports only from `'dialogwright'`).
 
 Two apps in this repository are the examples, and the snippets below are copied from them, except where a snippet says it is only an illustration:
 
@@ -20,6 +20,7 @@ Two apps in this repository are the examples, and the snippets below are copied 
 9. [Configuration hashes](#9-configuration-hashes)
 10. [Editor support](#10-editor-support)
 11. [Walkthroughs](#11-walkthroughs)
+12. [The knowledge base](#12-the-knowledge-base)
 
 ## 1. The folder
 
@@ -276,76 +277,11 @@ The corpus (`corpus.jsonl`, one labelled utterance per line), scripted calls, th
 {"id":"sn-01","text":"I'd like to make an appointment","intent":"schedule_new","context":"no_form"}
 ```
 
-### kb/ (optional): retrieval settings and commands
+Record a cassette under the Node major in `.nvmrc` (22). A recorded request is replayed by its exact text, and the engine reads text with Unicode properties (letters and digits, case folding, accents folded for retrieval) whose tables come with Node's ICU and can change between majors. CI replays on 22 and 24; a miss that only one major shows is such a table change, not a regression, and the fix is a deliberate re-record under `.nvmrc`'s major, never a recording made on another one.
 
-An app with a knowledge base (`kb/`) nominates topics for what a caller says before each turn a `topic` slot listens on. Unless its code gives a retriever of its own (`code.knowledge.retriever`), the engine's is used, set in `kb/kb.yaml`:
+### kb/ (optional)
 
-```yaml
-retrieval:
-  cap: 8                    # the most topics a turn offers (default 8)
-  embedder: potion-base-8M  # optional: also find topics by meaning, not only by their words
-  floor: 0.3                # optional: the similarity below which a topic found by meaning is not offered
-```
-
-- **Without `embedder`**, topics are found by their words alone: BM25 over each topic's title, keywords and example questions (`asks`), with a boost for a keyword said whole. Accents and common endings are folded, and greetings and question words are ignored. A topic is read in the caller's locale when `kb/locale/<tag>/topics.yaml` words it.
-- **With `embedder`**, the same keyword search runs beside a dense one, and the two rankings are merged by reciprocal rank fusion. A topic found by meaning counts only at `floor` or above (default: the model's own, 0.3); a keyword match always counts. The model is potion-base-8M, a static model run in TypeScript: about a hundredth of a millisecond per question, and the same numbers on every machine, so a recorded call replays exactly.
-- Every topic's vectors are in `kb/.index/<embedder>.json`, which you commit. Write it with `pnpm kb:index [app folder]` after any change to `topics.yaml` or a locale's wording; it embeds only the texts that changed, and gives the same bytes for the same topics. `pnpm check` reports a topic whose texts the index no longer matches, with the fix `run pnpm kb:index`.
-- The model's weights are not in the repository: `pnpm kb:model` downloads them once, at a pinned revision, checks each file's SHA-256, and keeps them in `~/.cache/dialogwright/models` (or `$DIALOGWRIGHT_MODEL_DIR`). `kb:index` downloads them when they are missing. A call never downloads anything: an app whose weights are not in the cache retrieves by keywords alone, and the trace's `retrieverId` says so (`keyword` rather than `hybrid:potion-base-8M`).
-- Choose `cap` and `floor` offline, never by re-recording calls: write `fixtures/kb/paraphrases.yaml` (each topic id with things callers say about it in other words, and `none:` with things no topic answers) and run `pnpm kb:bakeoff <app folder> --paraphrases fixtures/kb/paraphrases.yaml --sweep`. It reports each retriever's recall at the cap, how many topics it offers per question (and per question about nothing), and its speed, then recall against candidates for every floor and cap.
-- An ONNX model (bge-small, through the optional `@huggingface/transformers`) is available to code as `OnnxEmbedder` from `dialogwright/kb/onnx`, used with `HybridRetriever`; the bake-off includes it when the package is installed. It is not the default: it is a large native install, and its numbers can differ in the last bits between machines.
-
-### kb/ (optional): approval and staleness
-
-A passage is said only while it is approved and nothing it was approved over has changed. Its `approval` records the content's owner (a team), the person who approved it, the day, and two hashes: `sourceHash`, of its source section's text, and `hash`, of everything approved (the topic, the answer, `applies`, the effective dates, the source text and the topic's account line). Whitespace aside, any change to one of them makes the passage stale: the caller hears the unavailable line and is offered a person, once, and the trace records the passage with `fresh: false`. `pnpm check` fails on a passage that is stale or was never approved, and its fix names the two commands below.
-
-- `pnpm kb:status [app folder]` lists the passages by state: approved and fresh; stale because the source section changed; stale because the passage was edited (`git diff` shows the edit); never approved; and the drafts in `kb/pending/`. Each comes with its fix.
-- `pnpm kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]` approves each passage as it is now, after a person has read it against its source. It writes the `approval` in place, keeping the file's comments and layout, and appends one line to `kb/approvals.jsonl` (`id`, `version`, `approvedBy`, `owner`, `on`, both hashes, `from`: `passage` or `pending`, and `sourceText`, the section's text as approved, so a later review can show what changed in it). That log is only ever appended to. `--owner` is needed the first time; a re-approval keeps the owner unless `--owner` says otherwise.
-- A draft is `kb/pending/<id>.yaml`: the passage's fields without `approval`, plus `drafted: { by, on, excerpt }`, where `excerpt` quotes the source section word for word. Nothing in `kb/pending/` is ever read at run time. `kb:approve` checks a draft as the passage it would be and moves it into `kb/passages/` (or `kb/locale/<tag>/passages/` for a draft in another locale), dropping `drafted`.
-- `kb:approve` writes nothing for an id it refuses. It refuses an id that is no passage or draft, a passage that would fail `pnpm check` for anything but its approval (an unknown topic or source, a variable in the answer, an overlap with another passage, a locale the app does not speak), a draft whose excerpt is not in its section word for word, and a `--by` that names no person. An assistant or a tool may draft a passage, and only a person approves one.
-
-```yaml
-# kb/pending/late-fees-junior-2025.yaml: a draft, never said
-id: late-fees-junior-2025
-topic: late_fees
-version: "2025.1"
-applies: { card: junior }
-effective: { from: 2025-01-01, to: 2025-12-31 }
-source: { document: patron-guide, section: "3.2" }
-answer: There are no late fees on a junior card.
-drafted:
-  by: kb:draft
-  on: 2026-10-02
-  excerpt: Junior cards are not charged late fees.
-```
-
-### kb/ (optional): building a knowledge base from documents
-
-A passage is approved against a source section's text, so a knowledge base starts with its sources. You can write `kb/sources/<doc>.yaml` by hand, or read them from the documents the answers come from with `pnpm kb:ingest` (the `@dialogwright/kb-author` package, which an app never imports):
-
-```sh
-pnpm kb:ingest docs/ --dir apps/my-app                                   # a folder of PDF, DOCX, HTML, Markdown and text files
-pnpm kb:ingest https://example.org/help/ --dir apps/my-app --depth 2     # a website, to a link depth
-```
-
-- Each document becomes `kb/sources/<doc>.yaml`: its title, its provenance (its URL, or its file's path from the app folder, and the day it was read; for a crawled page, the crawl's settings too) and its text by section. Sections are cut at headings (h1 to h3, a DOCX's Heading 1 to 3, Markdown's `#` to `###`, a PDF's larger type) and named by the heading path (`late-fees`, `shifts/training`); a PDF's section records the page it starts on (`page`, and `lastPage` when it runs on), and a PDF without headings is cut by page (`p1`, `p2`). Paragraphs are kept.
-- A website is crawled politely: the start page's host only (unless `--allow-host`), robots.txt followed, one request a second (`--rate`), at most 50 pages (`--max-pages`), no cookies or sign-ins, linked PDF and DOCX files read too; `--include '/help/**'` narrows what is fetched. It never runs in CI.
-- Re-ingesting is safe: the same documents give the same bytes, an unchanged document is not rewritten (its `retrieved` date stays), and a document keeps its id. Each run says, per document and per section, what was added (`+`), changed (`~`) and removed (`-`); a changed section's passages go stale under the approval rules above. `--dry-run` shows this without writing. A source written by hand is never overwritten.
-
-Then the pipeline goes on: draft, review, refresh, and, once calls are happening, gaps.
-
-```sh
-pnpm kb:draft apps/my-app [--source <doc>] [--topic-hint "<what to cover>"] [--model <id>]   # drafts into kb/pending, with your own key
-pnpm kb:review apps/my-app                                                                    # the review page, on this machine only
-pnpm kb:refresh apps/my-app                                                                   # read every source again; withhold what changed
-pnpm kb:gaps apps/my-app [--traces traces/*.jsonl] [--since 2026-10-01] [--out gaps.md]       # what callers asked that the knowledge base did not answer, ranked
-```
-
-- **Draft.** `kb:draft` gives each source's sections that nothing cites yet (no passage, draft or rejected draft; `--all` for every section) to a drafter, by default Claude through the Messages API with your own `ANTHROPIC_API_KEY` (from the environment, or `.env` where you run it; default model `claude-haiku-4-5`, `--model` for another). It proposes, for each answer the document supports, the topic (one `topics.yaml` has, or a new one with a title, keywords and example questions), a spoken answer of one or two sentences, and the exact words of the section that support it. Every draft is checked before it is written: the excerpt in the section word for word, the answer within `maxAnswerChars` and without braces, a valid topic id (a new topic proposed with a title), `applies` and dates `kb.yaml` allows, and no repeat of another passage's or draft's answer. A draft that fails is reported with its reasons and never written; one that passes is `kb/pending/<id>.yaml` with `drafted: { by, on, excerpt }`. A new topic goes to `kb/pending/topics.yaml`, never to `topics.yaml`. Drafting is offline and pluggable (a `Drafter` is `{ id, draft(request) }`; tests use a fake), never runs in CI (it refuses to), and nothing pending is ever said.
-- **Review.** `kb:review` starts a small server on 127.0.0.1, on a free port (`--port` for a fixed one), and prints its URL with a one-time token that every request needs; it answers only this machine, and stops with Ctrl-C. It is not in the operator console, which has no access control until Phase 8. The page lists the proposed topics, the drafts and the passages withheld (stale or edited), each beside its source section with the excerpt marked, and for a source that changed, a word diff of the section as it was approved (from `kb/approvals.jsonl`) against the section now. It asks once for your name and your team, then: approve (it is `kb:approve` itself), edit then approve (the answer, `applies`, dates and a draft's excerpt, checked as a draft is), reject (the draft moves to `kb/rejected/<id>.yaml` with who, when and why: a record kept in the repository), and for a proposed topic, accept it into `topics.yaml` (under another id if you rename it; its drafts follow) or merge it into a topic the knowledge base has. A draft of a proposed topic is approved after its topic. Every page reads without JavaScript, and every field has a label.
-- **Refresh.** `kb:refresh` reads every source again from its provenance (the file, or the crawl with the settings it had) and writes those that changed, nothing else. It lists the passages now withheld because their section changed (the engine withholds them by their `sourceHash`; review them in `kb:review`), those whose section is gone (point them at the section that says it now, or delete them), and the sections nothing cites, to draft with `kb:draft --source`. A source written by hand, or whose file is gone, is left as it is and listed.
-- **Gaps.** `kb:gaps` reads the traces of real calls (`--traces`: a file, a folder or a glob; by default `$TRACE_DIR`, else the app's `traces/`, else `./traces`, where a server writes them) and ranks what callers asked that the knowledge base did not answer. It finds four kinds, turn by turn: the topic question answered `none` (or a topic chosen that the slot did not fill); words that look like a question (they end in `?`, start with a question word, or the model's intent was `other` or an informational intent) with no topic nominated; a passage that could not be said (stale, not in force, no translation, no facts about the caller); and a close call, where the slot asked which of two topics was meant. They are grouped by the nearest topic (the one retrieval nominated first, else the keyword retriever's best match on the words, else "no near topic"), ranked by count and then recency, each group with up to three of the callers' words (`--samples`) and the fix for each kind it holds: write a passage for the topic, draft from a source section nothing cites that reads as relevant, re-approve the stale passage, add a translation, add keywords or asks to the topic (or to both topics of a close call). Markdown by default (`--out` writes a file), `--json` for tools; `--since YYYY-MM-DD` keeps the recent calls. The words are the traces' own, as spoken, so keep a report as private as the traces; a turn on which an identity value was masked is counted but its words are not shown. The review page has the same list as its **Gaps** tab, with a link from each fix to where it is done: a stale passage to its withheld page, a topic to its passages and drafts, and the sections to draft from.
-
-[The package's README](../packages/kb-author/README.md) has the extraction, crawling, drafting and review rules in full.
+The folder of an app that answers general questions from approved passages: `kb.yaml`, `topics.yaml`, passages with the source documents they are approved against, a language's wording, drafts waiting for review, and the log of approvals. It is the subject of [section 12](#12-the-knowledge-base), which has each file with an example and everything built on it.
 
 ## 3. Policy and identity
 
@@ -1154,7 +1090,7 @@ A slot with `dtmf` needs `ask_<slot>_dtmf`, the line that asks for the keys ("Pl
 | `mask` | `••/••/1975`, the year alone; a tool param as `•` | A date of birth (the clinic's `dob`). |
 | `length` | `<38 chars>` | The caller's own words, such as a free-text note. The slot's display is a stand-in ("your description") and is kept; the live console keeps the words. The engine's testkit has one (`missingNote`). |
 
-Where it applies: a tool call's param with the same name as the slot, as the gate event, the trace and the audit log record it; and the trace's and the console's copies of the slot (its value and display, the slots in the turn state the model was given, a pending read-back, a prompt's variables named after the slot, a handoff's collected slots). A pending partial of a redacted slot keeps its shape with its numeric parts zeroed. So name the tool param and the prompt variable that carry the value exactly as the slot: the library's `listLoans` takes `card`, and its lines say `{card}`.
+Where it applies: a tool call's param with the same name as the slot, as the gate event, the trace and the audit log record it; and the trace's and the console's copies of the slot (its value and display, the slots in the turn state the model was given, a pending read-back, a prompt's variables named after the slot, a handoff's collected slots). What our own lines said of it is masked too: the trace's say actions, the console's spoken line, the frame log's outbound text frames and the part of a line an interruption heard have each redacted slot's value, display and digits (however a voice line spaces or groups them) replaced by its masked form. A pending partial of a redacted slot keeps its shape with its numeric parts zeroed. The console shows a passage's `applies` (whom it answered) only as `audit:` in policy.yaml declares each fact. So name the tool param and the prompt variable that carry the value exactly as the slot: the library's `listLoans` takes `card`, and its lines say `{card}`.
 
 What `redact` does not cover is the caller's words. The transcript (the speech event, the turn's text, and the questions the model was asked, whose span labels are the caller's words) is kept in the trace as said, so a trace is sensitive. The audit log holds only the masked calls. The model itself sees each slot's display in its turn state.
 
@@ -1373,6 +1309,7 @@ prompts:
 - **Folders.** `locale/` holds one folder per locale, named by its language tag. A file there is a problem, and so are two folders whose names differ only in letter case (`pt-BR` and `pt-br`), which would be one locale.
 - **Fallback.** A line missing from a locale is said from the default locale, one line at a time, so a half-translated app still works.
 - **Choosing the locale.** The session starts in the default locale. A channel can name another: the `session.start` event carries a `locale`, and the ConversationRelay adapter reads it from a custom parameter named `locale`. It is matched against the app's locales: the same tag (letter case aside), else the app's locale that is the request's language alone (`es-US` finds `es`), else the app's first locale in that language (`es` finds `es-MX`), else the default. The request is untrusted: it is only compared, and what is used is always one of the app's own tags.
+- **The knowledge base** has its own wording and passages per locale, with its own fallback rule (`localeFallback`): see [12.7](#127-locales-and-fallback).
 - **Spoken text.** A translated line is spoken by text to speech. Recorded clips are in the default language only.
 - **Slots hear and say the session's language.** A slot's context carries the session's locale (`ctx.locale`), and the library types read it. What changes for a Spanish session (`es`, or any `es-*` tag); every other locale, and an app without locales, reads and says values exactly as en-US always has:
   - **Numbers.** The spans a number question offers and the digits read from them are Spanish: "cinco cinco cinco dos cero cuatro uno siete", "cincuenta y cinco cincuenta y dos cero cuatro diecisiete", "mil novecientos noventa y uno". Accents are optional ("dieciséis", "dieciseis"); a span keeps them as said. The engine keeps one word table per language (`core/extract/lexicon.ts`), English and Spanish so far.
@@ -1413,6 +1350,7 @@ Every configuration file of an app built by `defineApp` has a content hash, so a
 - They are on the app as `App.configHashes` (`app` for the combined hash, `files` for each file).
 - The `call_started` audit row records the combined hash as `config` and the per-file lines as `configFiles`, so the row alone is enough to recompute and verify the combined hash.
 - Every trace record carries the combined hash as `configHash`, and the console shows its first eight characters as `config <8 chars>`.
+- An app with a knowledge base has a line for each `kb/` file it is read from (kb.yaml, topics, passages, sources and the locale files; not drafts, rejected drafts, the approvals log or the vector index), so the combined hash changes when an approved answer or its source does ([12.12](#1212-what-is-recorded)).
 - They are never sent to the model.
 
 An app that is not built from a folder has no hashes, and its rows are as they were.
@@ -1465,6 +1403,17 @@ For a form that collects slots and acts, such as renewing a loan:
 5. Write the goldens a reviewer reads and read their diffs: `pnpm policy:matrix <folder>` (what the gate decides), `pnpm policy:card <folder>` (the policy in plain English) and `pnpm app:diagram <folder>` (the app map), then commit them with the policy ([section 3.10](#310-testing-the-policy)).
 6. `pnpm check` says if the tool and its action do not match: a tool with no action, an action with no tool, a rule that is never named.
 
+### Answer a general question from the knowledge base
+
+For "what is the late fee", an answer a person approved, said word for word ([section 12](#12-the-knowledge-base) has each file):
+
+1. `kb/`: `kb.yaml` (the resolving `action`, and `applies` if the answer depends on the caller), `topics.yaml` (the topic with its keywords and example questions), `sources/<doc>.yaml` (the document's text, by hand or from `pnpm kb:ingest`), and `passages/<id>.yaml` (the answer, its source section and its dates).
+2. `pnpm kb:approve <id> --by "<your name>"`, after you have read the passage against its source. Only a person approves.
+3. `slots.yaml`: a slot of `type: topic`. `forms.yaml`: a form with that slot, `summaryPromptId: null` and `answers: { slot: <the slot> }`. `intents.yaml`: a `kind: form` intent for it.
+4. `app.ts`: the resolving tool, `kbAnswerTool({ facts })`, with the facts read from your records. `policy.yaml`: its action, and `topic: keep` under `audit`. `prompts.yaml`: `ask_<slot>`, `ask_<slot>_retry`, `disambiguate_<slot>`, `kb_answer` (`'{answer}'`) and `kb_unavailable`, in every locale; `app.yaml`: `answer` in `prompts.dataVars`.
+5. Paraphrases in `fixtures/kb/paraphrases.yaml` and a recall test ([12.11](#1211-testing)); corpus lines labelled with the topic question.
+6. `pnpm kb:index` if `kb.yaml` names an embedder, then `pnpm check`, then `pnpm verify`.
+
 ### Follow one scripted call turn by turn
 
 The stub regression (`pnpm --filter @dialogwright/example-<name> regress`) prints one line per difference from the baseline, a `FAIL scenario <id>: <field>: expected ..., got ...` line for each scripted call that does not reach what it expects, and `no changes` when there is neither, then a summary (`corpus 129/129 outcomes match expected`, `scenarios 34/34 pass expectation, 34/34 match expected`). A `FAIL` line names only the field that differed. To see how the call got there, ask for its transcript:
@@ -1499,3 +1448,494 @@ To build an app from a description (a paragraph of what callers can ask for, who
 Run `pnpm create-app <name>` (add `--identity` when callers must verify who they are). It writes `apps/<name>` from the template in `packages/dialogwright/templates/`: the five YAML files, `slots.yaml`, `identity.yaml` with `--identity`, `src/app.ts` with one stub tool over fixture data, a corpus and three scripted calls, the launchers, its tests, the policy read back (`policy.matrix`, `POLICY.md` and `APP-MAP.md`, written for the example, with the golden tests that compare them), a README with the recording steps, a `.env.example` and a short `CLAUDE.md`. It runs `pnpm install` so the workspace links the new app (`--no-install` skips that), and the result passes `pnpm check`, its type check, its tests and its stub regression as created. Replace the one example intent, form, slot and tool with your own and add more as above, running `pnpm check` after each change. The scaffold ships the example's stub baseline (`fixtures/expected`); make your own app's first baseline once with `regress --update`, review it in full, and never regenerate it after that.
 
 To start from an existing app instead, copy the library fixture's folder (or the clinic's) into `apps/<name>`, give it a `package.json` and the launchers the clinic has (`src/index.ts`, `cli.ts`, `regress.ts`), change `id`, empty the intents, forms, prompts and policy down to the control intents and the engine's lines, and run `pnpm check` until it says `ok`.
+
+## 12. The knowledge base
+
+A knowledge base is for the questions callers ask that no form handles: when are you open, what happens if I return a book late, how do I renew my card. Its answers are short passages that people approved, chosen by what the caller means, and spoken word for word. No model writes them and none changes them: the model only picks which topic the caller asked about, and code finds the one approved passage for this caller and this day.
+
+This section is the whole of it, in the order you meet it: the folder, how a call uses it, the three places an answer is said from, approval and staleness, building one from documents, tuning retrieval, testing and what is recorded. The examples are one small knowledge base, Example Town Library's, whose files are the ones the engine's own tests build. [The topic slot's page](slots/topic.md) has the question the model is asked.
+
+### 12.1 The folder
+
+An app with a knowledge base has a `kb/` folder beside its other files. Only `kb.yaml` and `topics.yaml` are required.
+
+```
+kb/
+  kb.yaml                       the settings: the gated action that resolves a passage, the facts a passage may depend on, retrieval
+  topics.yaml                   what callers ask about: a title, keywords and example questions each, and an optional line from the caller's own data
+  passages/<id>.yaml            one approved answer each, in the app's default language
+  sources/<doc>.yaml            the documents the answers come from, by section: what an approval is held to
+  locale/<tag>/topics.yaml      a language's titles, keywords and example questions
+  locale/<tag>/passages/        a language's passages, usually translations
+  pending/<id>.yaml             drafts waiting for a person: never read at run time, never said
+  pending/topics.yaml           topics the drafts propose
+  rejected/<id>.yaml            drafts a person turned down, with who, when and why
+  approvals.jsonl               every approval, one line each, appended and never rewritten
+  .index/<embedder>.json        the vectors of the topics' texts, for retrieval by meaning (optional; commit it)
+```
+
+Every file has a JSON Schema (`kb-settings`, `kb-topics`, `kb-locale-topics`, `kb-passage`, `kb-source`, `kb-pending`), named on its first line like the app's other files (the examples below show the file's path there instead). A file that is not in this list is a problem, so a mistyped folder name does not go unnoticed. `pnpm check` reads all of it, and so does `defineApp`.
+
+**kb.yaml** says how the knowledge base is read, never what it says:
+
+```yaml
+# kb/kb.yaml
+action: findPassage        # the gated tool that resolves a passage for a caller (a tool with an action in policy.yaml)
+applies:                   # the facts a passage may depend on, each with every value it can take
+  card: [adult, junior]
+localeFallback: none       # a missing translation is "unavailable" (none), or the default language's passage (default)
+maxAnswerChars: 400        # an answer is spoken, so it is short (40 to 2000; default 400)
+retrieval:
+  cap: 8                   # the most topics a turn offers the model (default 8)
+```
+
+`applies` is the one thing that makes passages differ by caller. A fact is a name and the values it can take; every topic needs a passage in force for every combination, and `pnpm check` lists a combination that has none. An app whose answers are the same for everyone leaves it out. The retrieval settings are in [12.10](#1210-retrieval-settings).
+
+**topics.yaml** names what callers ask about. Retrieval reads each topic's title, keywords and example questions; the topic question offers the title. A title is spoken, so an approval covers it: renaming a topic sends its passages back for review ([12.8](#128-approval-staleness-and-withholding)).
+
+```yaml
+# kb/topics.yaml
+opening_hours:
+  title: Opening hours
+  keywords: [opening hours, open, closed, hours]
+  asks:
+    - When are you open?
+    - Are you open on Sunday?
+  risk: low
+late_fees:
+  title: Late fees
+  keywords: [late fee, overdue, fine]
+  asks:
+    - How much is the fee for a late book?
+  accountLine:
+    text: Your card has {balance} in late fees right now.
+    from: getFees
+```
+
+`keywords` are words and phrases that name the topic exactly (a plan name, a code); a keyword said whole counts for more. `asks` are example questions in a caller's own words. `risk` is `regulated` (the default: only an approved passage is ever said) or `low`, which marks content a later release may let an app answer in generated wording, grounded in approved passages; nothing reads it yet. `accountLine` is explained in [12.5](#125-answers-through-the-gate).
+
+**A source** is a document's text by section. An approval is held to the section's text, so a changed word makes the passages drawn from it stale. You can write one by hand, or have `pnpm kb:ingest` read it from the document ([12.9](#129-building-one-from-documents)).
+
+```yaml
+# kb/sources/patron-guide.yaml
+document: Example Town Library Patron Guide
+provenance:
+  file: patron-guide.pdf
+  retrieved: 2025-12-01
+sections:
+  "1.1":
+    heading: Opening hours
+    text: >-
+      All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m.
+      to 4 p.m. All branches are closed on Sunday.
+  "3.1":
+    heading: Late fees on adult cards
+    text: An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.
+  "3.2":
+    heading: Late fees on junior cards
+    text: Junior cards are not charged late fees.
+```
+
+**A passage** is one approved answer: the topic it answers, who it answers (`applies`), the days it is in force, the source section it is drawn from, the answer, and its approval.
+
+```yaml
+# kb/passages/late-fees-junior.yaml
+id: late-fees-junior
+topic: late_fees
+version: "2026.1"
+applies: { card: junior }
+effective: { from: 2026-01-01 }
+source: { document: patron-guide, section: "3.2" }
+answer: There are no late fees on a junior card.
+approval:
+  owner: Patron Services
+  approvedBy: Branch Manager
+  on: 2025-12-10
+  sourceHash: 18345c1533866b482125f9f1f66d537d51741e4c0fce296322696bf920018b6a
+  hash: 83130b55c5f2be7a628620a4dcacca0dac5b6d8bfb97b4852b5816c7c65c3a03
+```
+
+- `id` is the file's name. `version` is the passage's own ("2026.1") and is recorded with every answer.
+- `applies` gives, for each fact of kb.yaml, a value or a list of values; a fact left out means any value. A topic's passages must not overlap: no two may be in force for the same caller on the same day, and `check` refuses a pair that would.
+- `effective` is a range of days, both ends inclusive; no `to` means open-ended. A change in the tariff is a second passage that starts the day after the first one's `to`, so the history stays in the repository and a caller always hears the one in force today.
+- `answer` is fixed text: no `{variable}`, no braces at all, no more than `maxAnswerChars`. It is said exactly as written, so write it to be heard: numbers as people say them, no abbreviations.
+- `approval` is written by `pnpm kb:approve`, never by hand ([12.8](#128-approval-staleness-and-withholding)).
+
+The second adult passage, `late-fees-adult`, differs only in `applies: { card: adult }`, its source section and its words. Last year's rate would keep its own passage, ending with `effective: { from: 2025-01-01, to: 2025-12-31 }`.
+
+```yaml
+# kb/passages/late-fees-adult.yaml
+id: late-fees-adult
+topic: late_fees
+version: "2026.1"
+applies: { card: adult }
+effective: { from: 2026-01-01 }
+source: { document: patron-guide, section: "3.1" }
+answer: Late books on an adult card cost 25 cents a day, up to 5 dollars a book.
+approval:
+  owner: Patron Services
+  approvedBy: Branch Manager
+  on: 2025-12-10
+  sourceHash: a3502dd02204f66615d5227dfafdb55a5b53572022c5982f1c5e53036ee9b850
+  hash: f2a183c49c4bdec0ab8b3253d90d5fd1a5a0b58a368882173ee7c6aa92a53ae7
+```
+
+```yaml
+# kb/passages/opening-hours.yaml
+id: opening-hours
+topic: opening_hours
+version: "2026.1"
+effective: { from: 2026-01-01 }
+source: { document: patron-guide, section: "1.1" }
+answer: We're open Monday to Friday from 9 in the morning to 8 at night, and Saturday from 10 to 4. We're closed on Sunday.
+approval:
+  owner: Patron Services
+  approvedBy: Branch Manager
+  on: 2025-12-10
+  sourceHash: 1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c
+  hash: be0ce40c52aeb3f1db18d14e464e98d8c16d885e44ed070889526fd19c236a30
+```
+
+**A locale** has its own topic wording and its own passages, under `locale/<tag>/`:
+
+```yaml
+# kb/locale/es/topics.yaml
+opening_hours:
+  title: Horario
+  keywords: [horario, abierto, cerrado]
+  asks:
+    - ¿A qué hora abren?
+late_fees:
+  title: Multas por retraso
+  keywords: [multa, retraso]
+  accountLine:
+    text: Su tarjeta tiene {balance} en multas ahora mismo.
+```
+
+```yaml
+# kb/locale/es/passages/opening-hours-es.yaml
+id: opening-hours-es
+topic: opening_hours
+version: "2026.1"
+effective: { from: 2026-01-01 }
+source: { document: patron-guide, section: "1.1" }
+answer: Abrimos de lunes a viernes de 9 de la mañana a 8 de la noche, y los sábados de 10 a 4. Los domingos cerramos.
+translates: opening-hours
+approval:
+  owner: Patron Services
+  approvedBy: Branch Manager
+  on: 2025-12-10
+  sourceHash: 1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c
+  hash: fe8bf374b3b707e2dd142f8ba25c6e5b0852abb505f7483d680f8e395c8d630b
+```
+
+More in [12.7](#127-locales-and-fallback).
+
+**A draft** is a passage waiting for a person. It has no `approval`, and says where it came from, with the words of the source it was drawn from:
+
+```yaml
+# kb/pending/late-fees-junior-2025.yaml: a draft, never said
+id: late-fees-junior-2025
+topic: late_fees
+version: "2025.1"
+applies: { card: junior }
+effective: { from: 2025-01-01, to: 2025-12-31 }
+source: { document: patron-guide, section: "3.2" }
+answer: There are no late fees on a junior card.
+drafted:
+  by: kb:draft
+  on: 2026-10-02
+  excerpt: Junior cards are not charged late fees.
+```
+
+`pending/topics.yaml` is a `topics.yaml`-shaped file of the topics the drafts propose. Nothing in `pending/` is read when a call runs.
+
+**A rejected draft** is the draft as it was, with who turned it down and why, kept in the repository so the same draft is not proposed again:
+
+```yaml
+# kb/rejected/late-fees-junior-2025.yaml: a draft a person turned down
+id: late-fees-junior-2025
+topic: late_fees
+version: "2025.1"
+applies: { card: junior }
+effective: { from: 2025-01-01, to: 2025-12-31 }
+source: { document: patron-guide, section: "3.2" }
+answer: There are no late fees on a junior card.
+drafted:
+  by: kb:draft
+  on: 2026-10-02
+  excerpt: Junior cards are not charged late fees.
+rejected:
+  by: Branch Manager
+  on: 2026-10-03
+  reason: The 2025 fee schedule is out of date; the 2026 passage says it.
+```
+
+**The approvals log** has one JSON line for each approval, written by `pnpm kb:approve` and only ever appended to. It keeps the source section's text as it was approved (`sourceText`), so a later review can show what changed in it, and `pnpm check` holds every passage's approval to a line of its id and hash:
+
+```jsonl
+{"id":"opening-hours","version":"2026.1","approvedBy":"Branch Manager","owner":"Patron Services","on":"2025-12-10","sourceHash":"1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c","hash":"be0ce40c52aeb3f1db18d14e464e98d8c16d885e44ed070889526fd19c236a30","from":"pending","sourceText":"All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m. to 4 p.m. All branches are closed on Sunday."}
+{"id":"late-fees-adult","version":"2026.1","approvedBy":"Branch Manager","owner":"Patron Services","on":"2025-12-10","sourceHash":"a3502dd02204f66615d5227dfafdb55a5b53572022c5982f1c5e53036ee9b850","hash":"f2a183c49c4bdec0ab8b3253d90d5fd1a5a0b58a368882173ee7c6aa92a53ae7","from":"pending","sourceText":"An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item."}
+{"id":"late-fees-junior","version":"2026.1","approvedBy":"Branch Manager","owner":"Patron Services","on":"2025-12-10","sourceHash":"18345c1533866b482125f9f1f66d537d51741e4c0fce296322696bf920018b6a","hash":"83130b55c5f2be7a628620a4dcacca0dac5b6d8bfb97b4852b5816c7c65c3a03","from":"pending","sourceText":"Junior cards are not charged late fees."}
+{"id":"opening-hours-es","version":"2026.1","approvedBy":"Branch Manager","owner":"Patron Services","on":"2025-12-10","sourceHash":"1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c","hash":"fe8bf374b3b707e2dd142f8ba25c6e5b0852abb505f7483d680f8e395c8d630b","from":"pending","sourceText":"All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m. to 4 p.m. All branches are closed on Sunday."}
+```
+
+### 12.2 How a call uses it
+
+Four steps, and only the second is a model's: nominate, select, resolve, speak.
+
+1. **Nominate.** Before a turn is planned, the engine runs the app's retriever once on what the caller said, in their language and for today, and gets back up to `cap` topics, best first, each with a score and how it was found (`keyword`, `dense` or `app`). This is the turn's one asynchronous step, since the questions are built before the model is asked.
+2. **Select.** The topic slot asks the model one question over those topics and "none": which does the caller ask about? The model answers with a probability for each. Code reads them: a topic is chosen when it reaches the threshold, two that cannot be told apart make the slot ask which one was meant, and "none" or a weak answer chooses nothing.
+3. **Resolve.** The form's completion reads the answer through the gate, with the topic and, where the policy says whose record it is, the caller's id. The tool finds the one passage in force: for this topic, for this caller's facts, on today's date, in the call's language, approved and not stale.
+4. **Speak.** The passage's answer is said word for word through the `kb_answer` line, followed by the topic's account line when it has one and the caller's own data allows it. When there is no passage to say, the caller hears the `kb_unavailable` line and is offered a person, once per call.
+
+**When retrieval runs.** Only on a turn where all of these hold: the app has a knowledge base, the turn has the caller's words (speech or text, not after the call has ended or while a downstream service's answer is awaited), and a topic slot is among the slots the turn asks. A turn that is none of these is exactly the turn it was without a knowledge base: no retrieval, no extra question, the same request to the model. An app with no `kb/` folder is unchanged byte for byte.
+
+**When the topics are asked.** Only when retrieval nominated something. Nominating is the cheap, fast check that a knowledge question is plausible, so a call that never asks one never pays for the question. A turn on which nothing was nominated asks nothing, and the slot has no value.
+
+**The budget.** The caller waits on retrieval, so it has 150 milliseconds (`RETRIEVE_BUDGET_MS`, fixed: it is a latency budget, not a threshold you tune). It fails open. A retriever that throws, returns something that is not a list of topics, or is not back in time nominates nothing, the turn goes on without a knowledge question, and the trace says which it was (`failed: 'error' | 'invalid' | 'late'`). The engine's own retrievers answer in well under a millisecond, so the budget is there for a retriever of your own that calls out. The budget bounds a retriever that returns a promise; one that answers synchronously runs to the end before the turn goes on (JavaScript cannot stop it), so a retriever of your own that may take long must be asynchronous.
+
+**Determinism.** The same words, language, day and knowledge base nominate the same topics in the same order with the same scores, on any machine. The nominations shape the model's request, so this is what lets a recorded call replay exactly.
+
+### 12.3 The topic slot
+
+A form that answers from the knowledge base has one `topic` slot. Its value is a topic's id, which is how the completion finds the passage; it never holds an answer.
+
+```yaml
+# slots.yaml
+subject:
+  type: topic
+  cap: 4
+```
+
+The slot opts in to retrieval, so naming it is what makes a turn retrieve. It asks one choice question over the nominated topics (`subjectTopic`, with each topic's id as a label and `none`), fills when the model's probability for a topic reaches `SLOT_CHOICE_FILL`, and asks "Do you mean {a} or {b}?" when the top two are within `KB_TOPIC_MARGIN` of each other. It says a topic by its title, in the call's language where the knowledge gives one. Its options (`cap`, `accept`, `disambiguate`, `fillAt`, the question's words) and its outcomes are on [its page](slots/topic.md). `pnpm check` refuses a topic slot in an app with no `kb/`, since it would never ask.
+
+When a caller's words name a task the engine confirms first ("can I park there with my pass?", then "yes"), the topic is read from the topics nominated for the words that named the task, not from the "yes".
+
+### 12.4 Lines the answers are said through
+
+Three lines in `prompts.yaml` (and in every locale), plus the slot's own:
+
+```yaml
+# prompts.yaml
+prompts:
+  ask_subject:
+    text: What would you like to know?
+    interruptible: true
+  ask_subject_retry:
+    text: Sorry, what would you like to know about the library?
+    interruptible: true
+  disambiguate_subject:
+    text: Is that about {a}, or {b}?
+    interruptible: true
+  kb_answer:
+    text: '{answer}'
+    interruptible: false
+  kb_unavailable:
+    text: I'm sorry, I don't have an answer to that I can give you right now.
+    interruptible: false
+```
+
+`kb_answer` says `{answer}` and nothing else: the passage's text, then the account line after a space. `answer` must be among `app.yaml`'s `prompts.dataVars`, because a line that carries a passage is spoken whole. `kb_unavailable` has no variable. A form may name its own two lines (`answers: { answer, unavailable }`).
+
+### 12.5 Answers through the gate
+
+A form that answers says so in `forms.yaml`, and its completion is the engine's, so it has no `complete` hook in code:
+
+```yaml
+# forms.yaml
+forms:
+  ask_library:
+    slots: [subject]
+    summaryPromptId: null
+    answers: { slot: subject }
+```
+
+`answers` takes `slot` (the form's topic slot), and optionally `via` (the resolving action, default kb.yaml's `action`), `answer` and `unavailable` (the two lines). The intent is an ordinary form intent:
+
+```yaml
+# intents.yaml
+intents:
+  ask_library:
+    criteria: Asks a question about the library, its cards or its fees
+    label: answer a question
+    kind: form
+```
+
+**The resolving tool.** The action kb.yaml names is a tool in the app's code with an action in `policy.yaml`, like any other: the gate decides whether it may run, and the rules you give it (`identity`, `scope`, ...) apply as to any read. The engine ships the tool for an app with a `kb/` folder:
+
+```ts
+// src/app.ts, in code.tools
+findPassage: kbAnswerTool({
+  facts: (_params, sys) => {
+    const kind = (sys as LibrarySystems).cardKind; // read from the library's records, never from what the caller said
+    return kind === null ? null : { card: kind };
+  },
+}),
+```
+
+and its action in `policy.yaml`, with its `topic` param declared under `audit:` like every param that is not a slot:
+
+```yaml
+# policy.yaml
+actions:
+  findPassage:
+    level: 0
+    rules: [identity]
+audit:
+  topic: keep
+```
+
+- **The facts are read by code.** `facts(params, systems, turn)` returns the caller's value for each fact kb.yaml's `applies` names, read from the system of record. They are never taken from what the caller said, since a caller who says "I have a junior card" does not get the junior answer. It returns null when there is no record to read them from (no passage: `no-facts`). Without `facts`, only a passage that applies to every caller answers.
+- **The params** are `topic` and, when the answer is a subject's (the action's `scope` rule names a param), that param first: `kbAnswerTool({ subject: 'cardNumber', facts })`. The completion fills it with the subject's id from the session, where the scope rule names one.
+- **When there is no answer** the tool says why: `unknown-topic`, `not-in-force`, `no-translation`, `ambiguous`, `stale` (with the withheld passage's record), or `no-facts`. Whatever the reason, the caller hears the `kb_unavailable` line and is offered a person. A yes to that offer, plain or "yes, connect me to someone", is a handoff for a person (`live-agent`, its `handoff_live_agent` line), not a frustrated caller's: the caller asked something there was no answer to. A refusal by the gate is the engine's usual one.
+- **An app that resolves answers in its own code** gives a tool of its own that returns the same shape (`{ answer, source }` or `{ unavailable }`, with `source` the knowledge record `kbSourceOf` builds). A `complete` hook may also delegate: `complete: kbCompletion({ slot: 'subject' })`.
+
+**Account lines.** A topic may add a line from the caller's own data after the approved answer: "Your card has 2 dollars in late fees right now." It is `accountLine` in topics.yaml (and each locale's wording): its `text` has `{variables}`, and `from` is a second gated tool that reads the caller's data. That tool is an ordinary read with its own action in `policy.yaml`, declaring the `fields` its result has (`ToolDef.fields`), and every variable of the line must be one of them. The line is said only when the read is allowed and has a value for every variable; a refused read, a record with nothing in it, or a missing field leaves the line out and the answer is said alone. A line is never said with a gap in it. The approved answer is the same either way, and the account line's text is part of what an approval covers.
+
+### 12.6 Informational passages
+
+For an answer that is the same for everyone and needs no question, an informational intent can name a passage instead of a prompt:
+
+```yaml
+# intents.yaml
+intents:
+  hours:
+    criteria: Asks when the library is open
+    label: hear the opening hours
+    kind: informational
+    passage: opening-hours
+```
+
+There is no retrieval and no gate: the passage in force today for that passage's topic, in the call's language, is said through `kb_answer`. It keeps what the knowledge base adds to a fixed line: approval, staleness, effective dates and a variant for each language. Because there is no gate and so no facts about the caller, no passage of its topic may apply to some callers only (`check` says which); use a form that answers for that. An intent names the passage of the default language, and a call in another language hears its translation. It may also be a key on the keypad menu. When it cannot be said (not in force, stale, no translation), the caller hears `kb_unavailable` and is offered a person once per call; declining returns them to the question they were on.
+
+### 12.7 Locales and fallback
+
+A language has its own wording for each topic (`kb/locale/<tag>/topics.yaml`: title, keywords, example questions and account line text, for the topics it words) and its own passages (`kb/locale/<tag>/passages/`, each with `translates:` naming the default language's passage of the same topic). The tag is one the app speaks, with a `locale/<tag>/prompts.yaml` ([section 8](#8-locales)), and the examples in [12.1](#121-the-folder) are a Spanish pair.
+
+- A call hears the passages of the language the session chose, and retrieval reads a topic's wording in that language, falling back to the default's wording for a topic that has none.
+- **Fallback** is kb.yaml's `localeFallback`. `none` (the default) says nothing when a topic has no passage in the caller's language: the answer is unavailable and a person is offered. That fails closed, which is right for regulated text, since a translation is something a person approved. `default` speaks the default language's passage instead. Choose it only where hearing the other language is acceptable.
+- A translation is approved like any other passage, against the same source section, and goes stale the same way: changing the section withholds the default and every translation until each is approved again.
+- Questions to the model are never translated: the topic question's labels are topic ids and its instructions are in English, as for every slot.
+
+### 12.8 Approval, staleness and withholding
+
+A passage is said only while it is approved and nothing it was approved over has changed. Its `approval` records the content's owner (a team), the person who approved it, the day, and two hashes: `sourceHash`, of its source section's text, and `hash`, of everything approved: the passage's `id`, its locale (the `kb/locale/<tag>` it is in, or the default), its `version`, the topic, the topic's title (in the default locale, and in the passage's own where that locale gives one), the answer, `applies`, the effective dates, the source text and the topic's account line. Whitespace aside, any change to one of them makes the passage **stale**. A topic's title is spoken (the topic question offers it, and a caller asked which of two topics they meant hears both), so renaming a topic sends its passages back for review; and an approval copied with its file to another id or locale does not hold there. At run time a stale passage is **withheld**: the caller hears the unavailable line and is offered a person once, and the trace records the passage with `fresh: false`. `pnpm check` fails on a passage that is stale or was never approved, and on an approval with no line of its id and hash in `kb/approvals.jsonl` (written by hand or copied, not by `kb:approve`, so no one is on record for it); its fix names the two commands below.
+
+- `pnpm kb:status [app folder]` lists the passages by state: approved and fresh; approved outside `kb:approve` (no line in the log); stale because the source section changed; stale because the passage was edited (`git diff` shows the edit); never approved; and the drafts in `kb/pending/`. Each comes with its fix.
+- `pnpm kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]` approves each passage as it is now, after a person has read it against its source. It first asks you to confirm at your terminal (the ids, your name, the team, and that you read each against its source); where there is no terminal (a script, a pipe, an assistant's shell) it refuses, unless `--yes` confirms on the command line, and `--yes` is refused when `CI` is set. It writes the `approval` in place, keeping the file's comments and layout, and appends one line to `kb/approvals.jsonl` (`id`, `version`, `approvedBy`, `owner`, `on`, both hashes, `from`: `passage` or `pending`, and `sourceText`). `--owner` is needed the first time; a re-approval keeps the owner unless `--owner` says otherwise. A passage approved outside it is approved again the same way, which puts a person on record for it.
+- A draft is approved by id too: `kb:approve` checks it as the passage it would be and moves it into `kb/passages/` (or `kb/locale/<tag>/passages/`), dropping `drafted`.
+- `kb:approve` writes nothing for an id it refuses. It refuses an id that is no passage or draft, a passage that would fail `pnpm check` for anything but its approval (an unknown topic or source, a variable in the answer, an overlap with another passage, a locale the app does not speak), a draft with no excerpt, or one not in its section word for word, shorter than 4 words and 20 characters, or missing a number its answer says (as `kb:draft` and `kb:review` hold an excerpt), and a `--by` that names no person. **An assistant or a tool may draft a passage, and only a person approves one.**
+- An app moving approved content from an earlier format may carry its approvals over with a script of its own: one line per passage with `from: migration`, the original `approvedBy`, `owner` and `on`, the hashes taken under this format, and a `note` that says what the original approval covered and what its owners are to confirm. `kb:status` marks those passages `(migrated: <note>)` for as long as they stand on that approval, and the people who own the content confirm the migration in review. The log is appended to, never rewritten: when the hash's definition changes, the migration is taken again as new lines, and the last line with a passage's id and hash is the one that stands.
+
+The files an approval stands on are the ones `CODEOWNERS` should protect ([3.12](#312-who-reviews-it-codeowners)): the passages, their sources, the topics, `kb.yaml` and the approvals log. Drafts are left open, since a draft is never said and approving it changes `kb/passages/`.
+
+### 12.9 Building one from documents
+
+Answers scale only if they are cheap to make, so the knowledge base has an authoring pipeline, in its own package (`@dialogwright/kb-author`, which an app never imports and the engine does not depend on). It never runs on a call. Every step before the last is a proposal, and the last is a person:
+
+```sh
+pnpm kb:ingest docs/ --dir apps/my-app                                  # 1. documents or a website into kb/sources
+pnpm kb:draft apps/my-app                                                # 2. a model drafts passages into kb/pending
+pnpm kb:review apps/my-app                                               # 3. a person approves, edits or rejects each draft
+pnpm kb:approve <id...> --by "<your name>"                               #    (the same approval, from the command line)
+pnpm kb:refresh apps/my-app                                              # 4. read the sources again; withhold what changed
+pnpm kb:gaps apps/my-app [--traces traces/*.jsonl] [--since 2026-10-01]  # 5. what callers asked that nothing answered
+```
+
+**Ingest.** `kb:ingest <folder | file | url> --dir <app folder>` reads PDF, DOCX, HTML, Markdown and text files, or a website to a link depth (`--depth`, default 1; `--include '/help/**'` narrows it), and writes each document as `kb/sources/<doc>.yaml`: its title, its provenance (its URL, or its file's path from the app folder, and the day it was read) and its text by section. Sections are cut at headings (h1 to h3, a DOCX's Heading 1 to 3, Markdown's `#` to `###`, a PDF's larger type) and named by the heading path (`late-fees`, `shifts/training`); a PDF's section records the page it starts on (`page`, `lastPage`), and a PDF without headings is cut by page. A website is crawled politely: the start page's host only (unless `--allow-host`), robots.txt followed, one request a second (`--rate`), at most 50 pages (`--max-pages`), no cookies or sign-ins; linked PDF and DOCX files are read too. It reads only public addresses: a host on a loopback, private, link-local or other non-public network is refused (each host resolved before each request, and the connection pinned to the address checked), unless `--allow-private` names a site on your own network. A file is read only up to its limits (50 MB; a DOCX's zip at most 50 MB uncompressed and checked before it is opened, so a zip bomb is refused; a PDF at most 500 pages, opened with code evaluation off). Re-ingesting is safe: the same documents give the same bytes, an unchanged document is not rewritten, and each run says per section what was added (`+`), changed (`~`) and removed (`-`). `--dry-run` shows it without writing. A source written by hand is never overwritten. Crawling is for you to run; it never runs in CI.
+
+**Draft.** `kb:draft` gives each source's sections that nothing cites yet (no passage, draft or rejected draft; `--all` for every section) to a drafter: by default Claude through the Messages API, with **your own** `ANTHROPIC_API_KEY`, from the environment or from a `.env` file where you run it (the file is git-ignored; never commit a key, and never put one in CI, a test or a fixture). The default model is `claude-haiku-4-5`; `--model` takes another, and `--topic-hint "<what to cover>"` steers it. It proposes, for each answer a document supports, a topic (one `topics.yaml` has, or a new one with a title, keywords and example questions), a spoken answer of one or two sentences, and the exact words of the section that support it. Every draft is checked before it is written, and a draft that fails is reported with its reasons and never written:
+
+| Check | Why |
+|---|---|
+| the excerpt is in the section word for word | the answer is held to what the document says |
+| the excerpt is at least 4 words and 20 characters, and says every number the answer says (amounts, times, dates, counts in figures) | an answer cannot hang a fee or a date on a fragment that does not hold it |
+| the answer is within `maxAnswerChars` and has no brace | a spoken answer is short, and is fixed text |
+| the topic is one that exists, or a new one proposed with a title | a draft cannot name a topic out of the air |
+| `applies` and dates are ones kb.yaml allows | the passage can be resolved |
+| it does not repeat another passage's or draft's answer | no near-duplicates |
+
+A draft that passes is `kb/pending/<id>.yaml`, and a new topic goes to `kb/pending/topics.yaml`, never to `topics.yaml`. Drafting is pluggable (a `Drafter` is `{ id, draft(request) }`; the tests use a fake), **never runs in CI** (`kb:draft` refuses when `CI` is set), and nothing pending is ever said. A model can be wrong; the excerpt check proves the answer cites the document, not that it says what the document means, which is what the person reviewing is for.
+
+**Review.** `kb:review` starts a small server on 127.0.0.1 on a free port (`--port` for a fixed one) and prints its URL with a one-time token that every request needs. It answers only this machine and stops with Ctrl-C. It is not the operator console, which has no access control until Phase 8, and whose tunnel carries the public's requests. The page lists the proposed topics, the drafts, the passages withheld (stale or edited) and those approved outside `kb:approve` (fresh, but with no line in `kb/approvals.jsonl`, which `pnpm check` refuses), each beside its source section with the excerpt marked, and, for a source that changed, a word diff of the section as it was approved (read from `kb/approvals.jsonl`) against the section now. It asks each browser once for your name and your team (kept in a signed, HttpOnly session cookie, so another browser is another reviewer), then you can: approve (it is `kb:approve` itself); edit, then approve (the answer, `applies`, the dates and a draft's excerpt, checked as a draft is); reject (the draft moves to `kb/rejected/<id>.yaml` with who, when and why); and for a proposed topic, accept it into `topics.yaml` with its title as you review it (callers hear a topic's title when the topic question offers it), under another id if you rename it (its drafts follow), or merge it into a topic the knowledge base has. A draft of a proposed topic is approved after its topic. Every change carries a hash of what its page showed, and is refused when the file or its source section changed since it was opened (reload and review it again). Every page reads without JavaScript, and every field has a label. After accepting topics in an app with an embedder, run `pnpm kb:index`.
+
+**Refresh.** `kb:refresh` reads every source again from its provenance (the file, or the crawl with the settings it had) and writes those that changed, nothing else. It reads a file only inside the app folder (a `../`, absolute or linked path out of it is refused), reads a URL only through the crawler's public-address check (`--allow-private` for your own network), and prints the hosts it will ask before it asks them. It lists the passages now withheld because their section changed (review them in `kb:review`), those whose section is gone (point them at the section that says it now, or delete them), and the sections nothing cites, to draft from with `kb:draft --source <doc>`. A source written by hand, or whose file is gone, is left alone and listed.
+
+**Gaps.** `kb:gaps` reads the traces of real calls (`--traces`: a file, a folder or a glob; by default `$TRACE_DIR`, else the app's `traces/`, else `./traces`) and ranks what callers asked that the knowledge base did not answer: a topic question answered `none`; words that look like a question with no topic nominated; a passage that could not be said (stale, not in force, no translation, no facts); and a close call between two topics. They are grouped by the nearest topic and ranked, each group with a few of the callers' words and the fix for each kind it holds: write a passage, draft from a source section nothing cites, re-approve the stale passage, add a translation, add keywords or asks to the topic. The words are the traces' own, so keep a report as private as the traces; a turn on which an identity value was masked is counted but its words are not shown. The review page has the same list as its Gaps tab.
+
+[The package's README](../packages/kb-author/README.md) has the extraction, crawling, drafting and review rules in full.
+
+### 12.10 Retrieval settings
+
+Unless the app's code gives a retriever of its own (`code.knowledge.retriever`, an object with an `id` and `nominate({ text, locale, todayIso })` that returns `{ topic, title, score, via }` entries, deterministic and quick), the engine's is used, set in kb.yaml:
+
+```yaml
+# kb/kb.yaml, with an embedder
+action: findPassage
+applies:
+  card: [adult, junior]
+retrieval:
+  cap: 8                    # the most topics a turn offers (default 8)
+  embedder: potion-base-8M  # optional: also find topics by meaning, not only by their words
+  floor: 0.3                # optional: the similarity below which a topic found by meaning is not offered
+```
+
+- **Without `embedder`**, topics are found by their words alone: BM25 over each topic's title, keywords and example questions, with a boost for a keyword said whole. Accents and common endings are folded, and greetings and question words are ignored.
+- **With `embedder`**, the same keyword search runs beside a dense one, and the two rankings are merged by reciprocal rank fusion. A topic found by meaning counts only at `floor` or above (default: the model's own); a keyword match always counts. The model is potion-base-8M, a static model run in TypeScript: about a hundredth of a millisecond per question, and the same numbers on every machine, so a recorded call replays exactly.
+- **The index.** Every topic's vectors are in `kb/.index/<embedder>.json`, which you commit. Write it with `pnpm kb:index [app folder]` after any change to `topics.yaml` or a locale's wording; it embeds only the texts that changed, and gives the same bytes for the same topics. `pnpm check` reports a topic whose texts the index no longer matches, with the fix.
+- **The model.** The weights are not in the repository: `pnpm kb:model` downloads them once, at a pinned revision, checks each file's SHA-256, and keeps them in `~/.cache/dialogwright/models` (or `$DIALOGWRIGHT_MODEL_DIR`). `kb:index` downloads them when they are missing. A call never downloads anything: an app whose weights are not in the cache retrieves by keywords alone, and the trace's `retrieverId` says so (`keyword` rather than `hybrid:potion-base-8M`).
+- **A fallback is said.** When kb.yaml names an embedder and the engine's retriever is keywords alone all the same (the weights not in the cache, or not the pinned ones; the index missing, not an index, or another model's), `defineApp`, `defineKnowledge` and `registerApp` warn on stderr with the reason and the command that fixes it. With `NODE_ENV=production`, or `DIALOGWRIGHT_REQUIRE_EMBEDDER=1`, `registerApp` throws instead, so a server does not start without retrieval by meaning. `pnpm check` stays independent of the model cache: it reports the index, never the weights, and says nothing of a fallback.
+- **Choose `cap` and `floor` offline, never by re-recording calls.** They change what the model is asked, which re-keys a recording. Write a paraphrase set ([12.11](#1211-testing)) and run `pnpm kb:bakeoff <app folder> --paraphrases fixtures/kb/paraphrases.yaml --sweep`. It reports each retriever's recall at the cap (the share of a topic's paraphrases whose nominations include it), how many topics it offers per question (and per question about nothing), and its speed; the sweep then shows recall against candidates for every floor and cap, so a floor is picked by what it costs.
+- **ONNX.** A larger model (bge-small, through the optional `@huggingface/transformers`) is available to code as `OnnxEmbedder` from `dialogwright/kb/onnx`, used with `HybridRetriever`, and the bake-off includes it when the package is installed and `--onnx-revision <commit>` names the model's commit. `OnnxEmbedder.create({ revision })` needs that commit (40 hex characters): there is no default, since a branch such as `main` moves under a committed index. It is not the default: it is a large native install, and its numbers can differ in the last bits between machines.
+
+An app that keeps a retriever of its own and later moves to the engine's hybrid one changes the topics some turns offer, so it re-records the calls those turns are in. Plan that as a deliberate step.
+
+### 12.11 Testing
+
+- **Paraphrase sets.** `fixtures/kb/paraphrases.yaml` maps each topic id to things callers say about it in words other than its own title, keywords and example questions, and `none:` to things no topic answers:
+
+  ```yaml
+  # fixtures/kb/paraphrases.yaml
+  opening_hours:
+    - What time do you close tonight?
+    - Is the library open on Saturday mornings?
+  late_fees:
+    - I returned a book late, what do I owe?
+    - How much do you charge for overdue DVDs?
+  none:
+    - Where do I park?
+    - I would like to speak to a librarian.
+  ```
+
+  Collect them from real wording, from the people who answer the phones, and from `kb:gaps`, and write at least eight for each topic. `pnpm kb:bakeoff` reads the file, and an id that is not a topic is an error.
+- **The recall test.** A test of the app's own that holds retrieval to its paraphrases, so a change to a topic's wording or a retriever's settings that loses recall fails in CI instead of on a call:
+
+  ```ts
+  // src/kb.test.ts
+  import { readFileSync } from 'node:fs';
+  import { fileURLToPath } from 'node:url';
+  import { expect, it } from 'vitest';
+  import { bakeoff, defaultRetriever, loadKnowledgeFolder, parseParaphrases } from 'dialogwright';
+
+  const APP = fileURLToPath(new URL('..', import.meta.url));
+
+  it('nominates the right topic for what callers say', async () => {
+    const kb = loadKnowledgeFolder(`${APP}kb`).kb!;
+    const paraphrases = parseParaphrases(readFileSync(`${APP}fixtures/kb/paraphrases.yaml`, 'utf8'), kb);
+    const result = await bakeoff(defaultRetriever(kb).retriever, paraphrases, 'en-US', '2026-10-03');
+    expect(result.recall).toBeGreaterThanOrEqual(0.9); // the floor you chose from the sweep
+    expect(result.noneCandidates).toBeLessThanOrEqual(2); // few topics offered for questions about nothing
+  });
+  ```
+
+- **Goldens.** Write each retriever's nominations for every paraphrase to a file you commit and compare it in a test, as the engine does for its own fixture. A change to a keyword or a floor then shows as a diff of what is offered, to read and accept. Write it deliberately, never to make a test pass.
+- **Turns.** To test a form that answers, `fixedRetriever` from `'dialogwright/testing'` nominates exactly what a test says for given words, and a call's answers are written out as for any slot ([the corpus guide](../.claude/skills/create-app/corpus.md) labels the topic question). The stub regression runs the app's real retriever, so a corpus line about a topic exercises nomination, selection, resolution and speaking against the baseline.
+- **State.** `pnpm check` is the test of the knowledge base itself: every passage approved with matching hashes, a passage in force for every topic and every combination of facts, no overlaps, every link to the app, the index current.
+
+### 12.12 What is recorded
+
+- **The trace** has `retrieval` on each turn retrieval ran: the retriever's id (`hybrid:potion-base-8M`, `keyword`, or your own), the SHA-256 of the index it read, the topics it nominated each with score and `via`, and `failed` (with `message` for an error) when it nominated nothing because it did not answer as asked. The turn's timing has `retrieveMs`.
+- **The knowledge record** is on the turn that answered (`kb` in the trace, `TurnOut.kb`) and on the console's source card: the passage, its version, the facts it answered for (`applies`, only those it depends on), its language, the source document and section, the days it is in force, who approved it and when, the first 12 hex characters of both hashes, and `fresh`. A passage that was withheld has its record with `fresh: false`. It is never part of what the model is asked.
+- **The audit** has a `kb_answer` row for each answer: the passage's id, its version, whether it was fresh, its language and the short hashes. It holds nothing of the caller's.
+- **The configuration hashes** include every file of `kb/` that is read (kb.yaml, topics, passages, sources and the locale files), so a call is tied to the exact knowledge it ran under. Drafts, rejected drafts, the approvals log and the index are not in them; the index's own hash is in the retrieval record.

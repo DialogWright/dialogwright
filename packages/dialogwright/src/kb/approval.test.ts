@@ -19,7 +19,7 @@ import { spokenText } from '../prompts/render';
 import { runTurn, type RunOptions, type TurnRun } from '../run/turn';
 import { choice, noul } from '../testing/answers';
 import { fixedRetriever } from '../testing/retrievers';
-import { excerptInSource, notAPerson } from './approval';
+import { excerptInSource, notAPerson, readApprovalLog } from './approval';
 import { BASE, cleanScratch, codeFor, folder, KB_FIXTURE, TODAY } from './__fixtures__/libraryKbApp';
 
 /**
@@ -49,12 +49,19 @@ const edit = (file: string, change: (text: string) => string): void => writeFile
 async function bin(args: readonly string[], cwd: string): Promise<{ code: number; out: string[]; err: string[] }> {
   const out: string[] = [];
   const err: string[] = [];
-  const code = await main(args, { out: (l) => out.push(l), err: (l) => err.push(...l.split('\n')), cwd, today: () => TODAY });
+  const code = await main(args, { out: (l) => out.push(l), err: (l) => err.push(...l.split('\n')), cwd, today: () => TODAY, confirm: () => Promise.resolve(true) });
   return { code, out, err };
 }
 
 const approve = (kbDir: string, ...args: string[]) => bin(['kb:approve', ...args, '--dir', kbDir], kbDir);
-const logOf = (kbDir: string): unknown[] => readFileSync(join(kbDir, 'approvals.jsonl'), 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l) as unknown);
+/** The fixture's own log: the approvals its passages stand on. */
+const FIXTURE_LOG = readFileSync(join(KB_FIXTURE, 'approvals.jsonl'), 'utf8');
+/** The lines kb:approve appended to a copy's log, after the fixture's own (which it never rewrites). */
+const logOf = (kbDir: string): unknown[] => {
+  const text = readFileSync(join(kbDir, 'approvals.jsonl'), 'utf8');
+  expect(text.startsWith(FIXTURE_LOG)).toBe(true);
+  return text.slice(FIXTURE_LOG.length).split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as unknown);
+};
 const passage = (kbDir: string, id: string) => loadKnowledgeFolder(kbDir, 'en-US').kb!.passages[id]!;
 
 /** A draft in kb/pending, as a drafter writes one. */
@@ -95,7 +102,7 @@ describe('who may approve', () => {
       'dialogwright kb:approve: --by "Claude" is not a person: an approval records the person who read the answer against its source and answers for it, and an assistant or a tool may draft a passage but never approve one',
     );
     expect(passage(kb, 'late-fees-adult').freshness).toBe('source-changed');
-    expect(existsSync(join(kb, 'approvals.jsonl'))).toBe(false);
+    expect(logOf(kb)).toEqual([]);
   });
 
   it('a draft\'s excerpt is held to its section word for word, whatever the line breaks', () => {
@@ -104,6 +111,57 @@ describe('who may approve', () => {
     expect(excerptInSource('It is renewed at any branch with a photo ID', section)).toBe(false);
     expect(excerptInSource('it is renewed at any branch desk', section)).toBe(false);
     expect(excerptInSource('   ', section)).toBe(false);
+  });
+});
+
+describe('a person confirms at the terminal', () => {
+  /** The bin, with how the run is confirmed: an injected answer, a terminal or not, the environment. */
+  async function run(args: readonly string[], cwd: string, how: { confirm?: (q: string) => Promise<boolean>; isTTY?: boolean; env?: NodeJS.ProcessEnv }) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await main(args, { out: (l) => out.push(l), err: (l) => err.push(...l.split('\n')), cwd, today: () => TODAY, ...how });
+    return { code, out, err };
+  }
+  const edited = (): string => {
+    const kb = kbCopy();
+    edit(join(kb, 'passages/late-fees-junior.yaml'), (t) => t.replace('There are no late fees on a junior card.', 'A junior card has no late fees.'));
+    return kb;
+  };
+  const ARGS = (kb: string, ...more: string[]) => ['kb:approve', 'late-fees-junior', '--by', 'Jane Smith', '--dir', kb, ...more];
+
+  it('asks once per run, naming the ids, the approver and the team; only a yes approves', async () => {
+    const kb = edited();
+    const asked: string[] = [];
+    const no = await run(ARGS(kb, '--owner', 'Patron Services'), kb, { confirm: (q) => (asked.push(q), Promise.resolve(false)) });
+    expect(no).toEqual({ code: 1, out: [], err: ['dialogwright kb:approve: not confirmed: nothing approved, nothing written'] });
+    expect(asked).toEqual([`Approve late-fees-junior in ${kb} as Jane Smith for Patron Services? You have read its answer against its source section and answer for it. [y/N] `]);
+    expect(passage(kb, 'late-fees-junior').freshness).toBe('edited');
+    expect(logOf(kb)).toEqual([]);
+    const yes = await run(ARGS(kb), kb, { confirm: () => Promise.resolve(true) });
+    expect(yes.code).toBe(0);
+    expect(passage(kb, 'late-fees-junior').freshness).toBe('fresh');
+  });
+
+  it('refuses without a terminal, unless --yes confirms on the command line; --yes is refused in CI and for no person', async () => {
+    const kb = edited();
+    expect(await run(ARGS(kb), kb, { isTTY: false, env: {} })).toEqual({
+      code: 2,
+      out: [],
+      err: ['dialogwright kb:approve: stdin is not a terminal, so no one can confirm the approval: run it at your own terminal, or confirm on the command line with --yes (refused in CI)'],
+    });
+    expect(await run(ARGS(kb, '--yes'), kb, { isTTY: false, env: { CI: 'true' } })).toEqual({
+      code: 2,
+      out: [],
+      err: ['dialogwright kb:approve: --yes is refused in CI (CI is set): an approval is a person\'s, confirmed by them at their own terminal, and no person is at a CI job\'s command'],
+    });
+    expect((await run(['kb:approve', 'late-fees-junior', '--by', 'Claude', '--dir', kb, '--yes'], kb, { isTTY: false, env: {} })).code).toBe(2);
+    expect(passage(kb, 'late-fees-junior').freshness).toBe('edited');
+    expect(logOf(kb)).toEqual([]);
+    // Outside CI, --yes is the person's confirmation: nothing is asked.
+    const asked: string[] = [];
+    expect((await run(ARGS(kb, '--yes'), kb, { isTTY: false, env: { CI: 'false' }, confirm: (q) => (asked.push(q), Promise.resolve(false)) })).code).toBe(0);
+    expect(asked).toEqual([]);
+    expect(passage(kb, 'late-fees-junior').freshness).toBe('fresh');
   });
 });
 
@@ -152,7 +210,7 @@ describe('kb:approve a passage', () => {
     const text = readFileSync(join(kb, 'passages/opening-hours.yaml'), 'utf8');
     expect(await approve(kb, 'opening-hours', '--by', 'Jane Smith')).toEqual({ code: 0, out: ['opening-hours: already approved and fresh (by Branch Manager on 2025-12-10): nothing written'], err: [] });
     expect(readFileSync(join(kb, 'passages/opening-hours.yaml'), 'utf8')).toBe(text);
-    expect(existsSync(join(kb, 'approvals.jsonl'))).toBe(false);
+    expect(logOf(kb)).toEqual([]);
 
     edit(join(kb, 'passages/late-fees-junior.yaml'), (t) => t.slice(0, t.indexOf('approval:')));
     expect(passage(kb, 'late-fees-junior').freshness).toBe('unapproved');
@@ -162,6 +220,28 @@ describe('kb:approve a passage', () => {
     });
     expect((await approve(kb, 'late-fees-junior', '--by', 'Jane Smith', '--owner', 'Patron Services')).code).toBe(0);
     expect(passage(kb, 'late-fees-junior')).toMatchObject({ freshness: 'fresh', approval: { owner: 'Patron Services', approvedBy: 'Jane Smith' } });
+  });
+
+  it('one approved outside kb:approve (fresh, no line in the log): listed by kb:status, and approved again by a person', async () => {
+    const kb = kbCopy();
+    const file = join(kb, 'passages/late-fees-junior.yaml');
+    // An edit, and an approval written for it by hand: fresh, but no one is on record for it.
+    edit(file, (t) => t.replace('There are no late fees on a junior card.', 'A junior card has no late fees.'));
+    const { current } = passage(kb, 'late-fees-junior');
+    edit(file, (t) => t.replace(/  hash: [0-9a-f]{64}/, `  hash: ${current.hash}`));
+    expect(passage(kb, 'late-fees-junior').freshness).toBe('fresh');
+    const status = await bin(['kb:status', kb], kb);
+    expect(status.out[0]).toBe(`${kb}: 7 passages (6 approved and fresh, 0 stale, 0 unapproved, 1 approved outside kb:approve), 0 pending drafts`);
+    expect(status.out.slice(8, 11)).toEqual([
+      'approved outside kb:approve, not in kb/approvals.jsonl: pnpm check refuses (1):',
+      '  late-fees-junior  2026.1  late_fees  its approval (by Branch Manager on 2025-12-10) was written by hand or copied with its file, so no one is on record for it',
+      '    -> review it against kb/sources/patron-guide.yaml section "3.2", then pnpm kb:approve late-fees-junior --by "<your name>"',
+    ]);
+    expect(status.out.at(-1)).toBe('pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved');
+    const run = await approve(kb, 'late-fees-junior', '--by', 'Jane Smith');
+    expect(run.out).toEqual([expect.stringMatching(/^late-fees-junior: approved \(version 2026\.1\) by Jane Smith for Patron Services/)]);
+    expect(logOf(kb)).toEqual([expect.objectContaining({ id: 'late-fees-junior', approvedBy: 'Jane Smith', hash: current.hash, from: 'passage' })]);
+    expect((await bin(['kb:status', kb], kb)).out.at(-1)).toBe('every passage is approved and fresh, and nothing waits for review');
   });
 
   it('refuses an id that is no passage or draft, and approves the others it is given', async () => {
@@ -253,7 +333,34 @@ describe('kb:approve a draft', () => {
     ]);
     expect(existsSync(pending)).toBe(true);
     expect(existsSync(join(kb, 'passages/late-fees-junior-2025.yaml'))).toBe(false);
-    expect(existsSync(join(kb, 'approvals.jsonl'))).toBe(false);
+    expect(logOf(kb)).toEqual([]);
+  });
+
+  it('refuses a draft with no excerpt, one too short to hold its answer to, and one missing a number its answer says', async () => {
+    const kb = kbCopy();
+    const pending = join(kb, 'pending/late-fees-junior-2025.yaml');
+    const go = () => approve(kb, 'late-fees-junior-2025', '--by', 'Jane Smith', '--owner', 'Patron Services');
+    writeFileSync(pending, DRAFT.replace('  excerpt: Junior cards are not charged late fees.\n', ''));
+    expect((await go()).err).toEqual(['late-fees-junior-2025: refused: a draft quotes the words of its source section that support it: add drafted.excerpt']);
+    writeFileSync(pending, DRAFT.replace('excerpt: Junior cards are not charged late fees.', 'excerpt: late fees.'));
+    expect((await go()).err).toEqual([
+      'late-fees-junior-2025: refused: its excerpt cannot hold its answer to its source',
+      '  its excerpt "late fees." is too short to hold the answer to: quote at least 4 words and 20 characters of the section',
+    ]);
+    // The adult fees: the answer's amounts are in the section, but not in the words it quotes.
+    const adult = DRAFT.replace('applies: { card: junior }', 'applies: { card: adult }').replace('effective: { from: 2025-01-01, to: 2025-12-31 }', 'effective: { from: 2024-01-01, to: 2024-12-31 }').replace('section: "3.2"', 'section: "3.1"').replace('There are no late fees on a junior card.', 'Late books on an adult card cost 25 cents a day, up to 5 dollars a book.');
+    writeFileSync(pending, adult.replace('excerpt: Junior cards are not charged late fees.', 'excerpt: An adult card is charged 25 cents for each day an item is overdue'));
+    expect((await go()).err).toEqual([
+      'late-fees-junior-2025: refused: its excerpt cannot hold its answer to its source',
+      '  its excerpt does not say 5, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes',
+    ]);
+    expect(existsSync(pending)).toBe(true);
+    expect(logOf(kb)).toEqual([]);
+    // kb:status says why it cannot be approved as it is.
+    expect((await bin(['kb:status', kb], kb)).out).toContain('    ! its excerpt does not say 5, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes');
+    // Quoting the whole sentence, with its amounts: approved.
+    writeFileSync(pending, adult.replace('excerpt: Junior cards are not charged late fees.', 'excerpt: An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.'));
+    expect((await go()).code).toBe(0);
   });
 
   it('refuses a draft that would fail check (an overlap with a passage in force), or that has a passage\'s id', async () => {
@@ -305,7 +412,7 @@ describe('kb:status', () => {
         '  late-fees-adult  2026.1  late_fees  kb/sources/patron-guide.yaml section "3.1" changed since Branch Manager approved it on 2025-12-10',
         '    -> read the answer against the section\'s text now; correct the answer if the source says something else, then pnpm kb:approve late-fees-adult --by "<your name>"',
         'stale, edited after approval: withheld (1):',
-        '  late-fees-junior  2026.1  late_fees  its answer, applies, dates, topic or account line changed since Branch Manager approved it on 2025-12-10 (the source is as approved)',
+        '  late-fees-junior  2026.1  late_fees  its answer, id, locale, version, applies, dates, topic, its topic\'s title or account line changed since Branch Manager approved it on 2025-12-10 (the source is as approved)',
         '    -> review the edit against kb/sources/patron-guide.yaml section "3.2" (git diff kb/passages/late-fees-junior.yaml), then pnpm kb:approve late-fees-junior --by "<your name>"',
         'unapproved: never said (1):',
         '  card-renewal-junior  2026.1  card_renewal  never approved',
@@ -337,6 +444,44 @@ describe('kb:status', () => {
       '    -> accept, rename or merge each in pnpm kb:review (kb/pending/topics.yaml); a draft of a proposed topic is approved after its topic',
       'pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved',
     ]);
+  });
+
+  it('marks an approval a migration carried over (from: migration in the log), and only while the passage is as migrated', async () => {
+    const kb = kbCopy();
+    const line = (id: string, from: string, extra: Record<string, string> = {}): string => {
+      const p = passage(kb, id);
+      return JSON.stringify({ id, version: p.version, approvedBy: p.approval!.approvedBy, owner: p.approval!.owner, on: p.approval!.on, sourceHash: p.approval!.sourceHash, hash: p.approval!.hash, from, ...extra });
+    };
+    // Appended to the log, as an app's migration script appends its lines.
+    writeFileSync(
+      join(kb, 'approvals.jsonl'),
+      FIXTURE_LOG + [
+        line('opening-hours', 'migration', { note: 'content unchanged; migrated from the old format' }),
+        line('late-fees-adult', 'migration'),
+        'not a line of the log',
+        // A later line for the same approval is the one the passage stands on.
+        line('card-renewal-adult', 'migration', { note: 'content unchanged' }),
+        line('card-renewal-adult', 'passage'),
+        '',
+      ].join('\n'),
+    );
+    expect(readApprovalLog(kb).slice(7).map((l) => `${l.id} ${l.from}`)).toEqual(['opening-hours migration', 'late-fees-adult migration', 'card-renewal-adult migration', 'card-renewal-adult passage']);
+    const run = await bin(['kb:status', kb], kb);
+    expect(run.out.slice(0, 9)).toEqual([
+      `${kb}: 7 passages (7 approved and fresh, 0 stale, 0 unapproved), 0 pending drafts`,
+      'approved and fresh (7):',
+      '  card-renewal-adult  2026.1  card_renewal  approved by Branch Manager (Patron Services) on 2025-12-10',
+      '  card-renewal-junior  2026.1  card_renewal  approved by Branch Manager (Patron Services) on 2025-12-10',
+      '  late-fees-adult  2026.1  late_fees  approved by Branch Manager (Patron Services) on 2025-12-10  (migrated)',
+      '  late-fees-adult-2025  2025.1  late_fees  approved by Branch Manager (Patron Services) on 2025-12-10',
+      '  late-fees-junior  2026.1  late_fees  approved by Branch Manager (Patron Services) on 2025-12-10',
+      '  opening-hours  2026.1  opening_hours  approved by Branch Manager (Patron Services) on 2025-12-10  (migrated: content unchanged; migrated from the old format)',
+      '  opening-hours-es  2026.1  opening_hours  approved by Branch Manager (Patron Services) on 2025-12-10',
+    ]);
+    // Edited and approved again by a person: the migration no longer stands for it.
+    edit(join(kb, 'passages/late-fees-adult.yaml'), (t) => t.replace('25 cents a day', '30 cents a day'));
+    expect((await approve(kb, 'late-fees-adult', '--by', 'Jane Smith')).code).toBe(0);
+    expect((await bin(['kb:status', kb], kb)).out[4]).toBe(`  late-fees-adult  2026.1  late_fees  approved by Jane Smith (Patron Services) on ${TODAY}`);
   });
 
   it('says when all is approved and fresh, from the app folder; and why a knowledge base does not load', async () => {
@@ -453,7 +598,7 @@ describe('end to end: a passage withheld on a real call until a person approves 
     expect(withheld.heard).toBe(`Sure, I can help you answer a question. ${UNAVAILABLE} ${OFFER}`);
     expect(withheld.heard).not.toContain('30 cents');
     expect(withheld.run.record.kb).toMatchObject({ passageId: 'late-fees-adult', fresh: false });
-    expect((await bin(['kb:status'], dir)).out).toContain('  late-fees-adult  2026.1  late_fees  its answer, applies, dates, topic or account line changed since Branch Manager approved it on 2025-12-10 (the source is as approved)');
+    expect((await bin(['kb:status'], dir)).out).toContain('  late-fees-adult  2026.1  late_fees  its answer, id, locale, version, applies, dates, topic, its topic\'s title or account line changed since Branch Manager approved it on 2025-12-10 (the source is as approved)');
     expect((await bin(['kb:approve', 'late-fees-adult', '--by', 'Jane Smith'], dir)).code).toBe(0);
     const said = await asks(await start(appOf(dir)));
     expect(said.heard).toContain('Late books on an adult card cost 30 cents a day, up to 5 dollars a book.');

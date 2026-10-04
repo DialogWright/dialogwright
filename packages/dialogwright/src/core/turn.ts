@@ -811,8 +811,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         return { decision: completeForm(s, pc.form, [...acks, ...fill.acks], io), events: fill.events };
       }
       // The offer was accepted: the transfer the caller was offered is the one they get. One made
-      // for a question there was no answer to is not a frustrated caller's.
-      if (pc.target === 'transfer') return { decision: handoff(s, pc.after !== undefined ? 'live-agent' : 'frustrated'), events: [] };
+      // for a question there was no answer to (a form's completion, or an informational intent's
+      // passage: `why: 'no-answer'`) is not a frustrated caller's.
+      if (pc.target === 'transfer') return { decision: handoff(s, pc.why === 'no-answer' || pc.after !== undefined ? 'live-agent' : 'frustrated'), events: [] };
       if (pc.intent === 'agent') return { decision: handoff(s, 'live-agent'), events: [] };
       if (pc.intent === 'done') return { decision: goodbye(s), events: [] };
       if (!isFormIntent(io.app, pc.intent)) return { decision: failAttempt(s, 'intent', io), events: [] };

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadKnowledgeFolder } from 'dialogwright';
 import { cleanScratch, folder, TODAY } from 'dialogwright/kb/__fixtures__/libraryKbApp';
@@ -50,8 +50,28 @@ describe('the checks on a draft', () => {
     expect(check({ applies: { branch: 'main' } })).toEqual(['its applies names "branch", which is not a fact of kb.yaml\'s applies (card)']);
     expect(check({ effective: { from: '2026-02-30' } })).toEqual(['its effective.from "2026-02-30" is not a day in the form YYYY-MM-DD']);
     expect(check({ effective: { from: '2026-03-01', to: '2026-02-01' } })).toEqual(['its effective.to (2026-02-01) is before its effective.from (2026-03-01)']);
-    expect(check({ answer: 'Late books on an adult card cost 25 cents a day, up to 5 dollars a book.' })).toEqual(['it repeats the answer of the passage "late-fees-adult"']);
+    expect(check({ answer: 'Late books on an adult card cost 25 cents a day, up to 5 dollars a book.', excerpt: 'charged 25 cents for each day an item is overdue, up to 5 dollars for each item' })).toEqual(['it repeats the answer of the passage "late-fees-adult"']);
     expect(check({ answer: 'A  PENDING answer.' })).toEqual(['it repeats the answer of the draft "other-draft" in kb/pending']);
+  });
+
+  it('refuses an excerpt too short to hold the answer to', () => {
+    expect(check({ excerpt: 'overdue' })).toEqual(['its excerpt "overdue" is too short to hold the answer to: quote at least 4 words and 20 characters of the section']);
+    expect(check({ excerpt: 'is charged 25 cents' })).toEqual(['its excerpt "is charged 25 cents" is too short to hold the answer to: quote at least 4 words and 20 characters of the section']);
+    expect(check({ excerpt: 'charged 25 cents each day' })).toEqual(['its excerpt is not in kb/sources/patron-guide.yaml section "3.1" word for word']);
+    expect(check({ excerpt: 'is charged 25 cents for' })).toEqual([]);
+  });
+
+  it('refuses an answer that says a number its excerpt does not, comparing numbers as numbers', () => {
+    expect(check({ answer: 'Late books on an adult card cost 50 cents a day.' })).toEqual(['its excerpt does not say 50, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes']);
+    expect(check({ answer: 'Late books cost 30 cents a day, up to 6 dollars, from 2026-01-05.' })).toEqual(['its excerpt does not say 30, 6 and 2026-01-05, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes']);
+    // The section's whole sentence: 25 cents and 5 dollars, said as $0.25 is not, but $5.00 is.
+    const whole = 'An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.';
+    expect(check({ answer: 'An adult card pays 25 cents a day late, at most $5.00 an item.', excerpt: whole })).toEqual([]);
+    // Numbers the excerpt writes as words count; times compare by the hour.
+    expect(check({ section: '2.1', topic: 'card_renewal', answer: 'An adult card lasts 3 years, then renew it at any desk.', excerpt: 'An adult card is valid for three years.' })).toEqual([]);
+    expect(check({ section: '2.1', topic: 'card_renewal', answer: 'An adult card lasts 4 years.', excerpt: 'An adult card is valid for three years.' })).toEqual(['its excerpt does not say 4, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes']);
+    expect(check({ section: '1.1', topic: 'opening_hours', answer: 'Weekdays we open at 9:00 and close at 8.', excerpt: 'from 9 a.m. to 8 p.m. and on Saturday' })).toEqual([]);
+    expect(check({ section: '1.1', topic: 'opening_hours', answer: 'Weekdays we open at 9:30.', excerpt: 'from 9 a.m. to 8 p.m. and on Saturday' })).toEqual(['its excerpt does not say 9:30, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes']);
   });
 
   it('the fake drafter quotes a section\'s first sentence when its rule gives no excerpt', () => {
@@ -73,6 +93,11 @@ describe('kb:draft', () => {
     // The library's passages cite every section of the patron guide: --all gives the drafter them all the same.
     expect(await main(['kb:draft', '--source', 'patron-guide'], io)).toBe(0);
     expect(out).toEqual(['kb:draft with fake-drafter: 1 source document, 0 sections drafted from (5 already cited, passed over): 0 drafts written to kb/pending, 0 refused']);
+    out.length = 0;
+    // A dry run says what it would write, a space after the verb, and writes nothing.
+    expect(await main(['kb:draft', '--source', 'patron-guide', '--all', '--dry-run'], io)).toBe(0);
+    expect(out[1]).toBe('  would write kb/pending/card-renewal-junior-2.yaml  card_renewal  from patron-guide section "2.2"');
+    expect(existsSync(join(dir, 'kb', 'pending', 'card-renewal-junior-2.yaml'))).toBe(false);
     out.length = 0;
     expect(await main(['kb:draft', '--source', 'patron-guide', '--all'], io)).toBe(0);
     expect(out).toEqual([

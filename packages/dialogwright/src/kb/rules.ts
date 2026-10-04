@@ -4,6 +4,7 @@ import { inForceOn, answers } from './resolve';
 import type { KbPassage, KnowledgeBase } from './types';
 import { MODEL_COMMAND, STATIC_MODELS } from './embed/model';
 import { INDEX_COMMAND, indexDrift, indexFileOf, sameEmbedder } from './vectorIndex';
+import { APPROVALS_LOG, approvalLogged } from './log';
 
 /**
  * The rules across a knowledge base's files, as problems in the loader's form
@@ -21,7 +22,8 @@ import { INDEX_COMMAND, indexDrift, indexFileOf, sameEmbedder } from './vectorIn
  *    tool declares (ToolDef.fields); every locale it has passages in is one the app speaks. defineApp
  *    runs these with the code (crossLink), `check` with the code or, without it, with policy.yaml.
  *  - state (kbStateProblems): what changes with time and review. Every passage is approved with
- *    both hashes matching what is there now; every topic has a passage in force today, in the
+ *    both hashes matching what is there now, and its approval is in kb/approvals.jsonl (a line of
+ *    its id and hash: approved through kb:approve, not by hand); every topic has a passage in force today, in the
  *    default locale, for every combination of the applies domain; and when kb.yaml names an
  *    embedder, its index (kb/.index/<embedder>.json) has a vector for every text of every topic
  *    (kbIndexProblems). Only `check` runs these (a stale
@@ -41,6 +43,9 @@ export const STATUS_COMMAND = 'pnpm kb:status';
 export function approveCommandFor(id: string): string {
   return `${APPROVE_COMMAND} ${id} --by "<your name>"`;
 }
+
+/** What an edit after approval may have changed, as a stale passage's problem and kb:status say it (./hash.ts approvalHashOf). */
+export const EDITED_WHAT = 'its answer, id, locale, version, applies, dates, topic, its topic\'s title or account line';
 
 /** How many combinations of the applies domain a knowledge base may have: each needs a passage per topic. */
 export const MAX_APPLIES_COMBINATIONS = 256;
@@ -250,9 +255,16 @@ export function kbStateProblems(kb: KnowledgeBase, todayIso: string, locate: Loc
     } else if (p.freshness === 'source-changed') {
       at(p.file, ['approval', 'sourceHash'], `passage "${p.id}" is stale: its source changed since approval (${base}/sources/${p.source.document}.yaml, section "${p.source.section}"), so it is withheld`, `review the answer against the source's text now (${STATUS_COMMAND} shows what changed), then ${approve}`);
     } else if (p.freshness === 'edited') {
-      at(p.file, ['approval', 'hash'], `passage "${p.id}" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld`, `review the edit (${STATUS_COMMAND} shows what changed), then ${approve}`);
+      at(p.file, ['approval', 'hash'], `passage "${p.id}" was edited after approval (${EDITED_WHAT}), so it is withheld`, `review the edit (${STATUS_COMMAND} shows what changed), then ${approve}`);
+    }
+    // An approval is a person's, recorded by kb:approve with a line in the log: one with no line of
+    // its id and hash was written by hand or copied with its file, and no one is on record for it.
+    if (approvalLogged(kb, p) === false) {
+      at(p.file, ['approval'], `passage "${p.id}" was approved outside kb:approve: its approval (by ${p.approval!.approvedBy} on ${p.approval!.on}) has no line of its id and hash in ${base}/${APPROVALS_LOG}, so no one is on record for it`, `review it against its source, then ${approve} (approvals are written by kb:approve, never by hand)`);
     }
   }
+  const log = kb.approvalLog;
+  if (log !== undefined && 'invalid' in log) at(log.file, [], `${log.file} cannot be read: ${log.invalid}`, `restore it from version control: it is appended to by ${APPROVE_COMMAND}, never rewritten`);
   problems.push(...kbIndexProblems(kb, locate, base));
   const combos = appliesCombinations(kb.settings.applies);
   for (const topic of Object.values(kb.topics)) {
