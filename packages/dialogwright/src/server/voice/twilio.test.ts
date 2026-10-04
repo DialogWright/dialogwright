@@ -144,6 +144,13 @@ describe('the Twilio voice provider', () => {
     expect(twilioProvider.parse({ url: '/voice/twilio', headers: {}, rawBody: 'CallSid=%20', nowSec: 0 })).toBeNull();
   });
 
+  it('says the call is live only when its status is in-progress, as Twilio words it, and not live with no status, as before', () => {
+    const live = (body: string) => twilioProvider.parse({ url: '/cr-action/twilio', headers: {}, rawBody: `CallSid=CA1${body}`, nowSec: 0 })?.live;
+    expect(live('&CallStatus=in-progress')).toBe(true);
+    for (const status of ['completed', 'ringing', 'busy', 'failed', 'active', 'In-Progress']) expect(live(`&CallStatus=${status}`), status).toBe(false);
+    expect(live('&SessionStatus=failed')).toBe(false);
+  });
+
   it('ends a call with the documents Twilio receives today', () => {
     expect(twilioProvider.hangupDocument()).toBe(`${HEAD}<Response><Hangup/></Response>`);
     expect(twilioProvider.dialDocument('+15555550199')).toBe(`${HEAD}<Response><Dial>+15555550199</Dial></Response>`);

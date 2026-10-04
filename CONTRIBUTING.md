@@ -145,7 +145,7 @@ A phone carrier that runs a text relay in front of the engine (the relay message
 
 1. **Implement `VoiceProvider`** (`server/voice/<id>.ts`): an `id` (lower case, the name in `VOICE_PROVIDERS` and in the paths `/voice/<id>`, `/cr-action/<id>`, `/conversation/<id>`), the documents' `contentType`, and
    - `verify(req, secret, publicHost)`: whether a webhook came from the carrier, by its signature, in constant time, refusing a missing or stale one;
-   - `parse(req)`: the webhook read into `CallbackParams` (the call id, numbers, call and session statuses, the end frame's handoff data, and every field raw for the frame log), or null when it names no call;
+   - `parse(req)`: the webhook read into `CallbackParams` (the call id, numbers, call and session statuses, `live`, whether the call is still live read from the carrier's own status words and absent when the callback carries no status, the end frame's handoff data, and every field raw for the frame log), or null when it names no call;
    - `startDocument(options)`: the document that connects the call to `wss://<publicHost>/conversation/<id>?token=...` with keypad detection on and its action at `/cr-action/<id>`, with the carrier's own voice and recognizer, and for an app that names its languages the call's language, one child per language it may switch to and the `locale` parameter (`xml.ts placeLanguages` does the placing for a carrier shaped like TwiML);
    - `hangupDocument()`, `dialDocument(number)` and `apologizeAndDialDocument(number)`.
    The socket frames are the shared relay wire (`channel/relay`); if the carrier sends a field on a frame that the wire drops, keep it there (as Telnyx's call ids on `setup` were), and show the wire goldens unchanged.

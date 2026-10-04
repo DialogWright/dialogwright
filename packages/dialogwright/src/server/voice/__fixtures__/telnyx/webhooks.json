@@ -9,7 +9,8 @@
       "callId": "v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ",
       "from": "+15555550110",
       "to": "+15555550111",
-      "callStatus": "ringing"
+      "callStatus": "ringing",
+      "live": false
     }
   },
   "action": {
@@ -21,6 +22,7 @@
     "expect": {
       "callId": "v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ",
       "callStatus": "in-progress",
+      "live": true,
       "sessionStatus": "completed",
       "handoffData": "{\"reason\":\"caller_done\"}"
     }
@@ -47,7 +49,21 @@
       "expect": {
         "callId": "v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ",
         "callStatus": "in-progress",
+        "live": true,
         "handoffData": "{\"reason\":\"caller_done\"}"
+      }
+    },
+    {
+      "source": "ASSUMED alternative: an action callback after a relay failure that words the call's status as the relay's setup frame does, active (https://developers.telnyx.com/docs/voice/programmable-voice/conversation-relay documents callStatus active in the setup frame; the callback's own fields are not documented)",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "rawBody": "{\"CallSid\": \"v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ\", \"CallStatus\": \"active\", \"SessionStatus\": \"failed\"}",
+      "expect": {
+        "callId": "v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ",
+        "callStatus": "active",
+        "live": true,
+        "sessionStatus": "failed"
       }
     }
   ]

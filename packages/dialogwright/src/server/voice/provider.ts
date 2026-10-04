@@ -24,8 +24,16 @@ export interface CallbackParams {
   readonly callId: string;
   readonly from?: string;
   readonly to?: string;
-  /** The call's status in the carrier's words; `in-progress` is the one value the engine tests for. */
+  /** The call's status in the carrier's words, as it sent it (for the frame log and the notes). */
   readonly callStatus?: string;
+  /**
+   * Whether the call is still live, in the engine's terms: the provider reads it from its own
+   * vocabulary (Twilio: `in-progress`; Telnyx: `active`, the relay's word, and `in-progress`,
+   * TeXML's). Absent when the callback says nothing of the call's status; then decideAction
+   * reconnects only a relay failure on a call the engine still holds live (server/http.ts). A
+   * caller's own params without it are read as Twilio's words: live when callStatus is `in-progress`.
+   */
+  readonly live?: boolean;
   /** The relay session's status on the action callback (`completed` when it ended normally). */
   readonly sessionStatus?: string;
   /** The `end` frame's handoffData, as the carrier hands it back on the action callback. */
