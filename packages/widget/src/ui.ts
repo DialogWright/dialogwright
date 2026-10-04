@@ -1,5 +1,5 @@
 import { createChatClient, type ChatClient, type ChatClientEvent, type ChatClientOptions, type ConnectionState } from './client';
-import { CHAT_TEXT_MAX } from './protocol';
+import { CHAT_TEXT_MAX, isLocaleTag } from './protocol';
 import { stringsOf, type StringKey, type WidgetStrings } from './strings';
 import { STYLES } from './styles';
 
@@ -28,6 +28,13 @@ export interface WidgetOptions {
   onTransfer?: (reason: string) => void;
   /** Delays between reconnect attempts, in ms (the client's backoffMs). */
   backoffMs?: readonly number[];
+  /** Reconnects in a row a dropped chat may try before the widget says it is unavailable (the client's maxReconnects). Default: no limit. */
+  maxReconnects?: number;
+  /**
+   * Every event the chat client reports (client.ts ChatClientEvent), after the panel has shown it: for
+   * a site that does more on a restart, a sign-in or the end (say, a notice of its own on `restarted`).
+   */
+  onEvent?: (e: ChatClientEvent) => void;
 }
 
 export interface WidgetDeps {
@@ -50,6 +57,32 @@ export function positionOf(value: string | undefined): Position | undefined {
   if (value === undefined) return undefined;
   if ((POSITIONS as readonly string[]).includes(value)) return value as Position;
   warn(`DialogWright widget: position "${value}" is not one of ${POSITIONS.join(', ')}; using bottom-right`);
+  return undefined;
+}
+
+/**
+ * The endpoint as a socket URL: ws: or wss: as given; an http(s) or relative one (`/chat`) is read
+ * against the page and given the socket scheme. Anything else cannot be a chat endpoint.
+ */
+export function endpointOf(raw: string): string {
+  let url: URL | null;
+  try {
+    url = new URL(raw.trim(), document.baseURI);
+  } catch {
+    url = null;
+  }
+  if (url !== null && (url.protocol === 'http:' || url.protocol === 'https:')) url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (url === null || (url.protocol !== 'ws:' && url.protocol !== 'wss:')) {
+    throw new Error(`DialogWright widget: endpoint must be the chat's URL, like wss://chat.example.com/chat; got "${raw}"`);
+  }
+  return url.href;
+}
+
+/** The language to ask for, if it is a language tag; otherwise none (the app's default), with a warning. */
+function localeOf(value: string | undefined, from: string): string | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  if (isLocaleTag(value.trim())) return value.trim();
+  warn(`DialogWright widget: ${from} "${value}" is not a language tag like es or en-US; asking for none`);
   return undefined;
 }
 
@@ -78,17 +111,27 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
   if (typeof options.endpoint !== 'string' || options.endpoint.trim() === '') {
     throw new Error('DialogWright widget: endpoint is required (data-endpoint, or mount({ endpoint }))');
   }
+  const endpoint = endpointOf(options.endpoint);
   const position: Position = positionOf(options.position) ?? 'bottom-right';
   const inline = position === 'inline';
   let parent: Element = document.body;
   if (inline) {
     if (!options.container) throw new Error('DialogWright widget: an inline widget needs a container (data-container, or mount({ container }))');
-    const found = document.querySelector(options.container);
+    let found: Element | null;
+    try {
+      found = document.querySelector(options.container);
+    } catch {
+      throw new Error(`DialogWright widget: container ${options.container} is not a CSS selector`);
+    }
     if (found === null) throw new Error(`DialogWright widget: container ${options.container} is not on the page`);
     parent = found;
+  } else if (options.container) {
+    warn(`DialogWright widget: container is for an inline widget; this one is ${position}, so it is not used`);
   }
   const s: WidgetStrings = stringsOf(options.strings, warn);
-  const locale = options.locale ?? (document.documentElement.getAttribute('lang') || undefined);
+  const locale = options.locale !== undefined
+    ? localeOf(options.locale, 'locale')
+    : localeOf(document.documentElement.getAttribute('lang') ?? undefined, 'the page\'s lang');
 
   const host = el('dialogwright-chat' as 'div', { 'data-position': position });
   const root = host.attachShadow({ mode: 'open' });
@@ -130,10 +173,13 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
   };
   const notice = (k: StringKey): void => line('notice', s[k]);
 
-  const setEnabled = (on: boolean): void => {
-    input.disabled = !on;
-    send.disabled = !on;
-    signIn.disabled = !on;
+  /** The chat is over: no more text. Focus on a control being disabled goes to close, so it is not lost to the page. */
+  const disable = (): void => {
+    const had = root.activeElement === input || root.activeElement === send || root.activeElement === signIn;
+    input.disabled = true;
+    send.disabled = true;
+    signIn.disabled = true;
+    if (had) close?.focus();
   };
 
   const onEvent = (e: ChatClientEvent): void => {
@@ -146,6 +192,8 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
         break;
       case 'restarted':
         notice('restarted');
+        // A new chat: signed in only once the server says so.
+        signIn.hidden = options.getToken === undefined;
         break;
       case 'signed_in':
         signIn.hidden = true;
@@ -165,7 +213,7 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
       case 'end':
         over = true;
         notice('ended');
-        setEnabled(false);
+        disable();
         break;
       case 'error': {
         const k = noticeFor(e.code, state);
@@ -182,20 +230,28 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
           // Closed without an end (taken over by another tab, say): over all the same.
           if (e.state === 'closed' && !over) notice('ended');
           over = true;
-          setEnabled(false);
+          disable();
         }
         break;
+    }
+    if (options.onEvent) {
+      try {
+        options.onEvent(e);
+      } catch (err) {
+        warn(`DialogWright widget: onEvent failed: ${String(err)}`);
+      }
     }
   };
 
   const connect = (): void => {
     if (client !== null) return;
     client = deps.createClient({
-      endpoint: options.endpoint,
+      endpoint,
       onEvent,
       ...(locale ? { locale } : {}),
       ...(options.getToken ? { getToken: options.getToken } : {}),
       ...(options.backoffMs ? { backoffMs: options.backoffMs } : {}),
+      ...(options.maxReconnects !== undefined ? { maxReconnects: options.maxReconnects } : {}),
     });
   };
 
@@ -207,12 +263,13 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
     void client.send(text);
   };
 
-  const open = (): void => {
+  /** Opens the panel; focus moves into it only when the person opened it, never on the page's load. */
+  const open = (focus = true): void => {
     connect();
     if (inline) return;
     panel.hidden = false;
     launcher?.setAttribute('aria-expanded', 'true');
-    input.focus();
+    if (focus) input.focus();
   };
   const hide = (): void => {
     if (inline) return;
@@ -229,22 +286,24 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
     submit();
   });
   panel.addEventListener('keydown', (ev: KeyboardEvent) => {
-    if (ev.key === 'Escape') {
+    // A key that ends an input method's composition (keyCode 229 where isComposing is not set) is the IME's, not the widget's.
+    const composing = ev.isComposing || ev.keyCode === 229;
+    if (ev.key === 'Escape' && !composing) {
       hide();
       return;
     }
-    if (ev.target === input && ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {
+    if (ev.target === input && ev.key === 'Enter' && !ev.shiftKey && !composing) {
       ev.preventDefault();
       submit();
     }
   });
 
   parent.appendChild(host);
-  if (inline || options.startOpen) open();
+  if (inline || options.startOpen) open(false);
 
   return {
     host,
-    open,
+    open: () => open(),
     close: hide,
     destroy() {
       client?.close();

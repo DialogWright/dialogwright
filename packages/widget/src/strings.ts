@@ -28,8 +28,8 @@ export const DEFAULT_STRINGS = {
   reconnecting: 'Reconnecting...',
   /** The chat a resume named had ended, and a new one started. */
   restarted: 'The chat started again.',
-  /** The server is full and the widget has stopped trying. */
-  unavailable: 'Chat is busy right now. Please try again later.',
+  /** No chat could be had (the server is full, or cannot be reached), and the widget has stopped trying. */
+  unavailable: 'Chat is not available right now. Please try again later.',
   /** Too many messages are waiting for their reply. */
   wait: 'Please wait for the reply.',
   tooLong: 'That message is too long.',
@@ -46,7 +46,8 @@ export type StringKey = keyof WidgetStrings;
 export function stringsOf(site: Readonly<Record<string, string>> | undefined, warn: (m: string) => void): WidgetStrings {
   const out: WidgetStrings = { ...DEFAULT_STRINGS };
   for (const [k, v] of Object.entries(site ?? {})) {
-    if (!(k in DEFAULT_STRINGS)) warn(`DialogWright widget: strings has no word "${k}" (it has ${Object.keys(DEFAULT_STRINGS).join(', ')})`);
+    // Own keys only: `toString` or `__proto__` in a site's JSON is not a word the widget has.
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_STRINGS, k)) warn(`DialogWright widget: strings has no word "${k}" (it has ${Object.keys(DEFAULT_STRINGS).join(', ')})`);
     else if (typeof v !== 'string') warn(`DialogWright widget: strings.${k} must be text`);
     else out[k as StringKey] = v;
   }

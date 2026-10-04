@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mountWidget, type WidgetOptions } from './ui';
+import { endpointOf, mountWidget, type WidgetOptions } from './ui';
 import { optionsFromScript } from './index';
-import { DEFAULT_STRINGS } from './strings';
+import { DEFAULT_STRINGS, stringsOf } from './strings';
 import { STYLES } from './styles';
 import type { ChatClient, ChatClientEvent, ChatClientOptions } from './client';
 
@@ -127,6 +127,10 @@ describe('the widget', () => {
     const { $ } = mount({ strings: { placeholdr: 'x', send: 'Go' } as Record<string, string> });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('placeholdr'));
     expect($('button.send')!.textContent).toBe('Go');
+    // An object's own built-ins are not words either.
+    const strings = stringsOf(JSON.parse('{"toString":"x","__proto__":"y","constructor":"z"}') as Record<string, string>, () => {});
+    expect(Object.keys(strings)).toEqual(Object.keys(DEFAULT_STRINGS));
+    expect(typeof strings.toString).toBe('function');
   });
 
   it('hands a transfer to the site, and says so itself when the site has no handler', () => {
@@ -241,6 +245,86 @@ describe('the widget', () => {
     expect(() => mountWidget({ endpoint: 'wss://x/chat', position: 'inline', container: '#nowhere' })).toThrow('#nowhere');
   });
 
+  it('tells the person, in the site\'s words, that the chat restarted, offers sign-in again, and tells the site', () => {
+    const seen: string[] = [];
+    const { f, root, $ } = mount({ startOpen: true, getToken: async () => 'mock:1', strings: { restarted: 'Nuevo chat.' }, onEvent: (e) => seen.push(e.type) });
+    const button = $<HTMLButtonElement>('button.signin')!;
+    f.emit({ type: 'signed_in', level: 2 });
+    expect(button.hidden).toBe(true);
+    f.emit({ type: 'restarted' });
+    expect(lines(root, 'notice').at(-1)).toBe('Nuevo chat.');
+    expect(button.hidden).toBe(false);
+    f.emit({ type: 'signed_in', level: 2 });
+    expect(button.hidden).toBe(true);
+    expect(seen).toEqual(['signed_in', 'restarted', 'signed_in']);
+  });
+
+  it('keeps going when the site\'s onEvent throws', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { f, root } = mount({ startOpen: true, onEvent: () => { throw new Error('site bug'); } });
+    f.emit({ type: 'say', text: 'one', lang: 'en-US' });
+    f.emit({ type: 'say', text: 'two', lang: 'en-US' });
+    expect(lines(root, 'agent')).toEqual(['one', 'two']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('onEvent failed'));
+  });
+
+  it('does not take the page\'s focus when it opens on load, only when the person opens it', () => {
+    const { root, $, w } = mount({ startOpen: true });
+    expect($<HTMLElement>('.panel')!.hidden).toBe(false);
+    expect(root.activeElement).toBeNull();
+    w.close();
+    w.open();
+    expect(root.activeElement).toBe($('textarea'));
+  });
+
+  it('leaves Escape and Enter to an input method while it composes', () => {
+    const { f, $ } = mount({ startOpen: true });
+    const input = $<HTMLTextAreaElement>('textarea')!;
+    input.value = 'こんにちは';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, isComposing: true }));
+    expect($<HTMLElement>('.panel')!.hidden).toBe(false);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, keyCode: 229 } as KeyboardEventInit));
+    expect(f.sent).toEqual([]);
+  });
+
+  it('moves focus to close when the chat ends under the person\'s typing', () => {
+    const { f, root, $, w } = mount();
+    w.open();
+    expect(root.activeElement).toBe($('textarea'));
+    f.emit({ type: 'end' });
+    expect(root.activeElement).toBe($('button.close'));
+  });
+
+  it('takes the endpoint as a socket URL, from a page-relative or http(s) one too', () => {
+    expect(endpointOf('wss://chat.example.com/chat')).toBe('wss://chat.example.com/chat');
+    expect(endpointOf('https://chat.example.com/chat')).toBe('wss://chat.example.com/chat');
+    expect(endpointOf('/chat')).toBe(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/chat`);
+    expect(() => endpointOf('ftp://chat.example.com/chat')).toThrow('endpoint must be the chat\'s URL');
+    const { f } = mount({ endpoint: 'https://chat.example.com/chat', startOpen: true });
+    expect(f.made[0]!.endpoint).toBe('wss://chat.example.com/chat');
+  });
+
+  it('asks for no language, with a warning, when the one given is not a language tag', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const a = mount({ locale: 'en US; drop', startOpen: true });
+    expect(a.f.made[0]!.locale).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"en US; drop" is not a language tag'));
+    document.documentElement.setAttribute('lang', 'x');
+    expect(mount({ startOpen: true }).f.made[0]!.locale).toBeUndefined();
+  });
+
+  it('passes the reconnect options on to its client', () => {
+    const { f } = mount({ startOpen: true, backoffMs: [100], maxReconnects: 3 });
+    expect(f.made[0]).toMatchObject({ backoffMs: [100], maxReconnects: 3 });
+  });
+
+  it('warns about a container it does not use, and refuses one that is not a selector', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mount({ container: '#help' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('container is for an inline widget'));
+    expect(() => mountWidget({ endpoint: 'wss://x/chat', position: 'inline', container: '##' })).toThrow('is not a CSS selector');
+  });
+
   it('closes its client and leaves the page as it was when destroyed', () => {
     const { f, w } = mount({ startOpen: true });
     expect(document.body.contains(w.host)).toBe(true);
@@ -271,5 +355,8 @@ describe('options from the script tag', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('top-middle'));
     expect(optionsFromScript(script('data-endpoint="wss://x/chat" data-strings="{not json"'))).toEqual({ endpoint: 'wss://x/chat' });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('data-strings'));
+    expect(optionsFromScript(script('data-endpoint="wss://x/chat" data-start-open="yes"'))).toEqual({ endpoint: 'wss://x/chat' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('data-start-open must be true or false, got "yes"'));
+    expect(optionsFromScript(script('data-endpoint="wss://x/chat" data-start-open="true"'))).toEqual({ endpoint: 'wss://x/chat', startOpen: true });
   });
 });

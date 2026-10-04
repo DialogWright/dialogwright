@@ -1,7 +1,7 @@
 import { createChatClient } from './client';
 import { mountWidget, positionOf, type WidgetOptions } from './ui';
 
-export { createChatClient, DEFAULT_BACKOFF_MS } from './client';
+export { createChatClient, DEFAULT_BACKOFF_MS, DEFAULT_MAX_RECONNECTS } from './client';
 export type { ChatClient, ChatClientEvent, ChatClientOptions, ConnectionState } from './client';
 export type { ChatErrorCode } from './protocol';
 export { mountWidget, POSITIONS } from './ui';
@@ -26,7 +26,12 @@ export function optionsFromScript(script: HTMLScriptElement): WidgetOptions {
   const position = positionOf(d.position);
   if (position) o.position = position;
   if (d.container) o.container = d.container;
-  if (d.startOpen !== undefined) o.startOpen = d.startOpen !== 'false';
+  if (d.startOpen !== undefined) {
+    // Present (or "true") opens it; "false" does not; anything else is the default, with a warning.
+    const v = d.startOpen.trim().toLowerCase();
+    if (v === '' || v === 'true' || v === 'false') o.startOpen = v !== 'false';
+    else console.warn(`DialogWright widget: data-start-open must be true or false, got "${d.startOpen}"; using false`);
+  }
   if (d.strings !== undefined) {
     try {
       const parsed: unknown = JSON.parse(d.strings);
