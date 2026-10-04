@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../../schemas/kb-passage.schema.json
+id: card-renewal-adult
+topic: card_renewal
+version: "2026.1"
+applies: { card: adult }
+effective: { from: 2026-01-01 }
+source: { document: patron-guide, section: "2.1" }
+answer: An adult card lasts three years. To renew it, bring a photo ID to any branch desk. There's no charge.
+approval:
+  owner: Patron Services
+  approvedBy: Branch Manager
+  on: 2025-12-10
+  sourceHash: 79085e7e7bf4586902ea4af948d2ac347d5943ee3567fdde429ca0a8e59258d8
+  hash: 63ef69d6d360d4093c50c9578499cf3bde1773aa0101b7f156aa7a91c1ab7283

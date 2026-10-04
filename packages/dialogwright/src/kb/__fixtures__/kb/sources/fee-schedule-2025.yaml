@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=../../../../../schemas/kb-source.schema.json
+document: Example Town Library Fee Schedule 2025
+provenance:
+  url: https://library.example/fees-2025
+sections:
+  adult:
+    text: An adult card is charged 20 cents for each day an item is overdue, up to 4 dollars for each item.

@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../../../../schemas/kb-passage.schema.json
+id: opening-hours
+topic: opening_hours
+version: "2026.1"
+effective: { from: 2026-01-01 }
+source: { document: patron-guide, section: "1.1" }
+answer: We're open Monday to Friday from 9 in the morning to 8 at night, and Saturday from 10 to 4. We're closed on Sunday.
+approval:
+  owner: Patron Services
+  approvedBy: Branch Manager
+  on: 2025-12-10
+  sourceHash: 1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c
+  hash: 13ef68b619cf02e9f86cb3776a57ca009833408d65ae9f1b92f4ed29bd74f278

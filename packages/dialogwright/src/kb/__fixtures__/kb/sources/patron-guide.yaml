@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../../../../schemas/kb-source.schema.json
+document: Example Town Library Patron Guide
+provenance:
+  file: patron-guide.pdf
+  retrieved: 2025-12-01
+sections:
+  "1.1":
+    heading: Opening hours
+    text: >-
+      All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m.
+      to 4 p.m. All branches are closed on Sunday.
+  "2.1":
+    heading: Renewing an adult card
+    text: An adult card is valid for three years. It is renewed at any branch desk with a photo ID, at no charge.
+  "2.2":
+    heading: Renewing a junior card
+    text: A junior card is renewed automatically each year until its holder turns eighteen. A parent or guardian may update its details at any branch desk.
+  "3.1":
+    heading: Late fees on adult cards
+    text: An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.
+  "3.2":
+    heading: Late fees on junior cards
+    text: Junior cards are not charged late fees.

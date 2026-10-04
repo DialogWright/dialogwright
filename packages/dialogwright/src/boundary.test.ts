@@ -8,7 +8,7 @@ import { dirname, join, normalize } from 'node:path';
  * (src/testing, which registers the default app for vitest). An engine file never reaches into an
  * app; apps are registered by the launchers inside them (src/apps/<app>/serve.ts and the like).
  */
-const ENGINE = ['core', 'gate', 'run', 'channel', 'server', 'jev', 'audit', 'trace', 'handoff', 'prompts', 'harness-text', 'define', 'slots'];
+const ENGINE = ['core', 'gate', 'run', 'channel', 'server', 'jev', 'audit', 'trace', 'handoff', 'prompts', 'harness-text', 'define', 'slots', 'kb'];
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {

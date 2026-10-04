@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "document": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The document's title, as a person would cite it."
+    },
+    "provenance": {
+      "description": "Where the text came from.",
+      "type": "object",
+      "properties": {
+        "url": {
+          "description": "Where it was read from on the web.",
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "description": "The file it was read from.",
+          "type": "string",
+          "minLength": 1
+        },
+        "retrieved": {
+          "description": "The day it was read.",
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sections": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "heading": {
+            "description": "The section's heading in the document.",
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The section's text, as the document has it. Approvals hash it (whitespace collapsed), so a changed word makes its passages stale."
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The document's sections, by id (a number like \"3.2\" or a short name)."
+    }
+  },
+  "required": [
+    "document",
+    "sections"
+  ],
+  "additionalProperties": false,
+  "description": "kb/sources/<doc>.yaml: one source document's text by section.",
+  "title": "DialogWright kb/sources/<doc>.yaml"
+}

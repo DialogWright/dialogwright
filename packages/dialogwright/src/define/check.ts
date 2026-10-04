@@ -8,6 +8,7 @@ import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { DEFAULT_ROLE_PERSON_REASON, personReasons } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES } from './schema/index';
+import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 
 /**
  * `dialogwright check`: everything that can be wrong with an app folder, found in one pass.
@@ -26,6 +27,10 @@ import { FILE_NAMES, FOLDER_FILES } from './schema/index';
  *  - every line of another locale is a line prompts.yaml has, and uses no variable the
  *    prompts.yaml line lacks (the code fills the default line's variables, and no others);
  *  - every intent has examples in the app's corpus, when app.yaml names a fixtures directory;
+ *  - the knowledge base, when the folder has a kb/ (../kb/rules.ts): what it names in policy.yaml
+ *    (crossLink checks it against the code when it runs; without the code, this does against
+ *    policy.yaml), and what changes with time and review: every passage approved and fresh, and a
+ *    passage in force today for every topic and every combination of the applies domain;
  *  - every prompt is `mode: fixed`: the schema allows no other mode, and refuses one with a message
  *    that says so (see the load tests), so there is nothing more to check here.
  *
@@ -185,6 +190,8 @@ export interface CheckOptions {
   code?: AppCode;
   /** The directory app.yaml's `fixtures.dir` is relative to. Default: the nearest folder above the app folder with a package.json, else the working directory. */
   fixturesRoot?: string;
+  /** The day the knowledge base must have a passage in force on, as an ISO date. Default: today (UTC). */
+  todayIso?: string;
 }
 
 export interface CheckResult {
@@ -226,6 +233,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
+  if (config.knowledge) {
+    if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));
+    problems.push(...kbStateProblems(config.knowledge, options.todayIso ?? new Date().toISOString().slice(0, 10), locate));
+  }
   return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
 }
 

@@ -22,6 +22,8 @@ describe('the package entry', () => {
       'candidateSpans', 'candidateWordSpans', 'atLeast',
       // the slot library
       'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType',
+      // the knowledge base
+      'defineKnowledge', 'knowledgeProblems', 'loadKnowledgeFolder', 'resolvePassage', 'approvalHashOf', 'sourceHashOf',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
       'buildQuestions', 'ENGINE_QUESTION_IDS', 'buildTurnState', 'FixtureStubClient', 'HeuristicStubClient', 'digitSpanLabel', 'dobParts', 'saysDob', 'saysExplicitYear',

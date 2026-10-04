@@ -13,6 +13,10 @@ import { z } from 'zod';
 import { DEFAULT_LOCALE } from '../core/locale';
 import { configHashesOf } from '../core/app/configHash';
 import type { ConfigHashes } from '../core/app/types';
+import { readKbFolder, type KbEntry, type KbFolderIo } from '../kb/folder';
+import { kbContentProblems } from '../kb/rules';
+import { KB_KINDS, type KbKind } from '../kb/schema';
+import type { KnowledgeBase } from '../kb/types';
 
 export type { Problem } from './problems';
 
@@ -28,6 +32,7 @@ export type { Problem } from './problems';
  *   slots.yaml                                                        optional (no file: every slot is the code's)
  *   locale/<tag>/prompts.yaml                                         the prompts of another locale
  *   locale/<tag>/slots.yaml                                           optional: its wording for the library slots
+ *   kb/                                                               optional: the knowledge base (../kb/folder.ts)
  *
  * The YAML is only ever data. It is parsed with the YAML 1.2 core schema (no custom tags, no
  * timestamps or binary, no merge keys), duplicate keys are errors, aliases are capped, and nothing
@@ -62,8 +67,14 @@ export interface LoadedConfig {
    */
   localeSlots: Record<string, LocaleSlotsYaml>;
   /**
+   * The knowledge base, when the folder has a kb/ (../kb/folder.ts reads it; the rules that need
+   * only the knowledge base itself, ../kb/rules.ts kbContentProblems, have passed). Absent without one.
+   */
+  knowledge?: KnowledgeBase;
+  /**
    * The content hash of every file read (app.yaml, ..., identity.yaml and slots.yaml when there are, and each
-   * locale/<tag>/prompts.yaml and locale/<tag>/slots.yaml), by its path in the folder, and the combined hash (App.configHashes;
+   * locale/<tag>/prompts.yaml and locale/<tag>/slots.yaml, and every file of kb/ the knowledge base is read from: not
+   * its drafts in kb/pending, which are never read, nor its hidden kb/.index), by its path in the folder, and the combined hash (App.configHashes;
    * core/app/configHash.ts). Each is taken over the file's parsed content, so comments, whitespace
    * and quoting do not change it; key order does, since it is meaning (slots.yaml's is the slot order).
    */
@@ -110,7 +121,8 @@ const RESERVED_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 
 const LOCALE_TAG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
 /** What each file starts with, for a missing or empty file's fix. */
-const STARTS_WITH: Record<FileKind | 'slots' | 'localeSlots', string> = {
+const STARTS_WITH: Record<Kind, string> = {
+  ...(Object.fromEntries(Object.entries(KB_KINDS).map(([kind, def]) => [kind, def.startsWith])) as Record<KbKind, string>),
   app: 'an id, for example "id: my-app"',
   intents: 'the "intents:" map and the "menu:" list',
   forms: 'the "forms:" map',
@@ -121,9 +133,15 @@ const STARTS_WITH: Record<FileKind | 'slots' | 'localeSlots', string> = {
   localeSlots: 'a slot id and what it says in this locale, for example "branch: { options: { north: Norte } }"',
 };
 
-/** A kind of file the loader checks: the six, the optional slots.yaml, and a locale's optional slots.yaml. */
-type Kind = FileKind | 'slots' | 'localeSlots';
-const SCHEMAS_OF: Record<Kind, z.ZodType> = { ...SCHEMAS, slots: slotsSchema, localeSlots: localeSlotsSchema };
+/** A kind of file the loader checks: the six, the optional slots.yaml, a locale's optional slots.yaml, and the knowledge base's. */
+type Kind = FileKind | 'slots' | 'localeSlots' | KbKind;
+const SCHEMAS_OF: Record<Kind, z.ZodType> = {
+  ...SCHEMAS,
+  slots: slotsSchema,
+  localeSlots: localeSlotsSchema,
+  ...(Object.fromEntries(Object.entries(KB_KINDS).map(([kind, def]) => [kind, def.schema])) as unknown as Record<KbKind, z.ZodType>),
+};
+const isKbKind = (kind: Kind): kind is KbKind => Object.hasOwn(KB_KINDS, kind);
 
 /** What to do about each kind of YAML syntax error (the codes are the `yaml` library's). */
 const SYNTAX_FIXES: Record<string, string> = {
@@ -236,6 +254,15 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     if (wording !== undefined) localeSlots[tag] = wording as LocaleSlotsYaml;
   }
 
+  // The knowledge base, when there is one.
+  let knowledge: KnowledgeBase | null = null;
+  if (existsNoFollow(join(root.real, 'kb'))) {
+    const io = kbIo(root.real, problems, documents, contents);
+    const before = problems.length;
+    knowledge = readKbFolder({ base: 'kb', defaultLocale, io, problems });
+    if (knowledge && problems.length === before) problems.push(...kbContentProblems(knowledge, io.locate));
+  }
+
   if (!valid.app || !valid.intents || !valid.forms || !valid.policy || !valid.prompts) return null;
   return {
     app: valid.app,
@@ -247,8 +274,58 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     defaultLocale,
     prompts,
     localeSlots,
+    ...(knowledge ? { knowledge } : {}),
     hashes: configHashesOf(contents),
   };
+}
+
+/** How the knowledge base's files are read: with this loader's own reading and parsing, under the folder's real path. */
+function kbIo(root: string, problems: Problem[], documents: Map<string, { doc: Document; lines: LineCounter }>, contents: Record<string, unknown>): KbFolderIo & { locate: (file: string, path: DataPath) => { line: number; column: number } | null } {
+  return {
+    read: (file) => readFile(root, file),
+    parse: (file, kind, text) => checkFile(file, kind, text, problems, documents, contents),
+    list: (dir) => listDir(root, dir),
+    locate: (file, path) => {
+      const read = documents.get(file);
+      return read ? positionOf(read.doc, read.lines, path) : null;
+    },
+  };
+}
+
+/**
+ * The entries of a folder (a path from the app folder), each a folder or not, links followed: a
+ * link to a folder inside the app folder counts as one. A link that leads out of the app folder, or
+ * nowhere, counts as a file, which is refused when it is read; a folder that is itself such a link
+ * is 'outside', and none of it is read.
+ */
+function listDir(root: string, dir: string): KbEntry[] | 'missing' | 'not-a-directory' | 'outside' {
+  const abs = join(root, ...dir.split('/'));
+  if (!existsNoFollow(abs)) return 'missing';
+  let real: string;
+  try {
+    real = realpathSync(abs);
+  } catch {
+    return 'not-a-directory';
+  }
+  if (!isInside(root, real)) return 'outside';
+  try {
+    if (!statSync(real).isDirectory()) return 'not-a-directory';
+  } catch {
+    return 'not-a-directory';
+  }
+  try {
+    return readdirSync(real, { withFileTypes: true }).map((e) => {
+      if (!e.isSymbolicLink()) return { name: e.name, dir: e.isDirectory() };
+      try {
+        const target = realpathSync(join(real, e.name));
+        return { name: e.name, dir: isInside(root, target) && statSync(target).isDirectory() };
+      } catch {
+        return { name: e.name, dir: false };
+      }
+    });
+  } catch {
+    return 'not-a-directory';
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -436,7 +513,7 @@ function listLocales(root: string, problems: Problem[]): { tag: string; dirName:
  * `kind` does not know at its top level. Only the six kinds: slots.yaml's top-level keys are slot ids.
  */
 function homesOf(kind: Kind, key: string): string[] {
-  if (kind === 'slots' || kind === 'localeSlots') return [];
+  if (kind === 'slots' || kind === 'localeSlots' || isKbKind(kind)) return [];
   return FILE_KINDS.filter((other) => other !== kind && Object.hasOwn((jsonSchemaOf(other).properties as object | undefined) ?? {}, key)).map((other) => FILE_NAMES[other]);
 }
 
@@ -446,7 +523,7 @@ function jsonSchemaOf(kind: Kind): JsonSchema {
   let schema = jsonSchemas.get(kind);
   if (!schema) {
     // slots.yaml's published schema is the full union over the types (and a locale's, over their wording); the loader checks the outer shape, whose schema is this.
-    schema = kind === 'slots' || kind === 'localeSlots' ? (z.toJSONSchema(SCHEMAS_OF[kind], { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
+    schema = kind === 'slots' || kind === 'localeSlots' || isKbKind(kind) ? (z.toJSONSchema(SCHEMAS_OF[kind], { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
     jsonSchemas.set(kind, schema);
   }
   return schema;
@@ -597,6 +674,48 @@ function sortProblems(problems: readonly Problem[]): Problem[] {
     return i === -1 ? order.length : i;
   };
   return [...problems].sort((a, b) => rank(a.file) - rank(b.file) || a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);
+}
+
+/** What loadKnowledgeFolder found. */
+export interface KnowledgeFolder {
+  /** The knowledge base, when the folder has no problems; otherwise null. */
+  kb: KnowledgeBase | null;
+  /** Everything wrong with reading it, and with its content (../kb/rules.ts kbContentProblems); empty when it is valid. */
+  problems: Problem[];
+  /** Where a data path is in one of its files (the files named as the problems name them, before `display`). */
+  locate(file: string, path: DataPath): { line: number; column: number } | null;
+  /** The content hash of each file read, by its path from the folder's parent (kb/kb.yaml, ...), and the combined one. */
+  hashes: ConfigHashes;
+  /** The folder's name, as its files' paths start ("kb"). */
+  base: string;
+}
+
+/**
+ * Reads a knowledge base folder on its own, for an app that is not a folder (defineKnowledge): the
+ * same reading, layout and content rules as an app folder's kb/ (../kb/folder.ts), with the folder's
+ * parent as the place nothing may be read from outside of. Problems name files from that parent
+ * (kb/passages/x.yaml for the folder src/kb). `defaultLocale` is the app's default locale.
+ */
+export function loadKnowledgeFolder(dir: string, defaultLocale: string = DEFAULT_LOCALE): KnowledgeFolder {
+  const problems: Problem[] = [];
+  const documents = new Map<string, { doc: Document; lines: LineCounter }>();
+  const contents: Record<string, unknown> = {};
+  const base = basename(resolve(dir));
+  let root: string;
+  try {
+    root = realpathSync(dirname(resolve(dir)));
+  } catch {
+    root = '';
+  }
+  const io = kbIo(root, problems, documents, contents);
+  const none = (): KnowledgeFolder => ({ kb: null, problems, locate: io.locate, hashes: configHashesOf(contents), base });
+  if (root === '' || !existsNoFollow(join(root, base))) {
+    problems.push(problemAt(base, WHOLE_FILE, `the knowledge base folder "${dir}" does not exist`, 'pass the path of the folder that holds kb.yaml, topics.yaml and passages/'));
+    return none();
+  }
+  const kb = readKbFolder({ base, defaultLocale, io, problems });
+  if (kb && problems.length === 0) problems.push(...kbContentProblems(kb, io.locate, base));
+  return { kb: problems.length === 0 ? kb : null, problems: sortProblems(problems), locate: io.locate, hashes: configHashesOf(contents), base };
 }
 
 /** What loadSlotsFile found: the parsed slots (null when there is a problem) and the document, to position later problems. */

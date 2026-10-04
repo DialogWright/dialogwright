@@ -47,6 +47,18 @@ export type { LoadedConfig, LoadResult } from './define/load';
 export { formatProblem } from './define/problems';
 export type { Problem } from './define/problems';
 
+// The knowledge base (an app folder's kb/, App.knowledge): approved passages, resolved for the
+// caller and the day and said word for word; defineKnowledge for an app that is not a folder.
+export { defineKnowledge, knowledgeProblems } from './define/defineKnowledge';
+export type { DefineKnowledgeOptions, KnowledgeProblemsOptions } from './define/defineKnowledge';
+export { loadKnowledgeFolder } from './define/load';
+export type { KnowledgeFolder } from './define/load';
+export { resolvePassage } from './kb/resolve';
+export type { ResolveInput } from './kb/resolve';
+export { approvalHashOf, sourceHashOf } from './kb/hash';
+export type { ApprovedContent } from './kb/hash';
+export type * from './kb/types';
+
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
 // What the author of a slot type uses is in 'dialogwright/slot-kit'; the conformance kit is in
 // 'dialogwright/testing'.

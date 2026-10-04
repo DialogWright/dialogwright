@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../../schemas/kb-passage.schema.json
+id: late-fees-adult
+topic: late_fees
+version: "2026.1"
+applies: { card: adult }
+effective: { from: 2026-01-01 }
+source: { document: patron-guide, section: "3.1" }
+answer: Late books on an adult card cost 25 cents a day, up to 5 dollars a book.
+approval:
+  owner: Patron Services
+  approvedBy: Branch Manager
+  on: 2025-12-10
+  sourceHash: a3502dd02204f66615d5227dfafdb55a5b53572022c5982f1c5e53036ee9b850
+  hash: d5c58a4130fba40b914fd022093868d7f475c0744ed54c7d59cd32c244fa4f6a

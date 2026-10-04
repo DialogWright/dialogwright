@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../../../../schemas/kb-passage.schema.json
+id: opening-hours-es
+topic: opening_hours
+version: "2026.1"
+effective: { from: 2026-01-01 }
+source: { document: patron-guide, section: "1.1" }
+answer: Abrimos de lunes a viernes de 9 de la mañana a 8 de la noche, y los sábados de 10 a 4. Los domingos cerramos.
+translates: opening-hours
+approval:
+  owner: Patron Services
+  approvedBy: Branch Manager
+  on: 2025-12-10
+  sourceHash: 1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c
+  hash: 3edab6d60c3d2d0b862cfc8ef162274878ca1e2fd1bb5312e47523fce7602ba8

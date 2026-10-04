@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "description": "The gated tool that resolves a passage for a caller (it reads the facts the applies domain names, such as the caller's plan, from the system of record). It must be a tool with an action in policy.yaml."
+    },
+    "applies": {
+      "default": {},
+      "description": "The facts a passage can depend on, each with every value it can take (for example card: [adult, junior]). Every topic needs a passage in force for every combination. Default: none, so one passage per topic answers everyone.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        }
+      }
+    },
+    "localeFallback": {
+      "default": "none",
+      "description": "What a caller in another locale hears when a topic has no passage in their locale. none: nothing (the answer is unavailable and a person is offered), which fails closed for regulated text. default: the default locale's passage. Default none.",
+      "type": "string",
+      "enum": [
+        "none",
+        "default"
+      ]
+    },
+    "maxAnswerChars": {
+      "default": 400,
+      "description": "The longest answer a passage may have, in characters: an answer is spoken, so it is short. Default 400.",
+      "type": "integer",
+      "minimum": 40,
+      "maximum": 2000
+    },
+    "retrieval": {
+      "default": {
+        "cap": 8
+      },
+      "description": "How topics are nominated for a caller's words: settings only, read by the retriever.",
+      "type": "object",
+      "properties": {
+        "cap": {
+          "default": 8,
+          "description": "How many topics retrieval nominates at most. Default 8.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "floor": {
+          "description": "The similarity below which a topic is not nominated. Default: the retriever's own.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "embedder": {
+          "description": "The id of the embedding model retrieval uses. Default: the engine's.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "action"
+  ],
+  "additionalProperties": false,
+  "description": "kb/kb.yaml: the knowledge base's settings.",
+  "title": "DialogWright kb/kb.yaml"
+}

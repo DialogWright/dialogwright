@@ -20,6 +20,8 @@ import { ruleDefinitionProblems } from '../gate/defineRule';
 import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotRedactOf, toolFieldProblems, toolParamProblems } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
+import { kbLinkProblems } from '../kb/rules';
+import type { KnowledgeRetriever } from '../kb/types';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -86,6 +88,8 @@ export interface AppCode {
   testing?: App['testing'];
   /** identity.yaml's code: the one-time code call's params (IdentityConfig.sendCodeParams). Only with an identity.yaml. */
   identity?: { sendCodeParams?: IdentityConfig['sendCodeParams'] };
+  /** The knowledge base's code: a retriever of the app's own (App.knowledge.retriever). Only with a kb/ folder. */
+  knowledge?: { retriever?: KnowledgeRetriever };
 }
 
 /**
@@ -430,6 +434,22 @@ export function crossLink(
     inTs(['identity'], 'the code has identity hooks, but the folder has no identity.yaml', `add identity.yaml (principals, levels and attempts, with the identity tools), or delete it from ${inCode('identity')}`);
   }
 
+  // kb/: the tools the knowledge base reads through, their actions and fields, and the locales it speaks.
+  if (config.knowledge) {
+    problems.push(...kbLinkProblems(config.knowledge, {
+      actions: new Set(Object.keys(policy.actions)),
+      tools: Object.fromEntries(tools.map((tool) => [tool, declaredFields(code.tools?.[tool])])),
+      locales: Object.keys(config.prompts),
+      inCode,
+    }, locate));
+    const retriever = code.knowledge?.retriever;
+    if (retriever !== undefined && (typeof retriever !== 'object' || retriever === null || typeof (retriever as { nominate?: unknown }).nominate !== 'function')) {
+      inTs(['knowledge', 'retriever'], 'the knowledge retriever has no nominate function', `make ${inCode('knowledge', 'retriever')} an object with nominate({ text, locale, todayIso }), which returns the topics it nominates with their scores`);
+    }
+  } else if (code.knowledge !== undefined) {
+    inTs(['knowledge'], 'the code has a knowledge retriever, but the folder has no kb/', `add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/), or delete it from ${inCode('knowledge')}`);
+  }
+
   // app.yaml
   const app = config.app;
   app.carrySlots?.forEach((slot, i) => slotExists('app.yaml', ['carrySlots', i], slot));
@@ -608,6 +628,8 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'portal', code.portal);
   put(app, 'testing', code.testing);
   put(app, 'fixtures', a.fixtures);
+  // The knowledge base, with the code's retriever when it gives one.
+  if (config.knowledge) app.knowledge = { kb: config.knowledge, ...(code.knowledge?.retriever ? { retriever: code.knowledge.retriever } : {}) };
   // The folder's content hashes: what the engine records on each call (call_started, the trace).
   app.configHashes = config.hashes;
   return app as App;

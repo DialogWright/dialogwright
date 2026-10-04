@@ -9,6 +9,7 @@ import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, topLevelOf } from './lookup';
 import { principalProblems } from './principals';
 import type { App, ConfigHashes } from './types';
+import type { KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
 
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
@@ -80,6 +81,24 @@ export function validateApp(app: App): void {
     if (typeof hashes.app !== 'string' || !CONFIG_HASH.test(hashes.app)) fail('configHashes has no combined SHA-256 hash (64 lowercase hex characters)');
     // The combined hash is the files' own, so a call_started row's lines and its combined hash cannot disagree.
     if (hashes.app !== combinedConfigHash(files)) fail("configHashes' combined hash is not the hash of its files' hashes");
+  }
+  if (app.knowledge !== undefined) {
+    // The shape defineApp builds (kb/folder.ts); the rules over its content are kb/rules.ts's, which defineApp and check run.
+    const knowledge: unknown = app.knowledge;
+    if (typeof knowledge !== 'object' || knowledge === null) return fail('knowledge is not an object');
+    const { kb, retriever } = knowledge as { kb?: unknown; retriever?: unknown };
+    if (typeof kb !== 'object' || kb === null) return fail('knowledge has no knowledge base (kb)');
+    const base = kb as Partial<Record<keyof KnowledgeBase, unknown>>;
+    for (const part of ['settings', 'topics', 'passages', 'sources'] as const) {
+      if (typeof base[part] !== 'object' || base[part] === null) return fail(`knowledge's kb has no ${part}`);
+    }
+    const { settings, topics, passages } = kb as KnowledgeBase;
+    if (typeof settings.action !== 'string' || !Object.hasOwn(app.tools, settings.action)) fail(`knowledge's action "${String(settings.action)}" is not a tool`);
+    for (const [id, p] of Object.entries(passages)) if (!Object.hasOwn(topics, p.topic)) fail(`knowledge passage "${id}" answers the topic "${p.topic}", which the knowledge base does not have`);
+    for (const topic of Object.values(topics)) {
+      if (topic.accountLine && !Object.hasOwn(app.tools, topic.accountLine.from)) fail(`knowledge topic "${topic.id}"'s account line reads from "${topic.accountLine.from}", which is not a tool`);
+    }
+    if (retriever !== undefined && (typeof retriever !== 'object' || retriever === null || typeof (retriever as { nominate?: unknown }).nominate !== 'function')) fail("knowledge's retriever has no nominate function");
   }
   for (const [name, value] of Object.entries(app.thresholds ?? {})) {
     if (Object.hasOwn(DEFAULT_THRESHOLDS, name)) fail(`threshold "${name}" is one of the engine's`);

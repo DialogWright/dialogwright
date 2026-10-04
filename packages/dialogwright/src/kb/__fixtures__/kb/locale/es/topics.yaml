@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../../../../../../schemas/kb-locale-topics.schema.json
+opening_hours:
+  title: Horario
+  keywords: [horario, abierto, cerrado]
+  asks:
+    - ¿A qué hora abren?
+late_fees:
+  title: Multas por retraso
+  keywords: [multa, retraso]
+  accountLine:
+    text: Su tarjeta tiene {balance} en multas ahora mismo.

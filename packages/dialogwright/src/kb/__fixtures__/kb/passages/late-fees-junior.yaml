@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../../schemas/kb-passage.schema.json
+id: late-fees-junior
+topic: late_fees
+version: "2026.1"
+applies: { card: junior }
+effective: { from: 2026-01-01 }
+source: { document: patron-guide, section: "3.2" }
+answer: There are no late fees on a junior card.
+approval:
+  owner: Patron Services
+  approvedBy: Branch Manager
+  on: 2025-12-10
+  sourceHash: 18345c1533866b482125f9f1f66d537d51741e4c0fce296322696bf920018b6a
+  hash: 7ae3662c77942ba368eecc8588b3ccaa2162791ab32880af189ed7331b648d0c

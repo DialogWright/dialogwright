@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../../../../schemas/kb-settings.schema.json
+# Example Town Library's knowledge base: what a caller hears about the library's hours, cards and
+# fees. Each answer is a passage approved against the patron guide; findPassage resolves one for the
+# caller's card, read from the library's records.
+action: findPassage
+applies:
+  card: [adult, junior]
+localeFallback: none
+maxAnswerChars: 400
+retrieval:
+  cap: 8

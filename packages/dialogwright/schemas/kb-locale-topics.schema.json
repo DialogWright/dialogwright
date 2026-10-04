@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "propertyNames": {
+    "type": "string",
+    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+  },
+  "additionalProperties": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "description": "The topic's title in this locale.",
+        "type": "string",
+        "minLength": 1
+      },
+      "keywords": {
+        "description": "Keywords in this locale.",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "asks": {
+        "description": "Example questions in this locale.",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "accountLine": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The account line in this locale; it reads the same tool, with the same variables, as kb/topics.yaml's."
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false,
+    "description": "A topic's wording in this locale."
+  },
+  "description": "kb/locale/<tag>/topics.yaml: the topics' titles, keywords and example questions in this locale, by topic id (each a topic of kb/topics.yaml).",
+  "title": "DialogWright kb/locale/<tag>/topics.yaml"
+}
