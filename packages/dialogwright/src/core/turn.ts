@@ -13,7 +13,7 @@ import { closeForm, cloneSession, emptySlot, missingSlots, setForm, type Pending
 import { buildTurnState, type TurnState } from './state';
 import { buildQuestions } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
-import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
+import { applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCode, awaitingSignIn, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type TurnOut } from './lifecycle';
 import type { Tools } from './tools';
@@ -758,7 +758,7 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
   const acks: Ack[] = queued.length && queue !== undefined
     ? [{ promptId: 'ack_intent_then', vars: { a: intentLabel(io.app, form), b: intentLabel(io.app, queue) } }]
     : [ackIntent(s, form)];
-  const fill = fillSlots(s, answers, ctx, activeSlots(s));
+  const fill = fillSlots(s, answers, ctx, slotsToFill(s));
   return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
 }
 
@@ -784,9 +784,11 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       return { decision: { kind: 'replay', text: s.lastPromptText }, events: [] };
     case 'inform': {
       // The answer plays as an ack in front of the question the caller was on. What else the
-      // breath carried still fills, as on the queue verdict; no attempt counter moves. A passage
-      // that could not be said is followed by the offer of a person, once per call (kb/answer.ts).
-      const fill = fillSlots(s, answers, ctx, activeSlots(s));
+      // breath carried for the open form still fills, as on the queue verdict; outside a form only
+      // what belongs to the call does (slotsToFill), since this turn opens no form for the rest.
+      // No attempt counter moves. A passage that could not be said is followed by the offer of a
+      // person, once per call (kb/answer.ts).
+      const fill = fillSlots(s, answers, ctx, slotsToFill(s));
       const said = informed(s, io, verdict);
       const acks = [said.ack, ...fill.acks];
       const offer = said.answered ? null : offerAfterUnavailable(s, acks);
@@ -816,6 +818,14 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (pc.target === 'transfer') return { decision: handoff(s, pc.why === 'no-answer' || pc.after !== undefined ? 'live-agent' : 'frustrated'), events: [] };
       if (pc.intent === 'agent') return { decision: handoff(s, 'live-agent'), events: [] };
       if (pc.intent === 'done') return { decision: goodbye(s), events: [] };
+      // An informational intent the model was unsure of (gates.ts, `inform_explicit`): the yes says
+      // it, as the inform verdict does, and the call goes back to the intent question. Nothing fills:
+      // the yes opens no form.
+      const informs = informationOf(io.app, pc.intent);
+      if (informs !== undefined) {
+        const said = informed(s, io, informs);
+        return { decision: (said.answered ? null : offerAfterUnavailable(s, [said.ack])) ?? resume(s, io, [said.ack]), events: [] };
+      }
       if (!isFormIntent(io.app, pc.intent)) return { decision: failAttempt(s, 'intent', io), events: [] };
       // Fill from what the caller originally said, not from the "yes"; the form hears the yes too.
       // Its topic slot reads the topics nominated for those words, not this turn's (for the yes).
@@ -851,8 +861,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         if (pc.after !== undefined) return { decision: declineTransfer(s, io, pc, []), events: [] };
         // The answer is an ordinary utterance as well, so whatever it filled
         // stands and the form loop asks whatever is next -- "no, keep going" re-asks the question
-        // the caller was on, and "keep going, it was Saturday" answers it on the way past.
-        const fill = fillSlots(s, answers, ctx, activeSlots(s));
+        // the caller was on, and "keep going, it was Saturday" answers it on the way past. Outside
+        // a form there is no question to answer on the way past: only the call's slots fill (slotsToFill).
+        const fill = fillSlots(s, answers, ctx, slotsToFill(s));
         return { decision: declineTransfer(s, io, pc, fill.acks), events: fill.events };
       }
       if (pc.target === 'slot') {
@@ -937,7 +948,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // The gates only emit queue inside a form; without one there is nothing to add to.
       if (!s.form) return handleVerdict(s, { kind: 'proceed' }, answers, ctx, io);
       const acks = enqueue(s, verdict.intent);
-      const fill = fillSlots(s, answers, ctx, activeSlots(s));
+      const fill = fillSlots(s, answers, ctx, slotsToFill(s));
       // Adding a request is not a failed answer: re-ask the open slot without counting an attempt.
       return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
     }
@@ -946,7 +957,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // not at all. A code actually said aloud arrives masked (spokenCode.ts) and counts as exposed,
       // so the caller is told a new one has been sent rather than asked to key the old one.
       if (s.promptedFor === 'otp') return { decision: codeReask(s, io, [], saidCode(ctx.text) ? 'otp_spoken_reissued' : 'ask_otp_spoken'), events: [] };
-      const fill = fillSlots(s, answers, ctx, activeSlots(s));
+      const fill = fillSlots(s, answers, ctx, slotsToFill(s));
       if (!fill.progress) {
         // Nothing to blame the failure on when the prompt was not a slot's: the slot the form
         // needs next takes the attempt, so the retry ladder still walks somewhere.

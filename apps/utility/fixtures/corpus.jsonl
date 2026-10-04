@@ -58,7 +58,7 @@
 {"id": "fd-01", "text": "next Friday", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "weekday", "firstDateWeekday": "friday"}}
 {"id": "fd-02", "text": "tomorrow", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "relative_day", "firstDateRelative": "tomorrow"}}
 {"id": "fd-03", "text": "the first of October", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "october", "firstDateDay": "1"}}
-{"id": "fd-04", "text": "I'm not sure, whenever works", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "knownGap": {"reason": "'whenever works' at the first-date prompt: the model reads count three (0.62), the value the form already holds, and no date; the engine counts the unchanged count as progress, so ask_firstDate is said again instead of its retry", "outcome": {"promptId": "ask_firstDate"}}}
+{"id": "fd-04", "text": "I'm not sure, whenever works", "intent": "none", "context": "set_up_plan", "prompted": "firstDate"}
 {"id": "fd-05", "text": "no wait, make it the twelfth of October", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "october", "firstDateDay": "12"}}
 {"id": "fd-06", "text": "the twentieth of November", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "november", "firstDateDay": "20"}}
 {"id": "fd-07", "text": "October eighteenth", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "october", "firstDateDay": "18"}}
@@ -83,13 +83,13 @@
 {"id": "om-04", "text": "is there a website that shows outages", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
 {"id": "om-05", "text": "can I see the outages online", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
 {"id": "om-06", "text": "what's the web address for outages", "intent": "outage_map", "context": "no_form"}
-{"id": "om-07", "text": "where can I check when power comes back", "intent": "outage_map", "context": "no_form", "knownGap": {"reason": "'when power comes back': outage_map 0.58 against ask_question 0.41, below the 0.6 an informational answer needs (it has no confirm band), so nomatch_open instead of the outage map", "outcome": {"promptId": "nomatch_open", "acks": [], "verdict": "intent_failed"}}}
+{"id": "om-07", "text": "where can I check when power comes back", "intent": "outage_map", "context": "no_form", "knownGap": {"reason": "'when power comes back': outage_map 0.58 against ask_question 0.41, below the 0.6 an informational answer is said at, so the caller is asked whether they want the outage map (confirm_intent_explicit, the band a form gets) before it is said", "outcome": {"promptId": "confirm_intent_explicit", "acks": [], "verdict": "route"}}}
 {"id": "om-08", "text": "actually, is there a map of outages I can look at", "intent": "outage_map", "context": "report_outage"}
 {"id": "oh-01", "text": "when are you open", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-02", "text": "hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-03", "text": "office hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-04", "text": "what time does the office close", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
-{"id": "oh-05", "text": "are you open on Saturday", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}, "knownGap": {"reason": "'on Saturday' in an office-hours question: the opener asks every slot's question and the model reads firstDate saturday (1.0), so firstDate is filled with 2026-09-19 though no arrangement was asked for; the same answer is said", "outcome": {"slots": {"place": null, "symptom": null, "account": null, "count": null, "firstDate": "2026-09-19", "subject": "office_hours", "accountId": null, "dob": null}}}}
+{"id": "oh-05", "text": "are you open on Saturday", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours", "firstDateMode": "weekday", "firstDateWeekday": "saturday"}}
 {"id": "oh-06", "text": "what are your opening hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-07", "text": "when can I come into the office", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-08", "text": "before that, what are your hours", "intent": "office_hours", "context": "check_balance"}

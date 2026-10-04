@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { checkApp, formatProblem, type GateFacts, type Principal, type ToolCall } from 'dialogwright';
+import { checkApp, formatProblem, newSession, VOICE_RELAY, type GateFacts, type Principal, type ToolCall } from 'dialogwright';
 import { confirmationHash } from 'dialogwright/policy';
 import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, gateEvaluator, policyInvariants, runRuleExamples } from 'dialogwright/testing';
 import { describe, expect, it } from 'vitest';
@@ -75,6 +75,28 @@ describe('the app map', () => {
 
   it('has no dangling reference: every form is started by an intent and every action is reached', () => {
     expect(danglingReferences(app)).toEqual([]);
+  });
+});
+
+describe('the balance form\'s account', () => {
+  const onEntry = code.forms!.check_balance!.onEntry!;
+  /** A call at the balance form whose `account` slot holds `said`, heard before the caller was verified as `principal`. */
+  function entered(principal: Principal, said: string | null) {
+    const s = newSession('t', 0, VOICE_RELAY, principal, app.id);
+    if (said !== null) Object.assign(s.slots.account!, { value: said, display: `${said.slice(0, 4)} ${said.slice(4)}`, confirmed: false });
+    onEntry(s, null);
+    return s.slots.account!;
+  }
+
+  it('is the verified customer\'s, whatever number was said before they verified', () => {
+    // The number said first fills the slot beside the factor (the two are asked in the same words);
+    // the customer then verifies as another account. The console shows the slot: it must be theirs.
+    expect(entered(customerPrincipal('55501234', 1)!, '55505678')).toMatchObject({ value: '55501234', display: '5550 1234', confirmed: true });
+    expect(entered(customerPrincipal('55501234', 1)!, null)).toMatchObject({ value: '55501234', display: '5550 1234', confirmed: true });
+  });
+
+  it('is the one a property manager named', () => {
+    expect(entered(managerPrincipal('riley')!, '55505678')).toMatchObject({ value: '55505678', confirmed: false });
   });
 });
 

@@ -31,7 +31,7 @@ export interface FillResult {
   events: FillEvent[];
   acks: Ack[];
   disambiguate: { slot: SlotId; a: SlotCandidate; b: SlotCandidate } | null;
-  /** true if any slot was filled, narrowed to a window, or needs disambiguation, or asked for help */
+  /** true if any slot was filled with a value it did not hold, narrowed to a new window, or needs disambiguation, or asked for help */
   progress: boolean;
   /** A help prompt to play in place of the question, for the slot the caller was just asked. */
   help: { slot: SlotId; promptId: string } | null;
@@ -72,6 +72,26 @@ export function activeSlots(session: Session): SlotSpec[] {
     return collectsIdentity ? [...factorSlots.map((id) => slotSpecOf(app, id)), ...form.filter((spec) => !factorSlots.includes(spec.id))] : form;
   }
   return Object.values(app.slots).filter((spec) => collectsIdentity || !factorSlots.includes(spec.id));
+}
+
+/**
+ * The slots a turn fills from what it heard: those it listens for (activeSlots), but outside a form
+ * only the ones that belong to the call rather than to a form: the identity factors (where the turn
+ * listens for them) and the slots the app carries from one form to the next (App.carrySlots).
+ *
+ * Outside a form the model is asked about every slot, so that the form a turn routes to hears what
+ * was said for it: enterForm opens the form and then fills it, from this list as it stands inside
+ * the form. A turn that opens no form (an informational answer, a declined transfer) would otherwise
+ * keep values said for no form at all: the topic of the question just answered, a day in it ("are
+ * you open on Saturday"). Left filled, a form asked for later would skip its question and read that
+ * value back as the caller's answer. A form starts from what is said once it is asked for.
+ */
+export function slotsToFill(session: Session): SlotSpec[] {
+  const listening = activeSlots(session);
+  if (session.form) return listening;
+  const app = appOf(session);
+  const callSlots = new Set<SlotId>([...identityOf(app).factorSlots, ...(app.carrySlots ?? [])]);
+  return listening.filter((spec) => callSlots.has(spec.id));
 }
 
 /**
@@ -181,14 +201,19 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         // and silent, but its readback is the form's final confirm rather than a confirm_<slot>
         // prompt of its own. A value already confirmed and spoken again unchanged stays
         // confirmed, so repeating it does not re-open the readback.
+        // Only a value the slot did not already hold is progress, as with a window below and a
+        // correction at the summary (correctingFill, turn.ts): a value spoken again unchanged (one
+        // the form holds, heard again in answer to another slot's question) answers nothing, and
+        // counting it would hold the prompted slot's `attempts` and re-ask its question forever.
         const policy = spec.spokenConfirm;
+        const unchanged = slot.value === outcome.value && slot.window === null;
         const keepConfirmed = slot.confirmed && slot.value === outcome.value;
         slot.value = outcome.value;
         slot.display = outcome.display;
         slot.confirmed = keepConfirmed || (policy === 'by-confidence' && outcome.confirm === 'none');
         slot.window = null;
         if (policy === 'by-confidence' && outcome.confirm === 'implicit') acks.push({ promptId: `ack_${spec.id}`, vars: { [spec.id]: outcome.display } });
-        progress = true;
+        if (!unchanged) progress = true;
         break;
       }
       case 'window': {

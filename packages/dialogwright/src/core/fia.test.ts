@@ -96,6 +96,21 @@ describe('fillSlots', () => {
     expect(r.session.slots.accountId).toMatchObject({ value: '55501234', confirmed: true });
   });
 
+  it('reports no progress when a slot is re-filled with the value it already holds', () => {
+    const s = setForm(newSession('s', 0, VOICE_RELAY), 'track_parcel');
+    s.slots.accountId!.value = '55501234';
+    s.slots.accountId!.display = '5550 1234';
+    const same = fillSlots(s, {
+      containsAccountId: noul(0.9), accountIdSpan: choice({ '55501234': 0.9, none: 0.1 }), accountIdComplete: noul(0.9),
+    }, ctx('55501234'), [SLOTS.accountId]);
+    expect(same.events).toEqual([{ slot: 'accountId', outcome: expect.objectContaining({ kind: 'filled', value: '55501234' }) }]);
+    expect(same.progress).toBe(false);
+    const changed = fillSlots(s, {
+      containsAccountId: noul(0.9), accountIdSpan: choice({ '55505678': 0.9, none: 0.1 }), accountIdComplete: noul(0.9),
+    }, ctx('55505678'), [SLOTS.accountId]);
+    expect(changed.progress).toBe(true);
+  });
+
   it('unconfirms a confirmed slot when re-filled with a different value', () => {
     const s = setForm(newSession('s', 0, VOICE_RELAY), 'track_parcel');
     s.slots.accountId!.value = '55501234';

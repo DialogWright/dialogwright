@@ -469,12 +469,26 @@ describe('evaluateGates', () => {
 
   it('answers an informational intent with its prompt, at the implicit band outside a form and the switch band inside', () => {
     expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.65, none: 0.35 }) })).verdict).toEqual({ kind: 'inform', promptId: 'capabilities' });
-    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.5, none: 0.5 }) })).verdict).toEqual({ kind: 'intent_failed' });
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.35, none: 0.65 }) })).verdict).toEqual({ kind: 'intent_failed' });
     const s = setForm(newSession('s', 0, VOICE_RELAY), 'report_missing');
     const answering = choice({ answering: 0.9, adding: 0.05, replacing: 0.05 });
     expect(run(s, baseAnswers({ intent: choice({ capabilities: 0.9, none: 0.1 }), intentChange: answering })).verdict).toEqual({ kind: 'inform', promptId: 'capabilities' });
     expect(run(s, baseAnswers({ intent: choice({ capabilities: 0.7, none: 0.3 }), intentChange: answering })).verdict).toEqual({ kind: 'proceed' });
     expect(run(s, baseAnswers({ intent: choice({ capabilities: 0.9, none: 0.1 }), intentChange: answering })).rows.find((g) => g.gate === 'intent')).toMatchObject({ outcome: 'inform:capabilities', decided: true });
+  });
+
+  it('confirms an informational intent below the implicit band outside a form, as it confirms a form', () => {
+    // The band a form gets ("Just to check, do you want to ...?"): from INTENT_EXPLICIT up to INTENT_IMPLICIT.
+    const unsure = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.58, other: 0.22, none: 0.2 }) }));
+    expect(unsure.verdict).toEqual({ kind: 'route', intent: 'capabilities', confirm: 'explicit' });
+    expect(unsure.rows.find((g) => g.gate === 'intent')).toMatchObject({ outcome: 'inform_explicit:capabilities', decided: true, threshold: T.INTENT_EXPLICIT });
+    expect(run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.4, none: 0.35, other: 0.25 }) })).verdict).toEqual({ kind: 'route', intent: 'capabilities', confirm: 'explicit' });
+    // A form close behind it is asked about as two forms are: which of the two.
+    const close = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.5, track_parcel: 0.4, none: 0.1 }) }));
+    expect(close.verdict).toEqual({ kind: 'disambiguate_intent', a: 'capabilities', b: 'track_parcel' });
+    // Inside a form nothing changes: an informational intent still needs the switch band.
+    const s = setForm(newSession('s', 0, VOICE_RELAY), 'report_missing');
+    expect(run(s, baseAnswers({ intent: choice({ capabilities: 0.5, none: 0.5 }), intentChange: choice({ answering: 0.9, adding: 0.05, replacing: 0.05 }) })).verdict).toEqual({ kind: 'proceed' });
   });
 
   it('lets an informational intent win over a pending summary and an unanswered confirmation, and carries a rung', () => {
