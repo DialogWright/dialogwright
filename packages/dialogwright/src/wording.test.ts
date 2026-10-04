@@ -36,6 +36,11 @@ const ALLOWED: readonly { path: string; words: readonly string[]; reason: string
     reason: "a clinic's billing line: its billing form asks for the ID on the caller's health plan card, and its billing intent covers a caller asking whether their plan pays for a visit (the intent's criteria, the corpus, the prompts, the recorded cassette and the snapshots of the questions the model sees)",
   },
   {
+    path: 'docs/authoring-an-app.md',
+    words: ['cla' + 'ims?'],
+    reason: "a sign-in token's own term (RFC 7519): identity.yaml's signIn key that names the token field carrying the subject's id, and principals' hook that reads the verified token, are named for it",
+  },
+  {
     path: 'docs/CLA.md',
     words: ['cla' + 'ims?'],
     reason: 'the contributor agreement is legal text: its patent license is over the patent ones a contributor can license',
