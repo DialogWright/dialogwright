@@ -381,6 +381,30 @@ describe('a call\'s languages (voice.numbers, voice.locales)', () => {
     expect(withApp).toContain('" transcriptionProvider="Google" speechModel="telephony" partialPrompts="true"');
   });
 
+  it('writes a Twilio voice that names its provider with that provider, whatever the deployment\'s TTS_PROVIDER', async () => {
+    const app: App = {
+      ...libraryApp,
+      voice: {
+        ...libraryApp.voice,
+        locales: {
+          'en-US': { voices: { twilio: 'en-US-Journey-O' } },
+          es: { tts: 'es-US', voices: { twilio: { voice: 'es-US-Neural2-A', provider: 'Google' }, telnyx: 'Telnyx.Ultra.Asher' } },
+        },
+      },
+    };
+    // No TTS_PROVIDER: the name alone has no provider (Twilio's default), the named one has its own.
+    const plain = await listen({ ...deps(), app });
+    expect((await post(plain, '/voice/twilio', { CallSid: 'CA1' })).text).toContain(
+      '<Language code="en-US" voice="en-US-Journey-O" transcriptionProvider="Deepgram" speechModel="flux"/><Language code="es-US" ttsProvider="Google" voice="es-US-Neural2-A"/>',
+    );
+    await new Promise<void>((r) => server!.close(() => r()));
+    // TTS_PROVIDER=Amazon: the name alone takes the deployment's provider, as before; the named one keeps Google.
+    const amazon = await listen({ ...deps({ TTS_PROVIDER: 'Amazon', TTS_VOICE: 'Joanna-Neural' }), app });
+    expect((await post(amazon, '/voice/twilio', { CallSid: 'CA2' })).text).toContain(
+      '<Language code="en-US" ttsProvider="Amazon" voice="en-US-Journey-O" transcriptionProvider="Deepgram" speechModel="flux"/><Language code="es-US" ttsProvider="Google" voice="es-US-Neural2-A"/>',
+    );
+  });
+
   it('reconnects a call in the language it is in now, not the one it started in', async () => {
     const d = { ...deps(), app: bilingual };
     const base = await listen(d);

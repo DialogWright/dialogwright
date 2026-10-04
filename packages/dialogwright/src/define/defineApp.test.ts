@@ -431,6 +431,35 @@ describe('defineApp: the voice on the phone, by locale and by number called (voi
     ]);
   });
 
+  it('loads a Twilio voice that names its own TTS provider, beside one that is a name alone', () => {
+    const dir = withVoice(
+      '  locales:',
+      '    en-US:',
+      '      voices: { twilio: en-US-Journey-O }',
+      '    es:',
+      '      voices:',
+      '        twilio: { voice: es-US-Neural2-A, provider: Google }',
+      '        telnyx: Telnyx.Ultra.Asher',
+    );
+    const app = defineApp(dir, libraryCode);
+    expect(app.voice?.locales).toEqual({
+      'en-US': { voices: { twilio: 'en-US-Journey-O' } },
+      es: { voices: { twilio: { voice: 'es-US-Neural2-A', provider: 'Google' }, telnyx: 'Telnyx.Ultra.Asher' } },
+    });
+  });
+
+  it('voice: a Twilio voice whose provider Twilio does not have', () => {
+    expect(loadProblems(withVoice('  locales:', '    es:', '      voices: { twilio: { voice: es-US-Neural2-A, provider: Gogle } }'))).toEqual([
+      'app.yaml:25:61  voice.locales.es.voices.twilio.provider  "provider" is "Gogle", which is not allowed here; it must be one of "Google", "Amazon", "ElevenLabs"  ->  change it to "Google"',
+    ]);
+  });
+
+  it('voice: a Telnyx voice written with a provider, which only a Twilio voice takes', () => {
+    expect(problems(libraryCode, withVoice('  locales:', '    es:', '      voices: { telnyx: { voice: Telnyx.Ultra.Asher, provider: Google } }'))).toEqual([
+      'app.yaml:25:17  voice.locales.es.voices.telnyx  a telnyx voice names its provider in its own name; only a Twilio voice takes { voice, provider }  ->  write the voice name alone, like telnyx: Telnyx.Ultra.Asher',
+    ]);
+  });
+
   it('loads a locale\'s recognizer per carrier, a field it leaves out being the carrier\'s default', () => {
     const dir = withVoice(
       '  locales:',

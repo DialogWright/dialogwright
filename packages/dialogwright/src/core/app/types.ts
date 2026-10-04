@@ -646,9 +646,11 @@ export interface VoiceLocale {
   /**
    * The voice, by voice provider id (twilio, telnyx), each in the carrier's own names. It wins over
    * the deployment's voice for that carrier; without it, the default locale has the deployment's and
-   * any other the carrier's default voice.
+   * any other the carrier's default voice. A name alone is spoken with the deployment's TTS provider
+   * (Twilio's TTS_PROVIDER, or Twilio's default when that is unset); a Twilio voice may name its own
+   * provider (`{ voice, provider }`), and a Telnyx voice's name carries its provider.
    */
-  readonly voices?: Readonly<Record<string, string>>;
+  readonly voices?: Readonly<Record<string, string | ProviderVoice>>;
   /** Words the recognizer should expect in this locale, in place of VoiceConfig.hints. */
   readonly hints?: readonly string[];
   /**
@@ -659,6 +661,12 @@ export interface VoiceLocale {
    * and any other the carrier's default, since a deployment's model may hear one language only.
    */
   readonly recognition?: Readonly<Record<string, Recognition>>;
+}
+
+/** A Twilio voice with its TTS provider (one of TWILIO_TTS_PROVIDERS, src/channel/voiceProviders.ts), as Twilio names them. */
+export interface ProviderVoice {
+  readonly voice: string;
+  readonly provider: string;
 }
 
 /** A speech recognizer on one carrier: its provider and its model, in the carrier's own names; a field left out is the carrier's default. */

@@ -363,7 +363,14 @@ export function problemsOf(issue: ZodIssue, src: IssueSource): Problem[] {
 
     case 'invalid_union': {
       const options = 'options' in issue && Array.isArray(issue.options) ? issue.options.map(String) : [];
-      if (options.length === 0) return [make(path, `${subject(path)} is not one of the shapes allowed here`, 'check the field against the schema')];
+      if (options.length === 0) {
+        // A union of shapes (a name, or a map with keys of its own): a value that has the shape of one
+        // branch alone is wrong inside that branch, so the problem is that branch's, said where it is.
+        const branches = 'errors' in issue && Array.isArray(issue.errors) ? (issue.errors as ZodIssue[][]) : [];
+        const fitting = branches.filter((b) => b.length > 0 && !b.some((i) => i.code === 'invalid_type' && i.path.length === 0));
+        if (fitting.length === 1) return fitting[0]!.flatMap((inner) => problemsOf({ ...inner, path: [...issue.path, ...inner.path] } as ZodIssue, src));
+        return [make(path, `${subject(path)} is not one of the shapes allowed here`, 'check the field against the schema')];
+      }
       if (here.node === null) return [missing(path, src, make)];
       const given = isScalar(here.node) ? String(here.node.value) : describeNode(here.node);
       const guess = closest(given, options);

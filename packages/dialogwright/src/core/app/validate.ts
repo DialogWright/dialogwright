@@ -12,7 +12,7 @@ import type { App, ConfigHashes } from './types';
 import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
 import { SLOT_LISTEN_VALUES } from '../slots/types';
-import { RECOGNIZER_NAME, VOICE_PROVIDER_IDS } from '../../channel/voiceProviders';
+import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS, VOICE_PROVIDER_IDS } from '../../channel/voiceProviders';
 
 /** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
 const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
@@ -158,7 +158,13 @@ export function validateApp(app: App): void {
   for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) if (!speaks.includes(tag)) fail(`voice.numbers starts ${number} in the locale "${tag}", which the app does not speak`);
   for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {
     if (!speaks.includes(tag)) fail(`voice.locales names the locale "${tag}", which the app does not speak`);
-    for (const provider of Object.keys(settings.voices ?? {})) if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) fail(`voice.locales.${tag}.voices names the unknown voice provider "${provider}"`);
+    for (const [provider, v] of Object.entries(settings.voices ?? {})) {
+      if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) fail(`voice.locales.${tag}.voices names the unknown voice provider "${provider}"`);
+      if (typeof v === 'string') continue;
+      // Only Twilio names a voice's TTS provider apart from the voice; a Telnyx voice's name carries it.
+      if (provider !== 'twilio') fail(`voice.locales.${tag}.voices.${provider} names a provider, which only a Twilio voice takes: write the voice's name alone`);
+      if (!(TWILIO_TTS_PROVIDERS as readonly string[]).includes(v.provider)) fail(`voice.locales.${tag}.voices.${provider}.provider "${v.provider}" is not one of Twilio's TTS providers (${TWILIO_TTS_PROVIDERS.join(', ')})`);
+    }
     for (const [provider, r] of Object.entries(settings.recognition ?? {})) {
       if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) fail(`voice.locales.${tag}.recognition names the unknown voice provider "${provider}"`);
       // The names go into a carrier's start document: a plain name only, as app.yaml's schema requires.
