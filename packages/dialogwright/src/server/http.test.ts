@@ -257,6 +257,24 @@ describe('routes by voice provider', () => {
     expect(r.status).toBe(200);
     expect(r.text).toContain('<Hangup/>');
   });
+
+  it('decides a legacy /cr-action that names no call on its fields, byte for byte as before providers', async () => {
+    const lines: string[] = [];
+    const base = await listen({ ...deps(), log: (l) => lines.push(l) });
+    const dial = await post(base, '/cr-action', { HandoffData: '{"reasonCode":"billing"}' });
+    expect(dial.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Dial>+15551234567</Dial></Response>');
+    await post(base, '/cr-action', { CallStatus: 'completed', SessionStatus: 'ended' });
+    expect(lines).toContain('/cr-action ? ended -> hangup:ended');
+  });
+
+  it('refuses every signature when a provider has no secret, rather than checking against an empty key', async () => {
+    const d = deps();
+    const base = await listen({ ...d, config: { ...d.config, providerSecrets: {} } });
+    const body = new URLSearchParams({ CallSid: 'CA1' }).toString();
+    const forged = computeTwilioSignature('https://demo.ngrok.app/voice/twilio', { CallSid: 'CA1' }, '');
+    const res = await fetch(base + '/voice/twilio', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-twilio-signature': forged }, body });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('Telnyx webhooks', () => {

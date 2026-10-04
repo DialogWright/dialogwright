@@ -67,12 +67,19 @@ export function voiceProviders(ids: readonly string[]): VoiceProvider[] {
 export type VoicePathBase = '/voice' | '/cr-action' | '/conversation';
 
 /**
- * The enabled provider a path names (`/voice/twilio`), or the legacy provider's for the unprefixed
- * path (`/voice`) when it is enabled; null for anything else, including a provider that is not enabled.
+ * The id of the enabled provider a path names (`/voice/twilio`), or the legacy provider's for the
+ * unprefixed path (`/voice`) when it is enabled; null for anything else, including a provider that
+ * is not enabled, a deeper path and a different case.
  */
-export function providerForPath(enabled: readonly VoiceProvider[], path: string, base: VoicePathBase): VoiceProvider | null {
-  if (path === base) return enabled.find((p) => p.id === LEGACY_PROVIDER) ?? null;
+export function providerIdForPath(enabled: readonly string[], path: string, base: VoicePathBase): string | null {
+  if (path === base) return enabled.includes(LEGACY_PROVIDER) ? LEGACY_PROVIDER : null;
   if (!path.startsWith(`${base}/`)) return null;
   const id = path.slice(base.length + 1);
+  return enabled.includes(id) ? id : null;
+}
+
+/** The enabled provider a path names, as providerIdForPath reads it. */
+export function providerForPath(enabled: readonly VoiceProvider[], path: string, base: VoicePathBase): VoiceProvider | null {
+  const id = providerIdForPath(enabled.map((p) => p.id), path, base);
   return enabled.find((p) => p.id === id) ?? null;
 }

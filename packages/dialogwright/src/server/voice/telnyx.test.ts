@@ -39,6 +39,10 @@ describe('the Telnyx voice provider', () => {
     expect(p).toMatchObject({ callId: 'v2:xyz', from: '+15555550100', to: '+15555550111' });
   });
 
+  it('reads the content type without regard to case', () => {
+    expect(telnyxProvider.parse({ url: '/voice/telnyx', headers: { 'content-type': 'Application/JSON' }, rawBody: '{"call_control_id":"v2:abc"}', nowSec: 0 })?.callId).toBe('v2:abc');
+  });
+
   it('reads a JSON body sent without a content type, and names no call for an unreadable one', () => {
     expect(telnyxProvider.parse({ url: '/voice/telnyx', headers: {}, rawBody: '{"CallSid":"v2:abc"}', nowSec: 0 })?.callId).toBe('v2:abc');
     expect(telnyxProvider.parse({ url: '/voice/telnyx', headers: JSON_TYPE, rawBody: '{not json', nowSec: 0 })).toBeNull();

@@ -25,7 +25,7 @@ import { verifyTelnyxSignature } from './telnyxSignature';
 
 /** The webhook's fields as strings: a JSON object's string fields, or a form body's fields. */
 function fields(req: WebhookRequest): Record<string, string> {
-  const type = req.headers['content-type'] ?? '';
+  const type = (req.headers['content-type'] ?? '').toLowerCase();
   const looksJson = type.includes('application/json') || (type === '' && req.rawBody.trimStart().startsWith('{'));
   if (!looksJson) return formFields(req.rawBody);
   let parsed: unknown;

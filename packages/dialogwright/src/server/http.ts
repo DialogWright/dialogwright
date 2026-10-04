@@ -15,6 +15,7 @@ import { isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly
 import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './voice/provider';
 import { providerForPath, voiceProviders } from './voice/registry';
 import { twilioCallbackParams, twilioProvider } from './voice/twilio';
+import { formFields } from './voice/xml';
 
 export interface HttpDeps {
   config: ServerConfig;
@@ -269,7 +270,9 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       const body = await readBody(req, res);
       if (body === null) return; // 413 already sent by readBody
       const webhook: WebhookRequest = { url: req.url ?? path, headers: lowerHeaders(req.headers), rawBody: body, nowSec: Math.floor(Date.now() / 1000) };
-      if (deps.config.signatureCheck && !provider.verify(webhook, deps.config.providerSecrets[provider.id] ?? '', deps.config.publicHost)) {
+      // A provider with no secret refuses everything: an empty key would make a signature anyone can compute.
+      const secret = deps.config.providerSecrets[provider.id];
+      if (deps.config.signatureCheck && (!secret || !provider.verify(webhook, secret, deps.config.publicHost))) {
         deps.log(`${path}: signature rejected`);
         reply(res, 403, 'text/plain', 'invalid signature');
         return;
@@ -288,8 +291,9 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));
         return;
       }
-      // An action callback that names no call is still answered (with a hangup), as it always was.
-      const callback: CallbackParams = params ?? { callId: '', raw: {} };
+      // An action callback that names no call is still answered, as it always was: the legacy path
+      // decides it on Twilio's fields as before providers, a provider's own path hangs up.
+      const callback: CallbackParams = params ?? (legacy ? twilioCallbackParams(formFields(body)) : { callId: '', raw: {} });
       // Masked at write time: Twilio's form post spells the caller's number four different ways
       // (From/To/Caller/Called), and the frame log must never hold the whole thing on disk.
       deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...callback.raw }));

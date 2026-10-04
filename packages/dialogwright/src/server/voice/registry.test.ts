@@ -3,9 +3,10 @@ import { KNOWN_VOICE_PROVIDERS, providerForPath, secretVarOf, voiceProviders } f
 import { socketProvider } from '../ws';
 
 describe('the voice provider registry', () => {
-  it('knows Twilio, with its secret variable', () => {
+  it('knows Twilio and Telnyx, each with its secret variable', () => {
     expect(KNOWN_VOICE_PROVIDERS).toContain('twilio');
     expect(secretVarOf('twilio')).toBe('TWILIO_AUTH_TOKEN');
+    expect(secretVarOf('telnyx')).toBe('TELNYX_PUBLIC_KEY');
     expect(() => secretVarOf('acme')).toThrow('unknown voice provider "acme"');
     expect(() => secretVarOf('__proto__')).toThrow('unknown voice provider "__proto__"');
   });
@@ -18,6 +19,10 @@ describe('the voice provider registry', () => {
     expect(providerForPath(enabled, '/voice/telnyx', '/voice')).toBeNull();
     expect(providerForPath(enabled, '/voicemail', '/voice')).toBeNull();
     expect(providerForPath(enabled, '/voice/twilio/x', '/voice')).toBeNull();
+    expect(providerForPath(enabled, '/voice/', '/voice')).toBeNull();
+    expect(providerForPath(enabled, '/voice/TWILIO', '/voice')).toBeNull();
+    expect(providerForPath(enabled, '/voice/__proto__', '/voice')).toBeNull();
+    expect(providerForPath(enabled, '/voice/constructor', '/voice')).toBeNull();
     expect(providerForPath([], '/voice', '/voice')).toBeNull();
   });
 
@@ -26,5 +31,9 @@ describe('the voice provider registry', () => {
     expect(socketProvider('/conversation/twilio', ['twilio'])).toBe('twilio');
     expect(socketProvider('/conversation/telnyx', ['twilio'])).toBeNull();
     expect(socketProvider('/conversations', ['twilio'])).toBeNull();
+    expect(socketProvider('/conversation/', ['twilio'])).toBeNull();
+    expect(socketProvider('/conversation/Twilio', ['twilio'])).toBeNull();
+    expect(socketProvider('/conversation/__proto__', ['twilio'])).toBeNull();
+    expect(socketProvider('/conversation', ['telnyx'])).toBeNull();
   });
 });
