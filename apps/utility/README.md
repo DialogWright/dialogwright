@@ -104,14 +104,25 @@ This app's baseline was made once, with `regress --update`, and read entry by en
 
 ## Recording against the real model
 
-The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API, so it is the maintainer's deliberate local step, run by hand with their own key, and never part of CI. This app has no cassette yet: CI runs only its stub regression (`.github/workflows/ci.yml`), and until a cassette is committed, `--client recorded` reports every turn as a cassette miss.
+The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API, so it is the maintainer's deliberate local step, run by hand with their own key, and never part of CI. The committed cassette is `fixtures/recorded/jev-1.13.0.jsonl` (the 307 requests of a full run: every corpus line and every spoken turn of the scripted calls), and CI replays it offline with no secrets (`pnpm --filter @dialogwright/example-utility regress --client recorded`, the last step of `.github/workflows/ci.yml`). The replay must exit 0: no cassette misses, every scripted call passing its expectation, and no difference from the baseline other than the known gaps below.
 
 1. Copy [`.env.example`](.env.example) to `.env` in this folder (it is git-ignored) and put your TypeSafe API key in it as `TYPESAFE_API_KEY`. The launchers do not read `.env` themselves, so load it into your shell: `set -a && source .env && set +a`.
 2. At the repository root: `pnpm --filter @dialogwright/example-utility regress --client record --threshold JEV_TIMEOUT_MS=15000`. It appends each answer to `fixtures/recorded/<model>.jsonl` and aborts after three consecutive client errors. The diff against the stub baseline shows where the real model reads a line differently from its label; that is expected, and it never rewrites the baseline.
-3. Check the replay offline, with the key unset: `pnpm --filter @dialogwright/example-utility regress --client recorded`. A line the model reads differently from its label stays the truth in the corpus and gets a `knownGap` with its reason (see "Known gaps" in the [clinic's README](../../apps/clinic/README.md)).
+3. Check the replay offline, with the key unset: `pnpm --filter @dialogwright/example-utility regress --client recorded`. Triage each difference. Where the model is right and the label was incomplete or wrong, correct the label, edit the baseline entry by hand to the stub's new outcome (the stub regression must still print `no changes`) and log it under "Baseline edits" in [DESIGN.md](DESIGN.md). Where the label is the truth, it stays, and the entry gets a `knownGap` with its reason (below).
 4. Commit the cassette. It holds only the corpus text and the model's answers to it.
 
-A change to the words in the YAML (criteria, labels, prompts, the questions a slot sends) changes what the model is sent, so the replay reports each changed request as a cassette miss until the cassette is recorded again.
+A change to the words in the YAML (criteria, labels, prompts, the questions a slot sends) changes what the model is sent, so the replay reports each changed request as a cassette miss until the cassette is recorded again. So does a new corpus line or a new spoken step: its words were never recorded. A corpus label, by contrast, is read only by the stub, so correcting one leaves the cassette as it is.
+
+### Known gaps
+
+See [docs/known-gaps.md](../../docs/known-gaps.md) for each gap's caller impact and candidate fix, and [DESIGN.md](DESIGN.md) ("Baseline edits", "Gaps") for the triage of the first recording.
+
+Where the decision model reads a corpus line differently from its label and the label is the truth, the entry carries a `knownGap` in `fixtures/corpus.jsonl`: a one-line reason, and the outcome fields the model is known to produce instead, as in the [clinic](../../apps/clinic/README.md). A recorded or live run that shows exactly that outcome prints each difference as `(allowed: knownGap: <reason>)` and does not count it as a failure; any other difference on the entry fails. A stub run ignores `knownGap` and must still match the baseline exactly. Today four entries drift this way:
+
+- `fd-04`: "I'm not sure, whenever works" at the first-date prompt: the model reads the count the form already holds, the engine counts that as progress, and the plain question is asked again instead of its retry.
+- `om-07`: "where can I check when power comes back" splits between the outage map (0.58) and a question (0.41), below the 0.6 an informational answer needs, so the caller hears `nomatch_open`.
+- `oh-05`: "are you open on Saturday" is answered, but the Saturday also fills `firstDate`.
+- `rp-07`: a bare "pardon" in a form is read as no request (0.56) rather than `repeat_prompt` (0.44), so the question's retry is said instead of a replay.
 
 ## Running it
 

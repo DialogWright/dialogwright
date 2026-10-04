@@ -255,7 +255,7 @@
     "slots": {
       "place": null,
       "symptom": null,
-      "account": null,
+      "account": "55505678",
       "count": null,
       "firstDate": null,
       "subject": null,
@@ -308,7 +308,7 @@
     "slots": {
       "place": null,
       "symptom": null,
-      "account": null,
+      "account": "55501234",
       "count": null,
       "firstDate": null,
       "subject": null,
@@ -762,7 +762,7 @@
     "form": "report_outage",
     "slots": {
       "place": null,
-      "symptom": null,
+      "symptom": "no_power",
       "account": null,
       "count": null,
       "firstDate": null,
@@ -968,7 +968,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "outage_map",
       "accountId": null,
       "dob": null
     },
@@ -995,7 +995,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "office_hours",
       "accountId": null,
       "dob": null
     },

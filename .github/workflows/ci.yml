@@ -40,3 +40,4 @@ jobs:
       - run: pnpm --filter @dialogwright/example-clinic regress
       - run: pnpm --filter @dialogwright/example-clinic regress --client recorded
       - run: pnpm --filter @dialogwright/example-utility regress
+      - run: pnpm --filter @dialogwright/example-utility regress --client recorded
