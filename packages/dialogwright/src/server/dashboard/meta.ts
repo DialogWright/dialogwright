@@ -99,14 +99,22 @@ function inlineJson(v: unknown): string {
   return JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 }
 
+/** What the server adds to the page beyond the app's metadata. */
+export interface ConsolePageOptions {
+  /** A Sign out button after the app's links (CONSOLE_AUTH=token). */
+  signOut?: boolean;
+}
+
 /**
  * The console page with the app's metadata in it: `{{name}}` and `{{mark}}` (escaped), `{{links}}`
- * (one header button per line), and `{{meta}}` (the whole ConsoleMeta, as a script literal).
+ * (one header button per line, then Sign out when `options.signOut`), and `{{meta}}` (the whole
+ * ConsoleMeta, as a script literal).
  */
-export function renderConsolePage(template: string, meta: ConsoleMeta): string {
+export function renderConsolePage(template: string, meta: ConsoleMeta, options: ConsolePageOptions = {}): string {
   const links = meta.links
     .map((l) => `    <button id="${escapeHtml(l.id)}" title="${escapeHtml(l.title)}">${escapeHtml(l.label)}</button>\n`)
-    .join('');
+    .join('')
+    + (options.signOut ? '    <form method="post" action="/dashboard/logout" class="signout"><button type="submit" title="Sign this browser out of the console">Sign out</button></form>\n' : '');
   // Replaced by function, so a `$` in a value is never read as a replacement pattern.
   const name = escapeHtml(meta.brand.name);
   const mark = escapeHtml(meta.brand.mark);
