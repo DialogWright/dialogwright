@@ -260,8 +260,11 @@ export const code: AppCode = {
     check_balance: {
       // Needs level 1: an anonymous caller verifies first. The customer's account is the one verified.
       entry: (s) => ({ tool: 'findAccount', params: { accountId: accountIdOf(s) } }),
+      // The slot is set to it, over any number said before verifying: for a customer the slot is
+      // asked beside the account number factor in the same words, so a number said then fills both,
+      // and the console shows the slot. The gate never reads it for a customer (accountIdOf).
       onEntry: (s) => {
-        if (s.principal.kind === 'customer' && s.slots.account && s.slots.account.value === null) {
+        if (s.principal.kind === 'customer' && s.slots.account) {
           Object.assign(s.slots.account, { value: s.principal.id, display: `${s.principal.id.slice(0, 4)} ${s.principal.id.slice(4)}`, confirmed: true, window: null });
         }
       },
