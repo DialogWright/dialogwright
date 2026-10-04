@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { formatProblem } from '../../define/problems';
-import { noul } from '../../testing/answers';
+import { choice, noul } from '../../testing/answers';
 import { shadowSlot } from '../../testing/shadowSlot';
 import { testSlotContext } from '../../testing/slots';
 import { missingNoteSlot } from '../../testing/testkit/oracles/missingNote';
 import { runSlotConformance } from '../conformance/run';
 import { buildSlot, defineSlot, isSlotConfigError, slotTypeJsonSchema } from '../defineSlot';
-import { textType } from './index';
+import { MAX_PICK_CANDIDATES, PICK_WORDS, pickCandidates, pickWordsFor, textType } from './index';
 
 /** The `text` type: the conformance kit over its examples, then what the kit does not cover. */
 runSlotConformance(textType, { describe, it, locales: ['en-US', 'es'] });
@@ -157,7 +157,7 @@ describe('the docs', () => {
   it('the docs page names every option', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/text.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(textType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['ids', 'instructions', 'keep', 'listen', 'maxLength', 'redact', 'say', 'text', 'what']);
+    expect(options.sort()).toEqual(['ids', 'instructions', 'keep', 'listen', 'maxLength', 'pick', 'redact', 'say', 'text', 'what']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
   });
 });
@@ -202,5 +202,136 @@ describe('a text slot in Spanish: its stand-in by locale', () => {
     const bad = buildSlot('note', { ...config, say: null, redact: 'none' }, { wording: { es: { say: 'su nota' } } });
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.problems.map(formatProblem)).toEqual([expect.stringContaining('locale/es/slots.yaml  note.say  unknown key "say"')]);
+  });
+});
+
+describe('pick: the candidates code proposes', () => {
+  const en = PICK_WORDS.en!;
+  const ALDER = 'the power is out at 22 Alder Street and nothing works';
+
+  it('splits at a joining word and offers a clause\'s tail after a preposition, each verbatim', () => {
+    expect(pickCandidates(ALDER, en)).toEqual(['the power is out at 22 Alder Street', '22 Alder Street', 'nothing works']);
+  });
+
+  it('splits at punctuation, but not inside a number or a time', () => {
+    expect(pickCandidates('Yes. It is 14 Birch Lane, by the school!', en)).toEqual(['Yes', 'It is 14 Birch Lane', 'by the school', 'the school']);
+    expect(pickCandidates('1,200 Oak Road at 10:30', en)).toEqual(['1,200 Oak Road at 10:30', '10:30']);
+  });
+
+  it('offers one candidate for a single clause with no preposition: the words themselves', () => {
+    expect(pickCandidates('200 Heron Row', en)).toEqual(['200 Heron Row']);
+    expect(pickCandidates('   ', en)).toEqual([]);
+  });
+
+  it('matches whole words only, case aside, and drops a joining word at either end', () => {
+    expect(pickCandidates('Sandby Road and Anderson Lane', en)).toEqual(['Sandby Road', 'Anderson Lane']);
+    expect(pickCandidates('AND it is out ON Pine Street', en)).toEqual(['it is out ON Pine Street', 'Pine Street']);
+  });
+
+  it('offers each tail of a clause, and each candidate once', () => {
+    expect(pickCandidates('the house on the corner near Elm Park', en)).toEqual(['the house on the corner near Elm Park', 'the corner near Elm Park', 'Elm Park']);
+    expect(pickCandidates('Elm Park and Elm Park', en)).toEqual(['Elm Park']);
+  });
+
+  it(`offers at most ${MAX_PICK_CANDIDATES}, the first in the order said`, () => {
+    const many = 'one, two, three, four, five, six, seven, eight, nine, ten';
+    expect(pickCandidates(many, en)).toEqual(['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']);
+  });
+
+  it('reads Spanish words in Spanish, accents aside, keeping the words as said', () => {
+    const es = pickWordsFor('es-MX');
+    expect(pickCandidates('se fue la luz en la calle Alder 22 y nada funciona', es)).toEqual(['se fue la luz en la calle Alder 22', 'la calle Alder 22', 'nada funciona']);
+    expect(pickCandidates('no hay luz, asi que llamo; está cerca de la plaza Mayor', es)).toEqual(['no hay luz', 'llamo', 'está cerca de la plaza Mayor', 'la plaza Mayor']);
+  });
+
+  it('English with no locale and in en-*; a language with no list splits at punctuation only, unless the slot gives its words', () => {
+    expect(pickWordsFor(undefined)).toEqual(en);
+    expect(pickWordsFor('en-GB')).toEqual(en);
+    const fr = 'la panne est au 22 rue Alder et rien ne marche';
+    expect(pickCandidates(fr, pickWordsFor('fr'))).toEqual([fr]);
+    const own = { fr: { joiners: ['et', 'parce que'], prepositions: ['au', 'près de'] } };
+    expect(pickCandidates(fr, pickWordsFor('fr-CA', own))).toEqual(['la panne est au 22 rue Alder', '22 rue Alder', 'rien ne marche']);
+    expect(pickWordsFor('en-US', { en: { joiners: ['and'] } })).toEqual({ joiners: ['and'], prepositions: en.prepositions });
+  });
+});
+
+describe('pick: the question and the value', () => {
+  const ALDER = 'the power is out at 22 Alder Street and nothing works';
+  const place = defineSlot('place', { type: 'text', what: 'where the problem is', say: null, redact: 'none', pick: { what: 'the street address' } });
+  const given = (p: number) => ({ placeGiven: noul(p) });
+
+  it('declares the pick question, named after the slot', () => {
+    expect(place.questionIds).toEqual(['placeGiven', 'placePick']);
+    expect(place.config).toMatchObject({ pick: { what: 'the street address' } });
+  });
+
+  it('asks which candidate is the value, by letter, with none of these', () => {
+    expect(place.questions(testSlotContext(ALDER)).placePick).toEqual({
+      type: 'choice',
+      instructions: 'Read asr.text. Which of these parts of the caller\'s words is the street address, with nothing else in it?',
+      criteria: { a: 'the power is out at 22 Alder Street', b: '22 Alder Street', c: 'nothing works', none: 'None of these is the street address' },
+    });
+  });
+
+  it('asks only the given question for a single candidate, and none for a value it would keep', () => {
+    expect(Object.keys(place.questions(testSlotContext('200 Heron Row')))).toEqual(['placeGiven']);
+    expect(Object.keys(place.questions(testSlotContext(ALDER, { current: '14 Birch Lane' })))).toEqual(['placeGiven']);
+    expect(Object.keys(place.questions(testSlotContext(ALDER, { current: '14 Birch Lane', prompted: true })))).toEqual(['placeGiven', 'placePick']);
+  });
+
+  it('fills with the picked span, verbatim', () => {
+    const o = place.fill({ ...given(0.9), placePick: choice({ b: 0.88, a: 0.07, c: 0.01, none: 0.04 }) }, testSlotContext(ALDER));
+    expect(o).toEqual({ kind: 'filled', value: '22 Alder Street', display: '22 Alder Street', confidence: 0.9, confirm: 'none' });
+  });
+
+  it('keeps the whole words on none, below SLOT_DETECT, a letter not offered, or no answer', () => {
+    const t = DEFAULT_THRESHOLDS.SLOT_DETECT;
+    for (const pick of [choice({ none: 0.9, b: 0.1 }), choice({ b: t - 0.01, none: t - 0.02, a: 0.03 }), choice({ e: 0.9, none: 0.1 }), undefined]) {
+      expect(place.fill({ ...given(0.9), ...(pick ? { placePick: pick } : {}) }, testSlotContext(ALDER))).toMatchObject({ kind: 'filled', value: ALDER });
+    }
+    expect(place.fill({ ...given(0.9), placePick: choice({ b: t, none: 1 - t }) }, testSlotContext(ALDER))).toMatchObject({ value: '22 Alder Street' });
+  });
+
+  it('is absent when the words are not given, whatever the pick says', () => {
+    expect(place.fill({ ...given(0.1), placePick: choice({ b: 0.95, none: 0.05 }) }, testSlotContext(ALDER))).toEqual({ kind: 'absent' });
+  });
+
+  it('cuts the picked span to maxLength', () => {
+    const short = defineSlot('place', { type: 'text', what: 'where', maxLength: 6, pick: { what: 'the street address' } });
+    expect(short.fill({ ...given(0.9), placePick: choice({ b: 0.9, none: 0.1 }) }, testSlotContext(ALDER))).toMatchObject({ value: '22 Ald', display: 'your description' });
+  });
+
+  it('text.pick, text.pickNone and ids.pick replace the wording and the id', () => {
+    const own = defineSlot('place', {
+      type: 'text', what: 'where', pick: { what: 'the address' },
+      text: { pick: 'Read asr.text. Which is the address?', pickNone: 'No address' }, ids: { pick: 'whichAddress' },
+    });
+    expect(own.questionIds).toEqual(['placeGiven', 'whichAddress']);
+    expect(own.questions(testSlotContext(ALDER)).whichAddress).toMatchObject({ instructions: 'Read asr.text. Which is the address?', criteria: { none: 'No address' } });
+  });
+
+  it('reads the locale\'s words, and the slot\'s own for another language', () => {
+    const es = place.questions(testSlotContext('se fue la luz en la calle Alder 22 y nada funciona', { locale: 'es' })).placePick;
+    expect(es).toMatchObject({ criteria: { a: 'se fue la luz en la calle Alder 22', b: 'la calle Alder 22', c: 'nada funciona' } });
+    const fr = defineSlot('place', { type: 'text', what: 'where', pick: { what: 'the address', words: { fr: { joiners: ['et'], prepositions: ['au'] } } } });
+    expect(fr.questions(testSlotContext('la panne est au 22 rue Alder et rien ne marche', { locale: 'fr' })).placePick).toMatchObject({
+      criteria: { a: 'la panne est au 22 rue Alder', b: '22 rue Alder', c: 'rien ne marche' },
+    });
+  });
+
+  it('refuses pick wording or an id without pick, a pick without what, and a word list with no words', () => {
+    const problems = (config: Record<string, unknown>) => {
+      const r = buildSlot('place', { type: 'text', what: 'where', ...config });
+      return r.ok ? [] : r.problems.map(formatProblem);
+    };
+    expect(problems({ text: { pick: 'Which?' } })).toEqual([
+      '(code)  place.text.pick  text.pick is not used without "pick"  ->  add "pick: { what: ... }", or delete text.pick',
+    ]);
+    expect(problems({ ids: { pick: 'whichAddress' } })).toEqual([
+      '(code)  place.ids.pick  ids.pick is not used without "pick"  ->  add "pick: { what: ... }", or delete ids.pick',
+    ]);
+    expect(problems({ pick: {} })).toEqual([expect.stringContaining('place.pick.what  required key "what" is missing')]);
+    expect(problems({ pick: { what: 'the address', words: { fr: { joiners: [] } } } })).toEqual([expect.stringContaining('place.pick.words.fr.joiners')]);
+    expect(problems({ pick: { what: 'the address', words: { French: { joiners: ['et'] } } } })).toEqual([expect.stringContaining('place.pick.words.French')]);
   });
 });
