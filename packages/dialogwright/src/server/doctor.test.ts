@@ -195,7 +195,7 @@ describe('pnpm diagnose', () => {
   describe('6. the handoff number', () => {
     it('warns about a 555 number', async () => {
       const dir = tempDir();
-      for (const n of ['+15555550123', '+12015550123']) {
+      for (const n of ['+15555550123', '+15550001111']) {
         expect(byId(await runDoctor({ env: { ...goodEnv(dir), HANDOFF_NUMBER: n }, cwd: dir }, deps()), 'handoff')).toMatchObject({ status: 'warn', message: `HANDOFF_NUMBER ${n} is a 555 number: calls handed off will go nowhere` });
       }
     });
