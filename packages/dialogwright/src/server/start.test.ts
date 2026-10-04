@@ -15,7 +15,7 @@ import { SIGNAL_REPEAT_MS } from './index';
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const QUICK = readFileSync(fileURLToPath(new URL('./fixture/cloudflared-quick-2024.txt', import.meta.url)), 'utf8');
-const HOST = 'example-quiet-harbor-words.trycloudflare.com';
+const HOST = 'example-quiet-river-words.trycloudflare.com';
 
 const dirs: string[] = [];
 afterEach(() => {

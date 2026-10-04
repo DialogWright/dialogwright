@@ -25,7 +25,7 @@ function fakeCloudflared(): TunnelProcess & { say(text: string, stream?: 'stdout
 }
 
 describe('quickTunnelHost', () => {
-  for (const [name, host] of [['cloudflared-quick-2024.txt', 'example-quiet-harbor-words.trycloudflare.com'], ['cloudflared-quick-2022.txt', 'sample-river-lantern-test.trycloudflare.com']] as const) {
+  for (const [name, host] of [['cloudflared-quick-2024.txt', 'example-quiet-river-words.trycloudflare.com'], ['cloudflared-quick-2022.txt', 'sample-river-lantern-test.trycloudflare.com']] as const) {
     it(`finds the hostname in ${name}, and not the other https addresses`, () => {
       expect(quickTunnelHost(fixture(name))).toBe(host);
     });
@@ -40,12 +40,12 @@ describe('quickTunnelHost', () => {
   it("never takes trycloudflare.com's own service address, which cloudflared names in its errors", () => {
     const failed = 'ERR failed to request quick Tunnel: Post "https://api.trycloudflare.com/tunnel": dial tcp: lookup api.trycloudflare.com: no such host\n';
     expect(quickTunnelHost(failed)).toBeNull();
-    expect(quickTunnelHost(`${failed}${fixture('cloudflared-quick-2024.txt')}`)).toBe('example-quiet-harbor-words.trycloudflare.com');
+    expect(quickTunnelHost(`${failed}${fixture('cloudflared-quick-2024.txt')}`)).toBe('example-quiet-river-words.trycloudflare.com');
   });
 
   it('reads the hostname in upper case or in JSON logs too', () => {
-    expect(quickTunnelHost('|  HTTPS://Example-Quiet-Harbor-Words.TryCloudflare.com  |')).toBe('example-quiet-harbor-words.trycloudflare.com');
-    expect(quickTunnelHost('{"level":"info","message":"|  https://example-quiet-harbor-words.trycloudflare.com  |"}')).toBe('example-quiet-harbor-words.trycloudflare.com');
+    expect(quickTunnelHost('|  HTTPS://Example-Quiet-River-Words.TryCloudflare.com  |')).toBe('example-quiet-river-words.trycloudflare.com');
+    expect(quickTunnelHost('{"level":"info","message":"|  https://example-quiet-river-words.trycloudflare.com  |"}')).toBe('example-quiet-river-words.trycloudflare.com');
   });
 });
 
@@ -57,7 +57,7 @@ describe('waitForQuickTunnel', () => {
     c.say(text.slice(0, 400));
     c.say(text.slice(400, 520), 'stdout');
     c.say(text.slice(520));
-    await expect(waiting).resolves.toBe('example-quiet-harbor-words.trycloudflare.com');
+    await expect(waiting).resolves.toBe('example-quiet-river-words.trycloudflare.com');
   });
 
   it('gives up with a clear error when no hostname comes in time', async () => {
