@@ -1,6 +1,6 @@
 import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { checkApp, defineApp, formatProblem, loadKnowledgeFolder, registerApp } from 'dialogwright';
+import { APPROVALS_LOG, checkApp, defineApp, formatProblem, loadKnowledgeFolder, parseApprovalLog, registerApp } from 'dialogwright';
 import { ask, call, cleanScratch, codeFor, folder, heard, TODAY } from 'dialogwright/kb/__fixtures__/libraryKbApp';
 import { afterAll, describe, expect, it } from 'vitest';
 import { FOLDER, fakeClock, guardedFetch } from './__fixtures__/server';
@@ -113,6 +113,9 @@ describe('the pipeline: ingest, draft, review, speak', () => {
   it('drafts from an ingested document, refusing what fails a check, and a person approves the rest in the review page before a caller hears it', async () => {
     const { dir, place } = scratchApp('kb-author-pipeline');
     const kbDir = place.kbDir;
+    // The fixture's own approvals are in its log already; this run's are the lines after them.
+    const logged = parseApprovalLog(readFileSync(join(kbDir, APPROVALS_LOG), 'utf8')).length;
+    expect(logged).toBeGreaterThan(0);
 
     // Ingest: the patron guide PDF beside the fixture's own hand-written patron guide source.
     const ingested = await ingest({ input: join(dir, 'docs', 'patron-guide.pdf'), appDir: dir, kbDir, today: TODAY });
@@ -228,7 +231,7 @@ describe('the pipeline: ingest, draft, review, speak', () => {
     // The approved passages load fresh, the app passes its checks, and a caller hears them.
     const kb = loadKnowledgeFolder(kbDir).kb!;
     expect([kb.passages['meeting-rooms']!.freshness, kb.passages['renewing-items']!.freshness]).toEqual(['fresh', 'fresh']);
-    const log = readFileSync(join(kbDir, 'approvals.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { id: string; sourceText: string });
+    const log = parseApprovalLog(readFileSync(join(kbDir, APPROVALS_LOG), 'utf8')).slice(logged);
     expect(log.map((l) => [l.id, l.sourceText])).toEqual([
       ['meeting-rooms', 'Meeting rooms can be booked up to sixty days ahead at no charge by any card holder. Each booking may last up to three hours.'],
       ['renewing-items', 'Most items can be renewed twice, online or at any branch desk, unless another patron has placed a hold on them.\n\nItems borrowed from another library through the interlibrary service cannot be renewed.'],
