@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { loadConfig, describeConfig, consoleExposure, recognitionFor } from './config';
 import { defaultTimeZone } from '../run/clock';
 
@@ -313,3 +316,35 @@ describe('voice providers', () => {
   });
 });
 
+
+describe('the widget file (WIDGET)', () => {
+  it('is off by default, and off leaves the config without it', () => {
+    expect(loadConfig(base).widget).toBeUndefined();
+    expect(loadConfig({ ...base, WIDGET: 'off', WIDGET_FILE: '/nowhere/widget.js' }).widget).toBeUndefined();
+    expect(describeConfig(loadConfig(base))).not.toContain('widget');
+  });
+
+  it('on, serves the file it names, which must exist', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'widget-'));
+    const file = join(dir, 'dialogwright-widget.js');
+    writeFileSync(file, '/* widget */');
+    const c = loadConfig({ ...base, WIDGET: 'on', WIDGET_FILE: file });
+    expect(c.widget).toEqual({ file });
+    expect(describeConfig(c)).toContain(`widget on (${file})`);
+    expect(() => loadConfig({ ...base, WIDGET: 'on', WIDGET_FILE: join(dir, 'missing.js') })).toThrow(
+      `WIDGET_FILE does not exist: ${join(dir, 'missing.js')} (build it with pnpm --filter @dialogwright/widget build)`,
+    );
+    // A directory is not a file to serve.
+    expect(() => loadConfig({ ...base, WIDGET: 'on', WIDGET_FILE: dir })).toThrow(`WIDGET_FILE does not exist: ${dir}`);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('on, defaults to the built bundle in the app\'s node_modules, resolved from where the server runs', () => {
+    const expected = resolve('node_modules/@dialogwright/widget/dist/dialogwright-widget.js');
+    expect(() => loadConfig({ ...base, WIDGET: 'on' })).toThrow(`WIDGET_FILE does not exist: ${expected}`);
+  });
+
+  it('says what is wrong, in the usual words', () => {
+    expect(() => loadConfig({ ...base, WIDGET: 'yes' })).toThrow('WIDGET must be on or off, got "yes"');
+  });
+});

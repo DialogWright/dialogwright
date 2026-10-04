@@ -33,6 +33,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/dialogwright
     devDependencies:
+      '@dialogwright/widget':
+        specifier: workspace:*
+        version: link:../../packages/widget
       '@types/node':
         specifier: ^22
         version: 22.20.5

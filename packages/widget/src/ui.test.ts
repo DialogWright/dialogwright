@@ -220,7 +220,7 @@ describe('the widget', () => {
   it('honours reduced motion and the colour scheme, and takes the site\'s colours', () => {
     expect(STYLES).toContain('prefers-reduced-motion');
     expect(STYLES).toContain('prefers-color-scheme: dark');
-    for (const v of ['--dw-accent', '--dw-bg', '--dw-fg', '--dw-user-bg', '--dw-agent-bg', '--dw-radius', '--dw-font', '--dw-z']) expect(STYLES, v).toContain(`var(${v}`);
+    for (const v of ['--dw-accent', '--dw-accent-fg', '--dw-bg', '--dw-fg', '--dw-user-bg', '--dw-agent-bg', '--dw-radius', '--dw-font', '--dw-z']) expect(STYLES, v).toContain(`var(${v}`);
     // Motion only for those who have not asked for less.
     expect(STYLES.indexOf('transition')).toBeGreaterThan(STYLES.indexOf('prefers-reduced-motion: no-preference'));
   });

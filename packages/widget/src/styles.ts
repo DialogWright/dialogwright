@@ -1,13 +1,14 @@
 /**
  * The panel's stylesheet, inside its shadow root (a site's CSS cannot reach in, and this cannot
  * reach out). A site themes it with custom properties on the host element (`dialogwright-chat`):
- * --dw-accent, --dw-bg, --dw-fg, --dw-user-bg, --dw-agent-bg, --dw-radius, --dw-font, --dw-z. Those
+ * --dw-accent, --dw-accent-fg, --dw-bg, --dw-fg, --dw-user-bg, --dw-agent-bg, --dw-radius, --dw-font, --dw-z. Those
  * it leaves unset follow the visitor's colour scheme; motion is only for those who have not asked
  * for less.
  */
 export const STYLES = `
 :host {
   --_accent: var(--dw-accent, #2f5bd3);
+  --_on-accent: var(--dw-accent-fg, #ffffff);
   --_bg: var(--dw-bg, #ffffff);
   --_fg: var(--dw-fg, #1d1d1f);
   --_user-bg: var(--dw-user-bg, #e8eefc);
@@ -23,7 +24,6 @@ export const STYLES = `
 }
 @media (prefers-color-scheme: dark) {
   :host {
-    --_accent: var(--dw-accent, #7aa2ff);
     --_bg: var(--dw-bg, #1f2023);
     --_fg: var(--dw-fg, #f1f1f3);
     --_user-bg: var(--dw-user-bg, #2c3b63);
@@ -52,7 +52,7 @@ button { cursor: pointer; }
 :focus-visible { outline: 3px solid var(--_accent); outline-offset: 2px; }
 .launcher {
   border: 0; border-radius: 999px; padding: 12px 20px;
-  background: var(--_accent); color: var(--_bg); font-weight: 600;
+  background: var(--_accent); color: var(--_on-accent); font-weight: 600;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 .panel {
@@ -72,7 +72,7 @@ h2 { margin: 0; padding: 14px 48px 14px 16px; font-size: 1.05em; border-bottom: 
   border: 0; border-radius: 50%; background: transparent; font-size: 20px; line-height: 1;
 }
 .log { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
-.line { max-width: 85%; padding: 8px 12px; border-radius: var(--_radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+.line { margin: 0; max-width: 85%; padding: 8px 12px; border-radius: var(--_radius); white-space: pre-wrap; overflow-wrap: anywhere; }
 .row { display: flex; flex-direction: column; }
 .row.user { align-items: flex-end; }
 .row.user .line { background: var(--_user-bg); }
@@ -85,9 +85,9 @@ textarea {
   border: 1px solid var(--_muted); border-radius: var(--_radius); background: var(--_bg);
 }
 .send, .signin {
-  border: 0; border-radius: var(--_radius); padding: 9px 14px; background: var(--_accent); color: var(--_bg); font-weight: 600;
+  border: 0; border-radius: var(--_radius); padding: 9px 14px; background: var(--_accent); color: var(--_on-accent); font-weight: 600;
 }
-.signin { margin: 0 12px 12px; background: transparent; color: var(--_accent); border: 1px solid var(--_accent); }
+.signin { margin: 0 12px 12px; background: transparent; color: var(--_fg); border: 1px solid var(--_accent); }
 button:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (prefers-reduced-motion: no-preference) {
   .panel { transition: opacity 160ms ease, transform 160ms ease; }

@@ -49,6 +49,7 @@ An option it cannot read (an unknown position, a word it does not have, `data-st
 ```css
 dialogwright-chat {
   --dw-accent: #0a7c55;   /* buttons, focus ring */
+  --dw-accent-fg: #ffffff; /* text on the buttons */
   --dw-bg: #ffffff;       /* panel */
   --dw-fg: #1d1d1f;       /* text */
   --dw-user-bg: #e3f4ec;  /* the person's lines */

@@ -135,6 +135,27 @@ function serveClip(req: IncomingMessage, res: ServerResponse, audioDir: string, 
   res.end(req.method === 'HEAD' ? undefined : body);
 }
 
+/** Where the server serves the web chat widget's script when WIDGET=on. */
+export const WIDGET_PATH = '/widget.js';
+
+/**
+ * The widget's built script (WIDGET_FILE), read on each request so a rebuild on the laptop is served
+ * without a restart, and never cached by the browser for the same reason. A file gone since the
+ * server started is a 404, with the reason in the log.
+ */
+function serveWidget(req: IncomingMessage, res: ServerResponse, file: string, log: (line: string) => void): void {
+  let body: Buffer;
+  try {
+    body = readFileSync(file);
+  } catch (e) {
+    log(`widget: could not read ${file}: ${e instanceof Error ? e.message : String(e)}`);
+    reply(res, 404, 'text/plain', 'not found');
+    return;
+  }
+  res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'content-length': body.length, 'cache-control': 'no-cache' });
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
 function isBlank(raw: string | undefined): boolean {
   return raw === undefined || raw.trim() === '';
 }
@@ -306,6 +327,10 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       // A route is handed only the paths that are its own, by the matcher the local-only guard used above.
       for (const route of routes) {
         if (routeOwns(route, path) && (await route.handle(req, res, path))) return;
+      }
+      if (deps.config.widget && (req.method === 'GET' || req.method === 'HEAD') && path === WIDGET_PATH) {
+        serveWidget(req, res, deps.config.widget.file, deps.log);
+        return;
       }
       if ((req.method === 'GET' || req.method === 'HEAD') && path.startsWith('/audio/')) {
         serveClip(req, res, deps.config.audioDir, path.slice('/audio/'.length));

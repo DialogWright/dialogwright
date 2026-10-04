@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { generateKeyPairSync, sign as signEd25519 } from 'node:crypto';
 import { createServer, request, type Server } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clipName, createRequestHandler, decideActionTwiml, type HttpDeps } from './http';
@@ -718,5 +718,51 @@ describe('decideActionTwiml', () => {
     const result = decideActionTwiml(d, { CallSid: 'CA1', HandoffData: '', CallStatus: 'in-progress', SessionStatus: 'failed' });
     expect(result.twiml).toContain('<ConversationRelay');
     expect(result.twiml).not.toContain('<Dial>');
+  });
+});
+
+describe('the widget file (WIDGET=on)', () => {
+  function widgetFile(body: string): string {
+    const file = join(mkdtempSync(join(tmpdir(), 'widget-')), 'dialogwright-widget.js');
+    writeFileSync(file, body);
+    return file;
+  }
+
+  it('serves the built widget at /widget.js, uncached, read afresh each time', async () => {
+    const file = widgetFile('window.DialogWright = 1;');
+    const base = await listen(deps({ WIDGET: 'on', WIDGET_FILE: file }));
+    const r = await get(base, '/widget.js');
+    expect(r.status).toBe(200);
+    expect(r.headers['content-type']).toBe('text/javascript; charset=utf-8');
+    expect(r.headers['cache-control']).toBe('no-cache');
+    expect(r.body.toString()).toBe('window.DialogWright = 1;');
+    const h = await head(base, '/widget.js');
+    expect(h.status).toBe(200);
+    expect(h.headers['content-length']).toBe(String(Buffer.byteLength('window.DialogWright = 1;')));
+    expect(h.body.length).toBe(0);
+    // A rebuild on the laptop is served without a restart.
+    writeFileSync(file, 'window.DialogWright = 2;');
+    expect((await get(base, '/widget.js')).body.toString()).toBe('window.DialogWright = 2;');
+    expect((await get(base, '/widget.js?v=2')).status).toBe(200);
+    expect((await get(base, '/widget.jsx')).status).toBe(404);
+  });
+
+  it('is 404 when off, as any other path is', async () => {
+    const base = await listen(deps());
+    expect((await get(base, '/widget.js')).status).toBe(404);
+  });
+
+  it('is 404, and says why in the log, when the file has gone since the server started', async () => {
+    const file = widgetFile('x');
+    const lines: string[] = [];
+    const base = await listen({ ...deps({ WIDGET: 'on', WIDGET_FILE: file }), log: (l) => lines.push(l) });
+    rmSync(file);
+    expect((await get(base, '/widget.js')).status).toBe(404);
+    expect(lines.some((l) => l.startsWith(`widget: could not read ${file}`))).toBe(true);
+  });
+
+  it('answers only GET and HEAD', async () => {
+    const base = await listen(deps({ WIDGET: 'on', WIDGET_FILE: widgetFile('x') }));
+    expect((await fetch(base + '/widget.js', { method: 'POST', body: 'x' })).status).toBe(404);
   });
 });
