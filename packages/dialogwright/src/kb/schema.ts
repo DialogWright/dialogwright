@@ -13,7 +13,8 @@ import { checkAlways, identifier, matching, text, unique } from '../define/schem
  *   kb/pending/<id>.yaml                drafts waiting for review: never loaded at run time (pnpm kb:approve moves one into passages/)
  *   kb/pending/topics.yaml              topics the drafts propose, as topics.yaml has them: never loaded (pnpm kb:review accepts one into topics.yaml)
  *   kb/rejected/<id>.yaml               drafts a reviewer rejected, with who, when and why: never loaded
- *   kb/approvals.jsonl                  every approval, one JSON line each, appended by pnpm kb:approve and never rewritten
+ *   kb/approvals.jsonl                  every approval, one JSON line each, appended by pnpm kb:approve (or by an app's
+ *                                       migration script, `from: migration`, ./approval.ts ApprovalLogLine) and never rewritten
  *
  * The zod schemas here are the source of truth; the JSON Schemas under packages/dialogwright/schemas
  * (kb-*.schema.json) are generated from them (define/schema/json.ts).

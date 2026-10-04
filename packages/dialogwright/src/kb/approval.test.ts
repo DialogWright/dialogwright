@@ -19,7 +19,7 @@ import { spokenText } from '../prompts/render';
 import { runTurn, type RunOptions, type TurnRun } from '../run/turn';
 import { choice, noul } from '../testing/answers';
 import { fixedRetriever } from '../testing/retrievers';
-import { excerptInSource, notAPerson } from './approval';
+import { excerptInSource, notAPerson, readApprovalLog } from './approval';
 import { BASE, cleanScratch, codeFor, folder, KB_FIXTURE, TODAY } from './__fixtures__/libraryKbApp';
 
 /**
@@ -337,6 +337,43 @@ describe('kb:status', () => {
       '    -> accept, rename or merge each in pnpm kb:review (kb/pending/topics.yaml); a draft of a proposed topic is approved after its topic',
       'pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved',
     ]);
+  });
+
+  it('marks an approval a migration carried over (from: migration in the log), and only while the passage is as migrated', async () => {
+    const kb = kbCopy();
+    const line = (id: string, from: string, extra: Record<string, string> = {}): string => {
+      const p = passage(kb, id);
+      return JSON.stringify({ id, version: p.version, approvedBy: p.approval!.approvedBy, owner: p.approval!.owner, on: p.approval!.on, sourceHash: p.approval!.sourceHash, hash: p.approval!.hash, from, ...extra });
+    };
+    writeFileSync(
+      join(kb, 'approvals.jsonl'),
+      [
+        line('opening-hours', 'migration', { note: 'content unchanged; migrated from the old format' }),
+        line('late-fees-adult', 'migration'),
+        'not a line of the log',
+        // A later line for the same approval is the one the passage stands on.
+        line('card-renewal-adult', 'migration', { note: 'content unchanged' }),
+        line('card-renewal-adult', 'passage'),
+        '',
+      ].join('\n'),
+    );
+    expect(readApprovalLog(kb).map((l) => `${l.id} ${l.from}`)).toEqual(['opening-hours migration', 'late-fees-adult migration', 'card-renewal-adult migration', 'card-renewal-adult passage']);
+    const run = await bin(['kb:status', kb], kb);
+    expect(run.out.slice(0, 9)).toEqual([
+      `${kb}: 7 passages (7 approved and fresh, 0 stale, 0 unapproved), 0 pending drafts`,
+      'approved and fresh (7):',
+      '  card-renewal-adult  2026.1  card_renewal  approved by Branch Manager (Patron Services) on 2025-12-10',
+      '  card-renewal-junior  2026.1  card_renewal  approved by Branch Manager (Patron Services) on 2025-12-10',
+      '  late-fees-adult  2026.1  late_fees  approved by Branch Manager (Patron Services) on 2025-12-10  (migrated)',
+      '  late-fees-adult-2025  2025.1  late_fees  approved by Branch Manager (Patron Services) on 2025-12-10',
+      '  late-fees-junior  2026.1  late_fees  approved by Branch Manager (Patron Services) on 2025-12-10',
+      '  opening-hours  2026.1  opening_hours  approved by Branch Manager (Patron Services) on 2025-12-10  (migrated: content unchanged; migrated from the old format)',
+      '  opening-hours-es  2026.1  opening_hours  approved by Branch Manager (Patron Services) on 2025-12-10',
+    ]);
+    // Edited and approved again by a person: the migration no longer stands for it.
+    edit(join(kb, 'passages/late-fees-adult.yaml'), (t) => t.replace('25 cents a day', '30 cents a day'));
+    expect((await approve(kb, 'late-fees-adult', '--by', 'Jane Smith')).code).toBe(0);
+    expect((await bin(['kb:status', kb], kb)).out[4]).toBe(`  late-fees-adult  2026.1  late_fees  approved by Jane Smith (Patron Services) on ${TODAY}`);
   });
 
   it('says when all is approved and fresh, from the app folder; and why a knowledge base does not load', async () => {

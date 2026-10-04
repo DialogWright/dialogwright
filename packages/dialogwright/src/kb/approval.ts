@@ -49,13 +49,51 @@ export interface ApprovalLogLine {
   on: string;
   sourceHash: string;
   hash: string;
-  /** What was approved: a draft from kb/pending, or a passage already in kb/passages. */
-  from: 'pending' | 'passage';
+  /**
+   * What was approved: a draft from kb/pending, or a passage already in kb/passages (both written by
+   * kb:approve); or `migration`: an approval carried over from the app's earlier format of the same
+   * content by the app's own script, never by kb:approve. A migration line keeps the original
+   * approver, owner and day (`approvedBy`, `owner`, `on`), records the hashes taken under this
+   * format, and says why in `note`; the people who own the content confirm it in review (it is in
+   * the log, and kb:status marks the passages it approved).
+   */
+  from: 'pending' | 'passage' | 'migration';
   /**
    * The source section's text as it was approved (its hash is `sourceHash`), so a review after the
    * source changes can show what changed (kb:review's diff). Lines written before it was kept lack it.
    */
   sourceText?: string;
+  /** For a migration, what was carried over and from where ("content unchanged; migrated from <the earlier format>"). */
+  note?: string;
+}
+
+/**
+ * The lines of a kb folder's approvals.jsonl, oldest first: none when there is no log. A line that
+ * is not JSON, or lacks an id, a hash or a `from`, is passed over: the log is for people, and a line
+ * someone wrote by hand must not stop kb:status.
+ */
+export function readApprovalLog(kbDir: string): ApprovalLogLine[] {
+  const file = join(kbDir, APPROVALS_LOG);
+  if (!existsSync(file)) return [];
+  const lines: ApprovalLogLine[] = [];
+  for (const text of readFileSync(file, 'utf8').split('\n')) {
+    if (text.trim() === '') continue;
+    try {
+      const l = JSON.parse(text) as Partial<ApprovalLogLine> | null;
+      if (l && typeof l.id === 'string' && typeof l.hash === 'string' && typeof l.from === 'string') lines.push(l as ApprovalLogLine);
+    } catch {
+      // a line that does not parse is passed over
+    }
+  }
+  return lines;
+}
+
+/** The log line that recorded a passage's approval as it is now (the last with its id and approval hash), or null. */
+function approvalLineOf(log: readonly ApprovalLogLine[], passage: KbPassage): ApprovalLogLine | null {
+  const hash = passage.approval?.hash;
+  if (hash === undefined) return null;
+  for (let i = log.length - 1; i >= 0; i--) if (log[i]!.id === passage.id && log[i]!.hash === hash) return log[i]!;
+  return null;
 }
 
 /** A knowledge base on disk: its folder, the folder its files are named from, and how problems name it. */
@@ -427,7 +465,13 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
   };
   const where = (p: KbPassage): string => `${base}/sources/${p.source.document}.yaml section "${p.source.section}"`;
   head('approved and fresh', fresh.length);
-  for (const p of fresh) lines.push(`  ${p.id}  ${p.version}  ${p.topic}  approved by ${p.approval!.approvedBy} (${p.approval!.owner}) on ${p.approval!.on}`);
+  const log = readApprovalLog(place.kbDir);
+  for (const p of fresh) {
+    // An approval a migration carried over is marked, so the people who own the content can confirm it.
+    const line = approvalLineOf(log, p);
+    const migrated = line?.from === 'migration' ? `  (migrated${line.note !== undefined ? `: ${line.note}` : ''})` : '';
+    lines.push(`  ${p.id}  ${p.version}  ${p.topic}  approved by ${p.approval!.approvedBy} (${p.approval!.owner}) on ${p.approval!.on}${migrated}`);
+  }
   head('stale, its source changed: withheld', changed.length);
   for (const p of changed) {
     lines.push(`  ${p.id}  ${p.version}  ${p.topic}  ${p.current.sourceHash === null ? `${where(p)} is gone` : `${where(p)} changed`} since ${p.approval!.approvedBy} approved it on ${p.approval!.on}`);

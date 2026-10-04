@@ -59,7 +59,7 @@ export { approvalHashOf, collapseWhitespace, sourceHashOf } from './kb/hash';
 export type { ApprovedContent } from './kb/hash';
 // Authoring the knowledge base (pnpm kb:approve and kb:status, and the @dialogwright/kb-author tools that
 // draft, review and refresh it): approving one passage or draft as the command does, and what waits.
-export { APPROVALS_LOG, approveOne, excerptInSource, formatApproveResult, notAPerson, pendingDrafts, placeOf as kbPlaceOf, proposedTopics } from './kb/approval';
+export { APPROVALS_LOG, approveOne, excerptInSource, formatApproveResult, notAPerson, pendingDrafts, placeOf as kbPlaceOf, proposedTopics, readApprovalLog } from './kb/approval';
 export type { ApprovalLogLine, ApproveOptions, ApproveResult, KbPlace, PendingDraft, ProposedTopic } from './kb/approval';
 export { PENDING_TOPICS_FILE } from './kb/folder';
 export { parseKbFile } from './define/load';
