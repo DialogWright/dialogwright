@@ -1,6 +1,7 @@
 import type { FormId, Intent, SlotId } from './app/types';
 import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
+import type { Nomination } from '../kb/types';
 import { ANONYMOUS } from '../gate/principal';
 import { formOf } from './app/lookup';
 import { appOf, defaultAppId, getApp } from './app/registry';
@@ -49,6 +50,12 @@ export type PendingConfirmation =
        */
       answers: Readonly<AnswerMap>;
       text: string;
+      /**
+       * The topics retrieval nominated for that utterance (SlotContext.nominated), when it ran on its
+       * turn: the confirmed form fills from those words, so its topic slot reads their nominations,
+       * not the yes turn's. Absent when retrieval did not run (and for every app without knowledge).
+       */
+      nominated?: readonly Nomination[];
     }
   | { target: 'slot'; slot: SlotId; value: string; display: string }
   /**

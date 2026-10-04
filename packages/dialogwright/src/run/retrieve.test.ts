@@ -7,14 +7,15 @@ import { isTopicSlot, topicsListening } from '../core/knowledge';
 import { newSession, type Session } from '../core/session';
 import type { SlotContext, SlotSpec } from '../core/slots/types';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
-import { slotContext, type TurnContext } from '../core/turn';
+import { resolve, slotContext, type TurnContext } from '../core/turn';
 import { keyEvents, silenceEvent, speechEvent, startEvent, textEvent } from '../channel/events';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import type { AppKnowledge, KnowledgeBase, Nomination, Retriever } from '../kb/types';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import { loadCorpus } from '../jev/corpus';
-import type { JevClient, JevRequest } from '../jev/types';
+import type { AnswerMap, JevClient, JevRequest } from '../jev/types';
+import { choice, noul, score } from '../testing/answers';
 import { useTestkit } from '../testing/apps';
 import { testkitApp } from '../testing/testkit';
 import { CUSTOMERS } from '../testing/testkit/domain/data';
@@ -268,6 +269,46 @@ describe('the nominations in plan and resolve', () => {
     expect('nominated' in slotContext(session, 'hi', tc())).toBe(false);
     expect(slotContext(session, 'hi', tc({ nominated: NOMINATED })).nominated).toEqual(NOMINATED);
     expect(slotContext(session, 'hi', tc({ nominated: [] })).nominated).toEqual([]);
+  });
+
+  /** The routing words' answers: everything heard, a tentative report, and the note described. */
+  const ROUTE: AnswerMap = {
+    addressedToSystem: noul(0.95), intelligible: noul(0.95), utteranceComplete: noul(0.9), wantsHuman: noul(0.05),
+    rephrasingLastTurn: noul(0.1), confusedByPrompt: noul(0.1), spokeAMenuNumber: noul(0.05), frustration: score({ none: 0.8, mild: 0.15, high: 0.05 }),
+    intent: choice({ report_missing: 0.97, none: 0.03 }), intentTentative: noul(0.9), describesParcel: noul(0.95),
+  };
+  const YES: AnswerMap = { ...ROUTE, intent: choice({ none: 0.95, report_missing: 0.05 }), intentTentative: noul(0.05), confirmsYes: noul(0.95), confirmsNo: noul(0.02) };
+  const MAYBE = 'maybe report a missing parcel, it was a small box left at the gate';
+
+  it('a yes that confirms an intent fills the form from the earlier words with the topics nominated for them, kept with the confirmation', () => {
+    const { app, seen } = appWith({ knowledge: { kb: KB, retriever: fixedRetriever() } });
+    const greeted = resolve(newSession('kb-5', 0, WEB_CHAT, CUSTOMER, app.id), startEvent(), null, tc());
+    const asked = resolve(greeted.session, textEvent(MAYBE), ROUTE, tc({ nominated: NOMINATED }));
+    expect(asked.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_intent_explicit' });
+    expect(asked.session.pendingConfirmation).toEqual({ target: 'intent', intent: 'report_missing', answers: ROUTE, text: MAYBE, nominated: NOMINATED });
+    seen.fill.length = 0;
+    // The yes turn retrieved for "yes" and found nothing; the form fills from the words before it.
+    const yes = resolve(asked.session, textEvent('yes'), YES, tc({ nominated: [] }));
+    expect(yes.session.form).toBe('report_missing');
+    expect(yes.session.slots.missingNote!.value).toBe(MAYBE);
+    const earlier = seen.fill.filter((ctx) => ctx.text === MAYBE);
+    expect(earlier.length).toBeGreaterThan(0);
+    for (const ctx of earlier) expect(ctx.nominated).toEqual(NOMINATED);
+    // What the yes itself fills (the form hears it too) sees the yes turn's own nominations.
+    for (const ctx of seen.fill.filter((c) => c.text === 'yes')) expect(ctx.nominated).toEqual([]);
+  });
+
+  it('without retrieval on the earlier turn, the confirmation keeps no nominations and the form fills without them', () => {
+    const { app, seen } = appWith({ knowledge: { kb: KB, retriever: fixedRetriever() } });
+    const greeted = resolve(newSession('kb-6', 0, WEB_CHAT, CUSTOMER, app.id), startEvent(), null, tc());
+    const asked = resolve(greeted.session, textEvent(MAYBE), ROUTE, tc());
+    expect(asked.session.pendingConfirmation).toEqual({ target: 'intent', intent: 'report_missing', answers: ROUTE, text: MAYBE });
+    seen.fill.length = 0;
+    const yes = resolve(asked.session, textEvent('yes'), YES, tc({ nominated: NOMINATED }));
+    expect(yes.session.form).toBe('report_missing');
+    const earlier = seen.fill.filter((ctx) => ctx.text === MAYBE);
+    expect(earlier.length).toBeGreaterThan(0);
+    for (const ctx of earlier) expect('nominated' in ctx).toBe(false);
   });
 
   it('isTopicSlot is the slot\'s own opt-in', () => {

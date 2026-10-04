@@ -24,6 +24,7 @@ import { decisionToActions, spokenText, type RenderContext } from '../prompts/re
 import { saidCode } from './spokenCode';
 import { matchLocale, slotLocaleOf } from './locale';
 import type { TurnKnowledge } from './knowledge';
+import type { Nomination } from '../kb/types';
 
 export interface TurnContext {
   nowMs: number;
@@ -209,14 +210,15 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
 }
 
 /**
- * The turn context without its nominations: for a slot context built from words other than this
- * turn's (an intent confirmed by a yes fills from what was said before it), which the nominations,
- * retrieved for this turn's words, do not describe.
+ * The turn context for a slot context built from words other than this turn's (an intent confirmed
+ * by a yes fills from what was said before it): this turn's nominations, retrieved for the yes, do not
+ * describe those words, so they are replaced by the ones retrieved for the words themselves on their
+ * own turn (`nominated`, kept with the pending confirmation), or dropped when none were.
  */
-function withoutKnowledge(tc: TurnContext): TurnContext {
-  if (tc.knowledge === undefined) return tc;
+function knowledgeOfWords(tc: TurnContext, nominated: readonly Nomination[] | undefined): TurnContext {
   const { knowledge: _, ...rest } = tc;
-  return rest;
+  if (nominated !== undefined) return { ...rest, knowledge: { nominated } };
+  return tc.knowledge === undefined ? tc : rest;
 }
 
 const withLocale = (locale: string | undefined): { locale?: string } => (locale === undefined ? {} : { locale });
@@ -801,8 +803,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (pc.intent === 'done') return { decision: goodbye(s), events: [] };
       if (!isFormIntent(io.app, pc.intent)) return { decision: failAttempt(s, 'intent', io), events: [] };
       // Fill from what the caller originally said, not from the "yes"; the form hears the yes too.
-      // This turn's nominations were retrieved for the yes, not for what the caller said before it.
-      return enterForm(s, pc.intent, pc.answers, slotContext(s, pc.text, withoutKnowledge(io.tc)), io, undefined, answers);
+      // Its topic slot reads the topics nominated for those words, not this turn's (for the yes).
+      return enterForm(s, pc.intent, pc.answers, slotContext(s, pc.text, knowledgeOfWords(io.tc, pc.nominated)), io, undefined, answers);
     }
     case 'rejected': {
       const pc = s.pendingConfirmation!;
@@ -903,7 +905,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
     }
     case 'route':
       if (verdict.confirm === 'explicit') {
-        s.pendingConfirmation = { target: 'intent', intent: verdict.intent, answers, text: ctx.text };
+        // The words' nominations go with them, for the form the yes opens (only when retrieval ran).
+        s.pendingConfirmation = { target: 'intent', intent: verdict.intent, answers, text: ctx.text, ...(ctx.nominated !== undefined ? { nominated: ctx.nominated } : {}) };
         return { decision: prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, verdict.intent) }, [], ['yes', 'no']), events: [] };
       }
       // "No, that's all" at "anything else?": the call ends with the goodbye alone.
