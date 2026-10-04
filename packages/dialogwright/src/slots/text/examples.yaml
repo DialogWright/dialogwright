@@ -92,7 +92,7 @@
       expect: { kind: filled, value: blue heron on the lake, display: blue heron on the lake, displays: { es: "blue heron on the lake" } }
 
 - name: picking the value out of the words
-  about: "pick: code splits the words into candidate parts, a second question chooses which part is the street address, and the value is that part as said. None of these, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. French is split with the slot's own words; in a Spanish session an English sentence is one clause, so it keeps the whole words."
+  about: "pick: code splits the words into candidate parts, a second question chooses which part is the street address, and the value is that part as said. Two clauses side by side are offered joined as said too, so the corner of Elm and Third can be picked whole. None of these, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. French is split with the slot's own words; in a Spanish session an English sentence is one clause, so it keeps the whole words."
   slot: place
   config:
     what: where the problem is
@@ -139,6 +139,11 @@
         placeGiven: { noul: 0.9 }
         placePick: { choice: { a: 0.06, b: 0.9, c: 0.01, none: 0.03 } }
       expect: { kind: filled, value: la calle Alder 22, display: la calle Alder 22 }
+    - text: meet me at the corner of Elm and Third, by the bank
+      answers:
+        placeGiven: { noul: 0.9 }
+        placePick: { choice: { a: 0.02, b: 0.05, c: 0.01, d: 0.01, e: 0.01, f: 0.04, g: 0.84, none: 0.02 } }
+      expect: { kind: filled, value: the corner of Elm and Third, display: the corner of Elm and Third }
     - text: la panne est au 22 rue Alder et rien ne marche
       context: { locale: fr }
       answers:

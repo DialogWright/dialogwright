@@ -17,8 +17,8 @@ const examples = examplesFrom(new URL('./examples.yaml', import.meta.url));
  * `text`: the caller's own words, kept as said (a description of a problem, a note for a courier).
  * One yes-or-no question asks whether the caller gives them; the value is the turn's words, never
  * a paraphrase. With `pick`, a second question chooses which of the parts code split the words into
- * is the value, and the value is that part, as said. A summary reads the slot back by a stand-in, and the words leave the turn by their
- * length only. See README.md beside this file.
+ * is the value, and the value is that part, as said. A summary reads the slot back by a stand-in,
+ * and the words leave the turn by their length only. See README.md beside this file.
  */
 export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextOptions, TextWording>({
   type: 'text',

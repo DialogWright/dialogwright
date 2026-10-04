@@ -214,7 +214,7 @@ describe('a text slot\'s pick, answered from a corpus label naming the part', ()
   });
 
   it('throws, naming the entry, on a part the question does not offer', async () => {
-    await expect(ask({ placeGiven: true, placePick: 'Alder Street' })).rejects.toThrow(/corpus pk: label "Alder Street" for placePick is not one the question offers \(a, b, c, none\)/);
+    await expect(ask({ placeGiven: true, placePick: 'Alder Street' })).rejects.toThrow(/corpus pk: label "Alder Street" for placePick is not one the question offers \(a, b, c, d, e, none\)/);
   });
 
   it('the heuristic client answers none, so the value is the whole words', async () => {

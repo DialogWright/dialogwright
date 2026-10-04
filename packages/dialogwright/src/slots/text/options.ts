@@ -48,10 +48,10 @@ const pickOption = z
           .describe('The words of one language: either list left out is the built-in one.'),
       )
       .optional()
-      .describe('The joining words and prepositions by language tag ("fr", or "fr-CA" for one region), for a language with no built-in list or to replace one. Built in: English ("and", "but", "so", "because"; "at", "on", "in", "near", "by"), also read with no locale, and Spanish ("y", "e", "pero", "porque", "así que"; "en", "cerca de", "junto a"). A language with neither splits at punctuation only.'),
+      .describe('The joining words and prepositions by language tag ("fr", or "fr-CA" for one region, whose missing list is the language\'s), for a language with no built-in list or to replace one. Built in: English ("and", "but", "so", "because"; "at", "on", "in", "near", "by"), also read with no locale, and Spanish ("y", "e", "pero", "porque", "así que"; "en", "cerca de", "junto a"). A language with neither splits at punctuation only.'),
   })
   .describe(
-    `Pick the value out of the words. Code splits the caller's words into candidate parts (clauses, split at punctuation and at joining words, and each clause's tail after a preposition; each verbatim, at most ${MAX_PICK_CANDIDATES}), and a second question (\`ids.pick\`, default \`<slot>Pick\`) asks which of them is \`pick.what\`, by letter, or none of these. The value is the part chosen, as said; none, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. Default: off, the value is the whole words and only the one question is asked.`,
+    `Pick the value out of the words. Code splits the caller's words into candidate parts (clauses, split at punctuation and at joining words, and each clause's tail after a preposition; then two clauses side by side joined as said, and that join's tails; each verbatim, at most ${MAX_PICK_CANDIDATES}), and a second question (\`ids.pick\`, default \`<slot>Pick\`) asks which of them is \`pick.what\`, by letter, or none of these. The value is the part chosen, as said; none, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. Default: off, the value is the whole words and only the one question is asked.`,
   );
 
 /** The most of the caller's words a text slot keeps, unless maxLength says otherwise. */

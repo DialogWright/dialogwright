@@ -22,9 +22,9 @@ A slot of this type is written under its id in slots.yaml, with `type: text` and
 | `say` | string or null | `your description` | The display: what a line, the console and the model's turn state show in place of the words ("your note"). null: the words themselves. |
 | `keep` | one of `first`, `first-unless-prompted` | `first-unless-prompted` | When a value is on file: "first-unless-prompted" replaces it only when the slot was just asked for; "first" never does. A correction at the summary replaces it either way. |
 | `redact` | one of `length`, `none` | `length` | "length": the words leave the turn (the trace, a tool call's param) as their length only, and the display is kept. "none": as they are. |
-| `pick` | map | unset | Pick the value out of the words. Code splits the caller's words into candidate parts (clauses, split at punctuation and at joining words, and each clause's tail after a preposition; each verbatim, at most 8), and a second question (`ids.pick`, default `<slot>Pick`) asks which of them is `pick.what`, by letter, or none of these. The value is the part chosen, as said; none, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. Default: off, the value is the whole words and only the one question is asked. |
+| `pick` | map | unset | Pick the value out of the words. Code splits the caller's words into candidate parts (clauses, split at punctuation and at joining words, and each clause's tail after a preposition; then two clauses side by side joined as said, and that join's tails; each verbatim, at most 8), and a second question (`ids.pick`, default `<slot>Pick`) asks which of them is `pick.what`, by letter, or none of these. The value is the part chosen, as said; none, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. Default: off, the value is the whole words and only the one question is asked. |
 | `pick.what` | string | required | What the value is, as a noun phrase the pick question names ("the street address"). |
-| `pick.words` | map of map | unset | The joining words and prepositions by language tag ("fr", or "fr-CA" for one region), for a language with no built-in list or to replace one. Built in: English ("and", "but", "so", "because"; "at", "on", "in", "near", "by"), also read with no locale, and Spanish ("y", "e", "pero", "porque", "así que"; "en", "cerca de", "junto a"). A language with neither splits at punctuation only. |
+| `pick.words` | map of map | unset | The joining words and prepositions by language tag ("fr", or "fr-CA" for one region, whose missing list is the language's), for a language with no built-in list or to replace one. Built in: English ("and", "but", "so", "because"; "at", "on", "in", "near", "by"), also read with no locale, and Spanish ("y", "e", "pero", "porque", "así que"; "en", "cerca de", "junto a"). A language with neither splits at punctuation only. |
 | `pick.words.<key>.joiners` | list of string | unset | Words or phrases that join two clauses, where the words are split ("et", "parce que"). Replaces the built-in list of the language. |
 | `pick.words.<key>.prepositions` | list of string | unset | Words or phrases after which a clause's tail is offered too ("au", "près de"). Replaces the built-in list of the language. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: given, pick, pickNone. |
@@ -64,19 +64,20 @@ With `instructions`, its words follow, after a space.
 
 A caller rarely says only the value. Asked where the outage is, they say "the power is out at 22 Alder Street and nothing works", and without `pick` that whole sentence is the value. With `pick: { what: the street address }` on the slot `place`, code splits the words into candidate parts, each copied as said:
 
-- **Clauses.** The words are split at punctuation (`.` `!` `?` `;` `:` `,` before a space or the end, so "1,200" and "10:30" stay whole, and `¿` `¡` and the full-width marks anywhere) and at a joining word, which is dropped: in English "and", "but", "so", "because".
+- **Clauses.** The words are split at punctuation (a mark that ends a clause in any script, such as `.` `!` `?` `;` `:` `,` or `…`, before a space or the end, so "1,200" and "10:30" stay whole; and `¿` `¡` and the full-width marks anywhere) and at a joining word, which is dropped: in English "and", "but", "so", "because". A word with an apostrophe or a hyphen inside it is one word ("O'Neil", "rock-and-roll").
 - **Tails.** After each clause comes its tail after each preposition in it: in English "at", "on", "in", "near", "by".
-- **Each once, at most 8**, in the order said. A ninth part is not offered.
+- **Joined clauses.** Then, for two clauses side by side with only a joining word between them (no punctuation), the two together as said, followed by the tails of that join that start in the first clause. A joining word can sit inside a value: "meet me at the corner of Elm and Third, by the bank" offers "the corner of Elm" and "Third", and then "meet me at the corner of Elm and Third" and "the corner of Elm and Third". Only two clauses are joined at a time ("Elm and Third and Main" offers "Elm and Third" and "Third and Main", never all three).
+- **Each once, at most 8**, in that order: every clause and tail first, in the order said, then the joined parts, in the order said. So a joined part never pushes a clause or a tail out of the 8, and never moves one to another letter. A part past the eighth is not offered.
 
-The sentence above gives three, and the slot asks `placePick` beside `placeGiven`:
+The sentence above gives five, and the slot asks `placePick` beside `placeGiven`:
 
 > Read asr.text. Which of these parts of the caller's words is the street address, with nothing else in it?
 >
-> `a`: the power is out at 22 Alder Street, `b`: 22 Alder Street, `c`: nothing works, `none`: None of these is the street address
+> `a`: the power is out at 22 Alder Street, `b`: 22 Alder Street, `c`: nothing works, `d`: the power is out at 22 Alder Street and nothing works, `e`: 22 Alder Street and nothing works, `none`: None of these is the street address
 
 The model chooses a letter; the value is that part, "22 Alder Street", copied from the words. The model never writes the value: every part it can choose is the caller's own words, cut where code cut them. When it chooses `none`, or its choice is below `SLOT_DETECT`, the value is the whole words, as without `pick`. Words that make one candidate (a single clause with no preposition, "200 Heron Row") are the value as they are, and the pick question is not asked; nor is it while a value on file would be kept (`keep`). The candidates are the criteria, by letter, so a recording holds what the model was offered.
 
-**Locales.** Words match whole, case and accents aside, and a phrase ("así que", "cerca de") matches word by word. The joining words and prepositions are the session's language's: English with no locale and in `en-*`; Spanish ("y", "e", "pero", "porque", "así que"; "en", "cerca de", "junto a") in `es-*`. A language with no built-in list splits at punctuation only, so English words never cut a French sentence. A slot gives its own for any language in `pick.words`, by language tag ("fr", or "fr-CA" for one region), each list replacing the built-in one:
+**Locales.** Words match whole, case and accents aside, and a phrase ("así que", "cerca de") matches word by word. The joining words and prepositions are the session's language's: English with no locale and in `en-*`; Spanish ("y", "e", "pero", "porque", "así que"; "en", "cerca de", "junto a") in `es-*`. A language with no built-in list splits at punctuation only, so English words never cut a French sentence. A slot gives its own for any language in `pick.words`, by language tag ("fr", or "fr-CA" for one region), each list replacing the built-in one; a list a region's entry leaves out is its language's entry's, then the built-in one:
 
 ```yaml
 place:
@@ -92,7 +93,7 @@ place:
 
 The words live in the slot's options, not in `locale/<tag>/slots.yaml`, because they decide what the model is asked, and a locale's wording only ever changes what a slot says.
 
-**Turning it on in an app.** `pick` adds a question to the turns the slot listens on, so the requests the model is sent change: an app that turns it on records its cassette again, and its corpus can label the part picked with the question's id and the part's words (`labels: { placePick: 22 Alder Street }`), which the fixture stub answers with that part's letter.
+**Turning it on in an app.** `pick` adds a question to the turns the slot listens on, so the requests the model is sent change: an app that turns it on records its cassette again, and its corpus can label the part picked with the question's id and the part's words (`labels: { placePick: 22 Alder Street }`), which the fixture stub answers with that part's letter. A letter itself is read as the letter; words that name two parts but for case (said "Elm Park" and "elm park") must be written as said.
 
 ## Examples
 
@@ -208,7 +209,7 @@ reference:
 
 #### picking the value out of the words
 
-pick: code splits the words into candidate parts, a second question chooses which part is the street address, and the value is that part as said. None of these, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. French is split with the slot's own words; in a Spanish session an English sentence is one clause, so it keeps the whole words.
+pick: code splits the words into candidate parts, a second question chooses which part is the street address, and the value is that part as said. Two clauses side by side are offered joined as said too, so the corner of Elm and Third can be picked whole. None of these, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. French is split with the slot's own words; in a Spanish session an English sentence is one clause, so it keeps the whole words.
 
 ```yaml
 place:
@@ -230,7 +231,7 @@ place:
           - près de
 ```
 
-<details><summary>Starter utterances (9)</summary>
+<details><summary>Starter utterances (10)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
@@ -241,6 +242,7 @@ place:
 | Yes, at 14 Birch Lane. By the school. | `placeGiven`: yes 0.93<br>`placePick`: `a` 0.01, `b` 0.1, `c` 0.85, `d` 0.01, `e` 0.01, `none` 0.02 | filled: value `14 Birch Lane`, display `14 Birch Lane` |
 | sorry, one moment, the kids, the dog, the noise, okay, right, well, it is 9 Quarry Hill | `placeGiven`: yes 0.9<br>`placePick`: `a` 0.02, `h` 0.03, `none` 0.95 | filled: value `sorry, one moment, the kids, the dog, the noise, okay, right, well, it is 9 Quarry Hill`, display `sorry, one moment, the kids, the dog, the noise, okay, right, well, it is 9 Quarry Hill` |
 | se fue la luz en la calle Alder 22 y nada funciona<br>_locale es_ | `placeGiven`: yes 0.9<br>`placePick`: `a` 0.06, `b` 0.9, `c` 0.01, `none` 0.03 | filled: value `la calle Alder 22`, display `la calle Alder 22` |
+| meet me at the corner of Elm and Third, by the bank | `placeGiven`: yes 0.9<br>`placePick`: `a` 0.02, `b` 0.05, `c` 0.01, `d` 0.01, `e` 0.01, `f` 0.04, `g` 0.84, `none` 0.02 | filled: value `the corner of Elm and Third`, display `the corner of Elm and Third` |
 | la panne est au 22 rue Alder et rien ne marche<br>_locale fr_ | `placeGiven`: yes 0.9<br>`placePick`: `a` 0.05, `b` 0.91, `c` 0.01, `none` 0.03 | filled: value `22 rue Alder`, display `22 rue Alder` |
 | the lights flicker at night | `placeGiven`: yes 0.2<br>`placePick`: `a` 0.1, `b` 0.1, `none` 0.8 | absent |
 
@@ -250,6 +252,6 @@ place:
 
 - Every slot listens on every turn, so the question is asked even while the form is on another slot. That is why `keep` defaults to `first-unless-prompted`: "and ring the bell" said later must not replace the note.
 - Without `pick`, the value is the whole turn's words, not the part that is the note. If the caller says "yes, leave it by the gate", the value is that sentence. With `pick`, it is the part the model chooses among those code found.
-- The candidates are cut by words, not by meaning: a joining word inside a value splits it too ("the corner of Elm and Third" offers "the corner of Elm" and "Third"). Then the model chooses none, and the value is the whole words.
+- The candidates are cut by words, not by meaning. A joining word inside a value is covered by the joined parts, but only for two clauses side by side with no punctuation between them; a value that spans punctuation ("5 St. James Place", where "St." ends a clause) or three clauses is not offered whole. Then the model chooses none, and the value is the whole words.
 - In another locale the stand-in can be that locale's: `locale/<tag>/slots.yaml` gives `say: <stand-in>` for the slot. The words themselves are the caller's, in whatever language they spoke. A slot whose display is the words (`say: null`) takes none.
 - Run its checks with `pnpm --filter dialogwright test slots/text`.
