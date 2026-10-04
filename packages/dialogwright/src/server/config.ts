@@ -1,13 +1,13 @@
 import { defaultTimeZone, localDateIso } from '../run/clock';
 import { resolveJevProvider, type JevProvider } from '../jev/provider';
 
-export type ClientKind = 'stub' | 'heuristic' | 'jev';
-
-/** ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider). */
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from './voice/registry';
 
+export type ClientKind = 'stub' | 'heuristic' | 'jev';
+
+/** Twilio ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider), for TTS_PROVIDER. */
 const TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
 
 export interface ServerConfig {
