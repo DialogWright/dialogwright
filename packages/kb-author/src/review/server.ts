@@ -35,9 +35,9 @@ import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, 
  * - The Knowledge base tab shows what it holds when nothing waits: every passage (each has a page, an
  *   approved and fresh one too) and every rejected draft (whose page can return it to the drafts).
  *   A passage whose approval a migration carried over is listed to confirm, and its page confirms it.
- * - The operator console is not where it lives: the console has no access control until Phase 8,
- *   and a page that approves what callers are told should not be reachable through the console's
- *   tunnel. It stops with Ctrl-C.
+ * - The operator console is not where it lives: the console's sign-in (CONSOLE_AUTH=token) is for
+ *   one owner watching calls, with no roles to say who may approve, and a page that approves what
+ *   callers are told should not be reachable through the console's tunnel. It stops with Ctrl-C.
  */
 
 export interface ReviewServerOptions {

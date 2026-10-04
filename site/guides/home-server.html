@@ -425,6 +425,11 @@ TYPESAFE_API_KEY=example-key-replace-me
 # The operator console: on (the default), and only for this machine (the default).
 DASHBOARD=on
 CONSOLE_LOCAL_ONLY=on
+# Or look at calls from your phone, through the tunnel, behind a one-time sign-in link
+# (pnpm console:link prints one). A key of your own keeps you signed in across restarts.
+# CONSOLE_AUTH=token
+# CONSOLE_SESSION_HOURS=12
+# CONSOLE_SESSION_KEY=example-key-replace-me
 
 # Where calls are written. Defaults: traces and audit, inside the app's folder.
 TRACE_DIR=/Users/alex/ivr/data/traces
@@ -462,6 +467,10 @@ TIMEZONE=America/Chicago
             variable is required (for <code>custom</code>, <code>JEV_BASE_URL</code> and <code>JEV_MODEL</code> are).</dd>
           <dt><code>CONSOLE_LOCAL_ONLY=on</code></dt>
           <dd>The console (<code>/dashboard</code>) answers only a request made on this machine; through the tunnel it is a 404.</dd>
+          <dt><code>CONSOLE_AUTH</code></dt>
+          <dd><code>local</code> (the default) is the rule above. <code>token</code> opens the console through the tunnel to whoever
+            signs in with a one-time link (<a href="#phone">from your phone</a>). <code>CONSOLE_SESSION_KEY</code>, if you set it,
+            must be 32 random bytes or more (<code>openssl rand -hex 32</code>); the server refuses anything shorter.</dd>
           <dt><code>TRACE_DIR</code>, <code>AUDIT_DIR</code></dt>
           <dd>Absolute paths keep the call data out of the repository, in one place to back up.</dd>
           <dt><code>WIDGET_FILE</code></dt>
@@ -678,6 +687,9 @@ curl -s https://ivr.example.com/health</code></pre>
 <pre data-copy><code>ssh -L 3000:localhost:3000 alex@homebox.local</code></pre>
           </li>
           <li>
+            <p>Or from your phone, with <code>CONSOLE_AUTH=token</code>: <a href="#phone">below</a>.</p>
+          </li>
+          <li>
             <p>Each call leaves two files in the traces folder: <code>&lt;call&gt;.jsonl</code>, its turns (what was heard, what the
               model answered, what the gate decided, how long each step took), and <code>&lt;call&gt;.frames.jsonl</code>, every frame in
               and out. The audit folder has one hash-chained file per UTC day; check the chains:</p>
@@ -685,6 +697,27 @@ curl -s https://ivr.example.com/health</code></pre>
 cd ~/dialogwright &amp;&amp; pnpm audit:verify ~/ivr/data/audit</code></pre>
           </li>
         </ol>
+        <h3 id="phone">Looking at calls from your phone</h3>
+        <p>
+          The console shows each call as it happens, with what the caller said, so by default it stays on the machine. To watch from
+          your phone (or any computer) through the tunnel, set <code>CONSOLE_AUTH=token</code> in the settings file and restart the
+          server. The console then asks for sign-in: a link that works once, for ten minutes. The server writes one when it starts,
+          to a file only you can read (its log names the file, never the link); for a new one, on the machine:
+        </p>
+<pre data-copy><code>cd ~/dialogwright &amp;&amp; ENV_FILE=~/ivr/myline.env pnpm console:link --app myline</code></pre>
+        <p>
+          It prints <code>https://ivr.example.com/dashboard/login?code=...</code>. Send it to your phone (a note to yourself, say),
+          open it, and press <strong>Sign in</strong>: the phone stays signed in for twelve hours (<code>CONSOLE_SESSION_HOURS</code>),
+          or until you press <strong>Sign out</strong> in the console's header. Each new link retires the one before it. A restart signs
+          everyone out unless <code>CONSOLE_SESSION_KEY</code> is set. Without a sign-in, <code>https://ivr.example.com/dashboard</code>
+          shows only the sign-in page, and <code>pnpm diagnose</code> checks that it does.
+        </p>
+        <p>
+          Every sign-in, every refused attempt, the first look at the live feed and every replay of a stored call go into the audit,
+          as <code>console_access</code> entries naming the session by a hash and never the link: the record of who looked at
+          which call. Failed attempts are limited per address and in all. Your app's own pages that are local only (its chats)
+          stay local only.
+        </p>
         <p>
           Then go deeper with <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/live-checks.md">the live checks</a>:
           the Telnyx call that settles the adapter's assumptions, a reconnect, languages, a gateway for the model, and a real
@@ -880,7 +913,8 @@ systemctl --user restart myline              # or: launchctl kickstart -k gui/$(
             script you commit, or a message. The server prints a secret's length, never its value.</li>
           <li><strong>Signature checks on</strong> (<code>SIGNATURE_CHECK=on</code>).</li>
           <li><strong>The console local-only</strong> (<code>CONSOLE_LOCAL_ONLY=on</code>): it shows calls as they happen, with what
-            callers said. Reach it from elsewhere over SSH, never by turning this off.</li>
+            callers said. Reach it from elsewhere with <code>CONSOLE_AUTH=token</code>'s sign-in or over SSH, never by turning this off.
+            Treat a sign-in link like a key: it opens every call for whoever uses it first.</li>
           <li><strong>No port opened on the router.</strong> The tunnel connects out. Turn on the machine's firewall: the server
             needs no incoming connection from the network, only from <code>cloudflared</code> on the same machine.</li>
           <li><strong>The traces hold what callers said.</strong> Treat the data folder as personal data, kept on this machine and in
@@ -897,7 +931,8 @@ systemctl --user restart myline              # or: launchctl kickstart -k gui/$(
           Phase 8 is a machine you own, run for months. Its first part is here: <code>pnpm configure</code>,
           <code>pnpm start</code> with a quick tunnel, settings files, readiness and a drain, retention, <code>pnpm diagnose</code>
           and service files. Next for one machine is a session store that outlives the process, so a restart no longer drops a
-          call; then writes that are never done twice after a crash, carrier fallback documents, and console sign-in. Until the
+          call; then writes that are never done twice after a crash, and carrier fallback documents. Console sign-in is here
+          (<a href="#phone">from your phone</a>). Until the
           store, update when the line is quiet. When one machine is no longer enough, the same app folder is designed to
           run on many servers.
         </p>
