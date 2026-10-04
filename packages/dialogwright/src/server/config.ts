@@ -39,8 +39,17 @@ export interface ServerConfig {
   sessionMaxAgeMs: number;
   timezone: string;
   audioDir: string;
+  /**
+   * TTS_PROVIDER and TTS_VOICE: Twilio's voice for the prompts, set together or not at all. Twilio's
+   * only; another carrier names its voices its own way and never receives these (voiceFor).
+   */
   ttsProvider: string | null;
   ttsVoice: string | null;
+  /**
+   * TELNYX_VOICE, optional: Telnyx's voice for the prompts, a Telnyx voice name, which carries its
+   * engine (`Telnyx.Ultra.Callie`, say). Unset, Telnyx speaks with its default voice.
+   */
+  telnyxVoice: string | null;
   /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
   noInputMs: number;
   /**
@@ -164,6 +173,12 @@ export function loadConfig(env: Env): ServerConfig {
   // the fallback voice for unrecorded segments should be a deliberate match to the recorded
   // clips, not whatever ConversationRelay defaults to.
   if ((ttsProvider === null) !== (ttsVoice === null)) throw new Error('TTS_PROVIDER and TTS_VOICE must be set together');
+  const telnyxVoice = env.TELNYX_VOICE?.trim() || null;
+  // A Telnyx voice is its engine, a dot, then the voice (Telnyx.Ultra.Callie, AWS.Polly.Joanna-Neural,
+  // Azure.en-US-AvaMultilingualNeural). A Twilio voice name here (en-US-Neural2-F) is the likely mistake.
+  if (telnyxVoice && !/^[A-Za-z]+(\.[A-Za-z0-9_-]+)+$/.test(telnyxVoice)) {
+    throw new Error(`TELNYX_VOICE must be a Telnyx voice name like Telnyx.Ultra.Callie, got "${telnyxVoice}"`);
+  }
   return {
     port,
     publicHost,
@@ -184,6 +199,7 @@ export function loadConfig(env: Env): ServerConfig {
     audioDir: env.AUDIO_DIR?.trim() || 'assets/audio',
     ttsProvider,
     ttsVoice,
+    telnyxVoice,
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     jevTimeoutMs: jevTimeout(env),
     screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
@@ -199,6 +215,18 @@ function jevTimeout(env: Env): number {
   const ms = integer(env, 'JEV_TIMEOUT_MS', DEFAULT_THRESHOLDS.JEV_TIMEOUT_MS);
   if (ms <= 0) throw new Error(`JEV_TIMEOUT_MS must be a positive number of milliseconds, got "${env.JEV_TIMEOUT_MS}"`);
   return ms;
+}
+
+/**
+ * The deployment's voice on one carrier, for its start document: Twilio's from TTS_PROVIDER and
+ * TTS_VOICE, Telnyx's from TELNYX_VOICE, and nothing from one carrier's settings ever reaches another.
+ * Empty for a carrier with no voice set, which then speaks with its own default.
+ * Part B's per-locale voices per carrier in app.yaml (voice.locales.<tag>.voices.<provider>) win over these.
+ */
+export function voiceFor(c: ServerConfig, providerId: string): { ttsProvider?: string; voice?: string } {
+  if (providerId === 'twilio') return c.ttsProvider && c.ttsVoice ? { ttsProvider: c.ttsProvider, voice: c.ttsVoice } : {};
+  if (providerId === 'telnyx') return c.telnyxVoice ? { voice: c.telnyxVoice } : {};
+  return {};
 }
 
 /** "a", "a and b", "a, b and c". */
@@ -244,5 +272,6 @@ export function describeConfig(c: ServerConfig): string {
     `anthropic key ${mask(c.anthropicApiKey)}`,
     c.handoffSummary ? `handoff note on${c.anthropicApiKey ? '' : ' (no key: none generated)'}` : 'handoff note OFF',
     c.ttsProvider && c.ttsVoice ? `tts ${c.ttsProvider} ${c.ttsVoice}` : 'tts default',
+    ...(c.voiceProviders.includes('telnyx') ? [`telnyx voice ${c.telnyxVoice ?? 'default'}`] : []),
   ].join('  ');
 }

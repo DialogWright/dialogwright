@@ -37,7 +37,10 @@ export interface StartDocumentOptions {
   readonly publicHost: string;
   readonly token: string;
   readonly hints: string;
-  /** TTS provider and voice for the spoken prompts; a provider decides which of the two it uses. */
+  /**
+   * The carrier's own voice for the spoken prompts (config.ts voiceFor), never another carrier's; a
+   * provider decides which of the two it uses (Telnyx's voice names carry their TTS provider).
+   */
   readonly ttsProvider?: string;
   readonly voice?: string;
 }

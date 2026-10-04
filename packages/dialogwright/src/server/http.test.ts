@@ -324,6 +324,35 @@ describe('Telnyx webhooks', () => {
     expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/telnyx?token=');
   });
 
+  it('gives each carrier only its own voice when a deployment answers on both', async () => {
+    const d = deps({
+      VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY,
+      TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F', TELNYX_VOICE: 'Telnyx.Ultra.Callie',
+    });
+    const base = await listen(d);
+    const telnyx = await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc');
+    expect(telnyx.text).toContain(' voice="Telnyx.Ultra.Callie"/>');
+    expect(telnyx.text).not.toContain('en-US-Neural2-F');
+    expect(telnyx.text).not.toContain('ttsProvider=');
+    for (const path of ['/voice/twilio', '/voice']) {
+      const twilio = await post(base, path, { CallSid: 'CA1' });
+      expect(twilio.text, path).toContain(' ttsProvider="Google" voice="en-US-Neural2-F"/>');
+      expect(twilio.text, path).not.toContain('Telnyx.Ultra.Callie');
+    }
+    // A reconnect keeps the carrier's own voice too.
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    const again = await postTelnyx(base, '/cr-action/telnyx', 'CallSid=v2%3Aabc&CallStatus=in-progress&SessionStatus=failed');
+    expect(again.text).toContain(' voice="Telnyx.Ultra.Callie"/>');
+    expect(again.text).not.toContain('en-US-Neural2-F');
+  });
+
+  it('sends Telnyx no voice when only the Twilio voice is set', async () => {
+    const base = await listen(deps({ VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY, TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' }));
+    const r = await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc');
+    expect(r.status).toBe(200);
+    expect(r.text).not.toContain('voice=');
+  });
+
   it('leaves the legacy Twilio paths unanswered when Twilio is not enabled', async () => {
     const base = await listen(deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY }));
     expect((await post(base, '/voice', { CallSid: 'CA1' })).status).toBe(404);

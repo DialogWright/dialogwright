@@ -68,7 +68,8 @@ function parse(req: WebhookRequest): CallbackParams | null {
 
 /**
  * The TeXML connect document. `ttsProvider` is left out: a Telnyx voice name carries its provider
- * (`Telnyx.NaturalHD.astra`), so the configured voice is passed whole and must be one Telnyx knows.
+ * (`Telnyx.NaturalHD.astra`), so the voice is passed whole. It is the deployment's TELNYX_VOICE
+ * (config.ts voiceFor), never Twilio's TTS_VOICE, whose names Telnyx does not know.
  */
 function startDocument(o: StartDocumentOptions): string {
   const attrs = [

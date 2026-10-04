@@ -1,7 +1,7 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ServerConfig } from './config';
+import { voiceFor, type ServerConfig } from './config';
 import { connectRelayTwiml } from './twiml';
 import type { SessionStore } from './sessions';
 import type { CallTokens } from './tokens';
@@ -139,15 +139,9 @@ function parseHandoff(raw: string): { reasonCode: string } {
   }
 }
 
-/** The start document's options shared by the initial /voice answer and a reconnect. */
-function connectOptions(deps: HttpDeps, token: string): StartDocumentOptions {
-  const { publicHost, ttsProvider, ttsVoice } = deps.config;
-  return {
-    publicHost,
-    token,
-    hints: deps.hints,
-    ...(ttsProvider && ttsVoice ? { ttsProvider, voice: ttsVoice } : {}),
-  };
+/** The start document's options shared by the initial /voice answer and a reconnect, with the carrier's own voice. */
+function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string): StartDocumentOptions {
+  return { publicHost: deps.config.publicHost, token, hints: deps.hints, ...voiceFor(deps.config, provider.id) };
 }
 
 /**
@@ -217,7 +211,7 @@ export function decideAction(
       deps.store.detach(callSid);
       entry.reconnects += 1;
       const token = deps.tokens.mint(callSid);
-      return { document: start(connectOptions(deps, token)), note: `reconnect:${entry.reconnects}` };
+      return { document: start(connectOptions(deps, provider, token)), note: `reconnect:${entry.reconnects}` };
     }
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
@@ -290,7 +284,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         const token = deps.tokens.mint(params.callId);
         // The caller's number is theirs, not the console's: the last four tell calls apart.
         deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}`);
-        const options = connectOptions(deps, token);
+        const options = connectOptions(deps, provider, token);
         reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));
         return;
       }
