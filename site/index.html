@@ -110,7 +110,8 @@
             <p>
               Your laptop to try it, then any machine that stays on: a Mac, a Linux mini PC, a spare desktop. A phone
               line needs two keys, a carrier's (Telnyx or Twilio) and a decision model's, and a tunnel (a quick one
-              needs no account). One process, no database.
+              needs no account). One process, no database: it starts at boot, survives its own restarts without dropping
+              a caller, and shows you calls on your phone. Built.
             </p>
             <p><a href="guides/home-server.html">Run your own IVR on a machine you own</a></p>
           </article>
@@ -118,7 +119,8 @@
             <h3>Many servers, for a business</h3>
             <p>
               The same app behind a load balancer, with sessions in a shared store so that a deploy or a failed server
-              never drops a call. Designed, not built yet: it is Phase 8 of the
+              never drops a call. Designed, not built yet: the seams are in (store interfaces with a contract suite,
+              versioned sessions, idempotent writes), and the shared stores are Phase 8b of the
               <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>.
             </p>
             <p><a href="guides/scaling.html">Scaling out (a design)</a></p>
@@ -364,7 +366,7 @@ apps/utility: ok</code></pre>
     <section id="start" aria-labelledby="start-title">
       <div class="wrap">
         <h2 id="start-title">Quick start</h2>
-        <p class="intro">Requires Node 22.19 or later and pnpm. Nothing needs a key: with no model attached, each app answers from its own labelled examples.</p>
+        <p class="intro">Requires Node 22.19 or later and pnpm. The first four steps need no key: with no model attached, each app answers from its own labelled examples. The fifth needs two.</p>
         <ol class="commands">
           <li>
             <p>Clone the repository and install.</p>
@@ -384,9 +386,15 @@ pnpm install</code></pre>
             <p>Start an app of your own. It passes the checks as created; add <code>--identity</code> for one that verifies callers.</p>
 <pre data-copy><code>pnpm create-app &lt;name&gt;</code></pre>
           </li>
+          <li>
+            <p>Answer a real phone call. With a carrier's key and a model's, and <code>cloudflared</code> installed, it asks for the
+              keys, opens a tunnel that needs no account, and prints the webhook to paste into your number.</p>
+<pre data-copy><code>pnpm configure
+pnpm start --tunnel quick</code></pre>
+          </li>
         </ol>
         <p>
-          To put it on a phone number, follow <a href="guides/home-server.html">Run your own IVR on a machine you own</a>.
+          For the whole first hour, and then a machine that stays on, follow <a href="guides/home-server.html">Run your own IVR on a machine you own</a>.
           Then read <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md">Authoring an app</a>,
           or give an AI coding assistant a paragraph describing your app and point it at the
           <a href="https://github.com/DialogWright/dialogwright/blob/main/.claude/skills/create-app/SKILL.md">create-app skill</a>.

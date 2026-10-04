@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>DialogWright guide: scaling out (a design)</title>
-  <meta name="description" content="How DialogWright is designed to run on many servers behind a load balancer: what must be shared, what a call's WebSocket implies, drain, single sign-on, secrets and observability. A design for Phase 8, not built yet.">
+  <meta name="description" content="How DialogWright is designed to run on many servers behind a load balancer: what one machine already has (store interfaces with a contract suite, a file store, resume, idempotent writes, drain, console sign-in) and what many servers add, Phase 8b, designed and not built yet.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -55,10 +55,13 @@
         whose line must survive a deploy, a crashed instance and a busy Monday.
       </p>
       <div class="banner design">
-        <p><strong>A design, not built yet.</strong> This is how DialogWright is designed to scale, for Phase 8 of the
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a> and later.
-          Today it runs as one process, with its sessions in memory. Where this page names a setting or a command that does
-          not exist yet, it says so.</p>
+        <p><strong>Part built, part designed.</strong> DialogWright runs as one process on one machine, and the seams many servers
+          need are built into it: the session stores sit behind interfaces with one contract suite, a session is versioned and
+          resumes on a restarted server, writes carry idempotency keys, the server says when it is ready and drains before it
+          stops, and the console has a sign-in. Running on many servers on top of those seams is Phase 8b of the
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>, designed and not
+          built yet. Each section below says which is which, and where this page names a setting or a command that does not exist
+          yet, it says so.</p>
         <p><strong>One server is the right answer for most people.</strong> A single process answers a personal line or a small
           office's without strain; <a href="home-server.html">run it on a machine you own</a>. Scale out when you need a deploy that
           never drops a call, or more than one machine's worth of calls.</p>
@@ -66,7 +69,7 @@
       <nav class="toc" aria-label="On this page">
         <h2>On this page</h2>
         <ol>
-          <li><a href="#today">What one process holds today</a></li>
+          <li><a href="#today">What one machine holds today</a></li>
           <li><a href="#shape">The reference shape</a></li>
           <li><a href="#shared">What has to be shared</a></li>
           <li><a href="#sockets">A call's WebSocket</a></li>
@@ -84,19 +87,24 @@
 
     <div class="wrap guide">
       <section id="today" aria-labelledby="today-title">
-        <h2 id="today-title">1. What one process holds today</h2>
+        <h2 id="today-title">1. What one machine holds today</h2>
         <p>
           The design's principle is that the agent failing never means dead air: a turn that fails is asked again and then handed to a
           person; an instance that dies mid-call is replaced by another that resumes the call; a whole service that is down is answered
           by the carrier's fallback URL, static markup from somewhere independent that apologizes and dials the human queue.
-          The single-process version of the middle one exists today: when a call's socket drops, the carrier calls
-          <code>/cr-action</code>, and the same process reconnects the call with a fresh one-time token, up to
-          <code>RECONNECT_LIMIT</code> times, then transfers it politely. What it cannot do is resume a call another process held.
+          The one-machine version of the middle one exists today: when a call's socket drops, the carrier calls
+          <code>/cr-action</code>, and the server reconnects the call with a fresh one-time token, up to
+          <code>RECONNECT_LIMIT</code> times, then transfers it politely. With <code>SESSION_STORE=file:&lt;dir&gt;</code> the call
+          is saved after every turn, so a restarted server on the same machine resumes it; a planned restart hands each call over
+          to the server that starts next, and the carrier's fallback (<code>pnpm fallback</code>) catches a callback that finds no
+          server. What it cannot do yet is resume a call on another machine: that needs a store they share.
         </p>
         <p>
           Everything a call needs lives in the server's memory or on its disk, by design: laptop mode is first-class, and every
-          production piece is to arrive as an interface whose default is the laptop implementation. The table in
-          <a href="#shared">section 3</a> names each piece and where it is in the code.
+          production piece arrives as an interface whose default is the laptop implementation. The session stores already have
+          theirs (<code>CallStateStore</code>, <code>ChatStateStore</code> and <code>TokenStore</code>, with memory and file
+          implementations), and one contract suite, <code>runStoreContract</code>, that a shared store must pass unchanged. The
+          table in <a href="#shared">section 3</a> names each piece and where it is in the code.
         </p>
       </section>
 
@@ -182,8 +190,9 @@
           <li><strong>A load balancer that carries WebSockets</strong>, with an idle timeout longer than the longest call, and no
             sticky sessions. Carrier webhooks are stateless HTTP.</li>
           <li><strong>Shared stores</strong>: sessions in Redis; the audit log in Postgres; traces in object storage; console
-            events over Redis pub/sub. Each is to be chosen by configuration, one at a time (the design's example is
-            <code>SESSION_STORE=redis://...</code>, a variable that does not exist yet).</li>
+            events over Redis pub/sub. Each is to be chosen by configuration, one at a time: <code>SESSION_STORE</code> exists and
+            takes <code>memory</code> or <code>file:&lt;dir&gt;</code> today; a shared value such as <code>redis://...</code> is
+            Phase 8b's.</li>
           <li><strong>A starter setup</strong> on a container platform with WebSockets: two instances, managed Redis and
             Postgres. <strong>Production</strong> on containers across availability zones. <strong>A second region</strong>
             later, as the carrier's fallback target.</li>
@@ -191,13 +200,14 @@
             retention policies and in-region data.</li>
           <li><strong>Locally</strong>, the design has <code>pnpm dev:stack</code> bring up Redis, Postgres and an object-storage
             stand-in with <code>docker compose</code>, two instances behind a local load balancer, where the kill-an-instance test
-            runs (planned).</li>
+            runs (planned, Phase 8b). Its one-machine version runs today: <code>server/restart.e2e.test.ts</code> kills the server
+            mid-call and resumes the call on a new process.</li>
         </ul>
       </section>
 
       <section id="shared" aria-labelledby="shared-title">
         <h2 id="shared-title">3. What has to be shared</h2>
-        <p>Each piece of state one process keeps today, and what it needs when there are many:</p>
+        <p>Each piece of state one machine keeps today, and what it needs when there are many:</p>
         <div class="table-wrap">
           <table class="stack">
             <thead>
@@ -206,28 +216,30 @@
             <tbody>
               <tr>
                 <td data-label="State">Call sessions, and each call's queue of turns</td>
-                <td data-label="Today (in the code)">A map in memory (<code>SessionStore</code>, <code>server/sessions.ts</code>): each call's session, its turn chain
-                  (<code>tail</code>, so turns run one at a time) and the turns in flight. Idle ones are evicted after
-                  <code>SESSION_TTL_MS</code>.</td>
-                <td data-label="Across instances">The core already returns a new serializable session each turn. It is saved after every turn, keyed by call or chat
-                  id, with a time-to-live and a schema version (a resume onto an incompatible version hands off politely). One
+                <td data-label="Today (in the code)">The live part in memory (<code>SessionStore</code>, <code>server/sessions.ts</code>): each call's socket, its turn
+                  chain (<code>tail</code>, so turns run one at a time) and the turns in flight. With <code>SESSION_STORE=file:</code>
+                  the session is saved after every turn (<code>CallStateStore</code>, <code>server/stores/</code>) with its
+                  <code>SESSION_SCHEMA</code>, and a restarted server loads it (a resume onto another schema hands off politely).</td>
+                <td data-label="Across instances">The same <code>CallStateStore</code>, shared, passing the same contract suite, so any instance loads any call. One
                   instance must own a call's turns at a time: a lock or lease per call id in the store.</td>
               </tr>
               <tr>
                 <td data-label="State">One-time socket tokens</td>
-                <td data-label="Today (in the code)">A map in memory (<code>CallTokens</code>, <code>server/tokens.ts</code>): one per call, 10 minutes, tied to the
-                  call and to the carrier that minted it.</td>
+                <td data-label="Today (in the code)">A <code>TokenStore</code> (<code>CallTokens</code> in memory, or <code>tokens.json</code> with the file store), kept only
+                  as SHA-256: one per call, 10 minutes, tied to the call and to the carrier that minted it.</td>
                 <td data-label="Across instances">Shared, with the same expiry, and still single-use: the instance that takes the socket must recognise a token
-                  another instance minted.</td>
+                  another instance minted. The server calls its token store synchronously today; a networked one needs those calls
+                  awaited.</td>
               </tr>
               <tr>
                 <td data-label="State">The reconnect counter</td>
-                <td data-label="Today (in the code)">A field of the call's entry (<code>reconnects</code>), checked against <code>RECONNECT_LIMIT</code>.</td>
+                <td data-label="Today (in the code)">A field of the call's entry (<code>reconnects</code>), saved with the call, checked against <code>RECONNECT_LIMIT</code>.</td>
                 <td data-label="Across instances">Part of the shared session, incremented atomically, or two instances could each grant the last reconnect.</td>
               </tr>
               <tr>
                 <td data-label="State">Chat sessions and resume tokens</td>
-                <td data-label="Today (in the code)">Maps in memory (<code>server/chat/socket.ts</code>); a fresh resume token with every <code>ready</code>.
+                <td data-label="Today (in the code)">In memory (<code>server/chat/socket.ts</code>), and with the file store saved as a <code>ChatStateStore</code>
+                  record found by its resume token's hash; a fresh resume token with every <code>ready</code>.
                   <code>CHAT_MAX_SESSIONS</code> counts this process's chats.</td>
                 <td data-label="Across instances">Shared, so a resume reaches any instance (<a href="#chat">section 5</a>). The limit becomes per instance, or
                   moves to the store.</td>
@@ -252,8 +264,8 @@
               <tr>
                 <td data-label="State">The knowledge base's index</td>
                 <td data-label="Today (in the code)">A committed file in the app folder (<code>kb/.index</code>), read at start.</td>
-                <td data-label="Across instances">Read-only, so it ships in the image and every instance reads its own copy. pgvector is planned behind the same
-                  <code>VectorIndex</code> interface for production.</td>
+                <td data-label="Across instances">Read-only, so it ships in the image and every instance reads its own copy. pgvector behind the same
+                  <code>VectorIndex</code> interface is a candidate for production, beside the Postgres audit.</td>
               </tr>
             </tbody>
           </table>
@@ -277,7 +289,8 @@
         <dl>
           <dt>The session in a shared store (the design's choice)</dt>
           <dd>Any instance can take any step: it reads the token, the counter and the session from the store, and the call resumes
-            ("Sorry, I lost you for a moment"). The load balancer needs no affinity. This is what Phase 8 builds.</dd>
+            ("Sorry, I lost you for a moment"). The load balancer needs no affinity. On one machine this is built: a restarted
+            server loads the call from the file store. Across instances it needs Phase 8b's shared store.</dd>
           <dt>Route by call id</dt>
           <dd>Keep state in memory and have the load balancer send every step of a call to the instance that holds it. Today the
             socket's URL carries only the token, so a balancer cannot see the call id at the upgrade; it would need the call id, or
@@ -294,8 +307,8 @@
         <h2 id="chat-title">5. Web chat across instances</h2>
         <p>
           A chat outlives its socket: the client reconnects with the resume token from the last <code>ready</code> and carries on, until
-          <code>CHAT_IDLE_MS</code> of quiet ends it. Today the session is in the memory of the instance that started it, so a resume
-          reaches only that instance. Across instances, the session and its resume token live in the shared store, a resume rotates
+          <code>CHAT_IDLE_MS</code> of quiet ends it. Today the session lives on the machine that started it (and, with the file store,
+          survives that server's restart), so a resume reaches only that machine. Across instances, the session and its resume token live in the shared store, a resume rotates
           the token there, and a resume that takes a chat over must close the old socket on whichever instance holds it (over the same
           pub/sub the console uses). The widget needs no change: it already reconnects and resumes with backoff.
         </p>
@@ -307,30 +320,36 @@
           When an instance dies after a tool started a write (booking an appointment, filing a report) but before the session recorded
           it, the call resumes elsewhere and the turn may run again. So every write tool gets a key derived from the session (the call
           id, the form, a hash of the confirmed values): a retry with the same key never acts twice. In-flight effects are recorded in
-          the session and re-issued with the same key. The tool context is to provide timeouts, retries with those keys, a circuit
-          breaker and caching, declared per tool. Your own systems must honour the key; the engine can only send it.
+          the session and re-issued with the same key. <strong>Built:</strong> a tool that declares <code>idempotent: true</code> gets
+          <code>ctx.idempotencyKey</code>, the same for the same confirmed write; a downstream service request always carries a key,
+          recorded in the call before it is sent and sent again once, with the same key, by a server that resumes a call waiting
+          on it. Still to come: timeouts, retries with those keys, a circuit breaker and caching, declared per tool. Your own systems
+          must honour the key; the engine can only send it.
         </p>
       </section>
 
       <section id="deploys" aria-labelledby="deploys-title">
         <h2 id="deploys-title">7. Readiness and drain</h2>
         <p>
-          Today, on SIGTERM or SIGINT the server stops its sweeps, waits for turns already in flight (up to two seconds), closes every
-          socket and exits (<code>server/index.ts</code>). <code>/health</code> answers <code>{"ok":true,"sessions":N,"retained":M}</code>
-          whenever the process is up; there is no separate readiness.
+          Built for one machine: <code>/ready</code> answers 503 once the server stops taking new calls, while <code>/health</code>
+          stays liveness. On SIGTERM or SIGINT it drains for <code>DRAIN_MS</code> (30 seconds by default): a new call goes to
+          the handoff number, a new chat is told it is busy, and live calls go on. With the file store, a call still live at the
+          end is handed over: its carrier is told to wait <code>RESTART_PAUSE_S</code> seconds and connect again, and the stopping
+          server refuses sockets until it exits, so the connection reaches the server that starts next.
         </p>
         <p>
           The design for a rolling deploy: new instances report ready before they take traffic; old ones stop taking new calls and keep
           serving the ones they have; after a drain limit (about 15 minutes) they close the remaining sockets, and those calls reconnect
-          to the new version from the shared session. The test that proves it is the kill-an-instance test: a deploy never drops a call.
+          to the new version from the shared session (Phase 8b). The test that proves it is the kill-an-instance test: a deploy never drops a call.
         </p>
       </section>
 
       <section id="console" aria-labelledby="console-title">
         <h2 id="console-title">8. The console behind single sign-on</h2>
         <p>
-          On one machine the console is kept off the internet by <code>CONSOLE_LOCAL_ONLY</code>, or opened to its one owner through
-          the tunnel by <code>CONSOLE_AUTH=token</code>'s one-time sign-in link, with each sign-in and replay in the audit. Across
+          Built for one machine: the console is kept off the internet by <code>CONSOLE_LOCAL_ONLY</code>, or opened to its one owner
+          through the tunnel by <code>CONSOLE_AUTH=token</code>'s one-time sign-in link (an HMAC-signed session cookie, rate-limited
+          sign-ins, a strict Content-Security-Policy), with each sign-in and replay in the audit. Across
           instances it becomes its own role (<code>--role console</code>), internal only, behind single sign-on or a VPN, reading the
           shared stores. The design adds roles (viewer, supervisor, admin) to the sign-in, and the
           access log of who replayed which call goes to the shared audit store.
@@ -383,16 +402,19 @@
           with the provider. Each request has a budget, <code>JEV_TIMEOUT_MS</code> (1500 ms by default); the client retries once within it,
           so a caller waits up to twice that on a turn the model never answers, then hears the slow-turn line with the question still open.
           A turn that fails is asked again, then handed to a person. A per-instance cap on requests in flight, so that a surge queues rather
-          than trips the provider's limit, belongs with Phase 8's resilient tools.
+          than trips the provider's limit, belongs with the resilient tools (design §11), not built yet.
         </p>
       </section>
 
       <section id="roadmap" aria-labelledby="roadmap-title">
         <h2 id="roadmap-title">12. The roadmap</h2>
         <p>
-          Phase 8, production: store interfaces with production implementations, resume across instances, idempotent writes, readiness and
-          drain, a <code>docker compose</code> stack, a reference deployment and console access control, proved by the kill-an-instance test.
-          Laptop mode stays first-class throughout: the same code runs in both modes, and contract tests keep the implementations honest.
+          Phase 8, local-first on a machine you own, is done: the store interfaces and their contract suite, a file store, resume
+          after a restart, idempotent writes, readiness and drain, retention, service files, carrier fallback documents and console
+          sign-in, proved by the kill-the-server test. Phase 8b, many servers, is planned: shared stores passing the same contract
+          suite, the audit in Postgres, traces in object storage, console events over pub/sub, <code>--role</code>, a container image
+          and a <code>docker compose</code> stack where the kill-an-instance test runs, and console roles with single sign-on.
+          Laptop mode stays first-class throughout: the same code runs in every mode, and the contract suite keeps the implementations honest.
         </p>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">The roadmap</a>
