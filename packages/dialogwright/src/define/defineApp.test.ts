@@ -374,6 +374,76 @@ describe('defineApp: the locales an App has', () => {
   });
 });
 
+describe('defineApp: the voice on the phone, by locale and by number called (voice.locales, voice.numbers)', () => {
+  const APP_YAML = readFileSync(join(LIBRARY_DIR, 'app.yaml'), 'utf8');
+  /** The library's app.yaml with `lines` added to its voice block (they start at line 23). */
+  const withVoice = (...lines: string[]): string => {
+    const text = APP_YAML.replace('      spell: lead\n', `      spell: lead\n${lines.join('\n')}\n`);
+    expect(text).not.toBe(APP_YAML);
+    return folder({ 'app.yaml': text });
+  };
+
+  it('loads a voice block that names each locale\'s languages, voices and hints, and the locale a number starts in', () => {
+    const dir = withVoice(
+      '  numbers:',
+      '    "+15555550142": es',
+      '  locales:',
+      '    en-US:',
+      '      voices: { twilio: en-US-Journey-O, telnyx: Telnyx.Ultra.Callie }',
+      '    es:',
+      '      tts: es-US',
+      '      transcription: es-MX',
+      '      voices: { twilio: es-US-Journey-F, telnyx: Telnyx.Ultra.Asher }',
+      '      hints: [renovar, reserva, sucursal]',
+    );
+    const app = defineApp(dir, libraryCode);
+    expect(app.voice?.numbers).toEqual({ '+15555550142': 'es' });
+    expect(app.voice?.locales).toEqual({
+      'en-US': { voices: { twilio: 'en-US-Journey-O', telnyx: 'Telnyx.Ultra.Callie' } },
+      es: { tts: 'es-US', transcription: 'es-MX', voices: { twilio: 'es-US-Journey-F', telnyx: 'Telnyx.Ultra.Asher' }, hints: ['renovar', 'reserva', 'sucursal'] },
+    });
+    expect(undefinedKeys(app.voice)).toEqual([]);
+    // Without them, the voice is as it was.
+    expect(Object.keys(libraryApp.voice!)).toEqual(['hints', 'spokenDigits']);
+  });
+
+  it('voice: a locale the app does not have, under voice.locales', () => {
+    expect(problems(libraryCode, withVoice('  locales:', '    fr-CA:', '      tts: fr-CA'))).toEqual([
+      'app.yaml:24:5  voice.locales.fr-CA  "fr-CA" is not a locale of this app  ->  add locale/fr-CA/ or use one of en-US, es',
+    ]);
+  });
+
+  it('voice: a number that starts a call in a locale the app does not have', () => {
+    expect(problems(libraryCode, withVoice('  numbers:', '    "+15555550142": fr'))).toEqual([
+      'app.yaml:24:21  voice.numbers["+15555550142"]  "fr" is not a locale of this app  ->  add locale/fr/ or use one of en-US, es',
+    ]);
+  });
+
+  it('voice: a number that is not E.164', () => {
+    expect(loadProblems(withVoice('  numbers:', '    "555-0142": es'))).toEqual([
+      'app.yaml:24:5  voice.numbers["555-0142"]  the key "555-0142" must be an E.164 number like +15555550142  ->  write the number with + and the country code, in quotes ("+15555550142")',
+    ]);
+  });
+
+  it('voice: a voice for a provider the engine does not know', () => {
+    expect(problems(libraryCode, withVoice('  locales:', '    es:', '      voices: { twilio: es-US-Journey-F, acme: Clara }'))).toEqual([
+      'app.yaml:25:42  voice.locales.es.voices.acme  unknown voice provider "acme"  ->  use twilio or telnyx',
+    ]);
+  });
+
+  it('voice: tts and transcription must be language tags', () => {
+    expect(loadProblems(withVoice('  locales:', '    es:', '      tts: Spanish', '      transcription: es_MX'))).toEqual([
+      expect.stringMatching(/^app\.yaml:25:12 {2}voice\.locales\.es\.tts {2}"Spanish" is not a language tag like "en-US" or "fr" {2}-> {2}write a language tag/),
+      expect.stringMatching(/^app\.yaml:26:22 {2}voice\.locales\.es\.transcription {2}"es_MX" is not a language tag like "en-US" or "fr" {2}-> {2}write a language tag/),
+    ]);
+  });
+});
+
+/** The problems loading the folder finds, before the code is looked at. */
+function loadProblems(dir: string): string[] {
+  return loadAppFolder(dir).problems.map(formatProblem);
+}
+
 describe('defineApp: a folder that does not load', () => {
   it('throws the loader\'s problems, unchanged, without looking at the code', () => {
     const forms = readFileSync(join(LIBRARY_DIR, 'forms.yaml'), 'utf8').replace('summaryPromptId: confirm_renew', 'summaryPrompId: confirm_renew');

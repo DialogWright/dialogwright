@@ -17,6 +17,7 @@ import { redactHandoffData, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
+import { lineLang } from '../prompts/render';
 import type { HandoffWording, SpokenDigitRule } from '../core/app/types';
 import type { Effect } from '../core/lifecycle';
 import { summarizeHandoff as summarizeHandoffDefault, type SummaryOptions } from '../handoff/summary';
@@ -549,7 +550,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       publish(deps, { type: 'reconnect', callSid: parsed.callSid, at: Date.now(), attempt: entry.reconnects });
       await deps.store.enqueue(parsed.callSid, async (e) => {
         if (!e.session.lastPromptText) return;
-        const sent = await sendFrames(deps, e, [textFrame(e.session.lastPromptText, true)]);
+        // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
+        const sent = await sendFrames(deps, e, [textFrame(e.session.lastPromptText, true, lineLang(appOf(e.session), e.session.locale))]);
         // The replay is a question the caller has to answer, so it starts a wait of its own; the
         // reconnect is not a turn, so nothing else would.
         armNoInput(deps, e, sent);

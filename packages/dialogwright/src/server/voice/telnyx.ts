@@ -1,5 +1,5 @@
 import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
-import { escapeXml, formFields, xmlResponse } from './xml';
+import { attr, escapeXml, formFields, relayChildren, relayElement, xmlResponse } from './xml';
 import { verifyTelnyxSignature } from './telnyxSignature';
 
 /**
@@ -20,6 +20,11 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *    also takes `handoffData`.
  * 3. `hints` is not a documented attribute; it is sent so recognition gets the app's words if Telnyx
  *    honours it, on the understanding that TeXML ignores an attribute it does not know.
+ * 4. For an app that names its languages, the call's language is the documented `language`
+ *    attribute (one tag for speech and recognition), and the languages it may switch to and the
+ *    `locale` custom parameter are `<Language code voice>` and `<Parameter name value>` children, in
+ *    the shape Twilio documents. A live call should confirm Telnyx reads the children, the text
+ *    frames' `lang` and the `language` frame (set_language) the same way.
  * The conformance fixtures (__fixtures__/telnyx) say which of their entries are documented and which assumed.
  */
 
@@ -78,8 +83,13 @@ function startDocument(o: StartDocumentOptions): string {
     'interruptible="any"',
     `hints="${escapeXml(o.hints)}"`,
   ];
-  if (o.voice) attrs.push(`voice="${escapeXml(o.voice)}"`);
-  return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx"><ConversationRelay ${attrs.join(' ')}/></Connect>`);
+  if (o.language) {
+    // One language for speech and recognition alike; its voice is the language's own, or Telnyx's default.
+    attrs.push(attr('language', o.language.tts));
+    if (o.language.voice) attrs.push(attr('voice', o.language.voice));
+  } else if (o.voice) attrs.push(`voice="${escapeXml(o.voice)}"`);
+  const relay = relayElement(attrs, relayChildren(o, false));
+  return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx">${relay}</Connect>`);
 }
 
 export const telnyxProvider: VoiceProvider = {

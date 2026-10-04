@@ -1,6 +1,6 @@
 import type {
   App, AppBrand, AppLocales, ConsoleConfig, FormDef, FormId, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
-  PromptManifestEntry, RoleAccess, SlotId, SpokenDigitRule, ToolDef, ToolName, VoiceConfig,
+  PromptManifestEntry, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale,
 } from '../core/app/types';
 import { SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
@@ -27,6 +27,7 @@ import { defaultRetriever } from '../kb/hybrid';
 import { warnFallback } from '../kb/fallback';
 import { KB_ANSWER_PROMPT, KB_UNAVAILABLE_PROMPT, kbCompletion } from '../kb/answer';
 import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
+import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -265,6 +266,11 @@ function withLocaleWording(linked: LinkedSlots, config: LoadedConfig, types: Slo
     else problems.push(...result.problems);
   }
   return { ...linked, slots, problems: [...linked.problems, ...problems] };
+}
+
+/** "a", "a or b", "a, b or c". */
+function orList(items: readonly string[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(', ')} or ${items.at(-1)!}` : items.join('');
 }
 
 /** ", or rename it to "x"" when a known name is close enough to be what was meant. */
@@ -575,6 +581,21 @@ export function crossLink(
     }
   }
 
+  // app.yaml's voice: every locale it names is one the app speaks, and every carrier one the engine knows.
+  const appLocales = [config.defaultLocale, ...Object.keys(config.prompts).filter((l) => l !== config.defaultLocale)];
+  const localeNamed = (path: DataPath, tag: string, atKey = false): void => {
+    if (!appLocales.includes(tag)) yaml('app.yaml', path, `"${tag}" is not a locale of this app`, `add locale/${tag}/ or use one of ${appLocales.join(', ')}`, atKey);
+  };
+  for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) localeNamed(['voice', 'numbers', number], tag);
+  for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {
+    localeNamed(['voice', 'locales', tag], tag, true);
+    for (const provider of Object.keys(settings.voices ?? {})) {
+      if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) {
+        yaml('app.yaml', ['voice', 'locales', tag, 'voices', provider], `unknown voice provider "${provider}"`, `${renameHint(provider, VOICE_PROVIDER_IDS)}use ${orList(VOICE_PROVIDER_IDS)}`, true);
+      }
+    }
+  }
+
   // The code alone
   for (const [id, spec] of Object.entries(code.slots ?? {})) {
     if (spec?.id !== id) inTs(['slots', id], `the slot spec filed under "${id}" has the id "${String(spec?.id)}"`, `file it under ${codePath('slots', String(spec?.id))}, or give it the id "${id}"`);
@@ -734,9 +755,18 @@ function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks |
 }
 
 function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {
-  const config: { hints?: readonly string[]; spokenDigits?: readonly SpokenDigitRule[] } = {};
+  const config: { -readonly [K in keyof VoiceConfig]: VoiceConfig[K] } = {};
   put(config, 'hints', voice.hints);
   put(config, 'spokenDigits', voice.spokenDigits?.map(({ pattern, spell }) => ({ pattern: new RegExp(pattern, 'g'), spell })));
+  put(config, 'numbers', voice.numbers);
+  put(config, 'locales', voice.locales === undefined ? undefined : Object.fromEntries(Object.entries(voice.locales).map(([tag, l]) => {
+    const one: { -readonly [K in keyof VoiceLocale]: VoiceLocale[K] } = {};
+    put(one, 'tts', l.tts);
+    put(one, 'transcription', l.transcription);
+    put(one, 'voices', l.voices);
+    put(one, 'hints', l.hints);
+    return [tag, one];
+  })));
   return config;
 }
 

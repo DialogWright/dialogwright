@@ -16,6 +16,9 @@ import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookReques
 import { providerForPath, voiceProviders } from './voice/registry';
 import { twilioCallbackParams, twilioProvider } from './voice/twilio';
 import { formFields } from './voice/xml';
+import type { App } from '../core/app/types';
+import { buildHintsFrom } from './hints';
+import { DEFAULT_LOCALE, localesOf, speechLanguagesOf } from '../core/locale';
 
 export interface HttpDeps {
   config: ServerConfig;
@@ -32,6 +35,11 @@ export interface HttpDeps {
   audit?: AuditSink;
   /** The app's own pages (its chats, say), each asked in turn before the webhooks; without them, none. */
   routes?: readonly AppRoute[];
+  /**
+   * The app the server runs, for the languages its calls are in (startOptions): the locale a number
+   * starts in, and each locale's languages and voices. Without it, a start document names no language.
+   */
+  app?: App;
 }
 
 const MAX_BODY = 64 * 1024;
@@ -140,9 +148,55 @@ function parseHandoff(raw: string): { reasonCode: string } {
   }
 }
 
-/** The start document's options shared by the initial /voice answer and a reconnect, with the carrier's own voice. */
-function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string): StartDocumentOptions {
-  return { publicHost: deps.config.publicHost, token, hints: deps.hints, ...voiceFor(deps.config, provider.id) };
+/**
+ * Whether the app's start documents name its languages: it speaks more than one locale, says how one
+ * is spoken (voice.locales) or which number starts in which (voice.numbers), or speaks a language
+ * other than the relay's default. A one-locale en-US app's documents are those of an app without
+ * locales, byte for byte.
+ */
+function namesLanguages(app: App): boolean {
+  if (!app.locales) return false;
+  return Object.keys(app.locales.prompts).length > 0 || app.voice?.locales !== undefined || app.voice?.numbers !== undefined || app.locales.default !== DEFAULT_LOCALE;
+}
+
+/** The locale a call starts in: the app's voice.numbers for the number called, else the app's default. Undefined for an app without locales. */
+export function startLocale(app: App, to: string | undefined): string | undefined {
+  if (!app.locales) return undefined;
+  const numbers = app.voice?.numbers;
+  const byNumber = to !== undefined && numbers && Object.hasOwn(numbers, to) ? numbers[to] : undefined;
+  return byNumber ?? app.locales.default;
+}
+
+/**
+ * The start document's options shared by the initial /voice answer and a reconnect, with the carrier's
+ * own voice. For an app that names its languages (namesLanguages), the call's language (`locale`: the
+ * number's on a new call, the session's own on a reconnect) and every language it may switch to, each
+ * with its voice on this carrier: the app's (voice.locales.<tag>.voices.<provider>), else, for the
+ * default locale only, the deployment's (config.ts voiceFor), else the carrier's default for it.
+ */
+function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string): StartDocumentOptions {
+  const deployment = voiceFor(deps.config, provider.id);
+  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: deps.hints, ...deployment };
+  const app = deps.app;
+  if (!app?.locales || !namesLanguages(app) || locale === undefined) return base;
+  const defaultLocale = app.locales.default;
+  const language = (tag: string) => {
+    const own = app.voice?.locales && Object.hasOwn(app.voice.locales, tag) ? app.voice.locales[tag] : undefined;
+    const appVoice = own?.voices && Object.hasOwn(own.voices, provider.id) ? own.voices[provider.id] : undefined;
+    const voice = appVoice ?? (tag === defaultLocale ? deployment.voice : undefined);
+    return {
+      ...speechLanguagesOf(app, tag),
+      ...(voice !== undefined ? { voice, ...(deployment.ttsProvider !== undefined ? { ttsProvider: deployment.ttsProvider } : {}) } : {}),
+    };
+  };
+  const hints = app.voice?.locales && Object.hasOwn(app.voice.locales, locale) ? app.voice.locales[locale]?.hints : undefined;
+  return {
+    ...base,
+    ...(hints ? { hints: buildHintsFrom(hints) } : {}),
+    language: language(locale),
+    languages: localesOf(app).map(language),
+    parameters: { locale },
+  };
 }
 
 /**
@@ -212,7 +266,9 @@ export function decideAction(
       deps.store.detach(callSid);
       entry.reconnects += 1;
       const token = deps.tokens.mint(callSid);
-      return { document: start(connectOptions(deps, provider, token)), note: `reconnect:${entry.reconnects}` };
+      // The call goes on in the language it is in now, which a switch may have changed since it started.
+      const locale = deps.app?.locales ? (entry.session.locale ?? deps.app.locales.default) : undefined;
+      return { document: start(connectOptions(deps, provider, token, locale)), note: `reconnect:${entry.reconnects}` };
     }
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
@@ -287,7 +343,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         const token = deps.tokens.mint(params.callId);
         // The caller's number is theirs, not the console's: the last four tell calls apart.
         deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}`);
-        const options = connectOptions(deps, provider, token);
+        const options = connectOptions(deps, provider, token, deps.app ? startLocale(deps.app, params.to) : undefined);
         reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));
         return;
       }

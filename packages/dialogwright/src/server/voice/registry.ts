@@ -2,6 +2,7 @@ import type { VoiceProvider } from './provider';
 import { twilioProvider } from './twilio';
 import { telnyxProvider } from './telnyx';
 import { telnyxPublicKey } from './telnyxSignature';
+import { VOICE_PROVIDER_IDS, type VoiceProviderId } from '../../channel/voiceProviders';
 
 /** A carrier the engine knows: its provider, and the environment variable that holds its secret. */
 interface KnownProvider {
@@ -15,7 +16,7 @@ interface KnownProvider {
 }
 
 /** Every carrier the engine knows, by id, in the order the docs list them. */
-const ALL: Readonly<Record<string, KnownProvider>> = {
+const ALL: Readonly<Record<VoiceProviderId, KnownProvider>> = {
   twilio: { provider: twilioProvider, secretVar: 'TWILIO_AUTH_TOKEN', secretLabel: 'auth token' },
   telnyx: {
     provider: telnyxProvider,
@@ -32,13 +33,13 @@ const ALL: Readonly<Record<string, KnownProvider>> = {
 };
 
 /** The ids VOICE_PROVIDERS may name. */
-export const KNOWN_VOICE_PROVIDERS: readonly string[] = Object.keys(ALL);
+export const KNOWN_VOICE_PROVIDERS: readonly string[] = VOICE_PROVIDER_IDS;
 
 /** The provider the unprefixed `/voice`, `/cr-action` and `/conversation` belong to, for deployments made before providers. */
 export const LEGACY_PROVIDER = 'twilio';
 
 function known(id: string): KnownProvider {
-  const k = Object.hasOwn(ALL, id) ? ALL[id] : undefined;
+  const k = Object.hasOwn(ALL, id) ? ALL[id as VoiceProviderId] : undefined;
   if (k === undefined) throw new Error(`unknown voice provider "${id}"`);
   return k;
 }

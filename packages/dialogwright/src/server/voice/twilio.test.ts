@@ -33,6 +33,45 @@ describe('the Twilio voice provider', () => {
     );
   });
 
+  it('names a two-locale call\'s languages: where it starts, each it may switch to with its voice, and the locale parameter', () => {
+    const doc = twilioProvider.startDocument({
+      ...START,
+      ttsProvider: 'Google',
+      voice: 'en-US-Neural2-F',
+      language: { tts: 'es-US', transcription: 'es-MX', voice: 'es-US-Journey-F', ttsProvider: 'Google' },
+      languages: [
+        { tts: 'en-US', transcription: 'en-US', voice: 'en-US-Neural2-F', ttsProvider: 'Google' },
+        { tts: 'es-US', transcription: 'es-MX', voice: 'es-US-Journey-F', ttsProvider: 'Google' },
+      ],
+      parameters: { locale: 'es' },
+    });
+    expect(doc).toBe(
+      `${HEAD}<Response><Connect action="https://voice.example.com/cr-action/twilio">` +
+        `<ConversationRelay url="wss://voice.example.com/conversation/twilio?token=${'a'.repeat(32)}" ${RELAY_ATTRS} ` +
+        'ttsLanguage="es-US" transcriptionLanguage="es-MX" ttsProvider="Google" voice="es-US-Journey-F">' +
+        '<Language code="en-US" ttsProvider="Google" voice="en-US-Neural2-F"/>' +
+        '<Language code="es-US" ttsProvider="Google" voice="es-US-Journey-F"/>' +
+        '<Parameter name="locale" value="es"/>' +
+        '</ConversationRelay></Connect></Response>',
+    );
+  });
+
+  it('gives a language with no voice of its own the carrier\'s default voice, and the legacy paths the same languages', () => {
+    const o = {
+      ...START,
+      ttsProvider: 'Google',
+      voice: 'en-US-Neural2-F',
+      language: { tts: 'es-US', transcription: 'es-US' },
+      languages: [{ tts: 'en-US', transcription: 'en-US' }, { tts: 'es-US', transcription: 'es-US' }],
+      parameters: { locale: 'es-US' },
+    };
+    const doc = twilioProvider.startDocument(o);
+    // The deployment's voice is the default locale's, never said in another language.
+    expect(doc).not.toContain('voice=');
+    expect(doc).toContain('hints="one,two" ttsLanguage="es-US" transcriptionLanguage="es-US"><Language code="en-US"/><Language code="es-US"/><Parameter name="locale" value="es-US"/></ConversationRelay>');
+    expect(connectRelayTwiml(o)).toBe(doc.replace('/cr-action/twilio', '/cr-action').replace('/conversation/twilio', '/conversation'));
+  });
+
   it('verifies the signature over the full URL and the sorted form fields', () => {
     const rawBody = 'CallSid=CA1&From=%2B15555550100';
     const url = '/voice/twilio';

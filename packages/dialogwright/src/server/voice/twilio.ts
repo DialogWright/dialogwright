@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
-import { escapeXml, formFields, xmlResponse } from './xml';
+import { attr, escapeXml, formFields, relayChildren, relayElement, xmlResponse } from './xml';
 
 /**
  * Twilio request signature: HMAC-SHA1 over the full URL followed by every POST
@@ -37,6 +37,9 @@ export const TWILIO_PATHS: RelayPaths = { socket: '/conversation/twilio', action
 
 /**
  * The ConversationRelay connect document. Attributes follow Twilio's ConversationRelay TwiML reference.
+ * For an app that names its languages, the call's start language (`ttsLanguage`,
+ * `transcriptionLanguage` and its voice), one `<Language>` child per language it may switch to,
+ * and `<Parameter>` children (the `locale` the engine reads back from the setup frame).
  *
  * `partialPrompts="true"` is on for the no-input wait, not for scoring: the adapter still runs a
  * turn only on a final prompt, but a partial tells it the caller has started speaking, so the
@@ -58,10 +61,18 @@ export function twilioConnectDocument(o: StartDocumentOptions, paths: RelayPaths
     'deepgramSmartFormat="false"',
     `hints="${escapeXml(o.hints)}"`,
   ];
-  if (o.ttsProvider && o.voice) {
+  if (o.language) {
+    // A call in a named language: its voice is the language's own, or Twilio's default for it.
+    attrs.push(attr('ttsLanguage', o.language.tts), attr('transcriptionLanguage', o.language.transcription));
+    if (o.language.voice) {
+      if (o.language.ttsProvider) attrs.push(attr('ttsProvider', o.language.ttsProvider));
+      attrs.push(attr('voice', o.language.voice));
+    }
+  } else if (o.ttsProvider && o.voice) {
     attrs.push(`ttsProvider="${escapeXml(o.ttsProvider)}"`, `voice="${escapeXml(o.voice)}"`);
   }
-  return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}${paths.action}"><ConversationRelay ${attrs.join(' ')}/></Connect>`);
+  const relay = relayElement(attrs, relayChildren(o, true));
+  return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}${paths.action}">${relay}</Connect>`);
 }
 
 /**

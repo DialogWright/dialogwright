@@ -25,6 +25,28 @@ describe('the Telnyx voice provider', () => {
     expect(telnyxProvider.startDocument({ ...START, voice: 'a "q" & b' })).toContain('voice="a &quot;q&quot; &amp; b"');
   });
 
+  it('names a two-locale call\'s language (one for speech and recognition alike), the languages it may switch to, and the locale parameter', () => {
+    const doc = telnyxProvider.startDocument({
+      ...START,
+      voice: 'Telnyx.Ultra.Callie',
+      language: { tts: 'es-US', transcription: 'es-US', voice: 'Telnyx.Ultra.Asher' },
+      languages: [{ tts: 'en-US', transcription: 'en-US', voice: 'Telnyx.Ultra.Callie' }, { tts: 'es-US', transcription: 'es-US', voice: 'Telnyx.Ultra.Asher' }],
+      parameters: { locale: 'es-US' },
+    });
+    expect(doc).toBe(
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Connect action="https://voice.example.com/cr-action/telnyx">' +
+        `<ConversationRelay url="wss://voice.example.com/conversation/telnyx?token=${'b'.repeat(32)}" dtmfDetection="true" interruptible="any" hints="one,two" ` +
+        'language="es-US" voice="Telnyx.Ultra.Asher">' +
+        '<Language code="en-US" voice="Telnyx.Ultra.Callie"/><Language code="es-US" voice="Telnyx.Ultra.Asher"/>' +
+        '<Parameter name="locale" value="es-US"/>' +
+        '</ConversationRelay></Connect></Response>',
+    );
+    // A language with no voice of its own: the carrier's default, never the deployment's default-locale voice.
+    const plain = telnyxProvider.startDocument({ ...START, voice: 'Telnyx.Ultra.Callie', language: { tts: 'es-US', transcription: 'es-US' } });
+    expect(plain).toContain('hints="one,two" language="es-US"/>');
+    expect(plain).not.toContain('voice=');
+  });
+
   it('reads a form-encoded TeXML callback and a JSON one alike', () => {
     const form = telnyxProvider.parse({ url: '/cr-action/telnyx', headers: FORM, rawBody: 'CallSid=v2%3Aabc&From=%2B15555550100&CallStatus=in-progress&HandoffData=%7B%7D', nowSec: 0 });
     const json = telnyxProvider.parse({

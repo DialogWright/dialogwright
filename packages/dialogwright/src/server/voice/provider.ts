@@ -43,6 +43,30 @@ export interface StartDocumentOptions {
    */
   readonly ttsProvider?: string;
   readonly voice?: string;
+  /**
+   * The language the call starts in, for an app that names its languages (server/http.ts
+   * startOptions); absent, the document names none and the carrier speaks its default (en-US), as
+   * before languages. When present, its voice is the start's, in place of `voice` and `ttsProvider`
+   * above: those are the default locale's, and a language with no voice of its own gets the
+   * carrier's default voice for it.
+   */
+  readonly language?: RelayLanguage;
+  /** Every language the call may switch to (set_language), each with its voice; absent or empty, none named. */
+  readonly languages?: readonly RelayLanguage[];
+  /** Custom parameters the relay hands back on its setup frame; `locale` is the one the engine reads (SessionStart.locale). */
+  readonly parameters?: Readonly<Record<string, string>>;
+}
+
+/** One language as a start document names it: what the voice speaks, what is heard, and the voice. */
+export interface RelayLanguage {
+  /** The language the voice speaks, a language tag: what a text frame's `lang` names (Say.lang). */
+  readonly tts: string;
+  /** The language speech is recognized in, a language tag. */
+  readonly transcription: string;
+  /** The voice, in the carrier's own names; absent for the carrier's default voice for this language. */
+  readonly voice?: string;
+  /** The voice's TTS provider, for a carrier that names it apart from the voice (Twilio's TTS_PROVIDER). */
+  readonly ttsProvider?: string;
 }
 
 export interface VoiceProvider {

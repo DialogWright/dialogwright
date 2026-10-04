@@ -3,6 +3,7 @@ import type { Decision } from '../core/decision';
 import { endAction, sayAction, transferAction, type Action, type Say, type SayPart } from '../channel/actions';
 import { isPauseOnly, joinSpoken, segmentTemplate, stripLeadingPause, ttsOnly, VAR } from './segments';
 import { vocabularyClipId } from './clips';
+import { speechLanguagesOf } from '../core/locale';
 
 export interface PromptEntry {
   text: string;
@@ -55,13 +56,16 @@ export function handoffPromptId(reason: string): string {
 }
 
 /**
- * The language a line in `locale` is said in (Say.lang): the locale, else the app's default, for an
- * app that declares locales (App.locales). An app without locales gives its lines no language, so
- * they map to the relay's en-US text frames exactly as they always have: that is what keeps every
- * golden of an app without locales unchanged.
+ * The language a line in `locale` is said in (Say.lang), for an app that declares locales
+ * (App.locales): the language the voice speaks that locale in (app.yaml voice.locales.<tag>.tts),
+ * which is the locale's own tag unless the app names another; without a locale, the default's. It is
+ * what a start document's languages are named by (server/http.ts startOptions), so a text frame
+ * names one of them. An app without locales gives its lines no language, so they map to the relay's
+ * en-US text frames exactly as they always have: that is what keeps every golden of an app without
+ * locales unchanged.
  */
 export function lineLang(app: App, locale?: string): string | undefined {
-  return app.locales ? (locale ?? app.locales.default) : undefined;
+  return app.locales ? speechLanguagesOf(app, locale ?? app.locales.default).tts : undefined;
 }
 
 /**

@@ -7,7 +7,7 @@ import { newSession } from '../core/session';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { plan, resolve, type TurnContext, type TurnResult } from '../core/turn';
 import { mockCodeVerifier } from '../core/tools';
-import { spokenText } from '../prompts/render';
+import { promptSay, spokenText } from '../prompts/render';
 import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap, QuestionMap } from '../jev/types';
 import { readdirSync } from 'node:fs';
@@ -119,6 +119,12 @@ describe('the language each line is said in', () => {
     const start = resolve(newSession('library-lang-es', 0, VOICE_RELAY, ANONYMOUS, libraryApp.id), startEvent({}, 'es'), null, tc());
     expect(langs(start.actions).length).toBeGreaterThan(0);
     expect(new Set(langs(start.actions))).toEqual(new Set([SPANISH]));
+  });
+
+  it('says a line in the language the voice speaks its locale in, where voice.locales names one', () => {
+    const app = { ...libraryApp, voice: { ...libraryApp.voice, locales: { [SPANISH]: { tts: 'es-US', transcription: 'es-MX' } } } };
+    expect(promptSay(app, 'goodbye', {}, false, null, SPANISH).lang).toBe('es-US');
+    expect(promptSay(app, 'goodbye', {}, false, null).lang).toBe('en-US');
   });
 
   it('says a call in the default locale in the app\'s locale:', () => {

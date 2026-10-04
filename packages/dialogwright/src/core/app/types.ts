@@ -616,6 +616,26 @@ export interface VoiceConfig {
    * out is rewritten: the session text, the trace and the manifest keep the readable form.
    */
   readonly spokenDigits?: readonly SpokenDigitRule[];
+  /** The locale a call starts in, by the number called (E.164); a number not listed starts in the app's default. Each is one of App.locales. */
+  readonly numbers?: Readonly<Record<string, string>>;
+  /** Per-locale speech settings on the phone, by the app's locale tags: languages, a voice per carrier, hints. */
+  readonly locales?: Readonly<Record<string, VoiceLocale>>;
+}
+
+/** How the phone speaks and hears one of the app's locales (VoiceConfig.locales). Each field is optional. */
+export interface VoiceLocale {
+  /** The language the voice speaks the locale in, a language tag. Default: the locale's tag. */
+  readonly tts?: string;
+  /** The language speech is recognized in, a language tag. Default: the locale's tag. */
+  readonly transcription?: string;
+  /**
+   * The voice, by voice provider id (twilio, telnyx), each in the carrier's own names. It wins over
+   * the deployment's voice for that carrier; without it, the default locale has the deployment's and
+   * any other the carrier's default voice.
+   */
+  readonly voices?: Readonly<Record<string, string>>;
+  /** Words the recognizer should expect in this locale, in place of VoiceConfig.hints. */
+  readonly hints?: readonly string[];
 }
 
 /**
