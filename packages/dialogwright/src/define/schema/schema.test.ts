@@ -203,7 +203,7 @@ describe('the JSON Schemas', () => {
   }
 
   it('the knowledge base has a JSON Schema for each kind of file it reads', () => {
-    expect(Object.keys(kbJsonSchemas()).sort()).toEqual(['kb-locale-topics', 'kb-passage', 'kb-settings', 'kb-source', 'kb-topics']);
+    expect(Object.keys(kbJsonSchemas()).sort()).toEqual(['kb-locale-topics', 'kb-passage', 'kb-pending', 'kb-settings', 'kb-source', 'kb-topics']);
   });
 
   it('slots.yaml: the outer shape is a map of ids to maps with a type, and each type\'s options are the type\'s to check', () => {

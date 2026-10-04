@@ -46,7 +46,9 @@
     "app:diagram": "tsx src/define/cli.ts app:diagram",
     "kb:model": "tsx src/define/cli.ts kb:model",
     "kb:index": "tsx src/define/cli.ts kb:index",
-    "kb:bakeoff": "tsx src/define/cli.ts kb:bakeoff"
+    "kb:bakeoff": "tsx src/define/cli.ts kb:bakeoff",
+    "kb:approve": "tsx src/define/cli.ts kb:approve",
+    "kb:status": "tsx src/define/cli.ts kb:status"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

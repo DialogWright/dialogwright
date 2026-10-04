@@ -13,7 +13,7 @@ import { formatProblem, type Problem } from './problems';
 
 /**
  * The `dialogwright` command (the package's bin; run through tsx, which is how the repo runs its
- * TypeScript). Nine commands:
+ * TypeScript). Eleven commands:
  *
  *   dialogwright check [--json] [dir...]
  *   dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install]
@@ -22,6 +22,7 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright policy:card [dir...]     (./pageCommand.ts: writes each app's POLICY.md, the policy card)
  *   dialogwright app:diagram [dir...]     (./pageCommand.ts: writes each app's APP-MAP.md, the app map)
  *   dialogwright kb:model | kb:index | kb:bakeoff   (../kb/commands.ts: the knowledge base's retrieval)
+ *   dialogwright kb:approve | kb:status             (../kb/commands.ts, ../kb/approval.ts: approving passages, and their state)
  *
  * `check` checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
  * per problem, then a summary line per folder (`N problems in <dir>`, or `<dir>: ok`). Exit code 1
@@ -63,6 +64,11 @@ export const USAGE = [
   '  dir: an app folder with a kb/, or a kb folder; writes kb/.index/<embedder>.json, re-embedding only changed texts; with none, every app folder with a kb/',
   '       dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD]',
   '  compares the retrievers (keyword, static, hybrid, onnx when installed) on a paraphrase file: recall at the cap, candidates, latency; --sweep: floor and cap',
+  '       dialogwright kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]',
+  '  approves passages (kb/passages) and moves approved drafts out of kb/pending, recording who, for which team and when, and logging each in kb/approvals.jsonl;',
+  '  --by is the person who reviewed each against its source; --owner is required for a passage approved for the first time; --dir: the app folder (default: the one here)',
+  '       dialogwright kb:status [dir...]',
+  '  dir: an app folder with a kb/, or a kb folder; lists the passages by state (fresh, stale, unapproved) and the drafts, with the fix for each',
 ].join('\n');
 
 export interface Io {
@@ -76,6 +82,8 @@ export interface Io {
   root?: string;
   /** Runs `pnpm install` in `root`; returns its exit code. Default: runs it, showing its output. */
   install?(root: string): number;
+  /** Today, as an ISO date (kb:approve records it). Default: today (UTC). */
+  today?: () => string;
 }
 
 const stdio = (): Io => ({
@@ -133,13 +141,16 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'policy:matrix') return matrixCommand(rest, io);
   if (command === 'policy:card') return pageCommand(POLICY_CARD, rest, io);
   if (command === 'app:diagram') return pageCommand(APP_DIAGRAM, rest, io);
-  if (command === 'kb:model' || command === 'kb:index' || command === 'kb:bakeoff') {
-    // Loaded only when one runs: the other commands do not need the retrieval code.
+  if (command === 'kb:model' || command === 'kb:index' || command === 'kb:bakeoff' || command === 'kb:approve' || command === 'kb:status') {
+    // Loaded only when one runs: the other commands do not need the knowledge base's code.
     const kb = await import('../kb/commands');
-    const kbIo = { out: io.out, err: io.err, cwd: io.invokedFrom ?? io.cwd };
+    const kbIo = { out: io.out, err: io.err, cwd: io.invokedFrom ?? io.cwd, ...(io.today ? { today: io.today } : {}) };
+    const discover = () => findAppFolders(io.invokedFrom ?? io.cwd).dirs;
     if (command === 'kb:model') return kb.kbModelCommand(rest, kbIo);
     if (command === 'kb:bakeoff') return kb.kbBakeoffCommand(rest, kbIo);
-    return kb.kbIndexCommand(rest, kbIo, () => findAppFolders(io.invokedFrom ?? io.cwd).dirs);
+    if (command === 'kb:approve') return kb.kbApproveCommand(rest, kbIo, discover);
+    if (command === 'kb:status') return kb.kbStatusCommand(rest, kbIo, discover);
+    return kb.kbIndexCommand(rest, kbIo, discover);
   }
   if (command !== 'check') {
     io.err(command === undefined ? USAGE : `dialogwright: "${command}" is not a command\n${USAGE}`);

@@ -17,6 +17,8 @@
     "app:diagram": "pnpm --filter dialogwright app:diagram",
     "kb:model": "pnpm --filter dialogwright kb:model",
     "kb:index": "pnpm --filter dialogwright kb:index",
-    "kb:bakeoff": "pnpm --filter dialogwright kb:bakeoff"
+    "kb:bakeoff": "pnpm --filter dialogwright kb:bakeoff",
+    "kb:approve": "pnpm --filter dialogwright kb:approve",
+    "kb:status": "pnpm --filter dialogwright kb:status"
   }
 }

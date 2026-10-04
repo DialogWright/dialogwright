@@ -34,6 +34,14 @@ export type Locate = (file: string, path: DataPath) => { line: number; column: n
 /** The command that approves a passage, as the fixes name it. */
 export const APPROVE_COMMAND = 'pnpm kb:approve';
 
+/** The command that lists the passages by state, with what changed, as the fixes name it. */
+export const STATUS_COMMAND = 'pnpm kb:status';
+
+/** The approval of one passage, as a fix says to run it (./approval.ts). */
+export function approveCommandFor(id: string): string {
+  return `${APPROVE_COMMAND} ${id} --by "<your name>"`;
+}
+
 /** How many combinations of the applies domain a knowledge base may have: each needs a passage per topic. */
 export const MAX_APPLIES_COMBINATIONS = 256;
 
@@ -236,13 +244,13 @@ export function kbStateProblems(kb: KnowledgeBase, todayIso: string, locate: Loc
   const problems: Problem[] = [];
   const at = (file: string, path: DataPath, message: string, fix: string): void => problemAt(problems, locate, file, path, message, fix);
   for (const p of Object.values(kb.passages)) {
-    const approve = `${APPROVE_COMMAND} ${p.id}`;
+    const approve = approveCommandFor(p.id);
     if (p.freshness === 'unapproved') {
-      at(p.file, ['answer'], `passage "${p.id}" is not approved, so it is never said`, `review it against its source, then ${approve}`);
+      at(p.file, ['answer'], `passage "${p.id}" is not approved, so it is never said`, `review it against its source (${STATUS_COMMAND} lists what waits), then ${approve}`);
     } else if (p.freshness === 'source-changed') {
-      at(p.file, ['approval', 'sourceHash'], `passage "${p.id}" is stale: its source changed since approval (${base}/sources/${p.source.document}.yaml, section "${p.source.section}"), so it is withheld`, `review the answer against the source's text now, then ${approve}`);
+      at(p.file, ['approval', 'sourceHash'], `passage "${p.id}" is stale: its source changed since approval (${base}/sources/${p.source.document}.yaml, section "${p.source.section}"), so it is withheld`, `review the answer against the source's text now (${STATUS_COMMAND} shows what changed), then ${approve}`);
     } else if (p.freshness === 'edited') {
-      at(p.file, ['approval', 'hash'], `passage "${p.id}" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld`, `review the edit, then ${approve}`);
+      at(p.file, ['approval', 'hash'], `passage "${p.id}" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld`, `review the edit (${STATUS_COMMAND} shows what changed), then ${approve}`);
     }
   }
   problems.push(...kbIndexProblems(kb, locate, base));

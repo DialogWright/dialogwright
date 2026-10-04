@@ -294,6 +294,30 @@ retrieval:
 - Choose `cap` and `floor` offline, never by re-recording calls: write `fixtures/kb/paraphrases.yaml` (each topic id with things callers say about it in other words, and `none:` with things no topic answers) and run `pnpm kb:bakeoff <app folder> --paraphrases fixtures/kb/paraphrases.yaml --sweep`. It reports each retriever's recall at the cap, how many topics it offers per question (and per question about nothing), and its speed, then recall against candidates for every floor and cap.
 - An ONNX model (bge-small, through the optional `@huggingface/transformers`) is available to code as `OnnxEmbedder` from `dialogwright/kb/onnx`, used with `HybridRetriever`; the bake-off includes it when the package is installed. It is not the default: it is a large native install, and its numbers can differ in the last bits between machines.
 
+### kb/ (optional): approval and staleness
+
+A passage is said only while it is approved and nothing it was approved over has changed. Its `approval` records the content's owner (a team), the person who approved it, the day, and two hashes: `sourceHash`, of its source section's text, and `hash`, of everything approved (the topic, the answer, `applies`, the effective dates, the source text and the topic's account line). Whitespace aside, any change to one of them makes the passage stale: the caller hears the unavailable line and is offered a person, once, and the trace records the passage with `fresh: false`. `pnpm check` fails on a passage that is stale or was never approved, and its fix names the two commands below.
+
+- `pnpm kb:status [app folder]` lists the passages by state: approved and fresh; stale because the source section changed; stale because the passage was edited (`git diff` shows the edit); never approved; and the drafts in `kb/pending/`. Each comes with its fix.
+- `pnpm kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]` approves each passage as it is now, after a person has read it against its source. It writes the `approval` in place, keeping the file's comments and layout, and appends one line to `kb/approvals.jsonl` (`id`, `version`, `approvedBy`, `owner`, `on`, both hashes, and `from`: `passage` or `pending`). That log is only ever appended to. `--owner` is needed the first time; a re-approval keeps the owner unless `--owner` says otherwise.
+- A draft is `kb/pending/<id>.yaml`: the passage's fields without `approval`, plus `drafted: { by, on, excerpt }`, where `excerpt` quotes the source section word for word. Nothing in `kb/pending/` is ever read at run time. `kb:approve` checks a draft as the passage it would be and moves it into `kb/passages/` (or `kb/locale/<tag>/passages/` for a draft in another locale), dropping `drafted`.
+- `kb:approve` writes nothing for an id it refuses. It refuses an id that is no passage or draft, a passage that would fail `pnpm check` for anything but its approval (an unknown topic or source, a variable in the answer, an overlap with another passage, a locale the app does not speak), a draft whose excerpt is not in its section word for word, and a `--by` that names no person. An assistant or a tool may draft a passage, and only a person approves one.
+
+```yaml
+# kb/pending/late-fees-junior-2025.yaml: a draft, never said
+id: late-fees-junior-2025
+topic: late_fees
+version: "2025.1"
+applies: { card: junior }
+effective: { from: 2025-01-01, to: 2025-12-31 }
+source: { document: patron-guide, section: "3.2" }
+answer: There are no late fees on a junior card.
+drafted:
+  by: kb:draft
+  on: 2026-10-02
+  excerpt: Junior cards are not charged late fees.
+```
+
 ## 3. Policy and identity
 
 The gate decides whether an action may run, and it decides from two files that a person who does not write code can read: `policy.yaml` (what the agent may do, action by action) and `identity.yaml` (who the app serves and how a caller proves who they are). Policy is data, and never lives in a tool. A tool does its work; the gate decides whether it runs. This section is the whole of how to write, test and review those two files. [design.md](design.md#6-identity-and-policy) says why they are shaped this way.
@@ -695,9 +719,16 @@ identity.yaml      @your-org/compliance
 # What compliance reads, and the golden that shows a change as a diff:
 POLICY.md          @your-org/compliance
 policy.matrix      @your-org/compliance
+# The knowledge base: the answers callers hear, their sources, and the log of approvals.
+**/kb/kb.yaml           @your-org/compliance @your-org/content
+**/kb/topics.yaml       @your-org/content
+**/kb/sources/          @your-org/content
+**/kb/passages/         @your-org/compliance @your-org/content
+**/kb/locale/           @your-org/compliance @your-org/content
+**/kb/approvals.jsonl   @your-org/compliance
 ```
 
-A bare file name matches in every folder, so each app of a repository is covered. A change to the rules lands as a diff of policy.yaml, of `POLICY.md` and of `policy.matrix` together, in plain words and as the verdicts that follow from it, which a reviewer who does not write code can read and accept or refuse. Owners may be users or teams; an owner needs write access to the repository, or the line is ignored. This repository's own file (`.github/CODEOWNERS`) owns the same four names.
+A bare file name matches in every folder, so each app of a repository is covered. A change to the rules lands as a diff of policy.yaml, of `POLICY.md` and of `policy.matrix` together, in plain words and as the verdicts that follow from it, which a reviewer who does not write code can read and accept or refuse. Owners may be users or teams; an owner needs write access to the repository, or the line is ignored. The knowledge base's lines use `**/kb/...` so they match an app's `kb/` in any folder, and name the files an approval stands on: the passages and their sources, the topics, `kb.yaml`, and `kb/approvals.jsonl`; give them to the people who own the content and, for regulated answers, compliance. Drafts in `kb/pending/` are left open: a draft is never said, and approving it changes `kb/passages/`, which they own. This repository's own file (`.github/CODEOWNERS`) owns the same four names, and the knowledge base's files.
 
 ### 3.13 Converting an old file
 

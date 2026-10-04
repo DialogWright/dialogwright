@@ -10,7 +10,8 @@ import { checkAlways, identifier, matching, text, unique } from '../define/schem
  *   kb/sources/<doc>.yaml               the source documents' text by section, which approvals hash
  *   kb/locale/<tag>/topics.yaml         a locale's titles, keywords and example questions
  *   kb/locale/<tag>/passages/<id>.yaml  a locale's passages (usually translations of the default's)
- *   kb/pending/                         drafts, never loaded
+ *   kb/pending/<id>.yaml                drafts waiting for review: never loaded at run time (pnpm kb:approve moves one into passages/)
+ *   kb/approvals.jsonl                  every approval, one JSON line each, appended by pnpm kb:approve and never rewritten
  *
  * The zod schemas here are the source of truth; the JSON Schemas under packages/dialogwright/schemas
  * (kb-*.schema.json) are generated from them (define/schema/json.ts).
@@ -170,6 +171,25 @@ export const kbPassageSchema = z
 export type KbPassageYaml = z.infer<typeof kbPassageSchema>;
 
 // ---------------------------------------------------------------------------------------------
+// pending/<id>.yaml
+// ---------------------------------------------------------------------------------------------
+
+export const kbPendingSchema = kbPassageSchema
+  .omit({ approval: true })
+  .extend({
+    drafted: z
+      .strictObject({
+        by: text().describe('Who or what drafted it: a person, or the drafting tool and its model.'),
+        on: isoDate().describe('The day it was drafted.'),
+        excerpt: text().optional().describe('The words of the source section the answer is drawn from, quoted exactly. pnpm kb:approve refuses a draft whose excerpt is not in the section word for word.'),
+      })
+      .describe('Where the draft came from. pnpm kb:approve drops it when it moves the draft into kb/passages.'),
+  })
+  .describe('kb/pending/<id>.yaml: a draft passage waiting for review. Never read at run time or said; pnpm kb:approve checks it and moves it into kb/passages (or kb/locale/<tag>/passages), with its approval.');
+
+export type KbPendingYaml = z.infer<typeof kbPendingSchema>;
+
+// ---------------------------------------------------------------------------------------------
 // sources/<doc>.yaml
 // ---------------------------------------------------------------------------------------------
 
@@ -206,6 +226,7 @@ export const KB_KINDS = {
   kbLocaleTopics: { schema: kbLocaleTopicsSchema, jsonName: 'kb-locale-topics', title: 'kb/locale/<tag>/topics.yaml', startsWith: 'a topic id and its wording in this locale, for example "opening_hours: { title: Horario }"' },
   kbPassage: { schema: kbPassageSchema, jsonName: 'kb-passage', title: 'kb/passages/<id>.yaml', startsWith: '"id:" (the file name), "topic:", "version:", "effective:", "source:" and "answer:"' },
   kbSource: { schema: kbSourceSchema, jsonName: 'kb-source', title: 'kb/sources/<doc>.yaml', startsWith: '"document:" (its title) and "sections:"' },
+  kbPending: { schema: kbPendingSchema, jsonName: 'kb-pending', title: 'kb/pending/<id>.yaml', startsWith: 'the passage\'s fields ("id:", "topic:", "version:", "effective:", "source:", "answer:") and "drafted:"' },
 } as const;
 
 export type KbKind = keyof typeof KB_KINDS;

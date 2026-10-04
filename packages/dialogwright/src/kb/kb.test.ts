@@ -341,7 +341,7 @@ describe('check: what the knowledge base must be on its own (the loader refuses 
       'kb/passages/late-fees-junior.yaml:8:9  answer  passage "late-fees-junior"\'s answer is 450 characters, over the 400 kb.yaml allows (maxAnswerChars)  ->  shorten it to what is said in one breath: split the topic in two, or say where the rest is written',
     ]);
     expect(await kbLines({ [P + 'late-fees-junior.yaml']: (t) => t.replace('There are no late fees on a junior card.', long), 'kb/kb.yaml': (t) => t.replace('maxAnswerChars: 400', 'maxAnswerChars: 450') })).toEqual([
-      'kb/passages/late-fees-junior.yaml:14:9  approval.hash  passage "late-fees-junior" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld  ->  review the edit, then pnpm kb:approve late-fees-junior',
+      'kb/passages/late-fees-junior.yaml:14:9  approval.hash  passage "late-fees-junior" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve late-fees-junior --by "<your name>"',
     ]);
   });
 
@@ -492,20 +492,20 @@ describe('check: approvals and the passages in force today (check only; at run t
   it('an unapproved passage fails check, and defineApp still builds (it is withheld when resolved)', async () => {
     const dir = appFolder({ [P + 'late-fees-junior.yaml']: unapproved });
     expect(await kbLines({ [P + 'late-fees-junior.yaml']: unapproved })).toEqual([
-      'kb/passages/late-fees-junior.yaml:8:9  answer  passage "late-fees-junior" is not approved, so it is never said  ->  review it against its source, then pnpm kb:approve late-fees-junior',
+      'kb/passages/late-fees-junior.yaml:8:9  answer  passage "late-fees-junior" is not approved, so it is never said  ->  review it against its source (pnpm kb:status lists what waits), then pnpm kb:approve late-fees-junior --by "<your name>"',
     ]);
     expect(defineApp(dir, CODE).knowledge!.kb!.passages['late-fees-junior']!.freshness).toBe('unapproved');
   });
 
   it('a passage whose source changed since approval is stale', async () => {
     expect(await kbLines({ 'kb/sources/patron-guide.yaml': (t) => t.replace('up to 5 dollars for each item', 'up to 6 dollars for each item') })).toEqual([
-      'kb/passages/late-fees-adult.yaml:13:15  approval.sourceHash  passage "late-fees-adult" is stale: its source changed since approval (kb/sources/patron-guide.yaml, section "3.1"), so it is withheld  ->  review the answer against the source\'s text now, then pnpm kb:approve late-fees-adult',
+      'kb/passages/late-fees-adult.yaml:13:15  approval.sourceHash  passage "late-fees-adult" is stale: its source changed since approval (kb/sources/patron-guide.yaml, section "3.1"), so it is withheld  ->  review the answer against the source\'s text now (pnpm kb:status shows what changed), then pnpm kb:approve late-fees-adult --by "<your name>"',
     ]);
   });
 
   it('a passage edited after approval is withheld until it is approved again', async () => {
     expect(await kbLines({ [P + 'card-renewal-adult.yaml']: (t) => t.replace('three years', 'four years') })).toEqual([
-      'kb/passages/card-renewal-adult.yaml:14:9  approval.hash  passage "card-renewal-adult" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld  ->  review the edit, then pnpm kb:approve card-renewal-adult',
+      'kb/passages/card-renewal-adult.yaml:14:9  approval.hash  passage "card-renewal-adult" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve card-renewal-adult --by "<your name>"',
     ]);
   });
 

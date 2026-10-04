@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { loadAppFolder, loadKnowledgeFolder } from '../define/load';
 import { formatProblem } from '../define/problems';
+import { approveOne, formatApproveResult, placeOf, statusLines, notAPerson, type KbPlace } from './approval';
 import { bakeoff, formatResults, formatSweep, parseParaphrases, sweep } from './bakeoff';
 import { downloadModel, loadPinnedModel, modelDir, modelPresent, STATIC_MODELS, DEFAULT_EMBEDDER, type PinnedModel } from './embed/model';
 import type { Embedder } from './embed/types';
@@ -16,6 +17,9 @@ import { buildIndex, INDEX_DIR, parseIndex } from './vectorIndex';
  *   kb:model [id...]                                 download the pinned static models into the cache (./embed/model.ts)
  *   kb:index [dir...]                                write each knowledge base's vector index (./vectorIndex.ts)
  *   kb:bakeoff <dir> --paraphrases <file> [--sweep]  compare the retrievers on a paraphrase file (./bakeoff.ts)
+ *   kb:approve <id...> --by "<name>" [--owner "<team>"] [--dir <app>]
+ *                                                    approve passages and drafts (./approval.ts)
+ *   kb:status [dir...]                               the passages by state, the drafts, and the fix for each (./approval.ts)
  *
  * A `dir` is an app folder with a kb/, or a knowledge base folder itself (one with kb.yaml). With
  * no dir, kb:index indexes every app folder found as `check` finds them. Exit codes: 0 done, 1 a
@@ -30,6 +34,8 @@ export interface KbIo {
   env?: NodeJS.ProcessEnv;
   /** The embedder for a pinned model, in place of the cache's (a test's). */
   embedderFor?: (model: PinnedModel) => Promise<Embedder>;
+  /** Today, as an ISO date: the day an approval is recorded on. Default: today (UTC). */
+  today?: () => string;
 }
 
 /** A knowledge base folder found from a dir: the folder, how problems name it, and the knowledge base (or the problems loading it). */
@@ -220,4 +226,96 @@ export async function kbBakeoffCommand(args: readonly string[], io: KbIo): Promi
     }
   }
   return 0;
+}
+
+/** The knowledge bases a kb command means when it is given no folder: the working directory's, else every app folder's with a kb/. */
+function placesFrom(io: KbIo, discover: () => string[]): KbPlace[] | string {
+  const here = placeOf(io.cwd, '.');
+  if (typeof here !== 'string') return [here];
+  const places = discover().map((d) => placeOf(d, relative(io.cwd, d) || '.')).filter((p): p is KbPlace => typeof p !== 'string');
+  return places.length > 0 ? places : 'no knowledge base found: the working directory is not an app folder with a kb/, and no app folder has a kb/kb.yaml';
+}
+
+const APPROVE_USAGE = 'usage: dialogwright kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]';
+
+/**
+ * `kb:approve <id...> --by "<name>" [--owner "<team>"] [--dir <app>]`: approves each passage or draft
+ * (./approval.ts), saying what it did with each. Exit 0 when each is approved (or already was), 1
+ * when any is refused, 2 for a command line not understood (no id, no --by, a --by that names no person).
+ */
+export function kbApproveCommand(args: readonly string[], io: KbIo, discover: () => string[]): number {
+  const parsed = parseArgs(args, { values: ['--by', '--owner', '--dir'], flags: [] });
+  if (typeof parsed === 'string' || parsed.positional.length === 0 || parsed.values['--by'] === undefined) {
+    io.err(`dialogwright kb:approve: ${typeof parsed === 'string' ? parsed : parsed.positional.length === 0 ? 'name the passages or drafts to approve, by id' : '--by is required: the name of the person who reviewed the passages against their sources and approves them'}\n${APPROVE_USAGE}`);
+    return 2;
+  }
+  const by = parsed.values['--by'];
+  const why = notAPerson(by);
+  if (why) {
+    io.err(`dialogwright kb:approve: ${why}\n${APPROVE_USAGE}`);
+    return 2;
+  }
+  let place: KbPlace;
+  if (parsed.values['--dir'] !== undefined) {
+    const found = placeOf(resolve(io.cwd, parsed.values['--dir']), parsed.values['--dir']);
+    if (typeof found === 'string') {
+      io.err(`dialogwright kb:approve: ${found}`);
+      return 1;
+    }
+    place = found;
+  } else {
+    const found = placesFrom(io, discover);
+    if (typeof found === 'string' || found.length > 1) {
+      io.err(`dialogwright kb:approve: ${typeof found === 'string' ? found : `several app folders have a knowledge base (${found.map((p) => dirname(p.label)).join(', ')}): say which with --dir`}`);
+      return 1;
+    }
+    place = found[0]!;
+  }
+  const today = (io.today ?? (() => new Date().toISOString().slice(0, 10)))();
+  let refused = false;
+  for (const id of parsed.positional) {
+    const result = approveOne(place, id, { by, ...(parsed.values['--owner'] !== undefined ? { owner: parsed.values['--owner'] } : {}), today });
+    const lines = formatApproveResult(result, place.label);
+    if (result.outcome === 'refused') {
+      refused = true;
+      for (const line of lines) io.err(line);
+    } else for (const line of lines) io.out(line);
+  }
+  return refused ? 1 : 0;
+}
+
+/** `kb:status [dir...]`: each knowledge base's passages by state, its drafts, and the fix for each. Exit 0, or 1 when one does not load. */
+export function kbStatusCommand(args: readonly string[], io: KbIo, discover: () => string[]): number {
+  const parsed = parseArgs(args, { values: [], flags: [] });
+  if (typeof parsed === 'string') {
+    io.err(`dialogwright kb:status: ${parsed}\nusage: dialogwright kb:status [dir...]`);
+    return 2;
+  }
+  let places: KbPlace[];
+  if (parsed.positional.length > 0) {
+    places = [];
+    for (const d of parsed.positional) {
+      const found = placeOf(resolve(io.cwd, d), d);
+      if (typeof found === 'string') {
+        io.err(`dialogwright kb:status: ${found}`);
+        return 1;
+      }
+      places.push(found);
+    }
+  } else {
+    const found = placesFrom(io, discover);
+    if (typeof found === 'string') {
+      io.out(found);
+      return 0;
+    }
+    places = found;
+  }
+  let ok = true;
+  places.forEach((place, i) => {
+    if (i > 0) io.out('');
+    const status = statusLines(place);
+    ok &&= status.ok;
+    for (const line of status.lines) (status.ok ? io.out : io.err)(line);
+  });
+  return ok ? 0 : 1;
 }

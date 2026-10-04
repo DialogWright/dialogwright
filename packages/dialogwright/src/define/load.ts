@@ -719,6 +719,18 @@ export function loadKnowledgeFolder(dir: string, defaultLocale: string = DEFAULT
   return { kb: problems.length === 0 ? kb : null, problems: sortProblems(problems), locate: io.locate, hashes: configHashesOf(contents), base };
 }
 
+/**
+ * Reads one knowledge base file's text as the loader reads it (YAML 1.2 with no tags, duplicate keys
+ * refused, aliases capped, then its kind's schema): the data, or null with its problems, positioned
+ * in `file` (a path as problems name it). For a file the loader does not read itself: a draft in
+ * kb/pending, which `pnpm kb:approve` checks before it moves it into kb/passages.
+ */
+export function parseKbFile(file: string, kind: KbKind, text: string): { data: unknown; problems: Problem[] } {
+  const problems: Problem[] = [];
+  const data = checkFile(file, kind, text, problems, new Map(), {});
+  return { data: problems.length === 0 ? data : null, problems: sortProblems(problems) };
+}
+
 /** What loadSlotsFile found: the parsed slots (null when there is a problem) and the document, to position later problems. */
 export interface SlotsFile {
   slots: SlotsYaml | null;

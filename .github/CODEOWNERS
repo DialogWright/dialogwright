@@ -13,3 +13,14 @@ identity.yaml   @stilesja
 # What a reviewer reads: the policy card, and the matrix that shows a change as its verdicts
 POLICY.md       @stilesja
 policy.matrix   @stilesja
+
+# The knowledge base: what callers hear as answers, the sources each is held to, and the log of who
+# approved it. `**/kb/...` matches an app's kb/ in any folder (and the engine's own fixtures), and not
+# the engine's code in packages/dialogwright/src/kb. Drafts (kb/pending) and the index (kb/.index) are
+# left out: a draft is never said, and the index is written by pnpm kb:index from topics.yaml.
+**/kb/kb.yaml           @stilesja
+**/kb/topics.yaml       @stilesja
+**/kb/sources/          @stilesja
+**/kb/passages/         @stilesja
+**/kb/locale/           @stilesja
+**/kb/approvals.jsonl   @stilesja

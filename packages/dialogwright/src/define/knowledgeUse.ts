@@ -1,5 +1,5 @@
 import { KB_ANSWER_PROMPT, KB_ANSWER_VAR, KB_UNAVAILABLE_PROMPT } from '../kb/answer';
-import { APPROVE_COMMAND, type Locate } from '../kb/rules';
+import { approveCommandFor, STATUS_COMMAND, type Locate } from '../kb/rules';
 import { VAR } from '../prompts/segments';
 import type { LoadedConfig } from './load';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
@@ -181,7 +181,7 @@ export function knowledgeUseStateProblems(config: LoadedConfig, locate: Locate):
     problems.push({
       file: 'intents.yaml', ...where, path: formatPath(path),
       message: `intent "${id}" says the passage "${passageId}", which ${why}, so the caller hears that there is no answer and is offered a person`,
-      fix: `review ${passage.file}, then ${APPROVE_COMMAND} ${passageId}`,
+      fix: `review ${passage.file} (${STATUS_COMMAND} shows what changed), then ${approveCommandFor(passageId)}`,
     });
   }
   return problems;

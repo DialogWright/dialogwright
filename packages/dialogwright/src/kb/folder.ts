@@ -15,8 +15,8 @@ import { indexFileOf, indexHashOf, MAX_INDEX_BYTES, parseIndex, type KbIndexRead
  * What this adds is the folder's layout: kb.yaml and topics.yaml are required; passages/ and
  * sources/ hold one .yaml file each, named by its id; locale/<tag>/ holds a locale's topics.yaml and
  * passages/; pending/ holds drafts, which are never read (only their names, so a draft cannot take
- * an approved passage's id); hidden entries (.index/, .DS_Store) are skipped. Anything else is a
- * problem. Every file read is hashed into the app's configuration hashes by `io.parse`.
+ * an approved passage's id); approvals.jsonl is the log of approvals, for people, never read;
+ * hidden entries (.index/, .DS_Store) are skipped. Anything else is a problem. Every file read is hashed into the app's configuration hashes by `io.parse`.
  *
  * The rules across files (references, a passage for every caller, overlaps, approvals) are ./rules.ts's; the loader runs
  * the ones that need only the knowledge base itself right after reading it.
@@ -59,6 +59,8 @@ const KB_ENTRIES: Readonly<Record<string, 'file' | 'dir'>> = {
   sources: 'dir',
   locale: 'dir',
   pending: 'dir',
+  // Every approval, appended by pnpm kb:approve: a record for people, never read here.
+  'approvals.jsonl': 'file',
 };
 
 export interface ReadKbInput {
@@ -272,8 +274,12 @@ export function accountLineTextOf(topic: KbTopic | undefined, locale: string, de
   return topic.accountLine.text;
 }
 
-/** A passage as loaded: applies made canonical, the answer's whitespace collapsed, and its hashes and freshness taken. */
-function passageOf(yaml: KbPassageYaml, locale: string, file: string, topics: Readonly<Record<string, KbTopic>>, sources: Readonly<Record<string, KbSourceDocument>>, defaultLocale: string): KbPassage {
+/**
+ * A passage as loaded: applies made canonical, the answer's whitespace collapsed, and its hashes and
+ * freshness taken. `file` is its path as problems name it. pnpm kb:approve builds a draft this way to
+ * check it as the passage it would become.
+ */
+export function passageOf(yaml: KbPassageYaml, locale: string, file: string, topics: Readonly<Record<string, KbTopic>>, sources: Readonly<Record<string, KbSourceDocument>>, defaultLocale: string): KbPassage {
   const sourceText = sourceTextOf(sources, yaml.source);
   const topic = Object.hasOwn(topics, yaml.topic) ? topics[yaml.topic] : undefined;
   const effective = yaml.effective.to === undefined ? { from: yaml.effective.from } : { from: yaml.effective.from, to: yaml.effective.to };
