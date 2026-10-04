@@ -1,8 +1,9 @@
 /**
  * @dialogwright/kb-author: building a DialogWright knowledge base from documents. It reads sources (a
  * folder of PDF, DOCX, HTML, Markdown and text files, or a website crawled politely to a link depth)
- * into `kb/sources/<doc>.yaml` with each document's sections and provenance, and drafts passages from
- * them with a pluggable drafter into `kb/pending`, for a person to review.
+ * into `kb/sources/<doc>.yaml` with each document's sections and provenance; drafts passages from
+ * them with a pluggable drafter into `kb/pending`; and serves a local review page where a person
+ * approves, edits or rejects each draft.
  */
 
 export { ingest, formatReport, IngestError, isUrl, MAX_FILE_BYTES } from './ingest';
@@ -32,5 +33,9 @@ export { draftProblems } from './draft/validate';
 export type { DraftContext } from './draft/validate';
 export { draftKb, formatDraftReport, DraftCommandError } from './draft/draft';
 export type { DraftOptions, DraftReport } from './draft/draft';
+export { acceptTopic, approve, editAndApprove, mergeTopic, reject, reviewState } from './review/actions';
+export type { ActionResult, Edits, Reviewer, ReviewState } from './review/actions';
+export { startReviewServer } from './review/server';
+export type { ReviewServer, ReviewServerOptions } from './review/server';
 
 export { main, ingestCommand, USER_AGENT, VERSION } from './cli';

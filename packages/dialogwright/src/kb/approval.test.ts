@@ -128,7 +128,7 @@ describe('kb:approve a passage', () => {
     expect(after.filter((line, i) => line !== before[i])).toEqual(['  approvedBy: Jane Smith', `  on: ${TODAY}`, `  sourceHash: ${current.sourceHash}`, `  hash: ${current.hash}`]);
     expect(after[0]).toBe('# yaml-language-server: $schema=../../../../../schemas/kb-passage.schema.json');
     expect(passage(kb, 'late-fees-adult')).toMatchObject({ freshness: 'fresh', approval: { owner: 'Patron Services', approvedBy: 'Jane Smith', on: TODAY } });
-    expect(logOf(kb)).toEqual([{ id: 'late-fees-adult', version: '2026.1', approvedBy: 'Jane Smith', owner: 'Patron Services', on: TODAY, sourceHash: current.sourceHash, hash: current.hash, from: 'passage' }]);
+    expect(logOf(kb)).toEqual([{ id: 'late-fees-adult', version: '2026.1', approvedBy: 'Jane Smith', owner: 'Patron Services', on: TODAY, sourceHash: current.sourceHash, hash: current.hash, from: 'passage', sourceText: 'An adult card is charged 25 cents for every day an item is overdue, up to 5 dollars for each item.' }]);
   });
 
   it('after an edit, with --owner taking the owner\'s place; the log is appended to, never rewritten', async () => {
@@ -222,7 +222,7 @@ describe('kb:approve a draft', () => {
       '',
     ].join('\n'));
     expect(p).toMatchObject({ freshness: 'fresh', applies: { card: ['junior'] }, effective: { from: '2025-01-01', to: '2025-12-31' } });
-    expect(logOf(kb)).toEqual([{ id: 'late-fees-junior-2025', version: '2025.1', approvedBy: 'Jane Smith', owner: 'Patron Services', on: TODAY, sourceHash: p.approval!.sourceHash, hash: p.approval!.hash, from: 'pending' }]);
+    expect(logOf(kb)).toEqual([{ id: 'late-fees-junior-2025', version: '2025.1', approvedBy: 'Jane Smith', owner: 'Patron Services', on: TODAY, sourceHash: p.approval!.sourceHash, hash: p.approval!.hash, from: 'pending', sourceText: 'Junior cards are not charged late fees.' }]);
   });
 
   it('a draft in another locale goes to that locale\'s passages', async () => {

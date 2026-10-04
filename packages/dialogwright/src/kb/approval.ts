@@ -19,7 +19,8 @@ import type { KbPassage, KnowledgeBase } from './types';
  *
  * An approval is a person's: they read the answer against its source section and answer for it.
  * kb:approve records it in the passage (`approval: { owner, approvedBy, on, sourceHash, hash }`,
- * ./hash.ts) and appends one line to kb/approvals.jsonl, the log no one rewrites. It takes either
+ * ./hash.ts) and appends one line to kb/approvals.jsonl, the log no one rewrites, with the source
+ * section's text as approved (so a later review can show how the source changed since). It takes either
  *
  *  - a passage in kb/passages (or kb/locale/<tag>/passages) that is unapproved, stale (its source
  *    section changed) or edited since its approval: it is approved as it is now; or
@@ -50,6 +51,11 @@ export interface ApprovalLogLine {
   hash: string;
   /** What was approved: a draft from kb/pending, or a passage already in kb/passages. */
   from: 'pending' | 'passage';
+  /**
+   * The source section's text as it was approved (its hash is `sourceHash`), so a review after the
+   * source changes can show what changed (kb:review's diff). Lines written before it was kept lack it.
+   */
+  sourceText?: string;
 }
 
 /** A knowledge base on disk: its folder, the folder its files are named from, and how problems name it. */
@@ -255,7 +261,7 @@ function approvePassage(place: KbPlace, loaded: Loaded, id: string, file: string
     writeFileSync(path, before);
     return { id, outcome: 'refused', reason: `the approval written to ${file} did not read back as fresh (${after?.freshness ?? 'not loaded'}), so the file is as it was`, problems: [] };
   }
-  const line: ApprovalLogLine = { id, version: passage.version, approvedBy: options.by, owner, on: options.today, sourceHash: approval.sourceHash, hash: approval.hash, from: 'passage' };
+  const line: ApprovalLogLine = { id, version: passage.version, approvedBy: options.by, owner, on: options.today, sourceHash: approval.sourceHash, hash: approval.hash, from: 'passage', sourceText: sourceTextOf(kb.sources, passage.source)! };
   appendLog(place.kbDir, line);
   return { id, outcome: 'approved', from: 'passage', file, line };
 }
@@ -318,7 +324,7 @@ function approveDraft(place: KbPlace, loaded: Loaded, id: string, pendingFile: s
     writeFileSync(join(root, pendingFile), text);
     return { id, outcome: 'refused', reason: `the passage written to ${target} did not read back as fresh (${after?.freshness ?? 'not loaded'}), so it was taken out again and the draft left as it was`, problems: [] };
   }
-  const line: ApprovalLogLine = { id, version: draft.version, approvedBy: options.by, owner: options.owner, on: options.today, sourceHash: approval.sourceHash, hash: approval.hash, from: 'pending' };
+  const line: ApprovalLogLine = { id, version: draft.version, approvedBy: options.by, owner: options.owner, on: options.today, sourceHash: approval.sourceHash, hash: approval.hash, from: 'pending', sourceText: sectionText ?? '' };
   appendLog(place.kbDir, line);
   return { id, outcome: 'approved', from: 'pending', file: target, line, moved: pendingFile };
 }
