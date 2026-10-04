@@ -154,6 +154,11 @@ export function withheldScrubber(values: readonly string[]): Scrub | null {
  * The scrub each recorded thing was made with (registered by the lifecycle, and carried by the
  * runner and the server from a side effect to the answer it brings): a decision, for the rows
  * recorded after it; a side effect, for its params as recorded; a service's answer, for its row.
+ *
+ * They live in this process only, keyed by the object, and are never part of a session. A decision's
+ * is made and used within its turn, from the turn's own call and result, so a turn run on a session a
+ * store saved and loaded records exactly what the live turn would (testing/sessionRoundTrip.ts holds
+ * the trace records of every scenario to that).
  */
 const SCRUBS = new WeakMap<object, Scrub>();
 

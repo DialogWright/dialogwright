@@ -21,6 +21,14 @@ import { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { demoTools } from '../core/tools';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 
+/** How a runner runs one turn: runTurn, unless a test runs each one another way (testing/sessionRoundTrip.ts). */
+export type TurnRunner = typeof runTurn;
+
+/** A run's options, and how it runs each turn (runTurn when `turn` is absent, as every run but a test's). */
+export interface ScenarioRunOptions extends RunOptions {
+  readonly turn?: TurnRunner;
+}
+
 export interface Outcome {
   id: string;
   decision: string;
@@ -244,21 +252,22 @@ function seededPrompt(s: Session): Pick<Session, 'lastPromptId' | 'lastPromptTex
   return { lastPromptId: s.lastPromptId, lastPromptText: s.lastPromptText, lastPromptOptions: [...s.lastPromptOptions], promptedFor: s.promptedFor };
 }
 
-export async function runCorpusEntry(entry: CorpusEntry, opts: RunOptions): Promise<{ outcome: Outcome; run: TurnRun; setup: TurnRun }> {
+export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOptions): Promise<{ outcome: Outcome; run: TurnRun; setup: TurnRun }> {
   // Seed before the greeting so the setup trace record already reports the placeholder slots
   // as filled; otherwise summarize() credits the entry's one utterance with filling them.
   // One book of business per entry: what the entry's turn reads or files is its own.
   const o = { ...opts, tools: opts.tools ?? demoTools() };
   const start = seedCorpusSession(startSession(entry.id, nowOf(opts)(), entry.as), entry, o);
   const asked = entry.context === 'no_form' ? null : seededPrompt(start);
-  const setup = await runTurn(start, startEvent(), o);
+  const turn = opts.turn ?? runTurn;
+  const setup = await turn(start, startEvent(), o);
   // The greeting's own bookkeeping moves the prompt to the greeting, so put back the one the seed
   // left the caller answering. Only the prompt: seeding again would read a summary a second time,
   // and a summary hook that remembers what the caller heard (FormDef.onSummaryRead) would then read the
   // short re-read instead of the summary the entry answers.
   const session = setup.result.session;
   if (asked) Object.assign(session, asked);
-  const run = await runTurn(session, saidEvent(session, entry.text), o);
+  const run = await turn(session, saidEvent(session, entry.text), o);
   // The setup run is returned as well as traced: a summary that leaves it out would read
   // the seeded placeholders as slots this one utterance filled.
   return { outcome: outcomeOf(entry.id, run.result), run, setup };
@@ -323,7 +332,7 @@ export interface ScenarioRun {
  * turn is ignored until the service's answer arrives. Returns the turns run, in order; the last one's
  * session is the call's.
  */
-export async function followEffects(run: TurnRun, opts: RunOptions, down = false): Promise<TurnRun[]> {
+export async function followEffects(run: TurnRun, opts: ScenarioRunOptions, down = false): Promise<TurnRun[]> {
   const runs: TurnRun[] = [];
   let session = run.result.session;
   for (const effect of run.result.effects) {
@@ -332,14 +341,14 @@ export async function followEffects(run: TurnRun, opts: RunOptions, down = false
     const event = serviceResultEvent(effect.service, down || !answer ? null : answer(effect.params));
     // The answer's audit row is masked as the effect's params were recorded, as the server does (server/services.ts).
     carryScrub(effect, event);
-    const next = await runTurn(session, event, opts);
+    const next = await (opts.turn ?? runTurn)(session, event, opts);
     runs.push(next);
     session = next.result.session;
   }
   return runs;
 }
 
-export async function runScenario(scenario: Scenario, opts: RunOptions): Promise<ScenarioRun> {
+export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions): Promise<ScenarioRun> {
   let failNext = false;
   const client: JevClient = {
     ask: (req) => (failNext ? Promise.reject(new JevClientError('injected timeout')) : opts.client.ask(req)),
@@ -349,7 +358,8 @@ export async function runScenario(scenario: Scenario, opts: RunOptions): Promise
   const runs: TurnRun[] = [];
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(opts)(), scenario.as);
-  const setup = await runTurn(session, startEvent({}, scenario.locale), o);
+  const turn = opts.turn ?? runTurn;
+  const setup = await turn(session, startEvent({}, scenario.locale), o);
   runs.push(setup);
   stepOf.push(-1);
   session = setup.result.session;
@@ -368,7 +378,7 @@ export async function runScenario(scenario: Scenario, opts: RunOptions): Promise
       : [saidEvent(session, step.say, step.partial !== true)];
     failNext = 'say' in step && step.fail === true;
     for (const event of events) {
-      last = await runTurn(session, event, o);
+      last = await turn(session, event, o);
       runs.push(last);
       stepOf.push(index);
       failNext = false;

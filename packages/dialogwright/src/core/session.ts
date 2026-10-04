@@ -9,6 +9,15 @@ import type { App } from './app/types';
 import type { Principal, ToolCall } from '../gate/types';
 import type { Channel, ChannelCaps } from '../channel/caps';
 
+/**
+ * The version of the Session shape: a store (server/stores/types.ts) keeps it beside each session it
+ * saves (StoredCall.schema), never inside it, so a trace and a golden are as they were. A session
+ * saved under another version is not resumed: the caller is put through to a person instead
+ * (server/sessions.ts restore). Raise it with any change to Session a saved one would not satisfy (a
+ * field added that the core reads without a default, a field whose meaning changes).
+ */
+export const SESSION_SCHEMA = 1;
+
 export interface SlotState {
   value: string | null;
   display: string | null;

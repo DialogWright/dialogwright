@@ -72,3 +72,7 @@ export type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookReques
 export { runStoreContract, storeContractChecks, contractCall, contractChat, contractSession, CONTRACT_TOKEN_TTL_MS } from './storeContract';
 export type { ContractContext, ContractStores, StoreContractCheck, StoreContractOptions } from './storeContract';
 export type { Awaitable, CallStateStore, ChatStateStore, StoredCall, StoredChat, TokenStore } from '../server/stores/types';
+// Whether a saved session resumes exactly: the corpus and scenarios run with the session put through
+// JSON before every turn, against the same run as it is (sessionRoundTrip.ts).
+export { sessionRoundTrip, jsonTrip } from './sessionRoundTrip';
+export type { RoundTripMismatch, RoundTripReport } from './sessionRoundTrip';
