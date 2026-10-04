@@ -6,7 +6,7 @@ export type ClientKind = 'stub' | 'heuristic' | 'jev';
 /** ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider). */
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
-import { KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from './voice/registry';
+import { checkSecretOf, KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from './voice/registry';
 
 const TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
 
@@ -20,7 +20,7 @@ export interface ServerConfig {
    * each on `/voice/<id>`, `/cr-action/<id>` and `/conversation/<id>`. The unprefixed paths are Twilio's.
    */
   voiceProviders: readonly string[];
-  /** Each enabled carrier's secret, by id: TWILIO_AUTH_TOKEN for twilio. Required only for an enabled carrier. */
+  /** Each enabled carrier's secret, by id: TWILIO_AUTH_TOKEN for twilio, TELNYX_PUBLIC_KEY for telnyx. Required only for an enabled carrier. */
   providerSecrets: Readonly<Record<string, string>>;
   handoffNumber: string;
   jevClient: ClientKind;
@@ -120,6 +120,7 @@ function providerSecretsOf(env: Env, ids: readonly string[]): Record<string, str
     const name = secretVarOf(id);
     const value = env[name]?.trim();
     if (!value) throw new Error(`missing required environment variable ${name} (VOICE_PROVIDERS includes ${id})`);
+    checkSecretOf(id, value);
     secrets[id] = value;
   }
   return secrets;

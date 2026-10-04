@@ -1,0 +1,98 @@
+import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
+import { escapeXml, formFields, xmlResponse } from './xml';
+import { verifyTelnyxSignature } from './telnyxSignature';
+
+/**
+ * Telnyx's Conversation Relay through TeXML. The socket frames are the shared relay wire; what
+ * differs is the start document (TeXML attribute names and Telnyx voices), the Ed25519 webhook
+ * signature (telnyxSignature.ts), and the callback's fields.
+ *
+ * Documented by Telnyx (developers.telnyx.com, "Conversation Relay" and the TeXML
+ * `<ConversationRelay>` reference): the `<Connect><ConversationRelay>` document and its attributes
+ * (url, voice, language, transcriptionProvider, dtmfDetection, interruptible), the socket frames, and
+ * the webhook signature headers.
+ *
+ * ASSUMPTIONS, not in Telnyx's published pages, to confirm with a live capture of a Telnyx call:
+ * 1. The TeXML voice and action webhooks are form-encoded with Twilio-compatible field names
+ *    (`CallSid`, `From`, `To`, `CallStatus`). The parser below reads a JSON body as well, and takes
+ *    `call_control_id` (or `CallControlId`) for the call id when `CallSid` is absent, so either answer works.
+ * 2. The `<Connect action>` callback hands the `end` frame's data back as `HandoffData`. The parser
+ *    also takes `handoffData`.
+ * 3. `hints` is not a documented attribute; it is sent so recognition gets the app's words if Telnyx
+ *    honours it, on the understanding that TeXML ignores an attribute it does not know.
+ * The conformance fixtures (__fixtures__/telnyx) say which of their entries are documented and which assumed.
+ */
+
+/** The webhook's fields as strings: a JSON object's string fields, or a form body's fields. */
+function fields(req: WebhookRequest): Record<string, string> {
+  const type = req.headers['content-type'] ?? '';
+  const looksJson = type.includes('application/json') || (type === '' && req.rawBody.trimStart().startsWith('{'));
+  if (!looksJson) return formFields(req.rawBody);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(req.rawBody);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(parsed)) if (typeof v === 'string') out[k] = v;
+  return out;
+}
+
+/** The first of `names` the fields carry. */
+function first(raw: Record<string, string>, ...names: string[]): string | undefined {
+  for (const n of names) if (raw[n] !== undefined) return raw[n];
+  return undefined;
+}
+
+function parse(req: WebhookRequest): CallbackParams | null {
+  const raw = fields(req);
+  const callId = (first(raw, 'CallSid', 'call_control_id', 'CallControlId') ?? '').trim();
+  if (!callId) return null;
+  const from = first(raw, 'From', 'from');
+  const to = first(raw, 'To', 'to');
+  const callStatus = first(raw, 'CallStatus');
+  const sessionStatus = first(raw, 'SessionStatus');
+  const handoffData = first(raw, 'HandoffData', 'handoffData');
+  return {
+    callId,
+    raw,
+    ...(from !== undefined ? { from } : {}),
+    ...(to !== undefined ? { to } : {}),
+    ...(callStatus !== undefined ? { callStatus } : {}),
+    ...(sessionStatus !== undefined ? { sessionStatus } : {}),
+    ...(handoffData !== undefined ? { handoffData } : {}),
+  };
+}
+
+/**
+ * The TeXML connect document. `ttsProvider` is left out: a Telnyx voice name carries its provider
+ * (`Telnyx.NaturalHD.astra`), so the configured voice is passed whole and must be one Telnyx knows.
+ */
+function startDocument(o: StartDocumentOptions): string {
+  const attrs = [
+    `url="wss://${escapeXml(o.publicHost)}/conversation/telnyx?token=${escapeXml(o.token)}"`,
+    'dtmfDetection="true"',
+    'interruptible="any"',
+    `hints="${escapeXml(o.hints)}"`,
+  ];
+  if (o.voice) attrs.push(`voice="${escapeXml(o.voice)}"`);
+  return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx"><ConversationRelay ${attrs.join(' ')}/></Connect>`);
+}
+
+export const telnyxProvider: VoiceProvider = {
+  id: 'telnyx',
+  contentType: 'text/xml',
+  verify: (req, secret) =>
+    verifyTelnyxSignature(
+      { signature: req.headers['telnyx-signature-ed25519'], timestamp: req.headers['telnyx-timestamp'], rawBody: req.rawBody, nowSec: req.nowSec },
+      secret,
+    ),
+  parse,
+  startDocument,
+  dialDocument: (n) => xmlResponse(`<Dial>${escapeXml(n)}</Dial>`),
+  hangupDocument: () => xmlResponse('<Hangup/>'),
+  apologizeAndDialDocument: (n) =>
+    xmlResponse(`<Say>Sorry, we lost the connection. Let me get someone to help you.</Say><Dial>${escapeXml(n)}</Dial>`),
+};

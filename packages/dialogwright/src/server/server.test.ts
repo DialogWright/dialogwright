@@ -642,6 +642,14 @@ describe('server end to end', () => {
     expect(safeFileStem('')).toBe('unknown');
   });
 
+  it('names a Telnyx call\'s files by a stable stem with no colon (its ids look like v2:...)', async () => {
+    const { safeFileStem } = await import('./index');
+    const id = 'v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ';
+    expect(safeFileStem(id)).toBe('v2_T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ');
+    expect(safeFileStem(id)).toBe(safeFileStem(id));
+    expect(safeFileStem(id)).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+  });
+
   it('exposes health and refuses upgrades on other paths', async () => {
     const s = await start();
     const res = await fetch(`${s.base}/health`);

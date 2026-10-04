@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { generateKeyPairSync, sign as signEd25519 } from 'node:crypto';
 import { createServer, request, type Server } from 'node:http';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -255,6 +256,79 @@ describe('routes by voice provider', () => {
     const r = await post(base, '/cr-action', { CallStatus: 'completed' });
     expect(r.status).toBe(200);
     expect(r.text).toContain('<Hangup/>');
+  });
+});
+
+describe('Telnyx webhooks', () => {
+  // A key pair made here: Telnyx signs with the private half, the server is configured with the public one.
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const TELNYX_PUBLIC_KEY = publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+
+  async function postTelnyx(base: string, path: string, body: string, opts: { sign?: boolean; type?: string; at?: number } = {}) {
+    const ts = String(opts.at ?? Math.floor(Date.now() / 1000));
+    const headers: Record<string, string> = { 'content-type': opts.type ?? 'application/x-www-form-urlencoded' };
+    if (opts.sign !== false) {
+      headers['telnyx-timestamp'] = ts;
+      headers['telnyx-signature-ed25519'] = signEd25519(null, Buffer.from(`${ts}|${body}`), privateKey).toString('base64');
+    }
+    const res = await fetch(base + path, { method: 'POST', headers, body });
+    return { status: res.status, text: await res.text(), type: res.headers.get('content-type') };
+  }
+
+  it('answers a signed /voice/telnyx with TeXML at its own socket path', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const base = await listen(d);
+    const r = await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc&From=%2B15555550100');
+    expect(r.status).toBe(200);
+    expect(r.type).toBe('text/xml');
+    expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/telnyx?token=');
+    expect(r.text).toContain('<Connect action="https://demo.ngrok.app/cr-action/telnyx">');
+    const token = /token=([0-9a-f]{32})/.exec(r.text)![1]!;
+    expect(d.tokens.verify(token, 'v2:abc')).toBe(true);
+  });
+
+  it('reads a JSON webhook too', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const base = await listen(d);
+    const r = await postTelnyx(base, '/voice/telnyx', JSON.stringify({ call_control_id: 'v2:json', from: '+15555550100' }), { type: 'application/json' });
+    expect(r.status).toBe(200);
+    expect(d.tokens.verify(/token=([0-9a-f]{32})/.exec(r.text)![1]!, 'v2:json')).toBe(true);
+  });
+
+  it('refuses an unsigned, a stale and a Twilio-signed webhook', async () => {
+    const base = await listen(deps({ VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY }));
+    expect((await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc', { sign: false })).status).toBe(403);
+    expect((await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc', { at: Math.floor(Date.now() / 1000) - 3600 })).status).toBe(403);
+    expect((await post(base, '/voice/telnyx', { CallSid: 'v2:abc' })).status).toBe(403);
+    // And the other way round: Twilio's paths still want Twilio's signature.
+    expect((await postTelnyx(base, '/voice/twilio', 'CallSid=CA1')).status).toBe(403);
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1' })).status).toBe(200);
+  });
+
+  it('ends a Telnyx call through /cr-action/telnyx with the end frame\'s data', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const base = await listen(d);
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    const done = await postTelnyx(base, '/cr-action/telnyx', 'CallSid=v2%3Aabc&HandoffData=%7B%22reasonCode%22%3A%22completed%22%7D');
+    expect(done.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
+    expect(d.store.get('v2:abc')?.ended).toBe(true);
+    const dial = await postTelnyx(base, '/cr-action/telnyx', JSON.stringify({ CallSid: 'v2:def', handoffData: '{"reasonCode":"billing"}' }), { type: 'application/json' });
+    expect(dial.text).toContain('<Dial>+15551234567</Dial>');
+  });
+
+  it('reconnects a live Telnyx call to its own socket', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const base = await listen(d);
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    const r = await postTelnyx(base, '/cr-action/telnyx', 'CallSid=v2%3Aabc&CallStatus=in-progress&SessionStatus=failed');
+    expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/telnyx?token=');
+  });
+
+  it('leaves the legacy Twilio paths unanswered when Twilio is not enabled', async () => {
+    const base = await listen(deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY }));
+    expect((await post(base, '/voice', { CallSid: 'CA1' })).status).toBe(404);
+    expect((await post(base, '/cr-action', { CallSid: 'CA1' })).status).toBe(404);
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1' })).status).toBe(404);
   });
 });
 

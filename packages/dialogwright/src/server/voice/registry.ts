@@ -1,5 +1,7 @@
 import type { VoiceProvider } from './provider';
 import { twilioProvider } from './twilio';
+import { telnyxProvider } from './telnyx';
+import { telnyxPublicKey } from './telnyxSignature';
 
 /** A carrier the engine knows: its provider, and the environment variable that holds its secret. */
 interface KnownProvider {
@@ -8,11 +10,25 @@ interface KnownProvider {
   readonly secretVar: string;
   /** How the startup line names the secret (its value is never printed, only its length). */
   readonly secretLabel: string;
+  /** Throws, with the message config shows, when the secret cannot be what the provider needs; absent when any value may be. */
+  readonly checkSecret?: (value: string) => void;
 }
 
 /** Every carrier the engine knows, by id, in the order the docs list them. */
 const ALL: Readonly<Record<string, KnownProvider>> = {
   twilio: { provider: twilioProvider, secretVar: 'TWILIO_AUTH_TOKEN', secretLabel: 'auth token' },
+  telnyx: {
+    provider: telnyxProvider,
+    secretVar: 'TELNYX_PUBLIC_KEY',
+    secretLabel: 'telnyx public key',
+    checkSecret: (value) => {
+      try {
+        telnyxPublicKey(value);
+      } catch {
+        throw new Error("TELNYX_PUBLIC_KEY must be the account's base64 Ed25519 public key");
+      }
+    },
+  },
 };
 
 /** The ids VOICE_PROVIDERS may name. */
@@ -30,6 +46,11 @@ function known(id: string): KnownProvider {
 /** The environment variable that holds a provider's secret (TWILIO_AUTH_TOKEN, say). */
 export function secretVarOf(id: string): string {
   return known(id).secretVar;
+}
+
+/** Refuses a secret that cannot be what the provider needs (a key that does not parse, say), at startup. */
+export function checkSecretOf(id: string, value: string): void {
+  known(id).checkSecret?.(value);
 }
 
 /** How the startup line names a provider's secret. */
