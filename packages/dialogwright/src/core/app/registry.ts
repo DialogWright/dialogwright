@@ -1,5 +1,6 @@
 import type { App } from './types';
 import { validateApp } from './validate';
+import { requireEmbedder } from '../../kb/fallback';
 
 /**
  * The apps this process serves, by id. A session carries only its app's id (sessions stay plain,
@@ -11,6 +12,9 @@ let first: string | null = null;
 
 export function registerApp(app: App): void {
   validateApp(app);
+  // The engine's default retriever fell back to keywords although kb.yaml names an embedder: a
+  // warning, or under NODE_ENV=production (or DIALOGWRIGHT_REQUIRE_EMBEDDER=1) an error (../../kb/fallback.ts).
+  requireEmbedder(app.knowledge?.retriever, `app "${app.id}"`);
   if (apps.has(app.id)) throw new Error(`app "${app.id}" is already registered`);
   apps.set(app.id, app);
   first ??= app.id;

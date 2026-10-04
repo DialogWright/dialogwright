@@ -1,11 +1,12 @@
 import { MemoryVectorIndex } from './embed/memory';
-import { loadPinnedModel, modelDir, modelPresent, STATIC_MODELS, type PinnedModel } from './embed/model';
+import { loadPinnedModel, MODEL_COMMAND, MODEL_DIR_ENV, modelDir, modelPresent, STATIC_MODELS, type PinnedModel } from './embed/model';
+import { markFallback } from './fallback';
 import type { Embedder, VectorEntry, VectorHit, VectorIndex } from './embed/types';
 import { KeywordRetriever } from './keyword';
 import { DEFAULT_RETRIEVAL_CAP } from './schema';
 import { byScoreThenTopic, roundScore } from './score';
 import type { KnowledgeBase, NominateInput, Nomination, Retriever } from './types';
-import { sameEmbedder, type KbIndexData } from './vectorIndex';
+import { INDEX_COMMAND, sameEmbedder, type KbIndexData } from './vectorIndex';
 import { textHash, topicWordsFor, type RetrievalKb } from './words';
 import { collapseWhitespace } from './hash';
 
@@ -193,7 +194,14 @@ export interface DefaultRetrieverOptions {
 }
 
 /** Why the default retriever of a knowledge base is what it is: hybrid, or keyword alone and why. */
-export type DefaultRetrieverKind = 'hybrid' | 'keyword: no embedder' | 'keyword: no index' | 'keyword: index of another embedder' | 'keyword: no weights';
+export type DefaultRetrieverKind =
+  | 'hybrid'
+  | 'keyword: no embedder'
+  | 'keyword: no index'
+  | 'keyword: index invalid'
+  | 'keyword: index of another embedder'
+  | 'keyword: no weights'
+  | 'keyword: weights failed their check';
 
 /**
  * The retriever an app with a knowledge base gets when its code gives none (App.knowledge.retriever):
@@ -204,35 +212,44 @@ export type DefaultRetrieverKind = 'hybrid' | 'keyword: no embedder' | 'keyword:
  *    capped at kb.yaml's cap, the floor kb.yaml's or the model's own.
  *  - Otherwise keyword retrieval alone, so a call still nominates; `pnpm check` reports a missing
  *    or stale index (kb/rules.ts), and `pnpm kb:model` puts the weights in the cache. The trace's
- *    retrieverId says which ran.
+ *    retrieverId says which ran, and `fallback` says why, with the command that fixes it: defineApp,
+ *    defineKnowledge and registerApp warn with it, and registerApp refuses the app with it under
+ *    NODE_ENV=production or DIALOGWRIGHT_REQUIRE_EMBEDDER=1 (./fallback.ts).
  *
  * Weights are read from the cache once, when the app is defined (about 30 ms), never at call time.
  */
-export function defaultRetriever(kb: KnowledgeBase, options: DefaultRetrieverOptions = {}): { retriever: Retriever; kind: DefaultRetrieverKind } {
+export function defaultRetriever(kb: KnowledgeBase, options: DefaultRetrieverOptions = {}): { retriever: Retriever; kind: DefaultRetrieverKind; fallback?: string } {
   const cap = kb.settings.retrieval.cap;
   const keyword = new KeywordRetriever(kb, { cap });
   const id = kb.settings.retrieval.embedder;
   if (id === undefined) return { retriever: keyword, kind: 'keyword: no embedder' };
+  const fallBack = (kind: DefaultRetrieverKind, why: string, fix: string) => {
+    const fallback = `kb.yaml names the embedder ${id}, but retrieval falls back to keywords alone: ${why}; ${fix}`;
+    markFallback(keyword, fallback);
+    return { retriever: keyword, kind, fallback };
+  };
   const index = kb.index;
-  if (!index || !('data' in index)) return { retriever: keyword, kind: 'keyword: no index' };
+  const indexFix = `run ${INDEX_COMMAND} and commit the index (${MODEL_COMMAND} downloads the weights it embeds with)`;
+  if (!index || 'missing' in index) return fallBack('keyword: no index', `its index${index ? ` ${index.file}` : ''} is missing`, indexFix);
+  if (!('data' in index)) return fallBack('keyword: index invalid', `its index ${index.file} is not a vector index (${index.invalid})`, indexFix);
   const model: PinnedModel | undefined = Object.hasOwn(STATIC_MODELS, id) ? STATIC_MODELS[id] : undefined;
   let embedder = options.embedder;
   if (!embedder) {
-    if (!model) return { retriever: keyword, kind: 'keyword: no weights' };
+    if (!model) return fallBack('keyword: no weights', `the engine has no model ${id}`, 'name one it has in kb.yaml (pnpm check says which)');
     const env = options.env ?? process.env;
     const dir = modelDir(model, env);
     embedder = loaded.get(dir);
     if (!embedder) {
-      if (!modelPresent(model, env)) return { retriever: keyword, kind: 'keyword: no weights' };
+      if (!modelPresent(model, env)) return fallBack('keyword: no weights', `the weights of ${id} are not in the model cache (${dir})`, `run ${MODEL_COMMAND} where the server runs (or set ${MODEL_DIR_ENV} to the cache it fills)`);
       try {
         embedder = loadPinnedModel(model, env);
-      } catch {
-        return { retriever: keyword, kind: 'keyword: no weights' };
+      } catch (error) {
+        return fallBack('keyword: weights failed their check', `the weights of ${id} in the model cache are not the pinned ones (${error instanceof Error ? error.message : String(error)})`, `delete ${dir} and run ${MODEL_COMMAND}`);
       }
       loaded.set(dir, embedder);
     }
   }
-  if (!sameEmbedder(index.data.embedder, embedder)) return { retriever: keyword, kind: 'keyword: index of another embedder' };
+  if (!sameEmbedder(index.data.embedder, embedder)) return fallBack('keyword: index of another embedder', `its index ${index.file} was written by ${index.data.embedder.id} at ${index.data.embedder.revision.slice(0, 12)}, not the pinned ${embedder.id} at ${embedder.revision.slice(0, 12)}`, indexFix);
   const floor = kb.settings.retrieval.floor ?? model?.floor ?? 0;
   return { retriever: new HybridRetriever(kb, { embedder, vectors: index.data, floor, cap, indexHash: index.hash, keyword }), kind: 'hybrid' };
 }

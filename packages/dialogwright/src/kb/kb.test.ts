@@ -2,11 +2,11 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, sym
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import type { ToolDef } from '../core/app/types';
 import type { SlotSpec } from '../core/slots/types';
 import { validateApp } from '../core/app/validate';
-import { checkApp } from '../define/check';
+import { checkApp, checkAppFully } from '../define/check';
 import { defineApp, isAppDefinitionError, type AppCode } from '../define/defineApp';
 import { defineKnowledge, knowledgeProblems } from '../define/defineKnowledge';
 import { libraryApp, libraryCode, LIBRARY_DIR } from '../define/fixture/app';
@@ -19,6 +19,8 @@ import { createHash } from 'node:crypto';
 import { defaultRetriever } from './hybrid';
 import { buildIndex } from './vectorIndex';
 import { MODEL_DIR_ENV, POTION_BASE_8M } from './embed/model';
+import { STATIC_MODEL_FILES } from './embed/static';
+import { registerApp } from '../core/app/registry';
 import type { Embedder } from './embed/types';
 import type { KnowledgeBase, Retriever } from './types';
 import { probeContexts } from '../core/app/probeQuestions';
@@ -830,6 +832,99 @@ describe('check: the vector index of the embedder kb.yaml names (kb/.index/<embe
     expect(defaultRetriever(loadAppFolder(appFolder({ 'kb/kb.yaml': withEmbedder })).config!.knowledge!, { env: noWeights }).kind).toBe('keyword: no index');
     expect(defaultRetriever(fixtureKb()).kind).toBe('keyword: no embedder');
     expect(defaultRetriever(kb, { embedder: { ...pinnedLookalike, sha256: '0'.repeat(64) } }).kind).toBe('keyword: index of another embedder');
+  });
+});
+
+describe('a default retriever that falls back to keywords although kb.yaml names an embedder', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  /** A model cache with the pinned model's files there, but not the pinned bytes. */
+  const corruptCache = (): string => {
+    const root = temp();
+    mkdirSync(join(root, POTION_BASE_8M.revision), { recursive: true });
+    for (const file of STATIC_MODEL_FILES) writeFileSync(join(root, POTION_BASE_8M.revision, file), 'not the model');
+    return root;
+  };
+
+  it('says why, and the command that fixes it', async () => {
+    const dir = await indexedFolder();
+    const kb = loadAppFolder(dir).config!.knowledge!;
+    const empty = temp();
+    const noWeights = defaultRetriever(kb, { env: { [MODEL_DIR_ENV]: empty } });
+    expect(noWeights.kind).toBe('keyword: no weights');
+    expect(noWeights.fallback).toBe(`kb.yaml names the embedder potion-base-8M, but retrieval falls back to keywords alone: the weights of potion-base-8M are not in the model cache (${join(empty, POTION_BASE_8M.revision)}); run pnpm kb:model where the server runs (or set DIALOGWRIGHT_MODEL_DIR to the cache it fills)`);
+    const corrupt = defaultRetriever(kb, { env: { [MODEL_DIR_ENV]: corruptCache() } });
+    expect(corrupt.kind).toBe('keyword: weights failed their check');
+    expect(corrupt.fallback).toMatch(/the weights of potion-base-8M in the model cache are not the pinned ones \(.* has the SHA-256 [0-9a-f]{64}, not the pinned [0-9a-f]{64}: .*\); delete .* and run pnpm kb:model$/);
+    const indexFix = 'run pnpm kb:index and commit the index (pnpm kb:model downloads the weights it embeds with)';
+    const missing = defaultRetriever(loadAppFolder(appFolder({ 'kb/kb.yaml': withEmbedder })).config!.knowledge!, { env: { [MODEL_DIR_ENV]: empty } });
+    expect([missing.kind, missing.fallback]).toEqual(['keyword: no index', `kb.yaml names the embedder potion-base-8M, but retrieval falls back to keywords alone: its index kb/.index/potion-base-8M.json is missing; ${indexFix}`]);
+    const invalid = defaultRetriever(loadAppFolder(await indexedFolder({ 'kb/.index/potion-base-8M.json': '{"embedder": {"id": 1}}' })).config!.knowledge!, { env: { [MODEL_DIR_ENV]: empty } });
+    expect([invalid.kind, invalid.fallback]).toEqual(['keyword: index invalid', `kb.yaml names the embedder potion-base-8M, but retrieval falls back to keywords alone: its index kb/.index/potion-base-8M.json is not a vector index (its "embedder" is not { id, revision, sha256, dim }); ${indexFix}`]);
+    const other = defaultRetriever(kb, { embedder: { ...pinnedLookalike, revision: 'b'.repeat(40) } });
+    expect(other.kind).toBe('keyword: index of another embedder');
+    expect(other.fallback).toContain(`its index kb/.index/potion-base-8M.json was written by potion-base-8M at ${POTION_BASE_8M.revision.slice(0, 12)}, not the pinned potion-base-8M at bbbbbbbbbbbb; ${indexFix}`);
+    // Neither hybrid nor a knowledge base without an embedder has anything to say.
+    expect(defaultRetriever(kb, { embedder: pinnedLookalike }).fallback).toBeUndefined();
+    expect(defaultRetriever(fixtureKb()).fallback).toBeUndefined();
+  });
+
+  it('defineApp and defineKnowledge warn, once, with the reason; check does not', async () => {
+    vi.stubEnv(MODEL_DIR_ENV, temp());
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const dir = await indexedFolder();
+      const app = defineApp(dir, CODE);
+      expect(warn.mock.calls.map((c) => c[0])).toEqual([expect.stringMatching(/^dialogwright: app "library": kb\.yaml names the embedder potion-base-8M, but retrieval falls back to keywords alone: the weights of potion-base-8M are not in the model cache .*; run pnpm kb:model .*\(with NODE_ENV=production or DIALOGWRIGHT_REQUIRE_EMBEDDER=1 this is an error, and the server does not start\)$/)]);
+      expect(app.knowledge!.retriever!.id).toBe('keyword');
+      warn.mockClear();
+      defineKnowledge(join(dir, 'kb'), { locales: ['en-US', 'es'] });
+      expect(warn.mock.calls.map((c) => c[0])).toEqual([expect.stringContaining(`dialogwright: the knowledge base in ${join(dir, 'kb')}: kb.yaml names the embedder potion-base-8M, but retrieval falls back to keywords alone`)]);
+      warn.mockClear();
+      // check imports the app's code, which defines it: it says nothing of the model cache.
+      writeFileSync(
+        join(dir, 'app.ts'),
+        [
+          `import { defineApp } from ${JSON.stringify(join(here, '..', 'index.ts'))};`,
+          `import { libraryCode } from ${JSON.stringify(join(here, '..', 'define', 'fixture', 'app.ts'))};`,
+          "const tools = { findPassage: { params: ['topic', 'card'], run: () => ({ value: null, summary: 'resolved' }) }, getFees: { params: ['card'], fields: ['balance'], run: () => ({ value: { balance: '1 dollar' }, summary: 'fees read' }) } };",
+          'export const code = { ...libraryCode, tools: { ...libraryCode.tools, ...tools } };',
+          `export const app = defineApp(${JSON.stringify(dir)}, code);`,
+          '',
+        ].join('\n'),
+      );
+      const checked = await checkAppFully(dir, { todayIso: TODAY });
+      expect(checked.codeChecked).toBe(true);
+      expect(checked.problems.map(formatProblem).filter((l) => !l.startsWith('kb/.index'))).toEqual([]);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('registerApp refuses the app under NODE_ENV=production or DIALOGWRIGHT_REQUIRE_EMBEDDER=1, and warns otherwise', async () => {
+    vi.stubEnv(MODEL_DIR_ENV, temp());
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const dir = await indexedFolder();
+      const built = (id: string) => {
+        writeFileSync(join(dir, 'app.yaml'), readFileSync(join(dir, 'app.yaml'), 'utf8').replace(/^id: .*$/m, `id: ${id}`));
+        return defineApp(dir, CODE);
+      };
+      vi.stubEnv('DIALOGWRIGHT_REQUIRE_EMBEDDER', '1');
+      expect(() => registerApp(built('library-fallback-required'))).toThrow('app "library-fallback-required": kb.yaml names the embedder potion-base-8M, but retrieval falls back to keywords alone: the weights of potion-base-8M are not in the model cache');
+      vi.stubEnv('DIALOGWRIGHT_REQUIRE_EMBEDDER', '');
+      vi.stubEnv('NODE_ENV', 'production');
+      expect(() => registerApp(built('library-fallback-production'))).toThrow('NODE_ENV=production or DIALOGWRIGHT_REQUIRE_EMBEDDER=1 requires the embedder, so the app is not registered');
+      vi.stubEnv('NODE_ENV', 'test');
+      // An app built by hand with the default retriever, never warned about: registerApp says it.
+      const kb = loadAppFolder(dir).config!.knowledge!;
+      const app = { ...built('library-fallback-warned'), knowledge: { kb, retriever: defaultRetriever(kb).retriever } };
+      warn.mockClear();
+      registerApp(app);
+      expect(warn.mock.calls.map((c) => c[0])).toEqual([expect.stringContaining('dialogwright: app "library-fallback-warned": kb.yaml names the embedder potion-base-8M, but retrieval falls back')]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
