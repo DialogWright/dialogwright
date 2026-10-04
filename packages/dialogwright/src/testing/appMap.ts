@@ -167,6 +167,10 @@ function intentsTable(app: App): string[] {
     if (intent.kind === 'form') {
       const form = app.forms[id];
       then = form ? `opens the form, which asks for ${form.slots.map((s) => slotNoun(app, s)).join(', ') || 'nothing'}` : 'no form: dangling';
+    } else if (intent.kind === 'informational' && intent.passage !== undefined) {
+      // The passage's words change through review (kb/passages), not here: the map names it.
+      const known = app.knowledge?.kb !== undefined && Object.hasOwn(app.knowledge.kb.passages, intent.passage);
+      then = known ? `says the passage ${intent.passage} from the knowledge base and goes back to the question` : `says the passage ${intent.passage}, which the knowledge base does not have: dangling`;
     } else if (intent.kind === 'informational') {
       const text = intent.promptId === undefined ? undefined : app.prompts.manifest[intent.promptId]?.text;
       then = text === undefined ? 'says a line that does not exist: dangling' : `says "${text.length > 90 ? `${text.slice(0, 87)}...` : text}" and goes back to the question`;

@@ -37,6 +37,7 @@ describe('a form that answers from the knowledge base (forms.yaml answers:)', ()
     // The app map draws the intent to its passage, and nothing it names is missing.
     expect(danglingReferences(APP)).toEqual([]);
     expect(appMapText(APP)).toContain('passage opening-hours');
+    expect(appMapText(APP)).toContain('| informational | hear the opening hours | says the passage opening-hours from the knowledge base and goes back to the question |');
   });
 
   it('says the answer word for word, with the account line from the caller\'s own data, and records the passage', () => {
