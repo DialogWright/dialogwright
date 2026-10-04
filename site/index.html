@@ -35,6 +35,7 @@
       </a>
       <nav aria-label="On this page">
         <ul>
+          <li><a href="#why">Why</a></li>
           <li><a href="#how">How it works</a></li>
           <li><a href="#examples">Examples</a></li>
           <li><a href="#start">Quick start</a></li>
@@ -53,11 +54,9 @@
         </picture>
         <h1 id="hero-title">Voice and chat agents that understand people and act safely.</h1>
         <p class="lede">
-          Callers talk naturally, and the system maps what they mean to the right action. A fast decision
-          model reads what was said and answers typed questions; it never writes the reply. What the agent
-          says and does is predictable: the lines are fixed, code decides what happens next, and a policy
-          gate checks every action. Replies are fast, because a decision is a short typed question, not a
-          composed answer.
+          A new take on virtual agents: natural understanding, predictable words and actions, and fast
+          replies. Callers say it their own way; the agent understands, does the right thing and says what
+          you approved.
         </p>
         <p class="actions">
           <a class="button primary" href="https://github.com/DialogWright/dialogwright">GitHub repository</a>
@@ -68,10 +67,42 @@
       </div>
     </section>
 
+    <section id="why" class="alt" aria-labelledby="why-title">
+      <div class="wrap">
+        <h2 id="why-title">Nobody calls an IVR to chat</h2>
+        <p>
+          People call to pay a bill, report an outage or move an appointment. They judge your IVR or chatbot
+          by one thing: whether it understood them. Nobody hangs up impressed that it said the same thing a
+          dozen different ways.
+        </p>
+        <p>
+          Large language models finally made real understanding possible, and generation came bundled with
+          it. Sometimes that is what you want: a warmer greeting, an explanation in the caller's own terms.
+          But in most of a service call, varied wording is not the point, and every reply you did not write
+          is a reply you cannot fully predict.
+        </p>
+        <p>
+          DialogWright unbundles them. Understanding is always on: a fast decision model works out what the
+          caller meant and chooses the next action. What the agent says was written and approved, and a
+          policy gate checks every action before it happens. Generated wording, where you
+          decide it helps, will be an opt-in for each prompt (it is on the
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#5-generated-wording">roadmap</a>).
+        </p>
+        <p>
+          Your agent does not need to talk about everything. It needs to understand its own domain thoroughly
+          and act on it safely. <strong>The intelligence is in the understanding.</strong>
+        </p>
+      </div>
+    </section>
+
     <section id="how" aria-labelledby="how-title">
       <div class="wrap">
         <h2 id="how-title">How it works</h2>
-        <p class="intro">Three parts, each with one job. The model never decides, and the code never guesses.</p>
+        <p class="intro">
+          Callers talk naturally, and the system maps what they mean to the right action. Three parts, each
+          with one job: the model never decides, and the code never guesses. Replies are fast, because a
+          decision is a short typed question, not a composed answer.
+        </p>
         <ol class="cards steps">
           <li>
             <h3><span class="num" aria-hidden="true">1</span> The model understands</h3>
@@ -318,9 +349,9 @@ pnpm install</code></pre>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/.claude/skills/create-app/SKILL.md">create-app skill</a>.
         </p>
         <p class="note">
-          Pre-release: APIs will change, and the package is not on npm yet. Next on the
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>,
-          coming soon: a knowledge base of approved answers, chosen by the model and spoken as approved, never generated.
+          Pre-release: APIs will change, and the package is not on npm yet. See the
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>
+          for what is built and what comes next.
         </p>
       </div>
     </section>
