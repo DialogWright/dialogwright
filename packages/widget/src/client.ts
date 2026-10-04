@@ -146,6 +146,8 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
     };
 
     socket.onmessage = (ev: MessageEvent) => {
+      // A socket the client has replaced or closed speaks for the chat no more.
+      if (stopped || ws !== socket) return;
       let m: ServerMessage;
       try {
         m = JSON.parse(String(ev.data)) as ServerMessage;
