@@ -190,3 +190,68 @@ pre[data-copy] code { overflow-wrap: anywhere; }
   .top nav ul { gap: 0.25rem 0.75rem; }
   .top nav a { font-size: 0.875rem; }
 }
+
+/* Guides (site/guides/*.html) */
+.guide-head { padding-top: 56px; padding-bottom: 32px; }
+.guide-head h1 { font-size: clamp(1.8rem, 1.2rem + 2.4vw, 2.6rem); margin: 0 0 1rem; max-width: 26ch; letter-spacing: -0.02em; }
+.crumbs { font-size: 0.9rem; color: var(--muted); margin: 0 0 1rem; }
+.guide { padding-bottom: 48px; }
+.guide > section { padding: 2.25rem 0 0.5rem; border-top: 1px solid var(--line); }
+.guide > section:first-child { border-top: 0; }
+.guide h2 { margin-bottom: 1rem; }
+.guide h3 { margin-top: 1.75rem; }
+.guide p, .guide ul, .guide ol, .guide dl { max-width: 46rem; }
+.guide li { margin-bottom: 0.4rem; }
+.guide pre { margin: 0 0 1.25rem; }
+.guide figure pre { margin: 0; }
+.toc { background: var(--bg-alt); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.25rem; max-width: 46rem; margin: 0 0 2rem; }
+.toc h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+.toc ol { margin: 0; padding-left: 1.4rem; columns: 2 16rem; column-gap: 2rem; }
+.toc li { margin-bottom: 0.25rem; break-inside: avoid; }
+.banner {
+  background: var(--surface); border: 1px solid var(--line); border-left: 6px solid var(--accent);
+  border-radius: 10px; padding: 1rem 1.25rem; max-width: 46rem; margin: 0 0 1.5rem;
+}
+.banner p { margin: 0 0 0.5rem; }
+.banner p:last-child { margin-bottom: 0; }
+.banner.design { border-left-color: var(--heading); }
+.unverified {
+  border-left: 3px dashed var(--accent); padding: 0.1rem 0 0.1rem 0.9rem; color: var(--muted); font-size: 0.95rem;
+}
+.table-wrap { overflow-x: auto; margin: 0 0 1.5rem; max-width: 100%; }
+.guide table { border-collapse: collapse; width: 100%; min-width: 36rem; font-size: 0.95rem; }
+.guide th, .guide td { text-align: left; vertical-align: top; padding: 0.55rem 0.7rem; border: 1px solid var(--line); }
+.guide th { background: var(--bg-alt); color: var(--heading); }
+.guide td code, .guide th code { overflow-wrap: anywhere; }
+.guide dt { font-weight: 700; margin-top: 0.75rem; }
+.guide dd { margin: 0.25rem 0 0 1.25rem; }
+.sources { font-size: 0.95rem; }
+
+/* Diagrams: inline SVG, coloured from the page's own tokens so they follow light and dark. */
+.diagram { margin: 0 0 1.5rem; max-width: 46rem; }
+.diagram svg { display: block; width: 100%; max-width: 560px; height: auto; margin: 0 auto; font-family: var(--sans); }
+.diagram figcaption { margin: 0.75rem 0 0; }
+.dg-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.dg-key { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.dg-zone { fill: var(--bg-alt); stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.dg-line { stroke: var(--muted); stroke-width: 1.75; fill: none; }
+.dg-line.dashed { stroke-dasharray: 5 4; }
+.dg-head { fill: var(--muted); }
+.dg-title { fill: var(--heading); font-size: 14px; font-weight: 700; }
+.dg-text { fill: var(--text); font-size: 12px; }
+.dg-note { fill: var(--muted); font-size: 11px; }
+.dg-box.optional { stroke-dasharray: 5 4; }
+/* On a phone, a table's rows become cards, each cell labelled with its column. */
+@media (max-width: 640px) {
+  .guide table.stack { min-width: 0; }
+  .guide table.stack thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .guide table.stack, .guide table.stack tbody, .guide table.stack tr { display: block; }
+  .guide table.stack tr { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 0.75rem; overflow: hidden; }
+  .guide table.stack td, .guide table.stack th { display: block; border: 0; border-top: 1px solid var(--line); }
+  .guide table.stack tr > :first-child { border-top: 0; background: var(--bg-alt); }
+  .guide table.stack td[data-label]::before {
+    content: attr(data-label); display: block; font-size: 0.8rem; font-weight: 700; color: var(--muted); margin-bottom: 0.15rem;
+  }
+}

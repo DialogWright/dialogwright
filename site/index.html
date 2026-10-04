@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>DialogWright: voice and chat agents that understand people and act safely</title>
-  <meta name="description" content="DialogWright is an open-source TypeScript framework for voice and chat agents. A decision model understands what callers mean, code decides what happens, and a policy gate checks every action.">
+  <title>DialogWright: your own phone system, on a machine you own</title>
+  <meta name="description" content="DialogWright is an open-source TypeScript framework for your own phone system: an IVR that understands callers, on a machine you own with a carrier number and a model key, designed to scale to a contact center.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -16,8 +16,8 @@
   <link rel="apple-touch-icon" href="brand/favicon-180.png">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://dialogwright.com/">
-  <meta property="og:title" content="DialogWright">
-  <meta property="og:description" content="Voice and chat agents that understand people and act safely. An open-source TypeScript framework.">
+  <meta property="og:title" content="DialogWright: your own phone system">
+  <meta property="og:description" content="An IVR for your life, on a machine you own, with a carrier number and a model key. The same open-source framework is designed to scale to a contact center.">
   <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
   <link rel="stylesheet" href="style.css">
   <script src="copy.js" defer></script>
@@ -37,6 +37,7 @@
         <ul>
           <li><a href="#why">Why</a></li>
           <li><a href="#how">How it works</a></li>
+          <li><a href="#guides">Guides</a></li>
           <li><a href="#examples">Examples</a></li>
           <li><a href="#start">Quick start</a></li>
           <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
@@ -52,18 +53,18 @@
           <source media="(prefers-color-scheme: dark)" srcset="brand/dialogwright-logo-dark.svg">
           <img class="logo" src="brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
         </picture>
-        <h1 id="hero-title">Voice and chat agents that understand people and act safely.</h1>
+        <h1 id="hero-title">Your own phone system. An IVR for your life, on a machine you own.</h1>
         <p class="lede">
-          A new take on virtual agents: natural understanding, predictable words and actions, and fast
-          replies. Callers say it their own way; the agent understands, does the right thing and says what
-          you approved.
+          Answer your own number, screen callers, take messages and put the urgent ones through to your mobile.
+          It runs on your laptop or a box at home with a carrier number and a model key, and the same framework
+          is designed to scale to a contact center.
         </p>
         <p class="actions">
-          <a class="button primary" href="https://github.com/DialogWright/dialogwright">GitHub repository</a>
-          <a class="button" href="#start">Quick start</a>
+          <a class="button primary" href="guides/home-server.html">Run it on a machine you own</a>
+          <a class="button" href="https://github.com/DialogWright/dialogwright">GitHub repository</a>
           <a class="button" href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Read the design</a>
         </p>
-        <p class="note">An open-source TypeScript framework. Apache-2.0. Pre-release. Runs on a laptop with no keys.</p>
+        <p class="note">Voice and chat agents that understand people and act safely: an open-source TypeScript framework. Apache-2.0. Pre-release. Try it on a laptop with no keys.</p>
       </div>
     </section>
 
@@ -71,9 +72,10 @@
       <div class="wrap">
         <h2 id="why-title">Nobody calls an IVR to chat</h2>
         <p>
-          People call to pay a bill, report an outage or move an appointment. They judge your IVR or chatbot
-          by one thing: whether it understood them. Nobody hangs up impressed that it said the same thing a
-          dozen different ways.
+          People call a business to pay a bill, report an outage or move an appointment. They call you to reach
+          you, to leave a message, or to find out whether it can wait. Either way they judge the line by one
+          thing: whether it understood them. Nobody hangs up impressed that it said the same thing a dozen
+          different ways.
         </p>
         <p>
           Large language models finally made real understanding possible, and generation came bundled with
@@ -95,7 +97,47 @@
       </div>
     </section>
 
-    <section id="how" aria-labelledby="how-title">
+    <section id="guides" aria-labelledby="guides-title">
+      <div class="wrap">
+        <h2 id="guides-title">From your desk to the enterprise</h2>
+        <p class="intro">
+          Start with one machine and your own number. When a business needs more, the same app is designed to run
+          on many servers.
+        </p>
+        <div class="cards two">
+          <article class="card">
+            <h3>One machine, for you</h3>
+            <p>
+              Your laptop to try it, then any machine that stays on: a Mac, a Linux mini PC, a spare desktop. A phone
+              line needs two keys, a carrier's (Telnyx or Twilio) and a decision model's, and a tunnel (a quick one
+              needs no account). One process, no database.
+            </p>
+            <p><a href="guides/home-server.html">Run your own IVR on a machine you own</a></p>
+          </article>
+          <article class="card">
+            <h3>Many servers, for a business</h3>
+            <p>
+              The same app behind a load balancer, with sessions in a shared store so that a deploy or a failed server
+              never drops a call. Designed, not built yet: it is Phase 8 of the
+              <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>.
+            </p>
+            <p><a href="guides/scaling.html">Scaling out (a design)</a></p>
+          </article>
+        </div>
+        <ul class="facts">
+          <li><strong>The same app folder.</strong> Intents, forms, prompts and slots in YAML, tools in TypeScript.</li>
+          <li><strong>The same policy.</strong> <code>policy.yaml</code> and the gate decide every action, on one machine or fifty.</li>
+          <li><strong>The same audit.</strong> Every decision, allowed or refused, in a hash-chained log, with a trace of every turn.</li>
+          <li><strong>The same tests.</strong> <code>pnpm check</code>, the policy matrix and the scripted calls, before any call is taken.</li>
+        </ul>
+        <p class="note">
+          A personal line (a voicemail replacement) is not an example app yet: it is what you can build. The examples today are a
+          clinic and a utility, below, and <code>pnpm create-app</code> starts yours.
+        </p>
+      </div>
+    </section>
+
+    <section id="how" class="alt" aria-labelledby="how-title">
       <div class="wrap">
         <h2 id="how-title">How it works</h2>
         <p class="intro">
@@ -139,7 +181,7 @@
       </div>
     </section>
 
-    <section id="folder" class="alt" aria-labelledby="folder-title">
+    <section id="folder" aria-labelledby="folder-title">
       <div class="wrap">
         <h2 id="folder-title">An app is a folder</h2>
         <p class="intro">
@@ -197,7 +239,7 @@ apps/utility: ok</code></pre>
       </div>
     </section>
 
-    <section id="assistants" aria-labelledby="assistants-title">
+    <section id="assistants" class="alt" aria-labelledby="assistants-title">
       <div class="wrap">
         <h2 id="assistants-title">Built for AI coding assistants</h2>
         <p class="intro">
@@ -242,7 +284,7 @@ apps/utility: ok</code></pre>
       </div>
     </section>
 
-    <section id="policy" class="alt" aria-labelledby="policy-title">
+    <section id="policy" aria-labelledby="policy-title">
       <div class="wrap">
         <h2 id="policy-title">Compliance can read it</h2>
         <p class="intro">
@@ -285,7 +327,7 @@ apps/utility: ok</code></pre>
       </div>
     </section>
 
-    <section id="examples" aria-labelledby="examples-title">
+    <section id="examples" class="alt" aria-labelledby="examples-title">
       <div class="wrap">
         <h2 id="examples-title">Examples</h2>
         <p class="intro">Two fictional organizations. Every name, date and number in them is made up, and neither needs a key to run.</p>
@@ -319,7 +361,7 @@ apps/utility: ok</code></pre>
       </div>
     </section>
 
-    <section id="start" class="alt" aria-labelledby="start-title">
+    <section id="start" aria-labelledby="start-title">
       <div class="wrap">
         <h2 id="start-title">Quick start</h2>
         <p class="intro">Requires Node 22.19 or later and pnpm. Nothing needs a key: with no model attached, each app answers from its own labelled examples.</p>
@@ -344,6 +386,7 @@ pnpm install</code></pre>
           </li>
         </ol>
         <p>
+          To put it on a phone number, follow <a href="guides/home-server.html">Run your own IVR on a machine you own</a>.
           Then read <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md">Authoring an app</a>,
           or give an AI coding assistant a paragraph describing your app and point it at the
           <a href="https://github.com/DialogWright/dialogwright/blob/main/.claude/skills/create-app/SKILL.md">create-app skill</a>.
@@ -368,6 +411,13 @@ pnpm install</code></pre>
           <p>Status: pre-release.</p>
           <p>Code under the <a href="https://github.com/DialogWright/dialogwright/blob/main/LICENSE">Apache-2.0 license</a>.</p>
         </div>
+        <nav aria-label="Guides">
+          <h2>Guides</h2>
+          <ul>
+            <li><a href="guides/home-server.html">A machine you own</a></li>
+            <li><a href="guides/scaling.html">Scaling out</a></li>
+          </ul>
+        </nav>
         <nav aria-label="Documentation">
           <h2>Docs</h2>
           <ul>

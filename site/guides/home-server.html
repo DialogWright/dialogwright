@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>DialogWright guide: run your own IVR on a machine you own</title>
+  <meta name="description" content="Step by step: try DialogWright with no accounts, then run a real phone line on your laptop or any always-on machine with two keys, a carrier and a decision model, and a tunnel.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://dialogwright.com/guides/home-server.html">
+  <link rel="icon" href="../brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="../brand/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="../brand/favicon-180.png">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://dialogwright.com/guides/home-server.html">
+  <meta property="og:title" content="Run your own IVR on a machine you own">
+  <meta property="og:description" content="Try it with no accounts, then a real phone line on a machine you own with two keys: a carrier and a decision model.">
+  <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
+  <link rel="stylesheet" href="../style.css">
+  <script src="../copy.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap bar">
+      <a class="home" href="../" aria-label="DialogWright, home page">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="../brand/dialogwright-mark-dark.svg">
+          <img src="../brand/dialogwright-mark.svg" alt="" width="32" height="32">
+        </picture>
+      </a>
+      <nav aria-label="Site">
+        <ul>
+          <li><a href="../#why">Why</a></li>
+          <li><a href="../#how">How it works</a></li>
+          <li><a href="../#guides">Guides</a></li>
+          <li><a href="../#examples">Examples</a></li>
+          <li><a href="../#start">Quick start</a></li>
+          <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap guide-head">
+      <p class="crumbs"><a href="../#guides">Guides</a> / A machine you own</p>
+      <h1>Run your own IVR on a machine you own</h1>
+      <p class="lede">
+        Your laptop to try it, then any machine that stays on: a Mac, a Linux mini PC, a spare desktop. Try it
+        first with no accounts at all. A real phone line needs two keys, a carrier's and a decision model's,
+        and a tunnel that can be had without signing up for anything.
+      </p>
+      <div class="banner">
+        <p><strong>Pre-release.</strong> DialogWright runs as a single process today, and its sessions live in that
+          process's memory: restarting the server drops any call in progress. A tunnel can blip and a call
+          reconnects; the server cannot restart and keep its calls. Phase 8 of the
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>
+          adds the production pieces.</p>
+        <p>A personal line (answering your own number, screening, taking a message, sending urgent calls to your mobile)
+          is something you can build on it, not an example app yet. The steps are the same for any app; the utility
+          example stands in for yours below. Every name, number, key and host name here is made up.</p>
+      </div>
+      <nav class="toc" aria-label="On this page">
+        <h2>On this page</h2>
+        <ol>
+          <li><a href="#try">Try it with no accounts</a></li>
+          <li><a href="#architecture">The architecture</a></li>
+          <li><a href="#accounts">Two keys, and what is optional</a></li>
+          <li><a href="#machine">The machine</a></li>
+          <li><a href="#configuration">Configuration</a></li>
+          <li><a href="#tunnel">The tunnel</a></li>
+          <li><a href="#carrier">Pointing the carrier at it</a></li>
+          <li><a href="#checking">Checking it works</a></li>
+          <li><a href="#running">Keeping it running</a></li>
+          <li><a href="#care">Updating, backing up, watching, security</a></li>
+          <li><a href="#coming">What is coming</a></li>
+          <li><a href="#sources">Sources</a></li>
+        </ol>
+      </nav>
+    </div>
+
+    <div class="wrap guide">
+      <section id="try" aria-labelledby="try-title">
+        <h2 id="try-title">1. Try it with no accounts</h2>
+        <p>
+          Everything here runs on your laptop with no key and no sign-up. With no model attached, an app understands
+          through its own labelled examples and a keyword fallback: enough to walk every path, not the real thing.
+          You need Node 22.19 or later and pnpm (<a href="#machine">section 4</a>).
+        </p>
+<pre data-copy><code>git clone https://github.com/DialogWright/dialogwright.git
+cd dialogwright
+pnpm install
+pnpm check</code></pre>
+        <p>Talk to the clinic example in a text console:</p>
+<pre data-copy><code>pnpm --filter @dialogwright/example-clinic cli --client heuristic</code></pre>
+        <p>Or run the utility example's server on your laptop and chat with it in a browser, through the same engine a call uses:</p>
+<pre data-copy><code>pnpm --filter @dialogwright/widget build
+PUBLIC_HOST=localhost TWILIO_AUTH_TOKEN=unused HANDOFF_NUMBER=+15551234567 \
+  CHAT=on CHAT_ALLOWED_ORIGINS=http://localhost:3000 CHAT_SIGNIN=mock WIDGET=on \
+  pnpm --filter @dialogwright/example-utility serve</code></pre>
+        <p>
+          Then open <code>http://localhost:3000/chat-demo</code> (a fictional account page with the chat widget on it) and
+          <code>http://localhost:3000/dashboard</code> (the operator console, showing the chat as it happens). Both exist
+          only on this machine. The <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/README.md#try-the-web-chat-on-your-laptop">utility's README</a>
+          says what to try.
+        </p>
+        <p>
+          With one key you can hear the real model in the same console:
+          <code>pnpm --filter @dialogwright/example-clinic cli --client jev</code> with <code>TYPESAFE_API_KEY</code> set
+          (or another provider, <a href="#accounts">section 3</a>). To build your own app, run
+          <code>pnpm create-app myline</code> and read
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md">Authoring an app</a>.
+        </p>
+      </section>
+
+      <section id="architecture" aria-labelledby="architecture-title">
+        <h2 id="architecture-title">2. The architecture</h2>
+        <p>
+          A caller dials your number. The carrier asks your server what to do (an HTTPS webhook), then opens a
+          WebSocket to it and streams the call as text: the carrier recognises speech and speaks the lines, and
+          DialogWright understands and decides. Both reach your machine through a tunnel, so nothing on your router is
+          opened. On each turn the server asks the decision model a few short typed questions.
+        </p>
+        <figure class="diagram">
+          <svg viewBox="0 0 400 664" role="img" aria-labelledby="arch-title arch-desc">
+            <title id="arch-title">A DialogWright line on a machine you own</title>
+            <desc id="arch-desc">A caller dials a number at the phone carrier, Telnyx or Twilio. The carrier sends HTTPS webhooks and a WebSocket to the tunnel's hostname at Cloudflare, which carries them through a tunnel that cloudflared opens from your machine to the DialogWright server on localhost port 3000. The server writes traces and audit files to the local disk, serves the operator console to that machine only, and asks the decision model over HTTPS. The carrier can transfer a call to a person at the handoff number. Optionally, a web page with the chat widget connects to the same server through the same tunnel.</desc>
+            <defs>
+              <marker id="hs-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="dg-head" d="M0,0 L10,5 L0,10 z"/>
+              </marker>
+            </defs>
+
+            <rect class="dg-box" x="12" y="12" width="176" height="52" rx="8"/>
+            <text class="dg-title" x="100" y="34" text-anchor="middle">Caller</text>
+            <text class="dg-note" x="100" y="52" text-anchor="middle">dials your number</text>
+
+            <rect class="dg-box" x="212" y="12" width="176" height="52" rx="8"/>
+            <text class="dg-title" x="300" y="34" text-anchor="middle">A person</text>
+            <text class="dg-note" x="300" y="52" text-anchor="middle">HANDOFF_NUMBER</text>
+
+            <rect class="dg-key" x="12" y="100" width="176" height="60" rx="8"/>
+            <text class="dg-title" x="100" y="122" text-anchor="middle">Phone carrier</text>
+            <text class="dg-text" x="100" y="139" text-anchor="middle">Telnyx or Twilio</text>
+            <text class="dg-note" x="100" y="154" text-anchor="middle">your number, speech, voice</text>
+
+            <rect class="dg-box optional" x="212" y="100" width="176" height="60" rx="8"/>
+            <text class="dg-title" x="300" y="122" text-anchor="middle">A web page</text>
+            <text class="dg-text" x="300" y="139" text-anchor="middle">with the chat widget</text>
+            <text class="dg-note" x="300" y="154" text-anchor="middle">optional</text>
+
+            <line class="dg-line" x1="100" y1="64" x2="100" y2="99" marker-end="url(#hs-arrow)"/>
+            <line class="dg-line" x1="188" y1="108" x2="282" y2="65" marker-end="url(#hs-arrow)"/>
+            <text class="dg-note" x="226" y="76" text-anchor="end">transfer</text>
+
+            <line class="dg-line" x1="100" y1="160" x2="100" y2="199" marker-end="url(#hs-arrow)"/>
+            <text class="dg-note" x="108" y="184">HTTPS + wss</text>
+            <line class="dg-line dashed" x1="300" y1="160" x2="300" y2="199" marker-end="url(#hs-arrow)"/>
+            <text class="dg-note" x="308" y="184">wss /chat</text>
+
+            <rect class="dg-box" x="12" y="200" width="376" height="56" rx="8"/>
+            <text class="dg-title" x="200" y="222" text-anchor="middle">Cloudflare: your tunnel's hostname</text>
+            <text class="dg-text" x="200" y="242" text-anchor="middle">a quick tunnel, or your own name; WebSockets pass</text>
+
+            <line class="dg-line" x1="200" y1="256" x2="200" y2="321" marker-end="url(#hs-arrow)"/>
+            <text class="dg-note" x="208" y="282">the tunnel</text>
+
+            <rect class="dg-zone" x="6" y="290" width="388" height="250" rx="12"/>
+            <text class="dg-note" x="20" y="306">a machine you own</text>
+
+            <rect class="dg-box" x="24" y="322" width="352" height="44" rx="8"/>
+            <text class="dg-title" x="200" y="341" text-anchor="middle">cloudflared</text>
+            <text class="dg-note" x="200" y="358" text-anchor="middle">connects out to Cloudflare; no router port opened</text>
+
+            <line class="dg-line" x1="200" y1="366" x2="200" y2="391" marker-end="url(#hs-arrow)"/>
+            <text class="dg-note" x="208" y="384">http://localhost:3000</text>
+
+            <rect class="dg-key" x="24" y="392" width="352" height="60" rx="8"/>
+            <text class="dg-title" x="200" y="414" text-anchor="middle">DialogWright server</text>
+            <text class="dg-text" x="200" y="432" text-anchor="middle">one process; sessions in memory</text>
+            <text class="dg-note" x="200" y="446" text-anchor="middle">launchd or systemd keeps it running</text>
+
+            <line class="dg-line" x1="108" y1="452" x2="108" y2="469" marker-end="url(#hs-arrow)"/>
+            <line class="dg-line" x1="292" y1="452" x2="292" y2="469" marker-end="url(#hs-arrow)"/>
+
+            <rect class="dg-box" x="24" y="470" width="168" height="54" rx="8"/>
+            <text class="dg-title" x="108" y="492" text-anchor="middle">traces and audit</text>
+            <text class="dg-note" x="108" y="510" text-anchor="middle">files on this disk</text>
+
+            <rect class="dg-box" x="208" y="470" width="168" height="54" rx="8"/>
+            <text class="dg-title" x="292" y="490" text-anchor="middle">Operator console</text>
+            <text class="dg-note" x="292" y="505" text-anchor="middle">localhost:3000/dashboard</text>
+            <text class="dg-note" x="292" y="518" text-anchor="middle">this machine only</text>
+
+            <line class="dg-line" x1="200" y1="452" x2="200" y2="589" marker-end="url(#hs-arrow)"/>
+            <text class="dg-note" x="208" y="568">HTTPS: short typed questions</text>
+
+            <rect class="dg-key" x="12" y="590" width="376" height="60" rx="8"/>
+            <text class="dg-title" x="200" y="612" text-anchor="middle">Decision model</text>
+            <text class="dg-text" x="200" y="630" text-anchor="middle">TypeSafe Jev, a gateway, or a model on your machine</text>
+          </svg>
+          <figcaption>
+            The machine is yours: a laptop, a Mac, a Linux mini PC. Everything public goes through one hostname;
+            the console and the files stay on the machine, and the router opens no port.
+          </figcaption>
+        </figure>
+        <ul>
+          <li><strong>The carrier</strong> owns the number. DialogWright answers it on <code>/voice/&lt;carrier&gt;</code>
+            (the webhook), <code>/cr-action/&lt;carrier&gt;</code> (the callback when the relay ends) and the WebSocket
+            <code>/conversation/&lt;carrier&gt;</code>.</li>
+          <li><strong>The tunnel</strong> gives the carrier an HTTPS address for a machine behind a home router.</li>
+          <li><strong>The server</strong> is <code>pnpm --filter &lt;your app&gt; serve</code>: the phone line, the
+            operator console and, if you turn it on, the web chat on <code>/chat</code>.</li>
+          <li><strong>The decision model</strong> reads what the caller said and answers typed questions. It never writes
+            what the caller hears.</li>
+        </ul>
+      </section>
+
+      <section id="accounts" aria-labelledby="accounts-title">
+        <h2 id="accounts-title">3. Two keys, and what is optional</h2>
+        <p>
+          A phone line needs two accounts: a carrier, for the number, and a decision model, for the understanding (or a
+          compatible model on your own machine, which needs neither an account nor a key). Everything else is optional or
+          free of sign-up. The running cost is small: a few dollars a month for a number, and fractions of a cent per call
+          for the model. The repository's live checks put a handful of test calls at "a few cents of call minutes and
+          model requests", and each trace records the estimated cost of its turns' model requests
+          (<code>usage.costUsd</code>), so your own numbers are in your own files.
+        </p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead>
+              <tr><th scope="col">What</th><th scope="col">Needed?</th><th scope="col">What it is for, and what you take from it</th><th scope="col">Where it goes</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="What"><strong>A carrier</strong>: Telnyx, or Twilio</td>
+                <td data-label="Needed?"><strong>Required</strong> for a phone line (not for chat)</td>
+                <td data-label="What it is for, and what you take from it">The number, speech recognition and the voice. Telnyx: a TeXML application whose voice URL is your server,
+                  and the account's public key. Twilio: a number whose voice webhook is your server, and the auth token.</td>
+                <td data-label="Where it goes"><code>VOICE_PROVIDERS=telnyx</code> with <code>TELNYX_PUBLIC_KEY</code>; or <code>VOICE_PROVIDERS=twilio</code>
+                  (the default) with <code>TWILIO_AUTH_TOKEN</code>; or <code>twilio,telnyx</code> with both</td>
+              </tr>
+              <tr>
+                <td data-label="What"><strong>A decision model key</strong></td>
+                <td data-label="Needed?"><strong>Required</strong> for real understanding, unless you run a compatible model yourself</td>
+                <td data-label="What it is for, and what you take from it">Jev, TypeSafe's decision model, from TypeSafe, or through OpenRouter or the Vercel AI Gateway.</td>
+                <td data-label="Where it goes"><code>JEV_CLIENT=jev</code>, and <code>TYPESAFE_API_KEY</code> (the default provider);
+                  or <code>JEV_PROVIDER=openrouter</code> with <code>OPENROUTER_API_KEY</code>;
+                  or <code>JEV_PROVIDER=vercel</code> with <code>AI_GATEWAY_API_KEY</code></td>
+              </tr>
+              <tr>
+                <td data-label="What"><strong>A compatible model on your machine</strong></td>
+                <td data-label="Needed?">Optional, instead of a key</td>
+                <td data-label="What it is for, and what you take from it">Any endpoint that serves Jev's API (<code>POST /v1/systemone</code>), such as an open-weight model.
+                  No account, no key. Its probabilities are not Jev's: every confidence threshold was measured on Jev, so the
+                  server warns at startup, and you should record a cassette with it and compare with <code>regress</code>.
+                  The repository does not ship or name one.</td>
+                <td data-label="Where it goes"><code>JEV_CLIENT=jev</code>, <code>JEV_PROVIDER=custom</code>, <code>JEV_BASE_URL=http://localhost:8000</code>
+                  (plain http only to this machine), <code>JEV_MODEL</code>; <code>JEV_API_KEY</code> only if it asks for one</td>
+              </tr>
+              <tr>
+                <td data-label="What"><strong>A tunnel</strong></td>
+                <td data-label="Needed?">Required for a phone line; <strong>no account</strong> to try it</td>
+                <td data-label="What it is for, and what you take from it">An HTTPS address the carrier can reach. A Cloudflare quick tunnel needs no account; a permanent one needs a
+                  domain on Cloudflare, or Tailscale, or ngrok (<a href="#tunnel">section 6</a>).</td>
+                <td data-label="Where it goes"><code>PUBLIC_HOST</code>: the bare hostname, no <code>https://</code>, no path</td>
+              </tr>
+              <tr>
+                <td data-label="What"><strong>A number to hand calls to</strong></td>
+                <td data-label="Needed?">Required setting; no account</td>
+                <td data-label="What it is for, and what you take from it">Where a call goes when the caller asks for a person, or the agent cannot help: your mobile, say.</td>
+                <td data-label="Where it goes"><code>HANDOFF_NUMBER=+15555550123</code> (E.164)</td>
+              </tr>
+              <tr>
+                <td data-label="What"><strong>An Anthropic key</strong></td>
+                <td data-label="Needed?">Optional</td>
+                <td data-label="What it is for, and what you take from it">A three-line note (what the caller wanted, what was done, what to do next), shown in the console when a
+                  call goes to a person, written by Claude Haiku from the call's audit entries.</td>
+                <td data-label="Where it goes"><code>ANTHROPIC_API_KEY</code>; <code>HANDOFF_SUMMARY</code> (default <code>on</code>)</td>
+              </tr>
+              <tr>
+                <td data-label="What"><strong>An identity provider</strong></td>
+                <td data-label="Needed?">Optional</td>
+                <td data-label="What it is for, and what you take from it">Signed-in web chat on your site: its JWKS URL, its issuer, and your application's client id.</td>
+                <td data-label="Where it goes"><code>CHAT_SIGNIN=jwt</code>, <code>CHAT_JWKS_URL</code>, <code>CHAT_ISSUER</code>, <code>CHAT_AUDIENCE</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="unverified">
+          Telnyx or Twilio: either works, and the same app answers on both. The Telnyx adapter is built from Telnyx's
+          documentation and checked against its documented frames, but a few of its details (the webhook's encoding, the
+          handoff field, whether a callback is posted when the socket drops) are assumptions until a live call settles
+          them: <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/live-checks.md#2-telnyx">live check 2</a>
+          is the call to make first. If anything there fails, Twilio is the fallback.
+        </p>
+      </section>
+
+      <section id="machine" aria-labelledby="machine-title">
+        <h2 id="machine-title">4. The machine</h2>
+        <p>
+          Your laptop is fine for trying a real call. For a line that stays up, use anything that stays on: a Mac, a Linux
+          mini PC, a spare desktop. It needs little: one Node process and a tunnel.
+        </p>
+        <h3>Keep it on</h3>
+        <ul>
+          <li><strong>macOS:</strong> in System Settings, Energy, turn on <em>Prevent automatic sleeping when the display is
+            off</em>, <em>Start up automatically after a power failure</em> and <em>Wake for network access</em>. With FileVault
+            on, a Mac that restarts after a power failure waits for a password before anything starts.</li>
+          <li><strong>Linux:</strong> stop it suspending (<code>sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target</code>
+            on a desktop install), and set the firmware to power on when power returns.</li>
+          <li><strong>Both:</strong> let the clock set itself. Telnyx's signature is refused when the server's clock is more
+            than five minutes off.</li>
+        </ul>
+        <h3>Node and pnpm</h3>
+        <p>
+          The repository requires Node 22.19 or later (CI runs Node 22 and 24) and pnpm 9 (it pins <code>pnpm@9.12.0</code>
+          in <code>package.json</code>, which corepack follows). Install Node 24 from
+          <a href="https://nodejs.org/">nodejs.org</a>, your package manager or Homebrew (<code>brew install node@24</code>),
+          then:
+        </p>
+<pre data-copy><code>corepack enable pnpm
+node --version     # v22.19 or later
+which node pnpm    # note the folders: the service needs them on its PATH</code></pre>
+        <p>
+          Then clone and install as in <a href="#try">section 1</a>, and run <code>pnpm --version</code> once inside the
+          repository: corepack fetches pnpm 9.12.0 then, so the service never has to. If you will put the chat widget on a
+          site, build it (<code>pnpm --filter @dialogwright/widget build</code>, again after each update).
+        </p>
+        <p>
+          This guide calls your app <code>myline</code> (<code>pnpm create-app myline</code> makes
+          <code>apps/myline</code>, package <code>@dialogwright/example-myline</code>). To follow along with a finished app,
+          use <code>@dialogwright/example-utility</code> in its place. Keep what is yours apart from the repository: the
+          settings, the logs and the call data.
+        </p>
+<pre data-copy><code>mkdir -p ~/ivr/logs ~/ivr/data/traces ~/ivr/data/audit
+chmod 700 ~/ivr</code></pre>
+      </section>
+
+      <section id="configuration" aria-labelledby="configuration-title">
+        <h2 id="configuration-title">5. Configuration</h2>
+        <p>
+          The server reads only its environment; it does not read a <code>.env</code> file itself. Keep the settings in
+          <code>~/ivr/myline.env</code>, outside the repository and readable by you alone; you load it into a shell, and
+          the service loads it the same way. The values below are made up. The variables, their defaults and their checks
+          are the server's own (<code>packages/dialogwright/src/server/config.ts</code>): it refuses to start, naming the
+          variable, when one is missing or malformed.
+        </p>
+        <figure>
+          <figcaption><code>~/ivr/myline.env</code> (paths for a Mac user called <code>alex</code>; on Linux, <code>/home/alex</code>)</figcaption>
+<pre data-copy><code># Where the carrier reaches this server: the tunnel's hostname, bare (no https://, no path).
+PUBLIC_HOST=ivr.example.com
+# The port the server listens on, and the tunnel points at (default 3000).
+PORT=3000
+
+# The carrier: telnyx, twilio, or both (twilio,telnyx). Default twilio.
+VOICE_PROVIDERS=telnyx
+# Telnyx: the account's public key, base64, from Keys &amp; Credentials.
+TELNYX_PUBLIC_KEY=Zm9yLWV4YW1wbGUtb25seS1ub3QtYS1yZWFsLWtleSE=
+# Twilio instead (or as well): the account's auth token.
+# TWILIO_AUTH_TOKEN=0123456789abcdef0123456789abcdef
+# Check every webhook's signature. Default on; leave it on.
+SIGNATURE_CHECK=on
+
+# Where a call goes when it needs a person, E.164.
+HANDOFF_NUMBER=+15555550123
+
+# The decision model. JEV_CLIENT defaults to stub (no model: the app's own examples);
+# set jev for a real one.
+JEV_CLIENT=jev
+JEV_PROVIDER=typesafe
+TYPESAFE_API_KEY=example-key-replace-me
+# Or through a gateway:
+# JEV_PROVIDER=openrouter
+# OPENROUTER_API_KEY=example-key-replace-me
+# JEV_PROVIDER=vercel
+# AI_GATEWAY_API_KEY=example-key-replace-me
+# Or a compatible model on this machine (no key; not calibrated like Jev):
+# JEV_PROVIDER=custom
+# JEV_BASE_URL=http://localhost:8000
+# JEV_MODEL=example-local-model
+# How long one model request may take before the turn plays its slow-turn line (default 1500 ms).
+# JEV_TIMEOUT_MS=1500
+
+# The operator console: on (the default), and only for this machine (the default).
+DASHBOARD=on
+CONSOLE_LOCAL_ONLY=on
+
+# Where calls are written. Defaults: traces and audit, inside the app's folder.
+TRACE_DIR=/Users/alex/ivr/data/traces
+AUDIT_DIR=/Users/alex/ivr/data/audit
+# The zone "today" is read in. Default: this machine's zone.
+TIMEZONE=America/Chicago
+
+# Optional: the handoff note.
+# ANTHROPIC_API_KEY=example-key-replace-me
+# HANDOFF_SUMMARY=on
+
+# Optional: the voice and the recognizer (each carrier names its own).
+# TELNYX_VOICE=Telnyx.Ultra.Callie
+# TTS_PROVIDER=Google
+# TTS_VOICE=en-US-Neural2-F
+
+# Optional: web chat for your site, and the widget's script served from here.
+# CHAT=on
+# CHAT_ALLOWED_ORIGINS=https://www.example.com
+# WIDGET=on
+# WIDGET_FILE=/Users/alex/dialogwright/packages/widget/dist/dialogwright-widget.js</code></pre>
+        </figure>
+<pre data-copy><code>chmod 600 ~/ivr/myline.env</code></pre>
+        <dl>
+          <dt><code>PUBLIC_HOST</code></dt>
+          <dd>Your tunnel's hostname. The server builds every URL it gives the carrier from it, and checks Twilio's signature
+            against <code>https://&lt;PUBLIC_HOST&gt;&lt;path&gt;</code>, so it must be exactly the hostname the carrier calls.</dd>
+          <dt><code>VOICE_PROVIDERS</code> and the carrier's secret</dt>
+          <dd>Each carrier listed needs its secret: <code>TELNYX_PUBLIC_KEY</code> (refused at startup unless it is a base64
+            Ed25519 key), <code>TWILIO_AUTH_TOKEN</code>.</dd>
+          <dt><code>SIGNATURE_CHECK=on</code></dt>
+          <dd>A webhook the carrier did not sign is refused. <code>off</code> exists only for posting webhooks by hand on a laptop.</dd>
+          <dt><code>JEV_CLIENT</code>, <code>JEV_PROVIDER</code> and the key</dt>
+          <dd>Without <code>JEV_CLIENT=jev</code> the server runs on the stub. Once it is <code>jev</code>, the provider's key
+            variable is required (for <code>custom</code>, <code>JEV_BASE_URL</code> and <code>JEV_MODEL</code> are).</dd>
+          <dt><code>CONSOLE_LOCAL_ONLY=on</code></dt>
+          <dd>The console (<code>/dashboard</code>) answers only a request made on this machine; through the tunnel it is a 404.</dd>
+          <dt><code>TRACE_DIR</code>, <code>AUDIT_DIR</code></dt>
+          <dd>Absolute paths keep the call data out of the repository, in one place to back up.</dd>
+          <dt><code>WIDGET_FILE</code></dt>
+          <dd>The default is the widget in your app's own <code>node_modules</code>, which a new app does not have (the utility
+            does); name the built file instead.</dd>
+        </dl>
+        <p>
+          The rest (<code>RECONNECT_LIMIT</code>, <code>NO_INPUT_MS</code>, <code>SESSION_TTL_MS</code>, the chat's limits and more)
+          have defaults that suit one line; the
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md#131-the-options">options table</a>
+          and the commented <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/.env.example"><code>.env.example</code></a>
+          list them.
+        </p>
+      </section>
+
+      <section id="tunnel" aria-labelledby="tunnel-title">
+        <h2 id="tunnel-title">6. The tunnel</h2>
+        <p>
+          A tunnel is an outbound connection from your machine to someone's edge; requests for its hostname come back down
+          it, so your router needs no open port. Install <code>cloudflared</code> (<code>brew install cloudflared</code> on a
+          Mac; on Linux, Cloudflare's package repository or a release binary from its
+          <a href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/">downloads page</a>).
+        </p>
+
+        <h3>To try it: a quick tunnel, no account</h3>
+        <p>In one terminal:</p>
+<pre data-copy><code>cloudflared tunnel --url http://localhost:3000</code></pre>
+        <p>
+          It prints a random <code>https://&lt;words&gt;.trycloudflare.com</code> address. Put that hostname (without
+          <code>https://</code>) in <code>PUBLIC_HOST</code>, start the server in another terminal, and point the carrier at it
+          (<a href="#carrier">section 7</a>):
+        </p>
+<pre data-copy><code>cd ~/dialogwright
+set -a &amp;&amp; source ~/ivr/myline.env &amp;&amp; set +a
+pnpm --filter @dialogwright/example-myline serve</code></pre>
+        <p>
+          The hostname changes every time <code>cloudflared</code> starts, so <code>PUBLIC_HOST</code> and the carrier's webhook
+          change with it. That is fine for an evening of testing and wrong for a line people rely on. Cloudflare also gives a
+          quick tunnel no uptime guarantee and caps it at 200 requests in flight.
+        </p>
+        <p class="unverified">
+          Cloudflare's quick tunnel page does not mention WebSockets, which the call's relay needs. Named tunnels pass them; for a
+          quick tunnel, a test call is the check (<a href="#checking">section 8</a>).
+        </p>
+
+        <h3>To keep it: a named tunnel on your own domain</h3>
+        <p>
+          A named Cloudflare Tunnel keeps one hostname (<code>ivr.example.com</code>) for good. It needs a free Cloudflare account
+          and a domain whose DNS is on Cloudflare. These are the steps for a locally managed tunnel, as Cloudflare's docs give them:
+        </p>
+        <ol class="commands">
+          <li>
+            <p>Log in (it opens a browser; choose your domain) and create the tunnel. It prints the tunnel's id and writes its
+              credentials to <code>~/.cloudflared/&lt;id&gt;.json</code>.</p>
+<pre data-copy><code>cloudflared tunnel login
+cloudflared tunnel create myline</code></pre>
+          </li>
+          <li>
+            <p>Point your hostname at it (this adds the DNS record):</p>
+<pre data-copy><code>cloudflared tunnel route dns myline ivr.example.com</code></pre>
+          </li>
+          <li>
+            <p>Write <code>~/.cloudflared/config.yml</code> with your tunnel's id. The last rule, a catch-all, is required:
+              anything not for your hostname is a 404 at Cloudflare.</p>
+<pre data-copy><code>tunnel: 0b5e7c2a-5555-4f00-9d1e-123456789abc
+credentials-file: /Users/alex/.cloudflared/0b5e7c2a-5555-4f00-9d1e-123456789abc.json
+
+ingress:
+  - hostname: ivr.example.com
+    service: http://localhost:3000
+  - service: http_status:404</code></pre>
+          </li>
+          <li>
+            <p>Check the rules and run it once in the foreground:</p>
+<pre data-copy><code>cloudflared tunnel ingress validate
+cloudflared tunnel run myline</code></pre>
+          </li>
+          <li>
+            <p>Run it as a service. <code>cloudflared service install</code> starts it at login from <code>~/.cloudflared/</code>;
+              <code>sudo cloudflared service install</code> starts it at boot and reads <code>/etc/cloudflared/</code> (copy the
+              config and the credentials file there, and fix <code>credentials-file</code>). On Linux,
+              <code>sudo cloudflared service install</code> makes a systemd service.</p>
+<pre data-copy><code>sudo cloudflared service install</code></pre>
+          </li>
+        </ol>
+
+        <h3>The choices</h3>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead>
+              <tr><th scope="col"></th><th scope="col">Cloudflare quick tunnel</th><th scope="col">Cloudflare named tunnel</th><th scope="col">Tailscale Funnel</th><th scope="col">ngrok</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Account</th>
+                <td data-label="Cloudflare quick tunnel">None</td>
+                <td data-label="Cloudflare named tunnel">Cloudflare, and a domain on it</td>
+                <td data-label="Tailscale Funnel">Tailscale</td>
+                <td data-label="ngrok">ngrok</td>
+              </tr>
+              <tr>
+                <th scope="row">Hostname</th>
+                <td data-label="Cloudflare quick tunnel">Random, new each run</td>
+                <td data-label="Cloudflare named tunnel">Your own, for good</td>
+                <td data-label="Tailscale Funnel"><code>&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code>; no custom domain</td>
+                <td data-label="ngrok">A free dev domain on <code>ngrok-free.app</code>, or your own on a paid plan</td>
+              </tr>
+              <tr>
+                <th scope="row">WebSockets</th>
+                <td data-label="Cloudflare quick tunnel">Not stated: <em>check with a call</em></td>
+                <td data-label="Cloudflare named tunnel">Passed through</td>
+                <td data-label="Tailscale Funnel">Not stated: <em>check with a call</em></td>
+                <td data-label="ngrok">Supported</td>
+              </tr>
+              <tr>
+                <th scope="row">Worth knowing</th>
+                <td data-label="Cloudflare quick tunnel">No uptime guarantee; 200 requests in flight</td>
+                <td data-label="Cloudflare named tunnel">Cloudflare closes an idle WebSocket, and sockets when it restarts its servers: a live call reconnects</td>
+                <td data-label="Tailscale Funnel">Public ports 443, 8443 and 10000 only; bandwidth limits you cannot change</td>
+                <td data-label="ngrok">The free plan shows a warning page to browsers (not to the carrier's webhooks)</td>
+              </tr>
+              <tr>
+                <th scope="row">Best for</th>
+                <td data-label="Cloudflare quick tunnel">Trying it tonight</td>
+                <td data-label="Cloudflare named tunnel">A line that stays up</td>
+                <td data-label="Tailscale Funnel">Someone already on Tailscale</td>
+                <td data-label="ngrok">Someone already on ngrok</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          When a tunnel drops a call's socket, the carrier calls <code>/cr-action</code> and the call reconnects, up to
+          <code>RECONNECT_LIMIT</code> times (default 2), then goes to a person with an apology. That works because the
+          server still holds the call; a restart of the server does not, and ends it. Whichever tunnel you use, the server
+          tells a tunnelled request from one made on the machine by the headers a proxy adds and by the <code>Host</code> it
+          names, so the console stays off the internet.
+        </p>
+      </section>
+
+      <section id="carrier" aria-labelledby="carrier-title">
+        <h2 id="carrier-title">7. Pointing the carrier at it</h2>
+        <h3>Telnyx</h3>
+        <ol>
+          <li>In the Mission Control Portal, get a number with voice.</li>
+          <li>Go to <strong>Real-Time Communications, Voice, Programmable Voice</strong>, the <strong>TeXML Applications</strong>
+            tab, and create an application.</li>
+          <li>In <strong>Send a TeXML Webhook to the URL</strong>, enter <code>https://ivr.example.com/voice/telnyx</code>
+            (your <code>PUBLIC_HOST</code>), with the <strong>Voice Method</strong> POST.</li>
+          <li>Assign your number to the application, on its <strong>Numbers</strong> tab (or from <strong>Real-Time
+            Communications, Numbers, Manage Numbers</strong>).</li>
+          <li>Copy the public key from <strong>Account settings, Keys &amp; Credentials, Public Key</strong> into
+            <code>TELNYX_PUBLIC_KEY</code>, with <code>VOICE_PROVIDERS=telnyx</code>, and restart the server.</li>
+          <li>Worth it on a home line: the application's <strong>Webhook Failover URL</strong> is asked when your server does not
+            answer. Point it at a static TeXML document (a TeXML Bin) that dials your mobile, so a call still reaches you when
+            the machine is off.</li>
+        </ol>
+        <p class="unverified">
+          Portal labels move. These are the ones Telnyx's TeXML pages use as of this writing; if yours differ, the fields are the
+          application's voice URL, its method and its failover URL.
+        </p>
+        <h3>Twilio</h3>
+        <ol>
+          <li>In the Twilio Console, open <strong>Phone Numbers, Manage, Active numbers</strong> and choose your number.</li>
+          <li>Under <strong>Voice Configuration</strong>, set <strong>A call comes in</strong> to Webhook,
+            <code>https://ivr.example.com/voice/twilio</code>, HTTP POST.</li>
+          <li>Optional: <strong>Primary handler fails</strong> takes a fallback URL, asked when your server errs or does not answer
+            within 15 seconds. A TwiML Bin that dials your mobile does the same job as Telnyx's failover.</li>
+          <li>Copy the account's auth token into <code>TWILIO_AUTH_TOKEN</code>, with <code>VOICE_PROVIDERS=twilio</code> (or
+            <code>twilio,telnyx</code>), and restart the server.</li>
+        </ol>
+        <p>The plain <code>https://ivr.example.com/voice</code> works for Twilio too: it is the path from before carriers were plug-ins.</p>
+      </section>
+
+      <section id="checking" aria-labelledby="checking-title">
+        <h2 id="checking-title">8. Checking it works</h2>
+        <ol class="commands">
+          <li>
+            <p>The startup line names what is in force, each secret by its length only (<code>telnyx public key set (44 chars)</code>),
+              then <code>listening on 3000; voice webhook https://ivr.example.com/voice/telnyx</code>. The server answers on the
+              machine and through the tunnel:</p>
+<pre data-copy><code>curl -s http://localhost:3000/health
+curl -s https://ivr.example.com/health</code></pre>
+            <p>Both print <code>{"ok":true,"sessions":0,"retained":0}</code>: the calls live now, and the ended ones still held for a minute.</p>
+          </li>
+          <li>
+            <p>The console is not public. This prints <code>404</code>:</p>
+<pre data-copy><code>curl -s -o /dev/null -w '%{http_code}\n' https://ivr.example.com/dashboard</code></pre>
+          </li>
+          <li>
+            <p>Call your number. The server's output shows the webhook as the call arrives (<code>/voice/telnyx ... from ...</code>)
+              and <code>/cr-action/telnyx ... -&gt; completed</code> when it ends, with no <code>signature rejected</code> line.</p>
+          </li>
+          <li>
+            <p>Watch calls in the console on the machine itself, <code>http://localhost:3000/dashboard</code>. From another computer,
+              forward the port over SSH and open the same address there:</p>
+<pre data-copy><code>ssh -L 3000:localhost:3000 alex@homebox.local</code></pre>
+          </li>
+          <li>
+            <p>Each call leaves two files in the traces folder: <code>&lt;call&gt;.jsonl</code>, its turns (what was heard, what the
+              model answered, what the gate decided, how long each step took), and <code>&lt;call&gt;.frames.jsonl</code>, every frame in
+              and out. The audit folder has one hash-chained file per UTC day; check the chains:</p>
+<pre data-copy><code>ls -lt ~/ivr/data/traces | head
+cd ~/dialogwright &amp;&amp; pnpm --filter dialogwright exec tsx src/audit/verifyCli.ts ~/ivr/data/audit</code></pre>
+          </li>
+        </ol>
+        <p>
+          Then go deeper with <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/live-checks.md">the live checks</a>:
+          the Telnyx call that settles the adapter's assumptions, a reconnect, languages, a gateway for the model, and a real
+          identity provider for the chat.
+        </p>
+      </section>
+
+      <section id="running" aria-labelledby="running-title">
+        <h2 id="running-title">9. Keeping it running</h2>
+        <p>
+          Once the line works, hand it to the system's service manager: it starts the server at boot or login, restarts it when
+          it exits, and keeps its output. Either way the service loads <code>~/ivr/myline.env</code> and runs
+          <code>pnpm --filter @dialogwright/example-myline serve</code> from the repository. A stop sends SIGTERM, which pnpm passes
+          to the server; the server lets turns already running finish (for up to about two seconds), closes the sockets and exits.
+          Use the paths <code>which node pnpm</code> printed.
+        </p>
+
+        <h3>Linux: a systemd unit</h3>
+        <p>systemd reads the settings file as it is (<code>KEY=value</code> lines; <code>#</code> lines are comments).</p>
+        <figure>
+          <figcaption><code>/etc/systemd/system/myline.service</code></figcaption>
+<pre data-copy><code>[Unit]
+Description=DialogWright phone line (myline)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=alex
+WorkingDirectory=/home/alex/dialogwright
+EnvironmentFile=/home/alex/ivr/myline.env
+ExecStart=/usr/local/bin/pnpm --filter @dialogwright/example-myline serve
+Restart=always
+RestartSec=10
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+        </figure>
+<pre data-copy><code>sudo systemctl daemon-reload
+sudo systemctl enable --now myline   # start now, and at every boot
+systemctl status myline              # running or not
+journalctl -u myline -f              # its output
+sudo systemctl restart myline        # drops live calls
+sudo systemctl stop myline</code></pre>
+
+        <h3>macOS: a launchd agent</h3>
+        <figure>
+          <figcaption><code>~/Library/LaunchAgents/com.example.myline.plist</code></figcaption>
+<pre data-copy><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;plist version="1.0"&gt;
+&lt;dict&gt;
+  &lt;key&gt;Label&lt;/key&gt;
+  &lt;string&gt;com.example.myline&lt;/string&gt;
+  &lt;!-- Load the settings, then run the app's server from the repository. --&gt;
+  &lt;key&gt;ProgramArguments&lt;/key&gt;
+  &lt;array&gt;
+    &lt;string&gt;/bin/bash&lt;/string&gt;
+    &lt;string&gt;-c&lt;/string&gt;
+    &lt;string&gt;set -a; source /Users/alex/ivr/myline.env; set +a; exec pnpm --filter @dialogwright/example-myline serve&lt;/string&gt;
+  &lt;/array&gt;
+  &lt;key&gt;WorkingDirectory&lt;/key&gt;
+  &lt;string&gt;/Users/alex/dialogwright&lt;/string&gt;
+  &lt;!-- launchd starts with a short PATH: name the folders node and pnpm are in. --&gt;
+  &lt;key&gt;EnvironmentVariables&lt;/key&gt;
+  &lt;dict&gt;
+    &lt;key&gt;PATH&lt;/key&gt;
+    &lt;string&gt;/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin&lt;/string&gt;
+    &lt;key&gt;COREPACK_ENABLE_DOWNLOAD_PROMPT&lt;/key&gt;
+    &lt;string&gt;0&lt;/string&gt;
+  &lt;/dict&gt;
+  &lt;!-- Start when loaded, and again whenever it exits (at most once every 10 seconds). --&gt;
+  &lt;key&gt;RunAtLoad&lt;/key&gt;
+  &lt;true/&gt;
+  &lt;key&gt;KeepAlive&lt;/key&gt;
+  &lt;true/&gt;
+  &lt;key&gt;ThrottleInterval&lt;/key&gt;
+  &lt;integer&gt;10&lt;/integer&gt;
+  &lt;!-- On stop: SIGTERM, then this many seconds before SIGKILL. --&gt;
+  &lt;key&gt;ExitTimeOut&lt;/key&gt;
+  &lt;integer&gt;15&lt;/integer&gt;
+  &lt;key&gt;StandardOutPath&lt;/key&gt;
+  &lt;string&gt;/Users/alex/ivr/logs/myline.out.log&lt;/string&gt;
+  &lt;key&gt;StandardErrorPath&lt;/key&gt;
+  &lt;string&gt;/Users/alex/ivr/logs/myline.err.log&lt;/string&gt;
+&lt;/dict&gt;
+&lt;/plist&gt;</code></pre>
+        </figure>
+<pre data-copy><code>plutil -lint ~/Library/LaunchAgents/com.example.myline.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.myline.plist   # start, and at every login
+launchctl print gui/$(id -u)/com.example.myline | grep -E 'state|pid'             # running or not
+tail -f ~/ivr/logs/myline.out.log ~/ivr/logs/myline.err.log                       # its output
+launchctl kickstart -k gui/$(id -u)/com.example.myline                            # restart: drops live calls
+launchctl bootout gui/$(id -u)/com.example.myline                                 # stop, and keep it stopped</code></pre>
+        <p>
+          An agent runs while you are logged in: turn on automatic login, or run it at boot as a daemon (copy the file to
+          <code>/Library/LaunchDaemons/</code>, owned by root, add <code>&lt;key&gt;UserName&lt;/key&gt;&lt;string&gt;alex&lt;/string&gt;</code>,
+          and use <code>sudo launchctl bootstrap system ...</code> and <code>system/com.example.myline</code>). With
+          <code>KeepAlive</code> on, killing the process only restarts it: <code>bootout</code> stops it.
+        </p>
+        <p>
+          On either system, a wrong setting shows as a restart every ten seconds, with the variable named in the output
+          (<code>missing required environment variable TELNYX_PUBLIC_KEY (VOICE_PROVIDERS includes telnyx)</code>).
+        </p>
+      </section>
+
+      <section id="care" aria-labelledby="care-title">
+        <h2 id="care-title">10. Updating, backing up, watching, security</h2>
+        <h3>Updating</h3>
+        <p>
+          DialogWright is pre-release and its APIs change, so update on purpose, and note the commit you last ran well
+          (<code>git rev-parse --short HEAD</code>) so you can go back. An update restarts the server, which drops live calls:
+          check <code>/health</code> says <code>"sessions":0</code> first.
+        </p>
+<pre data-copy><code>cd ~/dialogwright
+git pull
+pnpm install
+pnpm check
+pnpm --filter @dialogwright/example-myline test
+pnpm --filter @dialogwright/widget build     # if you serve the widget
+curl -s http://localhost:3000/health
+sudo systemctl restart myline                # or: launchctl kickstart -k gui/$(id -u)/com.example.myline</code></pre>
+        <p>Update the operating system, Node and <code>cloudflared</code> on the same quiet occasions.</p>
+
+        <h3>Backing up</h3>
+        <p>
+          What is yours and not in git: <code>~/ivr/myline.env</code> (your keys: back it up only somewhere encrypted), the traces
+          and audit folders, and <code>~/.cloudflared/</code> (a named tunnel's credentials). The audit files are append-only and
+          chained: copy them, never edit them, since an edit breaks every later link.
+        </p>
+
+        <h3>What to watch</h3>
+        <ul>
+          <li><strong>Disk.</strong> Nothing deletes old traces: two files per call, kept until you remove them. Check
+            <code>du -sh ~/ivr/data/*</code> now and then. The traces are what <code>pnpm kb:gaps</code> reads to find the
+            questions your knowledge base did not answer, so archive them before you prune them.</li>
+          <li><strong>The output.</strong> Errors and restarts show there first.</li>
+          <li><strong>Slow turns.</strong> Each trace record carries its timing (<code>timing.askMs</code>, <code>timing.totalMs</code>).
+            A model request slower than <code>JEV_TIMEOUT_MS</code> plays the slow-turn line and keeps the question open.</li>
+          <li><strong>The carrier's own logs</strong> (Telnyx's webhook debugging, Twilio's call logs) when a call never reached you.</li>
+        </ul>
+
+        <h3>Security</h3>
+        <ul>
+          <li><strong>Keys only in the settings file</strong>, mode 600, outside the repository: never in the unit, the plist, a
+            script you commit, or a message. The server prints a secret's length, never its value.</li>
+          <li><strong>Signature checks on</strong> (<code>SIGNATURE_CHECK=on</code>).</li>
+          <li><strong>The console local-only</strong> (<code>CONSOLE_LOCAL_ONLY=on</code>): it shows calls as they happen, with what
+            callers said. Reach it from elsewhere over SSH, never by turning this off.</li>
+          <li><strong>No port opened on the router.</strong> The tunnel connects out. Turn on the machine's firewall: the server
+            needs no incoming connection from the network, only from <code>cloudflared</code> on the same machine.</li>
+          <li><strong>The traces hold what callers said.</strong> Treat the data folder as personal data, kept on this machine and in
+            encrypted backups.</li>
+          <li><strong>Keep the machine updated.</strong></li>
+          <li>Building a line for a small business (a law office's, say)? Its callers are the business's clients: ask what it must
+            keep, for how long, and who may read it, before the first call.</li>
+        </ul>
+      </section>
+
+      <section id="coming" aria-labelledby="coming-title">
+        <h2 id="coming-title">11. What is coming</h2>
+        <p>
+          Phase 8 is production: store interfaces with production implementations, resume across instances, idempotent writes,
+          readiness and drain, a <code>docker compose</code> stack, a reference deployment and console access control. For one
+          machine the piece that matters most is a session store that outlives the process, so an update no longer drops a call.
+          Until then, update when the line is quiet. When one machine is no longer enough, the same app folder is designed to
+          run on many servers.
+        </p>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">The roadmap</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#8-production-architecture-and-laptop-mode">Production architecture, in the design</a>
+          <a href="scaling.html">Scaling out (a design)</a>
+        </p>
+      </section>
+
+      <section id="sources" aria-labelledby="sources-title">
+        <h2 id="sources-title">Sources</h2>
+        <p>The repository is the authority for every variable, path and default here. The steps outside it follow these pages, read on 2026-10-04:</p>
+        <ul class="sources">
+          <li><a href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/">Cloudflare: quick tunnels</a></li>
+          <li><a href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/create-local-tunnel/">Cloudflare: create a locally-managed tunnel</a></li>
+          <li><a href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/configuration-file/">Cloudflare: the configuration file and ingress rules</a></li>
+          <li><a href="https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/as-a-service/macos/">Cloudflare: run as a service on macOS</a></li>
+          <li><a href="https://developers.cloudflare.com/network/websockets/">Cloudflare: WebSockets</a></li>
+          <li><a href="https://keith.github.io/xcode-man-pages/launchd.plist.5.html">launchd.plist(5), the manual page</a></li>
+          <li><a href="https://support.apple.com/guide/mac-help/mchlp1168/mac">Apple: change Energy settings on a Mac desktop</a></li>
+          <li><a href="https://developers.telnyx.com/docs/voice/programmable-voice/texml-setup">Telnyx: TeXML setup</a> and <a href="https://developers.telnyx.com/docs/voice/programmable-voice/texml-fundamentals">TeXML fundamentals</a></li>
+          <li><a href="https://developers.telnyx.com/docs/development/api-fundamentals/webhooks/receiving-webhooks">Telnyx: receiving webhooks (the public key)</a></li>
+          <li><a href="https://support.twilio.com/hc/en-us/articles/223135027-Configuring-Phone-Numbers-to-Receive-Voice-Calls">Twilio: configure a number to receive calls</a> and <a href="https://www.twilio.com/docs/voice/twilio-voice-failover-best-practices">voice failover</a></li>
+          <li><a href="https://tailscale.com/kb/1223/funnel">Tailscale Funnel</a> and <a href="https://ngrok.com/docs/pricing-limits/free-plan-limits">ngrok's free plan limits</a></li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot-grid">
+        <div>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="../brand/dialogwright-logo-dark.svg">
+            <img class="foot-logo" src="../brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
+          </picture>
+          <p>Status: pre-release.</p>
+          <p>Code under the <a href="https://github.com/DialogWright/dialogwright/blob/main/LICENSE">Apache-2.0 license</a>.</p>
+        </div>
+        <nav aria-label="Guides">
+          <h2>Guides</h2>
+          <ul>
+            <li><a href="home-server.html">A machine you own</a></li>
+            <li><a href="scaling.html">Scaling out</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Documentation">
+          <h2>Docs</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Design</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md">Authoring an app</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/slots/README.md">Slot types</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt">llms.txt</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/CLA.md">Contributor agreement</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/SECURITY.md">Security</a></li>
+          </ul>
+        </nav>
+      </div>
+      <p class="fine">
+        The DialogWright name and logo are trademarks and are not covered by the license; see
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/NOTICE">NOTICE</a>.
+        This site sets no cookies and runs no analytics.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
