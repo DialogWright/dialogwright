@@ -277,6 +277,8 @@ The corpus (`corpus.jsonl`, one labelled utterance per line), scripted calls, th
 {"id":"sn-01","text":"I'd like to make an appointment","intent":"schedule_new","context":"no_form"}
 ```
 
+Recording a cassette, or running the server with `JEV_CLIENT=jev`, needs a key for the decision model. Jev is served by TypeSafe (`TYPESAFE_API_KEY`, the default), OpenRouter (`JEV_PROVIDER=openrouter`, `OPENROUTER_API_KEY`) and the Vercel AI Gateway (`JEV_PROVIDER=vercel`, `AI_GATEWAY_API_KEY`); `JEV_PROVIDER=custom` reaches a compatible endpoint at `JEV_BASE_URL` with `JEV_MODEL` (and `JEV_API_KEY` if it needs one). Each model gets its own cassette, named after it (`typesafe/jev-1.13` records `typesafe__jev-1.13.jsonl`), and the run's first line and the trace's session start say which provider and model answered. A compatible model is not Jev: its probabilities are not calibrated like Jev's, and the thresholds were measured on Jev, so a run on one warns once; record a cassette with it and compare with `regress` before trusting a threshold. Nothing is changed for you.
+
 Record a cassette under the Node major in `.nvmrc` (22). A recorded request is replayed by its exact text, and the engine reads text with Unicode properties (letters and digits, case folding, accents folded for retrieval) whose tables come with Node's ICU and can change between majors. CI replays on 22 and 24; a miss that only one major shows is such a table change, not a regression, and the fix is a deliberate re-record under `.nvmrc`'s major, never a recording made on another one.
 
 ### kb/ (optional)

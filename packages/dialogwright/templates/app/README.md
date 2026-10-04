@@ -54,7 +54,7 @@ The baseline that came with this folder is the example's. When your own app is b
 
 The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API, so it is a deliberate local step and never part of CI.
 
-1. Copy `.env.example` to `.env` in this folder (it is git-ignored) and put your TypeSafe API key in it as `TYPESAFE_API_KEY`. The launchers do not read `.env` themselves, so load it into your shell: `set -a && source .env && set +a`.
+1. Copy `.env.example` to `.env` in this folder (it is git-ignored) and put your TypeSafe API key in it as `TYPESAFE_API_KEY` (or a key from OpenRouter or the Vercel AI Gateway, or a compatible endpoint's, with `JEV_PROVIDER`: `.env.example` lists them). The launchers do not read `.env` themselves, so load it into your shell: `set -a && source .env && set +a`.
 2. At the repository root: `pnpm --filter @dialogwright/example-{{name}} regress --client record --threshold JEV_TIMEOUT_MS=15000`. It appends each answer to `fixtures/recorded/<model>.jsonl` and aborts after three consecutive client errors. The diff against the stub baseline shows where the real model reads a line differently from its label; that is expected, and it never rewrites the baseline.
 3. Check the replay offline, with the key unset: `pnpm --filter @dialogwright/example-{{name}} regress --client recorded`. A line the model reads differently from its label stays the truth in the corpus and gets a `knownGap` with its reason (see "Known gaps" in the [clinic's README]({{root}}/apps/clinic/README.md)).
 4. Commit the cassette. It holds only the corpus text and the model's answers to it.

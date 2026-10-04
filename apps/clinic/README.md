@@ -86,7 +86,7 @@ The operator console is then at `http://localhost:3200/dashboard`, branded for t
 
 The stub answers from the corpus labels. A cassette is the decision model's own answers, recorded once and replayed offline, so a run can show how a real model does on the clinic's calls without calling it again. Recording calls the paid perception API (a full recording of the clinic is about 3.2 million input tokens, about $0.13 at the time of writing), so it is a deliberate local step and never part of CI.
 
-You need a TypeSafe API key. Copy `apps/clinic/.env.example` to `apps/clinic/.env` (git-ignored), put the key in it as `TYPESAFE_API_KEY`, and load it into your shell, since the launchers do not read a `.env` file themselves:
+You need a key for the decision model: a TypeSafe API key, or a key from OpenRouter or the Vercel AI Gateway, which serve the same Jev (`JEV_PROVIDER`; `.env.example` lists the four options, the fourth a compatible endpoint). Copy `apps/clinic/.env.example` to `apps/clinic/.env` (git-ignored), put the key in it (`TYPESAFE_API_KEY` for TypeSafe), and load it into your shell, since the launchers do not read a `.env` file themselves:
 
 ```sh
 # at the repository root
@@ -94,7 +94,7 @@ set -a && source apps/clinic/.env && set +a
 pnpm --filter @dialogwright/example-clinic regress --client record --threshold JEV_TIMEOUT_MS=15000
 ```
 
-It appends each answer to `apps/clinic/fixtures/recorded/jev-1.13.0.jsonl` as it goes (one file per pinned model version), and aborts after three consecutive client errors. The run's diff against the stub baseline will show where the real model differs from the labels; that is expected, and it never rewrites the baseline. Then check the replay offline, with the key unset:
+It appends each answer to `apps/clinic/fixtures/recorded/jev-1.13.0.jsonl` as it goes (one file per model, named after it: another provider's model records its own file and never touches this one), and aborts after three consecutive client errors. The run's diff against the stub baseline will show where the real model differs from the labels; that is expected, and it never rewrites the baseline. Then check the replay offline, with the key unset:
 
 ```sh
 pnpm --filter @dialogwright/example-clinic regress --client recorded
