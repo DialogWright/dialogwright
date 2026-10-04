@@ -89,7 +89,7 @@
 {"id": "oh-02", "text": "hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-03", "text": "office hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-04", "text": "what time does the office close", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
-{"id": "oh-05", "text": "are you open on Saturday", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}, "knownGap": {"reason": "'on Saturday' in an office-hours question: the opener asks every slot's question and the model reads firstDate saturday (1.0), so firstDate is filled with 2026-09-19 though no arrangement was asked for; the same answer is said", "outcome": {"slots": {"place": null, "symptom": null, "account": null, "count": null, "firstDate": "2026-09-19", "subject": "office_hours", "accountId": null, "dob": null}}}}
+{"id": "oh-05", "text": "are you open on Saturday", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours", "firstDateMode": "weekday", "firstDateWeekday": "saturday"}}
 {"id": "oh-06", "text": "what are your opening hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-07", "text": "when can I come into the office", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-08", "text": "before that, what are your hours", "intent": "office_hours", "context": "check_balance"}

@@ -75,6 +75,26 @@ export function activeSlots(session: Session): SlotSpec[] {
 }
 
 /**
+ * The slots a turn fills from what it heard: those it listens for (activeSlots), but outside a form
+ * only the ones that belong to the call rather than to a form: the identity factors (where the turn
+ * listens for them) and the slots the app carries from one form to the next (App.carrySlots).
+ *
+ * Outside a form the model is asked about every slot, so that the form a turn routes to hears what
+ * was said for it: enterForm opens the form and then fills it, from this list as it stands inside
+ * the form. A turn that opens no form (an informational answer, a declined transfer) would otherwise
+ * keep values said for no form at all: the topic of the question just answered, a day in it ("are
+ * you open on Saturday"). Left filled, a form asked for later would skip its question and read that
+ * value back as the caller's answer. A form starts from what is said once it is asked for.
+ */
+export function slotsToFill(session: Session): SlotSpec[] {
+  const listening = activeSlots(session);
+  if (session.form) return listening;
+  const app = appOf(session);
+  const callSlots = new Set<SlotId>([...identityOf(app).factorSlots, ...(app.carrySlots ?? [])]);
+  return listening.filter((spec) => callSlots.has(spec.id));
+}
+
+/**
  * The context handed to one spec's `questions`/`fill`: that spec's own slot's pending partial
  * substituted in, never another slot's, and whether the last prompt asked for this slot. A
  * pending partial says what year is still owed on the next turn; `prompted` lets a slot call a

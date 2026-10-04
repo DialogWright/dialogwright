@@ -1098,6 +1098,22 @@ describe('capabilities', () => {
     expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_dob', acks: [CAPABILITIES] });
   });
 
+  it('keeps nothing the greeting\'s answer said for a form it did not enter: the form starts from what is said when it is asked for', () => {
+    let r = say(started(), 'what can you do, i need it tomorrow morning', { intent: ASKS, ...TOMORROW_MORNING });
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [CAPABILITIES] });
+    expect(r.session.slots.deliveryDay!.value).toBeNull();
+    expect(r.session.slots.deliveryPart!.value).toBeNull();
+    r = identify(say(r.session, 'i want to book a delivery window', { intent: intent('delivery_window') }).session);
+    if (r.session.promptedFor === 'otp') r = keys(r.session, '123456');
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_deliveryDay' });
+  });
+
+  it('keeps an identity factor said with an answer at the greeting: it is the call\'s, not a form\'s', () => {
+    const r = say(started(), `what can you do, my account id is ${ID_TEXT}`, { intent: ASKS, ...ID_ANSWERS });
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [CAPABILITIES] });
+    expect(r.session.slots.accountId!.value).toBe('55501234');
+  });
+
   it('describes itself at the summary and re-asks it without counting', () => {
     const r = afterTurns([...HAPPY, { say: 'what can you do', over: { intent: ASKS } }]);
     expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_report', target: 'confirm', acks: [CAPABILITIES] });
