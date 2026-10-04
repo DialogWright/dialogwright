@@ -93,7 +93,7 @@ describe('a form that answers from the knowledge base (forms.yaml answers:)', ()
   it('says in another language the passage in that language, and the account line in it', () => {
     const answer = 'Los libros atrasados con una tarjeta de adulto cuestan 25 centavos al día, hasta 5 dólares por libro.';
     const sourceText = 'An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.';
-    const hash = approvalHashOf({ topic: 'late_fees', answer, applies: { card: ['adult'] }, effective: { from: '2026-01-01' }, sourceText, accountLineText: 'Su tarjeta tiene {balance} en multas ahora mismo.' });
+    const hash = approvalHashOf({ id: 'late-fees-adult-es', locale: 'es', version: '2026.1', topic: 'late_fees', title: 'Late fees', localeTitle: 'Multas por retraso', answer, applies: { card: ['adult'] }, effective: { from: '2026-01-01' }, sourceText, accountLineText: 'Su tarjeta tiene {balance} en multas ahora mismo.' });
     const app = libraryKbApp('library-kb-es', {
       'kb/locale/es/passages/late-fees-adult-es.yaml': [
         'id: late-fees-adult-es', 'topic: late_fees', 'version: "2026.1"', 'applies: { card: adult }', 'effective: { from: 2026-01-01 }',
@@ -276,7 +276,7 @@ describe('check: a folder\'s knowledge answers', () => {
     const found = await lines('kb-c4', { 'kb/passages/opening-hours.yaml': (t) => t.replace('closed on Sunday', 'closed on Sundays') });
     expect(found).toEqual([
       'intents.yaml:19:14  intents.hours.passage  intent "hours" says the passage "opening-hours", which was edited after approval, so the caller hears that there is no answer and is offered a person  ->  review kb/passages/opening-hours.yaml (pnpm kb:status shows what changed), then pnpm kb:approve opening-hours --by "<your name>"',
-      'kb/passages/opening-hours.yaml:13:9  approval.hash  passage "opening-hours" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve opening-hours --by "<your name>"',
+      'kb/passages/opening-hours.yaml:13:9  approval.hash  passage "opening-hours" was edited after approval (its answer, id, locale, version, applies, dates, topic, its topic\'s title or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve opening-hours --by "<your name>"',
     ]);
   });
 

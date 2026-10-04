@@ -14,7 +14,8 @@ import { checkAlways, identifier, matching, text, unique } from '../define/schem
  *   kb/pending/topics.yaml              topics the drafts propose, as topics.yaml has them: never loaded (pnpm kb:review accepts one into topics.yaml)
  *   kb/rejected/<id>.yaml               drafts a reviewer rejected, with who, when and why: never loaded
  *   kb/approvals.jsonl                  every approval, one JSON line each, appended by pnpm kb:approve (or by an app's
- *                                       migration script, `from: migration`, ./approval.ts ApprovalLogLine) and never rewritten
+ *                                       migration script, `from: migration`, ./log.ts ApprovalLogLine) and never rewritten;
+ *                                       read as data, so check holds each approval to its line
  *
  * The zod schemas here are the source of truth; the JSON Schemas under packages/dialogwright/schemas
  * (kb-*.schema.json) are generated from them (define/schema/json.ts).
@@ -139,9 +140,9 @@ const approval = z
     approvedBy: text().describe('Who approved it.'),
     on: isoDate().describe('The day it was approved.'),
     sourceHash: sha256().describe('SHA-256 of the source section\'s text at approval (its words, whitespace collapsed). A changed source makes the passage stale.'),
-    hash: sha256().describe('SHA-256 of everything approved: topic, answer, applies, effective dates, the source text and the account line. An edit after approval makes it differ.'),
+    hash: sha256().describe('SHA-256 of everything approved: the passage\'s id, locale and version, its topic and the topic\'s title, the answer, applies, effective dates, the source text and the account line. An edit after approval makes it differ.'),
   })
-  .describe('Who approved the passage, when, and the hashes of what they approved. Written by pnpm kb:approve.');
+  .describe('Who approved the passage, when, and the hashes of what they approved. Written by pnpm kb:approve, which also logs it in kb/approvals.jsonl; pnpm check refuses an approval with no line there.');
 
 export const kbPassageSchema = z
   .strictObject({

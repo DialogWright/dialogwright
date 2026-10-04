@@ -123,7 +123,19 @@ export interface KnowledgeBase {
    * the default retriever reads its vectors (./hybrid.ts defaultRetriever).
    */
   readonly index?: KbIndexRead;
+  /**
+   * The log of approvals (kb/approvals.jsonl, ./log.ts) as read: each line's id, hash and where it
+   * came from, or why it could not be read. Present when the loader reads the folder from disk;
+   * `pnpm check` holds every approval to a line of the same id and hash (./rules.ts). A knowledge
+   * base built in code has none, and its approvals are not held to a log.
+   */
+  readonly approvalLog?: KbApprovalLogRead;
 }
+
+/** kb/approvals.jsonl as the loader read it: its lines (none when there is no log), or why it could not be read. */
+export type KbApprovalLogRead =
+  | { readonly file: string; readonly lines: readonly { readonly id: string; readonly hash: string; readonly from: string }[] }
+  | { readonly file: string; readonly invalid: string };
 
 /** Where a nomination came from: keyword retrieval, dense (embedding) retrieval, or an app's own retriever. */
 export type NominationVia = 'keyword' | 'dense' | 'app';

@@ -6,7 +6,8 @@ import { DEFAULT_LOCALE, loadAppFolder, loadKnowledgeFolder, parseKbFile, type L
 import { closest, formatProblem, positionOf, type DataPath, type Problem } from '../define/problems';
 import { PENDING_TOPICS_FILE, passageOf, sourceTextOf } from './folder';
 import { collapseWhitespace } from './hash';
-import { approveCommandFor, kbContentProblems, kbLinkProblems, kbStateProblems, type Locate } from './rules';
+import { APPROVALS_LOG, approvalLogged, logLineOf, parseApprovalLog, type ApprovalLogLine } from './log';
+import { approveCommandFor, EDITED_WHAT, kbContentProblems, kbLinkProblems, kbStateProblems, type Locate } from './rules';
 import { KB_FILE_ID, type KbPassageYaml, type KbPendingYaml } from './schema';
 import type { KbPassage, KnowledgeBase } from './types';
 
@@ -37,63 +38,16 @@ import type { KbPassage, KnowledgeBase } from './types';
  * given, so one refused leaves the others as they are.
  */
 
-/** Where the log of approvals is, in the kb folder. */
-export const APPROVALS_LOG = 'approvals.jsonl';
-
-/** One line of kb/approvals.jsonl. */
-export interface ApprovalLogLine {
-  id: string;
-  version: string;
-  approvedBy: string;
-  owner: string;
-  on: string;
-  sourceHash: string;
-  hash: string;
-  /**
-   * What was approved: a draft from kb/pending, or a passage already in kb/passages (both written by
-   * kb:approve); or `migration`: an approval carried over from the app's earlier format of the same
-   * content by the app's own script, never by kb:approve. A migration line keeps the original
-   * approver, owner and day (`approvedBy`, `owner`, `on`), records the hashes taken under this
-   * format, and says why in `note`; the people who own the content confirm it in review (it is in
-   * the log, and kb:status marks the passages it approved).
-   */
-  from: 'pending' | 'passage' | 'migration';
-  /**
-   * The source section's text as it was approved (its hash is `sourceHash`), so a review after the
-   * source changes can show what changed (kb:review's diff). Lines written before it was kept lack it.
-   */
-  sourceText?: string;
-  /** For a migration, what was carried over and from where ("content unchanged; migrated from <the earlier format>"). */
-  note?: string;
-}
+export { APPROVALS_LOG, type ApprovalLogLine } from './log';
 
 /**
  * The lines of a kb folder's approvals.jsonl, oldest first: none when there is no log. A line that
- * is not JSON, or lacks an id, a hash or a `from`, is passed over: the log is for people, and a line
- * someone wrote by hand must not stop kb:status.
+ * is not JSON, or lacks an id, a hash or a `from`, is passed over (./log.ts parseApprovalLog).
  */
 export function readApprovalLog(kbDir: string): ApprovalLogLine[] {
   const file = join(kbDir, APPROVALS_LOG);
   if (!existsSync(file)) return [];
-  const lines: ApprovalLogLine[] = [];
-  for (const text of readFileSync(file, 'utf8').split('\n')) {
-    if (text.trim() === '') continue;
-    try {
-      const l = JSON.parse(text) as Partial<ApprovalLogLine> | null;
-      if (l && typeof l.id === 'string' && typeof l.hash === 'string' && typeof l.from === 'string') lines.push(l as ApprovalLogLine);
-    } catch {
-      // a line that does not parse is passed over
-    }
-  }
-  return lines;
-}
-
-/** The log line that recorded a passage's approval as it is now (the last with its id and approval hash), or null. */
-function approvalLineOf(log: readonly ApprovalLogLine[], passage: KbPassage): ApprovalLogLine | null {
-  const hash = passage.approval?.hash;
-  if (hash === undefined) return null;
-  for (let i = log.length - 1; i >= 0; i--) if (log[i]!.id === passage.id && log[i]!.hash === hash) return log[i]!;
-  return null;
+  return parseApprovalLog(readFileSync(file, 'utf8'));
 }
 
 /** A knowledge base on disk: its folder, the folder its files are named from, and how problems name it. */
@@ -225,7 +179,10 @@ function about(problems: readonly Problem[], passage: { id: string; file: string
 /** What `pnpm check` would say about the passage once approved: the knowledge base with `candidate` in place, the rules run, those about it kept. */
 function checkCandidate(loaded: Loaded, kb: KnowledgeBase, candidate: KbPassage, today: string, locate: Locate): Problem[] {
   const passages = Object.fromEntries(Object.entries({ ...kb.passages, [candidate.id]: candidate }).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
-  const next: KnowledgeBase = { ...kb, passages };
+  // The approval's line, as kb:approve appends it once the passage is written.
+  const log = kb.approvalLog;
+  const approvalLog = log !== undefined && 'lines' in log && candidate.approval ? { ...log, lines: [...log.lines, { id: candidate.id, hash: candidate.approval.hash, from: 'passage' }] } : log;
+  const next: KnowledgeBase = { ...kb, passages, ...(approvalLog ? { approvalLog } : {}) };
   const problems = [...kbContentProblems(next, locate, loaded.base), ...kbStateProblems(next, today, locate, loaded.base)];
   if (loaded.config) {
     const config: LoadedConfig = { ...loaded.config, knowledge: next };
@@ -281,7 +238,9 @@ function approvePassage(place: KbPlace, loaded: Loaded, id: string, file: string
   const kb = loaded.kb;
   const passage = Object.hasOwn(kb.passages, id) ? kb.passages[id]! : undefined;
   if (!passage) return { id, outcome: 'refused', reason: `${file} did not load as a passage`, problems: [] };
-  if (passage.freshness === 'fresh') return { id, outcome: 'fresh', file, approvedBy: passage.approval!.approvedBy, on: passage.approval!.on };
+  // Fresh and in the log: nothing to do. Fresh but not in the log, it was approved outside kb:approve
+  // (by hand, or copied), and check refuses it: approving it records a person's approval of it now.
+  if (passage.freshness === 'fresh' && approvalLogged(kb, passage) !== false) return { id, outcome: 'fresh', file, approvedBy: passage.approval!.approvedBy, on: passage.approval!.on };
   const owner = options.owner ?? passage.approval?.owner;
   if (owner === undefined) return { id, outcome: 'refused', reason: `"${id}" has never been approved, so it has no owner yet: give the team that owns its content with --owner "<team>"`, problems: [] };
   if (passage.current.sourceHash === null) return { id, outcome: 'refused', reason: `its source section is missing (${loaded.base}/sources/${passage.source.document}.yaml, section "${passage.source.section}")`, problems: [] };
@@ -453,13 +412,15 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
   const base = loaded.base;
   const all = Object.values(kb.passages);
   const of = (state: KbPassage['freshness']): KbPassage[] => all.filter((p) => p.freshness === state);
-  const fresh = of('fresh');
+  // A fresh passage whose approval is not in the log was approved outside kb:approve: check refuses it.
+  const outside = of('fresh').filter((p) => approvalLogged(kb, p) === false);
+  const fresh = of('fresh').filter((p) => !outside.includes(p));
   const changed = of('source-changed');
   const edited = of('edited');
   const unapproved = of('unapproved');
   const drafts = pendingDrafts(place, kb);
   const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
-  lines.push(`${place.label}: ${count(all.length, 'passage')} (${fresh.length} approved and fresh, ${changed.length + edited.length} stale, ${unapproved.length} unapproved), ${count(drafts.length, 'pending draft')}`);
+  lines.push(`${place.label}: ${count(all.length, 'passage')} (${fresh.length} approved and fresh, ${changed.length + edited.length} stale, ${unapproved.length} unapproved${outside.length > 0 ? `, ${outside.length} approved outside kb:approve` : ''}), ${count(drafts.length, 'pending draft')}`);
   const head = (title: string, n: number): void => {
     if (n > 0) lines.push(`${title} (${n}):`);
   };
@@ -468,9 +429,14 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
   const log = readApprovalLog(place.kbDir);
   for (const p of fresh) {
     // An approval a migration carried over is marked, so the people who own the content can confirm it.
-    const line = approvalLineOf(log, p);
+    const line = logLineOf(log, p.id, p.approval?.hash);
     const migrated = line?.from === 'migration' ? `  (migrated${line.note !== undefined ? `: ${line.note}` : ''})` : '';
     lines.push(`  ${p.id}  ${p.version}  ${p.topic}  approved by ${p.approval!.approvedBy} (${p.approval!.owner}) on ${p.approval!.on}${migrated}`);
+  }
+  head(`approved outside kb:approve, not in ${base}/${APPROVALS_LOG}: pnpm check refuses`, outside.length);
+  for (const p of outside) {
+    lines.push(`  ${p.id}  ${p.version}  ${p.topic}  its approval (by ${p.approval!.approvedBy} on ${p.approval!.on}) was written by hand or copied with its file, so no one is on record for it`);
+    lines.push(`    -> review it against ${where(p)}, then ${approveCommandFor(p.id)}`);
   }
   head('stale, its source changed: withheld', changed.length);
   for (const p of changed) {
@@ -479,7 +445,7 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
   }
   head('stale, edited after approval: withheld', edited.length);
   for (const p of edited) {
-    lines.push(`  ${p.id}  ${p.version}  ${p.topic}  its answer, applies, dates, topic or account line changed since ${p.approval!.approvedBy} approved it on ${p.approval!.on} (the source is as approved)`);
+    lines.push(`  ${p.id}  ${p.version}  ${p.topic}  ${EDITED_WHAT} changed since ${p.approval!.approvedBy} approved it on ${p.approval!.on} (the source is as approved)`);
     lines.push(`    -> review the edit against ${where(p)} (git diff ${p.file}), then ${approveCommandFor(p.id)}`);
   }
   head('unapproved: never said', unapproved.length);
@@ -505,7 +471,7 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
     for (const p of t.problems) lines.push(`    ! ${p}`);
   }
   if (proposed.length > 0) lines.push(`    -> accept, rename or merge each in pnpm kb:review (${base}/pending/${PENDING_TOPICS_FILE}); a draft of a proposed topic is approved after its topic`);
-  if (changed.length + edited.length + unapproved.length + drafts.length + proposed.length === 0) lines.push('every passage is approved and fresh, and nothing waits for review');
+  if (outside.length + changed.length + edited.length + unapproved.length + drafts.length + proposed.length === 0) lines.push('every passage is approved and fresh, and nothing waits for review');
   else lines.push('pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved');
   return { lines, ok: true };
 }

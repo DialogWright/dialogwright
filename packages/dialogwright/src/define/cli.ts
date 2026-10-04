@@ -64,9 +64,10 @@ export const USAGE = [
   '  dir: an app folder with a kb/, or a kb folder; writes kb/.index/<embedder>.json, re-embedding only changed texts; with none, every app folder with a kb/',
   '       dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD]',
   '  compares the retrievers (keyword, static, hybrid, onnx when installed) on a paraphrase file: recall at the cap, candidates, latency; --sweep: floor and cap',
-  '       dialogwright kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]',
+  '       dialogwright kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>] [--yes]',
   '  approves passages (kb/passages) and moves approved drafts out of kb/pending, recording who, for which team and when, and logging each in kb/approvals.jsonl;',
   '  --by is the person who reviewed each against its source; --owner is required for a passage approved for the first time; --dir: the app folder (default: the one here)',
+  '  asks you to confirm at the terminal first; --yes confirms on the command line instead (refused in CI)',
   '       dialogwright kb:status [dir...]',
   '  dir: an app folder with a kb/, or a kb folder; lists the passages by state (fresh, stale, unapproved) and the drafts, with the fix for each',
 ].join('\n');
@@ -84,6 +85,12 @@ export interface Io {
   install?(root: string): number;
   /** Today, as an ISO date (kb:approve records it). Default: today (UTC). */
   today?: () => string;
+  /** kb:approve's confirmation, in place of the terminal's (../kb/commands.ts KbIo.confirm). */
+  confirm?: (question: string) => Promise<boolean>;
+  /** Whether stdin is a terminal. Default: process.stdin.isTTY. */
+  isTTY?: boolean;
+  /** The environment the kb commands read (CI, the model cache). Default: process.env. */
+  env?: NodeJS.ProcessEnv;
 }
 
 const stdio = (): Io => ({
@@ -144,7 +151,7 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'kb:model' || command === 'kb:index' || command === 'kb:bakeoff' || command === 'kb:approve' || command === 'kb:status') {
     // Loaded only when one runs: the other commands do not need the knowledge base's code.
     const kb = await import('../kb/commands');
-    const kbIo = { out: io.out, err: io.err, cwd: io.invokedFrom ?? io.cwd, ...(io.today ? { today: io.today } : {}) };
+    const kbIo = { out: io.out, err: io.err, cwd: io.invokedFrom ?? io.cwd, ...(io.today ? { today: io.today } : {}), ...(io.confirm ? { confirm: io.confirm } : {}), ...(io.isTTY !== undefined ? { isTTY: io.isTTY } : {}), ...(io.env ? { env: io.env } : {}) };
     const discover = () => findAppFolders(io.invokedFrom ?? io.cwd).dirs;
     if (command === 'kb:model') return kb.kbModelCommand(rest, kbIo);
     if (command === 'kb:bakeoff') return kb.kbBakeoffCommand(rest, kbIo);

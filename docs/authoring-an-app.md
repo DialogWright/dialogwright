@@ -1489,7 +1489,7 @@ retrieval:
 
 `applies` is the one thing that makes passages differ by caller. A fact is a name and the values it can take; every topic needs a passage in force for every combination, and `pnpm check` lists a combination that has none. An app whose answers are the same for everyone leaves it out. The retrieval settings are in [12.10](#1210-retrieval-settings).
 
-**topics.yaml** names what callers ask about. Retrieval reads each topic's title, keywords and example questions; the topic question offers the title.
+**topics.yaml** names what callers ask about. Retrieval reads each topic's title, keywords and example questions; the topic question offers the title. A title is spoken, so an approval covers it: renaming a topic sends its passages back for review ([12.8](#128-approval-staleness-and-withholding)).
 
 ```yaml
 # kb/topics.yaml
@@ -1550,7 +1550,7 @@ approval:
   approvedBy: Branch Manager
   on: 2025-12-10
   sourceHash: 18345c1533866b482125f9f1f66d537d51741e4c0fce296322696bf920018b6a
-  hash: 7ae3662c77942ba368eecc8588b3ccaa2162791ab32880af189ed7331b648d0c
+  hash: 83130b55c5f2be7a628620a4dcacca0dac5b6d8bfb97b4852b5816c7c65c3a03
 ```
 
 - `id` is the file's name. `version` is the passage's own ("2026.1") and is recorded with every answer.
@@ -1575,7 +1575,7 @@ approval:
   approvedBy: Branch Manager
   on: 2025-12-10
   sourceHash: a3502dd02204f66615d5227dfafdb55a5b53572022c5982f1c5e53036ee9b850
-  hash: d5c58a4130fba40b914fd022093868d7f475c0744ed54c7d59cd32c244fa4f6a
+  hash: f2a183c49c4bdec0ab8b3253d90d5fd1a5a0b58a368882173ee7c6aa92a53ae7
 ```
 
 ```yaml
@@ -1591,7 +1591,7 @@ approval:
   approvedBy: Branch Manager
   on: 2025-12-10
   sourceHash: 1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c
-  hash: 13ef68b619cf02e9f86cb3776a57ca009833408d65ae9f1b92f4ed29bd74f278
+  hash: be0ce40c52aeb3f1db18d14e464e98d8c16d885e44ed070889526fd19c236a30
 ```
 
 **A locale** has its own topic wording and its own passages, under `locale/<tag>/`:
@@ -1624,7 +1624,7 @@ approval:
   approvedBy: Branch Manager
   on: 2025-12-10
   sourceHash: 1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c
-  hash: 3edab6d60c3d2d0b862cfc8ef162274878ca1e2fd1bb5312e47523fce7602ba8
+  hash: fe8bf374b3b707e2dd142f8ba25c6e5b0852abb505f7483d680f8e395c8d630b
 ```
 
 More in [12.7](#127-locales-and-fallback).
@@ -1669,10 +1669,13 @@ rejected:
   reason: The 2025 fee schedule is out of date; the 2026 passage says it.
 ```
 
-**The approvals log** has one JSON line for each approval, written by `pnpm kb:approve` and only ever appended to. It keeps the source section's text as it was approved (`sourceText`), so a later review can show what changed in it:
+**The approvals log** has one JSON line for each approval, written by `pnpm kb:approve` and only ever appended to. It keeps the source section's text as it was approved (`sourceText`), so a later review can show what changed in it, and `pnpm check` holds every passage's approval to a line of its id and hash:
 
 ```jsonl
-{"id":"opening-hours","version":"2026.1","approvedBy":"Branch Manager","owner":"Patron Services","on":"2025-12-10","sourceHash":"1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c","hash":"13ef68b619cf02e9f86cb3776a57ca009833408d65ae9f1b92f4ed29bd74f278","from":"pending","sourceText":"All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m. to 4 p.m. All branches are closed on Sunday."}
+{"id":"opening-hours","version":"2026.1","approvedBy":"Branch Manager","owner":"Patron Services","on":"2025-12-10","sourceHash":"1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c","hash":"be0ce40c52aeb3f1db18d14e464e98d8c16d885e44ed070889526fd19c236a30","from":"pending","sourceText":"All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m. to 4 p.m. All branches are closed on Sunday."}
+{"id":"late-fees-adult","version":"2026.1","approvedBy":"Branch Manager","owner":"Patron Services","on":"2025-12-10","sourceHash":"a3502dd02204f66615d5227dfafdb55a5b53572022c5982f1c5e53036ee9b850","hash":"f2a183c49c4bdec0ab8b3253d90d5fd1a5a0b58a368882173ee7c6aa92a53ae7","from":"pending","sourceText":"An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item."}
+{"id":"late-fees-junior","version":"2026.1","approvedBy":"Branch Manager","owner":"Patron Services","on":"2025-12-10","sourceHash":"18345c1533866b482125f9f1f66d537d51741e4c0fce296322696bf920018b6a","hash":"83130b55c5f2be7a628620a4dcacca0dac5b6d8bfb97b4852b5816c7c65c3a03","from":"pending","sourceText":"Junior cards are not charged late fees."}
+{"id":"opening-hours-es","version":"2026.1","approvedBy":"Branch Manager","owner":"Patron Services","on":"2025-12-10","sourceHash":"1faa2dc4c217f7cccda164cf836746cf75b4d55ffe84f087255d58cba3e67d6c","hash":"fe8bf374b3b707e2dd142f8ba25c6e5b0852abb505f7483d680f8e395c8d630b","from":"pending","sourceText":"All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m. to 4 p.m. All branches are closed on Sunday."}
 ```
 
 ### 12.2 How a call uses it
@@ -1815,13 +1818,13 @@ A language has its own wording for each topic (`kb/locale/<tag>/topics.yaml`: ti
 
 ### 12.8 Approval, staleness and withholding
 
-A passage is said only while it is approved and nothing it was approved over has changed. Its `approval` records the content's owner (a team), the person who approved it, the day, and two hashes: `sourceHash`, of its source section's text, and `hash`, of everything approved (the topic, the answer, `applies`, the effective dates, the source text and the topic's account line). Whitespace aside, any change to one of them makes the passage **stale**. At run time a stale passage is **withheld**: the caller hears the unavailable line and is offered a person once, and the trace records the passage with `fresh: false`. `pnpm check` fails on a passage that is stale or was never approved, and its fix names the two commands below.
+A passage is said only while it is approved and nothing it was approved over has changed. Its `approval` records the content's owner (a team), the person who approved it, the day, and two hashes: `sourceHash`, of its source section's text, and `hash`, of everything approved: the passage's `id`, its locale (the `kb/locale/<tag>` it is in, or the default), its `version`, the topic, the topic's title (in the default locale, and in the passage's own where that locale gives one), the answer, `applies`, the effective dates, the source text and the topic's account line. Whitespace aside, any change to one of them makes the passage **stale**. A topic's title is spoken (the topic question offers it, and a caller asked which of two topics they meant hears both), so renaming a topic sends its passages back for review; and an approval copied with its file to another id or locale does not hold there. At run time a stale passage is **withheld**: the caller hears the unavailable line and is offered a person once, and the trace records the passage with `fresh: false`. `pnpm check` fails on a passage that is stale or was never approved, and on an approval with no line of its id and hash in `kb/approvals.jsonl` (written by hand or copied, not by `kb:approve`, so no one is on record for it); its fix names the two commands below.
 
-- `pnpm kb:status [app folder]` lists the passages by state: approved and fresh; stale because the source section changed; stale because the passage was edited (`git diff` shows the edit); never approved; and the drafts in `kb/pending/`. Each comes with its fix.
-- `pnpm kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]` approves each passage as it is now, after a person has read it against its source. It writes the `approval` in place, keeping the file's comments and layout, and appends one line to `kb/approvals.jsonl` (`id`, `version`, `approvedBy`, `owner`, `on`, both hashes, `from`: `passage` or `pending`, and `sourceText`). `--owner` is needed the first time; a re-approval keeps the owner unless `--owner` says otherwise.
+- `pnpm kb:status [app folder]` lists the passages by state: approved and fresh; approved outside `kb:approve` (no line in the log); stale because the source section changed; stale because the passage was edited (`git diff` shows the edit); never approved; and the drafts in `kb/pending/`. Each comes with its fix.
+- `pnpm kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]` approves each passage as it is now, after a person has read it against its source. It first asks you to confirm at your terminal (the ids, your name, the team, and that you read each against its source); where there is no terminal (a script, a pipe, an assistant's shell) it refuses, unless `--yes` confirms on the command line, and `--yes` is refused when `CI` is set. It writes the `approval` in place, keeping the file's comments and layout, and appends one line to `kb/approvals.jsonl` (`id`, `version`, `approvedBy`, `owner`, `on`, both hashes, `from`: `passage` or `pending`, and `sourceText`). `--owner` is needed the first time; a re-approval keeps the owner unless `--owner` says otherwise. A passage approved outside it is approved again the same way, which puts a person on record for it.
 - A draft is approved by id too: `kb:approve` checks it as the passage it would be and moves it into `kb/passages/` (or `kb/locale/<tag>/passages/`), dropping `drafted`.
 - `kb:approve` writes nothing for an id it refuses. It refuses an id that is no passage or draft, a passage that would fail `pnpm check` for anything but its approval (an unknown topic or source, a variable in the answer, an overlap with another passage, a locale the app does not speak), a draft whose excerpt is not in its section word for word, and a `--by` that names no person. **An assistant or a tool may draft a passage, and only a person approves one.**
-- An app moving approved content from an earlier format may carry its approvals over with a script of its own: one line per passage with `from: migration`, the original `approvedBy`, `owner` and `on`, the hashes taken under this format, and a `note` ("content unchanged; migrated from ..."). `kb:status` marks those passages `(migrated: ...)` for as long as they stand on that approval, and the people who own the content confirm the migration in review.
+- An app moving approved content from an earlier format may carry its approvals over with a script of its own: one line per passage with `from: migration`, the original `approvedBy`, `owner` and `on`, the hashes taken under this format, and a `note` that says what the original approval covered and what its owners are to confirm. `kb:status` marks those passages `(migrated: <note>)` for as long as they stand on that approval, and the people who own the content confirm the migration in review. The log is appended to, never rewritten: when the hash's definition changes, the migration is taken again as new lines, and the last line with a passage's id and hash is the one that stands.
 
 The files an approval stands on are the ones `CODEOWNERS` should protect ([3.12](#312-who-reviews-it-codeowners)): the passages, their sources, the topics, `kb.yaml` and the approvals log. Drafts are left open, since a draft is never said and approving it changes `kb/passages/`.
 

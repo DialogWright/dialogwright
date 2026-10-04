@@ -184,7 +184,12 @@ describe('the approval hashes', () => {
     expect(p.current.sourceHash).toBe(sourceHashOf('An adult card is charged 25 cents for each day an item is overdue,\n  up to 5 dollars for each item. '));
     expect(p.current.hash).toBe(
       approvalHashOf({
+        id: 'late-fees-adult',
+        locale: null,
+        version: '2026.1',
         topic: 'late_fees',
+        title: 'Late fees',
+        localeTitle: null,
         answer: p.answer,
         applies: { card: 'adult' },
         effective: { from: '2026-01-01' },
@@ -227,7 +232,65 @@ describe('the approval hashes', () => {
     const edited = (edits: Record<string, Edit>, id: string) => loadAppFolder(appFolder(edits)).config!.knowledge!.passages[id]!.freshness;
     expect(edited({ 'kb/passages/late-fees-adult-2025.yaml': (t) => t.replace('to: 2025-12-31', 'to: 2025-11-30') }, 'late-fees-adult-2025')).toBe('edited');
     expect(edited({ 'kb/topics.yaml': (t) => t.replace('in late fees right now', 'in late fees today') }, 'late-fees-adult')).toBe('edited');
-    expect(edited({ 'kb/locale/es/topics.yaml': (t) => t.replace('Horario', 'Horas') }, 'opening-hours-es')).toBe('fresh');
+    // A topic's other wording (keywords, example questions) is retrieval's, not what is said.
+    expect(edited({ 'kb/locale/es/topics.yaml': (t) => t.replace('[horario, abierto, cerrado]', '[horario, abierto]') }, 'opening-hours-es')).toBe('fresh');
+    expect(edited({ 'kb/topics.yaml': (t) => t.replace('[late fee, overdue, fine]', '[late fee, overdue]') }, 'late-fees-adult')).toBe('fresh');
+  });
+
+  it('cover the passage\'s id, locale and version, and its topic\'s title in its locale, which is spoken', () => {
+    const freshness = (edits: Record<string, Edit>) => Object.fromEntries(Object.values(loadAppFolder(appFolder(edits)).config!.knowledge!.passages).map((p) => [p.id, p.freshness]));
+    // The default title: every passage of the topic, in every locale (a locale that gives no title of its own says it).
+    expect(freshness({ 'kb/topics.yaml': (t) => t.replace('title: Opening hours', 'title: Opening times') })).toMatchObject({ 'opening-hours': 'edited', 'opening-hours-es': 'edited', 'late-fees-adult': 'fresh', 'card-renewal-adult': 'fresh' });
+    // A locale's own title: that locale's passages of the topic, and no other.
+    expect(freshness({ 'kb/locale/es/topics.yaml': (t) => t.replace('Horario', 'Horas') })).toMatchObject({ 'opening-hours-es': 'edited', 'opening-hours': 'fresh' });
+    expect(freshness({ 'kb/passages/opening-hours.yaml': (t) => t.replace('version: "2026.1"', 'version: "2026.2"') })).toMatchObject({ 'opening-hours': 'edited' });
+  });
+});
+
+describe('an approval names its passage, and is in the log', () => {
+  const OPENING = 'passages/opening-hours.yaml';
+  const RENEWAL = 'passages/card-renewal-adult.yaml';
+
+  it('a passage copied with its approval to another id, or another locale, is not fresh there', () => {
+    const loaded = loadAppFolder(
+      appFolder({
+        // The same locale, another id (a year earlier, so the two do not overlap).
+        [`kb/passages/late-fees-adult-2024.yaml`]: fixtureText('passages/late-fees-adult-2025.yaml').replace('id: late-fees-adult-2025', 'id: late-fees-adult-2024').replace('effective: { from: 2025-01-01, to: 2025-12-31 }', 'effective: { from: 2024-01-01, to: 2024-12-31 }'),
+        // Another locale, under a new id: the copy a translator might start from.
+        [`kb/locale/es/passages/card-renewal-adult-es.yaml`]: fixtureText(RENEWAL).replace('id: card-renewal-adult', 'id: card-renewal-adult-es'),
+      }),
+    );
+    expect(loaded.problems).toEqual([]);
+    const passages = loaded.config!.knowledge!.passages;
+    expect(passages['late-fees-adult-2024']!.freshness).toBe('edited');
+    expect(passages['card-renewal-adult-es']!.freshness).toBe('edited');
+    expect(passages['card-renewal-adult']!.freshness).toBe('fresh');
+  });
+
+  it('an approval written by hand, with hashes that match, is refused by check: it has no line in the log', async () => {
+    const dir = appFolder();
+    // Edit a passage and drop its approval, then write an approval for it as kb:approve would, but by hand.
+    const file = join(dir, 'kb', RENEWAL);
+    writeFileSync(file, readFileSync(file, 'utf8').replace('There\'s no charge.', 'It\'s free.').replace(/approval:[\s\S]*$/, ''));
+    const p = loadAppFolder(dir).config!.knowledge!.passages['card-renewal-adult']!;
+    expect(p.freshness).toBe('unapproved');
+    writeFileSync(file, `${readFileSync(file, 'utf8')}approval:\n  owner: Patron Services\n  approvedBy: Jane Smith\n  on: 2026-10-01\n  sourceHash: ${p.current.sourceHash}\n  hash: ${p.current.hash}\n`);
+    expect(loadAppFolder(dir).config!.knowledge!.passages['card-renewal-adult']!.freshness).toBe('fresh');
+    expect((await check(dir, CODE, TODAY)).filter((l) => l.startsWith('kb/'))).toEqual([
+      'kb/passages/card-renewal-adult.yaml:9:1  approval  passage "card-renewal-adult" was approved outside kb:approve: its approval (by Jane Smith on 2026-10-01) has no line of its id and hash in kb/approvals.jsonl, so no one is on record for it  ->  review it against its source, then pnpm kb:approve card-renewal-adult --by "<your name>" (approvals are written by kb:approve, never by hand)',
+    ]);
+    // knowledgeProblems (an app that is not a folder) says the same.
+    expect(knowledgeProblems(join(dir, 'kb'), { todayIso: TODAY }).map((q) => q.message)).toEqual([expect.stringContaining('passage "card-renewal-adult" was approved outside kb:approve')]);
+    // A line of its id and hash is what makes it an approval on record; the last line for it stands.
+    writeFileSync(join(dir, 'kb/approvals.jsonl'), `${readFileSync(join(dir, 'kb/approvals.jsonl'), 'utf8')}${JSON.stringify({ id: 'card-renewal-adult', version: '2026.1', approvedBy: 'Jane Smith', owner: 'Patron Services', on: '2026-10-01', sourceHash: p.current.sourceHash, hash: p.current.hash, from: 'passage' })}\n`);
+    expect((await check(dir, CODE, TODAY)).filter((l) => l.startsWith('kb/'))).toEqual([]);
+  });
+
+  it('a log that cannot be read is a problem for check, not for the call', async () => {
+    const dir = appFolder({ 'kb/approvals.jsonl': null });
+    writeFileSync(join(dir, 'kb/approvals.jsonl'), Buffer.from([0xff, 0xfe, 0x7b, 0x0a]));
+    expect(loadAppFolder(dir).config!.knowledge!.approvalLog).toMatchObject({ file: 'kb/approvals.jsonl', invalid: expect.any(String) });
+    expect((await check(dir, CODE, TODAY)).filter((l) => l.startsWith('kb/approvals.jsonl'))).toEqual([expect.stringMatching(/^kb\/approvals\.jsonl:1:1  \(file\)  kb\/approvals\.jsonl cannot be read: /)]);
   });
 });
 
@@ -341,7 +404,7 @@ describe('check: what the knowledge base must be on its own (the loader refuses 
       'kb/passages/late-fees-junior.yaml:8:9  answer  passage "late-fees-junior"\'s answer is 450 characters, over the 400 kb.yaml allows (maxAnswerChars)  ->  shorten it to what is said in one breath: split the topic in two, or say where the rest is written',
     ]);
     expect(await kbLines({ [P + 'late-fees-junior.yaml']: (t) => t.replace('There are no late fees on a junior card.', long), 'kb/kb.yaml': (t) => t.replace('maxAnswerChars: 400', 'maxAnswerChars: 450') })).toEqual([
-      'kb/passages/late-fees-junior.yaml:14:9  approval.hash  passage "late-fees-junior" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve late-fees-junior --by "<your name>"',
+      'kb/passages/late-fees-junior.yaml:14:9  approval.hash  passage "late-fees-junior" was edited after approval (its answer, id, locale, version, applies, dates, topic, its topic\'s title or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve late-fees-junior --by "<your name>"',
     ]);
   });
 
@@ -417,8 +480,11 @@ describe('check: what the knowledge base names in the app', () => {
   });
 
   it('a locale with passages is one the app speaks', async () => {
+    // Copied with its approval, which names opening-hours in the default locale: not fresh, and not in the log.
     expect(await kbLines({ 'kb/locale/fr/passages/x.yaml': fixtureText('passages/opening-hours.yaml').replace('id: opening-hours', 'id: x') })).toEqual([
       'kb/locale/fr:1:1  (file)  the knowledge base has fr passages, but the app does not speak fr  ->  add locale/fr/prompts.yaml to the app, or delete kb/locale/fr',
+      'kb/locale/fr/passages/x.yaml:8:1  approval  passage "x" was approved outside kb:approve: its approval (by Branch Manager on 2025-12-10) has no line of its id and hash in kb/approvals.jsonl, so no one is on record for it  ->  review it against its source, then pnpm kb:approve x --by "<your name>" (approvals are written by kb:approve, never by hand)',
+      'kb/locale/fr/passages/x.yaml:13:9  approval.hash  passage "x" was edited after approval (its answer, id, locale, version, applies, dates, topic, its topic\'s title or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve x --by "<your name>"',
     ]);
   });
 
@@ -505,7 +571,7 @@ describe('check: approvals and the passages in force today (check only; at run t
 
   it('a passage edited after approval is withheld until it is approved again', async () => {
     expect(await kbLines({ [P + 'card-renewal-adult.yaml']: (t) => t.replace('three years', 'four years') })).toEqual([
-      'kb/passages/card-renewal-adult.yaml:14:9  approval.hash  passage "card-renewal-adult" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve card-renewal-adult --by "<your name>"',
+      'kb/passages/card-renewal-adult.yaml:14:9  approval.hash  passage "card-renewal-adult" was edited after approval (its answer, id, locale, version, applies, dates, topic, its topic\'s title or account line), so it is withheld  ->  review the edit (pnpm kb:status shows what changed), then pnpm kb:approve card-renewal-adult --by "<your name>"',
     ]);
   });
 

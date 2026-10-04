@@ -39,7 +39,7 @@ describe('the knowledge record', () => {
     expect(source).toEqual({
       passageId: 'late-fees-junior', topic: 'late_fees', version: '2026.1', applies: { card: 'junior' }, locale: 'en-US',
       document: 'patron-guide', section: '3.2', effectiveFrom: '2026-01-01',
-      approvedBy: 'Branch Manager', approvedOn: '2025-12-10', sourceHash: '18345c153386', approvalHash: '7ae3662c7794', fresh: true,
+      approvedBy: 'Branch Manager', approvedOn: '2025-12-10', sourceHash: '18345c153386', approvalHash: '83130b55c5f2', fresh: true,
     } satisfies KbSource);
     // A record is JSON in the trace: it reads back as it was written.
     expect(JSON.parse(JSON.stringify(source))).toEqual(source);
@@ -47,7 +47,7 @@ describe('the knowledge record', () => {
 
   it('a closed range keeps its last day; a translation its own locale; the document can be named by its title', () => {
     expect(kbSourceOf(kb.passages['late-fees-adult-2025']!, { applies: { card: 'adult' } })).toMatchObject({
-      applies: { card: 'adult' }, effectiveFrom: '2025-01-01', effectiveTo: '2025-12-31', sourceHash: 'a14e5fbd6225', approvalHash: '3314a131c309', fresh: true,
+      applies: { card: 'adult' }, effectiveFrom: '2025-01-01', effectiveTo: '2025-12-31', sourceHash: 'a14e5fbd6225', approvalHash: '7fb1aa3b93bb', fresh: true,
     });
     const es = kbSourceOf(kb.passages['opening-hours-es']!, { applies: {}, document: kb.sources['patron-guide']!.document });
     expect(es).toMatchObject({ passageId: 'opening-hours-es', applies: {}, locale: 'es', document: 'Example Town Library Patron Guide', section: '1.1' });
@@ -77,7 +77,7 @@ describe('the knowledge audit row', () => {
     const row = kbAuditRow(kbSourceOf(kb.passages['late-fees-junior']!, { applies: { card: 'junior' } }));
     expect(row).toEqual({
       type: 'kb_answer',
-      detail: { passageId: 'late-fees-junior', version: '2026.1', fresh: true, locale: 'en-US', sourceHash: '18345c153386', approvalHash: '7ae3662c7794' },
+      detail: { passageId: 'late-fees-junior', version: '2026.1', fresh: true, locale: 'en-US', sourceHash: '18345c153386', approvalHash: '83130b55c5f2' },
     });
   });
 

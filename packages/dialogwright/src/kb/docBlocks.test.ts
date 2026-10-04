@@ -11,6 +11,7 @@ import { excerptInSource, readApprovalLog } from './approval';
 import { bakeoff, parseParaphrases } from './bakeoff';
 import { sourceHashOf } from './hash';
 import { defaultRetriever } from './hybrid';
+import { kbStateProblems } from './rules';
 import type { KbKind } from './schema';
 
 /**
@@ -20,7 +21,7 @@ import type { KbKind } from './schema';
  * against that file's schema; a ```jsonl block is the approvals log. The blocks of the guide's section
  * 12, the first for each path, are also put together into one kb/ folder (a library's: the files the
  * engine's own fixture has) and loaded as a knowledge base, which must have no problem, every passage
- * fresh (the hashes in the examples are the real ones), a log whose lines match the passages, and
+ * fresh (the hashes in the examples are the real ones), a log with a line for each passage's approval (check's rule), and
  * drafts whose excerpts are in their sections word for word. The form, intent and prompt blocks that
  * name their file (`# forms.yaml`) are held to its schema, the guide's test recipe's imports are the
  * root's exports, and its paraphrase file runs through the bake-off, so a doc example cannot drift
@@ -150,7 +151,9 @@ describe('the guide\'s example knowledge base', () => {
 
   it('has an approvals log whose lines are the passages\' approvals, and whose source text is the one approved', () => {
     const lines = readApprovalLog(kbDir);
-    expect(lines.length).toBeGreaterThan(0);
+    // One line for each passage: check holds every approval to a line of its id and hash.
+    expect(lines.map((l) => l.id).sort()).toEqual(Object.keys(loaded.kb!.passages).sort());
+    expect(kbStateProblems(loaded.kb!, '2026-10-03', loaded.locate).map((p) => `${p.file}: ${p.message}`)).toEqual([]);
     for (const line of lines) {
       const passage = loaded.kb!.passages[line.id]!;
       expect(passage, line.id).toBeDefined();
