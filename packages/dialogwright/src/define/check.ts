@@ -9,6 +9,7 @@ import { DEFAULT_ROLE_PERSON_REASON, personReasons } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES } from './schema/index';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
+import { knowledgePromptReferences, knowledgeUseProblems } from './knowledgeUse';
 
 /**
  * `dialogwright check`: everything that can be wrong with an app folder, found in one pass.
@@ -31,6 +32,8 @@ import { kbLinkProblems, kbStateProblems } from '../kb/rules';
  *    (crossLink checks it against the code when it runs; without the code, this does against
  *    policy.yaml), and what changes with time and review: every passage approved and fresh, and a
  *    passage in force today for every topic and every combination of the applies domain;
+ *  - the knowledge answers the folder says (./knowledgeUse.ts): a form's `answers:`, and its
+ *    lines in every locale;
  *  - every prompt is `mode: fixed`: the schema allows no other mode, and refuses one with a message
  *    that says so (see the load tests), so there is nothing more to check here.
  *
@@ -237,6 +240,9 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));
     problems.push(...kbStateProblems(config.knowledge, options.todayIso ?? new Date().toISOString().slice(0, 10), locate));
   }
+  // Forms that answer from the knowledge base: crossLink holds them to the code when it ran;
+  // without it, to the folder alone.
+  if (!linked) problems.push(...knowledgeUseProblems(config, locate));
   return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
 }
 
@@ -353,6 +359,8 @@ function referencesOf(config: LoadedConfig): Reference[] {
   for (const [id, form] of Object.entries(config.forms.forms)) {
     if (form.summaryPromptId !== null) refs.push({ id: form.summaryPromptId, file: 'forms.yaml', path: ['forms', id, 'summaryPromptId'] });
   }
+  // The lines a knowledge answer is said through: a form's answers (kb_answer and kb_unavailable, or its own).
+  for (const { id, file, path } of knowledgePromptReferences(config)) refs.push({ id, file, path });
   const identity = identityParts(config);
   if (identity?.failedPromptId !== undefined) refs.push({ id: identity.failedPromptId, file: 'identity.yaml', path: identity.failedPath });
   for (const [which, id] of Object.entries(config.app.prompts?.greetings ?? {})) {

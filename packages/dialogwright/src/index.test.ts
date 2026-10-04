@@ -25,6 +25,7 @@ describe('the package entry', () => {
       // the knowledge base
       'defineKnowledge', 'knowledgeProblems', 'loadKnowledgeFolder', 'resolvePassage', 'approvalHashOf', 'sourceHashOf', 'kbSourceOf', 'kbAuditRow', 'shortHash', 'KB_SHORT_HASH',
       'isTopicSlot', 'RETRIEVE_BUDGET_MS',
+      'kbCompletion', 'kbAnswerTool', 'readKbAnswer', 'KB_ANSWER_PROMPT', 'KB_UNAVAILABLE_PROMPT', 'KB_ANSWER_VAR', 'KB_TOPIC_PARAM',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',
       'buildQuestions', 'ENGINE_QUESTION_IDS', 'buildTurnState', 'FixtureStubClient', 'HeuristicStubClient', 'digitSpanLabel', 'dobParts', 'saysDob', 'saysExplicitYear',

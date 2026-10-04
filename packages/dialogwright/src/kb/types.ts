@@ -1,3 +1,5 @@
+import type { KbSource } from '../core/lifecycle';
+
 /**
  * An app's knowledge base, as the loader builds it from the `kb/` folder (./folder.ts): short,
  * approved passages, each the fixed answer to one topic for some callers on some days, with the
@@ -154,6 +156,14 @@ export interface CatalogTopic {
   readonly title: string;
   /** Its title by locale tag (`{ es: "Horario" }`), for a locale that gives one; the slot says the default title elsewhere. */
   readonly titles?: Readonly<Record<string, string>>;
+  /**
+   * For an app whose answers are resolved in its own code (CodeKnowledge): the line from the
+   * caller's own data said after the topic's answer, read through the gated tool `from` (as a
+   * kb/topics.yaml `accountLine`, kb/answer.ts). Its variables are fields of that tool's result,
+   * which the tool declares (ToolDef.fields). In the app's default locale; `texts` gives it in
+   * another, and a call in a locale without one is answered without it.
+   */
+  readonly accountLine?: { readonly text: string; readonly from: string; readonly texts?: Readonly<Record<string, string>> };
 }
 
 /**
@@ -208,3 +218,21 @@ export type KbUnavailable =
 export type KbResolution =
   | { readonly passage: KbPassage; readonly fresh: true }
   | { readonly unavailable: KbUnavailable; readonly passage?: KbPassage };
+
+/**
+ * Why a knowledge answer is not said: a resolution's reason (KbUnavailable), `no-facts` when the
+ * tool could not read the caller's facts from its systems (no such record), or `no-answer` when the
+ * resolving tool returned nothing the completion can read (fail closed).
+ */
+export type KbAnswerUnavailable = KbUnavailable | 'no-facts' | 'no-answer';
+
+/**
+ * What a knowledge answer's resolving tool returns (its value, through the gate), and what the
+ * knowledge completion (kb/answer.ts kbCompletion) reads: the answer to say word for word with its
+ * knowledge record, or why there is none (with the record of a passage withheld, when there was
+ * one). kbAnswerTool returns it for an app with a kb/ folder; an app that resolves answers in its
+ * own code returns it from its own tool.
+ */
+export type KbAnswer =
+  | { readonly answer: string; readonly source: KbSource }
+  | { readonly unavailable: KbAnswerUnavailable | (string & {}); readonly source?: KbSource };

@@ -23,6 +23,8 @@ import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } fro
 import { kbLinkProblems } from '../kb/rules';
 import type { Retriever } from '../kb/types';
 import { kbCatalog } from '../kb/catalog';
+import { kbCompletion } from '../kb/answer';
+import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -341,12 +343,21 @@ export function crossLink(
     form.slots.forEach((slot, i) => slotExists('forms.yaml', ['forms', id, 'slots', i], slot));
     if (form.summaryPromptId !== null) promptExists('forms.yaml', ['forms', id, 'summaryPromptId'], form.summaryPromptId);
 
+    if (form.answers) {
+      const lines = answerPromptsOf(form.answers);
+      promptExists('forms.yaml', ['forms', id, 'answers', ...(form.answers.answer !== undefined ? ['answer'] : [])], lines.answer);
+      promptExists('forms.yaml', ['forms', id, 'answers', ...(form.answers.unavailable !== undefined ? ['unavailable'] : [])], lines.unavailable);
+    }
+
+    const declared = form.hooks ?? [];
     const hooks = code.forms?.[id];
+    // A form with no hooks (one that answers from the knowledge base) needs nothing in the code.
+    if (!has(code.forms, id) && declared.length === 0) continue;
     if (!has(code.forms, id) || typeof hooks !== 'object' || hooks === null) {
-      yaml('forms.yaml', ['forms', id], `form "${id}" has no hooks in the code`, `write them in ${inCode('forms', id)}: ${form.hooks.join(', ')}`);
+      yaml('forms.yaml', ['forms', id], `form "${id}" has no hooks in the code`, `write them in ${inCode('forms', id)}: ${declared.join(', ')}`);
       continue;
     }
-    form.hooks.forEach((hook, i) => {
+    declared.forEach((hook, i) => {
       const fn = (hooks as Record<string, unknown>)[hook];
       if (fn === undefined) {
         yaml('forms.yaml', ['forms', id, 'hooks', i], `form "${id}" declares the hook "${hook}", but the code does not define it`, `write it in ${inCode('forms', id, hook)}, or delete "${hook}" from this list`);
@@ -358,7 +369,7 @@ export function crossLink(
       if (value === undefined) continue;
       if (!(FORM_HOOKS as readonly string[]).includes(key)) {
         inTs(['forms', id, key], `"${key}" is not a form hook; the hooks are ${FORM_HOOKS.join(', ')}`, `${renameHint(key, FORM_HOOKS)}delete it from ${inCode('forms', id, key)}`);
-      } else if (!form.hooks.includes(key as FormHook)) {
+      } else if (!declared.includes(key as FormHook)) {
         yaml('forms.yaml', ['forms', id, 'hooks'], `form "${id}" has the hook "${key}" in the code, but forms.yaml does not declare it`, `add "${key}" to forms.${id}.hooks, or delete the hook from ${inCode('forms', id, key)}`);
       }
     }
@@ -406,7 +417,7 @@ export function crossLink(
     customRules: Object.keys(customRules),
     lookups: Array.isArray(code.lookups) ? code.lookups.filter((x): x is string => typeof x === 'string') : [],
     prompts: promptIds,
-    confirms: Object.values(forms).some((form) => form.hooks.includes('confirmedParams')),
+    confirms: Object.values(forms).some((form) => (form.hooks ?? []).includes('confirmedParams')),
     inCode,
     codePath,
   };
@@ -456,6 +467,8 @@ export function crossLink(
   } else if (code.knowledge !== undefined) {
     inTs(['knowledge'], 'the code has a knowledge retriever, but the folder has no kb/', `add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/), or delete it from ${inCode('knowledge')}`);
   }
+  // forms.yaml's answers: what they name in the knowledge base, the policy and the code.
+  problems.push(...knowledgeUseProblems(config, locate, { tools, inCode }));
   // A slot that reads nominated topics (a `topic` slot) needs something to nominate them: a kb/, and a
   // retriever in the code. Without one it would never ask, so check refuses it rather than let it sit silent.
   for (const [id, spec] of Object.entries(linked.slots)) {
@@ -622,7 +635,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
     id: a.id,
     intents: Object.fromEntries(Object.entries(config.intents.intents).map(([id, def]) => [id, intentOf(def)])),
     menu: config.intents.menu.map(({ digit, intent }) => ({ digit, intent })),
-    forms: Object.fromEntries(Object.entries(config.forms.forms).map(([id, form]) => [id, formOf(form, code.forms[id]!)])),
+    forms: Object.fromEntries(Object.entries(config.forms.forms).map(([id, form]) => [id, formOf(form, code.forms?.[id])])),
     slots,
   };
   // identity.yaml's attempts are the policy's: what the attempts rule holds an identity check to.
@@ -663,11 +676,19 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
   return intent;
 }
 
-/** A form: its slots and summary from forms.yaml, then its hooks from the code, in the order forms.yaml declares them. */
-function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks): FormDef {
+/**
+ * A form: its slots and summary from forms.yaml, then its hooks from the code, in the order
+ * forms.yaml declares them. A form that answers from the knowledge base (`answers:`) has the
+ * engine's completion (kb/answer.ts kbCompletion) in place of a `complete` hook.
+ */
+function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks | undefined): FormDef {
   const def: Record<string, unknown> = { slots: form.slots, summaryPromptId: form.summaryPromptId };
   if (form.calls !== undefined) def.calls = form.calls;
-  for (const hook of form.hooks) def[hook] = hooks[hook];
+  for (const hook of form.hooks ?? []) def[hook] = hooks?.[hook];
+  if (form.answers) {
+    const { slot, via, answer, unavailable } = form.answers;
+    def.complete = kbCompletion({ slot, ...(via !== undefined ? { via } : {}), ...(answer !== undefined ? { answer } : {}), ...(unavailable !== undefined ? { unavailable } : {}) });
+  }
   return def as unknown as FormDef;
 }
 

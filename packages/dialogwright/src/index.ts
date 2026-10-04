@@ -62,6 +62,10 @@ export { KB_SHORT_HASH, kbAuditRow, kbSourceOf, shortHash } from './kb/record';
 export type { KbSourceOptions } from './kb/record';
 export type { KbSource } from './core/lifecycle';
 export type * from './kb/types';
+// Speaking an answer: a form's knowledge completion (forms.yaml `answers:`, or a `complete` hook that
+// delegates to kbCompletion), the resolving tool of an app with a kb/ folder, and their lines.
+export { KB_ANSWER_PROMPT, KB_ANSWER_VAR, KB_TOPIC_PARAM, KB_UNAVAILABLE_PROMPT, kbAnswerTool, kbCompletion, readKbAnswer } from './kb/answer';
+export type { KbAnswerToolOptions, KbCompletionOptions } from './kb/answer';
 // Retrieval in the turn: a topic slot (SlotSpec.nominates) makes runTurn nominate before it plans,
 // within a budget; what it did is the trace's `retrieval`.
 export { isTopicSlot } from './core/knowledge';
