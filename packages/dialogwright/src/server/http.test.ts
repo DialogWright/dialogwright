@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { generateKeyPairSync, sign as signEd25519 } from 'node:crypto';
 import { createServer, request, type Server } from 'node:http';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -192,6 +193,189 @@ describe('http routes', () => {
     expect(res.headers['content-type']).toBe('audio/wav');
     expect(res.headers['cache-control']).toBe('public, max-age=86400');
     expect(res.body.toString()).toBe('RIFFdata');
+  });
+});
+
+describe('routes by voice provider', () => {
+  it('answers /voice/twilio at the provider\'s own paths and the legacy /voice at the old ones', async () => {
+    const d = deps();
+    const base = await listen(d);
+    const a = await post(base, '/voice/twilio', { CallSid: 'CA1', From: '+15555550100' });
+    expect(a.status).toBe(200);
+    expect(a.text).toContain('url="wss://demo.ngrok.app/conversation/twilio?token=');
+    expect(a.text).toContain('<Connect action="https://demo.ngrok.app/cr-action/twilio">');
+    const token = /token=([0-9a-f]{32})/.exec(a.text)![1]!;
+    expect(d.tokens.verify(token, 'CA1')).toBe(true);
+    const b = await post(base, '/voice', { CallSid: 'CA2', From: '+15555550100' });
+    expect(b.text).toContain('url="wss://demo.ngrok.app/conversation?token=');
+    expect(b.text).toContain('<Connect action="https://demo.ngrok.app/cr-action">');
+  });
+
+  it('checks the signature over the provider\'s own path, and logs the call by its path', async () => {
+    const lines: string[] = [];
+    const base = await listen({ ...deps(), log: (l) => lines.push(l) });
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1' }, false)).status).toBe(403);
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1', From: '+15555550199' })).status).toBe(200);
+    expect(lines).toContain('/voice/twilio: signature rejected');
+    expect(lines).toContain('/voice/twilio CA1 from …0199');
+    expect((await post(base, '/voice/twilio', { From: '+15555550199' })).status).toBe(400);
+  });
+
+  it('is 404 for a provider that is not enabled or not known, and for a GET', async () => {
+    const base = await listen(deps());
+    expect((await post(base, '/voice/telnyx', { CallSid: 'x' })).status).toBe(404);
+    expect((await post(base, '/cr-action/acme', { CallSid: 'x' })).status).toBe(404);
+    expect((await post(base, '/voice/twilio/extra', { CallSid: 'x' })).status).toBe(404);
+    expect((await fetch(base + '/voice/twilio')).status).toBe(404);
+  });
+
+  it('reconnects through /cr-action/twilio to the provider\'s socket, and through /cr-action to the legacy one', async () => {
+    const d = deps();
+    const base = await listen(d);
+    d.store.create('CA1', { send: () => {}, close: () => {} });
+    const r = await post(base, '/cr-action/twilio', { CallSid: 'CA1', CallStatus: 'in-progress', SessionStatus: 'failed' });
+    expect(r.status).toBe(200);
+    expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/twilio?token=');
+    d.store.create('CA2', { send: () => {}, close: () => {} });
+    const legacy = await post(base, '/cr-action', { CallSid: 'CA2', CallStatus: 'in-progress', SessionStatus: 'failed' });
+    expect(legacy.text).toContain('url="wss://demo.ngrok.app/conversation?token=');
+  });
+
+  it('ends a call through /cr-action/twilio and logs the webhook under its own route', async () => {
+    const d = deps();
+    const base = await listen(d);
+    d.store.create('CA1', { send: () => {}, close: () => {} });
+    const r = await post(base, '/cr-action/twilio', { CallSid: 'CA1', HandoffData: '{"reasonCode":"completed"}', From: '+15555550199' });
+    expect(r.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
+    const line = readFileSync(join(d.dir, 'CA1.frames.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { dir: string; msg: Record<string, unknown> }).find((l) => l.dir === 'http');
+    expect(line?.msg).toMatchObject({ route: '/cr-action/twilio', From: '…0199' });
+  });
+
+  it('answers a legacy /cr-action that names no call by hanging up, as it always has', async () => {
+    const base = await listen(deps());
+    const r = await post(base, '/cr-action', { CallStatus: 'completed' });
+    expect(r.status).toBe(200);
+    expect(r.text).toContain('<Hangup/>');
+  });
+
+  it('decides a legacy /cr-action that names no call on its fields, byte for byte as before providers', async () => {
+    const lines: string[] = [];
+    const base = await listen({ ...deps(), log: (l) => lines.push(l) });
+    const dial = await post(base, '/cr-action', { HandoffData: '{"reasonCode":"billing"}' });
+    expect(dial.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Dial>+15551234567</Dial></Response>');
+    await post(base, '/cr-action', { CallStatus: 'completed', SessionStatus: 'ended' });
+    expect(lines).toContain('/cr-action ? ended -> hangup:ended');
+  });
+
+  it('refuses every signature when a provider has no secret, rather than checking against an empty key', async () => {
+    const d = deps();
+    const base = await listen({ ...d, config: { ...d.config, providerSecrets: {} } });
+    const body = new URLSearchParams({ CallSid: 'CA1' }).toString();
+    const forged = computeTwilioSignature('https://demo.ngrok.app/voice/twilio', { CallSid: 'CA1' }, '');
+    const res = await fetch(base + '/voice/twilio', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-twilio-signature': forged }, body });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('Telnyx webhooks', () => {
+  // A key pair made here: Telnyx signs with the private half, the server is configured with the public one.
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const TELNYX_PUBLIC_KEY = publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+
+  async function postTelnyx(base: string, path: string, body: string, opts: { sign?: boolean; type?: string; at?: number } = {}) {
+    const ts = String(opts.at ?? Math.floor(Date.now() / 1000));
+    const headers: Record<string, string> = { 'content-type': opts.type ?? 'application/x-www-form-urlencoded' };
+    if (opts.sign !== false) {
+      headers['telnyx-timestamp'] = ts;
+      headers['telnyx-signature-ed25519'] = signEd25519(null, Buffer.from(`${ts}|${body}`), privateKey).toString('base64');
+    }
+    const res = await fetch(base + path, { method: 'POST', headers, body });
+    return { status: res.status, text: await res.text(), type: res.headers.get('content-type') };
+  }
+
+  it('answers a signed /voice/telnyx with TeXML at its own socket path', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const base = await listen(d);
+    const r = await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc&From=%2B15555550100');
+    expect(r.status).toBe(200);
+    expect(r.type).toBe('text/xml');
+    expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/telnyx?token=');
+    expect(r.text).toContain('<Connect action="https://demo.ngrok.app/cr-action/telnyx">');
+    const token = /token=([0-9a-f]{32})/.exec(r.text)![1]!;
+    expect(d.tokens.verify(token, 'v2:abc')).toBe(true);
+  });
+
+  it('reads a JSON webhook too', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const base = await listen(d);
+    const r = await postTelnyx(base, '/voice/telnyx', JSON.stringify({ call_control_id: 'v2:json', from: '+15555550100' }), { type: 'application/json' });
+    expect(r.status).toBe(200);
+    expect(d.tokens.verify(/token=([0-9a-f]{32})/.exec(r.text)![1]!, 'v2:json')).toBe(true);
+  });
+
+  it('refuses an unsigned, a stale and a Twilio-signed webhook', async () => {
+    const base = await listen(deps({ VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY }));
+    expect((await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc', { sign: false })).status).toBe(403);
+    expect((await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc', { at: Math.floor(Date.now() / 1000) - 3600 })).status).toBe(403);
+    expect((await post(base, '/voice/telnyx', { CallSid: 'v2:abc' })).status).toBe(403);
+    // And the other way round: Twilio's paths still want Twilio's signature.
+    expect((await postTelnyx(base, '/voice/twilio', 'CallSid=CA1')).status).toBe(403);
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1' })).status).toBe(200);
+  });
+
+  it('ends a Telnyx call through /cr-action/telnyx with the end frame\'s data', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const base = await listen(d);
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    const done = await postTelnyx(base, '/cr-action/telnyx', 'CallSid=v2%3Aabc&HandoffData=%7B%22reasonCode%22%3A%22completed%22%7D');
+    expect(done.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
+    expect(d.store.get('v2:abc')?.ended).toBe(true);
+    const dial = await postTelnyx(base, '/cr-action/telnyx', JSON.stringify({ CallSid: 'v2:def', handoffData: '{"reasonCode":"billing"}' }), { type: 'application/json' });
+    expect(dial.text).toContain('<Dial>+15551234567</Dial>');
+  });
+
+  it('reconnects a live Telnyx call to its own socket', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const base = await listen(d);
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    const r = await postTelnyx(base, '/cr-action/telnyx', 'CallSid=v2%3Aabc&CallStatus=in-progress&SessionStatus=failed');
+    expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/telnyx?token=');
+  });
+
+  it('gives each carrier only its own voice when a deployment answers on both', async () => {
+    const d = deps({
+      VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY,
+      TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F', TELNYX_VOICE: 'Telnyx.Ultra.Callie',
+    });
+    const base = await listen(d);
+    const telnyx = await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc');
+    expect(telnyx.text).toContain(' voice="Telnyx.Ultra.Callie"/>');
+    expect(telnyx.text).not.toContain('en-US-Neural2-F');
+    expect(telnyx.text).not.toContain('ttsProvider=');
+    for (const path of ['/voice/twilio', '/voice']) {
+      const twilio = await post(base, path, { CallSid: 'CA1' });
+      expect(twilio.text, path).toContain(' ttsProvider="Google" voice="en-US-Neural2-F"/>');
+      expect(twilio.text, path).not.toContain('Telnyx.Ultra.Callie');
+    }
+    // A reconnect keeps the carrier's own voice too.
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    const again = await postTelnyx(base, '/cr-action/telnyx', 'CallSid=v2%3Aabc&CallStatus=in-progress&SessionStatus=failed');
+    expect(again.text).toContain(' voice="Telnyx.Ultra.Callie"/>');
+    expect(again.text).not.toContain('en-US-Neural2-F');
+  });
+
+  it('sends Telnyx no voice when only the Twilio voice is set', async () => {
+    const base = await listen(deps({ VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY, TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' }));
+    const r = await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc');
+    expect(r.status).toBe(200);
+    expect(r.text).not.toContain('voice=');
+  });
+
+  it('leaves the legacy Twilio paths unanswered when Twilio is not enabled', async () => {
+    const base = await listen(deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY }));
+    expect((await post(base, '/voice', { CallSid: 'CA1' })).status).toBe(404);
+    expect((await post(base, '/cr-action', { CallSid: 'CA1' })).status).toBe(404);
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1' })).status).toBe(404);
   });
 });
 

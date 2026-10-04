@@ -179,6 +179,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       summarizeHandoff: overrides.summarizeHandoff,
     },
     overrides.setupTimeoutMs,
+    config.voiceProviders,
   );
   /**
    * One pass of the idle sweep. Named and returned rather than inlined into the interval so a
@@ -278,10 +279,12 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
   try {
     const config = loadConfig(process.env);
     console.log(`[server] ${describeConfig(config)}`);
-    if (!config.signatureCheck) console.log('[server] WARNING: Twilio signature validation is OFF');
+    if (!config.signatureCheck) console.log('[server] WARNING: webhook signature validation is OFF');
     const sidecars = start ? await start(config) : {};
     const running = await startServer(config, sidecars.overrides ?? {});
-    console.log(`[server] listening on ${running.port}; voice webhook https://${config.publicHost}/voice`);
+    const webhooks = config.voiceProviders.map((id) => `https://${config.publicHost}/voice/${id}`).join(', ');
+    const legacy = config.voiceProviders.includes('twilio') ? ' (Twilio also on /voice)' : '';
+    console.log(`[server] listening on ${running.port}; voice webhook ${webhooks}${legacy}`);
     const consoleBase = config.consoleLocalOnly ? `http://localhost:${running.port}` : `https://${config.publicHost}`;
     if (running.bus) console.log(`[server] console ${consoleBase}/dashboard`);
     for (const r of running.routes) console.log(`[server] ${r.label} ${(r.localOnly ? consoleBase : `https://${config.publicHost}`)}${r.path}`);

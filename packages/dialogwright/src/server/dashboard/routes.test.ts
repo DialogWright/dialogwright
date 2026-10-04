@@ -75,6 +75,19 @@ describe('dashboard routes', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('serves the trace of a Telnyx call by its file stem', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dash-'));
+    const stem = 'v2_T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ';
+    const rec = { v: 1, sessionId: stem, turnIndex: 0, ts: '2026-09-21T00:00:00.000Z', event: { type: 'setup', from: '+15555550199', to: '+15550000002' }, decision: { kind: 'prompt', promptId: 'greeting', vars: {}, acks: [] }, slots: {}, form: null, gates: [], frames: [], timing: {}, usage: {} };
+    writeFileSync(join(dir, `${stem}.jsonl`), JSON.stringify(rec) + '\n');
+    const s = await serve(new DashboardBus(), dir);
+    const res = await fetch(`${s.base}/dashboard/traces/${stem}`);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { records: unknown[] }).records).toHaveLength(1);
+    s.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('lists traces and returns one with its frames; refuses a bad sid', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dash-'));
     const rec = { v: 1, sessionId: 'CA9', turnIndex: 0, ts: '2026-09-21T00:00:00.000Z', event: { type: 'setup', from: '+15555550199', to: '+15550000002' }, decision: { kind: 'prompt', promptId: 'greeting', vars: {}, acks: [] }, slots: {}, form: null, gates: [], frames: [], timing: {}, usage: {} };

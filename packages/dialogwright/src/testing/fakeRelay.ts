@@ -2,7 +2,11 @@ import WebSocket from 'ws';
 
 type Msg = Record<string, unknown> & { type: string };
 
-/** A minimal Twilio ConversationRelay stand-in: connects, sends the documented inbound messages, collects outbound ones. */
+/**
+ * A minimal ConversationRelay stand-in (Twilio's, or Telnyx's, which speaks the same messages): connects
+ * to the URL it is given (`/conversation`, or a provider's `/conversation/<id>`), sends the documented
+ * inbound messages, collects outbound ones.
+ */
 export class FakeRelay {
   readonly received: Msg[] = [];
   readonly closed: Promise<{ code: number; reason: string }>;
@@ -34,8 +38,9 @@ export class FakeRelay {
     this.send({ type: 'setup', sessionId, callSid, from: '+15550000001', to: '+15550000002', customParameters: {}, ...extras });
   }
 
-  prompt(text: string, last = true): void {
-    this.send({ type: 'prompt', voicePrompt: text, lang: 'en-US', last });
+  /** `lang` is what the carrier reports: Twilio a full tag (`en-US`), Telnyx may send a bare language (`en`). */
+  prompt(text: string, last = true, lang = 'en-US'): void {
+    this.send({ type: 'prompt', voicePrompt: text, lang, last });
   }
 
   dtmf(digits: string): void {

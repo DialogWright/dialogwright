@@ -642,6 +642,14 @@ describe('server end to end', () => {
     expect(safeFileStem('')).toBe('unknown');
   });
 
+  it('names a Telnyx call\'s files by a stable stem with no colon (its ids look like v2:...)', async () => {
+    const { safeFileStem } = await import('./index');
+    const id = 'v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ';
+    expect(safeFileStem(id)).toBe('v2_T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ');
+    expect(safeFileStem(id)).toBe(safeFileStem(id));
+    expect(safeFileStem(id)).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+  });
+
   it('exposes health and refuses upgrades on other paths', async () => {
     const s = await start();
     const res = await fetch(`${s.base}/health`);
@@ -685,6 +693,40 @@ describe('server end to end', () => {
     });
     expect(await third.text()).toContain('<Dial>+15551234567</Dial>');
     expect(running!.store.get(callSid)?.ended).toBe(true);
+  });
+});
+
+describe('the relay socket by voice provider', () => {
+  it('runs a call on /conversation/twilio, and the dashboard names the provider', async () => {
+    const s = await start();
+    const events: DashboardEvent[] = [];
+    running!.bus!.subscribe((e) => events.push(e));
+    const token = running!.tokens.mint('CA1');
+    const relay = await FakeRelay.connect(`${s.base.replace('http', 'ws')}/conversation/twilio?token=${token}`);
+    relay.setup('CA1');
+    expect(await relay.waitForTexts(1)).toEqual([GREETING_TEXT]);
+    expect(events.find((e) => e.type === 'call_started')).toMatchObject({ callSid: 'CA1', channel: 'voice', provider: 'twilio' });
+    relay.close();
+  });
+
+  it('names Twilio as the provider of a call on the legacy /conversation', async () => {
+    const s = await start();
+    const events: DashboardEvent[] = [];
+    running!.bus!.subscribe((e) => events.push(e));
+    const token = running!.tokens.mint('CA1');
+    const relay = await FakeRelay.connect(`${s.ws}?token=${token}`);
+    relay.setup('CA1');
+    await relay.waitForTexts(1);
+    expect(events.find((e) => e.type === 'call_started')).toMatchObject({ provider: 'twilio' });
+    relay.close();
+  });
+
+  it('refuses the socket of a provider that is not enabled, and a deeper path', async () => {
+    const s = await start();
+    const token = running!.tokens.mint('CA1');
+    const ws = s.base.replace('http', 'ws');
+    await expect(FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`)).rejects.toThrow(/404/);
+    await expect(FakeRelay.connect(`${ws}/conversation/twilio/x?token=${token}`)).rejects.toThrow(/404/);
   });
 });
 

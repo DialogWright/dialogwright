@@ -14,9 +14,9 @@ export type DashboardEvent =
    * satisfies the type; the view treats a missing one as 'voice' / null, which is what every
    * publisher before this sent anyway. For chat, `caller` names who is chatting (an app's chat says how); for
    * voice it is always null -- the dashboard route is unauthenticated and never shows the
-   * caller's own name.
+   * caller's own name. `provider` is a voice call's carrier (`twilio`, say), absent for chat.
    */
-  | (Base & { type: 'call_started'; from: string; todayIso: string; thresholds: Partial<Thresholds>; channel?: string; caller?: string | null })
+  | (Base & { type: 'call_started'; from: string; todayIso: string; thresholds: Partial<Thresholds>; channel?: string; provider?: string; caller?: string | null })
   /**
    * `turnIndex` is the index the record of the turn now starting will carry -- except on a turn
    * that resolves to ignore or hold, where `bookkeep` does not increment the session's counter and

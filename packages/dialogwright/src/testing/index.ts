@@ -16,7 +16,9 @@
  * golden of what it decides, with every custom rule's examples run through it (policyMatrix.ts). Two
  * more pages are written from the compiled app and kept as goldens: the policy card, the policy in
  * plain English with its diagrams (policyCard.ts), and the app map, its intents, forms, slots,
- * actions and rules as diagrams (appMap.ts).
+ * actions and rules as diagrams (appMap.ts). The voice conformance kit runs the checks every phone
+ * carrier (a VoiceProvider, src/server/voice) must pass over its documented frames and webhooks
+ * (voiceConformance.ts).
  */
 export {
   shadowSlot, withShadowSlots, shadowFromEnv, shadowModeOf, createShadowReport, formatShadowReport, formatShadowMismatch,
@@ -62,3 +64,6 @@ export type { RuleExampleResult, RuleExampleRun } from './policyMatrix';
 export { policyCardText, expectPolicyCard, writePolicyCard, ruleName, POLICY_CARD_FILE } from './policyCard';
 export { appMapText, expectAppMap, writeAppMap, danglingReferences, APP_MAP_FILE } from './appMap';
 export type { DanglingReference } from './appMap';
+export { runVoiceProviderConformance, voiceConformanceChecks } from './voiceConformance';
+export type { FrameFixture, VoiceFixtures, WebhookFixture } from './voiceConformance';
+export type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from '../server/voice/provider';

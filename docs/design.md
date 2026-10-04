@@ -344,7 +344,7 @@ approval:
 
 ## 10. Channels: our own event model, providers as adapters
 
-The core speaks its own channel event model. Every provider is an adapter that maps its wire format onto it, so the core never sees a provider's messages and never checks a channel's name. This is implemented today, with Twilio ConversationRelay as the first adapter.
+The core speaks its own channel event model. Every provider is an adapter that maps its wire format onto it, so the core never sees a provider's messages and never checks a channel's name. This is implemented today, with Twilio ConversationRelay and Telnyx Conversation Relay as the adapters. A carrier is a `VoiceProvider` (`server/voice/`): its webhook signature, the document that starts the relay and the ones that end the call, and its callback's fields; the socket frames are the shared relay wire. `VOICE_PROVIDERS` (env, default `twilio`) names the carriers a deployment answers, each on `/voice/<id>`, `/cr-action/<id>` and `/conversation/<id>`, and each carrier's secret (`TWILIO_AUTH_TOKEN`, `TELNYX_PUBLIC_KEY`) is required only when it is listed. Each carrier also has its own optional voice, since carriers name voices differently: `TTS_PROVIDER`/`TTS_VOICE` are Twilio's and `TELNYX_VOICE` is Telnyx's, and neither ever reaches the other carrier. The unprefixed paths stay Twilio's. A conformance kit (`runVoiceProviderConformance` in `dialogwright/testing`) runs each carrier against its documented frames and webhooks.
 
 **Events into the core** (`SessionEvent`):
 
@@ -380,7 +380,7 @@ Planned additions: a `ui` action for buttons and quick replies (such as "Sign in
 
 | Type | Who does speech | Examples | When |
 |---|---|---|---|
-| Text relay | The provider | Twilio ConversationRelay (today); Telnyx Conversation Relay (same message types, different webhook signatures and transfer markup) | First release |
+| Text relay | The provider | Twilio ConversationRelay and Telnyx Conversation Relay (today; the same message types, different webhook signatures and start documents) | First release |
 | Web and app chat | None | The embeddable widget | First release |
 | Messaging | None, asynchronous | SMS, WhatsApp | Soon after |
 | Audio streaming | The framework (recognition, synthesis, end-of-speech, barge-in), likely through Pipecat or LiveKit Agents | Twilio Media Streams, Telnyx media streaming, SIP, WebRTC | Later |

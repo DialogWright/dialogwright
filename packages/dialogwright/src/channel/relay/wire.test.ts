@@ -11,6 +11,16 @@ describe('parseInbound', () => {
     expect(f).toMatchObject({ type: 'setup', sessionId: 'VX1', callSid: 'CA1', accountSid: 'AC1', direction: 'inbound' });
   });
 
+  it('keeps the call ids Telnyx adds to a setup, and still drops fields nobody documents', () => {
+    const f = parseInbound(JSON.stringify({
+      type: 'setup', sessionId: 'S1', callSid: 'v2:abc', callControlId: 'v2:abc', callSessionId: 'cs-1', callLegId: 'cl-1',
+      from: '+15555550100', to: '+15555550101', customParameters: {}, unknownField: 'x', callLegNumber: 7,
+    }));
+    expect(f).toMatchObject({ type: 'setup', callSid: 'v2:abc', callControlId: 'v2:abc', callSessionId: 'cs-1', callLegId: 'cl-1' });
+    expect(f).not.toHaveProperty('unknownField');
+    expect(f).not.toHaveProperty('callLegNumber');
+  });
+
   it('defaults prompt lang and last', () => {
     expect(parseInbound('{"type":"prompt","voicePrompt":"hi"}')).toEqual({ type: 'prompt', voicePrompt: 'hi', lang: 'en-US', last: true });
     expect(parseInbound('{"type":"prompt","voicePrompt":"hi","lang":"en-GB","last":false}')).toEqual({ type: 'prompt', voicePrompt: 'hi', lang: 'en-GB', last: false });

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig, describeConfig, consoleExposure } from './config';
 import { defaultTimeZone } from '../run/clock';
 
+/** A Telnyx public key as Telnyx shows it: 32 bytes, base64. Made up; nothing signs with it. */
+const TELNYX_KEY = Buffer.alloc(32, 7).toString('base64');
+
 const base = { PUBLIC_HOST: 'demo.ngrok.app', TWILIO_AUTH_TOKEN: 'tok', HANDOFF_NUMBER: '+15551234567' };
 
 /** The paths CONSOLE_LOCAL_ONLY guards once an app's two chats are mounted (localOnly.ts localOnlyPaths). */
@@ -184,3 +187,87 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, CONSOLE_LOCAL_ONLY: 'maybe' })).toThrow('CONSOLE_LOCAL_ONLY must be on or off, got "maybe"');
   });
 });
+
+describe('voice providers', () => {
+  it('defaults to Twilio and needs only its token', () => {
+    const c = loadConfig({ ...base });
+    expect(c.voiceProviders).toEqual(['twilio']);
+    expect(c.providerSecrets).toEqual({ twilio: base.TWILIO_AUTH_TOKEN });
+    expect(c.twilioAuthToken).toBe(base.TWILIO_AUTH_TOKEN);
+  });
+
+  it('reads a comma list, trimmed, lower-cased and without repeats', () => {
+    expect(loadConfig({ ...base, VOICE_PROVIDERS: ' Twilio , twilio' }).voiceProviders).toEqual(['twilio']);
+  });
+
+  it('names the missing secret of an enabled provider, and why it is needed', () => {
+    const { TWILIO_AUTH_TOKEN: _t, ...rest } = base;
+    expect(() => loadConfig(rest)).toThrow('missing required environment variable TWILIO_AUTH_TOKEN (VOICE_PROVIDERS includes twilio)');
+    expect(() => loadConfig({ ...rest, TWILIO_AUTH_TOKEN: '  ' })).toThrow('missing required environment variable TWILIO_AUTH_TOKEN (VOICE_PROVIDERS includes twilio)');
+  });
+
+  it('refuses an unknown provider and an empty list', () => {
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: 'twilio,acme' })).toThrow('VOICE_PROVIDERS must name providers from twilio, telnyx, got "acme"');
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: ' ' })).toThrow('VOICE_PROVIDERS must name at least one provider');
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: ',' })).toThrow('VOICE_PROVIDERS must name at least one provider');
+  });
+
+  it('describes the providers, and each secret by its length only', () => {
+    const text = describeConfig(loadConfig(base));
+    expect(text).toContain('voice providers twilio');
+    expect(text).toContain('auth token set (3 chars)');
+  });
+
+  it('enables Telnyx alone, without a Twilio token', () => {
+    const { TWILIO_AUTH_TOKEN: _t, ...rest } = base;
+    const c = loadConfig({ ...rest, VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY });
+    expect(c.voiceProviders).toEqual(['telnyx']);
+    expect(c.providerSecrets).toEqual({ telnyx: TELNYX_KEY });
+    expect(c.twilioAuthToken).toBe('');
+  });
+
+  it('enables both, in the order given', () => {
+    const c = loadConfig({ ...base, VOICE_PROVIDERS: 'telnyx,twilio', TELNYX_PUBLIC_KEY: TELNYX_KEY });
+    expect(c.voiceProviders).toEqual(['telnyx', 'twilio']);
+    expect(Object.keys(c.providerSecrets).sort()).toEqual(['telnyx', 'twilio']);
+    const text = describeConfig(c);
+    expect(text).toContain('voice providers telnyx, twilio');
+    expect(text).toContain(`telnyx public key set (${TELNYX_KEY.length} chars)`);
+    expect(text).not.toContain(TELNYX_KEY);
+  });
+
+  it('names the missing Telnyx key', () => {
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: 'twilio,telnyx' })).toThrow('missing required environment variable TELNYX_PUBLIC_KEY (VOICE_PROVIDERS includes telnyx)');
+  });
+
+  it('takes an optional Telnyx voice of its own, never the Twilio TTS_VOICE', () => {
+    const both = { ...base, VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY, TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F' };
+    expect(loadConfig(both).telnyxVoice).toBeNull();
+    expect(loadConfig({ ...both, TELNYX_VOICE: ' Telnyx.Ultra.Callie ' })).toMatchObject({ telnyxVoice: 'Telnyx.Ultra.Callie', ttsProvider: 'Google', ttsVoice: 'en-US-Neural2-F' });
+    expect(loadConfig({ ...both, TELNYX_VOICE: 'AWS.Polly.Joanna-Neural' }).telnyxVoice).toBe('AWS.Polly.Joanna-Neural');
+  });
+
+  it('refuses a Telnyx voice that is not named the way Telnyx names one (its engine, a dot, the voice)', () => {
+    const telnyx = { ...base, VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY };
+    expect(() => loadConfig({ ...telnyx, TELNYX_VOICE: 'en-US-Neural2-F' })).toThrow(
+      'TELNYX_VOICE must be a Telnyx voice name like Telnyx.Ultra.Callie, got "en-US-Neural2-F"',
+    );
+    expect(() => loadConfig({ ...telnyx, TELNYX_VOICE: 'Telnyx.Ultra Callie' })).toThrow(/TELNYX_VOICE must be a Telnyx voice name/);
+  });
+
+  it('describes the Telnyx voice when Telnyx is enabled, and the Twilio voice as before', () => {
+    const both = { ...base, VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY };
+    expect(describeConfig(loadConfig(both))).toContain('telnyx voice default');
+    const text = describeConfig(loadConfig({ ...both, TTS_PROVIDER: 'Google', TTS_VOICE: 'en-US-Neural2-F', TELNYX_VOICE: 'Telnyx.Ultra.Callie' }));
+    expect(text).toContain('tts Google en-US-Neural2-F');
+    expect(text).toContain('telnyx voice Telnyx.Ultra.Callie');
+    expect(describeConfig(loadConfig({ ...base, TELNYX_VOICE: 'Telnyx.Ultra.Callie' }))).not.toContain('telnyx voice');
+  });
+
+  it('refuses a Telnyx key that is not a base64 Ed25519 public key', () => {
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: 'not-a-key' })).toThrow(
+      "TELNYX_PUBLIC_KEY must be the account's base64 Ed25519 public key",
+    );
+  });
+});
+

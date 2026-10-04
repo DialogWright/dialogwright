@@ -230,6 +230,8 @@ export interface ConnectionContext {
   malformed: number;
   /** Partial prompts are dropped silently after the first; one log line per connection is the signal. */
   partialLogged: boolean;
+  /** The voice provider whose socket path this connection came in on (server/voice/registry.ts). */
+  provider: string;
 }
 
 export interface AdapterDeps {
@@ -272,8 +274,8 @@ function publish(deps: AdapterDeps, event: DashboardEvent): void {
   deps.bus?.publish(event);
 }
 
-export function newConnectionContext(token: string | null, socket: SocketLike | null = null): ConnectionContext {
-  return { token, socket, callSid: null, malformed: 0, partialLogged: false };
+export function newConnectionContext(token: string | null, socket: SocketLike | null = null, provider = 'twilio'): ConnectionContext {
+  return { token, socket, callSid: null, malformed: 0, partialLogged: false, provider };
 }
 
 function describe(err: unknown): { name: string; message: string; stack?: string } {
@@ -560,9 +562,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     publish(deps, {
       type: 'call_started', callSid: parsed.callSid, at: Date.now(),
       from: maskNumber(parsed.from), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
-      // Twilio voice only, here; an app's chat (an AppRoute, src/server/appRoutes.ts) is
-      // the other publisher of this event, and there `caller` names who is chatting.
-      channel: 'voice', caller: null,
+      // Voice only, here, with the carrier it came in on; an app's chat (an AppRoute,
+      // src/server/appRoutes.ts) is the other publisher of this event, and there `caller` names who is chatting.
+      channel: 'voice', provider: ctx.provider, caller: null,
     });
     // Open the connection to the model while the greeting plays, so the caller's first answer does
     // not pay for its setup. Not awaited and never allowed to fail the call; a reconnect keeps the

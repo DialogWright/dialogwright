@@ -1,0 +1,54 @@
+{
+  "voice": {
+    "source": "ASSUMED, not documented by Telnyx: a TeXML voice webhook form-encoded with Twilio-compatible field names (to confirm with a live capture)",
+    "headers": {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "rawBody": "AccountSid=1f1a8b6f-1234-4abc-9def-1234567890ab&CallSid=v2%3AT02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ&CallStatus=ringing&Direction=inbound&From=%2B15555550110&To=%2B15555550111",
+    "expect": {
+      "callId": "v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ",
+      "from": "+15555550110",
+      "to": "+15555550111",
+      "callStatus": "ringing"
+    }
+  },
+  "action": {
+    "source": "ASSUMED, not documented by Telnyx: the <Connect action> callback form-encoded, the end frame's data as HandoffData (to confirm with a live capture)",
+    "headers": {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "rawBody": "CallSid=v2%3AT02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ&CallStatus=in-progress&SessionStatus=completed&HandoffData=%7B%22reason%22%3A%22caller_done%22%7D",
+    "expect": {
+      "callId": "v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ",
+      "callStatus": "in-progress",
+      "sessionStatus": "completed",
+      "handoffData": "{\"reason\":\"caller_done\"}"
+    }
+  },
+  "alternatives": [
+    {
+      "source": "ASSUMED alternative: a JSON voice webhook naming the call by call_control_id, with lower-case from and to",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "rawBody": "{\"call_control_id\": \"v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ\", \"from\": \"+15555550110\", \"to\": \"+15555550111\"}",
+      "expect": {
+        "callId": "v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ",
+        "from": "+15555550110",
+        "to": "+15555550111"
+      }
+    },
+    {
+      "source": "ASSUMED alternative: a JSON action callback carrying the end frame's data as handoffData",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "rawBody": "{\"CallSid\": \"v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ\", \"CallStatus\": \"in-progress\", \"handoffData\": \"{\\\"reason\\\":\\\"caller_done\\\"}\"}",
+      "expect": {
+        "callId": "v2:T02llQxIyaRkhfRKxgAP8nY511EhFLizdvdUKJiSw8d6A9BborherQ",
+        "callStatus": "in-progress",
+        "handoffData": "{\"reason\":\"caller_done\"}"
+      }
+    }
+  ]
+}
