@@ -581,8 +581,9 @@ describe('signing in to the chat', () => {
     await c.until((r) => r.at(-1)?.type === 'say');
     const n = c.received.length;
     c.send({ type: 'sign_in', token: 'mock:55505678' });
-    await c.until((r) => r.length > n);
-    expect(c.received[n]).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (the chat is already signed in)' });
+    // A line of the first sign-in's turn may still be on its way: the answer is the next error or signed_in.
+    const answer = (await c.until((r) => r.slice(n).some((m) => m.type === 'error' || m.type === 'signed_in'))).slice(n).find((m) => m.type === 'error' || m.type === 'signed_in');
+    expect(answer).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (the chat is already signed in)' });
   });
 
   it('a token beside a resume: not used on a chat signed in, signs in one still anonymous, and starts an ended one signed in', async () => {
