@@ -59,7 +59,7 @@ export function handoffPromptId(reason: string): string {
  * The language a line in `locale` is said in (Say.lang), for an app that declares locales
  * (App.locales): the language the voice speaks that locale in (app.yaml voice.locales.<tag>.tts),
  * which is the locale's own tag unless the app names another; without a locale, the default's. It is
- * what a start document's languages are named by (server/http.ts startOptions), so a text frame
+ * what a start document's languages are named by (server/http.ts connectOptions), so a text frame
  * names one of them. An app without locales gives its lines no language, so they map to the relay's
  * en-US text frames exactly as they always have: that is what keeps every golden of an app without
  * locales unchanged.

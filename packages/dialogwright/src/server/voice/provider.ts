@@ -45,7 +45,7 @@ export interface StartDocumentOptions {
   readonly voice?: string;
   /**
    * The language the call starts in, for an app that names its languages (server/http.ts
-   * startOptions); absent, the document names none and the carrier speaks its default (en-US), as
+   * connectOptions); absent, the document names none and the carrier speaks its default (en-US), as
    * before languages. When present, its voice is the start's, in place of `voice` and `ttsProvider`
    * above: those are the default locale's, and a language with no voice of its own gets the
    * carrier's default voice for it.

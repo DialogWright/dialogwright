@@ -36,7 +36,7 @@ export interface HttpDeps {
   /** The app's own pages (its chats, say), each asked in turn before the webhooks; without them, none. */
   routes?: readonly AppRoute[];
   /**
-   * The app the server runs, for the languages its calls are in (startOptions): the locale a number
+   * The app the server runs, for the languages its calls are in (connectOptions): the locale a number
    * starts in, and each locale's languages and voices. Without it, a start document names no language.
    */
   app?: App;
