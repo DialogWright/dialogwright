@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>DialogWright guide: scaling out (a design)</title>
+  <meta name="description" content="How DialogWright is designed to run on many servers behind a load balancer: what must be shared, what a call's WebSocket implies, drain, single sign-on, secrets and observability. A design for Phase 8, not built yet.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://dialogwright.com/guides/scaling.html">
+  <link rel="icon" href="../brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="../brand/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="../brand/favicon-180.png">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://dialogwright.com/guides/scaling.html">
+  <meta property="og:title" content="Scaling out (a design)">
+  <meta property="og:description" content="The same app folder on many servers: what must be shared, and how calls survive a deploy. Designed, not built yet.">
+  <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
+  <link rel="stylesheet" href="../style.css">
+  <script src="../copy.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap bar">
+      <a class="home" href="../" aria-label="DialogWright, home page">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="../brand/dialogwright-mark-dark.svg">
+          <img src="../brand/dialogwright-mark.svg" alt="" width="32" height="32">
+        </picture>
+      </a>
+      <nav aria-label="Site">
+        <ul>
+          <li><a href="../#why">Why</a></li>
+          <li><a href="../#how">How it works</a></li>
+          <li><a href="../#guides">Guides</a></li>
+          <li><a href="../#examples">Examples</a></li>
+          <li><a href="../#start">Quick start</a></li>
+          <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap guide-head">
+      <p class="crumbs"><a href="../#guides">Guides</a> / Scaling out</p>
+      <h1>Scaling out</h1>
+      <p class="lede">
+        The same app folder, the same policy and the same audit, on many servers behind a load balancer: for a business
+        whose line must survive a deploy, a crashed instance and a busy Monday.
+      </p>
+      <div class="banner design">
+        <p><strong>A design, not built yet.</strong> This is how DialogWright is designed to scale, for Phase 8 of the
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a> and later.
+          Today it runs as one process, with its sessions in memory. Where this page names a setting or a command that does
+          not exist yet, it says so.</p>
+        <p><strong>One server is the right answer for most people.</strong> A single process answers a personal line or a small
+          office's without strain; <a href="home-server.html">run it on a machine you own</a>. Scale out when you need a deploy that
+          never drops a call, or more than one machine's worth of calls.</p>
+      </div>
+      <nav class="toc" aria-label="On this page">
+        <h2>On this page</h2>
+        <ol>
+          <li><a href="#today">What one process holds today</a></li>
+          <li><a href="#shape">The reference shape</a></li>
+          <li><a href="#shared">What has to be shared</a></li>
+          <li><a href="#sockets">A call's WebSocket</a></li>
+          <li><a href="#chat">Web chat across instances</a></li>
+          <li><a href="#writes">Idempotent writes</a></li>
+          <li><a href="#deploys">Readiness and drain</a></li>
+          <li><a href="#console">The console behind single sign-on</a></li>
+          <li><a href="#secrets">Secrets</a></li>
+          <li><a href="#observability">Observability</a></li>
+          <li><a href="#model">The decision model's limits</a></li>
+          <li><a href="#roadmap">The roadmap</a></li>
+        </ol>
+      </nav>
+    </div>
+
+    <div class="wrap guide">
+      <section id="today" aria-labelledby="today-title">
+        <h2 id="today-title">1. What one process holds today</h2>
+        <p>
+          The design's principle is that the agent failing never means dead air: a turn that fails is asked again and then handed to a
+          person; an instance that dies mid-call is replaced by another that resumes the call; a whole service that is down is answered
+          by the carrier's fallback URL, static markup from somewhere independent that apologizes and dials the human queue.
+          The single-process version of the middle one exists today: when a call's socket drops, the carrier calls
+          <code>/cr-action</code>, and the same process reconnects the call with a fresh one-time token, up to
+          <code>RECONNECT_LIMIT</code> times, then transfers it politely. What it cannot do is resume a call another process held.
+        </p>
+        <p>
+          Everything a call needs lives in the server's memory or on its disk, by design: laptop mode is first-class, and every
+          production piece is to arrive as an interface whose default is the laptop implementation. The table in
+          <a href="#shared">section 3</a> names each piece and where it is in the code.
+        </p>
+      </section>
+
+      <section id="shape" aria-labelledby="shape-title">
+        <h2 id="shape-title">2. The reference shape</h2>
+        <figure class="diagram">
+          <svg viewBox="0 0 400 652" role="img" aria-labelledby="scale-title scale-desc">
+            <title id="scale-title">DialogWright on many servers (a design)</title>
+            <desc id="scale-desc">Callers, through the carrier, and web visitors reach a load balancer that passes HTTPS and WebSockets with an idle timeout longer than a call. Behind it run several instances of the same image in different roles: two voice instances and a chat instance. Every instance reads and writes shared stores: sessions with their call queues, tokens, reconnect counts and chat resume in Redis; the audit as a hash chain per session in Postgres; traces and frame logs in object storage. Every instance asks the decision model, whose account rate limits they share. The operator console runs as its own role, internal only, behind single sign-on, and reads the shared stores.</desc>
+            <defs>
+              <marker id="sc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="dg-head" d="M0,0 L10,5 L0,10 z"/>
+              </marker>
+            </defs>
+
+            <rect class="dg-box" x="12" y="12" width="176" height="48" rx="8"/>
+            <text class="dg-title" x="100" y="33" text-anchor="middle">Callers</text>
+            <text class="dg-note" x="100" y="50" text-anchor="middle">through the carrier</text>
+            <rect class="dg-box" x="212" y="12" width="176" height="48" rx="8"/>
+            <text class="dg-title" x="300" y="33" text-anchor="middle">Web visitors</text>
+            <text class="dg-note" x="300" y="50" text-anchor="middle">the widget on your site</text>
+
+            <line class="dg-line" x1="100" y1="60" x2="100" y2="95" marker-end="url(#sc-arrow)"/>
+            <line class="dg-line" x1="300" y1="60" x2="300" y2="95" marker-end="url(#sc-arrow)"/>
+
+            <rect class="dg-key" x="12" y="96" width="376" height="50" rx="8"/>
+            <text class="dg-title" x="200" y="117" text-anchor="middle">Load balancer</text>
+            <text class="dg-note" x="200" y="135" text-anchor="middle">HTTPS and WebSockets; idle timeout longer than a call</text>
+
+            <line class="dg-line" x1="70" y1="146" x2="70" y2="183" marker-end="url(#sc-arrow)"/>
+            <line class="dg-line" x1="200" y1="146" x2="200" y2="183" marker-end="url(#sc-arrow)"/>
+            <line class="dg-line" x1="330" y1="146" x2="330" y2="183" marker-end="url(#sc-arrow)"/>
+
+            <rect class="dg-key" x="12" y="184" width="116" height="56" rx="8"/>
+            <text class="dg-title" x="70" y="206" text-anchor="middle">voice</text>
+            <text class="dg-note" x="70" y="226" text-anchor="middle">--role voice</text>
+            <rect class="dg-key" x="142" y="184" width="116" height="56" rx="8"/>
+            <text class="dg-title" x="200" y="206" text-anchor="middle">voice</text>
+            <text class="dg-note" x="200" y="226" text-anchor="middle">--role voice</text>
+            <rect class="dg-key" x="272" y="184" width="116" height="56" rx="8"/>
+            <text class="dg-title" x="330" y="206" text-anchor="middle">chat</text>
+            <text class="dg-note" x="330" y="226" text-anchor="middle">--role chat</text>
+
+            <line class="dg-line" x1="70" y1="240" x2="70" y2="264"/>
+            <line class="dg-line" x1="200" y1="240" x2="200" y2="264"/>
+            <line class="dg-line" x1="330" y1="240" x2="330" y2="264"/>
+            <line class="dg-line" x1="70" y1="264" x2="380" y2="264"/>
+            <line class="dg-line" x1="150" y1="264" x2="150" y2="291" marker-end="url(#sc-arrow)"/>
+            <line class="dg-line" x1="380" y1="264" x2="380" y2="591" marker-end="url(#sc-arrow)"/>
+
+            <rect class="dg-zone" x="6" y="292" width="358" height="208" rx="12"/>
+            <text class="dg-note" x="20" y="310">shared stores</text>
+
+            <rect class="dg-box" x="20" y="320" width="330" height="50" rx="8"/>
+            <text class="dg-title" x="185" y="341" text-anchor="middle">Sessions (Redis, say)</text>
+            <text class="dg-note" x="185" y="359" text-anchor="middle">sessions, call queues, tokens, reconnects, chat resume</text>
+
+            <rect class="dg-box" x="20" y="380" width="330" height="50" rx="8"/>
+            <text class="dg-title" x="185" y="401" text-anchor="middle">Audit (Postgres, say)</text>
+            <text class="dg-note" x="185" y="419" text-anchor="middle">a hash chain per session, anchored daily</text>
+
+            <rect class="dg-box" x="20" y="440" width="330" height="50" rx="8"/>
+            <text class="dg-title" x="185" y="461" text-anchor="middle">Object storage</text>
+            <text class="dg-note" x="185" y="479" text-anchor="middle">traces and frame logs</text>
+
+            <line class="dg-line" x1="180" y1="524" x2="180" y2="502" marker-end="url(#sc-arrow)"/>
+            <rect class="dg-box" x="12" y="524" width="350" height="50" rx="8"/>
+            <text class="dg-title" x="187" y="545" text-anchor="middle">Operator console (--role console)</text>
+            <text class="dg-note" x="187" y="563" text-anchor="middle">internal only, behind single sign-on</text>
+
+            <rect class="dg-key" x="12" y="592" width="376" height="50" rx="8"/>
+            <text class="dg-title" x="200" y="613" text-anchor="middle">Decision model API</text>
+            <text class="dg-note" x="200" y="631" text-anchor="middle">one account's rate limits, shared by every instance</text>
+          </svg>
+          <figcaption>
+            One image, deployed in roles. The roles (<code>--role voice | chat | console</code>) are the design's; the server has no
+            such flag today.
+          </figcaption>
+        </figure>
+        <ul>
+          <li><strong>Containers</strong>, one codebase in separate deploys by role. Voice and chat are public; the console is
+            internal only.</li>
+          <li><strong>A load balancer that carries WebSockets</strong>, with an idle timeout longer than the longest call, and no
+            sticky sessions. Carrier webhooks are stateless HTTP.</li>
+          <li><strong>Shared stores</strong>: sessions in Redis; the audit log in Postgres; traces in object storage; console
+            events over Redis pub/sub. Each is to be chosen by configuration, one at a time (the design's example is
+            <code>SESSION_STORE=redis://...</code>, a variable that does not exist yet).</li>
+          <li><strong>A starter setup</strong> on a container platform with WebSockets: two instances, managed Redis and
+            Postgres. <strong>Production</strong> on containers across availability zones. <strong>A second region</strong>
+            later, as the carrier's fallback target.</li>
+          <li><strong>For regulated data</strong>, services covered by the agreements your sector requires, encryption at rest,
+            retention policies and in-region data.</li>
+          <li><strong>Locally</strong>, the design has <code>pnpm dev:stack</code> bring up Redis, Postgres and an object-storage
+            stand-in with <code>docker compose</code>, two instances behind a local load balancer, where the kill-an-instance test
+            runs (planned).</li>
+        </ul>
+      </section>
+
+      <section id="shared" aria-labelledby="shared-title">
+        <h2 id="shared-title">3. What has to be shared</h2>
+        <p>Each piece of state one process keeps today, and what it needs when there are many:</p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead>
+              <tr><th scope="col">State</th><th scope="col">Today (in the code)</th><th scope="col">Across instances</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="State">Call sessions, and each call's queue of turns</td>
+                <td data-label="Today (in the code)">A map in memory (<code>SessionStore</code>, <code>server/sessions.ts</code>): each call's session, its turn chain
+                  (<code>tail</code>, so turns run one at a time) and the turns in flight. Idle ones are evicted after
+                  <code>SESSION_TTL_MS</code>.</td>
+                <td data-label="Across instances">The core already returns a new serializable session each turn. It is saved after every turn, keyed by call or chat
+                  id, with a time-to-live and a schema version (a resume onto an incompatible version hands off politely). One
+                  instance must own a call's turns at a time: a lock or lease per call id in the store.</td>
+              </tr>
+              <tr>
+                <td data-label="State">One-time socket tokens</td>
+                <td data-label="Today (in the code)">A map in memory (<code>CallTokens</code>, <code>server/tokens.ts</code>): one per call, 10 minutes, tied to the
+                  call and to the carrier that minted it.</td>
+                <td data-label="Across instances">Shared, with the same expiry, and still single-use: the instance that takes the socket must recognise a token
+                  another instance minted.</td>
+              </tr>
+              <tr>
+                <td data-label="State">The reconnect counter</td>
+                <td data-label="Today (in the code)">A field of the call's entry (<code>reconnects</code>), checked against <code>RECONNECT_LIMIT</code>.</td>
+                <td data-label="Across instances">Part of the shared session, incremented atomically, or two instances could each grant the last reconnect.</td>
+              </tr>
+              <tr>
+                <td data-label="State">Chat sessions and resume tokens</td>
+                <td data-label="Today (in the code)">Maps in memory (<code>server/chat/socket.ts</code>); a fresh resume token with every <code>ready</code>.
+                  <code>CHAT_MAX_SESSIONS</code> counts this process's chats.</td>
+                <td data-label="Across instances">Shared, so a resume reaches any instance (<a href="#chat">section 5</a>). The limit becomes per instance, or
+                  moves to the store.</td>
+              </tr>
+              <tr>
+                <td data-label="State">The audit chain</td>
+                <td data-label="Today (in the code)">One hash chain per UTC day file in <code>AUDIT_DIR</code> (<code>audit/log.ts</code>), continued from the file's
+                  last line when the process starts.</td>
+                <td data-label="Across instances">Two processes appending to one day file would fork the chain. The design: Postgres, a hash chain per session,
+                  each session's final hash anchored into a daily chain.</td>
+              </tr>
+              <tr>
+                <td data-label="State">Traces and frame logs</td>
+                <td data-label="Today (in the code)">Two JSONL files per call in <code>TRACE_DIR</code>.</td>
+                <td data-label="Across instances">Object storage. A call that moves instance mid-call must continue one trace, not start a second.</td>
+              </tr>
+              <tr>
+                <td data-label="State">Console events</td>
+                <td data-label="Today (in the code)">An in-process bus (<code>DashboardBus</code>).</td>
+                <td data-label="Across instances">Redis pub/sub, so the console sees every instance's calls.</td>
+              </tr>
+              <tr>
+                <td data-label="State">The knowledge base's index</td>
+                <td data-label="Today (in the code)">A committed file in the app folder (<code>kb/.index</code>), read at start.</td>
+                <td data-label="Across instances">Read-only, so it ships in the image and every instance reads its own copy. pgvector is planned behind the same
+                  <code>VectorIndex</code> interface for production.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="sockets" aria-labelledby="sockets-title">
+        <h2 id="sockets-title">4. A call's WebSocket</h2>
+        <p>A phone call touches the server in three steps, and with several instances each can land on a different one:</p>
+        <ol>
+          <li>The carrier posts the voice webhook (<code>/voice/&lt;carrier&gt;</code>). The instance that answers mints a one-time
+            token and answers with a start document that names the socket's URL, with the token in its query.</li>
+          <li>The carrier opens the WebSocket (<code>/conversation/&lt;carrier&gt;?token=...</code>). The token is checked at the
+            upgrade; the call id arrives only afterwards, in the setup frame. The whole call then runs on this one socket, on
+            whichever instance accepted it.</li>
+          <li>If the socket drops (an instance dies, a deploy closes it, a network blip), the carrier posts the action callback
+            (<code>/cr-action/&lt;carrier&gt;</code>) with the call id, and the answer is a new start document with a new token. The
+            reconnected socket may land anywhere.</li>
+        </ol>
+        <p>There are two ways to make that work:</p>
+        <dl>
+          <dt>The session in a shared store (the design's choice)</dt>
+          <dd>Any instance can take any step: it reads the token, the counter and the session from the store, and the call resumes
+            ("Sorry, I lost you for a moment"). The load balancer needs no affinity. This is what Phase 8 builds.</dd>
+          <dt>Route by call id</dt>
+          <dd>Keep state in memory and have the load balancer send every step of a call to the instance that holds it. Today the
+            socket's URL carries only the token, so a balancer cannot see the call id at the upgrade; it would need the call id, or
+            a key derived from it, in the URL. And it saves nothing when the instance holding the call is the one that died, which
+            is the case that matters.</dd>
+        </dl>
+        <p>
+          A call is a long-lived socket. The load balancer's idle timeout must be longer than any call (the server ends a session it
+          has held for <code>SESSION_MAX_AGE_MS</code>, two hours by default), and the carrier's own reconnect limit still applies.
+        </p>
+      </section>
+
+      <section id="chat" aria-labelledby="chat-title">
+        <h2 id="chat-title">5. Web chat across instances</h2>
+        <p>
+          A chat outlives its socket: the client reconnects with the resume token from the last <code>ready</code> and carries on, until
+          <code>CHAT_IDLE_MS</code> of quiet ends it. Today the session is in the memory of the instance that started it, so a resume
+          reaches only that instance. Across instances, the session and its resume token live in the shared store, a resume rotates
+          the token there, and a resume that takes a chat over must close the old socket on whichever instance holds it (over the same
+          pub/sub the console uses). The widget needs no change: it already reconnects and resumes with backoff.
+        </p>
+      </section>
+
+      <section id="writes" aria-labelledby="writes-title">
+        <h2 id="writes-title">6. Idempotent writes</h2>
+        <p>
+          When an instance dies after a tool started a write (booking an appointment, filing a report) but before the session recorded
+          it, the call resumes elsewhere and the turn may run again. So every write tool gets a key derived from the session (the call
+          id, the form, a hash of the confirmed values): a retry with the same key never acts twice. In-flight effects are recorded in
+          the session and re-issued with the same key. The tool context is to provide timeouts, retries with those keys, a circuit
+          breaker and caching, declared per tool. Your own systems must honour the key; the engine can only send it.
+        </p>
+      </section>
+
+      <section id="deploys" aria-labelledby="deploys-title">
+        <h2 id="deploys-title">7. Readiness and drain</h2>
+        <p>
+          Today, on SIGTERM or SIGINT the server stops its sweeps, waits for turns already in flight (up to two seconds), closes every
+          socket and exits (<code>server/index.ts</code>). <code>/health</code> answers <code>{"ok":true,"sessions":N,"retained":M}</code>
+          whenever the process is up; there is no separate readiness.
+        </p>
+        <p>
+          The design for a rolling deploy: new instances report ready before they take traffic; old ones stop taking new calls and keep
+          serving the ones they have; after a drain limit (about 15 minutes) they close the remaining sockets, and those calls reconnect
+          to the new version from the shared session. The test that proves it is the kill-an-instance test: a deploy never drops a call.
+        </p>
+      </section>
+
+      <section id="console" aria-labelledby="console-title">
+        <h2 id="console-title">8. The console behind single sign-on</h2>
+        <p>
+          Today the console is kept off the internet by <code>CONSOLE_LOCAL_ONLY</code>: it answers only a request made on the server's own
+          machine. Across instances it becomes its own role (<code>--role console</code>), internal only, behind single sign-on or a VPN,
+          reading the shared stores. The design adds console sign-in with roles (viewer, supervisor, admin) and an access log, in the audit
+          store, of who replayed which call.
+        </p>
+      </section>
+
+      <section id="secrets" aria-labelledby="secrets-title">
+        <h2 id="secrets-title">9. Secrets</h2>
+        <p>
+          The server takes every secret from its environment, and prints only each one's length. Give each role only the secrets it uses,
+          from your platform's secrets manager, never baked into an image:
+        </p>
+        <ul>
+          <li>voice: the carriers' (<code>TWILIO_AUTH_TOKEN</code>, <code>TELNYX_PUBLIC_KEY</code>) and the model's
+            (<code>TYPESAFE_API_KEY</code>, or the gateway's);</li>
+          <li>chat: the model's; its sign-in settings (<code>CHAT_JWKS_URL</code>, <code>CHAT_ISSUER</code>, <code>CHAT_AUDIENCE</code>)
+            are configuration, not secrets;</li>
+          <li>both, if you use the handoff note: <code>ANTHROPIC_API_KEY</code>;</li>
+          <li>the stores' credentials, to the roles that reach them.</li>
+        </ul>
+        <p>Rotate a key by rolling the instances, which the drain above makes safe.</p>
+      </section>
+
+      <section id="observability" aria-labelledby="observability-title">
+        <h2 id="observability-title">10. Observability</h2>
+        <p>The data to ship already exists, in two formats with stable fields:</p>
+        <dl>
+          <dt>Traces (one JSON record per turn, <code>v: 2</code>)</dt>
+          <dd>The session and turn, the event, the questions and the model's answers, the gate's rows and the decision, the actions, the
+            slots, <code>timing</code> (<code>retrieveMs</code>, <code>planMs</code>, <code>askMs</code>, <code>resolveMs</code>,
+            <code>totalMs</code>), <code>usage</code> (tokens and <code>costUsd</code>), the config hash and, on the first record, which
+            model answered. They hold what callers said: ship them to storage you treat as personal data.</dd>
+          <dt>The audit (one JSON entry per decision)</dt>
+          <dd><code>seq</code>, <code>at</code>, <code>callId</code>, <code>channel</code>, <code>type</code> (<code>call_started</code>,
+            <code>identity</code>, <code>gate</code>, <code>tool_result</code>, <code>handoff</code>, <code>call_ended</code>, ...),
+            a minimized <code>detail</code>, and <code>prevHash</code> and <code>hash</code>. Minimized by design: ids by their last four,
+            never a date of birth or a code.</dd>
+        </dl>
+        <p>
+          The design adds OpenTelemetry metrics and traces, logs that carry ids and never personal data, and alerts on fallback hits,
+          handoffs for system failure, the reconnect rate and turn latency, plus a stable event stream derived from the audit for business
+          reporting.
+        </p>
+      </section>
+
+      <section id="model" aria-labelledby="model-title">
+        <h2 id="model-title">11. The decision model's limits</h2>
+        <p>
+          Every instance asks the same model account, so its rate limits are shared by all of them: size them against your busiest hour,
+          with the provider. Each request has a budget, <code>JEV_TIMEOUT_MS</code> (1500 ms by default); the client retries once within it,
+          so a caller waits up to twice that on a turn the model never answers, then hears the slow-turn line with the question still open.
+          A turn that fails is asked again, then handed to a person. A per-instance cap on requests in flight, so that a surge queues rather
+          than trips the provider's limit, belongs with Phase 8's resilient tools.
+        </p>
+      </section>
+
+      <section id="roadmap" aria-labelledby="roadmap-title">
+        <h2 id="roadmap-title">12. The roadmap</h2>
+        <p>
+          Phase 8, production: store interfaces with production implementations, resume across instances, idempotent writes, readiness and
+          drain, a <code>docker compose</code> stack, a reference deployment and console access control, proved by the kill-an-instance test.
+          Laptop mode stays first-class throughout: the same code runs in both modes, and contract tests keep the implementations honest.
+        </p>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">The roadmap</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#8-production-architecture-and-laptop-mode">Production architecture, in the design</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#11-foundations-designed-in-from-the-start">The foundations</a>
+          <a href="home-server.html">Run it on a machine you own</a>
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot-grid">
+        <div>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="../brand/dialogwright-logo-dark.svg">
+            <img class="foot-logo" src="../brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
+          </picture>
+          <p>Status: pre-release.</p>
+          <p>Code under the <a href="https://github.com/DialogWright/dialogwright/blob/main/LICENSE">Apache-2.0 license</a>.</p>
+        </div>
+        <nav aria-label="Guides">
+          <h2>Guides</h2>
+          <ul>
+            <li><a href="home-server.html">A machine you own</a></li>
+            <li><a href="scaling.html">Scaling out</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Documentation">
+          <h2>Docs</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Design</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md">Authoring an app</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/slots/README.md">Slot types</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt">llms.txt</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/CLA.md">Contributor agreement</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/SECURITY.md">Security</a></li>
+          </ul>
+        </nav>
+      </div>
+      <p class="fine">
+        The DialogWright name and logo are trademarks and are not covered by the license; see
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/NOTICE">NOTICE</a>.
+        This site sets no cookies and runs no analytics.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
