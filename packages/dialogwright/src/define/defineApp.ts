@@ -327,8 +327,15 @@ export function crossLink(
     }
   };
 
+  /** A locale the folder names (an intent's switch, app.yaml's voice) that is not one the app speaks. */
+  const appLocales = [config.defaultLocale, ...Object.keys(config.prompts).filter((l) => l !== config.defaultLocale)];
+  const localeNamed = (file: string, path: DataPath, tag: string, atKey = false): void => {
+    if (!appLocales.includes(tag)) yaml(file, path, `"${tag}" is not a locale of this app`, `add locale/${tag}/ or use one of ${appLocales.join(', ')}`, atKey);
+  };
+
   // intents.yaml
   for (const [id, def] of Object.entries(intents)) {
+    if (def.locale !== undefined) localeNamed('intents.yaml', ['intents', id, 'locale'], def.locale);
     if (def.kind === 'form' && !has(forms, id)) {
       yaml('intents.yaml', ['intents', id], `intent "${id}" is a form intent, but forms.yaml has no form "${id}"`, `add "${id}:" under forms in forms.yaml (its slots, summaryPromptId and hooks), or change this intent's kind`);
     }
@@ -582,13 +589,9 @@ export function crossLink(
   }
 
   // app.yaml's voice: every locale it names is one the app speaks, and every carrier one the engine knows.
-  const appLocales = [config.defaultLocale, ...Object.keys(config.prompts).filter((l) => l !== config.defaultLocale)];
-  const localeNamed = (path: DataPath, tag: string, atKey = false): void => {
-    if (!appLocales.includes(tag)) yaml('app.yaml', path, `"${tag}" is not a locale of this app`, `add locale/${tag}/ or use one of ${appLocales.join(', ')}`, atKey);
-  };
-  for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) localeNamed(['voice', 'numbers', number], tag);
+  for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) localeNamed('app.yaml', ['voice', 'numbers', number], tag);
   for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {
-    localeNamed(['voice', 'locales', tag], tag, true);
+    localeNamed('app.yaml', ['voice', 'locales', tag], tag, true);
     for (const provider of Object.keys(settings.voices ?? {})) {
       if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) {
         yaml('app.yaml', ['voice', 'locales', tag, 'voices', provider], `unknown voice provider "${provider}"`, `${renameHint(provider, VOICE_PROVIDER_IDS)}use ${orList(VOICE_PROVIDER_IDS)}`, true);
@@ -734,6 +737,7 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
   const intent: IntentDef = { criteria: def.criteria, label: def.label, kind: def.kind };
   put(intent, 'promptId', def.promptId);
   put(intent, 'passage', def.passage);
+  put(intent, 'locale', def.locale);
   put(intent, 'unsure', def.unsure);
   return intent;
 }

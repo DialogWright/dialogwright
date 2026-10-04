@@ -23,9 +23,9 @@ export interface IntentDef {
   criteria: string;
   /** Spoken label ("track a parcel"), used in acknowledgements and confirmations. */
   label: string;
-  /** form: starts a form; informational: plays its prompt (or says its passage) and resumes; control: agent, repeat, done, other, none. */
+  /** form: starts a form; informational: plays its prompt (or says its passage, or switches to its locale) and resumes; control: agent, repeat, done, other, none. */
   kind: 'form' | 'informational' | 'control';
-  /** For informational intents, the prompt played. An informational intent has this or `passage`, not both. */
+  /** For informational intents, the prompt played. An informational intent has this, `passage` or `locale` (`locale` may go with this). */
   promptId?: string;
   /**
    * For informational intents, in place of `promptId`: a passage of the app's knowledge base
@@ -36,6 +36,14 @@ export interface IntentDef {
    * `kb_unavailable` line is said and a person offered, once per call (kb/answer.ts).
    */
   passage?: string;
+  /**
+   * For informational intents: the locale the call switches to when it is chosen (one of
+   * App.locales). Its `promptId`, if any, is said in that locale, then the call resumes; a channel
+   * with speech is asked first to switch its voice and recognition (a `set_language` action, with the
+   * languages App.voice.locales names). Goes with `promptId` or alone, never with `passage`. Choosing
+   * the locale the call is already in says the prompt and changes nothing else.
+   */
+  locale?: string;
   /**
    * When the model is unsure of this intent (outside a form, read from INTENT_EXPLICIT up to
    * INTENT_IMPLICIT): `confirm` asks the caller ("Just to check, do you want to ...?"), `no-match`

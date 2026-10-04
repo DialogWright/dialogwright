@@ -28,10 +28,10 @@
               "informational",
               "control"
             ],
-            "description": "form: starts the form of the same id in forms.yaml. informational: plays its promptId and resumes. control: the engine's own (agent, repeat_prompt, done, other, none)."
+            "description": "form: starts the form of the same id in forms.yaml. informational: plays its promptId (or says its passage, or switches to its locale) and resumes. control: the engine's own (agent, repeat_prompt, done, other, none)."
           },
           "promptId": {
-            "description": "For an informational intent, the prompt played (an id in prompts.yaml). An informational intent names this or `passage`, not both.",
+            "description": "For an informational intent, the prompt played (an id in prompts.yaml). An informational intent names this, `passage` or `locale` (`locale` may go with this).",
             "type": "string",
             "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
           },
@@ -39,6 +39,11 @@
             "description": "For an informational intent, in place of promptId: a passage of the knowledge base (an id in kb/passages), said word for word through the kb_answer line. No retrieval and no gate: the passage in force today for its topic, in the call's language, for every caller (it has no applies). When none can be said, the kb_unavailable line is said and a person offered, once per call.",
             "type": "string",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+          },
+          "locale": {
+            "description": "For an informational intent: the locale the call switches to when it is chosen (one of the app's). Its promptId, if any, is said in that locale, then the call resumes; a speech channel is asked to switch its voice and recognition too (set_language, with the languages app.yaml's voice.locales names). Goes with promptId or alone, not with passage.",
+            "type": "string",
+            "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
           },
           "unsure": {
             "description": "When the model is unsure of this intent (outside a form, read from INTENT_EXPLICIT, 0.4, up to INTENT_IMPLICIT, 0.6): \"confirm\" asks the caller (\"Just to check, do you want to ...?\"), \"no-match\" takes it as no match (the no-match line, counted). For a form intent, an informational one and done. Default: app.yaml's unsureIntent, else \"confirm\".",

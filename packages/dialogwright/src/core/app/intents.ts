@@ -32,17 +32,23 @@ export function informationalPrompt(app: App, intent: string): string | undefine
 }
 
 /**
- * What an informational intent says: its prompt (`promptId`), or a passage of the knowledge base
- * (`passage`, said through kb/answer.ts informationalAnswer); undefined for any other intent.
+ * What an informational intent does: says its prompt (`promptId`) or a passage of the knowledge base
+ * (`passage`, said through kb/answer.ts informationalAnswer), or switches the call to its `locale`
+ * (IntentDef.locale), saying its prompt, if any, in that locale; undefined for any other intent.
  */
-export type Informs = { readonly promptId: string; readonly passage?: undefined } | { readonly passage: string; readonly promptId?: undefined };
+export type Informs =
+  | { readonly promptId: string; readonly passage?: undefined; readonly locale?: string }
+  | { readonly passage: string; readonly promptId?: undefined; readonly locale?: undefined }
+  | { readonly locale: string; readonly promptId?: undefined; readonly passage?: undefined };
 
-/** What an informational intent says (Informs), or undefined for any other intent and for one that names neither. */
+/** What an informational intent does (Informs), or undefined for any other intent and for one that names none of them. */
 export function informationOf(app: App, intent: string): Informs | undefined {
   const def = app.intents[intent];
   if (def?.kind !== 'informational') return undefined;
   if (def.passage !== undefined) return { passage: def.passage };
-  return def.promptId !== undefined ? { promptId: def.promptId } : undefined;
+  // A locale only where the intent names one: every other intent's verdict is as it was.
+  if (def.promptId !== undefined) return def.locale !== undefined ? { promptId: def.promptId, locale: def.locale } : { promptId: def.promptId };
+  return def.locale !== undefined ? { locale: def.locale } : undefined;
 }
 
 /** Informational intents and their prompt ids. */

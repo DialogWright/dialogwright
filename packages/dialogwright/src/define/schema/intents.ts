@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { REQUIRED_CONTROL_INTENTS } from '../../core/app/validate';
-import { checkAlways, identifier, matching, text } from './common';
+import { checkAlways, identifier, localeTag, matching, text } from './common';
 import { KB_FILE_ID } from '../../kb/schema';
 
 /**
@@ -14,14 +14,20 @@ const intentDef = z
     label: text().describe('The spoken label ("track a parcel"), used in acknowledgements and confirmations ("I\'d be happy to help you track a parcel").'),
     kind: z
       .enum(['form', 'informational', 'control'])
-      .describe('form: starts the form of the same id in forms.yaml. informational: plays its promptId and resumes. control: the engine\'s own (agent, repeat_prompt, done, other, none).'),
-    promptId: identifier().optional().describe('For an informational intent, the prompt played (an id in prompts.yaml). An informational intent names this or `passage`, not both.'),
+      .describe('form: starts the form of the same id in forms.yaml. informational: plays its promptId (or says its passage, or switches to its locale) and resumes. control: the engine\'s own (agent, repeat_prompt, done, other, none).'),
+    promptId: identifier().optional().describe('For an informational intent, the prompt played (an id in prompts.yaml). An informational intent names this, `passage` or `locale` (`locale` may go with this).'),
     passage: matching(KB_FILE_ID, 'is not a valid passage id: it must start with a letter or digit and use only letters, digits, underscores, hyphens and dots', 'write the passage\'s id, its file name in kb/passages without .yaml (for example "opening-hours")')
       .optional()
       .describe(
         'For an informational intent, in place of promptId: a passage of the knowledge base (an id in kb/passages), said word for word through the kb_answer line. ' +
           'No retrieval and no gate: the passage in force today for its topic, in the call\'s language, for every caller (it has no applies). ' +
           'When none can be said, the kb_unavailable line is said and a person offered, once per call.',
+      ),
+    locale: localeTag()
+      .optional()
+      .describe(
+        'For an informational intent: the locale the call switches to when it is chosen (one of the app\'s). Its promptId, if any, is said in that locale, then the call resumes; ' +
+          'a speech channel is asked to switch its voice and recognition too (set_language, with the languages app.yaml\'s voice.locales names). Goes with promptId or alone, not with passage.',
       ),
     unsure: z
       .enum(['confirm', 'no-match'])
@@ -32,14 +38,30 @@ const intentDef = z
       ),
   })
   .check(checkAlways((value, ctx) => {
-    const def = value as { kind?: unknown; promptId?: unknown; passage?: unknown } | null;
+    const def = value as { kind?: unknown; promptId?: unknown; passage?: unknown; locale?: unknown } | null;
     if (typeof def !== 'object' || def === null) return;
-    if (def.kind === 'informational' && def.promptId === undefined && def.passage === undefined) {
+    if (def.kind === 'informational' && def.promptId === undefined && def.passage === undefined && def.locale === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: [],
-        message: 'an informational intent plays a prompt or says a passage, and this one names neither',
-        params: { fix: 'add "promptId: <id>" naming the prompt in prompts.yaml that this intent plays, or "passage: <id>" naming a passage in kb/passages' },
+        message: 'an informational intent plays a prompt, says a passage or switches the language, and this one names none of them',
+        params: { fix: 'add "promptId: <id>" naming the prompt in prompts.yaml that this intent plays, "passage: <id>" naming a passage in kb/passages, or "locale: <tag>" naming the locale it switches to' },
+      });
+    }
+    if (def.locale !== undefined && def.kind !== undefined && def.kind !== 'informational') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['locale'],
+        message: `locale is for an informational intent, and this one is of kind ${String(def.kind)}`,
+        params: { fix: 'delete "locale", or make the intent kind: informational' },
+      });
+    }
+    if (def.locale !== undefined && def.passage !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['locale'],
+        message: 'an informational intent that switches the language says a prompt, not a passage',
+        params: { fix: 'delete the passage, and name the line said in the new language with promptId' },
       });
     }
     if (def.promptId !== undefined && def.passage !== undefined) {

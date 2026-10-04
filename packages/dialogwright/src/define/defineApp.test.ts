@@ -439,6 +439,40 @@ describe('defineApp: the voice on the phone, by locale and by number called (voi
   });
 });
 
+describe('defineApp: an intent that switches the call\'s language (intents.yaml locale:)', () => {
+  const INTENTS = readFileSync(join(LIBRARY_DIR, 'intents.yaml'), 'utf8');
+  const withIntents = (from: string, to: string): string => {
+    expect(INTENTS).toContain(from);
+    return folder({ 'intents.yaml': INTENTS.replace(from, to) });
+  };
+
+  it('an informational intent may name a locale with its line, or a locale alone', () => {
+    const app = defineApp(withIntents('    promptId: hours\n', '    promptId: hours\n    locale: es\n'), libraryCode);
+    expect(app.intents.hours).toEqual({ criteria: libraryApp.intents.hours!.criteria, label: 'hear the opening hours', kind: 'informational', promptId: 'hours', locale: 'es' });
+    const alone = defineApp(withIntents('    promptId: hours\n', '    locale: es\n'), libraryCode);
+    expect(alone.intents.hours).toEqual({ criteria: libraryApp.intents.hours!.criteria, label: 'hear the opening hours', kind: 'informational', locale: 'es' });
+    expect(Object.keys(libraryApp.intents.hours!)).not.toContain('locale');
+  });
+
+  it('locale: naming a locale the app does not have', () => {
+    expect(problems(libraryCode, withIntents('    promptId: hours\n', '    promptId: hours\n    locale: fr\n'))).toEqual([
+      'intents.yaml:20:13  intents.hours.locale  "fr" is not a locale of this app  ->  add locale/fr/ or use one of en-US, es',
+    ]);
+  });
+
+  it('locale: on a form or control intent is refused', () => {
+    expect(loadProblems(withIntents('    kind: form\n', '    kind: form\n    locale: es\n'))).toEqual([
+      'intents.yaml:7:13  intents.renew_loan.locale  locale is for an informational intent, and this one is of kind form  ->  delete "locale", or make the intent kind: informational',
+    ]);
+  });
+
+  it('locale: with a passage is refused: the switch says a prompt', () => {
+    expect(loadProblems(withIntents('    promptId: hours\n', '    passage: opening-hours\n    locale: es\n'))).toContain(
+      'intents.yaml:20:13  intents.hours.locale  an informational intent that switches the language says a prompt, not a passage  ->  delete the passage, and name the line said in the new language with promptId',
+    );
+  });
+});
+
 /** The problems loading the folder finds, before the code is looked at. */
 function loadProblems(dir: string): string[] {
   return loadAppFolder(dir).problems.map(formatProblem);
