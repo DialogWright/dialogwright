@@ -1,15 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_DRAIN_MS, integer } from './config';
+import { DEFAULT_DRAIN_MS, integer, type Env } from './config';
 import { readEnvFile } from './envFile';
 import { findOnPath } from './tunnel';
 import { findApp, workspaceApps, WORKSPACE_ROOT } from './workspace';
 
 /**
- * `pnpm service <launchd|systemd> --app <name> --env-file <path> [--label <label>] [--out <file>] [--force]`:
- * a service definition that keeps an app's server running on this machine, with absolute paths
+ * `ENV_FILE=<path> pnpm service <launchd|systemd> --app <name> [--label <label>] [--out <file>] [--force]`
+ * (or `--env-file <path>`): a service definition that keeps an app's server running on this machine, with absolute paths
  * resolved here. It runs `<pnpm> --filter <app> serve` from the repository with ENV_FILE naming the
  * settings file (the server reads it, as pnpm start does), starts it at load (login, or boot for a
  * lingering systemd user), restarts it when it exits, and gives a stop DRAIN_MS and ten seconds more
@@ -69,15 +69,21 @@ export function servicePath(kind: ServiceKind, label: string, home: string): str
   return kind === 'launchd' ? join(home, 'Library', 'LaunchAgents', `${label}.plist`) : join(home, '.config', 'systemd', 'user', `${label}.service`);
 }
 
+/** A path as a shell word: as it is when it needs no quoting, else in single quotes. */
+export function shellWord(s: string): string {
+  return /^[A-Za-z0-9_@%+=:,./~-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
 /** The commands that install, check and stop it: printed, never run. */
 export function installCommands(kind: ServiceKind, file: string, label: string, logDir: string): string[] {
+  const f = shellWord(file);
   if (kind === 'launchd') {
     return [
-      `mkdir -p ${logDir}`,
-      `plutil -lint ${file}`,
-      `launchctl bootstrap gui/$(id -u) ${file}      # start now, and at every login`,
+      `mkdir -p ${shellWord(logDir)}`,
+      `plutil -lint ${f}`,
+      `launchctl bootstrap gui/$(id -u) ${f}      # start now, and at every login`,
       `launchctl print gui/$(id -u)/${label} | grep -E 'state|pid'   # running or not`,
-      `tail -f ${logDir}/out.log ${logDir}/err.log   # its output`,
+      `tail -f ${shellWord(`${logDir}/out.log`)} ${shellWord(`${logDir}/err.log`)}   # its output`,
       `launchctl kickstart -k gui/$(id -u)/${label}   # restart: live calls get DRAIN_MS to finish`,
       `launchctl bootout gui/$(id -u)/${label}        # stop, and keep it stopped`,
     ];
@@ -85,7 +91,7 @@ export function installCommands(kind: ServiceKind, file: string, label: string, 
   return [
     'systemctl --user daemon-reload',
     `systemctl --user enable --now ${label}   # start now, and at every login`,
-    'loginctl enable-linger "$USER"   # and at boot, before anyone logs in',
+    'loginctl enable-linger "$USER"   # and at boot, with no one logged in (once; see above)',
     `systemctl --user status ${label}   # running or not`,
     `journalctl --user -u ${label} -f   # its output`,
     `systemctl --user restart ${label}   # restart: live calls get DRAIN_MS to finish`,
@@ -93,8 +99,21 @@ export function installCommands(kind: ServiceKind, file: string, label: string, 
   ];
 }
 
+/**
+ * Why a systemd user unit needs lingering, printed above its commands: without it, systemd starts a
+ * user's services at their first login and stops them at their last logout.
+ */
+export const LINGER_NOTE: readonly string[] = [
+  'A systemd user service runs only while you are logged in: systemd starts it at your first login and stops',
+  'it when your last session ends (an ssh session too). For a line that starts at boot and stays up with no one',
+  'logged in, turn on lingering for your user once: loginctl enable-linger "$USER" (some systems ask for sudo;',
+  'loginctl show-user "$USER" --property=Linger says yes when it is on).',
+];
+
 export interface ServiceIo {
   out(line: string): void;
+  /** The environment: ENV_FILE names the settings file when --env-file does not. */
+  env?: Env;
   /** Where the command was run (pnpm's INIT_CWD), which relative paths are from. */
   invokedFrom: string;
   root?: string;
@@ -106,7 +125,7 @@ export interface ServiceIo {
   nodeDir?: string;
 }
 
-export const SERVICE_USAGE = 'usage: pnpm service <launchd|systemd> --app <name> --env-file <path> [--label <label>] [--out <file>] [--force]';
+export const SERVICE_USAGE = 'usage: ENV_FILE=<path> pnpm service <launchd|systemd> --app <name> [--label <label>] [--out <file>] [--force]   (or --env-file <path>)';
 
 /** The command; returns its exit code (2 for a command line it does not understand). */
 export async function main(argv: readonly string[], io: ServiceIo): Promise<number> {
@@ -133,8 +152,9 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
     io.out('--app <name> is needed: the app the service runs');
     return 2;
   }
-  if (flags.envFile === undefined) {
-    io.out('--env-file <path> is needed: the settings file the service reads (keep it outside the repository, mode 600)');
+  const named = flags.envFile ?? ((io.env ?? process.env).ENV_FILE?.trim() || undefined);
+  if (named === undefined) {
+    io.out('the settings file the service reads is needed: ENV_FILE=<path> pnpm service ... (keep it outside the repository, mode 600)');
     return 2;
   }
   const root = io.root ?? WORKSPACE_ROOT;
@@ -143,7 +163,7 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
     io.out(`no app "${flags.app}" in this workspace`);
     return 2;
   }
-  const envFile = isAbsolute(flags.envFile) ? flags.envFile : resolve(io.invokedFrom, flags.envFile);
+  const envFile = isAbsolute(named) ? named : resolve(io.invokedFrom, named);
   let drainMs: number;
   try {
     // Read for DRAIN_MS alone; nothing from it goes into the service file but its path.
@@ -179,6 +199,10 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
   // It names the settings file and holds no secret, so it is an ordinary file.
   writeFileSync(file, text, { mode: 0o644 });
   io.out(`wrote ${file}: ${app.name} from ${root}, settings from ${envFile}, ${Math.ceil(drainMs / 1000) + 10} s to stop`);
+  if (platform !== 'win32' && statSync(envFile).mode & 0o077) {
+    io.out(`WARNING: ${envFile} can be read by others, and it holds keys: chmod 600 ${shellWord(envFile)}`);
+  }
+  if (kind === 'systemd') for (const line of LINGER_NOTE) io.out(line);
   io.out('Install it (pnpm service runs none of these):');
   for (const line of installCommands(kind, file, label, logDir)) io.out(`  ${line}`);
   return 0;
@@ -186,5 +210,5 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
 
 // Run when invoked directly (tsx serviceFile.ts); importing it runs nothing.
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  process.exitCode = await main(process.argv.slice(2), { out: (line) => console.log(line), invokedFrom: process.env.INIT_CWD?.trim() || process.cwd() });
+  process.exitCode = await main(process.argv.slice(2), { out: (line) => console.log(line), env: process.env, invokedFrom: process.env.INIT_CWD?.trim() || process.cwd() });
 }

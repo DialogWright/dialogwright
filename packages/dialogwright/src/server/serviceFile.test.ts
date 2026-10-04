@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -163,10 +163,10 @@ describe('pnpm service', () => {
     return { root, envFile, home };
   }
 
-  const run = async (argv: string[], w: { root: string; home: string }) => {
+  const run = async (argv: string[], w: { root: string; home: string }, env: Record<string, string> = {}) => {
     const out: string[] = [];
     const code = await main(argv, {
-      out: (l) => out.push(l), invokedFrom: w.root, root: w.root, home: w.home, platform: 'darwin',
+      out: (l) => out.push(l), env, invokedFrom: w.root, root: w.root, home: w.home, platform: 'darwin',
       which: (c) => (c === 'pnpm' ? '/opt/homebrew/bin/pnpm' : null), nodeDir: '/opt/homebrew/opt/node@24/bin',
     });
     return { code, out: out.join('\n') };
@@ -199,14 +199,36 @@ describe('pnpm service', () => {
     expect(existsSync(unit)).toBe(true);
     expect(readFileSync(unit, 'utf8')).toContain('TimeoutStopSec=60');
     expect(r.out).toContain('systemctl --user enable --now com.dialogwright.myline');
-    expect(r.out).toContain('loginctl enable-linger');
+    expect(r.out).toContain('loginctl enable-linger "$USER"   # and at boot, with no one logged in');
+    // Why, before the commands: a user service stops at the last logout unless lingering is on.
+    expect(r.out).toContain('A systemd user service runs only while you are logged in');
+    expect(r.out.indexOf('runs only while you are logged in')).toBeLessThan(r.out.indexOf('Install it'));
+  });
+
+  it('takes the settings file from ENV_FILE, the form that works under every pnpm', async () => {
+    const w = workspace();
+    const r = await run(['systemd', '--app', 'myline'], w, { ENV_FILE: 'myline.env' });
+    expect(r.code).toBe(0);
+    expect(readFileSync(join(w.home, '.config/systemd/user/com.dialogwright.myline.service'), 'utf8')).toContain(`Environment="ENV_FILE=${w.envFile}"`);
+  });
+
+  it('warns when the settings file can be read by others, and quotes a path with a space in the commands it prints', async () => {
+    const w = workspace();
+    chmodSync(w.envFile, 0o644);
+    const spaced = join(w.root, 'my agents', 'agent.plist');
+    const r = await run(['launchd', '--app', 'myline', '--out', spaced], w, { ENV_FILE: w.envFile });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(`WARNING: ${w.envFile} can be read by others, and it holds keys: chmod 600 ${w.envFile}`);
+    expect(r.out).toContain(`plutil -lint '${spaced}'`);
+    chmodSync(w.envFile, 0o600);
+    expect((await run(['launchd', '--app', 'myline', '--out', spaced, '--force'], w, { ENV_FILE: w.envFile })).out).not.toContain('WARNING');
   });
 
   it('needs the settings file, and one that exists', async () => {
     const w = workspace();
-    expect(await run(['launchd', '--app', 'myline'], w)).toEqual({ code: 2, out: expect.stringContaining('--env-file <path> is needed: the settings file the service reads') });
+    expect(await run(['launchd', '--app', 'myline'], w)).toEqual({ code: 2, out: expect.stringContaining('the settings file the service reads is needed: ENV_FILE=<path> pnpm service') });
     expect(await run(['launchd', '--app', 'myline', '--env-file', 'missing.env'], w)).toEqual({ code: 1, out: expect.stringContaining(`ENV_FILE does not exist: ${join(w.root, 'missing.env')}`) });
-    expect(await run(['upstart', '--app', 'myline', '--env-file', w.envFile], w)).toEqual({ code: 2, out: expect.stringContaining('usage: pnpm service <launchd|systemd>') });
+    expect(await run(['upstart', '--app', 'myline', '--env-file', w.envFile], w)).toEqual({ code: 2, out: expect.stringContaining('usage: ENV_FILE=<path> pnpm service <launchd|systemd>') });
   });
 
   it('refuses to replace a file without --force', async () => {
