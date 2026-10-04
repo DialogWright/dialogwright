@@ -2,7 +2,7 @@ import { isAnonymous, isParty } from '../gate/types';
 import type { AnswerMap, QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
-import type { SlotContext } from './slots/types';
+import type { SlotCandidate, SlotContext } from './slots/types';
 import { informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
@@ -604,6 +604,27 @@ function switchLocale(s: Session, io: TurnIO, target: string): void {
   if (!io.app.locales || target === s.locale) return;
   s.locale = target;
   if (s.caps.speech) io.prefix.push({ type: 'set_language', ...speechLanguagesOf(io.app, target) });
+  // A value already held is said in the new locale too: a fill's display is its slot's display(value,
+  // locale) (the slot conformance kit's `display` check), so it is formatted again in the new one.
+  const locale = slotLocaleOf(s);
+  const shown = (id: SlotId, value: string): string => slotSpecOf(io.app, id).display(value, locale);
+  for (const [id, slot] of Object.entries(s.slots)) if (slot.value !== null && Object.hasOwn(io.app.slots, id)) slot.display = shown(id, slot.value);
+  const pc = s.pendingConfirmation;
+  if (pc?.target === 'slot' && Object.hasOwn(io.app.slots, pc.slot)) pc.display = shown(pc.slot, pc.value);
+}
+
+/**
+ * A fill's acks and its disambiguation formatted again in the session's locale, after a switch in the
+ * same breath (switchLocale): the caller's words were heard in the old language, and every line the
+ * turn says, these included, is said in the new one. A fill's ack names only its own slot (`ack_<slot>`).
+ */
+function inLocaleOf(s: Session, io: TurnIO, fill: FillResult): Pick<FillResult, 'acks' | 'disambiguate'> {
+  const locale = slotLocaleOf(s);
+  const shown = (id: SlotId, c: SlotCandidate): SlotCandidate => ({ ...c, display: slotSpecOf(io.app, id).display(c.value, locale) });
+  return {
+    acks: fill.acks.map((a) => ({ ...a, vars: Object.fromEntries(Object.entries(a.vars).map(([k, v]) => [k, Object.hasOwn(io.app.slots, k) ? (s.slots[k]?.display ?? v) : v])) })),
+    disambiguate: fill.disambiguate && { ...fill.disambiguate, a: shown(fill.disambiguate.slot, fill.disambiguate.a), b: shown(fill.disambiguate.slot, fill.disambiguate.b) },
+  };
 }
 
 type TransferConfirmation = Extract<PendingConfirmation, { target: 'transfer' }>;
@@ -821,10 +842,13 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // No attempt counter moves. A passage that could not be said is followed by the offer of a
       // person, once per call (kb/answer.ts).
       const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+      const before = s.locale;
       const said = informed(s, io, verdict);
-      const acks = [...said.acks, ...fill.acks];
+      // A switch in the same breath: what was heard in the old language is said in the new one.
+      const { acks: filled, disambiguate } = s.locale === before ? fill : inLocaleOf(s, io, fill);
+      const acks = [...said.acks, ...filled];
       const offer = said.answered ? null : offerAfterUnavailable(s, acks);
-      return { decision: offer ?? resume(s, io, acks, fill.disambiguate, fill.help), events: fill.events };
+      return { decision: offer ?? resume(s, io, acks, disambiguate, fill.help), events: fill.events };
     }
     case 'confirmed': {
       const pc = s.pendingConfirmation!;

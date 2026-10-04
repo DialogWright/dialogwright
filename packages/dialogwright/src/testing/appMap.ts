@@ -43,7 +43,8 @@ export function danglingReferences(app: App): DanglingReference[] {
     if (intent.kind === 'form' && !Object.hasOwn(app.forms, id)) add('intent-without-form', id, `the intent ${code(id)} starts a form, and there is no form ${code(id)}`);
     if (intent.kind === 'informational' && intent.passage !== undefined) {
       if (!app.knowledge?.kb || !Object.hasOwn(app.knowledge.kb.passages, intent.passage)) add('informational-without-line', id, `the intent ${code(id)} says the passage ${code(intent.passage)}, which the knowledge base does not have`);
-    } else if (intent.kind === 'informational' && (intent.promptId === undefined || !Object.hasOwn(app.prompts.manifest, intent.promptId))) {
+    } else if (intent.kind === 'informational' && (intent.promptId === undefined ? intent.locale === undefined : !Object.hasOwn(app.prompts.manifest, intent.promptId))) {
+      // An intent that switches the language (locale:) may say no line of its own.
       add('informational-without-line', id, `the intent ${code(id)} says ${intent.promptId === undefined ? 'no line' : `the line ${code(intent.promptId)}, which does not exist`}`);
     }
   }
@@ -135,9 +136,11 @@ function menuDiagram(app: App): string[] {
       out.push(`  ${p}[/${mermaidLabel(`passage ${intent.passage}`, ...(known ? [] : ['not in the knowledge base']))}/]`, `  ${intentNode(id)} --> ${p}`);
       if (!known) bad.push(p);
     } else if (intent.kind === 'informational') {
-      const known = intent.promptId !== undefined && Object.hasOwn(app.prompts.manifest, intent.promptId);
+      const switches = intent.locale !== undefined ? [`switches to ${intent.locale}`] : [];
+      const known = intent.promptId !== undefined ? Object.hasOwn(app.prompts.manifest, intent.promptId) : switches.length > 0;
       const p = nodeId('p', id);
-      out.push(`  ${p}[/${mermaidLabel(intent.promptId === undefined ? 'no line' : known ? `line ${intent.promptId}` : `line ${intent.promptId}`, ...(known ? [] : ['not in the prompts']))}/]`, `  ${intentNode(id)} --> ${p}`);
+      const lines = intent.promptId === undefined ? (switches.length > 0 ? switches : ['no line']) : [`line ${intent.promptId}`, ...switches];
+      out.push(`  ${p}[/${mermaidLabel(lines[0]!, ...lines.slice(1), ...(known ? [] : ['not in the prompts']))}/]`, `  ${intentNode(id)} --> ${p}`);
       if (!known) bad.push(p);
     }
   };
@@ -171,9 +174,12 @@ function intentsTable(app: App): string[] {
       // The passage's words change through review (kb/passages), not here: the map names it.
       const known = app.knowledge?.kb !== undefined && Object.hasOwn(app.knowledge.kb.passages, intent.passage);
       then = known ? `says the passage ${intent.passage} from the knowledge base and goes back to the question` : `says the passage ${intent.passage}, which the knowledge base does not have: dangling`;
+    } else if (intent.kind === 'informational' && intent.locale !== undefined && intent.promptId === undefined) {
+      then = `switches the call to ${intent.locale} and goes back to the question`;
     } else if (intent.kind === 'informational') {
       const text = intent.promptId === undefined ? undefined : app.prompts.manifest[intent.promptId]?.text;
-      then = text === undefined ? 'says a line that does not exist: dangling' : `says "${text.length > 90 ? `${text.slice(0, 87)}...` : text}" and goes back to the question`;
+      const switches = intent.locale !== undefined ? `switches the call to ${intent.locale}, ` : '';
+      then = text === undefined ? 'says a line that does not exist: dangling' : `${switches}says "${text.length > 90 ? `${text.slice(0, 87)}...` : text}" and goes back to the question`;
     } else {
       then = 'handled by the engine';
     }

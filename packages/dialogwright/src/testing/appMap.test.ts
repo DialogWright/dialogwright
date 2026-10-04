@@ -49,6 +49,23 @@ describe('the app map: what it cannot connect', () => {
     expect(map).toContain('- no form reaches the action `listLoans`, and the identity flow does not call it');
   });
 
+  it('draws an intent that switches the language, alone or with its line, and finds nothing dangling in it', () => {
+    const app: App = {
+      ...libraryApp,
+      intents: {
+        ...libraryApp.intents,
+        spanish: { kind: 'informational', label: 'continue in Spanish', criteria: 'x', locale: 'es' },
+        hours: { ...libraryApp.intents.hours!, locale: 'es' },
+      },
+    };
+    expect(danglingReferences(app)).toEqual([]);
+    const map = appMapText(app);
+    expect(map).toContain('p_spanish[/"switches to es"/]');
+    expect(map).toContain('p_hours[/"line hours<br/>switches to es"/]');
+    expect(map).toContain('| `spanish` | informational | continue in Spanish | switches the call to es and goes back to the question |');
+    expect(map).toMatch(/\| `hours` \| informational \| hear the opening hours \| switches the call to es, says "[^"]+" and goes back to the question \|/);
+  });
+
   it('says so when forms do not declare their calls, and finds no action unreached then', () => {
     expect(danglingReferences(libraryApp)).toEqual([]);
     expect(appMapText(libraryApp)).toContain('the forms do not declare which actions they call (`calls`), so which actions are reached is not checked.');

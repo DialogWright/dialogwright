@@ -226,6 +226,43 @@ describe('switching language mid-call (an informational intent with locale:)', (
     expect(said(yes)).toBe(`Muy bien, seguimos en español. ${ASK_INTENT_ES}`);
   });
 
+  it('switches inside a form: the question it was on is asked again in Spanish, and the form goes on', () => {
+    const t = tc();
+    const start = resolve(newSession('switch-form', 0, VOICE_RELAY, ANONYMOUS, plain.id), startEvent(), null, t);
+    const hold = say(start, 'is my hold for The River Atlas in', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
+    expect(spokenText(plain, hold.decision, hold.session.locale)).toBe('Sure, I can help you check a hold. Which branch is the hold at, North or Riverside?');
+    const switched = say(hold, 'can we do this in Spanish', { intent: choice({ spanish: 0.95, none: 0.05 }), intentChange: choice({ answering: 0.05, adding: 0.9, replacing: 0.05 }) }, t).turn;
+    expect(switched.session.locale).toBe('es');
+    expect(lines(switched)).toEqual([
+      { type: 'set_language', tts: 'es', transcription: 'es' },
+      { lang: 'es', text: 'Muy bien, seguimos en español.' },
+      { lang: 'es', text: '¿En qué sucursal está la reserva, Norte o Ribera?' },
+    ]);
+    // The book was heard in English, and is said in Spanish now (its slot's display in es).
+    const branch = say(switched, 'en la sucursal Norte', { branch: choice({ north: 0.92, none: 0.08 }) }, t).turn;
+    expect(lines(branch)).toEqual([
+      { lang: 'es', text: 'Buenas noticias, El atlas del río le espera en la sucursal Norte.' },
+      { lang: 'es', text: '¿Hay algo más en que pueda ayudarle?' },
+    ]);
+  });
+
+  it('says a value heard in the breath that switches in the new language, with every line of the turn', () => {
+    const t = tc();
+    const start = resolve(newSession('switch-breath', 0, VOICE_RELAY, ANONYMOUS, plain.id), startEvent(), null, t);
+    const hold = say(start, 'is my hold for The River Atlas in', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
+    const both = say(hold, 'the North branch, and can we do this in Spanish', {
+      intent: choice({ spanish: 0.95, none: 0.05 }), intentChange: choice({ answering: 0.05, adding: 0.9, replacing: 0.05 }), branch: choice({ north: 0.92, none: 0.08 }),
+    }, t).turn;
+    expect(both.session.locale).toBe('es');
+    expect(both.session.slots.branch?.display).toBe('Norte');
+    expect(lines(both)[0]).toEqual({ type: 'set_language', tts: 'es', transcription: 'es' });
+    expect(lines(both).slice(1).map((l) => ('text' in l ? l.text : l))).toEqual([
+      'Muy bien, seguimos en español.',
+      'Buenas noticias, El atlas del río le espera en la sucursal Norte.',
+      '¿Hay algo más en que pueda ayudarle?',
+    ]);
+  });
+
   it('switches a chat\'s lines to Spanish without set_language', () => {
     const t = tc();
     const start = resolve(newSession('switch-chat', 0, WEB_CHAT, ANONYMOUS, plain.id), startEvent(), null, t);
