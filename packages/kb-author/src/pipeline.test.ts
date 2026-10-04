@@ -128,9 +128,9 @@ describe('the pipeline: ingest, draft, review, speak', () => {
     ]);
     expect(report.rejected.map((r) => [r.section, r.reasons])).toEqual([
       ['late-fees', ['its excerpt is not in kb/sources/patron-guide-pdf.yaml section "late-fees" word for word']],
-      ['opening-hours', ['its answer is 487 characters, over the 400 kb.yaml allows (maxAnswerChars): a spoken answer is one or two short sentences']],
+      ['opening-hours', ['its excerpt does not say 8, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes', 'its answer is 487 characters, over the 400 kb.yaml allows (maxAnswerChars): a spoken answer is one or two short sentences']],
       ['opening-hours', ['its answer has a brace: an answer is fixed text, said word for word, with no variables']],
-      ['intro', ['it repeats the answer of the passage "opening-hours"']],
+      ['intro', ['its excerpt does not say 9, 8, 10 and 4, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes', 'it repeats the answer of the passage "opening-hours"']],
     ]);
     expect(report.proposed.map((t) => t.id)).toEqual(['meeting_rooms', 'renewing_items', 'library_cards']);
     // The drafter saw the sections, the knowledge base's topics and its limits.

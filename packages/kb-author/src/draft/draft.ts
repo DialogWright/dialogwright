@@ -262,7 +262,7 @@ export function formatDraftReport(report: DraftReport, labels: { kb: string; dry
     `kb:draft with ${report.drafter}: ${n(report.documents.length, 'source document')}, ${n(given, 'section')} drafted from${cited > 0 ? ` (${cited} already cited, passed over)` : ''}: ${n(report.written.length, 'draft')} ${labels.dryRun ? 'would be ' : ''}written to ${labels.kb}/pending, ${report.rejected.length} refused${report.proposed.length > 0 ? `, ${n(report.proposed.length, 'topic')} proposed` : ''}${labels.dryRun ? ' (a dry run: nothing written)' : ''}`,
   ];
   for (const d of report.documents) if (d.error !== undefined) lines.push(`  failed   ${d.id}: ${d.error}`);
-  for (const w of report.written) lines.push(`  ${verb.padEnd(9)}${w.file}  ${w.topic}${w.proposed ? ' (a proposed topic)' : ''}  from ${w.document} section "${w.section}"`);
+  for (const w of report.written) lines.push(`  ${`${verb} `.padEnd(9)}${w.file}  ${w.topic}${w.proposed ? ' (a proposed topic)' : ''}  from ${w.document} section "${w.section}"`);
   for (const r of report.rejected) {
     lines.push(`  refused  ${r.document} section "${r.section}" (${r.topic}): ${r.reasons[0]}`);
     for (const reason of r.reasons.slice(1)) lines.push(`           ${reason}`);

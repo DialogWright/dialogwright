@@ -16,7 +16,21 @@ import { cleanText, sectionsOf, type Block, type ExtractedDocument } from '../se
  * `sectionsOf` then cuts the blocks at the headings (`late-fees`, with `page: 2` recorded), or by page
  * (`p1`, `p2`) when the document has no headings. A scanned PDF has no text layer and yields no sections:
  * it needs OCR before it can be read.
+ *
+ * It is opened with pdf.js's evaluation of code off (`isEvalSupported: false`: nothing in the file
+ * becomes a function). The pdf.js unpdf bundles (6.x) evaluates nothing at all and no longer reads
+ * the option, which is passed anyway so an older pdf.js never does; the tests hold the bundle to it.
+ * A document of more than 500 pages is refused before any page is read.
  */
+
+/** The most pages a PDF may have to be read. */
+export const MAX_PDF_PAGES = 500;
+
+/** How pdf.js opens a PDF here: nothing evaluated as code. */
+export const PDF_OPEN_OPTIONS: Readonly<{ isEvalSupported: false }> = { isEvalSupported: false };
+
+/** A PDF refused before it is read: too many pages. */
+export class PdfLimitError extends Error {}
 
 interface Run {
   str: string;
@@ -106,10 +120,12 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
   return blocks;
 }
 
-/** A PDF's bytes to sections, with its metadata title when it has one. */
-export async function extractPdf(bytes: Uint8Array): Promise<ExtractedDocument & { pages: number }> {
-  const pdf = await getDocumentProxy(new Uint8Array(bytes));
+/** A PDF's bytes to sections, with its metadata title when it has one (refused over `maxPages`, default 500). */
+export async function extractPdf(bytes: Uint8Array, options: { maxPages?: number } = {}): Promise<ExtractedDocument & { pages: number }> {
+  const maxPages = options.maxPages ?? MAX_PDF_PAGES;
+  const pdf = await getDocumentProxy(new Uint8Array(bytes), { ...PDF_OPEN_OPTIONS } as Parameters<typeof getDocumentProxy>[1]);
   try {
+    if (pdf.numPages > maxPages) throw new PdfLimitError(`it has ${pdf.numPages} pages, over the ${maxPages} read`);
     const lines: Line[] = [];
     for (let n = 1; n <= pdf.numPages; n += 1) {
       const page = await pdf.getPage(n);

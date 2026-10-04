@@ -60,7 +60,7 @@ sections:
 | Markdown (`.md`, `.markdown`) | a light reader: ATX and setext headings, lists, fenced code; inline markup stripped to its words | at `#` to `###` |
 | Text (`.txt`) | paragraphs between blank lines | one section |
 
-A folder is read recursively in name order. Hidden entries and `node_modules` are passed over, links are not followed, and any other file is listed as skipped. A scanned PDF has no text layer and is skipped with a note that it needs OCR first.
+A folder is read recursively in name order. Hidden entries and `node_modules` are passed over, links are not followed, and any other file is listed as skipped. A scanned PDF has no text layer and is skipped with a note that it needs OCR first. A file over 50 MB is not read. A DOCX is a zip, so its zip is checked before it is opened: its entries may hold at most 50 MB uncompressed in all and number at most 10,000, and each is inflated with its output capped at the size it declares, so a zip bomb, or an entry that holds more than it says, is refused unread. A PDF of more than 500 pages is refused before a page is read, and pdf.js opens every PDF with code evaluation off (`isEvalSupported: false`; the pdf.js it bundles evaluates nothing at all).
 
 ## The crawler
 
@@ -92,6 +92,8 @@ A drafter is pluggable: `{ id, draft({ source, existingTopics, locale, maxAnswer
 | --- | --- |
 | the section is in the source | `section "9.9" is not a section of kb/sources/patron-guide.yaml` |
 | the excerpt is there, word for word (whitespace aside) | `its excerpt is not in kb/sources/patron-guide.yaml section "3.1" word for word` |
+| the excerpt is long enough to hold the answer to: at least 4 words and 20 characters | `its excerpt "overdue" is too short to hold the answer to: quote at least 4 words and 20 characters of the section` |
+| every number in the answer (an amount, a time, a date, a count in figures) is in the excerpt, compared as numbers (`$5.00` is `5`, `9:00` is `9`, `1,000` is `1000`; the excerpt's `sixty` or `twenty-five` count) | `its excerpt does not say 50, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes` |
 | the answer is short | `its answer is 487 characters, over the 400 kb.yaml allows (maxAnswerChars): a spoken answer is one or two short sentences` |
 | the answer is fixed text | `its answer has a brace: an answer is fixed text, said word for word, with no variables` |
 | the topic is an id, and a new one has a title | `its topic "room_hire" is not in kb/topics.yaml, and it proposes no title for a new one` |
