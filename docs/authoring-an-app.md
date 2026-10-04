@@ -89,7 +89,27 @@ prompts:
 
 - `id` names the app in the registry. `locale` is the language of `prompts.yaml` (default `en-US`).
 - `brand` and `console` are what the operator console shows: the app's name, form and slot labels, the badge for each identity level, and the facts a tool call leaves.
-- `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech.
+- `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech. An app with more than one locale ([Locales](#8-locales)) can also say, per locale, how the phone speaks and hears it, and which number a call starts in which locale. Every key is optional:
+
+  ```yaml
+  voice:
+    hints: [renew, hold, branch, Riverside]
+    numbers:
+      "+15555550142": es        # a call to this number starts in Spanish
+    locales:
+      en-US:
+        voices: { twilio: en-US-Journey-O, telnyx: Telnyx.Ultra.Callie }
+      es:
+        tts: es-US              # the language the voice speaks; default: the locale's tag
+        transcription: es-US    # the language speech is heard in; default: the locale's tag
+        voices: { twilio: es-US-Journey-F, telnyx: Telnyx.Ultra.Asher }
+        hints: [renovar, reserva, sucursal]   # default: voice.hints
+  ```
+
+  - `voice.numbers` maps a number called (E.164, in quotes: unquoted, YAML reads `+1555...` as a number) to the locale its calls start in. Any other number starts in the default locale.
+  - `voice.locales.<tag>` is keyed by the app's own locale tags. `tts` and `transcription` are language tags; the start document names the call's language by them, and a line's text frame says its `tts`. `voices` names a voice per carrier, in that carrier's own names (a Twilio voice is one of the deployment's `TTS_PROVIDER`, or of Twilio's default provider when that is unset). An app's voice wins over the deployment's (`TTS_VOICE`, `TELNYX_VOICE`), which is used for the default locale only: another locale with no voice of its own gets the carrier's default voice for its language. `hints` replaces `voice.hints` for a call that starts in that locale.
+  - `pnpm check` refuses a locale the app does not have (`add locale/<tag>/ or use one of ...`), a number that is not E.164, a carrier the engine does not know (`use twilio or telnyx`), and a `tts` or `transcription` that is not a language tag.
+  - A one-locale en-US app with none of these writes the same start documents as an app without locales.
 - `wording` is the engine's own questions to the decision model, in the app's words (whom the caller is addressing, what counts as a hedge). Every string is sent to the model as written.
 - `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again). It is shorthand for `listen: call` on each slot it names ([Where a slot listens](#where-a-slot-listens-listen)); a carried slot that says another `listen` is refused.
 - `unsureIntent` says what an intent the model is unsure of gets, for every intent that does not say: `confirm` (the default) or `no-match` ([When the model is unsure](#when-the-model-is-unsure-unsure), under intents.yaml).
@@ -133,6 +153,18 @@ menu:
 - When the model is unsure, see the next subsection: an app or an intent can say that such a reading is no match rather than confirmed.
 - Two control intents are required, because the engine reads them by name: `agent` and `repeat_prompt`. The snippet above shows both. The other control intents (`done`, `other`, `none`) are optional; the library has all three, and the clinic leaves out `done`, since its calls end when a task completes.
 - Keypad digits are quoted strings.
+- An informational intent may switch the call's language: `locale:` names one of the app's locales, with a `promptId` said in it, or alone (never with a `passage`). Choosing it, by words, by its menu key or after a confirmation, sets the session's locale; on a phone call the turn first asks the relay to speak and hear that locale (`set_language`, with its `tts` and `transcription` from app.yaml's `voice.locales`), so the line and the question the call resumes on are said, and the caller's next words heard, in it. A chat switches its lines only. Choosing the locale the call is already in says the line and changes nothing else. `pnpm check` refuses a locale the app does not have, and `locale:` on a form or control intent. No intent switches unless the app writes one:
+
+  ```yaml
+  intents:
+    spanish:
+      kind: informational
+      label: continue in Spanish
+      criteria: The caller asks to continue in Spanish, or says they speak Spanish
+      locale: es
+      promptId: switched_to_spanish   # "Muy bien, seguimos en español." in locale/es/prompts.yaml
+  ```
+
 - A key on the menu starts a form, plays an informational intent's line, or (`agent`) goes to a person. A key for any other control intent does nothing on a call (the caller hears nothing), so `pnpm check` refuses one.
 - The menu listens only once it has been offered. On a call with a keypad (a phone call; a chat has none), the second missed answer to the intent question (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the keys of the next turn are menu keys; with `MAX_ATTEMPTS` at its default of 3, a third miss goes to a person. A key pressed before then, at the greeting for example, is ignored. After an informational key the menu is offered again, so it keeps listening. A scripted call that presses a menu key therefore misses twice first.
 
@@ -1361,7 +1393,7 @@ prompts:
 - **What `check` requires.** In every locale: each prompt an intent, form, identity.yaml or app.yaml names, and each line the engine says (section 2, prompts.yaml). A line that only the app's code says (the library's `no_hold`) may be left out of a translation. A translated line may use only the variables of its prompts.yaml line, and a locale may not have a line prompts.yaml lacks.
 - **Folders.** `locale/` holds one folder per locale, named by its language tag. A file there is a problem, and so are two folders whose names differ only in letter case (`pt-BR` and `pt-br`), which would be one locale.
 - **Fallback.** A line missing from a locale is said from the default locale, one line at a time, so a half-translated app still works.
-- **Choosing the locale.** The session starts in the default locale. A channel can name another: the `session.start` event carries a `locale`, and the ConversationRelay adapter reads it from a custom parameter named `locale`. It is matched against the app's locales: the same tag (letter case aside), else the app's locale that is the request's language alone (`es-US` finds `es`), else the app's first locale in that language (`es` finds `es-MX`), else the default. The request is untrusted: it is only compared, and what is used is always one of the app's own tags.
+- **Choosing the locale.** The session starts in the default locale. A channel can name another: the `session.start` event carries a `locale`, and the ConversationRelay adapter reads it from a custom parameter named `locale`, which the start document sets from app.yaml's `voice.numbers` for the number called (see [app.yaml](#appyaml)). It is matched against the app's locales: the same tag (letter case aside), else the app's locale that is the request's language alone (`es-US` finds `es`), else the app's first locale in that language (`es` finds `es-MX`), else the default. The request is untrusted: it is only compared, and what is used is always one of the app's own tags. An intent with `locale:` switches the call mid-way ([intents.yaml](#intentsyaml)).
 - **The knowledge base** has its own wording and passages per locale, with its own fallback rule (`localeFallback`): see [12.7](#127-locales-and-fallback).
 - **Spoken text.** A translated line is spoken by text to speech. Recorded clips are in the default language only.
 - **Slots hear and say the session's language.** A slot's context carries the session's locale (`ctx.locale`), and the library types read it. What changes for a Spanish session (`es`, or any `es-*` tag); every other locale, and an app without locales, reads and says values exactly as en-US always has:
@@ -1382,16 +1414,17 @@ prompts:
 
     `defineApp` builds each library slot it names again with its wording, whether the slot is in slots.yaml or built in code with `defineSlot`, and `check` reports, at the line: a slot the app does not have (with the closest name), a slot written by hand in code (it has no options to word; format its `display` by `locale` instead), a library slot changed in code after it was built (`{ ...slot, dtmf }`: built again it would lose the change), a type that takes no wording (`digits`, `date`, `birthdate`, `name` and `record` say their values by locale themselves), an option the slot does not have, and any key but `say`. The file is in the configuration hashes, by its path. An app that is not a folder (`defineSlots`) has no locale files.
   - **What stays in the default language, by design.** The questions: their instructions and criteria are what the model reads, and their labels are keys (`north`, `november`), so a Spanish caller is asked about in English, with the Spanish words among a span question's choices. A choice option's `means` and a record's `label` are criteria, so they are not worded per locale either.
-- **Known limits.** Today a locale is chosen, its lines are said and its slots hear and say its language, but no channel yet carries the language end to end:
-  - The server's ConversationRelay TwiML (`server/twiml.ts`) sends no `locale` parameter and sets no `language`, `ttsLanguage` or `transcriptionLanguage`, and the engine never emits the `set_language` action. So a voice session in a locale other than the default is transcribed and voiced with the relay's defaults (English), even when its lines are Spanish.
+- **On the phone.** For an app that names its languages (more than one locale, `voice.locales` or `voice.numbers`, or a default other than en-US), the start document (Twilio's and Telnyx's, and the legacy `/voice`) names the call's language and voice, one `<Language>` per locale it may switch to, and the `locale` parameter; a reconnect starts in the language the call is in by then. Each text frame says its line's language (the locale's `tts`), and a switch sends the `language` frame (`set_language`). An app without locales, and a one-locale en-US app, sends exactly what it did before: no languages, and text frames in `en-US`.
+- **Known limits.**
   - The chat channel has no way to ask for a locale, so every chat session speaks the default.
-  - Outbound ConversationRelay text frames say `lang: en-US` whatever the session's locale.
+  - The recognizer's provider and model in the Twilio start document (`transcriptionProvider`, `speechModel`) are the same for every locale; they are not yet set per locale.
+  - Telnyx's reading of the `<Language>` and `<Parameter>` children, of a text frame's `lang` and of the `language` frame follows Twilio's documented shape and is still to be confirmed on a live Telnyx call (`server/voice/telnyx.ts`).
   - Intent labels (`label:` in intents.yaml) stay in the default language, so a Spanish line that says "Claro, puedo ayudarle a {intentLabel}" still ends with the English label.
   - A slot written by hand in code formats its own values: it says them in Spanish only if it reads `ctx.locale` and `display(value, locale)`.
   - Spanish is the one language besides English the slots read and say; another language's sessions read words as English and say values in English until its lexicon and formats are added.
   - Matching a requested locale looks at the language and the whole tag, not at a script subtag: a request for `zh-Hant` in an app with only `zh-Hans` finds `zh-Hans` by its language, `zh`.
 
-  The channel parts (the TwiML's language attributes and `locale` parameter, `set_language`, a chat request for a locale, the text frames' language tag) belong to Phase 7 (Channels). See the roadmap in [design.md](design.md).
+  A chat's request for a locale belongs to Phase 7 (Channels), with the web chat. See the roadmap in [design.md](design.md).
 - An app with neither `locale:` in app.yaml nor a `locale/` folder behaves exactly as before: its App has no locales, its sessions carry no locale, and nothing it writes changes. `locale:` alone (as the clinic has) gives the App its locales, the default's and no others.
 
 ## 9. Configuration hashes
