@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { REQUIRED_CONTROL_INTENTS } from '../../core/app/validate';
 import { checkAlways, identifier, matching, text } from './common';
+import { KB_FILE_ID } from '../../kb/schema';
 
 /**
  * intents.yaml: what a caller can ask for, and the keypad menu. Mirrors App.intents (IntentDef) and
@@ -14,17 +15,40 @@ const intentDef = z
     kind: z
       .enum(['form', 'informational', 'control'])
       .describe('form: starts the form of the same id in forms.yaml. informational: plays its promptId and resumes. control: the engine\'s own (agent, repeat_prompt, done, other, none).'),
-    promptId: identifier().optional().describe('For an informational intent, the prompt played (an id in prompts.yaml).'),
+    promptId: identifier().optional().describe('For an informational intent, the prompt played (an id in prompts.yaml). An informational intent names this or `passage`, not both.'),
+    passage: matching(KB_FILE_ID, 'is not a valid passage id: it must start with a letter or digit and use only letters, digits, underscores, hyphens and dots', 'write the passage\'s id, its file name in kb/passages without .yaml (for example "opening-hours")')
+      .optional()
+      .describe(
+        'For an informational intent, in place of promptId: a passage of the knowledge base (an id in kb/passages), said word for word through the kb_answer line. ' +
+          'No retrieval and no gate: the passage in force today for its topic, in the call\'s language, for every caller (it has no applies). ' +
+          'When none can be said, the kb_unavailable line is said and a person offered, once per call.',
+      ),
   })
   .check(checkAlways((value, ctx) => {
-    const def = value as { kind?: unknown; promptId?: unknown } | null;
+    const def = value as { kind?: unknown; promptId?: unknown; passage?: unknown } | null;
     if (typeof def !== 'object' || def === null) return;
-    if (def.kind === 'informational' && def.promptId === undefined) {
+    if (def.kind === 'informational' && def.promptId === undefined && def.passage === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: [],
-        message: 'an informational intent plays a prompt, and this one names none',
-        params: { fix: 'add "promptId: <id>" naming the prompt in prompts.yaml that this intent plays' },
+        message: 'an informational intent plays a prompt or says a passage, and this one names neither',
+        params: { fix: 'add "promptId: <id>" naming the prompt in prompts.yaml that this intent plays, or "passage: <id>" naming a passage in kb/passages' },
+      });
+    }
+    if (def.promptId !== undefined && def.passage !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['passage'],
+        message: 'an informational intent plays a prompt or says a passage, and this one names both',
+        params: { fix: 'keep one: delete promptId to say the passage, or delete passage to play the prompt' },
+      });
+    }
+    if (def.passage !== undefined && def.kind !== undefined && def.kind !== 'informational') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['passage'],
+        message: `only an informational intent says a passage, and this one is of kind ${String(def.kind)}`,
+        params: { fix: 'delete the passage, or make the intent kind: informational' },
       });
     }
   }));

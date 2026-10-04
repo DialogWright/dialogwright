@@ -41,7 +41,9 @@ export function danglingReferences(app: App): DanglingReference[] {
   const actions = gateOf(app).source.actions;
   for (const [id, intent] of Object.entries(app.intents)) {
     if (intent.kind === 'form' && !Object.hasOwn(app.forms, id)) add('intent-without-form', id, `the intent ${code(id)} starts a form, and there is no form ${code(id)}`);
-    if (intent.kind === 'informational' && (intent.promptId === undefined || !Object.hasOwn(app.prompts.manifest, intent.promptId))) {
+    if (intent.kind === 'informational' && intent.passage !== undefined) {
+      if (!app.knowledge?.kb || !Object.hasOwn(app.knowledge.kb.passages, intent.passage)) add('informational-without-line', id, `the intent ${code(id)} says the passage ${code(intent.passage)}, which the knowledge base does not have`);
+    } else if (intent.kind === 'informational' && (intent.promptId === undefined || !Object.hasOwn(app.prompts.manifest, intent.promptId))) {
       add('informational-without-line', id, `the intent ${code(id)} says ${intent.promptId === undefined ? 'no line' : `the line ${code(intent.promptId)}, which does not exist`}`);
     }
   }
@@ -127,7 +129,12 @@ function menuDiagram(app: App): string[] {
       out.push(`  ${nodeId('nf', id)}[${mermaidLabel('no form')}]`, `  ${intentNode(id)} --> ${nodeId('nf', id)}`);
       bad.push(nodeId('nf', id));
     }
-    if (intent.kind === 'informational') {
+    if (intent.kind === 'informational' && intent.passage !== undefined) {
+      const known = app.knowledge?.kb !== undefined && Object.hasOwn(app.knowledge.kb.passages, intent.passage);
+      const p = nodeId('p', id);
+      out.push(`  ${p}[/${mermaidLabel(`passage ${intent.passage}`, ...(known ? [] : ['not in the knowledge base']))}/]`, `  ${intentNode(id)} --> ${p}`);
+      if (!known) bad.push(p);
+    } else if (intent.kind === 'informational') {
       const known = intent.promptId !== undefined && Object.hasOwn(app.prompts.manifest, intent.promptId);
       const p = nodeId('p', id);
       out.push(`  ${p}[/${mermaidLabel(intent.promptId === undefined ? 'no line' : known ? `line ${intent.promptId}` : `line ${intent.promptId}`, ...(known ? [] : ['not in the prompts']))}/]`, `  ${intentNode(id)} --> ${p}`);

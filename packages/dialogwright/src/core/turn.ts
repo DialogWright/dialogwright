@@ -3,7 +3,8 @@ import type { AnswerMap, QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotContext } from './slots/types';
-import { informationalPrompt, intentLabel, isFormIntent } from './app/intents';
+import { informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
+import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { formOf, identityOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, Completion, FormId, SlotId, SummaryMove } from './app/types';
@@ -569,6 +570,15 @@ function screenRow(screen: ScreenResult, t: Thresholds): GateRow {
   return { gate: 'screen', value: screen.value, threshold: t.SCREEN_FIRE, passed: !screen.fired, outcome, decided: screen.fired };
 }
 
+/**
+ * What an informational intent says: its prompt, or its knowledge-base passage (resolved and
+ * recorded by kb/answer.ts informationalAnswer: the answer, or the unavailable line).
+ */
+function informed(s: Session, io: TurnIO, informs: Informs): InformationalAnswer {
+  if (informs.passage !== undefined) return informationalAnswer(s, io.tc, io.out, informs.passage);
+  return { ack: { promptId: informs.promptId, vars: {} }, answered: true };
+}
+
 type TransferConfirmation = Extract<PendingConfirmation, { target: 'transfer' }>;
 
 /**
@@ -774,9 +784,13 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       return { decision: { kind: 'replay', text: s.lastPromptText }, events: [] };
     case 'inform': {
       // The answer plays as an ack in front of the question the caller was on. What else the
-      // breath carried still fills, as on the queue verdict; no attempt counter moves.
+      // breath carried still fills, as on the queue verdict; no attempt counter moves. A passage
+      // that could not be said is followed by the offer of a person, once per call (kb/answer.ts).
       const fill = fillSlots(s, answers, ctx, activeSlots(s));
-      return { decision: resume(s, io, [{ promptId: verdict.promptId, vars: {} }, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
+      const said = informed(s, io, verdict);
+      const acks = [said.ack, ...fill.acks];
+      const offer = said.answered ? null : offerAfterUnavailable(s, acks);
+      return { decision: offer ?? resume(s, io, acks, fill.disambiguate, fill.help), events: fill.events };
     }
     case 'confirmed': {
       const pc = s.pendingConfirmation!;
@@ -963,8 +977,11 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     if (option.intent === 'agent') return { decision: handoff(s, 'live-agent'), rows: [] };
     // An informational intent's key plays its line as the spoken intent does (the inform verdict):
     // an ack in front of the question the caller was on, here the keypad menu, its rung intact.
-    const informs = informationalPrompt(io.app, option.intent);
-    if (informs !== undefined) return { decision: resume(s, io, [{ promptId: informs, vars: {} }]), rows: [] };
+    const informs = informationOf(io.app, option.intent);
+    if (informs !== undefined) {
+      const said = informed(s, io, informs);
+      return { decision: (said.answered ? null : offerAfterUnavailable(s, [said.ack])) ?? resume(s, io, [said.ack]), rows: [] };
+    }
     if (!isFormIntent(io.app, option.intent)) return { decision: { kind: 'ignore' }, rows: [] };
     setForm(s, option.intent);
     return { decision: continueForm(s, io, [ackIntent(s, option.intent)], null), rows: [] };

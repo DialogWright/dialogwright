@@ -122,7 +122,7 @@ describe('mistakes get a precise error', () => {
 
   it('an informational intent without a prompt, a missing control intent and a repeated menu digit are each named', () => {
     expect(issuesOf('intents', 'intents:\n  info: { criteria: c, label: l, kind: informational }\nmenu:\n  - { digit: "1", intent: info }\n  - { digit: "1", intent: info }\n')).toEqual([
-      { path: 'intents.info', code: 'custom', message: 'an informational intent plays a prompt, and this one names none' },
+      { path: 'intents.info', code: 'custom', message: 'an informational intent plays a prompt or says a passage, and this one names neither' },
       { path: 'intents', code: 'custom', message: 'the control intent "agent" is missing: the engine reads it by name' },
       { path: 'intents', code: 'custom', message: 'the control intent "repeat_prompt" is missing: the engine reads it by name' },
       { path: 'menu.1.digit', code: 'custom', message: 'keypad digit "1" is assigned twice' },

@@ -23,10 +23,19 @@ export interface IntentDef {
   criteria: string;
   /** Spoken label ("track a parcel"), used in acknowledgements and confirmations. */
   label: string;
-  /** form: starts a form; informational: plays its prompt and resumes; control: agent, repeat, done, other, none. */
+  /** form: starts a form; informational: plays its prompt (or says its passage) and resumes; control: agent, repeat, done, other, none. */
   kind: 'form' | 'informational' | 'control';
-  /** For informational intents, the prompt played. */
+  /** For informational intents, the prompt played. An informational intent has this or `passage`, not both. */
   promptId?: string;
+  /**
+   * For informational intents, in place of `promptId`: a passage of the app's knowledge base
+   * (App.knowledge.kb), said word for word. No retrieval and no gate (general information, said to
+   * anyone): the passage in force today for its topic, in the call's language, is resolved with no
+   * facts (a passage an informational intent names applies to every caller), and said through the
+   * `kb_answer` line; when none can be said (none in force, stale, no translation) the
+   * `kb_unavailable` line is said and a person offered, once per call (kb/answer.ts).
+   */
+  passage?: string;
 }
 
 export interface FormDef {

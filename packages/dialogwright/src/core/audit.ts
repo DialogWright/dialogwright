@@ -12,6 +12,7 @@ import { identityOf } from './app/lookup';
 import type { App } from './app/types';
 import { configAuditDetail } from './app/configHash';
 import { scrubbedDrafts, scrubberOf } from './recording';
+import { kbAuditRow } from '../kb/record';
 
 /**
  * What one turn tells the audit log. Built from what the turn already reports, after
@@ -107,6 +108,9 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
     });
     drafts.push(...ranDrafts(app, e, after, t.kb));
   }
+  // An answer read from the knowledge base that no tool's audit hook recorded (an informational
+  // intent's passage, said with no gated read): the engine records it, as kbAnswerTool's hook would.
+  if (t.kb !== null && !drafts.some((d) => d.type === 'kb_answer')) drafts.push(kbAuditRow(t.kb));
   if (decision.kind === 'handoff') {
     drafts.push({ type: 'handoff', detail: { reason: decision.reason, completed: [...decision.completed], queued: [...decision.queued] } });
     drafts.push({ type: 'call_ended', detail: { reason: 'handoff', completed: [...decision.completed] } });

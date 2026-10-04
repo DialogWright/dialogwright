@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { VOICE_RELAY } from '../channel/caps';
-import { speechEvent, startEvent } from '../channel/events';
+import { keyEvents, speechEvent, startEvent } from '../channel/events';
 import { registerApp } from '../core/app/registry';
 import type { App, ToolDef } from '../core/app/types';
 import { gateOf } from '../core/app/lookup';
@@ -22,7 +22,7 @@ import type { AnswerMap } from '../jev/types';
 import { spokenText } from '../prompts/render';
 import { choice, noul, score } from '../testing/answers';
 import { fixedRetriever } from '../testing/retrievers';
-import { danglingReferences } from '../testing/appMap';
+import { appMapText, danglingReferences } from '../testing/appMap';
 import { registerTestkit, testkitApp } from '../testing/testkit';
 import { CUSTOMERS } from '../testing/testkit/domain/data';
 import { customerPrincipal } from '../testing/testkit/domain/principals';
@@ -37,7 +37,8 @@ import type { Nomination } from './types';
  * Speaking an answer from the knowledge base, on Example Town Library's line with its knowledge base
  * (./__fixtures__/kb) as kb/: a form that answers (forms.yaml `answers:`, the engine's completion)
  * through findPassage (kbAnswerTool, the caller's card kind read from the library's systems) with the
- * late fees' account line read through getFees. The model's answers are written out; the topics nominated are given to each turn as
+ * late fees' account line read through getFees, and the opening hours as an informational intent's
+ * passage. The model's answers are written out; the topics nominated are given to each turn as
  * runTurn's retrieval would give them.
  */
 
@@ -77,6 +78,7 @@ type Edit = string | ((text: string) => string) | null;
 const APP_EDITS: Record<string, (text: string) => string> = {
   'app.yaml': (t) => t.replace('prompts:\n  spokenVars: [due]', 'prompts:\n  spokenVars: [due]\n  dataVars: [answer]'),
   'intents.yaml': (t) => t
+    .replace('    kind: informational\n    promptId: hours', '    kind: informational\n    passage: opening-hours')
     .replace('  agent:\n', '  ask_library:\n    criteria: Asks a question about the library, its cards or its fees\n    label: answer a question\n    kind: form\n  agent:\n'),
   'forms.yaml': (t) => `${t}  ask_library:\n    slots: [libraryTopic]\n    summaryPromptId: null\n    answers: { slot: libraryTopic }\n`,
   'policy.yaml': (t) => t
@@ -211,8 +213,9 @@ describe('a form that answers from the knowledge base (forms.yaml answers:)', ()
   it('passes check as it is: the folder, its knowledge base, its lines in both languages, and the code', async () => {
     const dir = folder('library-kb-check');
     expect((await checkApp(dir, { code: codeFor(dir), todayIso: TODAY })).map(formatProblem)).toEqual([]);
-    // Nothing the app map draws is missing.
+    // The app map draws the intent to its passage, and nothing it names is missing.
     expect(danglingReferences(APP)).toEqual([]);
+    expect(appMapText(APP)).toContain('passage opening-hours');
   });
 
   it('says the answer word for word, with the account line from the caller\'s own data, and records the passage', () => {
@@ -334,6 +337,58 @@ describe('no answer to give: the unavailable line, and a person offered once', (
   });
 });
 
+describe('an informational intent that says a passage (intents.yaml passage:)', () => {
+  const hours = (c: Call): TurnResult => say(c, 'when are you open', { intent: choice({ hours: 0.95, none: 0.05 }) });
+
+  it('says the passage in force, word for word, with no gate, and records it with its audit row', () => {
+    const c = call(APP);
+    const r = hours(c);
+    expect(heard(c)).toBe('We\'re open Monday to Friday from 9 in the morning to 8 at night, and Saturday from 10 to 4. We\'re closed on Sunday. How can I help you today?');
+    expect(r.gateEvents).toEqual([]);
+    expect(r.kb).toMatchObject({ passageId: 'opening-hours', topic: 'opening_hours', applies: {}, locale: 'en-US', fresh: true });
+    expect(kbRows(r)).toEqual([expect.objectContaining({ detail: expect.objectContaining({ passageId: 'opening-hours', fresh: true }) })]);
+  });
+
+  it('says it in the caller\'s language where it is translated, and on the keypad menu\'s key the same', () => {
+    const c = call(APP, { locale: 'es' });
+    const r = hours(c);
+    expect(heard(c)).toBe('Abrimos de lunes a viernes de 9 de la mañana a 8 de la noche, y los sábados de 10 a 4. Los domingos cerramos. ¿En qué puedo ayudarle hoy?');
+    expect(r.kb).toMatchObject({ passageId: 'opening-hours-es', locale: 'es' });
+  });
+
+  it('none to say: the unavailable line and a person offered, once; declined, the caller is back where they were', () => {
+    const c = call(APP, { today: '2025-06-01' });
+    const r = hours(c);
+    expect(heard(c)).toBe('I\'m sorry, I don\'t have an answer to that I can give you right now. Would you like me to connect you to a librarian, or keep going?');
+    expect(r.kb).toBeNull();
+    expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0 });
+    const no = say(c, 'no', { confirmsYes: noul(0.03), confirmsNo: noul(0.95) });
+    expect(no.session.transferDeclined).toBe(true);
+    expect(heard(c, no)).toContain('How can I help you today?');
+    hours(c);
+    expect(heard(c)).toBe('I\'m sorry, I don\'t have an answer to that I can give you right now. How can I help you today?');
+  });
+
+  it('a stale passage is withheld and recorded as not fresh', () => {
+    const app = libraryKbApp('library-kb-stale-hours', { 'kb/sources/patron-guide.yaml': (t) => t.replace('from 9 a.m. to 8 p.m.', 'from 9 a.m. to 9 p.m.') });
+    const c = call(app);
+    const r = hours(c);
+    expect(heard(c)).toContain('I\'m sorry, I don\'t have an answer to that I can give you right now.');
+    expect(r.kb).toMatchObject({ passageId: 'opening-hours', fresh: false });
+    expect(kbRows(r)).toHaveLength(1);
+  });
+
+  it('the keypad: a menu key for the intent says the passage as the spoken intent does', () => {
+    const app = libraryKbApp('library-kb-menu', { 'intents.yaml': (t) => APP_EDITS['intents.yaml']!(t).replace('  - digit: "0"\n', '  - digit: "3"\n    intent: hours\n  - digit: "0"\n') });
+    const c = call(app);
+    c.last.session.menuActive = true;
+    const [key] = keyEvents('3');
+    const r = resolve(c.last.session, key!, null, c.t);
+    expect(spokenText(app, r.decision, r.session.locale)).toMatch(/^We're open Monday to Friday/);
+    expect(r.kb?.passageId).toBe('opening-hours');
+  });
+});
+
 describe('the pieces', () => {
   it('reads a resolving tool\'s value as an answer only when it has text and a fresh record', () => {
     const source: KbSource = { passageId: 'p', topic: 't', version: '1', applies: {}, document: 'd', section: 's', effectiveFrom: '2026-01-01', fresh: true };
@@ -382,6 +437,27 @@ describe('check: a folder\'s knowledge answers', () => {
       throw error;
     }
   }
+
+  it('an intent\'s passage that does not exist, is a translation, or has a passage for some callers only', async () => {
+    expect(await lines('kb-c1', { 'intents.yaml': (t) => APP_EDITS['intents.yaml']!(t).replace('passage: opening-hours', 'passage: opening-hour') })).toEqual([
+      'intents.yaml:19:14  intents.hours.passage  intent "hours" says the passage "opening-hour", which kb/passages does not have  ->  rename it to "opening-hours", or add kb/passages/opening-hour.yaml, then review and approve it',
+    ]);
+    expect(await lines('kb-c2', { 'intents.yaml': (t) => APP_EDITS['intents.yaml']!(t).replace('passage: opening-hours', 'passage: opening-hours-es') })).toEqual([
+      'intents.yaml:19:14  intents.hours.passage  intent "hours" says the passage "opening-hours-es", which is in es; an intent names the default locale\'s passage (en-US), and a call in another language hears its translation  ->  name the passage it translates ("opening-hours")',
+    ]);
+    expect(await lines('kb-c3', { 'intents.yaml': (t) => APP_EDITS['intents.yaml']!(t).replace('passage: opening-hours', 'passage: card-renewal-adult') })).toEqual([
+      'intents.yaml:19:14  intents.hours.passage  intent "hours" says the passage "card-renewal-adult", whose topic "card_renewal" has a passage for some callers only ("card-renewal-adult": card adult); an informational intent\'s answer is for every caller, read with no gate  ->  take the applies out of kb/passages/card-renewal-adult.yaml, or answer "card_renewal" through a form that answers from the knowledge base (forms.yaml answers:), whose gated read knows the caller',
+      'intents.yaml:19:14  intents.hours.passage  intent "hours" says the passage "card-renewal-adult", whose topic "card_renewal" has a passage for some callers only ("card-renewal-junior": card junior); an informational intent\'s answer is for every caller, read with no gate  ->  take the applies out of kb/passages/card-renewal-junior.yaml, or answer "card_renewal" through a form that answers from the knowledge base (forms.yaml answers:), whose gated read knows the caller',
+    ]);
+  });
+
+  it('an intent\'s passage that is not fresh', async () => {
+    const found = await lines('kb-c4', { 'kb/passages/opening-hours.yaml': (t) => t.replace('closed on Sunday', 'closed on Sundays') });
+    expect(found).toEqual([
+      'intents.yaml:19:14  intents.hours.passage  intent "hours" says the passage "opening-hours", which was edited after approval, so the caller hears that there is no answer and is offered a person  ->  review kb/passages/opening-hours.yaml, then pnpm kb:approve opening-hours',
+      'kb/passages/opening-hours.yaml:13:9  approval.hash  passage "opening-hours" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld  ->  review the edit, then pnpm kb:approve opening-hours',
+    ]);
+  });
 
   it('a form\'s topic slot it does not have, an action with no row in policy.yaml, and a calls list that leaves the reads out', async () => {
     expect(await lines('kb-c5', { 'forms.yaml': (t) => APP_EDITS['forms.yaml']!(t).replace('answers: { slot: libraryTopic }', 'answers: { slot: book, via: lookUp }') })).toEqual([

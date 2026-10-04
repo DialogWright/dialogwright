@@ -1,8 +1,8 @@
 import type { App, Completion, CompletionContext, SlotId, ToolDef, ToolName } from '../core/app/types';
 import { appOf } from '../core/app/registry';
-import { offerTransfer } from '../core/decision';
+import { offerTransfer, type Decision } from '../core/decision';
 import type { Ack } from '../core/fia';
-import type { KbSource } from '../core/lifecycle';
+import type { KbSource, TurnOut } from '../core/lifecycle';
 import { defaultLocaleOf } from '../core/locale';
 import type { Session } from '../core/session';
 import type { TurnContext } from '../core/turn';
@@ -15,7 +15,8 @@ import type { AppKnowledge, KbAnswer, KbPassage, KnowledgeBase } from './types';
 
 /**
  * Speaking an answer from the knowledge base: the knowledge completion a form gives (kbCompletion,
- * or forms.yaml `answers:`), and the resolving tool an app with a kb/ folder gives (kbAnswerTool).
+ * or forms.yaml `answers:`), the resolving tool an app with a kb/ folder gives (kbAnswerTool), and
+ * an informational intent's passage (informationalAnswer, intents.yaml `passage:`).
  *
  * The answer is a passage's approved text, said word for word through the answer line ("{answer}");
  * nothing in it is generated. A completion reads it through the gate (the resolving tool reads the
@@ -241,4 +242,46 @@ export function kbAnswerTool(opts: KbAnswerToolOptions = {}): ToolDef {
     },
     audit: ({ call, summary, kb }) => [{ type: 'tool_result', detail: { tool: call.tool, summary } }, ...(kb ? [kbAuditRow(kb)] : [])],
   };
+}
+
+/** What an informational intent's passage comes to: the line to say, and whether it is the answer (false: the unavailable line). */
+export interface InformationalAnswer {
+  readonly ack: Ack;
+  readonly answered: boolean;
+}
+
+/**
+ * An informational intent's passage (IntentDef.passage), said with no gate and no facts: the
+ * passage in force today for the named passage's topic, in the call's language (resolvePassage
+ * with no facts, so a passage that applies to some callers only never answers here), through the
+ * `kb_answer` line. Its record is the turn's (TurnOut.kb), and the audit's `kb_answer` row follows
+ * from it. None to say (not in force, stale, no translation, or no such passage): the
+ * `kb_unavailable` line, and the record of a withheld passage, when there is one.
+ */
+export function informationalAnswer(s: Session, tc: TurnContext, out: TurnOut, passageId: string): InformationalAnswer {
+  const unavailable: InformationalAnswer = { ack: { promptId: KB_UNAVAILABLE_PROMPT, vars: {} }, answered: false };
+  const kb = appOf(s).knowledge?.kb;
+  const named = kb !== undefined && Object.hasOwn(kb.passages, passageId) ? kb.passages[passageId]! : undefined;
+  if (kb === undefined || named === undefined) return unavailable;
+  const r = resolvePassage(kb, { topic: named.topic, facts: {}, todayIso: tc.todayIso, locale: s.locale ?? kb.defaultLocale });
+  if ('fresh' in r) {
+    out.kb = recordOf(kb, r.passage, {}, true);
+    return { ack: { promptId: KB_ANSWER_PROMPT, vars: { [KB_ANSWER_VAR]: r.passage.answer } }, answered: true };
+  }
+  if (r.passage) out.kb = recordOf(kb, r.passage, {}, false);
+  return unavailable;
+}
+
+/**
+ * After an informational passage that could not be said: a person offered in place of the question
+ * the caller was on, once per call. A caller who turned one down on this call, an offer already on
+ * the table, or a downstream service's answer awaited: no offer (null), and the call resumes. The
+ * question comes back once the offer is declined: the confirmation it displaced (`resume`) or the form loop.
+ */
+export function offerAfterUnavailable(s: Session, acks: Ack[]): Decision | null {
+  if (s.transferDeclined || s.pendingConfirmation?.target === 'transfer' || s.pendingService !== null) return null;
+  const displaced = s.pendingConfirmation;
+  s.pendingConfirmation = displaced !== null ? { target: 'transfer', attempts: 0, resume: displaced } : { target: 'transfer', attempts: 0 };
+  s.promptedFor = 'confirm';
+  return offerTransfer(acks);
 }

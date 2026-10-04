@@ -1,5 +1,5 @@
 import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from '../jev/types';
-import { informationalPrompt, isFormIntent } from './app/intents';
+import { informationOf, isFormIntent, type Informs } from './app/intents';
 import { formOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, Intent, SlotId } from './app/types';
@@ -41,7 +41,8 @@ export type Verdict =
   | ({ kind: 'confirm_unanswered'; queue?: FormId } & Frustrated)
   | ({ kind: 'change_slot'; slot: SlotId; queue?: FormId } & Frustrated)
   | { kind: 'replay' }
-  | ({ kind: 'inform'; promptId: string } & Frustrated)
+  /** An informational intent: its prompt (`promptId`) or its knowledge-base passage (`passage`) is said, and the call resumes. */
+  | ({ kind: 'inform' } & Informs & Frustrated)
   /** A form to enter, or 'done': the caller is finished and the call ends with the goodbye. */
   | ({ kind: 'route'; intent: FormId | 'done'; confirm: 'none' | 'implicit' | 'explicit'; queue?: FormId } & Frustrated)
   | ({ kind: 'queue'; intent: FormId } & Frustrated)
@@ -252,7 +253,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   const second = ranked[1];
   const label = top.label as Intent;
   const activeForm = session.form;
-  const informPromptId = informationalPrompt(app, label);
+  const informs = informationOf(app, label);
 
   let routeVerdict: Verdict | null = null;
   let outcome: string;
@@ -264,7 +265,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   if (activeForm === null) {
     if (label === 'agent' && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'handoff', reason: 'live-agent' }; outcome = 'agent'; }
     else if (label === 'repeat_prompt' && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'replay' }; outcome = 'replay'; }
-    else if (informPromptId !== undefined && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'inform', promptId: informPromptId }; outcome = 'inform'; }
+    else if (informs !== undefined && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'inform', ...informs }; outcome = 'inform'; }
     else if (isRoutable(app, label) && atLeast(top.p, t.INTENT_ROUTE)) { routeVerdict = { kind: 'route', intent: label, confirm: 'none' }; outcome = 'route'; }
     // Every form entry is acknowledged now, so this band no longer earns the
     // caller a different turn from a plain route -- only the dropped second task below and the
@@ -291,7 +292,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
 
     if (label === 'agent' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'handoff', reason: 'live-agent' }; outcome = 'agent'; }
     else if (label === 'repeat_prompt' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'replay' }; outcome = 'replay'; }
-    else if (informPromptId !== undefined && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'inform', promptId: informPromptId }; outcome = 'inform'; }
+    else if (informs !== undefined && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'inform', ...informs }; outcome = 'inform'; }
     else if (mode === 'answering') { routeVerdict = { kind: 'proceed' }; outcome = 'answering'; }
     else if (mode === 'adding') {
       // Adding keeps the task in hand, so that task is not what is added. What the model gives it

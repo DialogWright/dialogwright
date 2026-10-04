@@ -25,10 +25,24 @@ export function intentLabel(app: App, intent: Intent): string {
   return app.intents[intent]!.label;
 }
 
-/** The prompt an informational intent plays, or undefined for any other intent. */
+/** The prompt an informational intent plays, or undefined for any other intent (and for one that says a passage: informationOf). */
 export function informationalPrompt(app: App, intent: string): string | undefined {
   const def = app.intents[intent];
-  return def?.kind === 'informational' ? def.promptId : undefined;
+  return def?.kind === 'informational' && def.passage === undefined ? def.promptId : undefined;
+}
+
+/**
+ * What an informational intent says: its prompt (`promptId`), or a passage of the knowledge base
+ * (`passage`, said through kb/answer.ts informationalAnswer); undefined for any other intent.
+ */
+export type Informs = { readonly promptId: string; readonly passage?: undefined } | { readonly passage: string; readonly promptId?: undefined };
+
+/** What an informational intent says (Informs), or undefined for any other intent and for one that names neither. */
+export function informationOf(app: App, intent: string): Informs | undefined {
+  const def = app.intents[intent];
+  if (def?.kind !== 'informational') return undefined;
+  if (def.passage !== undefined) return { passage: def.passage };
+  return def.promptId !== undefined ? { promptId: def.promptId } : undefined;
 }
 
 /** Informational intents and their prompt ids. */

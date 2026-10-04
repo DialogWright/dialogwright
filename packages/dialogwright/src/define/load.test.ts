@@ -315,8 +315,8 @@ describe('loadAppFolder: problems', () => {
         line: 6,
         column: 3,
         path: 'intents.capabilities',
-        message: 'an informational intent plays a prompt, and this one names none',
-        fix: 'add "promptId: <id>" naming the prompt in prompts.yaml that this intent plays'
+        message: 'an informational intent plays a prompt or says a passage, and this one names neither',
+        fix: 'add "promptId: <id>" naming the prompt in prompts.yaml that this intent plays, or "passage: <id>" naming a passage in kb/passages'
       },
       {
         file: 'intents.yaml',

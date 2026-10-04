@@ -23,7 +23,7 @@ import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } fro
 import { kbLinkProblems } from '../kb/rules';
 import type { Retriever } from '../kb/types';
 import { kbCatalog } from '../kb/catalog';
-import { kbCompletion } from '../kb/answer';
+import { KB_ANSWER_PROMPT, KB_UNAVAILABLE_PROMPT, kbCompletion } from '../kb/answer';
 import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
 
 /**
@@ -325,6 +325,10 @@ export function crossLink(
       yaml('intents.yaml', ['intents', id], `intent "${id}" is a form intent, but forms.yaml has no form "${id}"`, `add "${id}:" under forms in forms.yaml (its slots, summaryPromptId and hooks), or change this intent's kind`);
     }
     if (def.promptId !== undefined) promptExists('intents.yaml', ['intents', id, 'promptId'], def.promptId);
+    if (def.passage !== undefined) {
+      promptExists('intents.yaml', ['intents', id, 'passage'], KB_ANSWER_PROMPT);
+      promptExists('intents.yaml', ['intents', id, 'passage'], KB_UNAVAILABLE_PROMPT);
+    }
   }
   menu.forEach(({ digit, intent }, i) => {
     if (!has(intents, intent)) {
@@ -467,7 +471,7 @@ export function crossLink(
   } else if (code.knowledge !== undefined) {
     inTs(['knowledge'], 'the code has a knowledge retriever, but the folder has no kb/', `add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/), or delete it from ${inCode('knowledge')}`);
   }
-  // forms.yaml's answers: what they name in the knowledge base, the policy and the code.
+  // forms.yaml's answers and intents.yaml's passages: what they name in the knowledge base, the policy and the code.
   problems.push(...knowledgeUseProblems(config, locate, { tools, inCode }));
   // A slot that reads nominated topics (a `topic` slot) needs something to nominate them: a kb/, and a
   // retriever in the code. Without one it would never ask, so check refuses it rather than let it sit silent.
@@ -673,6 +677,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
 function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
   const intent: IntentDef = { criteria: def.criteria, label: def.label, kind: def.kind };
   put(intent, 'promptId', def.promptId);
+  put(intent, 'passage', def.passage);
   return intent;
 }
 

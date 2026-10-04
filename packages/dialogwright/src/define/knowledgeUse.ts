@@ -1,19 +1,24 @@
 import { KB_ANSWER_PROMPT, KB_ANSWER_VAR, KB_UNAVAILABLE_PROMPT } from '../kb/answer';
-import type { Locate } from '../kb/rules';
+import { APPROVE_COMMAND, type Locate } from '../kb/rules';
 import { VAR } from '../prompts/segments';
 import type { LoadedConfig } from './load';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
 
 /**
  * Where an app folder says answers from its knowledge base: a form's `answers:` (forms.yaml), whose
- * completion is the engine's (kb/answer.ts kbCompletion). The rules that hold them to the rest of
- * the folder (knowledgeUseProblems):
+ * completion is the engine's (kb/answer.ts kbCompletion), and an informational intent's `passage:`
+ * (intents.yaml). The rules that hold them to the rest of the folder:
  *
- *  - a form's topic slot is one of its slots; its action (`via`, else kb.yaml's) is a tool with an
- *    action in policy.yaml, and, where the form says which actions it calls, among them, with
- *    every account line's tool; the answer line says `{answer}` and nothing else, the unavailable
- *    line says no variable; and `answer` is one of app.yaml's prompts.dataVars (a line that carries
- *    a passage is spoken whole). defineApp runs these with the code (crossLink); `check` without it.
+ *  - links (knowledgeUseProblems): an intent's passage is one the knowledge base has, in its default
+ *    locale, and no passage of its topic applies to some callers only (an informational answer is
+ *    for every caller, with no gate to read their facts); a form's topic slot is one of its slots;
+ *    its action (`via`, else kb.yaml's) is a tool with an action in policy.yaml, and, where the
+ *    form says which actions it calls, among them, with every account line's tool; the answer
+ *    line says `{answer}` and nothing else, the unavailable line says no variable; and `answer` is
+ *    one of app.yaml's prompts.dataVars (a line that carries a passage is spoken whole). defineApp
+ *    runs these with the code (crossLink); `check` without it.
+ *  - state (knowledgeUseStateProblems): an intent's passage is fresh (approved, nothing it was
+ *    approved over changed). Only `check` runs it, beside the knowledge base's own state rules.
  *
  * The lines themselves (kb_answer and kb_unavailable, or a form's own) are references: crossLink
  * holds them to prompts.yaml, and `check` to every locale.
@@ -24,6 +29,11 @@ export function answerPromptsOf(answers: { answer?: string | undefined; unavaila
   return { answer: answers.answer ?? KB_ANSWER_PROMPT, unavailable: answers.unavailable ?? KB_UNAVAILABLE_PROMPT };
 }
 
+/** Whether the folder says any answer from its knowledge base (a form's answers or an intent's passage). */
+export function saysKnowledge(config: LoadedConfig): boolean {
+  return Object.values(config.forms.forms).some((f) => f.answers !== undefined) || Object.values(config.intents.intents).some((i) => i.passage !== undefined);
+}
+
 /** The lines the folder's knowledge answers are said through, each with where it is named: the references `check` holds to every locale. */
 export function knowledgePromptReferences(config: LoadedConfig): { id: string; file: string; path: DataPath; role: 'answer' | 'unavailable' }[] {
   const refs: { id: string; file: string; path: DataPath; role: 'answer' | 'unavailable' }[] = [];
@@ -32,6 +42,11 @@ export function knowledgePromptReferences(config: LoadedConfig): { id: string; f
     const lines = answerPromptsOf(form.answers);
     refs.push({ id: lines.answer, file: 'forms.yaml', path: ['forms', id, 'answers', ...(form.answers.answer !== undefined ? ['answer'] : [])], role: 'answer' });
     refs.push({ id: lines.unavailable, file: 'forms.yaml', path: ['forms', id, 'answers', ...(form.answers.unavailable !== undefined ? ['unavailable'] : [])], role: 'unavailable' });
+  }
+  for (const [id, intent] of Object.entries(config.intents.intents)) {
+    if (intent.passage === undefined) continue;
+    refs.push({ id: KB_ANSWER_PROMPT, file: 'intents.yaml', path: ['intents', id, 'passage'], role: 'answer' });
+    refs.push({ id: KB_UNAVAILABLE_PROMPT, file: 'intents.yaml', path: ['intents', id, 'passage'], role: 'unavailable' });
   }
   return refs;
 }
@@ -58,6 +73,37 @@ export function knowledgeUseProblems(config: LoadedConfig, locate: Locate, input
   const kb = config.knowledge;
   const actions = Object.keys(config.policy.actions);
   const addKb = 'add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/)';
+
+  // intents.yaml: an informational intent's passage
+  for (const [id, intent] of Object.entries(config.intents.intents)) {
+    const passageId = intent.passage;
+    if (passageId === undefined) continue;
+    const path: DataPath = ['intents', id, 'passage'];
+    if (!kb) {
+      at('intents.yaml', path, `intent "${id}" says the passage "${passageId}", but the app has no knowledge base (kb/)`, `${addKb}, or play a prompt instead (promptId)`);
+      continue;
+    }
+    const passage = Object.hasOwn(kb.passages, passageId) ? kb.passages[passageId]! : undefined;
+    if (!passage) {
+      const defaults = Object.values(kb.passages).filter((p) => p.locale.toLowerCase() === kb.defaultLocale.toLowerCase()).map((p) => p.id);
+      at('intents.yaml', path, `intent "${id}" says the passage "${passageId}", which kb/passages does not have`, `${rename(passageId, defaults)}add kb/passages/${passageId}.yaml, then review and approve it`);
+      continue;
+    }
+    if (passage.locale.toLowerCase() !== kb.defaultLocale.toLowerCase()) {
+      at('intents.yaml', path, `intent "${id}" says the passage "${passageId}", which is in ${passage.locale}; an intent names the default locale's passage (${kb.defaultLocale}), and a call in another language hears its translation`, `name the passage it translates${passage.translates !== undefined ? ` ("${passage.translates}")` : ''}`);
+      continue;
+    }
+    for (const p of Object.values(kb.passages)) {
+      if (p.topic !== passage.topic || Object.keys(p.applies).length === 0) continue;
+      const who = Object.entries(p.applies).map(([fact, values]) => `${fact} ${values.join(' or ')}`).join(', ');
+      at(
+        'intents.yaml',
+        path,
+        `intent "${id}" says the passage "${passageId}", whose topic "${passage.topic}" has a passage for some callers only ("${p.id}": ${who}); an informational intent's answer is for every caller, read with no gate`,
+        `take the applies out of ${p.file}, or answer "${passage.topic}" through a form that answers from the knowledge base (forms.yaml answers:), whose gated read knows the caller`,
+      );
+    }
+  }
 
   // forms.yaml: a form's knowledge answer
   for (const [id, form] of Object.entries(config.forms.forms)) {
@@ -115,6 +161,28 @@ export function knowledgeUseProblems(config: LoadedConfig, locate: Locate, input
   if (refs.length > 0 && !(config.app.prompts?.dataVars ?? []).includes(KB_ANSWER_VAR)) {
     const path: DataPath = config.app.prompts?.dataVars !== undefined ? ['prompts', 'dataVars'] : config.app.prompts !== undefined ? ['prompts'] : [];
     at('app.yaml', path, `the app says answers from the knowledge base in {${KB_ANSWER_VAR}}, which is not one of prompts.dataVars, so a line that says one could be split into recorded clips`, `add "${KB_ANSWER_VAR}" to prompts.dataVars in app.yaml`);
+  }
+  return problems;
+}
+
+/** The state rule for an informational intent's passage: it may be said today (approved, nothing it was approved over changed since). Only `check` runs it. */
+export function knowledgeUseStateProblems(config: LoadedConfig, locate: Locate): Problem[] {
+  const problems: Problem[] = [];
+  const kb = config.knowledge;
+  if (!kb) return problems;
+  for (const [id, intent] of Object.entries(config.intents.intents)) {
+    const passageId = intent.passage;
+    if (passageId === undefined || !Object.hasOwn(kb.passages, passageId)) continue;
+    const passage = kb.passages[passageId]!;
+    if (passage.freshness === 'fresh') continue;
+    const path: DataPath = ['intents', id, 'passage'];
+    const where = locate('intents.yaml', path) ?? { line: 1, column: 1 };
+    const why = passage.freshness === 'unapproved' ? 'is not approved' : passage.freshness === 'source-changed' ? 'is stale (its source changed since approval)' : 'was edited after approval';
+    problems.push({
+      file: 'intents.yaml', ...where, path: formatPath(path),
+      message: `intent "${id}" says the passage "${passageId}", which ${why}, so the caller hears that there is no answer and is offered a person`,
+      fix: `review ${passage.file}, then ${APPROVE_COMMAND} ${passageId}`,
+    });
   }
   return problems;
 }

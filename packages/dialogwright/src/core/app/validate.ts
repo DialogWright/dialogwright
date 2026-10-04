@@ -137,7 +137,14 @@ export function validateApp(app: App): void {
   for (const { digit, intent } of app.menu) if (!Object.hasOwn(app.intents, intent)) fail(`menu digit "${digit}" has unknown intent "${intent}"`);
   for (const [id, def] of Object.entries(app.intents)) {
     if (def.kind === 'form' && !Object.hasOwn(app.forms, id)) fail(`form intent "${id}" has no form`);
-    if (def.kind === 'informational' && !def.promptId) fail(`informational intent "${id}" has no promptId`);
+    if (def.kind === 'informational' && !def.promptId && def.passage === undefined) fail(`informational intent "${id}" has no promptId or passage`);
+    if (def.passage !== undefined) {
+      if (def.kind !== 'informational') fail(`intent "${id}" names a passage, but only an informational intent says one`);
+      if (def.promptId !== undefined) fail(`informational intent "${id}" has both a promptId and a passage`);
+      const kb = app.knowledge?.kb;
+      if (!kb) fail(`informational intent "${id}" says the passage "${def.passage}", but the app has no knowledge base`);
+      else if (!Object.hasOwn(kb.passages, def.passage)) fail(`informational intent "${id}" says the passage "${def.passage}", which the knowledge base does not have`);
+    }
   }
   for (const id of Object.keys(app.forms)) {
     if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') fail(`form "${id}" has no form intent`);
