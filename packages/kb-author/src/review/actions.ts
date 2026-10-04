@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFil
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import {
   APPROVALS_LOG,
+  approvalLogged,
   approveOne,
   collapseWhitespace,
   formatApproveResult,
@@ -107,10 +108,15 @@ export function reviewerProblem(reviewer: Reviewer | null): string | null {
 // What waits for review
 // ---------------------------------------------------------------------------------------------
 
-/** A passage withheld from callers until a person approves it again, and why. */
+/**
+ * A passage a person must approve (again), and why: withheld from callers until they do (its source
+ * changed or is gone, it was edited, it was never approved), or fresh but approved outside kb:approve
+ * (`unlogged`: its approval has no line in kb/approvals.jsonl, so no one is on record for it and
+ * pnpm check refuses it).
+ */
 export interface Withheld {
   passage: KbPassage;
-  why: 'source-changed' | 'source-gone' | 'edited' | 'unapproved';
+  why: 'source-changed' | 'source-gone' | 'edited' | 'unapproved' | 'unlogged';
 }
 
 /** Everything that waits for review. */
@@ -138,7 +144,10 @@ export function reviewState(place: KbPlace): ReviewState {
   }
   const withheld: Withheld[] = [];
   for (const p of Object.values(loaded.kb?.passages ?? {})) {
-    if (p.freshness === 'fresh') continue;
+    if (p.freshness === 'fresh') {
+      if (approvalLogged(loaded.kb!, p) === false) withheld.push({ passage: p, why: 'unlogged' });
+      continue;
+    }
     withheld.push({ passage: p, why: p.freshness === 'source-changed' ? (p.current.sourceHash === null ? 'source-gone' : 'source-changed') : p.freshness });
   }
   return { kb: loaded.kb, problems: loaded.problems, drafts, withheld, proposed, proposedProblems };

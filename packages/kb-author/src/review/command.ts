@@ -17,7 +17,7 @@ import { startReviewServer } from './server';
 export const REVIEW_USAGE = [
   'usage: kb:review [dir] [--port N] [--traces <path|glob>]...',
   '  serves the review page on 127.0.0.1 (a free port unless --port) for this machine only, with a one-time token in its URL;',
-  '  approve, edit then approve, or reject each draft, accept or merge each proposed topic, and approve passages withheld after a change. Ctrl-C stops it.',
+  '  approve, edit then approve, or reject each draft, accept or merge each proposed topic, and approve passages withheld after a change or approved outside kb:approve. Ctrl-C stops it.',
   '  its Gaps tab ranks what callers asked that the knowledge base did not answer, from the traces (--traces: files, folders or globs; default $TRACE_DIR, else <app>/traces, else ./traces).',
 ].join('\n');
 

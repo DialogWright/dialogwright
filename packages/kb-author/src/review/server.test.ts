@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { main, type Io } from '../cli';
 import { findKb, type KbPlace } from '../kbPlace';
 import { loadKb } from '../kbPlace';
-import { acceptTopic, approve, approvedSectionText, editAndApprove, mergeTopic, reject } from './actions';
+import { acceptTopic, approve, approvedSectionText, editAndApprove, mergeTopic, reject, reviewState } from './actions';
 import { backTo, sameToken, startReviewServer, type ReviewServer } from './server';
 import { excerptRange, wordDiff } from './text';
 
@@ -344,6 +344,42 @@ describe('a proposed topic\'s title', () => {
     } finally {
       await server.close();
     }
+  });
+});
+
+describe('a passage approved outside kb:approve', () => {
+  it('is listed for review though it is fresh, and once approved here it is in the log and no longer listed', async () => {
+    const dir = folder('kb-author-review-unlogged');
+    const log = join(dir, 'kb', 'approvals.jsonl');
+    // Its approval is in its file, but its line is not in the log: written by hand, or copied with its file.
+    const lines = readFileSync(log, 'utf8').split('\n').filter((l) => l.trim() !== '');
+    expect(lines.some((l) => (JSON.parse(l) as { id: string }).id === 'opening-hours')).toBe(true);
+    writeFileSync(log, `${lines.filter((l) => (JSON.parse(l) as { id: string }).id !== 'opening-hours').join('\n')}\n`);
+    const place = findKb(dir, 'app');
+    if (typeof place === 'string') throw new Error(place);
+    const before = reviewState(place);
+    expect(before.kb!.passages['opening-hours']!.freshness).toBe('fresh');
+    expect(before.withheld.map((w) => [w.passage.id, w.why])).toEqual([['opening-hours', 'unlogged']]);
+
+    const server = await startReviewServer({ place, today: () => TODAY });
+    try {
+      const web = browser(server);
+      const home = (await web.get('/')).body;
+      expect(home).toContain('Passages withheld from callers (0)');
+      expect(home).toContain('Passages approved outside kb:approve (1)');
+      expect(home).toContain('/passage/opening-hours');
+      const page = (await web.get('/passage/opening-hours')).body;
+      expect(page).toContain('approved outside kb:approve');
+      expect(page).toContain('no one is on record for this answer');
+      await web.post('/reviewer', { by: 'Jane Smith', owner: 'Patron Services', back: '/' });
+      await web.post('/passage/opening-hours/approve', { seen: seenIn(page, '/passage/opening-hours/approve') });
+      expect(flashIn((await web.get('/')).body)).toMatch(/^opening-hours: approved \(version 2026\.1\) by Jane Smith/);
+    } finally {
+      await server.close();
+    }
+    const last = JSON.parse(readFileSync(log, 'utf8').trim().split('\n').pop()!) as { id: string; approvedBy: string };
+    expect([last.id, last.approvedBy]).toEqual(['opening-hours', 'Jane Smith']);
+    expect(reviewState(place).withheld).toEqual([]);
   });
 });
 

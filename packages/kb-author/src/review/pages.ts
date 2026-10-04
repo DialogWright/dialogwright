@@ -171,6 +171,7 @@ const WHY: Record<Withheld['why'], { chip: string; text: string }> = {
   'source-gone': { chip: 'fail', text: 'its source section is gone' },
   edited: { chip: 'warn', text: 'edited since it was approved' },
   unapproved: { chip: '', text: 'never approved' },
+  unlogged: { chip: 'warn', text: 'approved outside kb:approve' },
 };
 
 export function indexPage(ctx: PageContext, state: ReviewState, draftProblems: (d: DraftOnDisk) => string[]): string {
@@ -209,17 +210,25 @@ export function indexPage(ctx: PageContext, state: ReviewState, draftProblems: (
   }
   parts.push('</section>');
 
-  parts.push(`<section class="card" aria-labelledby="withheld-h"><h2 id="withheld-h">Passages withheld from callers (${state.withheld.length})</h2>`);
-  if (state.withheld.length === 0) parts.push('<p class="muted">Every passage is approved and fresh.</p>');
-  else {
-    parts.push('<table><thead><tr><th scope="col">Passage</th><th scope="col">Topic</th><th scope="col">Why</th><th scope="col">Source</th></tr></thead><tbody>');
-    for (const w of state.withheld) {
+  const passageRows = (list: readonly Withheld[]): string => {
+    const rows = list.map((w) => {
       const why = WHY[w.why];
-      parts.push(`<tr><td class="mono"><a href="${href(ctx, `/passage/${encodeURIComponent(w.passage.id)}`)}">${esc(w.passage.id)}</a></td><td class="mono">${esc(w.passage.topic)}</td><td><span class="chip ${why.chip}">${esc(why.text)}</span></td><td class="mono">${esc(w.passage.source.document)} / ${esc(w.passage.source.section)}</td></tr>`);
-    }
-    parts.push('</tbody></table>');
-  }
+      return `<tr><td class="mono"><a href="${href(ctx, `/passage/${encodeURIComponent(w.passage.id)}`)}">${esc(w.passage.id)}</a></td><td class="mono">${esc(w.passage.topic)}</td><td><span class="chip ${why.chip}">${esc(why.text)}</span></td><td class="mono">${esc(w.passage.source.document)} / ${esc(w.passage.source.section)}</td></tr>`;
+    });
+    return `<table><thead><tr><th scope="col">Passage</th><th scope="col">Topic</th><th scope="col">Why</th><th scope="col">Source</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+  };
+  const held = state.withheld.filter((w) => w.why !== 'unlogged');
+  const unlogged = state.withheld.filter((w) => w.why === 'unlogged');
+  parts.push(`<section class="card" aria-labelledby="withheld-h"><h2 id="withheld-h">Passages withheld from callers (${held.length})</h2>`);
+  if (held.length === 0) parts.push(`<p class="muted">Every passage is approved and fresh.</p>`);
+  else parts.push(passageRows(held));
   parts.push('</section>');
+  if (unlogged.length > 0) {
+    parts.push(`<section class="card" aria-labelledby="unlogged-h"><h2 id="unlogged-h">Passages approved outside kb:approve (${unlogged.length})</h2>`);
+    parts.push('<p class="hint">Their approvals have no line in the log of approvals, so no one is on record for them and pnpm check refuses them. Review each against its source and approve it here.</p>');
+    parts.push(passageRows(unlogged));
+    parts.push('</section>');
+  }
   return page(ctx, 'Everything waiting', parts.join('\n'));
 }
 
@@ -344,7 +353,7 @@ export function passagePage(ctx: PageContext, kb: KnowledgeBase, w: Withheld, ap
     ${p.approval ? `<dt>Approved</dt><dd>by ${esc(p.approval.approvedBy)} (${esc(p.approval.owner)}) on ${esc(p.approval.on)}</dd>` : ''}
     <dt>File</dt><dd class="mono">${esc(p.file)}</dd>
   </dl>
-  <p>Callers are not given this answer until a person approves it again.</p>
+  <p>${w.why === 'unlogged' ? 'Its approval was written outside kb:approve: no line of the log of approvals records it, so no one is on record for this answer and pnpm check refuses it until a person approves it here.' : 'Callers are not given this answer until a person approves it again.'}</p>
   ${
     w.why === 'source-gone'
       ? '<p role="alert">Its source section is gone, so it cannot be approved: point the passage at the section that says this now (source.section in its file), or delete it.</p>'
