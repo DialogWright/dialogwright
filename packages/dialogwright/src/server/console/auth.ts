@@ -30,7 +30,7 @@ import { signInPage, type SignInNote } from './pages';
  * nosniff.
  *
  * Failed sign-ins are limited: ten in a quarter of an hour from one address (the tunnel's
- * cf-connecting-ip or x-forwarded-for, else the socket's), then a hundred in a quarter of an hour
+ * cf-connecting-ip, else the last x-forwarded-for, else the socket's), then a hundred in a quarter of an hour
  * through the tunnel for everyone; past either, an attempt is refused (429) before its code is looked
  * at. A request made on this machine is held only to its own address's limit, so an owner at the server
  * can always sign in.
@@ -140,9 +140,13 @@ function header(req: IncomingMessage, name: string): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-/** The address a request came from: the tunnel's word for it (Cloudflare's, else the first forwarded), else the socket's. */
+/**
+ * The address a request came from: the tunnel's word for it, else the socket's. Cloudflare's
+ * cf-connecting-ip first (its edge sets it, whatever the client sent), else the last x-forwarded-for
+ * entry, the one the tunnel itself added (any before it are the client's own say).
+ */
 function clientAddress(req: IncomingMessage): string {
-  const raw = header(req, 'cf-connecting-ip') ?? header(req, 'x-forwarded-for')?.split(',')[0] ?? req.socket.remoteAddress ?? '';
+  const raw = header(req, 'cf-connecting-ip') ?? header(req, 'x-forwarded-for')?.split(',').at(-1) ?? req.socket.remoteAddress ?? '';
   const a = raw.trim();
   // An address, not whatever a client put in a header: it reaches the audit and a map's keys.
   return /^[0-9A-Fa-f:.]{2,45}$/.test(a) ? a : 'unknown';

@@ -282,6 +282,9 @@ describe('CONSOLE_AUTH=token: signing in', () => {
     // Another address still signs in with the code, which the refusals did not use up.
     const elsewhere = { ...TUNNEL, 'cf-connecting-ip': '198.51.100.7', 'x-forwarded-for': '198.51.100.7' };
     expect((await raw(r.base, 'POST', '/dashboard/login', { ...elsewhere, ...FORM }, `code=${code}`)).status).toBe(303);
+    // An address a client writes first in x-forwarded-for is its own say: the tunnel's last entry counts.
+    const spoofed = { host: 'demo.example.net', 'x-forwarded-for': '192.0.2.50, 203.0.113.9' };
+    expect((await raw(r.base, 'POST', '/dashboard/login', { ...spoofed, ...FORM }, `code=${wrong()}`)).status).toBe(429);
     // A quarter of an hour later, the address may try again.
     r.clock.t += 15 * 60 * 1000 + 1;
     expect((await raw(r.base, 'POST', '/dashboard/login', { ...TUNNEL, ...FORM }, `code=${wrong()}`)).status).toBe(403);
