@@ -2,6 +2,7 @@ import type { Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { handleSocketClose, handleSocketMessage, newConnectionContext, type AdapterDeps } from './adapter';
 import type { SocketLike } from './sessions';
+import { LEGACY_PROVIDER } from './voice/registry';
 
 /** A connection that has not identified itself with a setup message by now is not ConversationRelay. */
 export const SETUP_TIMEOUT_MS = 10_000;
@@ -16,14 +17,33 @@ function wrap(ws: WebSocket): SocketLike {
   };
 }
 
-/** Accept ConversationRelay upgrades on /conversation only; the token from the query is checked at setup. */
-export function attachWebSocketServer(server: Server, deps: AdapterDeps, setupTimeoutMs: number = SETUP_TIMEOUT_MS): WebSocketServer {
+/**
+ * The voice provider a socket path names: `/conversation/<id>` for an enabled provider, or the legacy
+ * provider (Twilio) for the unprefixed `/conversation` when it is enabled; null for anything else.
+ */
+export function socketProvider(pathname: string, enabled: readonly string[]): string | null {
+  if (pathname === '/conversation') return enabled.includes(LEGACY_PROVIDER) ? LEGACY_PROVIDER : null;
+  if (!pathname.startsWith('/conversation/')) return null;
+  const id = pathname.slice('/conversation/'.length);
+  return enabled.includes(id) ? id : null;
+}
+
+/**
+ * Accept relay upgrades on `/conversation/<id>` for each enabled voice provider (`voiceProviders`,
+ * default Twilio alone) and on the legacy `/conversation` (Twilio's); the token from the query is checked at setup.
+ */
+export function attachWebSocketServer(
+  server: Server,
+  deps: AdapterDeps,
+  setupTimeoutMs: number = SETUP_TIMEOUT_MS,
+  voiceProviders: readonly string[] = [LEGACY_PROVIDER],
+): WebSocketServer {
   // 64 KiB is far above any ConversationRelay message; larger payloads are closed with 1009 by ws.
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
-  const onConnection = (ws: WebSocket, token: string): void => {
+  const onConnection = (ws: WebSocket, token: string, provider: string): void => {
     const sock = wrap(ws);
-    const ctx = newConnectionContext(token, sock);
+    const ctx = newConnectionContext(token, sock, provider);
     // Twilio sends setup immediately; a socket that never does is holding a session slot for nothing.
     const deadline = setTimeout(() => {
       deps.log('connection closed: no setup within the deadline');
@@ -51,7 +71,8 @@ export function attachWebSocketServer(server: Server, deps: AdapterDeps, setupTi
 
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    if (url.pathname !== '/conversation') {
+    const provider = socketProvider(url.pathname, voiceProviders);
+    if (provider === null) {
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
       socket.destroy();
       return;
@@ -72,7 +93,7 @@ export function attachWebSocketServer(server: Server, deps: AdapterDeps, setupTi
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => onConnection(ws, token));
+    wss.handleUpgrade(req, socket, head, (ws) => onConnection(ws, token, provider));
   });
 
   return wss;

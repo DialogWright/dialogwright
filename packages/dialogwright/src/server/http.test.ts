@@ -195,6 +195,69 @@ describe('http routes', () => {
   });
 });
 
+describe('routes by voice provider', () => {
+  it('answers /voice/twilio at the provider\'s own paths and the legacy /voice at the old ones', async () => {
+    const d = deps();
+    const base = await listen(d);
+    const a = await post(base, '/voice/twilio', { CallSid: 'CA1', From: '+15555550100' });
+    expect(a.status).toBe(200);
+    expect(a.text).toContain('url="wss://demo.ngrok.app/conversation/twilio?token=');
+    expect(a.text).toContain('<Connect action="https://demo.ngrok.app/cr-action/twilio">');
+    const token = /token=([0-9a-f]{32})/.exec(a.text)![1]!;
+    expect(d.tokens.verify(token, 'CA1')).toBe(true);
+    const b = await post(base, '/voice', { CallSid: 'CA2', From: '+15555550100' });
+    expect(b.text).toContain('url="wss://demo.ngrok.app/conversation?token=');
+    expect(b.text).toContain('<Connect action="https://demo.ngrok.app/cr-action">');
+  });
+
+  it('checks the signature over the provider\'s own path, and logs the call by its path', async () => {
+    const lines: string[] = [];
+    const base = await listen({ ...deps(), log: (l) => lines.push(l) });
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1' }, false)).status).toBe(403);
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1', From: '+15555550199' })).status).toBe(200);
+    expect(lines).toContain('/voice/twilio: signature rejected');
+    expect(lines).toContain('/voice/twilio CA1 from …0199');
+    expect((await post(base, '/voice/twilio', { From: '+15555550199' })).status).toBe(400);
+  });
+
+  it('is 404 for a provider that is not enabled or not known, and for a GET', async () => {
+    const base = await listen(deps());
+    expect((await post(base, '/voice/telnyx', { CallSid: 'x' })).status).toBe(404);
+    expect((await post(base, '/cr-action/acme', { CallSid: 'x' })).status).toBe(404);
+    expect((await post(base, '/voice/twilio/extra', { CallSid: 'x' })).status).toBe(404);
+    expect((await fetch(base + '/voice/twilio')).status).toBe(404);
+  });
+
+  it('reconnects through /cr-action/twilio to the provider\'s socket, and through /cr-action to the legacy one', async () => {
+    const d = deps();
+    const base = await listen(d);
+    d.store.create('CA1', { send: () => {}, close: () => {} });
+    const r = await post(base, '/cr-action/twilio', { CallSid: 'CA1', CallStatus: 'in-progress', SessionStatus: 'failed' });
+    expect(r.status).toBe(200);
+    expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/twilio?token=');
+    d.store.create('CA2', { send: () => {}, close: () => {} });
+    const legacy = await post(base, '/cr-action', { CallSid: 'CA2', CallStatus: 'in-progress', SessionStatus: 'failed' });
+    expect(legacy.text).toContain('url="wss://demo.ngrok.app/conversation?token=');
+  });
+
+  it('ends a call through /cr-action/twilio and logs the webhook under its own route', async () => {
+    const d = deps();
+    const base = await listen(d);
+    d.store.create('CA1', { send: () => {}, close: () => {} });
+    const r = await post(base, '/cr-action/twilio', { CallSid: 'CA1', HandoffData: '{"reasonCode":"completed"}', From: '+15555550199' });
+    expect(r.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
+    const line = readFileSync(join(d.dir, 'CA1.frames.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { dir: string; msg: Record<string, unknown> }).find((l) => l.dir === 'http');
+    expect(line?.msg).toMatchObject({ route: '/cr-action/twilio', From: '…0199' });
+  });
+
+  it('answers a legacy /cr-action that names no call by hanging up, as it always has', async () => {
+    const base = await listen(deps());
+    const r = await post(base, '/cr-action', { CallStatus: 'completed' });
+    expect(r.status).toBe(200);
+    expect(r.text).toContain('<Hangup/>');
+  });
+});
+
 /** A raw request, so the test controls every header, `Host` included. */
 function raw(base: string, method: string, path: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
   const url = new URL(base + path);

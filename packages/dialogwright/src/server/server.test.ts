@@ -688,6 +688,40 @@ describe('server end to end', () => {
   });
 });
 
+describe('the relay socket by voice provider', () => {
+  it('runs a call on /conversation/twilio, and the dashboard names the provider', async () => {
+    const s = await start();
+    const events: DashboardEvent[] = [];
+    running!.bus!.subscribe((e) => events.push(e));
+    const token = running!.tokens.mint('CA1');
+    const relay = await FakeRelay.connect(`${s.base.replace('http', 'ws')}/conversation/twilio?token=${token}`);
+    relay.setup('CA1');
+    expect(await relay.waitForTexts(1)).toEqual([GREETING_TEXT]);
+    expect(events.find((e) => e.type === 'call_started')).toMatchObject({ callSid: 'CA1', channel: 'voice', provider: 'twilio' });
+    relay.close();
+  });
+
+  it('names Twilio as the provider of a call on the legacy /conversation', async () => {
+    const s = await start();
+    const events: DashboardEvent[] = [];
+    running!.bus!.subscribe((e) => events.push(e));
+    const token = running!.tokens.mint('CA1');
+    const relay = await FakeRelay.connect(`${s.ws}?token=${token}`);
+    relay.setup('CA1');
+    await relay.waitForTexts(1);
+    expect(events.find((e) => e.type === 'call_started')).toMatchObject({ provider: 'twilio' });
+    relay.close();
+  });
+
+  it('refuses the socket of a provider that is not enabled, and a deeper path', async () => {
+    const s = await start();
+    const token = running!.tokens.mint('CA1');
+    const ws = s.base.replace('http', 'ws');
+    await expect(FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`)).rejects.toThrow(/404/);
+    await expect(FakeRelay.connect(`${ws}/conversation/twilio/x?token=${token}`)).rejects.toThrow(/404/);
+  });
+});
+
 describe('startup: what answers', () => {
   async function startupLines(extra: Record<string, string>): Promise<string[]> {
     const { config } = makeConfig({ CLIPS: 'off', ...extra });

@@ -1,9 +1,8 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ServerConfig } from './config';
-import { validateTwilioSignature } from './signature';
-import { apologizeAndDialTwiml, connectRelayTwiml, dialTwiml, hangupTwiml } from './twiml';
+import { connectRelayTwiml } from './twiml';
 import type { SessionStore } from './sessions';
 import type { CallTokens } from './tokens';
 import type { DashboardBus } from './dashboard/bus';
@@ -13,7 +12,9 @@ import { maskNumber, redactDeep } from './dashboard/events';
 import type { AuditSink } from '../run/turn';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
 import { isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly';
-import { formFields } from './voice/xml';
+import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './voice/provider';
+import { providerForPath, voiceProviders } from './voice/registry';
+import { twilioCallbackParams, twilioProvider } from './voice/twilio';
 
 export interface HttpDeps {
   config: ServerConfig;
@@ -63,6 +64,13 @@ function readBody(req: IncomingMessage, res: ServerResponse): Promise<string | n
       if (!tooLarge) reject(err);
     });
   });
+}
+
+/** Node's headers as a webhook's: names lower-cased, a repeated header's first value. */
+function lowerHeaders(h: IncomingHttpHeaders): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(h)) out[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;
+  return out;
 }
 
 function reply(res: ServerResponse, status: number, type: string, body: string): void {
@@ -131,8 +139,8 @@ function parseHandoff(raw: string): { reasonCode: string } {
   }
 }
 
-/** The ConversationRelay connect attributes shared by the initial /voice answer and a reconnect. */
-function connectOptions(deps: HttpDeps, token: string): Parameters<typeof connectRelayTwiml>[0] {
+/** The start document's options shared by the initial /voice answer and a reconnect. */
+function connectOptions(deps: HttpDeps, token: string): StartDocumentOptions {
   const { publicHost, ttsProvider, ttsVoice } = deps.config;
   return {
     publicHost,
@@ -142,23 +150,41 @@ function connectOptions(deps: HttpDeps, token: string): Parameters<typeof connec
   };
 }
 
-/** The <Connect action> callback decision. Pure apart from store and token side effects. */
+/**
+ * The legacy Twilio `<Connect action>` decision on Twilio's raw form fields, a reconnect answered at the
+ * legacy socket path. Kept for existing callers; the webhook itself calls decideAction.
+ */
 export function decideActionTwiml(deps: HttpDeps, params: Record<string, string>): { twiml: string; note: string } {
-  const callSid = params.CallSid ?? '';
+  const { document, note } = decideAction(deps, twilioProvider, twilioCallbackParams(params), connectRelayTwiml);
+  return { twiml: document, note };
+}
+
+/**
+ * The `<Connect action>` callback decision, in the provider's documents. Pure apart from store and
+ * token side effects. `start` writes a reconnect's start document: the provider's own, or the legacy
+ * one for a call that came in on the unprefixed `/voice`.
+ */
+export function decideAction(
+  deps: HttpDeps,
+  provider: VoiceProvider,
+  params: CallbackParams,
+  start: (o: StartDocumentOptions) => string = (o) => provider.startDocument(o),
+): { document: string; note: string } {
+  const callSid = params.callId;
 
   // (a) An explicit handoff decision from the adapter wins outright.
-  const handoffData = params.HandoffData;
+  const handoffData = params.handoffData;
   if (!isBlank(handoffData)) {
     const handoff = parseHandoff(handoffData!);
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
-    if (handoff.reasonCode === 'completed') return { twiml: hangupTwiml(), note: 'completed' };
-    return { twiml: dialTwiml(deps.config.handoffNumber), note: `dial:${handoff.reasonCode}` };
+    if (handoff.reasonCode === 'completed') return { document: provider.hangupDocument(), note: 'completed' };
+    return { document: provider.dialDocument(deps.config.handoffNumber), note: `dial:${handoff.reasonCode}` };
   }
 
   // (b) No handoff: an ordinary caller hangup (or any status that isn't a live in-progress call)
   // just ends the call. This must not be logged as gave-up or dialed.
-  if (params.SessionStatus === 'completed' || params.CallStatus !== 'in-progress') {
+  if (params.sessionStatus === 'completed' || params.callStatus !== 'in-progress') {
     // Read before `end`, and published only for a call that was still live: this branch is the
     // one place that knows a socket close was a hangup rather than the reconnect branch below,
     // so it is the dashboard's only producer of `ended{hangup}`. A call that ended on its own
@@ -179,8 +205,8 @@ export function decideActionTwiml(deps: HttpDeps, params: Record<string, string>
       }
       deps.bus?.publish({ type: 'ended', reason: 'hangup', callSid, at: Date.now() });
     }
-    const reason = params.SessionStatus ?? params.CallStatus ?? 'unknown';
-    return { twiml: hangupTwiml(), note: `hangup:${reason}` };
+    const reason = params.sessionStatus ?? params.callStatus ?? 'unknown';
+    return { document: provider.hangupDocument(), note: `hangup:${reason}` };
   }
 
   // (c) Live call, session failed or otherwise ended on the ConversationRelay side: reconnect
@@ -191,19 +217,20 @@ export function decideActionTwiml(deps: HttpDeps, params: Record<string, string>
       deps.store.detach(callSid);
       entry.reconnects += 1;
       const token = deps.tokens.mint(callSid);
-      return { twiml: connectRelayTwiml(connectOptions(deps, token)), note: `reconnect:${entry.reconnects}` };
+      return { document: start(connectOptions(deps, token)), note: `reconnect:${entry.reconnects}` };
     }
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
-    return { twiml: apologizeAndDialTwiml(deps.config.handoffNumber), note: 'gave-up' };
+    return { document: provider.apologizeAndDialDocument(deps.config.handoffNumber), note: 'gave-up' };
   }
-  return { twiml: hangupTwiml(), note: 'hangup' };
+  return { document: provider.hangupDocument(), note: 'hangup' };
 }
 
 export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const routes = deps.routes ?? [];
   validateRoutes(routes);
   const localOnly = localOnlyPaths(routes);
+  const enabled = voiceProviders(deps.config.voiceProviders);
   return (req, res) => {
     void (async () => {
       const path = (req.url ?? '/').split('?')[0] ?? '/';
@@ -235,41 +262,46 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         }
         return;
       }
-      if (req.method !== 'POST' || (path !== '/voice' && path !== '/cr-action')) {
+      // A carrier's webhooks: `/voice/<id>` and `/cr-action/<id>` for an enabled provider, and the
+      // unprefixed `/voice` and `/cr-action` for Twilio (the legacy paths, answered with the legacy documents).
+      const answer = providerForPath(enabled, path, '/voice');
+      const action = answer ? null : providerForPath(enabled, path, '/cr-action');
+      const provider = answer ?? action;
+      if (req.method !== 'POST' || provider === null) {
         reply(res, 404, 'text/plain', 'not found');
         return;
       }
+      const legacy = path === '/voice' || path === '/cr-action';
       const body = await readBody(req, res);
       if (body === null) return; // 413 already sent by readBody
-      const params = formFields(body);
-      if (deps.config.signatureCheck) {
-        const fullUrl = `https://${deps.config.publicHost}${req.url ?? path}`;
-        const header = req.headers['x-twilio-signature'];
-        if (!validateTwilioSignature(fullUrl, params, Array.isArray(header) ? header[0] : header, deps.config.twilioAuthToken)) {
-          deps.log(`${path}: signature rejected`);
-          reply(res, 403, 'text/plain', 'invalid signature');
-          return;
-        }
+      const webhook: WebhookRequest = { url: req.url ?? path, headers: lowerHeaders(req.headers), rawBody: body, nowSec: Math.floor(Date.now() / 1000) };
+      if (deps.config.signatureCheck && !provider.verify(webhook, deps.config.providerSecrets[provider.id] ?? '', deps.config.publicHost)) {
+        deps.log(`${path}: signature rejected`);
+        reply(res, 403, 'text/plain', 'invalid signature');
+        return;
       }
-      if (path === '/voice') {
-        const callSid = (params.CallSid ?? '').trim();
-        if (!callSid) {
-          deps.log('/voice: missing CallSid');
+      const params = provider.parse(webhook);
+      if (answer) {
+        if (params === null) {
+          deps.log(`${path}: missing CallSid`);
           reply(res, 400, 'text/plain', 'missing CallSid');
           return;
         }
-        const token = deps.tokens.mint(callSid);
+        const token = deps.tokens.mint(params.callId);
         // The caller's number is theirs, not the console's: the last four tell calls apart.
-        deps.log(`/voice ${callSid} from ${maskNumber(params.From)}`);
-        reply(res, 200, 'text/xml', connectRelayTwiml(connectOptions(deps, token)));
+        deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}`);
+        const options = connectOptions(deps, token);
+        reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));
         return;
       }
+      // An action callback that names no call is still answered (with a hangup), as it always was.
+      const callback: CallbackParams = params ?? { callId: '', raw: {} };
       // Masked at write time: Twilio's form post spells the caller's number four different ways
       // (From/To/Caller/Called), and the frame log must never hold the whole thing on disk.
-      deps.store.get(params.CallSid ?? '')?.frames.write('http', redactDeep({ route: '/cr-action', ...params }));
-      const { twiml, note } = decideActionTwiml(deps, params);
-      deps.log(`/cr-action ${params.CallSid ?? '?'} ${params.SessionStatus ?? ''} -> ${note}`);
-      reply(res, 200, 'text/xml', twiml);
+      deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...callback.raw }));
+      const { document, note } = decideAction(deps, provider, callback, legacy ? connectRelayTwiml : undefined);
+      deps.log(`${path} ${callback.callId || '?'} ${callback.sessionStatus ?? ''} -> ${note}`);
+      reply(res, 200, provider.contentType, document);
     })().catch((e: unknown) => {
       deps.log(`http error: ${e instanceof Error ? e.message : String(e)}`);
       if (!res.headersSent) reply(res, 500, 'text/plain', 'error');

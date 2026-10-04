@@ -64,12 +64,13 @@ export function twilioConnectDocument(o: StartDocumentOptions, paths: RelayPaths
   return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}${paths.action}"><ConversationRelay ${attrs.join(' ')}/></Connect>`);
 }
 
-function parse(req: WebhookRequest): CallbackParams | null {
-  const raw = formFields(req.rawBody);
-  const callId = (raw.CallSid ?? '').trim();
-  if (!callId) return null;
+/**
+ * Twilio's form fields in the engine's terms. The call id is empty when CallSid is absent: the legacy
+ * action callback still answers such a request (with a hangup), so it is read rather than refused.
+ */
+export function twilioCallbackParams(raw: Record<string, string>): CallbackParams {
   return {
-    callId,
+    callId: (raw.CallSid ?? '').trim(),
     raw,
     ...(raw.From !== undefined ? { from: raw.From } : {}),
     ...(raw.To !== undefined ? { to: raw.To } : {}),
@@ -77,6 +78,11 @@ function parse(req: WebhookRequest): CallbackParams | null {
     ...(raw.SessionStatus !== undefined ? { sessionStatus: raw.SessionStatus } : {}),
     ...(raw.HandoffData !== undefined ? { handoffData: raw.HandoffData } : {}),
   };
+}
+
+function parse(req: WebhookRequest): CallbackParams | null {
+  const params = twilioCallbackParams(formFields(req.rawBody));
+  return params.callId ? params : null;
 }
 
 /** Twilio's ConversationRelay: form-encoded webhooks signed with the account's auth token, and TwiML. */

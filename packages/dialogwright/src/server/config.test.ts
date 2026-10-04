@@ -184,3 +184,34 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, CONSOLE_LOCAL_ONLY: 'maybe' })).toThrow('CONSOLE_LOCAL_ONLY must be on or off, got "maybe"');
   });
 });
+
+describe('voice providers', () => {
+  it('defaults to Twilio and needs only its token', () => {
+    const c = loadConfig({ ...base });
+    expect(c.voiceProviders).toEqual(['twilio']);
+    expect(c.providerSecrets).toEqual({ twilio: base.TWILIO_AUTH_TOKEN });
+    expect(c.twilioAuthToken).toBe(base.TWILIO_AUTH_TOKEN);
+  });
+
+  it('reads a comma list, trimmed, lower-cased and without repeats', () => {
+    expect(loadConfig({ ...base, VOICE_PROVIDERS: ' Twilio , twilio' }).voiceProviders).toEqual(['twilio']);
+  });
+
+  it('names the missing secret of an enabled provider, and why it is needed', () => {
+    const { TWILIO_AUTH_TOKEN: _t, ...rest } = base;
+    expect(() => loadConfig(rest)).toThrow('missing required environment variable TWILIO_AUTH_TOKEN (VOICE_PROVIDERS includes twilio)');
+    expect(() => loadConfig({ ...rest, TWILIO_AUTH_TOKEN: '  ' })).toThrow('missing required environment variable TWILIO_AUTH_TOKEN (VOICE_PROVIDERS includes twilio)');
+  });
+
+  it('refuses an unknown provider and an empty list', () => {
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: 'twilio,acme' })).toThrow('VOICE_PROVIDERS must name providers from twilio, got "acme"');
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: ' ' })).toThrow('VOICE_PROVIDERS must name at least one provider');
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: ',' })).toThrow('VOICE_PROVIDERS must name at least one provider');
+  });
+
+  it('describes the providers, and each secret by its length only', () => {
+    const text = describeConfig(loadConfig(base));
+    expect(text).toContain('voice providers twilio');
+    expect(text).toContain('auth token set (3 chars)');
+  });
+});

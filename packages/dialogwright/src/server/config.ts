@@ -6,13 +6,22 @@ export type ClientKind = 'stub' | 'heuristic' | 'jev';
 /** ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider). */
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
+import { KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from './voice/registry';
 
 const TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
 
 export interface ServerConfig {
   port: number;
   publicHost: string;
+  /** Twilio's auth token, or the empty string when VOICE_PROVIDERS leaves Twilio out. Kept for existing readers; providerSecrets has every carrier's. */
   twilioAuthToken: string;
+  /**
+   * VOICE_PROVIDERS, default `twilio`: the carriers this deployment answers, by id (server/voice/registry.ts),
+   * each on `/voice/<id>`, `/cr-action/<id>` and `/conversation/<id>`. The unprefixed paths are Twilio's.
+   */
+  voiceProviders: readonly string[];
+  /** Each enabled carrier's secret, by id: TWILIO_AUTH_TOKEN for twilio. Required only for an enabled carrier. */
+  providerSecrets: Readonly<Record<string, string>>;
   handoffNumber: string;
   jevClient: ClientKind;
   /**
@@ -94,10 +103,33 @@ function timeZone(env: Env): string {
   return raw;
 }
 
+/** VOICE_PROVIDERS as ids, trimmed, lower-cased and without repeats; default Twilio alone. */
+function voiceProvidersOf(env: Env): string[] {
+  const ids = (env.VOICE_PROVIDERS ?? 'twilio').split(',').map((s) => s.trim().toLowerCase()).filter((s) => s !== '');
+  if (ids.length === 0) throw new Error('VOICE_PROVIDERS must name at least one provider');
+  for (const id of ids) {
+    if (!KNOWN_VOICE_PROVIDERS.includes(id)) throw new Error(`VOICE_PROVIDERS must name providers from ${KNOWN_VOICE_PROVIDERS.join(', ')}, got "${id}"`);
+  }
+  return [...new Set(ids)];
+}
+
+/** Each enabled provider's secret; a missing one is named with the provider that needs it. */
+function providerSecretsOf(env: Env, ids: readonly string[]): Record<string, string> {
+  const secrets: Record<string, string> = {};
+  for (const id of ids) {
+    const name = secretVarOf(id);
+    const value = env[name]?.trim();
+    if (!value) throw new Error(`missing required environment variable ${name} (VOICE_PROVIDERS includes ${id})`);
+    secrets[id] = value;
+  }
+  return secrets;
+}
+
 export function loadConfig(env: Env): ServerConfig {
   const publicHost = required(env, 'PUBLIC_HOST').replace(/^https?:\/\//, '').replace(/\/+$/, '');
   if (/[/?:]/.test(publicHost)) throw new Error(`PUBLIC_HOST must be a bare hostname, got "${publicHost}"`);
-  const twilioAuthToken = required(env, 'TWILIO_AUTH_TOKEN');
+  const voiceProviders = voiceProvidersOf(env);
+  const providerSecrets = providerSecretsOf(env, voiceProviders);
   const handoffNumber = required(env, 'HANDOFF_NUMBER');
   if (!/^\+\d{8,15}$/.test(handoffNumber)) throw new Error(`HANDOFF_NUMBER must be an E.164 number like +15551234567, got "${handoffNumber}"`);
   const port = integer(env, 'PORT', 3000);
@@ -134,7 +166,9 @@ export function loadConfig(env: Env): ServerConfig {
   return {
     port,
     publicHost,
-    twilioAuthToken,
+    twilioAuthToken: providerSecrets.twilio ?? '',
+    voiceProviders,
+    providerSecrets,
     handoffNumber,
     jevClient: jevClientRaw,
     jevProvider,
@@ -191,7 +225,8 @@ export function describeConfig(c: ServerConfig): string {
     `handoff ${c.handoffNumber}`,
     `client ${c.jevClient}`,
     `api key ${mask(c.jevProvider?.apiKey ?? null)}`,
-    `auth token ${mask(c.twilioAuthToken)}`,
+    `voice providers ${c.voiceProviders.join(', ')}`,
+    ...c.voiceProviders.map((id) => `${secretLabelOf(id)} ${mask(c.providerSecrets[id] ?? null)}`),
     `signature check ${c.signatureCheck ? 'on' : 'OFF'}`,
     `today ${c.todayOverride ?? 'wall clock'}`,
     `timezone ${c.timezone}`,
