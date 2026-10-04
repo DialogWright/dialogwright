@@ -2185,9 +2185,10 @@ pnpm configure [--app <name>]                # asks, and writes <app>/.env (mode
 pnpm start [--app <name>] [--tunnel quick|named|none]   # the server with that file; quick opens a tunnel that needs no account
 pnpm diagnose [--app <name>] [--offline]     # what is misconfigured, one line per check with its fix
 pnpm audit:verify <audit folder>             # each audit day's hash chain, exit 1 at the first break
+pnpm service <launchd|systemd> --app <name> --env-file <path>   # a service file that keeps it running; prints the install commands, runs none
 ```
 
-`pnpm configure` asks for a key with the echo off, or takes it from the environment variable of its own name, never from a flag; `--non-interactive` with `--mode`, `--carrier`, `--model` and `--handoff` answers every question for a script. `pnpm start` opens Cloudflare's quick tunnel when `PUBLIC_HOST` is unset (`cloudflared` must be installed; its hostname changes every run, so it prints the webhook URL to paste each time), runs the server alone when `PUBLIC_HOST` is set, and stops the tunnel only after the server has drained. The full guide to a machine that keeps a line up is the website's [running your own IVR](https://dialogwright.com/guides/home-server.html).
+`pnpm configure` asks for a key with the echo off, or takes it from the environment variable of its own name, never from a flag; `--non-interactive` with `--mode`, `--carrier`, `--model` and `--handoff` answers every question for a script. `pnpm start` opens Cloudflare's quick tunnel when `PUBLIC_HOST` is unset (`cloudflared` must be installed; its hostname changes every run, so it prints the webhook URL to paste each time), runs the server alone when `PUBLIC_HOST` is set, and stops the tunnel only after the server has drained. `pnpm service` writes a launchd agent or a systemd user unit with this machine's absolute paths: it runs the app's server with `ENV_FILE`, restarts it when it exits, and gives a stop `DRAIN_MS` and ten seconds more. The full guide to a machine that keeps a line up is the website's [running your own IVR](https://dialogwright.com/guides/home-server.html).
 
 | Choice | Where it is set | Default | When to choose otherwise |
 |---|---|---|---|

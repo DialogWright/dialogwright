@@ -61,6 +61,7 @@ pnpm configure [--app <name>]   # asks, and writes <app>/.env (mode 600): a lapt
 pnpm start [--app <name>] [--tunnel quick|named|none]   # the app's server with its .env (ENV_FILE); quick, the default with PUBLIC_HOST unset, opens a Cloudflare quick tunnel (no account)
 pnpm diagnose [--app <name>] [--offline]   # what is misconfigured, one line per check with its fix; calls no carrier or model
 pnpm audit:verify <audit folder>   # each audit day file's hash chain; exit 1 at the first break
+pnpm service <launchd|systemd> --app <name> --env-file <path> [--label <label>] [--out <file>]   # a service file with this machine's paths; prints the install commands, runs none
 ```
 
 `pnpm check` prints one line per problem, `file:line:column  path  message  ->  fix`, and exits 1 when there is any. Act on the fix text.

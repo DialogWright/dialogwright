@@ -690,89 +690,79 @@ cd ~/dialogwright &amp;&amp; pnpm audit:verify ~/ivr/data/audit</code></pre>
       <section id="running" aria-labelledby="running-title">
         <h2 id="running-title">9. Keeping it running</h2>
         <p>
-          Once the line works, hand it to the system's service manager: it starts the server at boot or login, restarts it when
-          it exits, and keeps its output. Either way the service loads <code>~/ivr/myline.env</code> and runs
-          <code>pnpm --filter @dialogwright/example-myline serve</code> from the repository. A stop sends SIGTERM, which pnpm passes
-          to the server; the server lets turns already running finish (for up to about two seconds), closes the sockets and exits.
-          Use the paths <code>which node pnpm</code> printed.
+          Once the line works, hand it to the system's service manager: it starts the server at login or boot, restarts it when
+          it exits, and keeps its output. <code>pnpm service</code> writes the service file for this machine, with the absolute
+          paths of the repository, pnpm, node and the settings file, and prints the commands that install it; it runs none of
+          them. The service runs <code>pnpm --filter @dialogwright/example-myline serve</code> from the repository with
+          <code>ENV_FILE</code> naming <code>~/ivr/myline.env</code>, so the server reads the same file <code>pnpm start</code>
+          and <code>pnpm diagnose</code> read. Nothing from the file goes into the service file but its path.
+        </p>
+        <p>
+          A stop sends SIGTERM to pnpm, which passes it to the server and waits. The server drains: <code>/ready</code> answers
+          503, a new call is put through to <code>HANDOFF_NUMBER</code>, a new chat is told it is busy, and live calls go on
+          until they end or <code>DRAIN_MS</code> passes (30 seconds by default); then it closes what is left and exits. The
+          service gives a stop <code>DRAIN_MS</code> and ten seconds more before it kills anything. A second signal stops the
+          server at once. A crash is logged with its stack and exits 1, and the service manager starts it again.
         </p>
 
-        <h3>Linux: a systemd unit</h3>
-        <p>systemd reads the settings file as it is (<code>KEY=value</code> lines; <code>#</code> lines are comments).</p>
-        <figure>
-          <figcaption><code>/etc/systemd/system/myline.service</code></figcaption>
-<pre data-copy><code>[Unit]
-Description=DialogWright phone line (myline)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=alex
-WorkingDirectory=/home/alex/dialogwright
-EnvironmentFile=/home/alex/ivr/myline.env
-ExecStart=/usr/local/bin/pnpm --filter @dialogwright/example-myline serve
-Restart=always
-RestartSec=10
-TimeoutStopSec=15
-
-[Install]
-WantedBy=multi-user.target</code></pre>
-        </figure>
-<pre data-copy><code>sudo systemctl daemon-reload
-sudo systemctl enable --now myline   # start now, and at every boot
-systemctl status myline              # running or not
-journalctl -u myline -f              # its output
-sudo systemctl restart myline        # drops live calls
-sudo systemctl stop myline</code></pre>
-
         <h3>macOS: a launchd agent</h3>
+<pre data-copy><code>cd ~/dialogwright
+pnpm service launchd --app myline --env-file ~/ivr/myline.env --label com.example.myline</code></pre>
+        <p>It writes <code>~/Library/LaunchAgents/com.example.myline.plist</code> from this template, its values filled in:</p>
         <figure>
-          <figcaption><code>~/Library/LaunchAgents/com.example.myline.plist</code></figcaption>
-<pre data-copy><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+          <figcaption><code>packages/dialogwright/templates/service/launchd.plist</code></figcaption>
+<pre data-from="packages/dialogwright/templates/service/launchd.plist"><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
 &lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;!-- Written by pnpm service: the DialogWright app {{app}}, run from the repository with its settings file. --&gt;
 &lt;plist version="1.0"&gt;
 &lt;dict&gt;
   &lt;key&gt;Label&lt;/key&gt;
-  &lt;string&gt;com.example.myline&lt;/string&gt;
-  &lt;!-- Load the settings, then run the app's server from the repository. --&gt;
+  &lt;string&gt;{{label}}&lt;/string&gt;
   &lt;key&gt;ProgramArguments&lt;/key&gt;
   &lt;array&gt;
-    &lt;string&gt;/bin/bash&lt;/string&gt;
-    &lt;string&gt;-c&lt;/string&gt;
-    &lt;string&gt;set -a; source /Users/alex/ivr/myline.env; set +a; exec pnpm --filter @dialogwright/example-myline serve&lt;/string&gt;
+    &lt;string&gt;{{pnpm}}&lt;/string&gt;
+    &lt;string&gt;--filter&lt;/string&gt;
+    &lt;string&gt;{{app}}&lt;/string&gt;
+    &lt;string&gt;serve&lt;/string&gt;
   &lt;/array&gt;
   &lt;key&gt;WorkingDirectory&lt;/key&gt;
-  &lt;string&gt;/Users/alex/dialogwright&lt;/string&gt;
-  &lt;!-- launchd starts with a short PATH: name the folders node and pnpm are in. --&gt;
+  &lt;string&gt;{{root}}&lt;/string&gt;
+  &lt;!-- The server reads the settings file itself (ENV_FILE). launchd starts with a short PATH: these hold node and pnpm. --&gt;
   &lt;key&gt;EnvironmentVariables&lt;/key&gt;
   &lt;dict&gt;
+    &lt;key&gt;ENV_FILE&lt;/key&gt;
+    &lt;string&gt;{{envFile}}&lt;/string&gt;
     &lt;key&gt;PATH&lt;/key&gt;
-    &lt;string&gt;/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin&lt;/string&gt;
+    &lt;string&gt;{{path}}&lt;/string&gt;
     &lt;key&gt;COREPACK_ENABLE_DOWNLOAD_PROMPT&lt;/key&gt;
     &lt;string&gt;0&lt;/string&gt;
   &lt;/dict&gt;
-  &lt;!-- Start when loaded, and again whenever it exits (at most once every 10 seconds). --&gt;
+  &lt;!-- Start when loaded, and again whenever it exits, at most once every 10 seconds. --&gt;
   &lt;key&gt;RunAtLoad&lt;/key&gt;
   &lt;true/&gt;
   &lt;key&gt;KeepAlive&lt;/key&gt;
   &lt;true/&gt;
   &lt;key&gt;ThrottleInterval&lt;/key&gt;
   &lt;integer&gt;10&lt;/integer&gt;
-  &lt;!-- On stop: SIGTERM, then this many seconds before SIGKILL. --&gt;
+  &lt;key&gt;ProcessType&lt;/key&gt;
+  &lt;string&gt;Interactive&lt;/string&gt;
+  &lt;!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_MS and 10 more) before SIGKILL. --&gt;
   &lt;key&gt;ExitTimeOut&lt;/key&gt;
-  &lt;integer&gt;15&lt;/integer&gt;
+  &lt;integer&gt;{{stopSeconds}}&lt;/integer&gt;
   &lt;key&gt;StandardOutPath&lt;/key&gt;
-  &lt;string&gt;/Users/alex/ivr/logs/myline.out.log&lt;/string&gt;
+  &lt;string&gt;{{logDir}}/out.log&lt;/string&gt;
   &lt;key&gt;StandardErrorPath&lt;/key&gt;
-  &lt;string&gt;/Users/alex/ivr/logs/myline.err.log&lt;/string&gt;
+  &lt;string&gt;{{logDir}}/err.log&lt;/string&gt;
 &lt;/dict&gt;
 &lt;/plist&gt;</code></pre>
         </figure>
-<pre data-copy><code>plutil -lint ~/Library/LaunchAgents/com.example.myline.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.myline.plist   # start, and at every login
+        <p>and prints the commands that install, check and stop it:</p>
+<pre data-copy><code>mkdir -p ~/Library/Logs/com.example.myline
+plutil -lint ~/Library/LaunchAgents/com.example.myline.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.myline.plist   # start now, and at every login
 launchctl print gui/$(id -u)/com.example.myline | grep -E 'state|pid'             # running or not
-tail -f ~/ivr/logs/myline.out.log ~/ivr/logs/myline.err.log                       # its output
-launchctl kickstart -k gui/$(id -u)/com.example.myline                            # restart: drops live calls
+tail -f ~/Library/Logs/com.example.myline/out.log ~/Library/Logs/com.example.myline/err.log   # its output
+launchctl kickstart -k gui/$(id -u)/com.example.myline                            # restart: live calls get DRAIN_MS to finish
 launchctl bootout gui/$(id -u)/com.example.myline                                 # stop, and keep it stopped</code></pre>
         <p>
           An agent runs while you are logged in: turn on automatic login, or run it at boot as a daemon (copy the file to
@@ -780,9 +770,54 @@ launchctl bootout gui/$(id -u)/com.example.myline                               
           and use <code>sudo launchctl bootstrap system ...</code> and <code>system/com.example.myline</code>). With
           <code>KeepAlive</code> on, killing the process only restarts it: <code>bootout</code> stops it.
         </p>
+
+        <h3>Linux: a systemd user unit</h3>
+<pre data-copy><code>cd ~/dialogwright
+pnpm service systemd --app myline --env-file ~/ivr/myline.env --label myline</code></pre>
+        <p>It writes <code>~/.config/systemd/user/myline.service</code> from this template:</p>
+        <figure>
+          <figcaption><code>packages/dialogwright/templates/service/systemd.service</code></figcaption>
+<pre data-from="packages/dialogwright/templates/service/systemd.service"><code># Written by pnpm service: the DialogWright app {{app}}, run from the repository with its settings file.
+[Unit]
+Description=DialogWright: {{app}}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory={{root}}
+# The server reads the settings file itself (ENV_FILE), as pnpm start and pnpm diagnose do.
+Environment="ENV_FILE={{envFile}}"
+Environment="PATH={{path}}"
+Environment="COREPACK_ENABLE_DOWNLOAD_PROMPT=0"
+ExecStart={{pnpm}} --filter {{app}} serve
+Restart=always
+RestartSec=10
+# On stop: SIGTERM to pnpm, which passes it to the server and waits while it drains; the rest of
+# the service gets SIGKILL only if it is still there after TimeoutStopSec (DRAIN_MS and 10 more).
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec={{stopSeconds}}
+
+[Install]
+WantedBy=default.target</code></pre>
+        </figure>
+        <p>and prints:</p>
+<pre data-copy><code>systemctl --user daemon-reload
+systemctl --user enable --now myline   # start now, and at every login
+loginctl enable-linger "$USER"         # and at boot, before anyone logs in
+systemctl --user status myline         # running or not
+journalctl --user -u myline -f         # its output
+systemctl --user restart myline        # restart: live calls get DRAIN_MS to finish
+systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
+        <p>
+          A system unit works the same way: copy the file to <code>/etc/systemd/system/</code>, add <code>User=alex</code> under
+          <code>[Service]</code>, make it <code>WantedBy=multi-user.target</code>, and use <code>sudo systemctl</code> without
+          <code>--user</code> (and without the linger).
+        </p>
         <p>
           On either system, a wrong setting shows as a restart every ten seconds, with the variable named in the output
-          (<code>missing required environment variable TELNYX_PUBLIC_KEY (VOICE_PROVIDERS includes telnyx)</code>).
+          (<code>missing required environment variable TELNYX_PUBLIC_KEY (VOICE_PROVIDERS includes telnyx)</code>):
+          run <code>pnpm diagnose --env-file ~/ivr/myline.env</code> first.
         </p>
       </section>
 
@@ -791,8 +826,9 @@ launchctl bootout gui/$(id -u)/com.example.myline                               
         <h3>Updating</h3>
         <p>
           DialogWright is pre-release and its APIs change, so update on purpose, and note the commit you last ran well
-          (<code>git rev-parse --short HEAD</code>) so you can go back. An update restarts the server, which drops live calls:
-          check <code>/health</code> says <code>"sessions":0</code> first.
+          (<code>git rev-parse --short HEAD</code>) so you can go back. An update restarts the server: it stops taking new calls
+          and gives live ones <code>DRAIN_MS</code> to finish, but a call still going after that is dropped (the server does not
+          keep its calls across a restart yet), so check <code>/health</code> says <code>"sessions":0</code> first.
         </p>
 <pre data-copy><code>cd ~/dialogwright
 git pull
@@ -801,7 +837,7 @@ pnpm check
 pnpm --filter @dialogwright/example-myline test
 pnpm --filter @dialogwright/widget build     # if you serve the widget
 curl -s http://localhost:3000/health
-sudo systemctl restart myline                # or: launchctl kickstart -k gui/$(id -u)/com.example.myline</code></pre>
+systemctl --user restart myline              # or: launchctl kickstart -k gui/$(id -u)/com.example.myline</code></pre>
         <p>Update the operating system, Node and <code>cloudflared</code> on the same quiet occasions.</p>
 
         <h3>Backing up</h3>
