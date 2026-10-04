@@ -75,6 +75,22 @@ The app's one list of confirmed fields (every `confirmed` rule names it, in this
 |---|---|
 | `<intent>` | "<line>" |
 
+## Knowledge
+
+Delete this section when no caller asks a general question that a document answers. A knowledge base says what people approved, word for word; an assistant drafts at most, and only a person approves.
+
+| The question callers ask | Topic id | The document and section that answers it | Same answer for every caller? (else the fact it depends on, and the system it is read from) | A line from the caller's own data after it (tool, fields) | Who approves (a person, and their team) |
+|---|---|---|---|---|---|
+| "<what are your hours>" | `<opening_hours>` | `<patron-guide>`, section `<1.1>` | <yes, or: depends on `<card>`, read by `<tool>`> | <none, or `<getFees>`: `<balance>`> | <name, team> |
+
+| Document | Where it is (a folder, a file, an address the paragraph names) | Ingested as (`kb/sources/<doc>.yaml`) |
+|---|---|---|
+| <Patron guide> | `<docs/patron-guide.pdf>` | `<patron-guide>` |
+
+Drafts awaiting approval, and who has been asked (the commands are `pnpm kb:review apps/<name>` and `pnpm kb:approve <id...> --by "<their name>"`):
+
+- <draft id: awaiting <person>>
+
 ## What goes to a person
 
 | When | Reason | Line |
@@ -113,9 +129,10 @@ Every hand edit to `fixtures/expected/*.json` after the first `regress --update`
 - [ ] `identity.yaml` matches the paragraph: who must verify, with what, the code only where a level 2 action needs it, the tries.
 - [ ] The policy read back (`policy.matrix`, the policy card `POLICY.md` and the app map `APP-MAP.md`) matches "Who may do what" above, cell by cell, and the card matches the paragraph line by line; each is tested (`expectPolicyMatrix`, `expectPolicyCard`, `expectAppMap`).
 - [ ] Every tool lists its `params`, every param has a row under "What is recorded", and the card's "What is recorded" table says what the row does; nothing a person said in their own words is kept without a reason written there.
-- [ ] No tool decides who may do what; every line a caller hears is in `prompts.yaml`.
+- [ ] No tool decides who may do what; every line a caller hears is in `prompts.yaml`, or is a passage a person approved.
+- [ ] If there is a knowledge base: every knowledge row has a topic with keywords and example questions, a source section and a passage; each passage was approved by a person (you approved none, and wrote no `approval`, hash or approvals line) or is listed above as awaiting one; paraphrases (eight or more a topic) and the recall test are written; no model key is in any file.
 - [ ] Nothing private or real: invented names and streets, 555 numbers, `example.com` addresses.
-- [ ] `pnpm check` ok; `pnpm verify` green; every app's regression (this one's, the clinic's and every other under apps/) and the testkit's say `no changes`.
+- [ ] `pnpm check` ok (with a knowledge base awaiting approval, its approval findings are the only ones left, and the worksheet says so); `pnpm verify` green; every app's regression (this one's, the clinic's and every other under apps/) and the testkit's say `no changes`.
 - [ ] The baseline was made once with `regress --update`, read entry by entry, and every later edit is under "Baseline edits".
 - [ ] `.github/workflows/ci.yml` runs this app's regression; `pnpm-lock.yaml` is committed.
 - [ ] `README.md` says what the app does and how it is built, and keeps the scaffold's recording steps; `CLAUDE.md` still matches the folder.

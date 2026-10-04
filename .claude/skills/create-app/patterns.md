@@ -404,6 +404,73 @@ and the line in `prompts.yaml`. After it the caller hears `ask_intent`, so a scr
 
 A key on the keypad menu may name it: the key plays the line, then offers the menu again. A key for a control intent other than `agent` does nothing, so `pnpm check` refuses one. When the menu listens is under "Keypad entry".
 
+## A knowledge form
+
+A general question a document answers ("what is the late fee?"), said from a passage a person approved, word for word. The whole feature is section 12 of the [authoring guide](../../../docs/authoring-an-app.md#12-the-knowledge-base); this is the wiring, as built in a running app (the engine's library fixture), and the traps.
+
+```yaml
+# slots.yaml
+subject:
+  type: topic
+```
+
+```yaml
+# forms.yaml, under forms:
+forms:
+  ask_library:
+    slots: [subject]
+    summaryPromptId: null
+    answers: { slot: subject }
+    calls: [findPassage, getFees]
+```
+
+```yaml
+# intents.yaml, under intents:
+intents:
+  ask_library:
+    criteria: Asks a question about the library, its cards or its fees
+    label: answer a question
+    kind: form
+```
+
+```yaml
+# policy.yaml
+actions:
+  findPassage:
+    level: 0
+    rules: [identity]
+  getFees:
+    level: 0
+    rules: [identity]
+audit:
+  topic: keep
+```
+
+```ts
+// src/app.ts, in code.tools
+findPassage: kbAnswerTool({
+  facts: (_params, sys) => {
+    const kind = (sys as Systems).cardKind; // the caller's card, read from the library's records
+    return kind === null ? null : { card: kind };
+  },
+}),
+getFees: {
+  params: ['topic'],
+  fields: ['balance'], // the variables the topic's account line may use
+  run: (_call, sys) => ({ value: { balance: (sys as Systems).balance }, summary: 'fees read' }),
+},
+```
+
+- **The folder.** `kb/kb.yaml` (`action: findPassage`, `applies: { card: [adult, junior] }`), `kb/topics.yaml` (a topic's `accountLine: { text: "Your card has {balance} in late fees right now.", from: getFees }`), `kb/sources/` and `kb/passages/`. The guide's section 12.1 shows each file.
+- **The lines.** `ask_subject`, `ask_subject_retry` and `disambiguate_subject` (with `{a}` and `{b}`) for the slot; `kb_answer` with the text `'{answer}'` and `interruptible: false`; `kb_unavailable` with no variable. All in every locale, and `answer` among `app.yaml`'s `prompts.dataVars` (`prompts: { dataVars: [answer] }`). `pnpm check` names each one that is missing.
+- **No `complete` hook.** A form with `answers:` completes in the engine; give `hooks` none. `calls` lists the resolving action and each account line's tool, or `pnpm check` says one is missing; like every `calls`, it is declared on every form of the app or on none.
+- **The facts are read by code.** `facts` returns the caller's value for each fact `applies` names, from the system of record, never from what the caller said; null when there is no record (the answer is then unavailable). An answer that is the same for everyone needs no `applies` and no `facts`.
+- **The policy.** The resolving action is an ordinary action: its `level` and `rules` decide who may hear the answer (a general answer at level 0 with `identity`, or `scope` where the answer is a subject's), and `topic` is declared under `audit` like any param that is not a slot. An account line's tool is a read with its own action and `fields`, so a delegate or an anonymous caller may be refused the line and still hear the answer.
+- **An answer that is one line for everyone and needs no question** is an informational intent with `passage: <id>` in place of `promptId`, with no form and no slot; no passage of its topic may apply to some callers only.
+- **The corpus.** The topic question for a slot `x` is `xTopic`, asked only when the app's retriever nominates topics for the line, and its labels are the nominated topics' ids ([corpus.md](corpus.md#labels-by-slot-type)). The stub regression runs the real retriever, so keywords and example questions in `topics.yaml` decide what a line nominates. A corpus line about a topic is written after a person approves its passage: until then the call hears the unavailable line.
+- **Paraphrases and a recall test.** `fixtures/kb/paraphrases.yaml` (each topic id with eight or more things callers say in other words, and `none:`), and a test that holds the retriever's recall to it ([12.11](../../../docs/authoring-an-app.md#1211-testing)). Choose retrieval's `floor` and `cap` with `pnpm kb:bakeoff --sweep`, never by recording.
+- **Never.** Never write an `approval` or a hash by hand, never run `pnpm kb:approve`, never put a `{variable}` or a brace in an answer, never use a model key. See step 6b.
+
 ## Keypad entry
 
 - A `digits`, `date`, `birthdate` or `choice` slot takes `keypad: true` and then needs `ask_<slot>_dtmf` (the line that asks for the keys). The keypad is offered after spoken answers miss, and keys are taken whenever the slot was the last thing asked.
