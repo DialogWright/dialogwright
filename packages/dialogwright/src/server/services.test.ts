@@ -19,6 +19,14 @@ describe('downstream services from the app', () => {
     expect((await resolveService(hooked, { kind: 'service', service: 'scout', params: {} }, undefined)).result).toEqual({ url: null, seen: [] });
   });
 
+  it("hands the agent the request's idempotency key when there is one, and none when there is not", async () => {
+    const seen: unknown[] = [];
+    const keyed: App = { ...testkitApp, id: 'agents-keyed', services: { scout: { ...scout, resolve: async (_p, opts) => (seen.push(opts), serviceResultEvent('scout', null)) } } };
+    await resolveService(keyed, { kind: 'service', service: 'scout', params: {} }, undefined, undefined, 'k'.repeat(32));
+    await resolveService(keyed, { kind: 'service', service: 'scout', params: {} }, undefined);
+    expect(seen).toEqual([{ url: null, idempotencyKey: 'k'.repeat(32) }, { url: null }]);
+  });
+
   it('an agent the app does not declare answers at once with no result', async () => {
     expect(await resolveService(bare, { kind: 'service', service: 'depot', params: { a: '1' } }, { depot: 'http://x' })).toEqual(serviceResultEvent('depot', null));
   });

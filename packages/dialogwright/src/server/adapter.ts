@@ -17,12 +17,29 @@ import { redactHandoffData, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
-import { lineLang } from '../prompts/render';
+import { lineLang, promptText } from '../prompts/render';
 import type { HandoffWording, SpokenDigitRule } from '../core/app/types';
 import type { Effect } from '../core/lifecycle';
 import { summarizeHandoff as summarizeHandoffDefault, type SummaryOptions } from '../handoff/summary';
 import type { AuditEntry } from '../audit/types';
-import { carryScrub, type Scrub } from '../core/recording';
+import { carryScrub, registerScrub, scrubberOf, scrubFromParts, scrubParts, type Scrub, type ScrubPart } from '../core/recording';
+import { serviceIdempotencyKey } from '../core/idempotency';
+import type { PendingEffect } from './stores/types';
+
+/**
+ * Said first when a call comes back after its server restarted (SESSION_STORE=file), before the
+ * question the caller was last asked: the engine's line, unless the app's prompts.yaml has one called
+ * `resumed` (said in the call's language where its locale has the line). The engine's line is English: an
+ * app in another language gives its own.
+ */
+export const RESUMED_TEXT = 'Sorry, I lost you for a moment.';
+
+/** The line a call resumed after a restart hears first: the app's `resumed` prompt, or RESUMED_TEXT. */
+export function resumedLine(session: Session): string {
+  const app = appOf(session);
+  // A locale's own line is a translation of prompts.yaml's (check refuses one prompts.yaml lacks).
+  return Object.hasOwn(app.prompts.manifest, 'resumed') ? promptText(app, 'resumed', {}, session.locale) : RESUMED_TEXT;
+}
 
 /** Spoken when a turn throws, so a failure is a retry rather than dead air. */
 export const TURN_ERROR_TEXT = 'Sorry, something went wrong on my end. Please say that again.';
@@ -374,14 +391,20 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
  * so a call is never left ignoring its caller. The log lines' keys are `serviceAfterEnd` (replay
  * does not act on it) and `serviceWaitAbandoned` (replay clears the wait there, as here).
  */
-function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect): void {
+function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect, pending: PendingEffect): void {
+  // Recorded with its key before it is sent: the turn that left it saved it with the call (turn, below;
+  // SESSION_STORE=file), so a server that loads the call after a restart sends it again with the same
+  // key (and its scrub). Sent after that save, since the request waits for the turn to finish.
+  entry.pending = pending;
   void enqueueUnsettled(deps, entry.callSid, async (e) => {
-    const answer = await resolveService(appOf(e.session), effect, deps.serviceUrls, deps.serviceTimeoutMs);
+    const answer = await resolveService(appOf(e.session), effect, deps.serviceUrls, deps.serviceTimeoutMs, pending.idempotencyKey);
     // The caller hung up while the service was thinking: there is no one to tell.
     if (e.ended) {
       e.frames.write('log', { serviceAfterEnd: true });
       return;
     }
+    // Answered: the turn that runs it saves the call without it.
+    if (e.pending === pending) e.pending = null;
     // Logged as the frame replay reads back (frameToEvent gives this event again).
     e.frames.write('in', serviceResultFrame(answer.service, answer.result, answer.note));
     if (await turn(deps, e, answer)) return;
@@ -394,7 +417,27 @@ function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect): void
     }
     e.session = { ...e.session, pendingService: null };
     e.frames.write('log', { serviceWaitAbandoned: true });
+    await deps.store.persist(e.callSid);
   });
+}
+
+/** The request a turn leaves for a service, with its key and its scrub as data: what is saved with the call. */
+function pendingOf(entry: CallEntry, effect: Effect): PendingEffect {
+  return { effect, idempotencyKey: serviceIdempotencyKey(entry.session, effect), ...(scrubPartsOf(effect) ?? {}) };
+}
+
+/** An effect's scrub as data, for a pending request saved with the call; null when it has none it can write down. */
+function scrubPartsOf(effect: Effect): { scrub: ScrubPart[] } | null {
+  const parts = scrubParts(scrubberOf(effect));
+  return parts === null ? null : { scrub: parts };
+}
+
+/** A request saved with the call, as the effect a server sends again after a restart: its scrub made again from data. */
+function revived(pending: PendingEffect): Effect {
+  const effect: Effect = { ...pending.effect, params: { ...pending.effect.params } };
+  const scrub = pending.scrub ? scrubFromParts(pending.scrub) : null;
+  if (scrub !== null) registerScrub(effect, scrub);
+  return effect;
 }
 
 /** Words in a handoff summary, for the audit draft; a null summary has none. */
@@ -436,6 +479,13 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     entry.auditEntries.push(...run.audit);
     const kind = run.result.decision.kind;
     ending = kind === 'complete' || kind === 'handoff';
+    // Work handed to a downstream service: recorded with its key now, so the save below holds it.
+    const service = ending ? undefined : run.result.effects.find((e) => e.kind === 'service');
+    const pending = service ? pendingOf(entry, service) : undefined;
+    if (pending) entry.pending = pending;
+    // Saved before what the turn says goes out (SESSION_STORE=file; nothing with the memory store), so a
+    // restart after the caller heard a question resumes at that question.
+    await deps.store.persist(entry.callSid);
     if (run.result.decision.kind === 'handoff') {
       publish(deps, { type: 'handoff', callSid: entry.callSid, at: Date.now(), reason: run.result.decision.reason, number: maskNumber(deps.handoffNumber) });
       fireHandoffSummary(deps, entry);
@@ -445,9 +495,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // timer on its way in. Kept so a future path that arms and then ends cannot strand a timer.
     if (ending) clearNoInput(entry.callSid);
     const sent = await sendFrames(deps, entry, actionsToFrames(run.result.actions), run.result.decision);
-    const service = run.result.effects.find((e) => e.kind === 'service');
     // Work handed to a downstream service: its answer is the next turn, and it arms the wait itself.
-    if (service && !ending) queueService(deps, entry, service);
+    if (service && pending) queueService(deps, entry, service, pending);
     // A prompt restarts the wait - including the silence turn's own re-ask, which is how the
     // ladder walks itself. So does anything that left the caller still owing an answer: an
     // ignored digit mid-slot, a barge-in, a relay error frame. Those produce no frames of their
@@ -524,6 +573,19 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       return;
     }
     ctx.callSid = parsed.callSid;
+    // A call this server does not hold may have been saved by the one before it (SESSION_STORE=file): a
+    // planned restart's handover answered its carrier's callback there, so its socket comes here with no
+    // callback first. Loaded, it resumes; one saved in a shape this server cannot read is ended toward a
+    // person (the carrier's callback with that handoff dials HANDOFF_NUMBER), never begun again as a new
+    // call. With the memory store there is never one to load.
+    if (deps.store.get(parsed.callSid) === undefined && deps.store.durable) {
+      const loaded = await deps.store.restore(parsed.callSid, ctx.provider);
+      if (loaded === 'unreadable') {
+        await sendOne(socket, endFrame('unreadable'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
+        deps.tokens.revoke(parsed.callSid);
+        return;
+      }
+    }
     const existing = deps.store.get(parsed.callSid);
     if (existing) {
       // Masked at write time, not only when the dashboard reads it back: the setup frame carries
@@ -546,19 +608,33 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
         previous.close(1000, 'replaced by reconnect');
       }
       const entry = deps.store.attach(parsed.callSid, socket) ?? existing;
-      entry.frames.write('log', { resumed: true, sessionId: parsed.sessionId });
+      // A call loaded from the session store after a restart (SESSION_STORE=file): its caller heard
+      // nothing for a moment, and is told so before the question is asked again.
+      const restarted = deps.store.takeRestored(parsed.callSid);
+      entry.frames.write('log', { resumed: true, sessionId: parsed.sessionId, ...(restarted ? { afterRestart: true } : {}) });
+      if (restarted) deps.log(`${parsed.callSid}: resumed after a restart`);
       publish(deps, { type: 'reconnect', callSid: parsed.callSid, at: Date.now(), attempt: entry.reconnects });
       await deps.store.enqueue(parsed.callSid, async (e) => {
-        if (!e.session.lastPromptText) return;
+        const again = restarted ? [resumedLine(e.session), e.session.lastPromptText].filter(Boolean).join(' ') : e.session.lastPromptText;
+        if (!again) return;
         // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
-        const sent = await sendFrames(deps, e, [textFrame(e.session.lastPromptText, true, lineLang(appOf(e.session), e.session.locale))]);
+        const sent = await sendFrames(deps, e, [textFrame(again, true, lineLang(appOf(e.session), e.session.locale))]);
+        // A request the call was waiting on when its server went away: sent again, with the same key, and its
+        // answer is the next turn, which arms the wait itself.
+        const pending = restarted ? e.pending : null;
+        if (pending && e.session.pendingService === pending.effect.service) {
+          deps.log(`${e.callSid}: sending the ${pending.effect.service} request again, with the same key`);
+          e.frames.write('log', { serviceResent: pending.effect.service });
+          queueService(deps, e, revived(pending), pending);
+          return;
+        }
         // The replay is a question the caller has to answer, so it starts a wait of its own; the
         // reconnect is not a turn, so nothing else would.
         armNoInput(deps, e, sent);
       });
       return;
     }
-    const entry = deps.store.create(parsed.callSid, socket);
+    const entry = deps.store.create(parsed.callSid, socket, ctx.provider);
     entry.frames.write('in', redactDeep(parsed));
     // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
     publish(deps, {

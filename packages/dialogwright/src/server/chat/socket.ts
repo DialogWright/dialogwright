@@ -9,7 +9,8 @@ import { appOf } from '../../core/app/registry';
 import { codeLengthOf } from '../../core/app/lookup';
 import { defaultLocaleOf, localeOf } from '../../core/locale';
 import type { Scrub } from '../../core/recording';
-import { newSession } from '../../core/session';
+import { newSession, SESSION_SCHEMA } from '../../core/session';
+import { tokenHash, type ChatStateStore, type StoredChat } from '../stores/types';
 import { maskSpokenCode, spokenCodeMinDigits } from '../../core/spokenCode';
 import { isAnonymous, type Party } from '../../gate/types';
 import type { RunOptions, TurnRun } from '../../run/turn';
@@ -67,6 +68,11 @@ export interface ChatDeps extends ChatTurnDeps {
   startTimeoutMs?: number;
   /** How the identity provider's published keys are fetched (CHAT_SIGNIN=jwt); tests serve their own. */
   fetch?: typeof fetch;
+  /**
+   * Where each chat is saved after every turn, and found by its resume token after a restart
+   * (SESSION_STORE=file, server/stores/file.ts). Absent or null (memory, the default), nowhere.
+   */
+  state?: ChatStateStore | null;
 }
 
 /** One chat session, whichever socket it is on now. */
@@ -80,6 +86,8 @@ interface ChatEntry extends ChatTurnEntry {
   inFlight: number;
   /** Work queued for the session and not yet done (CHAT_MAX_WAITING). */
   waiting: number;
+  /** When the session started, as saved (StoredChat.createdAtMs). */
+  readonly createdAtMs: number;
 }
 
 /** One WebSocket connection, before and after it has a session. */
@@ -88,6 +96,8 @@ interface ChatConnection {
   id: string | null;
   malformed: number;
   startTimer: ReturnType<typeof setTimeout> | null;
+  /** A resume is being looked up in the session store: a second start waits for no one. */
+  starting?: boolean;
 }
 
 export interface ChatEndpoint {
@@ -108,6 +118,8 @@ export interface ChatEndpoint {
   activeCount(): number;
   /** The server is stopping: a new chat is refused `busy` from now on, and a resume is still taken. */
   drain(): void;
+  /** Every save and removal queued for the session store so far, done (nothing to wait for without one). */
+  settled?(): Promise<void>;
 }
 
 const fresh = (): string => randomBytes(16).toString('hex');
@@ -219,10 +231,34 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     return run;
   };
 
+  const state = deps.state ?? null;
+  /** Each chat's saves and removals, in order, so a slow store never writes an older save over a newer one. */
+  const writes = new Map<string, Promise<void>>();
+  const queueWrite = (id: string, what: string, write: (st: ChatStateStore) => unknown): void => {
+    if (state === null) return;
+    const run = (writes.get(id) ?? Promise.resolve())
+      .then(() => write(state))
+      .then(() => undefined, (err: unknown) => log(`chat ${id}: could not ${what}: ${describeError(err)}`));
+    writes.set(id, run);
+    void run.then(() => {
+      if (writes.get(id) === run) writes.delete(id);
+    });
+  };
+  /** Save the chat as it is now (after a turn, a resume); nothing without a session store. */
+  const save = (e: ChatEntry): void => {
+    if (state === null || e.ended) return;
+    const chat: StoredChat = {
+      id: e.id, schema: SESSION_SCHEMA, session: e.session, resumeHash: tokenHash(e.resume),
+      createdAtMs: e.createdAtMs, lastActivityMs: e.lastActivityMs, auditTail: [...e.auditEntries],
+    };
+    queueWrite(e.id, 'save the session', (st) => st.save(chat));
+  };
+
   /** The session is over: forget it, and close its socket once what was sent has gone. */
   const finish = (e: ChatEntry, reason: string): void => {
     e.ended = true;
     sessions.delete(e.id);
+    queueWrite(e.id, 'remove the saved session', (st) => st.remove(e.id));
     fullLogged = false;
     resumeIds.delete(e.resume);
     record(e.frames, 'log', { ended: reason });
@@ -261,7 +297,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       // A transfer ends the session too: the client is told it is over either way.
       if (last !== 'end') sendTo(e, { type: 'end' });
       finish(e, runs.at(-1)?.result.decision.kind ?? 'ended');
-    }
+    } else save(e);
   };
 
   /** A token checked against the deployment's method and the app's rule; a refusal logged by its reason, never the token. */
@@ -331,7 +367,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     const { opts, frames } = deps.resources(id, { get: (sid) => sessions.get(sid) });
     const e: ChatEntry = {
       id, session: newSession(id, now(), WEB_CHAT), auditEntries: [], opts, lastActivityMs: now(),
-      resume: fresh(), socket: conn.ws, frames, ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0,
+      resume: fresh(), socket: conn.ws, frames, ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, createdAtMs: now(),
     };
     sessions.set(id, e);
     resumeIds.set(e.resume, id);
@@ -367,33 +403,101 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
 
   const ready = (e: ChatEntry): ServerMessage[] => [{ type: 'ready', session: e.id, resume: e.resume, locale: localeOf(e.session) }];
 
+  /** Reopen a live session on this connection: a fresh resume token, the old socket closed, ready sent. */
+  const resumeOn = (conn: ChatConnection, e: ChatEntry, m: Extract<ClientMessage, { type: 'start' }>): void => {
+    // A fresh token each time one is used: a token seen once (a log, a shoulder) opens nothing later.
+    resumeIds.delete(e.resume);
+    e.resume = fresh();
+    resumeIds.set(e.resume, e.id);
+    const previous = e.socket;
+    if (previous !== null && previous !== conn.ws) previous.close(1000, 'resumed elsewhere');
+    e.socket = conn.ws;
+    e.lastActivityMs = now();
+    conn.id = e.id;
+    record(e.frames, 'in', loggedIn(m));
+    // Saved with its new token, so the one just used opens nothing after a restart either.
+    save(e);
+    // At once, ahead of a reply still in flight (which goes to this socket when it is done), so the
+    // client has its session and new resume token before any line; nothing is resent.
+    for (const r of ready(e)) sendTo(e, r);
+    // A resume keeps the sign-in the chat had. A token beside it is there for the new chat that
+    // starts if this one has ended (below), so a client can ask for both without knowing which it
+    // gets: it signs in a chat still anonymous, and is not used (nor refused) on one signed in.
+    const token = m.token;
+    if (token !== undefined) {
+      void enqueue(e, async (s) => {
+        if (isAnonymous(s.session.principal)) await laterSignIn(s, token);
+      });
+    }
+  };
+
+  /**
+   * A chat this server does not hold, saved by the one before it (SESSION_STORE=file), found by the
+   * hash of its resume token: a live session again, or null when there is none to resume (never saved,
+   * idle past CHAT_IDLE_MS, or saved under another SESSION_SCHEMA or for an app this server does not
+   * run, which is then forgotten).
+   */
+  const restore = async (resume: string): Promise<ChatEntry | null> => {
+    if (state === null) return null;
+    let c: StoredChat | null;
+    try {
+      c = await state.findByResume(tokenHash(resume));
+    } catch (err) {
+      log(`chat: could not look up a resume in the session store: ${describeError(err)}`);
+      return null;
+    }
+    if (c === null) return null;
+    const held = sessions.get(c.id);
+    if (held !== undefined) return held.ended ? null : held;
+    let readable = c.schema === SESSION_SCHEMA;
+    if (readable) {
+      try {
+        appOf(c.session);
+      } catch {
+        readable = false;
+      }
+    }
+    if (!readable || c.session.ended || now() - c.lastActivityMs >= deps.settings.idleMs) {
+      if (!readable) log(`chat ${c.id}: not resumed: saved under session schema ${c.schema} or for an app this server does not run`);
+      queueWrite(c.id, 'remove the saved session', (st) => st.remove(c.id));
+      return null;
+    }
+    const { opts, frames } = deps.resources(c.id, { get: (sid) => sessions.get(sid) });
+    const e: ChatEntry = {
+      id: c.id, session: c.session, auditEntries: [...c.auditTail], opts, lastActivityMs: now(), resume: resume, socket: null, frames,
+      ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, createdAtMs: c.createdAtMs,
+    };
+    sessions.set(e.id, e);
+    resumeIds.set(e.resume, e.id);
+    log(`chat ${e.id}: restored from the session store`);
+    record(e.frames, 'log', { restored: true });
+    return e;
+  };
+
   const start = (conn: ChatConnection, m: Extract<ClientMessage, { type: 'start' }>): void => {
     if (m.resume !== undefined) {
-      const id = resumeIds.get(m.resume);
+      const resume = m.resume;
+      const id = resumeIds.get(resume);
       const e = id === undefined ? undefined : sessions.get(id);
       if (e !== undefined && !e.ended) {
-        // A fresh token each time one is used: a token seen once (a log, a shoulder) opens nothing later.
-        resumeIds.delete(e.resume);
-        e.resume = fresh();
-        resumeIds.set(e.resume, e.id);
-        const previous = e.socket;
-        if (previous !== null && previous !== conn.ws) previous.close(1000, 'resumed elsewhere');
-        e.socket = conn.ws;
-        e.lastActivityMs = now();
-        conn.id = e.id;
-        record(e.frames, 'in', loggedIn(m));
-        // At once, ahead of a reply still in flight (which goes to this socket when it is done), so the
-        // client has its session and new resume token before any line; nothing is resent.
-        for (const r of ready(e)) sendTo(e, r);
-        // A resume keeps the sign-in the chat had. A token beside it is there for the new chat that
-        // starts if this one has ended (below), so a client can ask for both without knowing which it
-        // gets: it signs in a chat still anonymous, and is not used (nor refused) on one signed in.
-        const token = m.token;
-        if (token !== undefined) {
-          void enqueue(e, async (s) => {
-            if (isAnonymous(s.session.principal)) await laterSignIn(s, token);
+        resumeOn(conn, e, m);
+        return;
+      }
+      if (state !== null) {
+        // Saved by the server before this one, perhaps: looked up before the chat is said to have ended.
+        conn.starting = true;
+        void restore(resume)
+          .catch(() => null)
+          .then((found) => {
+            conn.starting = false;
+            if (conn.ws.readyState !== WebSocket.OPEN) return;
+            if (found !== null && !found.ended) {
+              resumeOn(conn, found, m);
+              return;
+            }
+            send(conn.ws, null, { type: 'error', code: 'session_unknown', message: 'that chat has ended; a new one starts' });
+            open(conn, m);
           });
-        }
         return;
       }
       send(conn.ws, null, { type: 'error', code: 'session_unknown', message: 'that chat has ended; a new one starts' });
@@ -421,7 +525,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       return;
     }
     if (m.type === 'start') {
-      if (conn.id !== null) {
+      if (conn.id !== null || conn.starting === true) {
         send(conn.ws, entry?.frames ?? null, { type: 'error', code: 'not_allowed', message: 'this chat has started' });
         return;
       }
@@ -498,6 +602,22 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     ws.on('error', (err) => log(`chat ${conn.id ?? 'unstarted'}: socket error ${err.message}`));
   };
 
+  const sweepSaved = async (cutoff: number): Promise<void> => {
+    if (state === null) return;
+    try {
+      for (const id of await state.list()) {
+        if (sessions.has(id)) continue;
+        const c = await state.load(id);
+        if (c === null || sessions.has(id) || c.lastActivityMs > cutoff) continue;
+        queueWrite(id, 'remove the saved session', (st) => st.remove(id));
+        log(`chat ${id}: saved before a restart and never resumed; ended after ${deps.settings.idleMs} ms idle`);
+        deps.audit.append(id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } });
+      }
+    } catch (err) {
+      log(`chat: could not sweep the session store: ${describeError(err)}`);
+    }
+  };
+
   return {
     handleUpgrade(req, socket, head) {
       const origin = req.headers.origin;
@@ -525,6 +645,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         // Forgotten whatever failed above: an idle session is never kept for want of a log line.
         finish(e, 'idle');
       }
+      // The chats saved before a restart that no one resumed, once idle as long: forgotten, and their end recorded.
+      if (state !== null) void sweepSaved(cutoff);
     },
     tails() {
       return [...sessions.values()].map((e) => e.tail);
@@ -543,6 +665,9 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     },
     drain() {
       draining = true;
+    },
+    async settled() {
+      await Promise.all([...writes.values()]);
     },
   };
 }

@@ -1,5 +1,5 @@
 import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
-import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, relayElement, xmlResponse } from './xml';
+import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, pauseVerb, relayElement, xmlResponse } from './xml';
 import { verifyTelnyxSignature } from './telnyxSignature';
 
 /**
@@ -116,7 +116,7 @@ function startDocument(o: StartDocumentOptions): string {
     if (placed.voice.voice !== undefined) attrs.push(attr('voice', placed.voice.voice));
   } else if (o.voice) attrs.push(`voice="${escapeXml(o.voice)}"`);
   const relay = relayElement(attrs, placed.children);
-  return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx">${relay}</Connect>`);
+  return xmlResponse(`${pauseVerb(o.pauseS)}<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx">${relay}</Connect>`);
 }
 
 export const telnyxProvider: VoiceProvider = {

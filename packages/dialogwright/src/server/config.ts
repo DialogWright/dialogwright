@@ -164,7 +164,39 @@ export interface ServerConfig {
    * files more than this many days old are deleted, never today's. Absent when unset.
    */
   auditRetentionDays?: number;
+  /**
+   * SESSION_STORE, default memory (absent here, as before it existed): where calls, chats and relay
+   * tokens are kept between turns (server/stores). `file:<dir>` keeps them in a folder on this machine
+   * (server/stores/file.ts), so a restart resumes a call whose carrier calls back after it; a relative
+   * folder is from where the server runs, as TRACE_DIR is.
+   */
+  sessionStore?: SessionStoreSetting;
 }
+
+/** Where sessions are kept when it is not the process's memory. */
+export interface SessionStoreSetting {
+  kind: 'file';
+  dir: string;
+  /**
+   * SESSION_FSYNC=on|off, default off: whether each save is flushed to the disk before it is renamed
+   * into place (stores/file.ts writeAtomic). Off, a process that stops or crashes loses nothing, and a
+   * power cut may lose the last few seconds of saves; on, it loses none, at the disk's latency on
+   * every turn.
+   */
+  fsync: boolean;
+  /**
+   * RESTART_PAUSE_S, default 5 (DEFAULT_RESTART_PAUSE_S), 0 to 60: at the end of a planned restart's
+   * drain, the seconds each live call's carrier is told to wait before it connects again, so its socket
+   * reaches the restarted server (index.ts drain). 0: the stopping server stops listening first, and a
+   * callback that finds no server goes to the carrier's fallback document.
+   */
+  restartPauseS: number;
+}
+
+/** The pause a planned restart's handover asks of each carrier, unless RESTART_PAUSE_S says otherwise. */
+export const DEFAULT_RESTART_PAUSE_S = 5;
+/** The longest RESTART_PAUSE_S: a caller in silence longer than this has hung up. */
+const MAX_RESTART_PAUSE_S = 60;
 
 /** How long a stopping server waits for live calls and chats, unless DRAIN_MS says otherwise. */
 export const DEFAULT_DRAIN_MS = 30_000;
@@ -314,10 +346,33 @@ export function loadConfig(env: Env): ServerConfig {
     drainMs: integer(env, 'DRAIN_MS', DEFAULT_DRAIN_MS),
     ...retentionOf(env, 'TRACE_RETENTION_DAYS', 'traceRetentionDays'),
     ...retentionOf(env, 'AUDIT_RETENTION_DAYS', 'auditRetentionDays'),
+    ...sessionStoreOf(env),
     ...(chat ? { chat } : {}),
     ...(widget ? { widget } : {}),
     ...(consoleAuth ? { consoleAuth } : {}),
   };
+}
+
+/** SESSION_STORE as `{ sessionStore }`, or nothing for memory (unset, or `memory`). */
+function sessionStoreOf(env: Env): { sessionStore?: SessionStoreSetting } {
+  // Checked whatever the store, so a typo is found before the file store is switched on.
+  const fsync = (env.SESSION_FSYNC?.trim() || 'off').toLowerCase();
+  if (fsync !== 'on' && fsync !== 'off') throw new Error(`SESSION_FSYNC must be on or off, got "${env.SESSION_FSYNC}"`);
+  const restartPauseS = integer(env, 'RESTART_PAUSE_S', DEFAULT_RESTART_PAUSE_S);
+  if (restartPauseS > MAX_RESTART_PAUSE_S) {
+    throw new Error(`RESTART_PAUSE_S must be a whole number of seconds from 0 to ${MAX_RESTART_PAUSE_S}, got "${env.RESTART_PAUSE_S}"`);
+  }
+  const raw = env.SESSION_STORE?.trim() ?? '';
+  if (raw === '' || raw.toLowerCase() === 'memory') return {};
+  const dir = raw.startsWith('file:') ? raw.slice('file:'.length).trim() : '';
+  if (dir === '') throw new Error(`SESSION_STORE must be memory or file:<dir>, got "${env.SESSION_STORE}"`);
+  return { sessionStore: { kind: 'file', dir, fsync: fsync === 'on', restartPauseS } };
+}
+
+/** The file store's two settings, as the startup line says them. */
+function describeSessionStore(s: SessionStoreSetting): string {
+  const pause = s.restartPauseS > 0 ? `restart pause ${s.restartPauseS} s` : 'restart pause off';
+  return s.fsync ? `${pause}, fsync on` : pause;
 }
 
 /** A retention in days, as `{ [key]: days }`, or nothing when the variable is unset. */
@@ -485,6 +540,7 @@ export function describeConfig(c: ServerConfig): string {
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,
     `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}`,
     `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,
+    ...(c.sessionStore ? [`sessions file:${c.sessionStore.dir} (${describeSessionStore(c.sessionStore)})`] : []),
     `clips ${c.clips ? 'on' : 'OFF (all TTS)'}`,
     `anthropic key ${mask(c.anthropicApiKey)}`,
     c.handoffSummary ? `handoff note on${c.anthropicApiKey ? '' : ' (no key: none generated)'}` : 'handoff note OFF',

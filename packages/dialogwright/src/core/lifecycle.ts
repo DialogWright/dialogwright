@@ -9,6 +9,7 @@ import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
+import { idempotencyKey } from './idempotency';
 import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
 
 export { redactCall };
@@ -129,7 +130,9 @@ function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
  * define never gets here (the gate's unlisted line blocks it), so one that does is a bug and throws.
  */
 function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code: string | undefined): { value: unknown; summary: string; ref?: string } {
-  return toolOf(appOf(s), call.tool).run(call, tc.tools.sys, { s, tc, out, code });
+  const def = toolOf(appOf(s), call.tool);
+  // A tool that writes is given its write's key (core/idempotency.ts); any other is called as it always was.
+  return def.run(call, tc.tools.sys, def.idempotent === true ? { s, tc, out, code, idempotencyKey: idempotencyKey(s, call) } : { s, tc, out, code });
 }
 
 /**

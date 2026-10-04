@@ -36,6 +36,9 @@ export interface ChatUpgrades {
 /**
  * Accept relay upgrades on `/conversation/<id>` for each enabled voice provider (`voiceProviders`,
  * default Twilio alone) and on the legacy `/conversation` (Twilio's); the token from the query is checked at setup.
+ * While `restarting` says so (the server is closing with its sessions saved: a planned restart's
+ * handover, index.ts drain, or a close), every upgrade, a call's and a chat's, is turned away with 503,
+ * so the carrier's socket and the chat's resume reach the restarted server rather than this one.
  */
 export function attachWebSocketServer(
   server: Server,
@@ -43,6 +46,7 @@ export function attachWebSocketServer(
   setupTimeoutMs: number = SETUP_TIMEOUT_MS,
   voiceProviders: readonly string[] = [LEGACY_PROVIDER],
   chat: ChatUpgrades | null = null,
+  restarting: () => boolean = () => false,
 ): WebSocketServer {
   // 64 KiB is far above any ConversationRelay message; larger payloads are closed with 1009 by ws.
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
@@ -76,6 +80,12 @@ export function attachWebSocketServer(
   };
 
   server.on('upgrade', (req, socket, head) => {
+    if (restarting()) {
+      deps.log('upgrade refused: the server is restarting');
+      socket.write('HTTP/1.1 503 Service Unavailable\r\nRetry-After: 1\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
     const url = new URL(req.url ?? '/', 'http://localhost');
     // The web chat, when it is on: checked for its origin there, and never for a call token.
     if (chat !== null && url.pathname === chat.path) {

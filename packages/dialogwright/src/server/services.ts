@@ -24,16 +24,17 @@ const CEILING_GRACE_MS = 250;
  * against a ceiling (`timeoutMs` plus a grace when given, else SERVICE_CEILING_MS), and a rejection, a
  * timeout, or an answer for some other service all become a no-answer for this one (reason
  * 'service-error' or 'timeout'), so the turn that follows clears the call's wait and its queue never
- * blocks. `timeoutMs` shortens the service's own budget (tests).
+ * blocks. `timeoutMs` shortens the service's own budget (tests). `idempotencyKey` is the request's
+ * key (core/idempotency.ts serviceIdempotencyKey), handed to the service (ServiceResolveOptions).
  */
-export async function resolveService(app: App, effect: Effect, urls: ServiceUrls | undefined, timeoutMs?: number): Promise<ServiceResult> {
-  const answer = await askService(app, effect, urls, timeoutMs);
+export async function resolveService(app: App, effect: Effect, urls: ServiceUrls | undefined, timeoutMs?: number, idempotencyKey?: string): Promise<ServiceResult> {
+  const answer = await askService(app, effect, urls, timeoutMs, idempotencyKey);
   // The answer's audit row (ServiceDef.audit) is masked as the effect's params were recorded.
   carryScrub(effect, answer);
   return answer;
 }
 
-async function askService(app: App, effect: Effect, urls: ServiceUrls | undefined, timeoutMs?: number): Promise<ServiceResult> {
+async function askService(app: App, effect: Effect, urls: ServiceUrls | undefined, timeoutMs?: number, idempotencyKey?: string): Promise<ServiceResult> {
   const service = app.services?.[effect.service];
   if (!service) return serviceResultEvent(effect.service, null);
   const noAnswer = (reason: 'service-error' | 'timeout'): ServiceResult => serviceResultEvent(effect.service, null, { outcome: 'no-answer', reason });
@@ -41,7 +42,8 @@ async function askService(app: App, effect: Effect, urls: ServiceUrls | undefine
   let timer: ReturnType<typeof setTimeout> | undefined;
   const ceiling = new Promise<ServiceResult>((resolve) => { timer = setTimeout(() => resolve(noAnswer('timeout')), ceilingMs); });
   try {
-    const asked = Promise.resolve().then(() => service.resolve(effect.params, { url: urls?.[effect.service] ?? null, ...(timeoutMs !== undefined ? { timeoutMs } : {}) }));
+    const opts = { url: urls?.[effect.service] ?? null, ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(idempotencyKey !== undefined ? { idempotencyKey } : {}) };
+    const asked = Promise.resolve().then(() => service.resolve(effect.params, opts));
     // A rejection that comes after the ceiling has won is handled here, not left unhandled.
     asked.catch(() => undefined);
     const answer = await Promise.race([asked, ceiling]);

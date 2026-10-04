@@ -68,10 +68,11 @@ export const TESTKIT_TOOLS: { readonly [T in TestkitTool]: ToolDef } = {
     const open = sys.windowOpen(p.deliveryDay ?? '', p.deliveryPart ?? '');
     return { value: { open }, summary: open ? 'window open' : 'window full' };
   }),
-  createReport: tool<'createReport'>(['accountId', 'missingNote', 'expectedDate'], (p, sys) => {
-    const r = sys.createReport({ owner: p.accountId ?? '', missingNote: p.missingNote ?? '', expectedDate: p.expectedDate ?? '' });
+  // A write: idempotent, so the systems file one report for the same confirmed write however often it runs.
+  createReport: { ...tool<'createReport'>(['accountId', 'missingNote', 'expectedDate'], (p, sys, { idempotencyKey }) => {
+    const r = sys.createReport({ owner: p.accountId ?? '', missingNote: p.missingNote ?? '', expectedDate: p.expectedDate ?? '' }, idempotencyKey);
     return { value: { number: r.number }, summary: `report ${r.number}`, ref: r.number };
-  }, ({ call, ref }) => [{ type: 'report_created', detail: { report: ref ?? null, customer: call.params.accountId ?? null } }]),
+  }, ({ call, ref }) => [{ type: 'report_created', detail: { report: ref ?? null, customer: call.params.accountId ?? null } }]), idempotent: true },
   notifyDepot: tool<'notifyDepot'>(['report', 'missingNote', 'expectedDate'], (p, _sys, { out }) => {
     // The one hop to another agent: queued as an effect, made after the turn.
     out.effects.push({ kind: 'service', service: 'depot', params: { ...p } });

@@ -71,6 +71,13 @@ export interface StartDocumentOptions {
   readonly languages?: readonly RelayLanguage[];
   /** Custom parameters the relay hands back on its setup frame; `locale` is the one the engine reads (SessionStart.locale). */
   readonly parameters?: Readonly<Record<string, string>>;
+  /**
+   * Seconds of silence before the document connects (a `<Pause>` ahead of `<Connect>`): a planned
+   * restart's handover (RESTART_PAUSE_S, server/index.ts drain), so the carrier's socket reaches the
+   * restarted server rather than the one about to stop. Absent or 0, none, as before. A provider
+   * that cannot pause leaves it out, and the document connects at once.
+   */
+  readonly pauseS?: number;
 }
 
 /** One language as a start document names it: what the voice speaks, what is heard, and the voice. */

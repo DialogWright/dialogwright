@@ -133,4 +133,10 @@ describe('the Telnyx voice provider', () => {
     expect(telnyxProvider.dialDocument('+15555550199')).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Dial>+15555550199</Dial></Response>');
     expect(telnyxProvider.apologizeAndDialDocument('+15555550199')).toContain('<Say>Sorry, we lost the connection.');
   });
+
+  it('pauses before it connects when asked (a planned restart: the restarted server takes the socket), and not otherwise', () => {
+    const doc = telnyxProvider.startDocument({ ...START, pauseS: 5 });
+    expect(doc).toBe(telnyxProvider.startDocument(START).replace('<Response><Connect', '<Response><Pause length="5"/><Connect'));
+    expect(telnyxProvider.startDocument({ ...START, pauseS: 0 })).toBe(telnyxProvider.startDocument(START));
+  });
 });

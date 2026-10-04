@@ -277,6 +277,65 @@ describe('pnpm diagnose', () => {
     });
   });
 
+  describe('10. the session store', () => {
+    it('is not checked with the memory store (the default): a deployment that sets nothing sees what it saw', async () => {
+      const dir = tempDir();
+      const results = await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: 'memory' }, cwd: dir }, deps());
+      expect(results.map((r) => r.id)).not.toContain('store');
+    });
+
+    it('passes a folder the server can write that a reboot keeps, read from where the server runs, and names the fallback', async () => {
+      const dir = tempDir();
+      const results = await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: 'file:sessions' }, cwd: dir }, { ...deps(), temporary: () => false });
+      expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'store', 'space', 'clock']);
+      expect(byId(results, 'store')).toEqual({
+        id: 'store', status: 'ok',
+        message: `sessions in ${join(dir, 'sessions')}: a restart resumes the calls under way (a carrier that calls back while no server listens needs its fallback document: pnpm fallback)`,
+      });
+    });
+
+    it('fails a folder the server cannot write', async () => {
+      const dir = tempDir();
+      const locked = join(dir, 'locked');
+      mkdirSync(locked);
+      chmodSync(locked, 0o500);
+      const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: 'file:locked/sessions' }, cwd: dir }, { ...deps(), temporary: () => false }), 'store');
+      if (process.getuid?.() === 0) return; // root writes anywhere
+      expect(r).toEqual({
+        id: 'store', status: 'fail', message: `SESSION_STORE folder ${join(dir, 'locked/sessions')} cannot be written`,
+        fix: 'make it writable by the user the server runs as, or point SESSION_STORE elsewhere',
+      });
+    });
+
+    it('warns about a folder on a temporary filesystem, which a reboot empties', async () => {
+      const dir = tempDir();
+      const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: `file:${join(dir, 'sessions')}` }, cwd: dir }, { ...deps(), temporary: () => true }), 'store');
+      expect(r).toEqual({
+        id: 'store', status: 'warn', message: `SESSION_STORE folder ${join(dir, 'sessions')} is on a temporary filesystem: a reboot empties it, and the calls in it with it`,
+        fix: 'point SESSION_STORE at a folder that outlives a reboot, beside the app (file:sessions)',
+      });
+    });
+
+    it('warns when others than its owner can read the folder, which holds what callers said', async () => {
+      const dir = tempDir();
+      const open = join(dir, 'sessions');
+      mkdirSync(open);
+      chmodSync(open, 0o755);
+      const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: 'file:sessions' }, cwd: dir }, { ...deps(), temporary: () => false }), 'store');
+      expect(r).toEqual({
+        id: 'store', status: 'warn', message: `SESSION_STORE folder ${open} can be read by others than its owner (mode 755)`,
+        fix: `chmod 700 ${open}`,
+      });
+    });
+
+    it('takes the temporary folders this machine has for temporary', async () => {
+      const { onTemporaryFilesystem } = await import('./doctor');
+      expect(onTemporaryFilesystem(join(tmpdir(), 'x', 'sessions'))).toBe(true);
+      expect(onTemporaryFilesystem('/tmp/sessions')).toBe(true);
+      expect(onTemporaryFilesystem(join(ROOT, 'apps', 'clinic', 'sessions'))).toBe(false);
+    });
+  });
+
   describe('9. the clock', () => {
     it("fails when it is more than a minute from the carrier's clock, read from a HEAD that carries no key", async () => {
       const dir = tempDir();
