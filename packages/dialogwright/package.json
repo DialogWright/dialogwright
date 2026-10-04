@@ -49,7 +49,8 @@
     "kb:bakeoff": "tsx src/define/cli.ts kb:bakeoff",
     "kb:approve": "tsx src/define/cli.ts kb:approve",
     "kb:status": "tsx src/define/cli.ts kb:status",
-    "audit:verify": "tsx src/audit/verifyCli.ts"
+    "audit:verify": "tsx src/audit/verifyCli.ts",
+    "diagnose": "tsx src/server/doctor.ts"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

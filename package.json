@@ -25,6 +25,7 @@
     "kb:review": "pnpm --filter @dialogwright/kb-author kb:review",
     "kb:refresh": "pnpm --filter @dialogwright/kb-author kb:refresh",
     "kb:gaps": "pnpm --filter @dialogwright/kb-author kb:gaps",
-    "audit:verify": "pnpm --filter dialogwright audit:verify"
+    "audit:verify": "pnpm --filter dialogwright audit:verify",
+    "diagnose": "pnpm --filter dialogwright diagnose"
   }
 }
