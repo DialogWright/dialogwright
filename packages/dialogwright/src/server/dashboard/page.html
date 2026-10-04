@@ -679,7 +679,9 @@
     return `<div class="card-head"><span class="card-title">Knowledge source</span>${badge}</div>`
       + `<div class="doc">${esc(s.document)}</div>`
       + `<div class="meta">§ ${esc(s.section)} · <b>version ${esc(s.version)}</b> · <span class="mono" style="color:var(--faint)">${esc(s.passageId)}</span></div>`
-      + `<div class="meta">Effective ${esc(s.effective)} to present · Approved by Compliance Review on ${esc(s.approved)}</div>`;
+      + (s.applies?.length || s.locale ? `<div class="meta">${[...(s.applies ?? []).map((a) => `<b>${esc(a)}</b>`), ...(s.locale ? [`locale ${esc(s.locale)}`] : [])].join(' · ')}</div>` : '')
+      + `<div class="meta">Effective ${esc(s.effective)} to ${s.effectiveTo ? esc(s.effectiveTo) : 'present'} · ${s.approved ? `Approved${s.approvedBy ? ` by ${esc(s.approvedBy)}` : ''} on ${esc(s.approved)}` : 'Not approved'}</div>`
+      + (s.sourceHash || s.approvalHash ? `<div class="meta mono" style="color:var(--faint)">${[...(s.sourceHash ? [`source ${esc(s.sourceHash)}`] : []), ...(s.approvalHash ? [`approval ${esc(s.approvalHash)}`] : [])].join(' · ')}</div>` : '');
   }
 
   function handoffHtml(h) {

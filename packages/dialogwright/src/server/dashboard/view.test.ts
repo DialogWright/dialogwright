@@ -367,13 +367,37 @@ describe('stages, gate, source, audit and handoff', () => {
 
   it("reads the source card from the passage a turn's answer came from, and keeps it on later turns", () => {
     const kb = {
-      passageId: 'terms-2026', topic: 'terms', plan: 'standard', document: 'Delivery Terms', section: '3.2', version: '2026-01',
-      effectiveFrom: '2026-01-01', effectiveTo: null, approvedBy: 'legal', approvedOn: '2025-12-15', fresh: true,
+      passageId: 'terms-2026', topic: 'terms', version: '2026-01', applies: { zone: 'north', tier: 'standard' }, locale: 'en-US',
+      document: 'Delivery Terms', section: '3.2', effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31',
+      approvedBy: 'legal', approvedOn: '2025-12-15', sourceHash: '18345c153386', approvalHash: '7ae3662c7794', fresh: true,
     };
     const v = reduce([started, turnEvent({ kb }), turnEvent({ turnIndex: 3 })]);
-    expect(v.source).toEqual({ passageId: 'terms-2026', document: 'Delivery Terms', section: '3.2', version: '2026-01', effective: '2026-01-01', approved: '2025-12-15', fresh: true });
+    // Whom it answered, one "fact: value" line per fact, sorted; the approval's short digests as they are.
+    expect(v.source).toEqual({
+      passageId: 'terms-2026', document: 'Delivery Terms', section: '3.2', version: '2026-01', effective: '2026-01-01', effectiveTo: '2026-12-31',
+      approved: '2025-12-15', approvedBy: 'legal', fresh: true, applies: ['tier: standard', 'zone: north'], locale: 'en-US',
+      sourceHash: '18345c153386', approvalHash: '7ae3662c7794',
+    });
     expect(reduce([started, turnEvent({ kb: { ...kb, fresh: false } })]).source?.fresh).toBe(false);
     expect(reduce([started, turnEvent({})]).source).toBeNull();
+  });
+
+  it('shows a withheld, unapproved passage with no applies, locale or digests as nulls and an empty list', () => {
+    const kb = { passageId: 'notice', topic: 'notice', version: '1', applies: {}, document: 'Notices', section: '1', effectiveFrom: '2026-01-01', fresh: false };
+    expect(reduce([started, turnEvent({ kb })]).source).toEqual({
+      passageId: 'notice', document: 'Notices', section: '1', version: '1', effective: '2026-01-01', effectiveTo: null,
+      approved: null, approvedBy: null, fresh: false, applies: [], locale: null, sourceHash: null, approvalHash: null,
+    });
+  });
+
+  it("replays a record written before applies: its deprecated plan is not read, and the card shows no one it applied to", () => {
+    const old = {
+      passageId: 'terms-2025', topic: 'terms', plan: 'standard', document: 'Delivery Terms', section: '3.2', version: '2025-01',
+      effectiveFrom: '2025-01-01', effectiveTo: null, approvedBy: 'legal', approvedOn: '2024-12-15', fresh: true,
+    };
+    const source = reduce([started, turnEvent({ kb: old })]).source;
+    expect(source).toMatchObject({ applies: [], effectiveTo: null, approved: '2024-12-15', approvedBy: 'legal', sourceHash: null });
+    expect(source).not.toHaveProperty('plan');
   });
 
   const auditEntry = (seq: number): AuditEntry => ({

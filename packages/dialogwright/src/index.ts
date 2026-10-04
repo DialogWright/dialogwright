@@ -57,6 +57,10 @@ export { resolvePassage } from './kb/resolve';
 export type { ResolveInput } from './kb/resolve';
 export { approvalHashOf, sourceHashOf } from './kb/hash';
 export type { ApprovedContent } from './kb/hash';
+// The knowledge record a turn reports (TurnOut.kb): written to the trace, given to a tool's audit hook, shown on the console.
+export { KB_SHORT_HASH, kbAuditRow, kbSourceOf, shortHash } from './kb/record';
+export type { KbSourceOptions } from './kb/record';
+export type { KbSource } from './core/lifecycle';
 export type * from './kb/types';
 
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
