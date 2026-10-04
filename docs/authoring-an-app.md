@@ -2100,7 +2100,7 @@ Choosing it, by words, by its menu key or on the yes to an unsure reading, sets 
 
 - A call's `hints` are its starting locale's: a mid-call switch keeps them, since the carriers take hints on the relay element only.
 - That a carrier applies a `<Language>` child's voice and recognizer to the call's first language as well as to a switch is read from Twilio's reference ("map a language code to a set of text-to-speech and speech-to-text settings"), and is to be confirmed on a live call, on Twilio and on Telnyx.
-- Telnyx's reading of the `<Language>` and `<Parameter>` children, of a text frame's `lang` and of the `language` frame follows Twilio's documented shape, and is to be confirmed on a live Telnyx call.
+- Telnyx documents the `<Language>` child (`code`, and per language `voice`, `ttsProvider`, `transcriptionProvider` and `speechModel`, so a locale's recognizer model on Telnyx is a documented attribute), the `<Parameter>` child (its pairs come back in the setup frame's `customParameters`, where the engine reads `locale`) and the `language` frame. Still to confirm on a live Telnyx call: whether it reads a text frame's `lang` (its text frame example has `token` and `last` only), and whether a `<Language>` child inherits what it leaves out from the relay element, as Twilio documents.
 - The no-input wait is cancelled at the caller's first syllable by the relay's partial prompts. That a locale moved off Deepgram flux keeps sending them is to be confirmed live.
 
 ### 13.4 Web chat
