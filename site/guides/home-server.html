@@ -433,6 +433,8 @@ AUDIT_DIR=/Users/alex/ivr/data/audit
 # Where live calls and chats are kept between turns, so a restart resumes them.
 # Default memory (a restart ends them).
 SESSION_STORE=file:/Users/alex/ivr/data/sessions
+# On a planned restart, how long each caller waits in silence for the restarted server. Default 5.
+# RESTART_PAUSE_S=5
 # The zone "today" is read in. Default: this machine's zone.
 TIMEZONE=America/Chicago
 
@@ -473,7 +475,13 @@ TIMEZONE=America/Chicago
             tokens, as hashes) in a folder only you can read; when the server restarts, for an update, a reboot or a crash, and
             the carrier calls back for a call, the server loads it and the caller hears "Sorry, I lost you for a moment." and the
             question they were on, with what they had said still there. Unset, the calls are in memory and a restart ends them.
-            Keep it on a disk that outlives a reboot (not <code>/tmp</code>): <code>pnpm diagnose</code> checks.</dd>
+            Keep it on a disk that outlives a reboot (not <code>/tmp</code>): <code>pnpm diagnose</code> checks. Saves are not
+            flushed to the disk, so a power cut may lose the last few seconds; <code>SESSION_FSYNC=on</code> flushes each one, on a
+            machine with no battery or UPS.</dd>
+          <dt><code>RESTART_PAUSE_S</code></dt>
+          <dd>How long a planned restart asks each carrier to wait before it connects to the restarted server (default 5
+            seconds, which the caller hears as silence). Set it a little above how long your server takes to stop and start
+            again; a restart slower than that sends the caller to the <a href="#fallback">fallback</a>.</dd>
           <dt><code>WIDGET_FILE</code></dt>
           <dd>The default is the widget in your app's own <code>node_modules</code>, which a new app does not have (the utility
             does); name the built file instead.</dd>
@@ -717,17 +725,19 @@ cd ~/dialogwright &amp;&amp; pnpm audit:verify ~/ivr/data/audit</code></pre>
           A stop sends SIGTERM to pnpm, which passes it to the server and waits. The server drains: <code>/ready</code> answers
           503, a new call is put through to <code>HANDOFF_NUMBER</code>, a new chat is told it is busy, and live calls go on
           until they end or <code>DRAIN_MS</code> passes (30 seconds by default); a call still going then is put through to
-          <code>HANDOFF_NUMBER</code>, and the server exits. With <code>SESSION_STORE=file:</code> it is not: the server stops
-          listening and leaves the call saved, and the carrier's callback reaches the server the service starts next, which
-          resumes it. The service gives a stop <code>DRAIN_MS</code> and ten seconds more
+          <code>HANDOFF_NUMBER</code>, and the server exits. With <code>SESSION_STORE=file:</code> it is not: the server closes
+          the call's socket, answers the carrier's callback with "wait <code>RESTART_PAUSE_S</code> seconds, then connect
+          again", stops listening, and exits; the service starts the server again, and the carrier's connection, a few seconds
+          later, reaches it, which resumes the call. The caller hears a few seconds of silence, then "Sorry, I lost you for a
+          moment." and the question they were on. The service gives a stop <code>DRAIN_MS</code> and ten seconds more
           before it kills anything. A second signal stops the server at once. A crash is logged with its stack and exits 1
           after a short close, and the service manager starts it again.
         </p>
 
         <h3 id="fallback">When the server is down: the carrier's fallback</h3>
         <p>
-          A carrier calls back the moment a call's socket drops. If no server is listening then (the seconds a restart takes,
-          a reboot, a crash), the callback fails, and the carrier turns to the number's fallback, a document you host somewhere
+          A carrier calls back the moment a call's socket drops. If no server is listening then (a crash, a reboot, a power
+          cut, or a planned restart that took longer than <code>RESTART_PAUSE_S</code>), the callback fails, and the carrier turns to the number's fallback, a document you host somewhere
           other than this machine. <code>pnpm fallback</code> writes one that apologizes and puts the caller through to
           <code>HANDOFF_NUMBER</code>, and says where to paste its URL; host the file anywhere that stays up when your machine
           does not (a static page on GitHub Pages or Cloudflare Pages, object storage). Set it once per number: with it, a
@@ -864,8 +874,8 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
           DialogWright is pre-release and its APIs change, so update on purpose, and note the commit you last ran well
           (<code>git rev-parse --short HEAD</code>) so you can go back. An update restarts the server: it stops taking new calls
           and gives live ones <code>DRAIN_MS</code> to finish. With <code>SESSION_STORE=file:</code> a call still going after that
-          is saved and resumed by the restarted server when its carrier calls back (and put through by the
-          <a href="#fallback">fallback</a> when it calls back before the server is up); with the memory store it is put through
+          is handed over: its carrier is told to wait <code>RESTART_PAUSE_S</code> seconds and connect again, and the restarted
+          server resumes it (the <a href="#fallback">fallback</a> puts the caller through when the restart takes longer); with the memory store it is put through
           to <code>HANDOFF_NUMBER</code>, so check <code>/health</code> says <code>"sessions":0</code> first. A session saved by
           a version whose session shape differs is not resumed: that caller is put through to a person.
         </p>
