@@ -313,6 +313,40 @@ describe('what the reviewer saw is what they approve', () => {
   });
 });
 
+describe('a proposed topic\'s title', () => {
+  it('is reviewed as it is accepted: the page says callers hear it, and the reviewer may rewrite it', async () => {
+    const dir = folder('kb-author-review-topic-title');
+    writeFileSync(join(dir, 'kb', 'pending', 'topics.yaml'), 'sunday_hours:\n  title: sunday hrs\n  keywords: [sunday]\n');
+    const found = findKb(dir, 'app');
+    if (typeof found === 'string') throw new Error(found);
+    const server = await startReviewServer({ place: found, today: () => TODAY });
+    try {
+      const web = browser(server);
+      await web.post('/reviewer', { by: 'Jane Smith', owner: 'Patron Services', back: '/' });
+      const page = (await web.get('/topic/sunday_hours')).body;
+      expect(page).toContain('<label for="topic-title">Its title (callers hear it)</label>');
+      expect(page).toContain('<input id="topic-title" name="title" type="text" value="sunday hrs" required maxlength="80" aria-describedby="topic-title-hint">');
+      expect(page).toContain("A topic's title is spoken to callers: the topic question offers it");
+      const topics = join(dir, 'kb', 'topics.yaml');
+      const before = readFileSync(topics, 'utf8');
+      for (const [title, why] of [
+        ['  ', 'give the topic a title: callers hear it when they are asked which topic they mean'],
+        ['Sunday {hours}', 'the title has a brace: it is said to callers as it is written, with no variables'],
+        ['Sunday '.repeat(12), 'the title is 83 characters, over 80: a topic&#39;s title is a few words, said in a question'],
+      ] as const) {
+        await web.post('/topic/sunday_hours/accept', { as: 'sunday_hours', title, seen: seenIn((await web.get('/topic/sunday_hours')).body, '/topic/sunday_hours/accept') });
+        expect([title, flashIn((await web.get('/')).body)]).toEqual([title, `Not done: ${why.replace('&#39;', "'")}`]);
+        expect(readFileSync(topics, 'utf8')).toBe(before);
+      }
+      await web.post('/topic/sunday_hours/accept', { as: 'sunday_hours', title: ' Sunday  opening hours ', seen: seenIn((await web.get('/topic/sunday_hours')).body, '/topic/sunday_hours/accept') });
+      expect(flashIn((await web.get('/')).body)).toBe('accepted the topic "sunday_hours" ("Sunday opening hours", retitled from "sunday hrs") into kb/topics.yaml');
+      expect(readFileSync(topics, 'utf8')).toContain('sunday_hours:\n  title: Sunday opening hours\n  keywords:\n    - sunday\n');
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 describe('the section as it was approved', () => {
   it('is read from kb/approvals.jsonl only when its text hashes to the approval\'s sourceHash', () => {
     const dir = folder('kb-author-review-approved-text');

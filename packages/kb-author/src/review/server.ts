@@ -246,7 +246,8 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
       if (kind === 'topic') {
         if (action === 'accept') {
           const as = form.get('as');
-          const result = acceptTopic(place, id, reviewer, { ...(as !== null ? { as } : {}), seen });
+          const title = form.get('title');
+          const result = acceptTopic(place, id, reviewer, { ...(as !== null ? { as } : {}), ...(title !== null ? { title } : {}), seen });
           return done(result, result.ok ? '/' : `/topic/${encodeURIComponent(id)}`);
         }
         if (action === 'merge') {

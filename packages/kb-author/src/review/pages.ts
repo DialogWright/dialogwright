@@ -372,12 +372,15 @@ export function topicPage(ctx: PageContext, kb: KnowledgeBase, t: ProposedTopic,
 <section class="card" aria-labelledby="topic-h">
   <h2 id="topic-h">The topic</h2>
   <dl>
-    <dt>Title</dt><dd>${esc(t.title)}</dd>
+    <dt>Title</dt><dd>${esc(t.title)} <span class="muted">(said to callers)</span></dd>
     <dt>Keywords</dt><dd>${t.keywords && t.keywords.length > 0 ? esc(t.keywords.join(', ')) : '<span class="muted">none</span>'}</dd>
     <dt>Callers ask</dt><dd>${t.asks && t.asks.length > 0 ? `<ul class="problems">${t.asks.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '<span class="muted">none</span>'}</dd>
   </dl>
   <form class="action" method="post" action="/topic/${encodeURIComponent(t.id)}/accept">${tokenField(ctx)}
     <h3>Accept it into topics.yaml</h3>
+    <label for="topic-title">Its title (callers hear it)</label>
+    <input id="topic-title" name="title" type="text" value="${esc(t.title)}" required maxlength="80" aria-describedby="topic-title-hint">
+    <p class="hint" id="topic-title-hint">A topic's title is spoken to callers: the topic question offers it ("Is it about Opening hours, or about Late fees?"). Write it as a caller would recognise it, in a few words.</p>
     <label for="topic-as">Its id (rename it here; its drafts follow)</label>
     <input id="topic-as" name="as" type="text" value="${esc(t.id)}" pattern="[A-Za-z][A-Za-z0-9_]*" required aria-describedby="topic-as-hint">
     <p class="hint" id="topic-as-hint">Letters, digits and underscores, starting with a letter.</p>

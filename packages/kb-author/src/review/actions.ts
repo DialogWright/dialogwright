@@ -411,15 +411,33 @@ function settle(place: KbPlace, files: readonly { path: string; before: string |
   return { ok: true, message: embedder !== undefined ? `${done}; the topics changed, so run pnpm kb:index before pnpm check` : done };
 }
 
-/** How a proposed topic is accepted: under another id (`as`), and the hash of what the reviewer opened (`seen`). */
+/** How a proposed topic is accepted: under another id (`as`), with its title as the reviewer wrote it, and the hash of what they opened (`seen`). */
 export interface AcceptOptions {
   as?: string;
+  /** Its title, as the reviewer edited it: callers hear it (the topic question offers it). Default: the proposal's. */
+  title?: string;
   seen?: string;
+}
+
+/** The longest a topic's title may be: a few words, said in a question. */
+export const MAX_TOPIC_TITLE_CHARS = 80;
+
+/** Why `title` cannot be a topic's title (null when it can). */
+export function topicTitleProblem(title: string): string | null {
+  const t = collapseWhitespace(title);
+  if (t === '') return 'give the topic a title: callers hear it when they are asked which topic they mean';
+  if (t.length > MAX_TOPIC_TITLE_CHARS) return `the title is ${t.length} characters, over ${MAX_TOPIC_TITLE_CHARS}: a topic's title is a few words, said in a question`;
+  if (/[{}]/.test(t)) return 'the title has a brace: it is said to callers as it is written, with no variables';
+  return null;
 }
 
 /** Accepts a proposed topic into topics.yaml, under its own id or `as` (the drafts that name it following). */
 export function acceptTopic(place: KbPlace, id: string, reviewer: Reviewer | null, options: AcceptOptions = {}): ActionResult {
   const { as, seen } = options;
+  if (options.title !== undefined) {
+    const problem = topicTitleProblem(options.title);
+    if (problem !== null) return refused(problem);
+  }
   const bad = topicIdProblem(id);
   if (bad !== null) return refused(bad);
   const who = reviewerProblem(reviewer);
@@ -438,7 +456,8 @@ export function acceptTopic(place: KbPlace, id: string, reviewer: Reviewer | nul
   const topicsPath = join(place.kbDir, 'topics.yaml');
   const topicsBefore = readFileSync(topicsPath, 'utf8');
   const doc = readForEdit(topicsPath)!;
-  const yaml = topicYamlOf(proposal);
+  const accepted = options.title !== undefined ? { ...proposal, title: collapseWhitespace(options.title) } : proposal;
+  const yaml = topicYamlOf(accepted);
   if (isMap(doc.contents)) {
     doc.contents.flow = false;
     doc.set(target, doc.createNode(yaml));
@@ -452,7 +471,8 @@ export function acceptTopic(place: KbPlace, id: string, reviewer: Reviewer | nul
   const pendingTopics = join(place.kbDir, 'pending', PENDING_TOPICS_FILE);
   files.push({ path: pendingTopics, before: dropProposal(place, id) });
   if (target !== id) files.push(...repoint(place, id, target));
-  return settle(place, files, `accepted the topic "${target}" ("${proposal.title}") into ${base}/topics.yaml${target !== id ? ` (proposed as "${id}"; its drafts follow)` : ''}`);
+  const retitled = accepted.title !== proposal.title.trim() ? `, retitled from "${proposal.title.trim()}"` : '';
+  return settle(place, files, `accepted the topic "${target}" ("${accepted.title}"${retitled}) into ${base}/topics.yaml${target !== id ? ` (proposed as "${id}"; its drafts follow)` : ''}`);
 }
 
 /** Merges a proposed topic into one topics.yaml has: its drafts re-pointed, the proposal dropped. */
