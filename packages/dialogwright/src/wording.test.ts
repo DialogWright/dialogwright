@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * The repository's vocabulary rule, over what people and assistants read and copy: the example apps,
- * the docs, the scaffold's templates, the authoring package (its code and fixtures), the create-app skill, the CI and the root's own pages. An
+ * the docs, the scaffold's templates, the authoring package (its code and fixtures), the create-app skill, the CI, the landing page (site/) and the root's own pages. An
  * example app keeps to neutral words and invented names, as the engine does, so the banned words of
  * one industry and the one name this repository never carries are refused everywhere here, with a short allow-list for
  * the places a word is that app's own. The words are written in pieces so that this file keeps to the
@@ -22,7 +22,7 @@ const WORDS = [
 const BANNED = new RegExp(`\\b(${WORDS.join('|')})\\b`, 'gi');
 
 /** The folders scanned (every file under them), and the root's own pages. */
-const FOLDERS = ['apps', 'docs', 'packages/dialogwright/templates', 'packages/kb-author', '.claude', '.github'];
+const FOLDERS = ['apps', 'docs', 'packages/dialogwright/templates', 'packages/kb-author', '.claude', '.github', 'site'];
 const ROOT_FILES = ['README.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'SECURITY.md', 'llms.txt', 'NOTICE'];
 
 /**
@@ -84,10 +84,10 @@ function hits(): { at: string; path: string; word: string; allowed: boolean }[] 
   return out;
 }
 
-describe('the wording of the apps, the docs, the templates and the skill', () => {
+describe('the wording of the apps, the docs, the templates, the skill and the site', () => {
   it('scans the folders it names', () => {
     const paths = files().map(pathOf);
-    for (const expected of ['apps/clinic/intents.yaml', 'apps/utility/policy.yaml', 'docs/design.md', 'packages/dialogwright/templates/app/prompts.yaml', '.claude/skills/create-app/SKILL.md', 'llms.txt']) {
+    for (const expected of ['apps/clinic/intents.yaml', 'apps/utility/policy.yaml', 'docs/design.md', 'packages/dialogwright/templates/app/prompts.yaml', '.claude/skills/create-app/SKILL.md', 'llms.txt', 'site/index.html', '.github/workflows/pages.yml']) {
       expect(paths, expected).toContain(expected);
     }
   });
