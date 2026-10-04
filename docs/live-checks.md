@@ -6,8 +6,8 @@ Each check says what to set, what to do, what to look for, and where to record t
 
 ## Before you start
 
-- **A public address.** The carriers post webhooks to `https://<PUBLIC_HOST>`. On a laptop, run a tunnel (ngrok, say) to the server's port and set `PUBLIC_HOST` to the tunnel's host name (no scheme, no path).
-- **An app to run.** The checks use the utility example (`apps/utility`), whose launcher is `pnpm --filter @dialogwright/example-utility serve`, unless a check says otherwise. Copy `apps/utility/.env.example` to `apps/utility/.env`, fill it in, and load it into the shell (`set -a && source apps/utility/.env && set +a`); the launcher does not read the file itself.
+- **An app and its settings.** The checks use the utility example (`apps/utility`) unless a check says otherwise. `pnpm configure --app utility --force` writes `apps/utility/.env` with the carrier, the model and the handoff number (a key read with the echo off, never a flag), and `pnpm start --app utility` runs the server with it (`pnpm --filter @dialogwright/example-utility serve` with `ENV_FILE=apps/utility/.env` is the same server without the tunnel). A check that sets a variable adds it to that file, or puts it in front of the command (a variable in the environment wins over the file).
+- **A public address.** The carriers post webhooks to `https://<PUBLIC_HOST>`. With `PUBLIC_HOST` unset, `pnpm start` opens a Cloudflare quick tunnel and prints the hostname and the webhook URL (check 7 is whether a carrier's call runs through it); with a named tunnel or ngrok, set `PUBLIC_HOST` to its host name (no scheme, no path). Before a call, `PUBLIC_HOST=<host> pnpm diagnose --app utility` (the line `pnpm start` prints) says what is misconfigured.
 - **Where to look.** The server's console prints one line per webhook (`/voice/telnyx <call id> from ...0110`, `/cr-action/telnyx <call id> <status> -> <decision>`), and the startup line says what is in force (carriers, voices, recognizers, chat, sign-in). Each call writes two files under `TRACE_DIR` (default `traces/`): `<call>.jsonl`, the turns, and `<call>.frames.jsonl`, the wire: every frame in and out (`"dir": "in"` and `"out"`), the action callback's fields (`"dir": "http"`) and the server's notes (`"dir": "log"`). The operator console is at `http://localhost:<PORT>/dashboard` on the same machine.
 - **Fakes stay off.** Keep `SIGNATURE_CHECK=on` (the default) for every carrier check: a signature that fails is one of the things to find.
 
@@ -52,8 +52,8 @@ Each check says what to set, what to do, what to look for, and where to record t
 
 **Set.** As in check 2 (and once with check 1's settings for Twilio, as a baseline). For runs b, c and d also `SESSION_STORE=file:sessions`, and the carrier's fallback set to a document from `pnpm fallback --provider <carrier> --number <HANDOFF_NUMBER> --out fallback.xml`, hosted somewhere other than this machine (Twilio: the number's "Primary handler fails" URL; Telnyx: the TeXML application's fallback URL).
 
-**Do.** Three runs, each a call that gets past the greeting and into a form (an answer or two given):
-- a. With the memory store (`SESSION_STORE` unset): stop the server (Ctrl-C) and start it again at once. The session was in the stopped server's memory, so the engine hangs up rather than resumes; what this run is after is whether the callback arrives.
+**Do.** Four runs, each a call that gets past the greeting and into a form (an answer or two given):
+- a. With the memory store (`SESSION_STORE` unset): `kill -9` the server's process and start it again at once. The session was in the killed server's memory, so the engine hangs up rather than resumes; what this run is after is whether the callback arrives. (A Ctrl-C would drain first, and after `DRAIN_MS` the stopping server would answer the callback itself by putting the caller through to `HANDOFF_NUMBER`: also worth seeing once, as `-> dial:closing`.)
 - b. With the file store, a crash: `kill -9` the server's process and start it again at once.
 - c. With the file store: stop the server and wait 30 seconds before starting it again.
 - d. With the file store, a planned restart: `DRAIN_MS=0` and the default `RESTART_PAUSE_S=5`, the server run by its service (`pnpm service`), restarted with `systemctl --user restart` or `launchctl kickstart -k`, so it stops and starts as an update would.
@@ -83,7 +83,7 @@ voice:
         twilio: { provider: Deepgram, model: nova-3-general }
 ```
 
-Run it with the carrier's settings from check 1 or 2 (`pnpm --filter @dialogwright/example-lang-check serve`). Two numbers: one listed under `voice.numbers` for `es`, one not. Delete `apps/lang-check` when the check is done.
+Run it with the carrier's settings from check 1 or 2 (`pnpm configure --app lang-check`, then `pnpm start --app lang-check`). Two numbers: one listed under `voice.numbers` for `es`, one not. Delete `apps/lang-check` when the check is done.
 
 **Do, on Twilio and then on Telnyx:**
 1. Call the Spanish number. Listen to the greeting.
@@ -130,6 +130,39 @@ Say `I need to move my appointment to next week`, then quit.
 **Look for.** The panel says you are signed in; the console shows the signed-in identity line for the session (the subject the token named, at the sign-in level); the balance is answered without the account number and date of birth being asked. The startup line shows `chat sign-in jwt (<issuer>)`. Then sign in with a token for the wrong audience (another application of the tenant) and see `sign_in_failed` in the panel. No token appears in the console or in any file under `TRACE_DIR`.
 
 **Record.** Pass or fail, the provider's kind (not the tenant's name), and anything about its tokens the guide's [13.5](authoring-an-app.md#135-sign-in-on-the-web-chat) should say (a key algorithm it uses that the engine refuses, a namespaced token claim). Put `apps/utility/identity.yaml` back.
+
+## 7. A carrier through a quick tunnel
+
+**Why.** `pnpm start` opens Cloudflare's quick tunnel so the first hour needs no account. Cloudflare's quick tunnel page does not mention WebSockets, which the call's relay runs on (named tunnels document them), and a quick tunnel has no uptime guarantee and a limit on requests in flight. The tests only read `cloudflared`'s output from samples written in its log format; no test has run it.
+
+**Set.** `cloudflared` installed, `PUBLIC_HOST` unset in `apps/utility/.env` (as `pnpm configure` leaves it), the carrier's settings from check 1 or 2.
+
+**Do.**
+1. `pnpm start --app utility --tunnel quick`. Note how long it takes to print the `*.trycloudflare.com` hostname and the webhook URL.
+2. In another terminal, run the `pnpm diagnose` line it printed.
+3. Paste the webhook into the number (the steps it printed) and call. Run a call through a form to its end, with a pause of a minute or more somewhere in it.
+4. Ctrl-C `pnpm start` during a second call, and watch the order the server and `cloudflared` stop in.
+
+**Look for.** Step 1: the hostname within the 30 seconds `pnpm start` waits, and no `[cloudflared] ... ERR` lines. Step 2: `reach` and `console` `ok` (the console a 404 through the tunnel). Step 3: the call greets, runs on the relay's WebSocket (the frame log has `setup` and `prompt` frames), and ends with `/cr-action/<carrier> ... -> completed`; no `reconnect` in the console during the pause (an idle socket closed by the tunnel would show one). Step 4: the server drains (`draining`), the call goes on until it ends or `DRAIN_MS` passes, and only then does `cloudflared` stop.
+
+**Record.** On each carrier: whether the WebSocket ran through the quick tunnel, the time to the hostname, and any reconnect during the pause. If the socket never opens, say so in section 14.3 of the guide and on the home-server guide (the first hour then needs a named tunnel or ngrok), and in `server/start.ts`'s notes.
+
+## 8. Console sign-in from a phone, through the tunnel
+
+**Why.** `CONSOLE_AUTH=token` is tested against the server on one machine, and the console's narrow layout was looked at in a desktop browser at a phone's width. A real phone on a mobile network, through the tunnel, is what an owner will use: the cookie's `Secure` and `SameSite=Strict` over the tunnel's https, a messaging app's link preview, the client address the tunnel reports, and the page on a small screen.
+
+**Set.** As in check 7 (a quick tunnel) or with a named tunnel, plus `CONSOLE_AUTH=token` and `CONSOLE_CLIENT_ADDRESS=cf-connecting-ip`. Once with `CONSOLE_SESSION_KEY` set (`openssl rand -hex 32`) and once without.
+
+**Do.**
+1. Start the server and run `pnpm console:link --app utility` on the machine. Send the link to the phone through a messaging app that shows link previews, and wait for the preview to appear.
+2. Turn the phone's Wi-Fi off (mobile data only), open the link, and press Sign in. Make a call to the number and watch it in the console.
+3. Replay the call from the console. Then Sign out.
+4. Open the same link again and press Sign in. Then try a made-up code five times (`/dashboard/login?code=` with 64 hex digits of your own).
+5. Restart the server (once with the session key set, once without) and reload the console on the phone, signed in and signed out.
+
+**Look for.** Step 1: the preview does not use the code up (the sign-in still works in step 2). Step 2: the console opens with no sideways scroll, Sign out on screen, and the live call appears. The `console_access` entries in the day's audit file (`sign_in`, `live`, then `replay`) carry the phone's address on the mobile network, not the tunnel's, with `via: tunnel`. Step 3: after Sign out, a reload goes to the sign-in page. Step 4: a used code is refused, and the made-up codes are refused (`sign_in_refused` with `used`, then `unknown`). Step 5: with the key, a signed-in phone stays signed in and a signed-out one stays out; without it, both are signed out. `pnpm audit:verify` passes on the audit folder.
+
+**Record.** The phone's kind and browser (not its owner), whether the preview used the code, the address the access log recorded, and anything the narrow layout got wrong. A preview that uses the code, or an address that is the tunnel's own, is a code change with a test.
 
 ## Results log
 
