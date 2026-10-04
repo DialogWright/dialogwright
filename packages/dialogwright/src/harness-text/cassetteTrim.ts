@@ -1,11 +1,10 @@
 import { parseArgs } from 'node:util';
 import { writeFileSync } from 'node:fs';
 import { loadCorpus } from '../jev/corpus';
-import { CassetteClient, isCassetteMiss, loadCassette, requestKey, trimCassette } from '../jev/cassette';
-import { JEV_MODEL } from '../jev/sdkClient';
+import { isCassetteMiss, loadCassette, requestKey, trimCassette } from '../jev/cassette';
 import type { JevClient } from '../jev/types';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
-import { cassettePath } from '../run/client';
+import { recordedCassette } from '../run/client';
 import { defaultCorpusFile, scenariosDir } from '../run/fixtures';
 import { REGRESS_TODAY } from './baseline';
 import { loadScenarios } from './runner';
@@ -23,9 +22,9 @@ async function run(): Promise<void> {
   // replay must make the same requests, or every turn misses and nothing is written.
   const { values: args } = parseArgs({ options: { screen: { type: 'string' } } });
   const screen = parseScreenMode(args.screen, '--screen');
-  const path = cassettePath();
-  const replay = new CassetteClient({ path, mode: 'replay', expectModel: JEV_MODEL });
-  replay.preload();
+  // The resolved model's cassette (jev/provider.ts), as `--client recorded` replays it.
+  const replay = recordedCassette();
+  const path = replay.path;
   const used = new Set<string>();
   const client: JevClient = {
     ask: (req) => {

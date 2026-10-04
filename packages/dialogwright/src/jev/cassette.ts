@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { TraceRecord } from '../trace/types';
-import { JevClientError, type AnswerMap, type JevClient, type JevRequest, type JevResponse } from './types';
+import { JevClientError, type AnsweredBy, type AnswerMap, type JevClient, type JevRequest, type JevResponse } from './types';
 
 /** JSON with object keys sorted at every level, arrays in order, no whitespace. Object keys whose value is undefined are dropped; any other value JSON.stringify cannot represent becomes null. Input is expected to be a JsonValue; toJSON methods are not honored. */
 export function canonicalJson(value: unknown): string {
@@ -96,6 +96,8 @@ export interface CassetteOptions {
   now?: () => number;
   /** when set, a recorded or replayed line whose model differs fails the run: the file is named for one model */
   expectModel?: string;
+  /** The model the file holds the answers of (JevClient.answeredBy); in record mode, the inner client's when left out. */
+  answeredBy?: AnsweredBy;
 }
 
 function textOf(state: unknown): string {
@@ -113,9 +115,17 @@ function textOf(state: unknown): string {
  */
 export class CassetteClient implements JevClient {
   private lines: Map<string, CassetteLine> | null = null;
+  readonly answeredBy?: AnsweredBy;
 
   constructor(private readonly opts: CassetteOptions) {
     if (opts.mode === 'record' && !opts.inner) throw new Error('CassetteClient: record mode needs an inner client');
+    const answeredBy = opts.answeredBy ?? opts.inner?.answeredBy;
+    if (answeredBy) this.answeredBy = answeredBy;
+  }
+
+  /** The file this cassette reads and, recording, appends to. */
+  get path(): string {
+    return this.opts.path;
   }
 
   private load(): Map<string, CassetteLine> {

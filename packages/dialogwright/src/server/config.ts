@@ -1,4 +1,5 @@
 import { defaultTimeZone, localDateIso } from '../run/clock';
+import { resolveJevProvider, type JevProvider } from '../jev/provider';
 
 export type ClientKind = 'stub' | 'heuristic' | 'jev';
 
@@ -14,7 +15,11 @@ export interface ServerConfig {
   twilioAuthToken: string;
   handoffNumber: string;
   jevClient: ClientKind;
-  typesafeApiKey: string | null;
+  /**
+   * Where the model is, which one, and its key (jev/provider.ts), resolved for JEV_CLIENT=jev
+   * only: JEV_PROVIDER, JEV_BASE_URL, JEV_MODEL and the provider's key variable. Null for a stub.
+   */
+  jevProvider: JevProvider | null;
   todayOverride: string | null;
   traceDir: string;
   /** The hash-chained audit log's directory, one JSONL file per UTC day. */
@@ -101,8 +106,7 @@ export function loadConfig(env: Env): ServerConfig {
   if (jevClientRaw !== 'stub' && jevClientRaw !== 'heuristic' && jevClientRaw !== 'jev') {
     throw new Error(`JEV_CLIENT must be stub, heuristic, or jev, got "${jevClientRaw}"`);
   }
-  const typesafeApiKey = env.TYPESAFE_API_KEY?.trim() || null;
-  if (jevClientRaw === 'jev' && !typesafeApiKey) throw new Error('missing required environment variable TYPESAFE_API_KEY (JEV_CLIENT=jev)');
+  const jevProvider = jevClientRaw === 'jev' ? resolveJevProvider(env) : null;
   const todayOverride = env.TODAY_OVERRIDE?.trim() || null;
   if (todayOverride && !/^\d{4}-\d{2}-\d{2}$/.test(todayOverride)) throw new Error(`TODAY_OVERRIDE must be YYYY-MM-DD, got "${todayOverride}"`);
   const sig = (env.SIGNATURE_CHECK ?? 'on').toLowerCase();
@@ -133,7 +137,7 @@ export function loadConfig(env: Env): ServerConfig {
     twilioAuthToken,
     handoffNumber,
     jevClient: jevClientRaw,
-    typesafeApiKey,
+    jevProvider,
     todayOverride,
     traceDir: env.TRACE_DIR?.trim() || 'traces',
     auditDir: env.AUDIT_DIR?.trim() || 'audit',
@@ -186,7 +190,7 @@ export function describeConfig(c: ServerConfig): string {
     `public host ${c.publicHost}`,
     `handoff ${c.handoffNumber}`,
     `client ${c.jevClient}`,
-    `api key ${mask(c.typesafeApiKey)}`,
+    `api key ${mask(c.jevProvider?.apiKey ?? null)}`,
     `auth token ${mask(c.twilioAuthToken)}`,
     `signature check ${c.signatureCheck ? 'on' : 'OFF'}`,
     `today ${c.todayOverride ?? 'wall clock'}`,

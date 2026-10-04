@@ -11,7 +11,7 @@ import { replayFrameLog } from './replay';
 import { summarize } from './metrics';
 import { formatAnswers, formatDecision, formatGates, formatMetrics, formatSlots } from './print';
 export { buildThresholds, buildClient, defaultCorpusFile } from '../run/client';
-import { buildThresholds, buildClient, defaultCorpusFile } from '../run/client';
+import { buildThresholds, buildClient, defaultCorpusFile, isClientKind, modelHeader, providerFor } from '../run/client';
 import { defaultTimeZone, localDateIso } from '../run/clock';
 import { VOICE_RELAY } from '../channel/caps';
 import { parseScreenMode } from '../core/screen';
@@ -113,7 +113,11 @@ async function run(): Promise<void> {
   const args = parseCliArgs();
   const thresholds = buildThresholds(args.threshold ?? []);
   const todayIso = resolveTodayIso(args.today);
-  const client = buildClient(args.client!, corpusFileOf(args['corpus-file'], args.corpus), thresholds, todayIso);
+  // Resolved once, so the header names the model the client asks; buildClient refuses an unknown kind.
+  const kind = args.client!;
+  const provider = isClientKind(kind) ? providerFor(kind) : null;
+  if (isClientKind(kind)) for (const line of modelHeader(kind, provider)) console.log(line);
+  const client = buildClient(kind, corpusFileOf(args['corpus-file'], args.corpus), thresholds, todayIso, provider ?? undefined);
   const trace = args.trace ? new TraceWriter(args.trace) : null;
   const opts: RunOptions = { client, thresholds, todayIso, trace, screen: parseScreenMode(args.screen, '--screen') };
   const records: TraceRecord[] = [];

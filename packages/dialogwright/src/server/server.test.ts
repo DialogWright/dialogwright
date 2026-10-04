@@ -687,3 +687,30 @@ describe('server end to end', () => {
     expect(running!.store.get(callSid)?.ended).toBe(true);
   });
 });
+
+describe('startup: what answers', () => {
+  async function startupLines(extra: Record<string, string>): Promise<string[]> {
+    const { config } = makeConfig({ CLIPS: 'off', ...extra });
+    const lines: string[] = [];
+    const stub: JevClient = { ask: () => Promise.reject(new Error('not asked')) };
+    running = await startServer(config, { client: stub, log: (l) => lines.push(l) });
+    return lines;
+  }
+
+  it('names the model, and warns once that a compatible model\'s probabilities are not Jev\'s', async () => {
+    const lines = await startupLines({ JEV_CLIENT: 'jev', JEV_PROVIDER: 'custom', JEV_BASE_URL: 'http://127.0.0.1:9', JEV_MODEL: 'open-jev-7b', JEV_API_KEY: 'test-key' });
+    expect(lines).toContain('model open-jev-7b from custom (http://127.0.0.1:9)');
+    expect(lines.filter((l) => /not Jev's/.test(l))).toHaveLength(1);
+    expect(lines.join('\n')).not.toContain('test-key');
+  });
+
+  it('names an official provider\'s model with no warning, and says nothing of a model for a stub', async () => {
+    const official = await startupLines({ JEV_CLIENT: 'jev', JEV_PROVIDER: 'openrouter', OPENROUTER_API_KEY: 'test-key' });
+    expect(official).toContain('model typesafe/jev-1.13 from openrouter (https://openrouter.ai/api)');
+    expect(official.filter((l) => /not Jev's/.test(l))).toHaveLength(0);
+    await running?.close();
+    running = null;
+    const stub = await startupLines({});
+    expect(stub.filter((l) => l.startsWith('model ') || /not Jev's/.test(l))).toHaveLength(0);
+  });
+});

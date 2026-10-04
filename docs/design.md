@@ -59,6 +59,8 @@ Every turn has three steps: perception (what did they mean), the decision (what 
 
 The gate, typed state, the audit log, replay and recorded-model regression stay the same in every mode.
 
+**Where the model is.** The Jev adapter reaches the same API through TypeSafe, OpenRouter, the Vercel AI Gateway, or a compatible endpoint (`JEV_PROVIDER`; one resolver, `src/jev/provider.ts`, for the server, the CLI and the regression run). The first three serve TypeSafe's Jev. A compatible open-weight model answers in the same shape, but its probabilities are not calibrated like Jev's, so the thresholds are measured with its own cassette (each model records its own) rather than carried over; a run on one says so at startup, and the trace names the provider and model that answered.
+
 **Model-agnostic by design.** Decision models are becoming a category, so the framework names the category, not a vendor. Every perceiver adapter passes the same conformance tests and records into the same cassette format, which makes an app's scenario suite a built-in benchmark: run your recorded calls against each provider and compare accuracy, calibration, latency and cost.
 
 ## 3. Shape: packages and the app folder

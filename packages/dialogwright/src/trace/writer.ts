@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import type { RetrievalRecord, TraceRecord, TraceTiming } from './types';
 import { redactRecordSlots } from './redact';
 import type { SessionEvent } from '../channel/events';
-import type { JevResponse, JevUsage, QuestionMap } from '../jev/types';
+import type { AnsweredBy, JevResponse, JevUsage, QuestionMap } from '../jev/types';
 import type { TurnError, TurnResult } from '../core/turn';
 import type { Session } from '../core/session';
 import { appOf } from '../core/app/registry';
@@ -40,6 +40,8 @@ export interface TraceInput {
   timing: TraceTiming;
   /** What the knowledge retriever did before the turn was planned; null or absent when it did not run. */
   retrieval?: RetrievalRecord | null;
+  /** What answers the call (TraceRecord.answeredBy): on the session start's record, from a client that asks a model. */
+  answeredBy?: AnsweredBy | null;
   ts: string;
   pricePerMtok: number;
 }
@@ -81,6 +83,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     ...(result.session.locale !== undefined ? { locale: result.session.locale } : {}),
     // Only an app built from a folder has configuration hashes; every other record is as it was.
     ...configHashOf(result.session),
+    // Only on the session start, from a client that asks a model; every other record is as it was.
+    ...(input.answeredBy ? { answeredBy: { ...input.answeredBy } } : {}),
     screen: result.screen ? { ...result.screen } : null,
     quarantined: result.quarantined,
     // Added for the dashboard's stages, gate and source-of-truth cards: every gate

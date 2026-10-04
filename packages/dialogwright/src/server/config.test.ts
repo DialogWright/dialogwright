@@ -27,6 +27,21 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, JEV_CLIENT: 'other' })).toThrow('JEV_CLIENT');
   });
 
+  it('resolves the model\'s provider for the jev client only, and names the key variable it needs', () => {
+    expect(loadConfig(base).jevProvider).toBeNull();
+    expect(loadConfig({ ...base, JEV_CLIENT: 'jev', TYPESAFE_API_KEY: 'test-key' }).jevProvider).toMatchObject({ provider: 'typesafe', model: 'jev-1.13.0', official: true });
+    expect(() => loadConfig({ ...base, JEV_CLIENT: 'jev', JEV_PROVIDER: 'openrouter', TYPESAFE_API_KEY: 'test-key' })).toThrow('missing required environment variable OPENROUTER_API_KEY (JEV_PROVIDER=openrouter)');
+    expect(() => loadConfig({ ...base, JEV_CLIENT: 'jev', JEV_PROVIDER: 'nope' })).toThrow(/JEV_PROVIDER must be typesafe, openrouter, vercel or custom/);
+    const custom = loadConfig({ ...base, JEV_CLIENT: 'jev', JEV_PROVIDER: 'custom', JEV_BASE_URL: 'http://127.0.0.1:8080', JEV_MODEL: 'open-jev-7b' });
+    expect(custom.jevProvider).toMatchObject({ provider: 'custom', model: 'open-jev-7b', apiKey: null, official: false });
+  });
+
+  it('describes the provider\'s key by its length, never its value (the model is named at startup, server/index.ts)', () => {
+    const text = describeConfig(loadConfig({ ...base, JEV_CLIENT: 'jev', JEV_PROVIDER: 'vercel', AI_GATEWAY_API_KEY: 'test-gateway-key' }));
+    expect(text).toContain('api key set (16 chars)');
+    expect(text).not.toContain('test-gateway-key');
+  });
+
   it('parses numbers and flags', () => {
     const c = loadConfig({ ...base, PORT: '4100', SIGNATURE_CHECK: 'off', RECONNECT_LIMIT: '1', TODAY_OVERRIDE: '2026-09-18' });
     expect(c.port).toBe(4100);

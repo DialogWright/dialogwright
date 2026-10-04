@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 import { existsSync } from 'node:fs';
 import { loadCorpus } from '../jev/corpus';
-import { buildClient, buildThresholds, cassettePath, CLIENT_KINDS, isClientKind } from '../run/client';
+import { buildClient, buildThresholds, cassettePath, CLIENT_KINDS, isClientKind, modelHeader, providerFor } from '../run/client';
 import { defaultCorpusFile, expectedDir, scenariosDir } from '../run/fixtures';
 import { isCassetteMiss } from '../jev/cassette';
 import { diff, gapsNowMatching, knownGapsFor, REAL_MODEL_KINDS } from './regressDiff';
@@ -70,12 +70,15 @@ async function run(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  if (kind === 'record' || kind === 'recorded') {
-    const path = cassettePath();
+  // Resolved once, so the header names the model the client asks (jev/provider.ts).
+  const provider = providerFor(kind);
+  for (const line of modelHeader(kind, provider)) console.log(line);
+  if (provider && (kind === 'record' || kind === 'recorded')) {
+    const path = cassettePath(provider.model);
     console.log(`cassette ${path}${existsSync(path) ? '' : ' (not found; every turn will miss until recorded)'}  screen ${screen}`);
   }
   const opts: RunOptions = {
-    client: buildClient(kind, defaultCorpusFile(), thresholds, REGRESS_TODAY),
+    client: buildClient(kind, defaultCorpusFile(), thresholds, REGRESS_TODAY, provider ?? undefined),
     thresholds,
     todayIso: REGRESS_TODAY,
     now: () => 0,

@@ -293,6 +293,16 @@ describe('reduce, call-level moments', () => {
     expect(v).toEqual(reduce([second]));
   });
 
+  it('names the model that answers the call from the session start, and forgets it when another call begins', () => {
+    const answeredBy = { provider: 'custom', model: 'open-jev-7b', official: false };
+    const v = reduce([started, turnEvent({ turnIndex: 0, event: { type: 'session.start', provider: {} }, answeredBy }), turnEvent({})]);
+    expect(v.answeredBy).toEqual(answeredBy);
+    const second: DashboardEvent = { type: 'call_started', callSid: 'CA2', at: 99_000, from: '…1111', todayIso: TODAY, thresholds: DEFAULT_THRESHOLDS };
+    expect(reduce([started, turnEvent({ answeredBy }), second]).answeredBy).toBeUndefined();
+    // A stub names none.
+    expect(reduce([started, turnEvent({})]).answeredBy).toBeUndefined();
+  });
+
   it('names what the pending confirmation is about', () => {
     const line = (pendingConfirmation: Record<string, unknown>): string | null => reduce([started, turnEvent({ pendingConfirmation })]).pending;
     expect(line({ target: 'form', form: 'report_missing', attempts: 1 })).toBe('confirm · summary (report_missing) · attempt 1');

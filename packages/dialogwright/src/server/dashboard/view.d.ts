@@ -200,6 +200,11 @@ export interface View {
    * latest turn record that names one: only a call of an app built from a folder has one; absent otherwise.
    */
   configHash?: string;
+  /**
+   * What answers the call (TraceRecord.answeredBy): the provider, the model, and whether it is
+   * TypeSafe's Jev. From the session start's record; absent for a stub, which asks no model.
+   */
+  answeredBy?: { provider: string; model: string; official: boolean };
   caller: string | null;
   /** The last turn's `turnState.caller.level`; unset while a non-model turn is in flight, it holds the last one seen. */
   level: 0 | 1 | 2;
