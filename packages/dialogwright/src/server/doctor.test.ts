@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { formatResult, main, runDoctor, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { formatResult, main, runDoctor, settingsFileCheck, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
 
 /**
  * `pnpm diagnose` (doctor.ts): each check's ok and its warn or fail, with fetch, DNS, the clock and the
@@ -54,11 +54,18 @@ function goodEnv(dir: string): Record<string, string> {
 interface Seen {
   fetched: string[];
   looked: string[];
+  /** Each request's method and headers, to show none carries a key. */
+  requests: { url: string; method: string; headers: Record<string, string> }[];
 }
 
-/** Stubs answering as a healthy server behind its tunnel would, each part overridable. */
-function deps(over: Partial<{ health: Response | Error; dashboard: Response | Error; lookup: Error | null; date: number; free: number | null }> = {}): DoctorDeps & { seen: Seen } {
-  const seen: Seen = { fetched: [], looked: [] };
+/**
+ * Stubs answering as a healthy server behind its tunnel would, each part overridable. The server's own
+ * answers carry this machine's time (through a tunnel, it is this machine's clock); `date` is the time
+ * other hosts answer a HEAD with, and `clock` replaces their answer.
+ */
+function deps(over: Partial<{ health: Response | Error; dashboard: Response | Error; clock: Response | Error; lookup: Error | null; date: number; free: number | null }> = {}): DoctorDeps & { seen: Seen } {
+  const seen: Seen = { fetched: [], looked: [], requests: [] };
+  const own = new Date(NOW).toUTCString();
   const date = new Date(over.date ?? NOW).toUTCString();
   return {
     seen,
@@ -67,15 +74,21 @@ function deps(over: Partial<{ health: Response | Error; dashboard: Response | Er
       seen.looked.push(host);
       if (over.lookup) throw over.lookup;
     },
-    fetch: (async (input: string | URL | Request) => {
+    fetch: (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      seen.fetched.push(url);
+      const method = init?.method ?? 'GET';
+      seen.fetched.push(method === 'GET' ? url : `${method} ${url}`);
+      seen.requests.push({ url, method, headers: Object.fromEntries(new Headers(init?.headers).entries()) });
+      if (method === 'HEAD') {
+        if (over.clock instanceof Error) throw over.clock;
+        return over.clock ?? new Response(null, { status: 404, headers: { date } });
+      }
       const which = url.endsWith('/health') ? over.health : over.dashboard;
       if (which instanceof Error) throw which;
       if (which) return which;
       return url.endsWith('/health')
-        ? new Response(JSON.stringify({ ok: true, sessions: 0, retained: 0 }), { status: 200, headers: { date } })
-        : new Response('not found', { status: 404, headers: { date } });
+        ? new Response(JSON.stringify({ ok: true, sessions: 0, retained: 0 }), { status: 200, headers: { date: own } })
+        : new Response('not found', { status: 404, headers: { date: own } });
     }) as typeof fetch,
     freeBytes: () => (over.free === undefined ? 50 * GB : over.free),
   };
@@ -96,7 +109,7 @@ describe('pnpm diagnose', () => {
       'config ok', 'reach ok', 'console ok', 'carrier ok', 'model ok', 'handoff ok', 'folders ok', 'space ok', 'clock ok',
     ]);
     expect(d.seen.looked).toEqual(['ivr.example.com']);
-    expect(d.seen.fetched).toEqual(['https://ivr.example.com/health', 'https://ivr.example.com/dashboard']);
+    expect(d.seen.fetched).toEqual(['https://ivr.example.com/health', 'https://ivr.example.com/dashboard', 'HEAD https://api.telnyx.com/']);
   });
 
   describe('1. the config', () => {
@@ -115,7 +128,8 @@ describe('pnpm diagnose', () => {
       const results = await runDoctor({ env, cwd: dir }, d);
       expect(byId(results, 'config')).toMatchObject({ status: 'warn', message: expect.stringContaining('PUBLIC_HOST is not set: pnpm start --tunnel quick sets it each run') });
       expect(byId(results, 'reach').status).toBe('skip');
-      expect(d.seen.fetched).toEqual([]);
+      // Nothing of the server's is asked; only the carrier's host, for the clock.
+      expect(d.seen.fetched).toEqual(['HEAD https://api.telnyx.com/']);
     });
   });
 
@@ -130,7 +144,7 @@ describe('pnpm diagnose', () => {
       const dir = tempDir();
       const results = await runDoctor({ env: goodEnv(dir), cwd: dir }, deps({ health: new Error('timed out') }));
       expect(byId(results, 'reach')).toMatchObject({ status: 'fail', message: 'https://ivr.example.com/health did not answer (timed out)', fix: 'the carrier cannot reach this server: is the tunnel running?' });
-      expect(byId(results, 'clock').status).toBe('skip');
+      expect(byId(results, 'console').status).toBe('skip');
     });
 
     it('fails when something else answers', async () => {
@@ -146,7 +160,8 @@ describe('pnpm diagnose', () => {
       expect(['reach', 'console', 'clock'].map((id) => byId(offline, id as CheckId).status)).toEqual(['skip', 'skip', 'skip']);
       const laptop = await runDoctor({ env: { ...goodEnv(dir), PUBLIC_HOST: 'localhost' }, cwd: dir }, d);
       expect(byId(laptop, 'reach')).toMatchObject({ status: 'skip', message: expect.stringContaining('localhost') });
-      expect(d.seen.fetched).toEqual([]);
+      // A laptop uses no carrier: the clock is read from the model's host alone.
+      expect(d.seen.fetched).toEqual(['HEAD https://openrouter.ai/']);
     });
   });
 
@@ -219,27 +234,86 @@ describe('pnpm diagnose', () => {
     });
   });
 
-  describe("8. the clock", () => {
-    it("fails when it is more than a minute from the server's Date header", async () => {
+  describe('9. the clock', () => {
+    it("fails when it is more than a minute from the carrier's clock, read from a HEAD that carries no key", async () => {
       const dir = tempDir();
-      const r = byId(await runDoctor({ env: goodEnv(dir), cwd: dir }, deps({ date: NOW - 125_000 })), 'clock');
-      expect(r).toMatchObject({ status: 'fail', message: 'the clock is 125 s ahead of https://ivr.example.com', fix: 'let the clock set itself (Telnyx refuses a webhook whose signature is more than five minutes off)' });
+      const d = deps({ date: NOW - 125_000 });
+      const r = byId(await runDoctor({ env: goodEnv(dir), cwd: dir }, d), 'clock');
+      expect(r).toMatchObject({ status: 'fail', message: 'the clock is 125 s ahead of api.telnyx.com', fix: 'let the clock set itself (Telnyx refuses a webhook whose signature is more than five minutes off)' });
+      const head = d.seen.requests.filter((q) => q.method === 'HEAD');
+      expect(head).toEqual([{ url: 'https://api.telnyx.com/', method: 'HEAD', headers: {} }]);
+    });
+
+    it("never compares with PUBLIC_HOST's Date, which through a tunnel is this machine's own clock", async () => {
+      const dir = tempDir();
+      // The server's own answers carry NOW; the carrier's is two minutes behind: the check must see the gap.
+      const r = byId(await runDoctor({ env: goodEnv(dir), cwd: dir }, deps({ date: NOW - 120_000 })), 'clock');
+      expect(r.status).toBe('fail');
+      expect(r.message).not.toContain('ivr.example.com');
+    });
+
+    it('reads it even when the server cannot be reached', async () => {
+      const dir = tempDir();
+      const r = byId(await runDoctor({ env: goodEnv(dir), cwd: dir }, deps({ lookup: Object.assign(new Error('x'), { code: 'ENOTFOUND' }) })), 'clock');
+      expect(r).toEqual({ id: 'clock', status: 'ok', message: 'the clock is within a minute of api.telnyx.com' });
+    });
+
+    it("falls back to the model provider's host, and never to a model on this machine", async () => {
+      const dir = tempDir();
+      const answered: string[] = [];
+      const d = deps();
+      const inner = d.fetch;
+      d.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        if (init?.method === 'HEAD') answered.push(String(input));
+        if (String(input).startsWith('https://api.telnyx.com')) throw new Error('offline');
+        return inner(input, init);
+      }) as typeof fetch;
+      expect(byId(await runDoctor({ env: goodEnv(dir), cwd: dir }, d), 'clock')).toMatchObject({ status: 'ok', message: 'the clock is within a minute of openrouter.ai' });
+      expect(answered).toEqual(['https://api.telnyx.com/', 'https://openrouter.ai/']);
+
+      const local = { ...goodEnv(dir), JEV_PROVIDER: 'custom', JEV_BASE_URL: 'http://localhost:8000', JEV_MODEL: 'local-model' };
+      const d2 = deps({ clock: new Error('offline') });
+      expect(byId(await runDoctor({ env: local, cwd: dir }, d2), 'clock')).toMatchObject({ status: 'skip', message: 'the clock: no Date from api.telnyx.com' });
+      expect(d2.seen.fetched.filter((u) => u.startsWith('HEAD'))).toEqual(['HEAD https://api.telnyx.com/']);
+    });
+
+    it('is skipped with nothing to compare with, and offline', async () => {
+      const dir = tempDir();
+      const laptop = { ...goodEnv(dir), PUBLIC_HOST: 'localhost', JEV_CLIENT: 'heuristic' };
+      const d = deps();
+      expect(byId(await runDoctor({ env: laptop, cwd: dir }, d), 'clock')).toMatchObject({ status: 'skip', message: expect.stringContaining('no other server this setup uses') });
+      expect(d.seen.fetched).toEqual([]);
+      const off = deps();
+      expect(byId(await runDoctor({ env: goodEnv(dir), cwd: dir, offline: true }, off), 'clock')).toMatchObject({ status: 'skip', message: 'the clock: not asked (--offline)' });
+      expect(off.seen.fetched).toEqual([]);
     });
   });
 
   it('prints one line per check, with the fix, and exits 1 only when one fails', async () => {
     const dir = tempDir();
     const file = join(dir, 'line.env');
-    writeFileSync(file, Object.entries({ ...goodEnv(dir), HANDOFF_NUMBER: '+15555550123' }).map(([k, v]) => `${k}=${v}`).join('\n'));
+    writeFileSync(file, Object.entries({ ...goodEnv(dir), HANDOFF_NUMBER: '+15555550123' }).map(([k, v]) => `${k}=${v}`).join('\n'), { mode: 0o600 });
     const out: string[] = [];
     const code = await main(['--env-file', file], { out: (l) => out.push(l), env: {}, invokedFrom: dir }, deps());
     expect(code).toBe(0);
     expect(out).toContain('warn  HANDOFF_NUMBER +15555550123 is a 555 number: calls handed off will go nowhere  ->  set it to a phone a person answers');
-    expect(out.at(-1)).toBe('9 checks: 8 ok, 1 warn, 0 fail');
+    expect(out).toContain(`ok    ${file} is readable by its owner alone`);
+    expect(out.at(-1)).toBe('10 checks: 9 ok, 1 warn, 0 fail');
     expect(out.join('\n')).not.toContain('test-key-not-real');
     const failing = await main(['--env-file', join(dir, 'missing.env')], { out: (l) => out.push(l), env: {}, invokedFrom: dir }, deps());
     expect(failing).toBe(1);
-    expect(out).toContain(`fail  ENV_FILE does not exist: ${join(dir, 'missing.env')}  ->  run pnpm configure, or name the file with --env-file`);
+    expect(out).toContain(`fail  ENV_FILE does not exist: ${join(dir, 'missing.env')}  ->  run pnpm configure, or name the file: ENV_FILE=<path> pnpm diagnose`);
+  });
+
+  it('warns when the settings file can be read by others, since it holds keys', async () => {
+    const dir = tempDir();
+    const file = join(dir, 'line.env');
+    writeFileSync(file, Object.entries(goodEnv(dir)).map(([k, v]) => `${k}=${v}`).join('\n'));
+    chmodSync(file, 0o644);
+    const out: string[] = [];
+    await main([], { out: (l) => out.push(l), env: { ENV_FILE: file }, invokedFrom: dir }, deps());
+    expect(out).toContain(`warn  ${file} can be read by others (mode 644), and it holds keys  ->  chmod 600 ${file}`);
+    expect(settingsFileCheck(file, 'win32').status).toBe('skip');
   });
 
   it('formats a skipped check plainly', () => {

@@ -1,6 +1,6 @@
 import { accessSync, constants, existsSync, realpathSync, statfsSync, statSync } from 'node:fs';
 import { lookup as dnsLookup } from 'node:dns/promises';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, type Env, type ServerConfig } from './config';
 import { readEnvFile } from './envFile';
@@ -8,10 +8,11 @@ import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } from './workspace';
 
 /**
- * `pnpm diagnose [--app <name>] [--env-file <path>] [--offline]`: what is misconfigured, before a
- * caller finds out. It reads the settings the server would (the app's `.env`, or the file named, with
- * a variable already in the environment winning, as the server takes them) and checks, one line each
- * with `ok`, `warn`, `fail` or `skip` and a fix:
+ * `[ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]`: what is misconfigured, before a caller
+ * finds out. It reads the settings the server would (the app's `.env`, or the file ENV_FILE or
+ * `--env-file <path>` names, with a variable already in the environment winning, as the server takes
+ * them), says whether that file is readable by its owner alone, and checks, one line each with `ok`,
+ * `warn`, `fail` or `skip` and a fix:
  *
  *   1. the config loads, with the server's own messages;
  *   2. PUBLIC_HOST resolves and https://PUBLIC_HOST/health answers within five seconds (through the tunnel);
@@ -20,13 +21,16 @@ import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } 
  *   5. the model: which one and from where, and its key variable set (no request is made); a stub is a warning;
  *   6. HANDOFF_NUMBER is not a 555 number;
  *   7. the trace and audit folders can be written, and 8. there is more than a gigabyte free;
- *   9. this machine's clock is within a minute of the Date the server's address answers with.
+ *   9. this machine's clock is within a minute of another machine's: the Date that the carrier's API host
+ *      (or else the model provider's) answers a HEAD with. Not PUBLIC_HOST's: through a tunnel that is
+ *      this machine's own clock, passed back.
  *
- * It calls no carrier and no model: the only requests are DNS and two GETs to the server's own address,
- * and none with --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
+ * It calls no carrier and no model: the only requests are DNS, two GETs to the server's own address,
+ * and one HEAD with no key and no body to a host the setup already relies on, for its clock; none with
+ * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'folders' | 'space' | 'clock';
+export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'folders' | 'space' | 'clock';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -74,6 +78,14 @@ const ASK_MS = 5_000;
 const CLOCK_TOLERANCE_MS = 60_000;
 const LOW_SPACE_BYTES = 1024 ** 3;
 const UNREACHABLE = 'the carrier cannot reach this server: is the tunnel running?';
+/**
+ * Each carrier's public API host, asked by the clock check alone, for the Date it answers with: a HEAD
+ * with no key, no body and nothing of the settings in it. The engine never calls these otherwise.
+ */
+export const CARRIER_CLOCK_URLS: Readonly<Record<string, string>> = {
+  telnyx: 'https://api.telnyx.com/',
+  twilio: 'https://api.twilio.com/',
+};
 
 function messageOf(err: unknown): string {
   if (err instanceof Error) {
@@ -266,25 +278,76 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
     );
   }
 
-  // 9. The clock, against the Date the server's address answered with.
-  const date = health?.headers.get('date');
-  const at = date ? Date.parse(date) : NaN;
-  if (health === null || Number.isNaN(at)) {
-    results.push({ id: 'clock', status: 'skip', message: health === null ? 'the clock: no answer to read the time from' : 'the clock: the answer had no Date' });
+  // 9. The clock, against another machine's: a host this setup relies on, never PUBLIC_HOST (through a
+  // tunnel to this machine, its Date is this machine's own clock).
+  if (o.offline) {
+    results.push({ id: 'clock', status: 'skip', message: 'the clock: not asked (--offline)' });
   } else {
-    const off = deps.now() - at;
-    results.push(
-      Math.abs(off) > CLOCK_TOLERANCE_MS
-        ? { id: 'clock', status: 'fail', message: `the clock is ${Math.round(Math.abs(off) / 1000)} s ${off > 0 ? 'ahead of' : 'behind'} ${base}`, fix: 'let the clock set itself (Telnyx refuses a webhook whose signature is more than five minutes off)' }
-        : { id: 'clock', status: 'ok', message: `the clock is within a minute of ${base}` },
-    );
+    const sources = clockSources(config, laptop);
+    let read: { url: string; at: number } | null = null;
+    for (const url of sources) {
+      try {
+        const res = await deps.fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(ASK_MS), redirect: 'manual' });
+        const at = Date.parse(res.headers.get('date') ?? '');
+        if (!Number.isNaN(at)) {
+          read = { url, at };
+          break;
+        }
+      } catch {
+        // The next one, if there is one.
+      }
+    }
+    if (read === null) {
+      results.push({
+        id: 'clock',
+        status: 'skip',
+        message: sources.length === 0
+          ? 'the clock: no other server this setup uses to compare it with (no carrier on a laptop, no hosted model)'
+          : `the clock: no Date from ${sources.map((u) => new URL(u).host).join(' or ')}`,
+      });
+    } else {
+      const off = deps.now() - read.at;
+      const other = new URL(read.url).host;
+      results.push(
+        Math.abs(off) > CLOCK_TOLERANCE_MS
+          ? { id: 'clock', status: 'fail', message: `the clock is ${Math.round(Math.abs(off) / 1000)} s ${off > 0 ? 'ahead of' : 'behind'} ${other}`, fix: 'let the clock set itself (Telnyx refuses a webhook whose signature is more than five minutes off)' }
+          : { id: 'clock', status: 'ok', message: `the clock is within a minute of ${other}` },
+      );
+    }
   }
   return results;
+}
+
+/**
+ * The servers whose clocks the clock check reads, in order: each enabled carrier's API host (none on a
+ * laptop, where no carrier is used), then the model provider's, unless that is on this machine.
+ */
+export function clockSources(config: ServerConfig, laptop: boolean): string[] {
+  const urls = laptop ? [] : config.voiceProviders.map((id) => CARRIER_CLOCK_URLS[id]).filter((u): u is string => u !== undefined);
+  const p = config.jevClient === 'jev' ? config.jevProvider : null;
+  if (p) {
+    try {
+      const base = new URL(p.baseURL);
+      if (!isLoopbackHost(base.hostname)) urls.push(`${base.origin}/`);
+    } catch {
+      // loadConfig has checked it; a URL that does not parse is simply not asked.
+    }
+  }
+  return [...new Set(urls)];
 }
 
 /** One check as a line: its status, what it found, and the fix. */
 export function formatResult(r: Pick<CheckResult, 'status' | 'message' | 'fix'> & { id?: CheckId }): string {
   return `${r.status.padEnd(4)}  ${r.message}${r.fix ? `  ->  ${r.fix}` : ''}`;
+}
+
+/** The settings file holds keys: readable by its owner alone (mode 600), as pnpm configure writes it. */
+export function settingsFileCheck(file: string, platform: NodeJS.Platform = process.platform): CheckResult {
+  if (platform === 'win32') return { id: 'settings', status: 'skip', message: `${file}: who may read it is not checked on Windows` };
+  const mode = statSync(file).mode & 0o777;
+  return mode & 0o077
+    ? { id: 'settings', status: 'warn', message: `${file} can be read by others (mode ${mode.toString(8)}), and it holds keys`, fix: `chmod 600 ${file}` }
+    : { id: 'settings', status: 'ok', message: `${file} is readable by its owner alone` };
 }
 
 export interface DoctorIo {
@@ -297,7 +360,7 @@ export interface DoctorIo {
   root?: string;
 }
 
-export const DOCTOR_USAGE = 'usage: pnpm diagnose [--app <name>] [--env-file <path>] [--offline]';
+export const DOCTOR_USAGE = 'usage: [ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]   (ENV_FILE names a settings file other than <app>/.env)';
 
 /** The command; returns its exit code (0 nothing failed, 1 something did, 2 a command line it does not understand). */
 export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDeps = defaultDoctorDeps): Promise<number> {
@@ -342,13 +405,18 @@ export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDe
   try {
     fromFile = readEnvFile(file);
   } catch (e) {
-    io.out(formatResult({ status: 'fail', message: e instanceof Error ? e.message : String(e), fix: 'run pnpm configure, or name the file with --env-file' }));
+    io.out(formatResult({ status: 'fail', message: e instanceof Error ? e.message : String(e), fix: 'run pnpm configure, or name the file: ENV_FILE=<path> pnpm diagnose' }));
     return 1;
   }
   const env: Env = { ...fromFile };
   for (const [k, v] of Object.entries(io.env)) if (v !== undefined) env[k] = v;
+  // A file named with no --app: the folders are read from the app's folder still, when it is plain which app that is.
+  if (app === null) {
+    const here = apps.find((a) => io.invokedFrom === a.dir || io.invokedFrom.startsWith(a.dir + sep));
+    app = here ?? (apps.length === 1 ? apps[0]! : null);
+  }
   io.out(`${app ? `${app.name}: ` : ''}settings from ${file}${offline ? ' (offline)' : ''}`);
-  const results = await runDoctor({ env, cwd: app?.dir ?? io.invokedFrom, offline }, deps);
+  const results = [settingsFileCheck(file), ...(await runDoctor({ env, cwd: app?.dir ?? io.invokedFrom, offline }, deps))];
   for (const r of results) io.out(formatResult(r));
   const count = (s: CheckStatus) => results.filter((r) => r.status === s).length;
   const skipped = count('skip');
