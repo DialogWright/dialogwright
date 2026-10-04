@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Voice and chat agents that act safely: a decision model reads, code decides, every action goes through a policy gate.",
   "license": "Apache-2.0",
-  "homepage": "https://dialogwright.dev",
+  "homepage": "https://dialogwright.com",
   "repository": {
     "type": "git",
     "url": "https://github.com/DialogWright/dialogwright.git",
