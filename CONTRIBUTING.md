@@ -155,7 +155,7 @@ A phone carrier that runs a text relay in front of the engine (the relay message
 5. **Register it and its secret.** Add the id to `VOICE_PROVIDER_IDS` (`channel/voiceProviders.ts`, which an app's YAML is checked against) and the provider to `ALL` in `server/voice/registry.ts`, with the environment variable that holds its secret (required only when `VOICE_PROVIDERS` lists it), how the startup line names it, and a `checkSecret` that refuses at startup a value that cannot be one. If the carrier names its voices or recognizers its own way, give it variables of its own in `server/config.ts` (`voiceFor`, `recognitionFor`, and the startup line), never another carrier's: one carrier's settings never reach another.
 6. **Document it.** The guide's [section 13](docs/authoring-an-app.md#13-channels) (the options table and "Serving voice"), §10 of the design, the `.env.example` of each app and of the template (`packages/dialogwright/templates/app/.env.example`), commented with its defaults, and the checks only a live call can make in [docs/live-checks.md](docs/live-checks.md).
 
-Before you open the pull request: `pnpm verify`, `pnpm check`, the three stub regressions (`no changes`), and the wire goldens (`src/channel/relay/__snapshots__/wire-testkit*.txt`) unchanged: a new carrier changes no call on the ones before it.
+Before you open the pull request: `pnpm verify`, `pnpm check`, the three stub regressions (`no changes`), and the wire goldens (`packages/dialogwright/src/channel/__snapshots__/wire-testkit*.txt`) unchanged: a new carrier changes no call on the ones before it.
 
 ## Pull requests
 

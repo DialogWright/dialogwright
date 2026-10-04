@@ -1884,7 +1884,7 @@ The files an approval stands on are the ones `CODEOWNERS` should protect ([3.12]
 
 ### 12.9 Building one from documents
 
-Answers scale only if they are cheap to make, so the knowledge base has an authoring pipeline, in its own package (`@dialogwright/kb-author`, which an app never imports and the engine does not depend on). It never runs on a call. Every step before the last is a proposal, and the last is a person:
+Answers scale only if they are cheap to make, so the knowledge base has an authoring pipeline, in its own package (`@dialogwright/kb-author`, which an app never imports and the engine does not depend on). It never runs on a call. Every step before the last is a proposal, and the last is a person. Start from an app whose `kb/` already has `kb.yaml` and `topics.yaml` ([12.1](#121-the-folder)): `kb:ingest` writes `kb/sources` into any app folder, but until those two files exist `pnpm check` reports each as missing and `kb:status` does not take the folder as a knowledge base.
 
 ```sh
 pnpm kb:ingest docs/ --dir apps/my-app                                  # 1. documents or a website into kb/sources

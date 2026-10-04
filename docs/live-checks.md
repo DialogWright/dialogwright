@@ -54,7 +54,7 @@ Each check says what to set, what to do, what to look for, and where to record t
 
 **Do.** Call, get past the greeting, and while the call is live stop the server (Ctrl-C) and start it again at once. The session was in the stopped server's memory, so the engine will hang up rather than resume; what this check is after is whether the callback arrives.
 
-**Look for.** Within a few seconds of the restart, a `/cr-action/telnyx v2:... in-progress -> hangup` line (or `/cr-action/twilio CA... -> hangup` on Twilio). Note the `SessionStatus` and `CallStatus` the frame log's `http` line shows, if the call's frame log survived.
+**Look for.** Within a few seconds of the restart, a `/cr-action/telnyx v2:... <SessionStatus> -> hangup` line (or `/cr-action/twilio CA... failed -> hangup` on Twilio): the word before the arrow is the callback's `SessionStatus`, and `-> hangup:<status>` instead means the callback's `SessionStatus` was `completed` or its `CallStatus` was not `in-progress`, so even a server that still held the call would not have reconnected it. Note the `SessionStatus` and `CallStatus` the frame log's `http` line shows, if the call's frame log survived.
 
 **Record.** Whether Telnyx posted the callback, and its statuses. If it did not, a dropped Telnyx call cannot reconnect: say so in `telnyx.ts` and in the guide's [13.2](authoring-an-app.md#132-serving-voice-twilio-telnyx-or-both).
 
