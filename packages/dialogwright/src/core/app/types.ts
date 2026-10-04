@@ -300,7 +300,15 @@ export interface ToolDef {
    * as policy.yaml's `audit:` declares it (PolicyTables.audit). `check` refuses a param the tool
    * lists (its params, below) that neither covers.
    */
-  run(call: ToolCall, sys: unknown, ctx: { s: Session; tc: TurnContext; out: TurnOut; code?: string }): { value: unknown; summary: string; ref?: string };
+  run(call: ToolCall, sys: unknown, ctx: { s: Session; tc: TurnContext; out: TurnOut; code?: string; idempotencyKey?: string }): { value: unknown; summary: string; ref?: string };
+  /**
+   * The tool writes (files, books, sends), and a repeat of the same write must not be done twice: it is
+   * given `ctx.idempotencyKey` as it runs (core/idempotency.ts idempotencyKey: the same for the same
+   * confirmed write on the same call, however often it is retried, as when a call resumed after a crash
+   * says yes to the same summary again). The tool passes it to the system it writes to, which keeps the
+   * keys it has seen and answers a repeat with what it did the first time. Absent (the default), no key.
+   */
+  idempotent?: boolean;
   /**
    * The audit rows for a call the gate let run, after its gate row (core/audit.ts). Without it, one
    * `tool_result` row with the tool's name and summary. Rows carry no PHI: the call is the redacted
@@ -376,6 +384,13 @@ export interface ServiceResolveOptions {
   url: string | null;
   /** The budget for the request; the service's own default unless the server shortens it. */
   timeoutMs?: number;
+  /**
+   * The request's key (core/idempotency.ts serviceIdempotencyKey): the same when a call resumed after a
+   * restart sends a request it was waiting on again. A service may send it as an `Idempotency-Key`
+   * header, so the system behind it answers a repeat as it did the first. Absent where the engine sends
+   * none (the text harness's stand-ins).
+   */
+  idempotencyKey?: string;
 }
 
 /**

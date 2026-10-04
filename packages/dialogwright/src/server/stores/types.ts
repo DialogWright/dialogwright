@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { Session } from '../../core/session';
 import type { AuditEntry } from '../../audit/types';
+import type { Effect } from '../../core/lifecycle';
+import type { ScrubPart } from '../../core/recording';
 
 /**
  * What the server keeps of a call or a chat between turns, behind interfaces, so where it lives is a
@@ -19,6 +21,19 @@ import type { AuditEntry } from '../../audit/types';
  */
 export type Awaitable<T> = T | Promise<T>;
 
+/**
+ * A request a turn handed to one of the app's downstream services (App.services), recorded with its
+ * idempotency key before it is sent (core/idempotency.ts serviceIdempotencyKey), so a call resumed
+ * after a restart that finds it unanswered sends it again with the same key, and the service can tell
+ * it is the same request.
+ */
+export interface PendingEffect {
+  readonly effect: Effect;
+  readonly idempotencyKey: string;
+  /** The effect's scrub as data (core/recording.ts scrubParts), so its answer is recorded masked; absent when nothing of it is masked. */
+  readonly scrub?: readonly ScrubPart[];
+}
+
 /** A call's server-side state, as stored: the session and the counters the server keeps beside it. */
 export interface StoredCall {
   readonly callId: string;
@@ -32,6 +47,8 @@ export interface StoredCall {
   readonly lastActivityMs: number;
   /** The call's audit entries, as chained: what the handoff summary reads (server/sessions.ts CallEntry.auditEntries). */
   readonly auditTail: readonly AuditEntry[];
+  /** The service request the call is waiting on, when it waits on one (the session's pendingService). */
+  readonly pending?: PendingEffect;
 }
 
 /** A web chat's server-side state, as stored (server/chat/socket.ts). */

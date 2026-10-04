@@ -1,6 +1,6 @@
 import { SESSION_SCHEMA, type Session } from '../core/session';
 import { appOf } from '../core/app/registry';
-import type { CallStateStore, StoredCall } from './stores/types';
+import type { CallStateStore, PendingEffect, StoredCall } from './stores/types';
 import type { RunOptions } from '../run/turn';
 import type { TraceWriter } from '../trace/writer';
 import type { FrameLog } from './frameLog';
@@ -38,6 +38,12 @@ export interface CallEntry extends CallResources {
   auditEntries: AuditEntry[];
   /** The carrier the call came in on (server/voice/registry.ts), when the adapter named it: what a saved call is resumed for. */
   provider?: string;
+  /**
+   * The service request the call is waiting on, with its idempotency key, from just before it is sent
+   * until its answer's turn has run (server/adapter.ts queueService): saved with the call, so a server
+   * that loads the call after a restart sends it again with the same key.
+   */
+  pending?: PendingEffect | null;
 }
 
 export type CallFactory = (callSid: string) => CallResources;
@@ -175,6 +181,7 @@ export class SessionStore {
       createdAtMs: e.createdAtMs,
       lastActivityMs: e.lastActivityMs,
       auditTail: [...e.auditEntries],
+      ...(e.pending ? { pending: e.pending } : {}),
     };
     return this.queueWrite(callSid, 'save the session', (state) => state.save(call));
   }
@@ -256,6 +263,8 @@ export class SessionStore {
       inFlight: 0,
       auditEntries: [...c.auditTail],
       provider: c.provider,
+      // Only a request the session still waits on: one answered before the save is not sent again.
+      pending: c.pending && c.session.pendingService === c.pending.effect.service ? c.pending : null,
     };
     this.calls.set(callId, entry);
     this.restored.add(callId);

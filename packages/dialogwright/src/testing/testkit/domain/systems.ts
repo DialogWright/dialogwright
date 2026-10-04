@@ -45,6 +45,8 @@ function weekdayOf(iso: string): number {
  */
 export class ParcelSystems {
   private readonly reports: Report[] = [];
+  /** Each report by the idempotency key of the write that filed it. */
+  private readonly byKey = new Map<string, Report>();
   private nextReport = 9001;
   /** Texts sent, newest last: only whom and what, never a code. */
   readonly texts: Array<{ to: string; what: string }> = [];
@@ -90,10 +92,22 @@ export class ParcelSystems {
     return PARCELS.some((p) => p.owner === owner && p.status === 'delivered' && p.day === day);
   }
 
-  createReport(r: Omit<Report, 'number'>): Report {
+  /**
+   * Files a report, or, for a key it has seen (the write's idempotency key, core/idempotency.ts), hands
+   * back the report that key filed: a write repeated after a crash files nothing new.
+   */
+  createReport(r: Omit<Report, 'number'>, key?: string): Report {
+    const seen = key === undefined ? undefined : this.byKey.get(key);
+    if (seen) return seen;
     const report = { ...r, number: String(this.nextReport++) };
     this.reports.push(report);
+    if (key !== undefined) this.byKey.set(key, report);
     return report;
+  }
+
+  /** The reports filed for a customer, oldest first. */
+  reportsOf(owner: string): Report[] {
+    return this.reports.filter((r) => r.owner === owner);
   }
 
   /** Texts the phone on file; null when there is no such customer. */

@@ -6,6 +6,7 @@ import type { Action } from '../channel/actions';
 import { appOf } from '../core/app/registry';
 import { spokenText } from '../prompts/render';
 import { resolveService, type ServiceUrls } from './services';
+import { serviceIdempotencyKey } from '../core/idempotency';
 import { summarizeHandoff as summarizeHandoffDefault } from '../handoff/summary';
 import type { DashboardBus } from './dashboard/bus';
 
@@ -82,7 +83,8 @@ export async function runChatTurnRuns(d: ChatTurnDeps, entry: ChatTurnEntry, eve
   // adapter queues it as a turn instead).
   for (const effect of r.result.effects) {
     if (effect.kind !== 'service' || entry.session.ended) continue;
-    const answer = await resolveService(appOf(entry.session), effect, d.serviceUrls);
+    // With its key (core/idempotency.ts), as the phone line sends it.
+    const answer = await resolveService(appOf(entry.session), effect, d.serviceUrls, undefined, serviceIdempotencyKey(entry.session, effect));
     out.push(...(await runChatTurnRuns(d, entry, answer, now, handoffTo)));
   }
   return out;

@@ -22,7 +22,9 @@ import type { HandoffWording, SpokenDigitRule } from '../core/app/types';
 import type { Effect } from '../core/lifecycle';
 import { summarizeHandoff as summarizeHandoffDefault, type SummaryOptions } from '../handoff/summary';
 import type { AuditEntry } from '../audit/types';
-import { carryScrub, type Scrub } from '../core/recording';
+import { carryScrub, registerScrub, scrubberOf, scrubFromParts, scrubParts, type Scrub, type ScrubPart } from '../core/recording';
+import { serviceIdempotencyKey } from '../core/idempotency';
+import type { PendingEffect } from './stores/types';
 
 /**
  * Said first when a call comes back after its server restarted (SESSION_STORE=file), before the
@@ -389,14 +391,25 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
  * so a call is never left ignoring its caller. The log lines' keys are `serviceAfterEnd` (replay
  * does not act on it) and `serviceWaitAbandoned` (replay clears the wait there, as here).
  */
-function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect): void {
+function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect, again?: PendingEffect): void {
+  // Recorded with its key before it is sent (saved with the call: SESSION_STORE=file), so a server that
+  // loads the call after a restart sends it again with the same key (`again`, then, with its scrub).
+  const pending: PendingEffect = again ?? {
+    effect,
+    idempotencyKey: serviceIdempotencyKey(entry.session, effect),
+    ...(scrubPartsOf(effect) ?? {}),
+  };
+  entry.pending = pending;
+  if (again === undefined) void deps.store.persist(entry.callSid);
   void enqueueUnsettled(deps, entry.callSid, async (e) => {
-    const answer = await resolveService(appOf(e.session), effect, deps.serviceUrls, deps.serviceTimeoutMs);
+    const answer = await resolveService(appOf(e.session), effect, deps.serviceUrls, deps.serviceTimeoutMs, pending.idempotencyKey);
     // The caller hung up while the service was thinking: there is no one to tell.
     if (e.ended) {
       e.frames.write('log', { serviceAfterEnd: true });
       return;
     }
+    // Answered: the turn that runs it saves the call without it.
+    if (e.pending === pending) e.pending = null;
     // Logged as the frame replay reads back (frameToEvent gives this event again).
     e.frames.write('in', serviceResultFrame(answer.service, answer.result, answer.note));
     if (await turn(deps, e, answer)) return;
@@ -411,6 +424,20 @@ function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect): void
     e.frames.write('log', { serviceWaitAbandoned: true });
     await deps.store.persist(e.callSid);
   });
+}
+
+/** An effect's scrub as data, for a pending request saved with the call; null when it has none it can write down. */
+function scrubPartsOf(effect: Effect): { scrub: ScrubPart[] } | null {
+  const parts = scrubParts(scrubberOf(effect));
+  return parts === null ? null : { scrub: parts };
+}
+
+/** A request saved with the call, as the effect a server sends again after a restart: its scrub made again from data. */
+function revived(pending: PendingEffect): Effect {
+  const effect: Effect = { ...pending.effect, params: { ...pending.effect.params } };
+  const scrub = pending.scrub ? scrubFromParts(pending.scrub) : null;
+  if (scrub !== null) registerScrub(effect, scrub);
+  return effect;
 }
 
 /** Words in a handoff summary, for the audit draft; a null summary has none. */
@@ -576,6 +603,15 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
         if (!again) return;
         // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
         const sent = await sendFrames(deps, e, [textFrame(again, true, lineLang(appOf(e.session), e.session.locale))]);
+        // A request the call was waiting on when its server went away: sent again, with the same key, and its
+        // answer is the next turn, which arms the wait itself.
+        const pending = restarted ? e.pending : null;
+        if (pending && e.session.pendingService === pending.effect.service) {
+          deps.log(`${e.callSid}: sending the ${pending.effect.service} request again, with the same key`);
+          e.frames.write('log', { serviceResent: pending.effect.service });
+          queueService(deps, e, revived(pending), pending);
+          return;
+        }
         // The replay is a question the caller has to answer, so it starts a wait of its own; the
         // reconnect is not a turn, so nothing else would.
         armNoInput(deps, e, sent);

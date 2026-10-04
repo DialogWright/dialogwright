@@ -18,6 +18,9 @@ import { defaultCorpusFile } from '../run/fixtures';
 import type { JevClient } from '../jev/types';
 import type { ServerMessage } from '../channel/chat/protocol';
 import { RESUMED_TEXT } from './adapter';
+import { testkitApp } from '../testing/testkit';
+import { serviceResultEvent } from '../channel/events';
+import type { ServiceResolveOptions } from '../core/app/types';
 
 /**
  * The kill-the-server test: with SESSION_STORE=file:<dir>, a call partway through a form survives its
@@ -300,6 +303,78 @@ describe('a restart with the file session store', () => {
     await second.server.store.settled();
     expect(storedCalls(dir)).toEqual([]);
     expectAuditContinuous(dir, callSid);
+  }, 20_000);
+});
+
+describe('a write and a service request across a restart', () => {
+  const depot = testkitApp.services!.depot!;
+  const resolveBefore = depot.resolve;
+  afterEach(() => {
+    depot.resolve = resolveBefore;
+  });
+
+  it('a call waiting on a service when its server went away sends the request again after the restart, once, with the same key', async () => {
+    const dir = folder();
+    const asked: { server: string; params: Readonly<Record<string, string>>; opts: ServiceResolveOptions }[] = [];
+    // The first server's depot never answers (the server goes away first); the second's answers at once.
+    depot.resolve = (params, opts) => {
+      asked.push({ server: 'first', params, opts });
+      return new Promise(() => {});
+    };
+    const first = await boot(settings(dir));
+    const callSid = 'CA0000000000000000000000000000svc1';
+    const relay = await FakeRelay.connect(await answer(first.base, 'twilio', callSid));
+    sockets.push(relay);
+    relay.setup(callSid);
+    await relay.waitForTexts(1);
+    for (const said of ['my parcel never arrived', ACCOUNT_ID, DOB]) {
+      const n = relay.texts().length;
+      relay.prompt(said);
+      await relay.waitFor(() => relay.texts().length > n);
+    }
+    relay.dtmf('123456');
+    await relay.waitFor((m) => m.type === 'text' && /what happened|describe|missing/i.test(String(m.token)));
+    for (const said of ['it was a small brown box left at the side gate', 'last tuesday']) {
+      const n = relay.texts().length;
+      relay.prompt(said);
+      await relay.waitFor(() => relay.texts().length > n);
+    }
+    relay.prompt('yes');
+    // Filed, and the depot asked: the request is saved with its key before it is sent.
+    const deadline = Date.now() + 3000;
+    while (asked.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    expect(asked).toHaveLength(1);
+    const key = asked[0]!.opts.idempotencyKey!;
+    expect(key).toMatch(/^[0-9a-f]{32}$/);
+    const callsDir = join(dir, 'sessions', 'calls');
+    const saved = JSON.parse(readFileSync(join(callsDir, readdirSync(callsDir)[0]!), 'utf8'));
+    expect(saved.pending).toMatchObject({ effect: { kind: 'service', service: 'depot' }, idempotencyKey: key });
+    expect(saved.session.pendingService).toBe('depot');
+    await first.server.close();
+
+    depot.resolve = async (params, opts) => {
+      asked.push({ server: 'second', params, opts });
+      return serviceResultEvent('depot', { searchDays: 2 });
+    };
+    const second = await boot(settings(dir));
+    const doc = await (await fetch(`${second.base}/cr-action/twilio`, form(failed('twilio', callSid)))).text();
+    const again = await FakeRelay.connect(socketUrl(doc, second.base));
+    sockets.push(again);
+    again.setup(callSid, 'VX-after');
+    // The line that says what happened, then the depot's answer as its own turn.
+    const said = await again.waitForTexts(2);
+    expect(said[0]).toMatch(new RegExp(`^${RESUMED_TEXT.replace('.', '\\.')}`));
+    expect(said.join(' ')).toContain('call you within 2 days');
+    expect(asked.map((a) => a.server)).toEqual(['first', 'second']);
+    expect(asked[1]!.opts.idempotencyKey).toBe(key);
+    expect(asked[1]!.params).toEqual(asked[0]!.params);
+    await second.server.store.settled();
+    const after = JSON.parse(readFileSync(join(callsDir, readdirSync(callsDir)[0]!), 'utf8'));
+    expect(after.pending ?? null).toBeNull();
+    // The depot's answer is in the audit, after the restart, in the same chain.
+    for (const f of readdirSync(join(dir, 'audit'))) expect(verifyChain(join(dir, 'audit', f))).toMatchObject({ ok: true });
+    const audit = readdirSync(join(dir, 'audit')).flatMap((f) => readFileSync(join(dir, 'audit', f), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { type: string; callId: string; detail: Record<string, unknown> }));
+    expect(audit.filter((e) => e.callId === callSid && e.type === 'a2a').map((e) => e.detail.phase)).toEqual(['sent', 'answered']);
   }, 20_000);
 });
 

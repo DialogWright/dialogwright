@@ -104,14 +104,49 @@ export function scrubberOfValues(pairs: Iterable<readonly [raw: string, shown: s
   if (shownFor.size === 0) return null;
   const alternatives = [...shownFor.keys()].sort((a, b) => b.length - a.length).map(escape).join('|');
   const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives})(?![\\p{L}\\p{N}])`, 'giu');
-  return (text) => text.replace(pattern, (m) => shownFor.get(m.toLowerCase()) ?? '•');
+  return withParts((text) => text.replace(pattern, (m) => shownFor.get(m.toLowerCase()) ?? '•'), [{ kind: 'values', pairs: [...shownFor] }]);
+}
+
+/**
+ * A scrub as data: the kind of scrub and the values it looks for, each with what is shown for it, so a
+ * scrub can be saved with a call (server/stores StoredCall.pending) and made again from it. Only the
+ * scrubs a call and a result make (scrubberOfValues, the last-four scrub, and both together) have one.
+ */
+export interface ScrubPart {
+  readonly kind: 'values' | 'lastFour';
+  readonly pairs: readonly (readonly [string, string])[];
+}
+
+/** The data each scrub was made from, where it was made from data alone. */
+const PARTS = new WeakMap<Scrub, readonly ScrubPart[]>();
+
+function withParts(scrub: Scrub, parts: readonly ScrubPart[]): Scrub {
+  PARTS.set(scrub, parts);
+  return scrub;
+}
+
+/** The scrub as data (ScrubPart), or null for no scrub, or for one not made from data alone (a spoken line's). */
+export function scrubParts(scrub: Scrub | null): ScrubPart[] | null {
+  if (scrub === null) return null;
+  const parts = PARTS.get(scrub);
+  return parts === undefined ? null : parts.map((p) => ({ kind: p.kind, pairs: p.pairs.map(([raw, shown]) => [raw, shown] as const) }));
+}
+
+/** The scrub `parts` were taken from (scrubParts), made again; null for none. */
+export function scrubFromParts(parts: readonly ScrubPart[]): Scrub | null {
+  let scrub: Scrub | null = null;
+  for (const p of parts) scrub = bothScrubs(scrub, p.kind === 'values' ? scrubberOfValues(p.pairs) : p.pairs.length === 0 ? null : maskedIdScrub(p.pairs));
+  return scrub;
 }
 
 /** Two scrubs as one (the first, then the second); either may be null. */
 export function bothScrubs(a: Scrub | null, b: Scrub | null): Scrub | null {
   if (a === null) return b;
   if (b === null) return a;
-  return (text) => b(a(text));
+  const both: Scrub = (text) => b(a(text));
+  const pa = PARTS.get(a);
+  const pb = PARTS.get(b);
+  return pa !== undefined && pb !== undefined ? withParts(both, [...pa, ...pb]) : both;
 }
 
 /**
@@ -142,7 +177,7 @@ function maskedIdScrub(pairs: readonly (readonly [string, string])[]): Scrub {
   // Two values with the same last four: the first's shown form is used for both.
   for (const [masked, shown] of pairs) if (!shownFor.has(masked)) shownFor.set(masked, shown);
   const pattern = new RegExp(`(?:${[...shownFor.keys()].sort((a, b) => b.length - a.length).map(escape).join('|')})(?![\\p{L}\\p{N}])`, 'gu');
-  return (text) => text.replace(pattern, (m) => shownFor.get(m) ?? '•');
+  return withParts((text) => text.replace(pattern, (m) => shownFor.get(m) ?? '•'), [{ kind: 'lastFour', pairs: [...shownFor] }]);
 }
 
 /** The scrub of a result's withheld values (core/resultRedaction.ts): each text a withheld field held, "•" wherever the summary or the record named repeats it. */
@@ -158,7 +193,10 @@ export function withheldScrubber(values: readonly string[]): Scrub | null {
  * They live in this process only, keyed by the object, and are never part of a session. A decision's
  * is made and used within its turn, from the turn's own call and result, so a turn run on a session a
  * store saved and loaded records exactly what the live turn would (testing/sessionRoundTrip.ts holds
- * the trace records of every scenario to that).
+ * the trace records of every scenario to that). A side effect's is carried to its answer, the next
+ * turn: a call saved while it waits for that answer keeps the scrub as data (scrubParts, in
+ * StoredCall.pending), and a server that sends the request again after a restart makes the scrub
+ * again from it (scrubFromParts), so the answer is recorded masked as it would have been.
  */
 const SCRUBS = new WeakMap<object, Scrub>();
 
