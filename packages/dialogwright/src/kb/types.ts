@@ -109,24 +109,46 @@ export interface KnowledgeBase {
   readonly sources: Readonly<Record<string, KbSourceDocument>>;
 }
 
-/** A topic retrieval puts forward for the caller's words, with its score (higher is closer). */
-export interface KbNomination {
+/** Where a nomination came from: keyword retrieval, dense (embedding) retrieval, or an app's own retriever. */
+export type NominationVia = 'keyword' | 'dense' | 'app';
+
+/** A topic retrieval puts forward for the caller's words: its id and title, its score (higher is closer), and how it was found. */
+export interface Nomination {
   readonly topic: string;
+  readonly title: string;
   readonly score: number;
+  readonly via: NominationVia;
+}
+
+/** What a retriever is asked: the caller's words this turn, the session's locale, and the day. */
+export interface NominateInput {
+  readonly text: string;
+  readonly locale: string;
+  readonly todayIso: string;
 }
 
 /**
- * Nominates topics for what a caller said. An app may give its own (App.knowledge.retriever); the
- * turn runs it before planning, only when the app has a knowledge base and a topic slot is listening.
+ * Nominates topics for what a caller said. An app may give its own (App.knowledge.retriever, from
+ * its code's `knowledge.retriever`). runTurn calls it once per turn, before the turn is planned, only
+ * when the app has a knowledge base, the turn has words, and a slot that reads nominations
+ * (SlotSpec.nominates) is listening; its nominations reach that turn's questions and fill
+ * (SlotContext.nominated). It is given a budget (run/retrieve.ts RETRIEVE_BUDGET_MS): one that throws,
+ * returns something that is not a list of nominations, or is not back in time nominates nothing, and
+ * the turn goes on without it. It must be deterministic (the same words, locale and day, the same
+ * nominations, in the same order): its nominations shape the model's request, which a cassette replays by.
  */
-export interface KnowledgeRetriever {
-  nominate(input: { readonly text: string; readonly locale: string; readonly todayIso: string }): readonly KbNomination[] | Promise<readonly KbNomination[]>;
+export interface Retriever {
+  /** Its name in the trace (trace.retrieval.retrieverId). */
+  readonly id: string;
+  /** The hash of the index it reads, when it has one, recorded with its nominations. */
+  readonly indexHash?: string;
+  nominate(input: NominateInput): Promise<readonly Nomination[]> | readonly Nomination[];
 }
 
-/** An app's knowledge (App.knowledge): its knowledge base, and the retriever its code gives, if any. */
+/** An app's knowledge (App.knowledge): its knowledge base, and the retriever its code gives, if any (none yet: nothing is nominated). */
 export interface AppKnowledge {
   readonly kb: KnowledgeBase;
-  readonly retriever?: KnowledgeRetriever;
+  readonly retriever?: Retriever;
 }
 
 /** Why no passage can be said. */

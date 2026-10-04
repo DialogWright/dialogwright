@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { TraceRecord, TraceTiming } from './types';
+import type { RetrievalRecord, TraceRecord, TraceTiming } from './types';
 import { redactRecordSlots } from './redact';
 import type { SessionEvent } from '../channel/events';
 import type { JevResponse, JevUsage, QuestionMap } from '../jev/types';
@@ -38,6 +38,8 @@ export interface TraceInput {
   /** the injection screen's usage, when it answered; added into the record's usage and cost */
   screenUsage?: JevUsage | null;
   timing: TraceTiming;
+  /** What the knowledge retriever did before the turn was planned; null or absent when it did not run. */
+  retrieval?: RetrievalRecord | null;
   ts: string;
   pricePerMtok: number;
 }
@@ -86,6 +88,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     // drafts (before chaining -- no seq or hash yet; those live only on the live `audit` bus event).
     gateEvents: [...result.gateEvents],
     kb: result.kb,
+    // Only on a turn the retriever ran: every other record is as it was.
+    ...(input.retrieval ? { retrieval: input.retrieval } : {}),
     // As recorded: each param masked as its call was (core/recording.ts recordedEffect); the runner sends the effect itself.
     effects: result.effects.map(recordedEffect),
     audit: [...result.audit],

@@ -23,6 +23,7 @@ import type { AuditDraft } from '../audit/types';
 import { decisionToActions, spokenText, type RenderContext } from '../prompts/render';
 import { saidCode } from './spokenCode';
 import { matchLocale, slotLocaleOf } from './locale';
+import type { TurnKnowledge } from './knowledge';
 
 export interface TurnContext {
   nowMs: number;
@@ -59,6 +60,14 @@ export interface TurnContext {
    * the answer is in: the caller had not yet heard what the answer's turn asks. Unset, false.
    */
   duringService?: boolean;
+  /**
+   * What retrieval nominated for this turn's words (core/knowledge.ts TurnKnowledge), run once by
+   * runTurn before the turn is planned, and only when a topic slot is listening (topicsListening):
+   * plan() and resolve() hand the same nominations to every slot's questions and fill
+   * (SlotContext.nominated). Absent on every other turn and for an app without a knowledge base; a
+   * caller that plans or resolves without runTurn passes it to give a turn nominations.
+   */
+  knowledge?: TurnKnowledge;
 }
 
 /**
@@ -193,7 +202,21 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
     // The session's language, only for an app that declares locales: any other app's slots see the
     // context they always have.
     ...withLocale(locale),
+    // What retrieval nominated, only on a turn it ran for: any other turn's slots see the context
+    // they always have.
+    ...(tc.knowledge !== undefined ? { nominated: tc.knowledge.nominated } : {}),
   };
+}
+
+/**
+ * The turn context without its nominations: for a slot context built from words other than this
+ * turn's (an intent confirmed by a yes fills from what was said before it), which the nominations,
+ * retrieved for this turn's words, do not describe.
+ */
+function withoutKnowledge(tc: TurnContext): TurnContext {
+  if (tc.knowledge === undefined) return tc;
+  const { knowledge: _, ...rest } = tc;
+  return rest;
 }
 
 const withLocale = (locale: string | undefined): { locale?: string } => (locale === undefined ? {} : { locale });
@@ -778,7 +801,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (pc.intent === 'done') return { decision: goodbye(s), events: [] };
       if (!isFormIntent(io.app, pc.intent)) return { decision: failAttempt(s, 'intent', io), events: [] };
       // Fill from what the caller originally said, not from the "yes"; the form hears the yes too.
-      return enterForm(s, pc.intent, pc.answers, slotContext(s, pc.text, io.tc), io, undefined, answers);
+      // This turn's nominations were retrieved for the yes, not for what the caller said before it.
+      return enterForm(s, pc.intent, pc.answers, slotContext(s, pc.text, withoutKnowledge(io.tc)), io, undefined, answers);
     }
     case 'rejected': {
       const pc = s.pendingConfirmation!;

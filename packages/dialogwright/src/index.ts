@@ -62,6 +62,12 @@ export { KB_SHORT_HASH, kbAuditRow, kbSourceOf, shortHash } from './kb/record';
 export type { KbSourceOptions } from './kb/record';
 export type { KbSource } from './core/lifecycle';
 export type * from './kb/types';
+// Retrieval in the turn: a topic slot (SlotSpec.nominates) makes runTurn nominate before it plans,
+// within a budget; what it did is the trace's `retrieval`.
+export { isTopicSlot } from './core/knowledge';
+export type { TurnKnowledge } from './core/knowledge';
+export { RETRIEVE_BUDGET_MS } from './run/retrieve';
+export type { RetrievalRecord } from './trace/types';
 
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
 // What the author of a slot type uses is in 'dialogwright/slot-kit'; the conformance kit is in

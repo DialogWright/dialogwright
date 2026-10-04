@@ -9,14 +9,31 @@ import type { FormId, SlotId } from '../core/app/types';
 import type { ScreenResult } from '../core/screen';
 import type { Effect, GateEvent, KbSource } from '../core/lifecycle';
 import type { AuditDraft } from '../audit/types';
+import type { NominationVia } from '../kb/types';
 
 export type TraceSource = AnswerSource | 'dtmf' | 'silence' | 'error' | 'none';
 
 export interface TraceTiming {
+  /** How long the knowledge retriever took, before planning; only on a turn it ran (TraceRecord.retrieval). */
+  retrieveMs?: number;
   planMs: number;
   askMs: number;
   resolveMs: number;
   totalMs: number;
+}
+
+/**
+ * What the knowledge retriever did on a turn (run/retrieve.ts): the topics it nominated, each with
+ * its score and how it was found, best first, and the index it read. `failed` says why it nominated
+ * nothing when it did not answer as asked: `error` (it threw or rejected, with `message`), `invalid`
+ * (it returned something other than a list of nominations), `late` (not back within the budget).
+ */
+export interface RetrievalRecord {
+  retrieverId: string;
+  indexHash?: string;
+  nominated: Array<{ topic: string; score: number; via: NominationVia }>;
+  failed?: 'error' | 'invalid' | 'late';
+  message?: string;
 }
 
 export interface TraceUsage {
@@ -83,6 +100,12 @@ export interface TraceRecord {
    */
   gateEvents?: GateEvent[];
   kb?: KbSource | null;
+  /**
+   * What the knowledge retriever nominated before the turn was planned: only on a turn it ran (an
+   * app with a knowledge base and a retriever, words, and a topic slot listening); absent on every
+   * other turn and for every other app.
+   */
+  retrieval?: RetrievalRecord;
   effects?: Effect[];
   /**
    * This turn's audit drafts, in the order they were chained -- before chaining: no `seq` or

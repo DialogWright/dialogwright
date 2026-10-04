@@ -99,6 +99,7 @@ export function validateApp(app: App): void {
       if (topic.accountLine && !Object.hasOwn(app.tools, topic.accountLine.from)) fail(`knowledge topic "${topic.id}"'s account line reads from "${topic.accountLine.from}", which is not a tool`);
     }
     if (retriever !== undefined && (typeof retriever !== 'object' || retriever === null || typeof (retriever as { nominate?: unknown }).nominate !== 'function')) fail("knowledge's retriever has no nominate function");
+    else if (retriever !== undefined && (typeof (retriever as { id?: unknown }).id !== 'string' || (retriever as { id: string }).id.trim() === '')) fail("knowledge's retriever has no id");
   }
   for (const [name, value] of Object.entries(app.thresholds ?? {})) {
     if (Object.hasOwn(DEFAULT_THRESHOLDS, name)) fail(`threshold "${name}" is one of the engine's`);

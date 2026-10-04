@@ -133,7 +133,7 @@ describe('the knowledge base folder: a valid one', () => {
   });
 
   it('a retriever in the code becomes App.knowledge.retriever', () => {
-    const retriever = { nominate: () => [{ topic: 'opening_hours', score: 1 }] };
+    const retriever = { id: 'fixed', nominate: () => [{ topic: 'opening_hours', title: 'Opening hours', score: 1, via: 'app' as const }] };
     const app = defineApp(appFolder(), { ...CODE, knowledge: { retriever } });
     expect(app.knowledge!.retriever).toBe(retriever);
   });
@@ -420,14 +420,17 @@ describe('check: what the knowledge base names in the app', () => {
     ]);
   });
 
-  it('a retriever in the code without a kb/ folder, or without nominate, is refused', async () => {
+  it('a retriever in the code without a kb/ folder, without nominate, or without an id, is refused', async () => {
     const plain = temp();
     cpSync(LIBRARY_DIR, plain, { recursive: true, filter: (src) => !src.endsWith('.ts') });
-    expect((await check(plain, { ...libraryCode, knowledge: { retriever: { nominate: () => [] } } })).filter((l) => l.includes('knowledge'))).toEqual([
+    expect((await check(plain, { ...libraryCode, knowledge: { retriever: { id: 'none', nominate: () => [] } } })).filter((l) => l.includes('knowledge'))).toEqual([
       'app.ts  code.knowledge  the code has a knowledge retriever, but the folder has no kb/  ->  add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/), or delete it from app.ts (code.knowledge)',
     ]);
     expect((await check(appFolder(), { ...CODE, knowledge: { retriever: {} as never } })).filter((l) => l.includes('knowledge'))).toEqual([
       'app.ts  code.knowledge.retriever  the knowledge retriever has no nominate function  ->  make app.ts (code.knowledge.retriever) an object with nominate({ text, locale, todayIso }), which returns the topics it nominates with their scores',
+    ]);
+    expect((await check(appFolder(), { ...CODE, knowledge: { retriever: { id: ' ', nominate: () => [] } } })).filter((l) => l.includes('knowledge'))).toEqual([
+      'app.ts  code.knowledge.retriever.id  the knowledge retriever has no id  ->  give app.ts (code.knowledge.retriever) an id: its name in the trace, beside the topics it nominates',
     ]);
   });
 });

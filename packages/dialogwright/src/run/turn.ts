@@ -16,6 +16,9 @@ import type { RenderContext } from '../prompts/render';
 import { buildTraceRecord, type TraceWriter } from '../trace/writer';
 import type { TraceRecord } from '../trace/types';
 import type { AuditDraft, AuditEntry } from '../audit/types';
+import { topicsListening } from '../core/knowledge';
+import { localeOf } from '../core/locale';
+import { retrieve } from './retrieve';
 
 export interface TurnObserver {
   /**
@@ -60,6 +63,11 @@ export interface RunOptions {
    * holds one or the other's requests, so a replay must use the mode it was recorded in.
    */
   screen?: ScreenMode;
+  /**
+   * How long a turn waits for the app's knowledge retriever (run/retrieve.ts RETRIEVE_BUDGET_MS,
+   * unset). Tests shorten it; a retriever not back in time nominates nothing.
+   */
+  retrieveBudgetMs?: number;
 }
 
 /**
@@ -158,7 +166,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const now = nowOf(opts);
   const digit = arrivalContext(session, event, arrival);
   const sensitive = digit.digitClass ?? null;
-  const tc: TurnContext = {
+  const base: TurnContext = {
     nowMs: now(),
     todayIso: opts.todayIso,
     thresholds: opts.thresholds,
@@ -166,6 +174,15 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     render: opts.render ?? null,
     ...digit,
   };
+  const tr = performance.now();
+  // Retrieval, the turn's one async step before planning: questions are built synchronously, so the
+  // topics a topic slot asks about are nominated first, once, and plan() and resolve() both see them.
+  // Only when a topic slot is listening (an app with a knowledge base, words, such a slot active): any
+  // other turn's context, and so its request, is exactly as it was.
+  const retrieved = topicsListening(session, event, base.duringService)
+    ? await retrieve(appOf(session).knowledge!, { text: words!, locale: localeOf(session), todayIso: opts.todayIso }, opts.retrieveBudgetMs)
+    : null;
+  const tc: TurnContext = retrieved ? { ...base, knowledge: { nominated: retrieved.nominated } } : base;
   const t0 = performance.now();
   const p = plan(session, event, tc);
   const t1 = performance.now();
@@ -238,7 +255,11 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       : event;
   const record = buildTraceRecord({
     result, event: traced, questions: p.questions, response, error, screenUsage: screenResponse?.usage ?? null,
-    timing: { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - t0 },
+    // Retrieval's time only on a turn a retriever ran; its total then counts from before it.
+    timing: retrieved?.ms != null
+      ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - tr }
+      : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - t0 },
+    retrieval: retrieved?.record ?? null,
     ts: new Date(now()).toISOString(),
     pricePerMtok: opts.thresholds.JEV_PRICE_PER_MTOK,
   });

@@ -21,7 +21,7 @@ import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, decla
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
 import { kbLinkProblems } from '../kb/rules';
-import type { KnowledgeRetriever } from '../kb/types';
+import type { Retriever } from '../kb/types';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -89,7 +89,7 @@ export interface AppCode {
   /** identity.yaml's code: the one-time code call's params (IdentityConfig.sendCodeParams). Only with an identity.yaml. */
   identity?: { sendCodeParams?: IdentityConfig['sendCodeParams'] };
   /** The knowledge base's code: a retriever of the app's own (App.knowledge.retriever). Only with a kb/ folder. */
-  knowledge?: { retriever?: KnowledgeRetriever };
+  knowledge?: { retriever?: Retriever };
 }
 
 /**
@@ -445,6 +445,8 @@ export function crossLink(
     const retriever = code.knowledge?.retriever;
     if (retriever !== undefined && (typeof retriever !== 'object' || retriever === null || typeof (retriever as { nominate?: unknown }).nominate !== 'function')) {
       inTs(['knowledge', 'retriever'], 'the knowledge retriever has no nominate function', `make ${inCode('knowledge', 'retriever')} an object with nominate({ text, locale, todayIso }), which returns the topics it nominates with their scores`);
+    } else if (retriever !== undefined && (typeof retriever.id !== 'string' || retriever.id.trim() === '')) {
+      inTs(['knowledge', 'retriever', 'id'], 'the knowledge retriever has no id', `give ${inCode('knowledge', 'retriever')} an id: its name in the trace, beside the topics it nominates`);
     }
   } else if (code.knowledge !== undefined) {
     inTs(['knowledge'], 'the code has a knowledge retriever, but the folder has no kb/', `add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/), or delete it from ${inCode('knowledge')}`);

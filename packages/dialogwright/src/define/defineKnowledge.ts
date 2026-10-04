@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import type { ToolName } from '../core/app/types';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
-import type { AppKnowledge, KnowledgeRetriever } from '../kb/types';
+import type { AppKnowledge, Retriever } from '../kb/types';
 import { AppDefinitionError, codePath } from './defineApp';
 import { loadConfigFile, loadKnowledgeFolder, DEFAULT_LOCALE } from './load';
 import { declaredFields } from './policyFile';
@@ -31,7 +31,7 @@ export interface DefineKnowledgeOptions {
   /** policy.yaml, its path or its content: the action and each account line's tool must have an action there. */
   policy?: string | Record<string, unknown>;
   /** A retriever of the app's own (App.knowledge.retriever). */
-  retriever?: KnowledgeRetriever;
+  retriever?: Retriever;
 }
 
 export interface KnowledgeProblemsOptions extends DefineKnowledgeOptions {
