@@ -65,6 +65,7 @@ export type * from './kb/types';
 // Retrieval in the turn: a topic slot (SlotSpec.nominates) makes runTurn nominate before it plans,
 // within a budget; what it did is the trace's `retrieval`.
 export { isTopicSlot } from './core/knowledge';
+export { topicCatalog } from './kb/catalog';
 export type { TurnKnowledge } from './core/knowledge';
 export { RETRIEVE_BUDGET_MS } from './run/retrieve';
 export type { RetrievalRecord } from './trace/types';
@@ -74,8 +75,8 @@ export type { RetrievalRecord } from './trace/types';
 // 'dialogwright/testing'.
 export { defineSlot, defineSlots, buildSlot, SlotConfigError, isSlotConfigError, BUILT_IN_SLOT_TYPES, registerSlotType } from './slots/index';
 export type {
-  BuildSlotOptions, BuildSlotResult, SlotSource, SlotType, SlotTypes, LibrarySlotSpec,
-  BirthdateOptions, ChoiceOptions, ChoiceOption, DateOptions, DigitsOptions, NameOptions, RecordOptions, TextOptions,
+  BuildSlotOptions, BuildSlotResult, DefineSlotOptions, DefineSlotsOptions, SlotSource, SlotType, SlotTypes, SlotBuildEnv, LibrarySlotSpec,
+  BirthdateOptions, ChoiceOptions, ChoiceOption, DateOptions, DigitsOptions, NameOptions, RecordOptions, TextOptions, TopicOptions,
 } from './slots/index';
 
 // The channel model: what the engine hears (events), what it does (actions), what a channel can do (caps).

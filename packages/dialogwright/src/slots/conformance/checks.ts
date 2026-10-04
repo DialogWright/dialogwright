@@ -6,6 +6,7 @@ import { isChoice, isNoul, isScore, type AnswerMap, type QuestionMap } from '../
 import { buildSlot, defineSlot, SlotConfigError, slotTypeJsonSchema } from '../defineSlot';
 import { BUILT_IN_SLOT_TYPES } from '../registry';
 import { refusesUnknownKeys } from '../slotType';
+import type { TopicCatalog } from '../../kb/types';
 import type { ExampleContext, LibrarySlotSpec, SlotExample, SlotType, SlotTypes, SlotUtterance } from '../types';
 import {
   answersOf, describeOutcome, essence, kitContext, MALFORMED_ANSWERS, MALFORMED_KEYS, outcomeProblem, quietAnswers,
@@ -132,11 +133,14 @@ interface Run {
 const configOf = (r: Run, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ type: r.type.type, ...r.example.config, ...extra });
 /** The example's slot, with its wording by locale when it gives any. */
 const build = (r: Run, slot = r.example.slot): LibrarySlotSpec => {
-  if (r.example.wording === undefined) return defineSlot(slot, configOf(r), r.types);
-  const built = buildSlot(slot, configOf(r), { types: r.types, wording: r.example.wording });
+  const catalog = catalogOf(r.example);
+  if (r.example.wording === undefined) return defineSlot(slot, configOf(r), r.types, catalog ? { catalog } : {});
+  const built = buildSlot(slot, configOf(r), { types: r.types, wording: r.example.wording, ...(catalog ? { catalog } : {}) });
   if (!built.ok) throw new SlotConfigError(slot, built.problems);
   return built.spec;
 };
+/** The app's knowledge topics an example's slot is built with (SlotExample.topics), if it gives any. */
+const catalogOf = (example: SlotExample): TopicCatalog | undefined => (example.topics !== undefined ? { topics: example.topics } : undefined);
 const said = (u: SlotUtterance): string => JSON.stringify(u.text);
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -171,13 +175,18 @@ const where = (ctx: SlotContext): string =>
  * KIT_TODAYS, and each utterance's own.
  */
 function contextsOf(r: Run, windows: readonly SlotPartial[] = []): SlotContext[] {
-  // Each utterance's words with the records it was said over (an app's lists stay the same whether
-  // or not the slot was asked for), and the empty words with none.
+  // Each utterance's words with the records it was said over and the topics nominated for them (an
+  // app's lists, and what retrieval nominates for the words, stay the same whether or not the slot
+  // was asked for), and the empty words with none.
   const turns: { text: string; lists: ExampleContext }[] = [
     { text: '', lists: {} },
     ...r.example.utterances.map((u) => ({
       text: u.text,
-      lists: { ...(u.context?.records !== undefined ? { records: u.context.records } : {}), ...(u.context?.sources !== undefined ? { sources: u.context.sources } : {}) },
+      lists: {
+        ...(u.context?.records !== undefined ? { records: u.context.records } : {}),
+        ...(u.context?.sources !== undefined ? { sources: u.context.sources } : {}),
+        ...(u.context?.nominated !== undefined ? { nominated: u.context.nominated } : {}),
+      },
     })),
   ];
   const states: ExampleContext[] = [];
@@ -311,7 +320,7 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
       if (shared.length > 0) r.fail(`a second slot of this type would ask the same question ids (${shared.join(', ')}): derive each id from the slot's id`);
     }
     // A locale's wording changes what the slot says, never what the model is asked.
-    const plain = r.example.wording === undefined ? undefined : attempt(r, 'defineSlot without the wording', () => defineSlot(r.example.slot, configOf(r), r.types));
+    const plain = r.example.wording === undefined ? undefined : attempt(r, 'defineSlot without the wording', () => defineSlot(r.example.slot, configOf(r), r.types, catalogOf(r.example) ? { catalog: catalogOf(r.example)! } : {}));
     // A type whose examples make no partial is tried with one it never made, so a question asked
     // only while a partial is pending is seen; a questions() that throws on that one is skipped.
     const windows = windowsOf(r, spec);

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { ToolDef } from '../core/app/types';
+import type { SlotSpec } from '../core/slots/types';
 import { validateApp } from '../core/app/validate';
 import { checkApp } from '../define/check';
 import { defineApp, isAppDefinitionError, type AppCode } from '../define/defineApp';
@@ -13,7 +14,8 @@ import { loadAppFolder, loadKnowledgeFolder } from '../define/load';
 import { formatProblem } from '../define/problems';
 import { approvalHashOf, sourceHashOf } from './hash';
 import { resolvePassage } from './resolve';
-import type { KnowledgeBase } from './types';
+import type { KnowledgeBase, Retriever } from './types';
+import { probeContexts } from '../core/app/probeQuestions';
 
 /**
  * The knowledge base folder (kb/): Example Town Library's, a small fictional one in
@@ -122,7 +124,7 @@ describe('the knowledge base folder: a valid one', () => {
     const dir = appFolder();
     expect(await check(dir)).toEqual([]);
     const app = defineApp(dir, CODE);
-    expect(Object.keys(app.knowledge!.kb.passages)).toHaveLength(7);
+    expect(Object.keys(app.knowledge!.kb!.passages)).toHaveLength(7);
     expect(app.knowledge!.retriever).toBeUndefined();
     expect(() => validateApp(app)).not.toThrow();
   });
@@ -435,13 +437,58 @@ describe('check: what the knowledge base names in the app', () => {
   });
 });
 
+describe('a topic slot and the knowledge it reads', () => {
+  const SLOTS_YAML = '# yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json\nbook: { type: code }\nbranch: { type: code }\ncard: { type: code }\nsubject:\n  type: topic\n';
+  const retriever: Retriever = { id: 'words', nominate: () => [] };
+
+  it('is built with the kb/ folder\'s topics: their titles by locale, and its retrieval cap', () => {
+    const app = defineApp(appFolder({ 'slots.yaml': SLOTS_YAML, 'kb/kb.yaml': (t) => t.replace('cap: 8', 'cap: 3') }), { ...CODE, knowledge: { retriever } });
+    const subject = app.slots.subject!;
+    expect(subject.nominates).toBe(true);
+    expect(subject.display('late_fees')).toBe('late fees');
+    expect(subject.display('late_fees', 'es')).toBe('multas por retraso');
+    expect(subject.display('card_renewal', 'es')).toBe('renewing a library card');
+    const many = ['opening_hours', 'card_renewal', 'late_fees', 'a', 'b', 'c', 'd', 'e', 'f'].map((topic) => ({ topic, title: topic, score: 1, via: 'keyword' as const }));
+    const asked = subject.questions({ ...probeContexts()[0]!, nominated: many }).subjectTopic;
+    expect(asked?.type === 'choice' && Object.keys(asked.criteria)).toEqual(['opening_hours', 'card_renewal', 'late_fees', 'none']);
+  });
+
+  it('check refuses a topic slot in an app without a kb/ folder, or without a retriever: it would never ask', async () => {
+    const plain = temp();
+    cpSync(LIBRARY_DIR, plain, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+    writeFileSync(join(plain, 'slots.yaml'), SLOTS_YAML);
+    expect((await check(plain, libraryCode)).filter((l) => l.includes('nominates'))).toEqual([
+      'slots.yaml:5:1  subject  the slot "subject" asks about the topics retrieval nominates, but the app has no knowledge base (kb/), so it would never ask  ->  add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/), or give the slot another type',
+    ]);
+    expect((await check(appFolder({ 'slots.yaml': SLOTS_YAML }))).filter((l) => l.includes('nominates'))).toEqual([
+      'slots.yaml:5:1  subject  the slot "subject" asks about the topics retrieval nominates, but the code gives no retriever, so nothing is nominated and it would never ask  ->  give a retriever in app.ts (code.knowledge.retriever): an object with an id and nominate({ text, locale, todayIso })',
+    ]);
+    expect((await check(appFolder({ 'slots.yaml': SLOTS_YAML }), { ...CODE, knowledge: { retriever } })).filter((l) => l.includes('nominates'))).toEqual([]);
+  });
+
+  it('validateApp: knowledge without a kb/ folder is the topics its retriever nominates, and that retriever', () => {
+    const topics = [{ id: 'opening_hours', title: 'Opening hours' }];
+    expect(() => validateApp({ ...libraryApp, knowledge: { topics, retriever } })).not.toThrow();
+    expect(() => validateApp({ ...libraryApp, knowledge: { topics } as never })).toThrow('knowledge without a knowledge base (kb) has no retriever, so nothing would nominate its topics');
+    expect(() => validateApp({ ...libraryApp, knowledge: { retriever } as never })).toThrow('knowledge has neither a knowledge base (kb) nor a list of topics');
+    expect(() => validateApp({ ...libraryApp, knowledge: { topics: [{ id: 'x', title: ' ' }], retriever } })).toThrow("knowledge's topic 0 has no id and title");
+    expect(() => validateApp({ ...libraryApp, knowledge: { topics: [...topics, ...topics], retriever } })).toThrow('knowledge\'s topic "opening_hours" is listed twice');
+    expect(() => validateApp({ ...libraryApp, knowledge: { kb: fixtureKb(), topics, retriever } as never })).toThrow("knowledge has both a knowledge base (kb) and topics of its own");
+  });
+
+  it('validateApp refuses a slot that reads nominations in an app without knowledge', () => {
+    const subject: SlotSpec = { id: 'subject', spokenConfirm: 'summary', nominates: true, questions: () => ({}), fill: () => ({ kind: 'absent' }), display: (v) => v };
+    expect(() => validateApp({ ...libraryApp, slots: { ...libraryApp.slots, subject } })).toThrow('slot "subject" asks about the topics retrieval nominates, but the app has no knowledge');
+  });
+});
+
 describe('check: approvals and the passages in force today (check only; at run time such a passage is withheld)', () => {
   it('an unapproved passage fails check, and defineApp still builds (it is withheld when resolved)', async () => {
     const dir = appFolder({ [P + 'late-fees-junior.yaml']: unapproved });
     expect(await kbLines({ [P + 'late-fees-junior.yaml']: unapproved })).toEqual([
       'kb/passages/late-fees-junior.yaml:8:9  answer  passage "late-fees-junior" is not approved, so it is never said  ->  review it against its source, then pnpm kb:approve late-fees-junior',
     ]);
-    expect(defineApp(dir, CODE).knowledge!.kb.passages['late-fees-junior']!.freshness).toBe('unapproved');
+    expect(defineApp(dir, CODE).knowledge!.kb!.passages['late-fees-junior']!.freshness).toBe('unapproved');
   });
 
   it('a passage whose source changed since approval is stale', async () => {

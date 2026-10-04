@@ -17,6 +17,15 @@ const answer = z.union([
   z.strictObject({ score: probabilities }),
 ]);
 const partial = z.record(z.string(), z.union([z.string(), z.number()])).and(z.object({ kind: z.string() }));
+/** A topic retrieval nominated, as an example writes it: `via` defaults to keyword retrieval. */
+const nomination = z.strictObject({
+  topic: z.string().min(1),
+  title: z.string().min(1),
+  score: z.number(),
+  via: z.enum(['keyword', 'dense', 'app']).default('keyword'),
+});
+/** One of the app's knowledge topics a slot is built with (SlotBuildEnv.catalog). */
+const catalogTopic = z.strictObject({ id: z.string().min(1), title: z.string().min(1), titles: z.record(z.string(), z.string()).optional() });
 
 const utterance = z.strictObject({
   text: z.string(),
@@ -30,6 +39,7 @@ const utterance = z.strictObject({
       todayIso: z.string().optional(),
       records: z.array(z.unknown()).optional(),
       sources: z.record(z.string(), z.array(z.unknown())).optional(),
+      nominated: z.array(nomination).optional(),
     })
     .optional(),
   expect: z.strictObject({
@@ -56,6 +66,7 @@ export const slotExamplesSchema = z.array(
       .array(z.strictObject({ digits: z.string(), locale: z.string().optional(), expect: z.strictObject({ value: z.string(), display: z.string().optional() }).nullable() }))
       .optional(),
     wording: z.record(z.string(), z.unknown()).optional(),
+    topics: z.array(catalogTopic).optional(),
   }),
 );
 

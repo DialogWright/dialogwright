@@ -1,5 +1,6 @@
 import type { Document, LineCounter } from 'yaml';
 import type { SlotSpec } from '../core/slots/types';
+import type { TopicCatalog } from '../kb/types';
 import { closest, formatPath, keyPositionOf, positionOf, type DataPath, type Problem } from '../define/problems';
 import { CODE_SLOT_TYPE } from '../define/schema/slots';
 import { buildSlot } from './defineSlot';
@@ -38,6 +39,8 @@ export interface ResolveSlotsInput {
   source?: SlotsFileSource;
   /** How a fix names a part of the code: `app.ts (code.slots.note)`. Default: the bare accessor. */
   inCode?: (...segs: readonly string[]) => string;
+  /** The app's knowledge topics, given to every library slot's build (BuildSlotOptions.catalog). */
+  catalog?: TopicCatalog;
 }
 
 export interface ResolvedSlots {
@@ -113,7 +116,9 @@ export function resolveSlots(input: ResolveSlotsInput): ResolvedSlots {
         true,
       );
     }
-    const built = buildSlot(id, config, { types, file, ...(source ? { source: { file, doc: source.doc, lines: source.lines, at: [id] } } : {}) });
+    const built = buildSlot(id, config, {
+      types, file, ...(source ? { source: { file, doc: source.doc, lines: source.lines, at: [id] } } : {}), ...(input.catalog !== undefined ? { catalog: input.catalog } : {}),
+    });
     if (built.ok) {
       slots[id] = built.spec;
       library.add(id);

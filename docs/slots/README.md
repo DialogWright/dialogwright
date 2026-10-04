@@ -36,6 +36,7 @@ Each type has a page with every option, its default, the default question text, 
 | [`name`](name.md) | The caller's own name | The caller says who they are. `exclude` lists words that never belong to the caller's name, such as the names of people discussed on the call. |
 | [`record`](record.md) | One of the app's own records, found by a tool and chosen by what the caller says of it | The list differs from caller to caller: their parcels, orders or bookings. The slot takes the record's key, never anything the model wrote. |
 | [`text`](text.md) | The caller's own words, kept as said | The value is free text no list holds and no code can check: a description, a note, a reason. A summary reads it back by a stand-in. |
+| [`topic`](topic.md) | Which of the knowledge base's topics the caller asks about | The app answers general questions from approved passages. The app's retriever nominates a few topics for the caller's words, the question offers only those, and a turn that nominates none asks nothing. |
 
 When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or contribute a type: see [Adding a slot type](../../CONTRIBUTING.md#adding-a-slot-type).
 
@@ -46,6 +47,7 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 - One of a short list you write in the YAML: `choice`. One of a list a tool returns for this caller: `record`.
 - The caller's own name: `name`. A name picked from a list (a provider, a branch): `choice`.
 - Anything said in the caller's own words: `text`. If the words can be checked, use the type made for them.
+- A general question the app answers from its knowledge base: `topic`, which needs the app's knowledge (a `kb/` folder and a retriever).
 
 ### Defaults for sensitive values
 
@@ -57,18 +59,17 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 | `birthdate` | `mask` (the year only) | `display` |
 | `name` | `none` | `display` |
 | `text` | `length` (`<38 chars>`) | the display, a stand-in |
-| `choice`, `date`, `record` | none | the display |
+| `choice`, `date`, `record`, `topic` | none | the display |
 
 ### Locales
 
-Every type reads and says en-US exactly as it did before there were locales. In a Spanish session (`es`, or any `es-*`) the types also read Spanish number words, names and dates and say values in Spanish formats, and a day-first keypad applies. `choice` options and a `text` slot's stand-in can be worded per locale in `locale/<tag>/slots.yaml`. The questions the model reads are never translated. See section 7 of the authoring guide and the "Notes" of each page.
+Every type reads and says en-US exactly as it did before there were locales. In a Spanish session (`es`, or any `es-*`) the types also read Spanish number words, names and dates and say values in Spanish formats, and a day-first keypad applies. `choice` options and a `text` slot's stand-in can be worded per locale in `locale/<tag>/slots.yaml`; a `topic` slot says a topic by the title the knowledge base gives that locale. The questions the model reads are never translated. See section 7 of the authoring guide and the "Notes" of each page.
 
 ## Not yet in the library
 
 | Type | Why it waits |
 |---|---|
 | `otp` (a one-time code) | Identity owns the code path (how a code is sent and checked), and a spoken code must be masked, reissued and never traced. It arrives with identity and the named policy rules in Phase 4, so the slot and the gate agree on one design. |
-| `topic` (a knowledge-base question) | It needs the knowledge base's retrieval contract, which does not exist yet (Phase 6). |
 | `time-slot` (an appointment time) | An appointment time is asked by form state in the apps that have it today. Making it a slot would change every recorded request, so it waits for a deliberate re-record. |
 | Name spelling | Letter-by-letter capture is its own set of questions, left until an app needs it. |
 

@@ -5,8 +5,9 @@
  * conformance kit is in `dialogwright/testing`.
  */
 export { defineSlot, buildSlot, SlotConfigError, isSlotConfigError } from './defineSlot';
-export type { BuildSlotOptions, BuildSlotResult, SlotSource } from './defineSlot';
+export type { BuildSlotOptions, BuildSlotResult, DefineSlotOptions, SlotSource } from './defineSlot';
 export { defineSlots } from './defineSlots';
+export type { DefineSlotsOptions } from './defineSlots';
 export { BUILT_IN_SLOT_TYPES, registerSlotType } from './registry';
 export type { BirthdateOptions } from './birthdate/index';
 export type { ChoiceOptions, ChoiceOption } from './choice/index';
@@ -15,4 +16,5 @@ export type { DigitsOptions } from './digits/index';
 export type { NameOptions } from './name/index';
 export type { RecordOptions } from './record/index';
 export type { TextOptions } from './text/index';
-export type { SlotType, LibrarySlotSpec, SlotTypes } from './types';
+export type { TopicOptions } from './topic/index';
+export type { SlotType, LibrarySlotSpec, SlotTypes, SlotBuildEnv } from './types';

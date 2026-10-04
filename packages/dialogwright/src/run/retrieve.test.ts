@@ -193,19 +193,21 @@ describe('the retrieval step in runTurn', () => {
   });
 
   it('an app without a knowledge base: contexts and requests exactly as before (no nominated key)', async () => {
-    const opted = appWith({ nominates: true });
     const plain = appWith({ nominates: false });
     const a = recordingClient();
     const b = recordingClient();
-    const x = await call(opted.app, a, SAID);
-    const y = await call(plain.app, b, SAID);
+    const x = await call(plain.app, a, SAID);
+    const y = await call(testkitApp, b, SAID);
     expect(a.requests).toEqual(b.requests);
-    expect(opted.seen.questions).toEqual(plain.seen.questions);
-    expect(opted.seen.fill).toEqual(plain.seen.fill);
-    for (const ctx of [...opted.seen.questions, ...opted.seen.fill]) expect(Object.keys(ctx)).not.toContain('nominated');
+    expect(plain.seen.questions.length).toBeGreaterThan(0);
+    for (const ctx of [...plain.seen.questions, ...plain.seen.fill]) expect(Object.keys(ctx)).not.toContain('nominated');
     expect(x.turn.record.retrieval).toBeUndefined();
     expect(Object.keys(x.turn.record.timing)).toEqual(['planMs', 'askMs', 'resolveMs', 'totalMs']);
     expect(x.turn.record.decision).toEqual(y.turn.record.decision);
+  });
+
+  it('an app without knowledge may not have a slot that reads nominations: it would never ask', () => {
+    expect(() => appWith({ nominates: true })).toThrow('slot "missingNote" asks about the topics retrieval nominates, but the app has no knowledge');
   });
 
   it('fails open: a retriever that throws, rejects, returns nonsense or is late nominates nothing, the turn goes on, and the trace says why', async () => {

@@ -44,7 +44,7 @@ describe('the package entry', () => {
     expect(entry.loadAppFolder).toBe((await import('./define/load')).loadAppFolder);
     expect(entry.defineSlot).toBe((await import('./slots/defineSlot')).defineSlot);
     expect(entry.defineSlots).toBe((await import('./slots/defineSlots')).defineSlots);
-    expect(Object.keys(entry.BUILT_IN_SLOT_TYPES).sort()).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'record', 'text']);
+    expect(Object.keys(entry.BUILT_IN_SLOT_TYPES).sort()).toEqual(['birthdate', 'choice', 'date', 'digits', 'name', 'record', 'text', 'topic']);
     expect(entry.BUILT_IN_SLOT_TYPES.text).toBe((await import('./slots/text/index')).textType);
     expect(entry.defineSlot('note', { type: 'text', what: 'a note' }).type).toBe('text');
     // the library's types are exported with the functions that take them

@@ -4,7 +4,8 @@ import { clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from '../define/problems';
 import type { JsonSchema } from '../define/schema/json';
 import { BUILT_IN_SLOT_TYPES } from './registry';
-import type { LibrarySlotSpec, SlotType, SlotTypes } from './types';
+import type { TopicCatalog } from '../kb/types';
+import type { LibrarySlotSpec, SlotBuildEnv, SlotType, SlotTypes } from './types';
 import { applySlotWording, markBuilt } from './wording';
 
 /**
@@ -38,6 +39,18 @@ export interface BuildSlotOptions {
   wording?: Readonly<Record<string, unknown>>;
   /** Where each locale's wording was written, so its problems point at the line. */
   wordingSources?: Readonly<Record<string, SlotSource>>;
+  /**
+   * The app's knowledge topics (kb/catalog.ts topicCatalog), given to the type's build
+   * (SlotBuildEnv.catalog): a `topic` slot says a topic by its title and knows the topics there are.
+   * Absent: the slot is built with none.
+   */
+  catalog?: TopicCatalog;
+}
+
+/** What defineSlot builds a slot with beyond its configuration. */
+export interface DefineSlotOptions {
+  /** The app's knowledge topics (BuildSlotOptions.catalog). */
+  catalog?: TopicCatalog;
 }
 
 export type BuildSlotResult = { ok: true; spec: LibrarySlotSpec } | { ok: false; problems: Problem[] };
@@ -65,8 +78,8 @@ const formatLine = (p: Problem): string => `${p.line > 0 ? `${p.file}:${p.line}:
  * The slot `id` built from `config` (its `type` and that type's options), or throws a
  * SlotConfigError listing every problem. `types` adds an app's own types (registerSlotType).
  */
-export function defineSlot(id: string, config: unknown, types: SlotTypes = BUILT_IN_SLOT_TYPES): LibrarySlotSpec {
-  const result = buildSlot(id, config, { types });
+export function defineSlot(id: string, config: unknown, types: SlotTypes = BUILT_IN_SLOT_TYPES, options: DefineSlotOptions = {}): LibrarySlotSpec {
+  const result = buildSlot(id, config, { types, ...(options.catalog !== undefined ? { catalog: options.catalog } : {}) });
   if (!result.ok) throw new SlotConfigError(id, result.problems);
   return result.spec;
 }
@@ -117,7 +130,8 @@ export function buildSlot(id: string, config: unknown, options: BuildSlotOptions
     return { ok: false, problems: problems.map(place) };
   }
 
-  const built = type.build(id, parsed.data);
+  const env: SlotBuildEnv | undefined = options.catalog !== undefined ? { catalog: options.catalog } : undefined;
+  const built = env === undefined ? type.build(id, parsed.data) : type.build(id, parsed.data, undefined, env);
   if (built.id !== id) throw new Error(`the "${name}" type built a slot with the id "${built.id}" for the slot "${id}"`);
   if (!Array.isArray(built.questionIds) || !Array.isArray(built.prompts)) {
     throw new Error(`the "${name}" type built the slot "${id}" without questionIds and prompts; a library type declares both`);
@@ -131,7 +145,7 @@ export function buildSlot(id: string, config: unknown, options: BuildSlotOptions
   });
   if (clashes.length > 0) return { ok: false, problems: clashes };
 
-  const spec: LibrarySlotSpec = markBuilt({ ...built, type: name, config: Object.freeze(parsed.data) });
+  const spec: LibrarySlotSpec = markBuilt({ ...built, type: name, config: Object.freeze(parsed.data) }, env);
   if (options.wording === undefined || Object.keys(options.wording).length === 0) return { ok: true, spec };
   return applySlotWording({ spec, types, raw: options.wording, ...(options.wordingSources ? { sources: options.wordingSources } : {}) });
 }

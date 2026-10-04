@@ -145,10 +145,50 @@ export interface Retriever {
   nominate(input: NominateInput): Promise<readonly Nomination[]> | readonly Nomination[];
 }
 
-/** An app's knowledge (App.knowledge): its knowledge base, and the retriever its code gives, if any (none yet: nothing is nominated). */
-export interface AppKnowledge {
+/**
+ * A topic as a topic slot offers and says it (TopicCatalog): its id (the label the model chooses and
+ * the slot's value), its title in the default locale, and its title in each other locale that gives one.
+ */
+export interface CatalogTopic {
+  readonly id: string;
+  readonly title: string;
+  /** Its title by locale tag (`{ es: "Horario" }`), for a locale that gives one; the slot says the default title elsewhere. */
+  readonly titles?: Readonly<Record<string, string>>;
+}
+
+/**
+ * The topics an app's knowledge has, in order (kb/topics.yaml's, or the code's), with how many a
+ * turn offers (kb.yaml's retrieval.cap): what a topic slot is built with (kb/catalog.ts topicCatalog),
+ * to say a topic's title and to know the topics there are.
+ */
+export interface TopicCatalog {
+  readonly topics: readonly CatalogTopic[];
+  /** How many nominated topics a turn offers, when the knowledge says (kb.yaml's retrieval.cap). */
+  readonly cap?: number;
+}
+
+/**
+ * An app's knowledge (App.knowledge), in one of two shapes:
+ * - a knowledge base (an app folder's kb/, which defineApp loads, or defineKnowledge), and the
+ *   retriever its code gives, if any (none: nothing is nominated). Its topics are kb/topics.yaml's.
+ * - for an app that resolves its answers in its own code (no kb/): the topics its retriever can
+ *   nominate (`topics`, each with its title), and that retriever, which it must give.
+ * A topic slot is built with the topics of either (topicCatalog), and runTurn nominates for either.
+ */
+export type AppKnowledge = KbKnowledge | CodeKnowledge;
+
+/** Knowledge with a knowledge base (an app folder's kb/, or defineKnowledge), and the retriever its code gives, if any. */
+export interface KbKnowledge {
   readonly kb: KnowledgeBase;
   readonly retriever?: Retriever;
+  readonly topics?: undefined;
+}
+
+/** Knowledge without a knowledge base: the topics the app's own retriever nominates (answers resolved in its own code), and that retriever. */
+export interface CodeKnowledge {
+  readonly kb?: undefined;
+  readonly topics: readonly CatalogTopic[];
+  readonly retriever: Retriever;
 }
 
 /** Why no passage can be said. */

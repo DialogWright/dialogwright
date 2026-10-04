@@ -5,6 +5,7 @@ import { digitsType } from './digits/index';
 import { nameType } from './name/index';
 import { recordType } from './record/index';
 import { textType } from './text/index';
+import { topicType } from './topic/index';
 import type { SlotType, SlotTypes } from './types';
 
 /**
@@ -20,6 +21,7 @@ export const BUILT_IN_SLOT_TYPES: SlotTypes = Object.freeze({
   [nameType.type]: nameType,
   [recordType.type]: recordType,
   [textType.type]: textType,
+  [topicType.type]: topicType,
 });
 
 /**

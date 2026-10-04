@@ -209,7 +209,12 @@ function answerCell(answers: SlotUtterance['answers']): string {
 
 function contextNote(context: SlotUtterance['context']): string {
   if (!context) return '';
-  const bits = Object.entries(context).map(([k, v]) => (v === true ? k : `${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`));
+  const bits = Object.entries(context).map(([k, v]) => {
+    if (v === true) return k;
+    // Nominations as the topics' ids, best first, rather than the whole records.
+    if (k === 'nominated' && Array.isArray(v)) return `nominated ${v.length === 0 ? 'nothing' : v.map((n: { topic: string }) => n.topic).join(', ')}`;
+    return `${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`;
+  });
   return bits.length > 0 ? `<br>_${prose(bits.join('; '))}_` : '';
 }
 
@@ -224,6 +229,10 @@ function exampleSection(type: SlotType<any, any>, example: SlotExample): string 
   const lines: string[] = [`#### ${example.name}`, ''];
   if (example.about) lines.push(example.about, '');
   lines.push('```yaml', yamlOf({ [example.slot]: { type: type.type, ...example.config } }), '```', '');
+  if (example.topics) {
+    const rows = example.topics.map((t) => [code(t.id), prose(t.title), Object.entries(t.titles ?? {}).map(([tag, title]) => `${tag}: ${prose(title)}`).join('<br>') || 'none']);
+    lines.push('Built with the knowledge topics:', '', table(['Topic', 'Title', 'Titles by locale'], rows), '');
+  }
   if (example.wording) {
     for (const [tag, wording] of Object.entries(example.wording)) lines.push(`In \`locale/${tag}/slots.yaml\`:`, '', '```yaml', yamlOf({ [example.slot]: wording }), '```', '');
   }

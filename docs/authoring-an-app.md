@@ -242,7 +242,7 @@ card:
 plate: { type: code }                          # an example of a slot the code writes (code.slots.plate)
 ```
 
-The seven types and their options are in section 5 and in [docs/slots](slots/README.md); a small library slot looks like this:
+The eight types and their options are in section 5 and in [docs/slots](slots/README.md); a small library slot looks like this:
 
 ```yaml
 note:
@@ -747,7 +747,7 @@ A slot is one value a form collects: a book, a day, a card number. The model nev
 
 ### Pick a type in slots.yaml
 
-The library has seven types. Each has a page with every option, its default, the default question text, the outcomes it can give, the prompts it needs and starter examples (the pages are [indexed here](slots/README.md)):
+The library has eight types. Each has a page with every option, its default, the default question text, the outcomes it can give, the prompts it needs and starter examples (the pages are [indexed here](slots/README.md)):
 
 | Type | It collects |
 |---|---|
@@ -758,6 +758,7 @@ The library has seven types. Each has a page with every option, its default, the
 | [`name`](slots/name.md) | The caller's own name |
 | [`record`](slots/record.md) | One of the app's own records, chosen by what the caller says of it |
 | [`text`](slots/text.md) | The caller's own words, kept as said |
+| [`topic`](slots/topic.md) | Which of the knowledge base's topics the caller asks about, from those retrieval nominates |
 
 A slot is a key in `slots.yaml` with a `type` and that type's options. The common cases, each a few lines:
 
@@ -859,6 +860,7 @@ Compare the model's numbers against `ctx.thresholds`, by name, never against a n
 | `SLOT_CHOICE_FILL` | 0.55 | Enough to take a picked label silently; between the two, take it and read it back. |
 | `SLOT_CHOICE_MARGIN` | 0.15 | Two labels closer than this are asked about (`disambiguate`). |
 | `SLOT_HELP` | 0.6 | A help answer ("I don't know it") to take as one. |
+| `KB_TOPIC_MARGIN` | 0.15 | Two knowledge-base topics closer than this are asked about (a `topic` slot's `disambiguate`). |
 
 An app's own thresholds go in app.yaml (`thresholds:`, the clinic's `PROVIDER_UNSURE`), and the engine adds them to `ctx.thresholds` on every turn. A unit test's `testSlotContext` has only the engine's, so the clinic reads its own through a helper that falls back to the registered app's value (`clinicThreshold` in `apps/clinic/src/domain/thresholds.ts`).
 
@@ -984,6 +986,7 @@ Some rules about questions:
 | `sources` | The app's records by name (`App.facts.forSlots` returning `{ sources: { parcels: [...], orders: [...] } }`), for a slot that names the list it chooses from (a `record` slot's `from`), so two such slots each read their own. Absent when the app names none. |
 | `prompted` | Whether the last prompt asked for this slot. |
 | `locale` | The language the session speaks, for an app that declares locales (section 8); absent otherwise. A slot that formats its value for the language reads it here. |
+| `nominated` | The knowledge-base topics the app's retriever nominated for this turn's words, best first, for a slot that reads them (`nominates: true`, a `topic` slot). Present only on a turn retrieval ran for (an app with knowledge, words, and such a slot listening); absent otherwise. |
 
 `fill(answers, ctx)` returns a `SlotOutcome`. Each kind, when to return it, and what the engine then does:
 

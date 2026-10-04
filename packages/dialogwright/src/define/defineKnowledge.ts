@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import type { ToolName } from '../core/app/types';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
-import type { AppKnowledge, Retriever } from '../kb/types';
+import type { KbKnowledge, Retriever } from '../kb/types';
 import { AppDefinitionError, codePath } from './defineApp';
 import { loadConfigFile, loadKnowledgeFolder, DEFAULT_LOCALE } from './load';
 import { declaredFields } from './policyFile';
@@ -40,7 +40,7 @@ export interface KnowledgeProblemsOptions extends DefineKnowledgeOptions {
 }
 
 /** The problems with the knowledge base in `dir`, and the knowledge it makes when there are none of the kinds defineKnowledge refuses. */
-function load(dir: string, options: KnowledgeProblemsOptions, state: boolean): { knowledge: AppKnowledge | null; problems: Problem[] } {
+function load(dir: string, options: KnowledgeProblemsOptions, state: boolean): { knowledge: KbKnowledge | null; problems: Problem[] } {
   const folder = loadKnowledgeFolder(dir, options.locale ?? DEFAULT_LOCALE);
   const problems: Problem[] = [...folder.problems];
   let actions: Set<string> | undefined;
@@ -75,7 +75,7 @@ function load(dir: string, options: KnowledgeProblemsOptions, state: boolean): {
 }
 
 /** The app's knowledge (App.knowledge) from the knowledge base folder `dir`, checked against the app's tools, policy and locales. */
-export function defineKnowledge(dir: string, options: DefineKnowledgeOptions = {}): AppKnowledge {
+export function defineKnowledge(dir: string, options: DefineKnowledgeOptions = {}): KbKnowledge {
   const { knowledge, problems } = load(dir, options, false);
   if (!knowledge) throw new AppDefinitionError(dir, problems, `the knowledge base in ${dir}`);
   return knowledge;

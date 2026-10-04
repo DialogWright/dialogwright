@@ -22,6 +22,7 @@ import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type Dat
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
 import { kbLinkProblems } from '../kb/rules';
 import type { Retriever } from '../kb/types';
+import { kbCatalog } from '../kb/catalog';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -200,7 +201,11 @@ export function linkSlots(config: LoadedConfig, code: AppCode, document: LoadRes
   if (!config.slots) {
     return withLocaleWording({ slots: codeSlots, library: new Set(), ids: Object.keys(codeSlots), known: new Set(Object.keys(codeSlots)), problems: typeProblems }, config, merged.types, document, inCode);
   }
-  const resolved = resolveSlots({ configs: config.slots, codeSlots, types: merged.types, file: SLOTS_FILE, source: document?.(SLOTS_FILE) ?? undefined, inCode });
+  // A topic slot is built with the knowledge base's topics (kb/catalog.ts), when the folder has a kb/.
+  const catalog = config.knowledge ? kbCatalog(config.knowledge) : undefined;
+  const resolved = resolveSlots({
+    configs: config.slots, codeSlots, types: merged.types, file: SLOTS_FILE, source: document?.(SLOTS_FILE) ?? undefined, inCode, ...(catalog !== undefined ? { catalog } : {}),
+  });
   return withLocaleWording({ ...resolved, known: new Set([...resolved.ids, ...Object.keys(codeSlots)]), problems: [...typeProblems, ...resolved.problems] }, config, merged.types, document, inCode);
 }
 
@@ -450,6 +455,21 @@ export function crossLink(
     }
   } else if (code.knowledge !== undefined) {
     inTs(['knowledge'], 'the code has a knowledge retriever, but the folder has no kb/', `add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/), or delete it from ${inCode('knowledge')}`);
+  }
+  // A slot that reads nominated topics (a `topic` slot) needs something to nominate them: a kb/, and a
+  // retriever in the code. Without one it would never ask, so check refuses it rather than let it sit silent.
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    // core/knowledge.ts isTopicSlot, read here directly: that module reads the session's app.
+    if (spec?.nominates !== true) continue;
+    const at = (message: string, fix: string): void => {
+      if (linked.library.has(id)) yaml(SLOTS_FILE, [id], message, fix, true);
+      else inTs(['slots', id], message, fix);
+    };
+    if (!config.knowledge) {
+      at(`the slot "${id}" asks about the topics retrieval nominates, but the app has no knowledge base (kb/), so it would never ask`, `add the knowledge base (kb/kb.yaml, kb/topics.yaml, kb/passages/), or give the slot another type`);
+    } else if (code.knowledge?.retriever === undefined) {
+      at(`the slot "${id}" asks about the topics retrieval nominates, but the code gives no retriever, so nothing is nominated and it would never ask`, `give a retriever in ${inCode('knowledge', 'retriever')}: an object with an id and nominate({ text, locale, todayIso })`);
+    }
   }
 
   // app.yaml

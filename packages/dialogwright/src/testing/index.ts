@@ -24,6 +24,10 @@ export {
 } from './shadowSlot';
 export type { ShadowMethod, ShadowMismatch, ShadowMode, ShadowOptions, ShadowReport } from './shadowSlot';
 export { isCassetteMiss } from '../jev/cassette';
+// Retrievers for a test of a topic slot or a knowledge app: one that nominates exactly what it is
+// given, and one that nominates by plain keywords (retrievers.ts).
+export { fixedRetriever, keywordRetriever } from './retrievers';
+export type { FixedNominations, KeywordRetrieverOptions, KeywordTopic } from './retrievers';
 export {
   runSlotConformance, slotConformanceChecks, ConformanceError, CHECK_IDS, CHECK_ABOUT, kitContext, answersOf, quietAnswers, KIT_TODAY,
 } from '../slots/conformance/index';

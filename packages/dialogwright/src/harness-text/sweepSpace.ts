@@ -6,6 +6,7 @@ export const SWEEPABLE: readonly ThresholdName[] = [
   'INTENT_ROUTE', 'INTENT_IMPLICIT', 'INTENT_EXPLICIT', 'INTENT_SWITCH', 'GATE_INTENT_MARGIN', 'GATE_FRUSTRATION_HIGH',
   'INTENT_TENTATIVE', 'INTENT_CHANGE', 'SLOT_CHANGE', 'INTENT_SECOND',
   'SLOT_DETECT', 'SLOT_CHOICE_FILL', 'SLOT_CHOICE_CONFIRM', 'SLOT_CHOICE_MARGIN', 'SLOT_HELP',
+  'KB_TOPIC_MARGIN',
   'CONFIRM_YES', 'CONFIRM_NO', 'MENU_NUMBER',
   'SCREEN_FIRE',
 ];
@@ -20,7 +21,7 @@ export const EXCLUDED: Partial<Record<ThresholdName, string>> = {
   SCREEN_FIRE: 'injection screen; sensitive on purpose (a false positive costs one reprompt), and an outcome score rewards raising it, so a recommended rise is a safety change, not tuning',
 };
 
-const MARGINS: ReadonlySet<ThresholdName> = new Set(['GATE_INTENT_MARGIN', 'SLOT_CHOICE_MARGIN']);
+const MARGINS: ReadonlySet<ThresholdName> = new Set(['GATE_INTENT_MARGIN', 'SLOT_CHOICE_MARGIN', 'KB_TOPIC_MARGIN']);
 
 function range(lo: number, hi: number, step: number): number[] {
   const n = Math.round((hi - lo) / step) + 1;

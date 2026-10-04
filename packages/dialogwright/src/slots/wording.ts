@@ -4,7 +4,7 @@ import { formatPath, keyPositionOf, problemsOfIssues, type DataPath, type Proble
 import type { JsonSchema } from '../define/schema/json';
 import { canonicalJson } from '../jev/cassette';
 import type { SlotSource } from './defineSlot';
-import type { LibrarySlotSpec, SlotType, SlotTypes } from './types';
+import type { LibrarySlotSpec, SlotBuildEnv, SlotType, SlotTypes } from './types';
 
 /**
  * A library slot's wording by locale: the words it says its values with in a locale other than the
@@ -44,11 +44,11 @@ export type WordingResult = { ok: true; spec: LibrarySlotSpec } | { ok: false; p
  * replaced in code (`{ ...slot, dtmf }`) is not one: built again from its options, it would lose the
  * change, so it takes no wording.
  */
-const AS_BUILT = new WeakSet<object>();
+const AS_BUILT = new WeakMap<object, SlotBuildEnv | undefined>();
 
-/** Marks a slot as exactly what its type built (buildSlot calls this). */
-export function markBuilt<T extends object>(spec: T): T {
-  AS_BUILT.add(spec);
+/** Marks a slot as exactly what its type built (buildSlot calls this), with what the app gave its build, to build it again with. */
+export function markBuilt<T extends object>(spec: T, env?: SlotBuildEnv): T {
+  AS_BUILT.set(spec, env);
   return spec;
 }
 
@@ -118,10 +118,11 @@ export function applySlotWording(input: WordingInput): WordingResult {
   const key = canonicalJson(wording);
   const cached = BUILT.get(spec)?.get(key);
   if (cached !== undefined && cached.type === type) return { ok: true, spec: cached.spec };
-  const built = type.build(id, spec.config, Object.freeze(wording));
+  const env = AS_BUILT.get(spec);
+  const built = env === undefined ? type.build(id, spec.config, Object.freeze(wording)) : type.build(id, spec.config, Object.freeze(wording), env);
   const worded: LibrarySlotSpec = { ...built, type: spec.type, config: spec.config, wording: Object.freeze(wording) };
   if (!BUILT.has(spec)) BUILT.set(spec, new Map());
-  BUILT.get(spec)!.set(key, { type, spec: markBuilt(worded) });
+  BUILT.get(spec)!.set(key, { type, spec: markBuilt(worded, env) });
   return { ok: true, spec: worded };
 }
 
