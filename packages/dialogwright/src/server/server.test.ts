@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { generateKeyPairSync } from 'node:crypto';
 import { mkdtempSync, readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -727,6 +728,34 @@ describe('the relay socket by voice provider', () => {
     const ws = s.base.replace('http', 'ws');
     await expect(FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`)).rejects.toThrow(/404/);
     await expect(FakeRelay.connect(`${ws}/conversation/twilio/x?token=${token}`)).rejects.toThrow(/404/);
+  });
+
+  it("ties a call's token to its carrier: a Telnyx call's token opens no Twilio socket, and a Twilio call's none of Telnyx's", async () => {
+    const telnyxKey = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+    const { config } = makeConfig({ VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: telnyxKey });
+    running = await startServer(config, { log: () => {} });
+    const base = `http://127.0.0.1:${running.port}`;
+    const ws = base.replace('http', 'ws');
+    const tokenOf = async (path: string, callSid: string): Promise<string> => {
+      const res = await fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ CallSid: callSid, From: '+15555550110', To: '+15555550111', CallStatus: 'ringing' }).toString() });
+      return /token=([0-9a-f]{32})/.exec(await res.text())![1]!;
+    };
+    const telnyx = await tokenOf('/voice/telnyx', 'v2:telnyx-call');
+    await expect(FakeRelay.connect(`${ws}/conversation/twilio?token=${telnyx}`)).rejects.toThrow(/401/);
+    await expect(FakeRelay.connect(`${ws}/conversation?token=${telnyx}`)).rejects.toThrow(/401/);
+    const twilio = await tokenOf('/voice/twilio', 'CA1');
+    await expect(FakeRelay.connect(`${ws}/conversation/telnyx?token=${twilio}`)).rejects.toThrow(/401/);
+    const legacy = await tokenOf('/voice', 'CA2');
+    await expect(FakeRelay.connect(`${ws}/conversation/telnyx?token=${legacy}`)).rejects.toThrow(/401/);
+    // Each on its own carrier's path is a call.
+    const own = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${telnyx}`);
+    own.setup('v2:telnyx-call');
+    expect(await own.waitForTexts(1)).toEqual([GREETING_TEXT]);
+    own.close();
+    const legacyOwn = await FakeRelay.connect(`${ws}/conversation?token=${legacy}`);
+    legacyOwn.setup('CA2');
+    expect(await legacyOwn.waitForTexts(1)).toEqual([GREETING_TEXT]);
+    legacyOwn.close();
   });
 });
 

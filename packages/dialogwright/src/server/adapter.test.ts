@@ -192,6 +192,17 @@ describe('adapter', () => {
     expect(d.store.get('CA1')).toBeUndefined();
   });
 
+  it("refuses a setup whose token was minted for another carrier's call", async () => {
+    const d = deps();
+    const tok = d.tokens.mint('CA1', 'telnyx');
+    const sock = fakeSocket();
+    // The connection came in on Twilio's socket path; the token is Telnyx's.
+    await handleSocketMessage(d, sock, newConnectionContext(tok, sock, 'twilio'), setupMsg('CA1'));
+    expect(sock.sent).toEqual([{ type: 'end', handoffData: '{"reasonCode":"unauthorized"}' }]);
+    expect(sock.closed?.code).toBe(1008);
+    expect(d.store.get('CA1')).toBeUndefined();
+  });
+
   it('ignores messages before setup and counts malformed ones', async () => {
     const d = deps();
     const sock = fakeSocket();
@@ -416,7 +427,7 @@ describe('adapter', () => {
     expect(d.store.get('CA1')?.socket).toBeNull();
     for (const t of COMPLETED_CALL) await handleSocketMessage(d, sock, ctx, prompt(t));
     expect(d.store.get('CA1')?.ended).toBe(true);
-    expect(d.tokens.verify(tok, 'CA1')).toBe(false);
+    expect(d.tokens.verify(tok, 'CA1', 'twilio')).toBe(false);
     // Nothing reached the wire, so nothing is logged as sent, and the detached socket is not closed twice.
     expect(sock.closed).toBeNull();
     const lines = frameLines(d.dir);

@@ -300,7 +300,7 @@ export function decideAction(
     if (entry.reconnects < deps.config.reconnectLimit) {
       deps.store.detach(callSid);
       entry.reconnects += 1;
-      const token = deps.tokens.mint(callSid);
+      const token = deps.tokens.mint(callSid, provider.id);
       // The call goes on in the language it is in now, which a switch may have changed since it started.
       const locale = deps.app?.locales ? (entry.session.locale ?? deps.app.locales.default) : undefined;
       return { document: start(connectOptions(deps, provider, token, locale)), note: `reconnect:${entry.reconnects}` };
@@ -379,7 +379,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           reply(res, 400, 'text/plain', 'missing CallSid');
           return;
         }
-        const token = deps.tokens.mint(params.callId);
+        const token = deps.tokens.mint(params.callId, provider.id);
         // The caller's number is theirs, not the console's: the last four tell calls apart.
         deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}`);
         const options = connectOptions(deps, provider, token, deps.app ? startLocale(deps.app, params.to) : undefined);
