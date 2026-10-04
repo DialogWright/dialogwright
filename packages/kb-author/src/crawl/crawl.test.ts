@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fakeClock, guardedFetch, serveSite, type FixtureSite } from '../__fixtures__/server';
 import { crawl, CrawlError, type CrawlOptions } from './crawl';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { gzipSync } from 'node:zlib';
+import { NetworkRefusal, pinnedLookup, privateAddressKind, publicFetch } from './net';
 
 const UA = 'dialogwright-kb-ingest/0.0.0 (+https://github.com/DialogWright/dialogwright)';
 
@@ -188,5 +192,161 @@ describe('the crawler with a scripted server', () => {
     const on = await run(s.fetch, { allowHosts: ['docs.h.test'] });
     expect(on.result.documents.map((d) => d.url)).toEqual(['http://h.test/', 'http://docs.h.test/guide.html']);
     expect(on.result.robots.map((r) => r.host)).toEqual(['h.test', 'docs.h.test']);
+  });
+});
+
+describe('the crawler stays off private networks', () => {
+  /** A fetch that records each URL and passes it to the network (only the tests' own servers on 127.0.0.1). */
+  function recording() {
+    const asked: string[] = [];
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      asked.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+      return globalThis.fetch(input, init);
+    };
+    return { fetch, asked };
+  }
+
+  it('follows robots.txt\'s redirects one hop at a time, and never off the host', async () => {
+    const other = await serveSite();
+    const redirecting = await serveSite({ '/robots.txt': { status: 302, headers: { location: `${other.origin}/latest/meta-data/` } } });
+    try {
+      const r = recording();
+      const clock = fakeClock();
+      const result = await crawl({ start: `${redirecting.origin}/`, depth: 0, userAgent: UA, fetch: r.fetch, sleep: clock.sleep, now: clock.now });
+      expect(other.requests).toEqual([]);
+      expect(r.asked).toEqual([`${redirecting.origin}/robots.txt`]);
+      expect(result.robots).toEqual([{ host: new URL(redirecting.origin).host, outcome: 'unreadable' }]);
+      expect(result.skipped).toEqual([
+        { url: `${redirecting.origin}/robots.txt`, reason: `redirects off the host, to ${other.origin}/latest/meta-data/: the host is not crawled` },
+        { url: `${redirecting.origin}/`, reason: 'disallowed by robots.txt' },
+      ]);
+      expect(result.documents).toEqual([]);
+    } finally {
+      await other.close();
+      await redirecting.close();
+    }
+  });
+
+  it('follows a robots.txt redirect on the host', async () => {
+    const moved = await serveSite({ '/robots.txt': { status: 301, headers: { location: '/site-robots.txt' } }, '/site-robots.txt': { status: 200, headers: { 'content-type': 'text/plain' }, body: 'User-agent: *\nDisallow: /\n' } });
+    try {
+      const clock = fakeClock();
+      const result = await crawl({ start: `${moved.origin}/`, depth: 0, userAgent: UA, fetch: guardedFetch(moved.origin).fetch, sleep: clock.sleep, now: clock.now });
+      expect(result.robots).toEqual([{ host: new URL(moved.origin).host, outcome: 'found' }]);
+      expect(result.skipped).toEqual([{ url: `${moved.origin}/`, reason: 'disallowed by robots.txt' }]);
+    } finally {
+      await moved.close();
+    }
+  });
+
+  it('refuses a start on 127.0.0.1 without --allow-private, asking it nothing', async () => {
+    const from = site.requests.length;
+    await expect(crawl({ start: `${site.origin}/`, depth: 0, userAgent: UA })).rejects.toThrow(
+      new CrawlError(`${site.origin}/ is not crawled: 127.0.0.1 is not a public address (loopback): the crawler reads only public addresses (--allow-private reads a private network)`),
+    );
+    await expect(crawl({ start: 'http://[::ffff:7f00:1]/', depth: 0, userAgent: UA })).rejects.toThrow('::ffff:7f00:1 is not a public address (loopback, in an IPv6 address)');
+    await expect(crawl({ start: 'http://169.254.169.254/latest/meta-data/', depth: 0, userAgent: UA })).rejects.toThrow('169.254.169.254 is not a public address (link-local, where cloud metadata services answer)');
+    expect(site.requests.length).toBe(from);
+  });
+
+  it('reads the fixture site with --allow-private, through its own fetch', async () => {
+    const clock = fakeClock();
+    const from = site.requests.length;
+    const result = await crawl({ start: `${site.origin}/`, depth: 0, userAgent: UA, allowPrivate: true, sleep: clock.sleep, now: clock.now });
+    expect(result.documents.map((d) => d.url)).toEqual([`${site.origin}/`]);
+    expect(site.requests.slice(from).map((r) => r.path)).toEqual(['/robots.txt', '/']);
+  });
+
+  it('refuses a host name that resolves to a private address, whichever of its addresses it is', async () => {
+    const resolve = async (host: string) => (host === 'intranet.test' ? [{ address: '10.1.2.3', family: 4 }] : [{ address: '203.0.113.7', family: 4 }, { address: 'fd00::7', family: 6 }]);
+    await expect(crawl({ start: 'http://intranet.test/', depth: 0, userAgent: UA, resolve })).rejects.toThrow('intranet.test is at 10.1.2.3, which is not a public address (private, RFC 1918)');
+    await expect(crawl({ start: 'http://mixed.test/', depth: 0, userAgent: UA, resolve })).rejects.toThrow('mixed.test is at fd00::7, which is not a public address (unique local, fc00::/7)');
+  });
+
+  it('checks every request, not only the start: a link, a redirect or another allowed host is refused before it is sent', async () => {
+    // Every request the crawl makes goes through this fetch; it resolves and checks before it connects.
+    const resolve = async (host: string) => [{ address: host === 'internal.test' ? '192.168.0.10' : '203.0.113.7', family: 4 }];
+    const fetchIt = publicFetch({ resolve });
+    await expect(fetchIt('http://internal.test/admin')).rejects.toThrow(new NetworkRefusal('internal.test is at 192.168.0.10, which is not a public address (private, RFC 1918): the crawler reads only public addresses (--allow-private reads a private network)'));
+    await expect(fetchIt(`${site.origin}/`)).rejects.toThrow(NetworkRefusal);
+    await expect(fetchIt('http://[fe80::1]/')).rejects.toThrow('fe80::1 is not a public address (link-local)');
+    await expect(publicFetch({ resolve: async () => [] })('http://nowhere.test/')).rejects.toThrow('nowhere.test does not resolve');
+  });
+
+  it('connects to the address it checked: the name is not looked up again (no rebinding)', async () => {
+    const port = new URL(site.origin).port;
+    const answers: string[] = [];
+    // The first answer is the fixture server; any later one would be an address where nothing listens.
+    const resolve = async (host: string) => {
+      answers.push(host);
+      return [{ address: answers.length === 1 ? '127.0.0.1' : '127.0.0.2', family: 4 }];
+    };
+    const res = await publicFetch({ allowPrivate: true, resolve })(`http://rebind.test:${port}/about.html`, { headers: { 'user-agent': UA } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('About');
+    expect(answers).toEqual(['rebind.test']);
+    // The socket's lookup answers with the checked address whatever it is asked.
+    const lookup = pinnedLookup('203.0.113.9', 4) as unknown as (h: string, o: { all?: boolean }, cb: (...a: unknown[]) => void) => void;
+    const got: unknown[][] = [];
+    lookup('rebind.test', {}, (...a) => got.push(a));
+    lookup('anything.else', { all: true }, (...a) => got.push(a));
+    expect(got).toEqual([[null, '203.0.113.9', 4], [null, [{ address: '203.0.113.9', family: 4 }]]]);
+  });
+
+  it('reads a compressed answer, decoded, though it asks for none', async () => {
+    const page = '<html><body><main><p>Compressed hello.</p></main></body></html>';
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html', 'content-encoding': 'gzip' });
+      res.end(gzipSync(page));
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    try {
+      const res = await publicFetch({ allowPrivate: true })(`http://127.0.0.1:${(server.address() as AddressInfo).port}/z.html`);
+      expect(await res.text()).toBe(page);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('knows which addresses are not public', () => {
+    const kinds = Object.fromEntries(
+      [
+        '127.0.0.1', '10.0.0.1', '172.16.5.4', '172.31.255.255', '192.168.1.1', '169.254.169.254', '100.64.0.1', '100.127.255.255', '0.0.0.0', '224.0.0.1', '255.255.255.255',
+        '::', '::1', 'fe80::1', 'fc00::1', 'fd12:3456::1', '::ffff:127.0.0.1', '::ffff:7f00:1', '::ffff:a9fe:a9fe', '::ffff:10.0.0.1', '64:ff9b::a00:1', '2002:c0a8:101::1', 'ff02::1',
+        '8.8.8.8', '93.184.216.34', '100.128.0.1', '172.32.0.1', '2606:4700::1111', '::ffff:8.8.8.8', '2002:808:808::1',
+      ].map((a) => [a, privateAddressKind(a)]),
+    );
+    expect(kinds).toEqual({
+      '127.0.0.1': 'loopback',
+      '10.0.0.1': 'private, RFC 1918',
+      '172.16.5.4': 'private, RFC 1918',
+      '172.31.255.255': 'private, RFC 1918',
+      '192.168.1.1': 'private, RFC 1918',
+      '169.254.169.254': 'link-local, where cloud metadata services answer',
+      '100.64.0.1': 'shared, carrier-grade NAT',
+      '100.127.255.255': 'shared, carrier-grade NAT',
+      '0.0.0.0': 'unspecified, "this network"',
+      '224.0.0.1': 'multicast',
+      '255.255.255.255': 'reserved or broadcast',
+      '::': 'unspecified',
+      '::1': 'loopback',
+      'fe80::1': 'link-local',
+      'fc00::1': 'unique local, fc00::/7',
+      'fd12:3456::1': 'unique local, fc00::/7',
+      '::ffff:127.0.0.1': 'loopback, in an IPv6 address',
+      '::ffff:7f00:1': 'loopback, in an IPv6 address',
+      '::ffff:a9fe:a9fe': 'link-local, where cloud metadata services answer, in an IPv6 address',
+      '::ffff:10.0.0.1': 'private, RFC 1918, in an IPv6 address',
+      '64:ff9b::a00:1': 'private, RFC 1918, in an IPv6 address',
+      '2002:c0a8:101::1': 'private, RFC 1918, in an IPv6 address',
+      'ff02::1': 'multicast',
+      '8.8.8.8': null,
+      '93.184.216.34': null,
+      '100.128.0.1': null,
+      '172.32.0.1': null,
+      '2606:4700::1111': null,
+      '::ffff:8.8.8.8': null,
+      '2002:808:808::1': null,
+    });
   });
 });

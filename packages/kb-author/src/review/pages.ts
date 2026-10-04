@@ -25,6 +25,8 @@ export interface PageContext {
   flash: ActionResult | null;
   /** The path of the page, for the reviewer form to come back to. */
   path: string;
+  /** A hash of what the page shows of its draft, passage or topic: every form that changes it carries it back. */
+  seen?: string;
 }
 
 const STYLE = `
@@ -101,8 +103,8 @@ const STYLE = `
 /** A link inside the review page, carrying the token. */
 export const href = (ctx: PageContext, path: string): string => `${path}?token=${encodeURIComponent(ctx.token)}`;
 
-/** The token as a form's hidden field. */
-const tokenField = (ctx: PageContext): string => `<input type="hidden" name="token" value="${esc(ctx.token)}">`;
+/** The token as a form's hidden field, and what the page shows (seen) when it shows a draft, a passage or a topic. */
+const tokenField = (ctx: PageContext): string => `<input type="hidden" name="token" value="${esc(ctx.token)}">${ctx.seen !== undefined ? `<input type="hidden" name="seen" value="${esc(ctx.seen)}">` : ''}`;
 
 /** A whole page. */
 export function page(ctx: PageContext, title: string, body: string): string {
@@ -147,7 +149,7 @@ function flashHtml(ctx: PageContext): string {
 function reviewerForm(ctx: PageContext): string {
   return `<section class="card" aria-labelledby="who">
   <h2 id="who">Who is reviewing</h2>
-  <p class="muted">An approval records the person who read each answer against its source and answers for it, and the team that owns the content. You are asked once while this page runs.</p>
+  <p class="muted">An approval records the person who read each answer against its source and answers for it, and the team that owns the content. You are asked once in this browser while this page runs.</p>
   <form method="post" action="/reviewer">
     ${tokenField(ctx)}<input type="hidden" name="back" value="${esc(ctx.path)}">
     <div class="row">
@@ -370,12 +372,15 @@ export function topicPage(ctx: PageContext, kb: KnowledgeBase, t: ProposedTopic,
 <section class="card" aria-labelledby="topic-h">
   <h2 id="topic-h">The topic</h2>
   <dl>
-    <dt>Title</dt><dd>${esc(t.title)}</dd>
+    <dt>Title</dt><dd>${esc(t.title)} <span class="muted">(said to callers)</span></dd>
     <dt>Keywords</dt><dd>${t.keywords && t.keywords.length > 0 ? esc(t.keywords.join(', ')) : '<span class="muted">none</span>'}</dd>
     <dt>Callers ask</dt><dd>${t.asks && t.asks.length > 0 ? `<ul class="problems">${t.asks.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '<span class="muted">none</span>'}</dd>
   </dl>
   <form class="action" method="post" action="/topic/${encodeURIComponent(t.id)}/accept">${tokenField(ctx)}
     <h3>Accept it into topics.yaml</h3>
+    <label for="topic-title">Its title (callers hear it)</label>
+    <input id="topic-title" name="title" type="text" value="${esc(t.title)}" required maxlength="80" aria-describedby="topic-title-hint">
+    <p class="hint" id="topic-title-hint">A topic's title is spoken to callers: the topic question offers it ("Is it about Opening hours, or about Late fees?"). Write it as a caller would recognise it, in a few words.</p>
     <label for="topic-as">Its id (rename it here; its drafts follow)</label>
     <input id="topic-as" name="as" type="text" value="${esc(t.id)}" pattern="[A-Za-z][A-Za-z0-9_]*" required aria-describedby="topic-as-hint">
     <p class="hint" id="topic-as-hint">Letters, digits and underscores, starting with a letter.</p>

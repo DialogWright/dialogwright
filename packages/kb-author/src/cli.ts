@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CrawlError, DEFAULT_MAX_PAGES, DEFAULT_RATE_MS } from './crawl/crawl';
+import type { Resolver } from './crawl/net';
 import type { Drafter } from './draft/drafter';
 import { draftCommand } from './draft/command';
 import { gapsCommand } from './gaps/command';
@@ -16,11 +17,11 @@ import { reviewCommand } from './review/command';
  * `kb:review`, `kb:refresh` and `kb:gaps`):
  *
  *   kb:ingest <folder | file | url> [--dir <app folder>] [--depth N] [--include <glob>]...
- *             [--max-pages M] [--rate <ms>] [--allow-host <host>]... [--dry-run] [--json]
+ *             [--max-pages M] [--rate <ms>] [--allow-host <host>]... [--allow-private] [--dry-run] [--json]
  *   kb:draft [dir] [--source <doc>]... [--topic-hint <text>]... [--model <id>] [--all] [--dry-run] [--json]
  *             (./draft/command.ts)
  *   kb:review [dir] [--port N]       (./review/command.ts)
- *   kb:refresh [dir] [--dry-run] [--json]   (./refresh/command.ts)
+ *   kb:refresh [dir] [--allow-private] [--dry-run] [--json]   (./refresh/command.ts)
  *   kb:gaps [dir] [--traces <path|glob>]... [--since YYYY-MM-DD] [--samples N] [--out <file>] [--json]   (./gaps/command.ts)
  *
  * It reads a folder (recursively), a file or a website into sections and writes each document to
@@ -37,8 +38,9 @@ export interface Io {
   cwd: string;
   /** Today, as an ISO date. Default: today (UTC). */
   today?: () => string;
-  /** The crawl's fetch, timer and clock (a test's). */
+  /** The crawl's fetch, resolver, timer and clock (a test's). */
   fetch?: typeof globalThis.fetch;
+  resolve?: Resolver;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   /** kb:draft's drafter, in place of the Claude adapter (a test's fake). */
@@ -60,12 +62,13 @@ const MIN_RATE_MS = 100;
 
 const USAGE = [
   'usage: kb:ingest <folder | file | url> [--dir <app folder>] [--dry-run] [--json]',
-  '       for a url: [--depth N] [--include <glob>]... [--max-pages M] [--rate <ms>] [--allow-host <host>]...',
+  '       for a url: [--depth N] [--include <glob>]... [--max-pages M] [--rate <ms>] [--allow-host <host>]... [--allow-private]',
   '  reads PDF, DOCX, HTML, Markdown and text files (a folder recursively), or a website to a link depth,',
   '  and writes each document to <app>/kb/sources/<doc>.yaml with its sections and provenance;',
   `  a crawl stays on the start page's host, follows robots.txt, waits --rate ms between requests (default ${DEFAULT_RATE_MS})`,
   `  and reads at most --max-pages pages (default ${DEFAULT_MAX_PAGES}); --depth is how many links from the start page (default 1);`,
-  '  --include narrows what is fetched beyond the start page by URL path (/help/**, *.pdf)',
+  '  --include narrows what is fetched beyond the start page by URL path (/help/**, *.pdf);',
+  '  a crawl reads only public addresses: --allow-private reads a site on a private network (loopback, RFC 1918, link-local)',
 ].join('\n');
 
 const stdio = (): Io => ({
@@ -89,7 +92,7 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
   const positional: string[] = [];
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i]!;
-    if (a === '--dry-run' || a === '--json') flags.add(a);
+    if (a === '--dry-run' || a === '--json' || a === '--allow-private') flags.add(a);
     else if (['--dir', '--depth', '--max-pages', '--rate', '--include', '--allow-host'].includes(a)) {
       const v = args[i + 1];
       if (v === undefined || v.startsWith('--')) {
@@ -110,7 +113,7 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
   }
   const input = positional[0]!;
   const url = isUrl(input);
-  const crawlOnly = ['--depth', '--max-pages', '--rate'].filter((o) => o in values).concat(['--include', '--allow-host'].filter((o) => lists[o]!.length > 0));
+  const crawlOnly = ['--depth', '--max-pages', '--rate'].filter((o) => o in values).concat(['--include', '--allow-host'].filter((o) => lists[o]!.length > 0), flags.has('--allow-private') ? ['--allow-private'] : []);
   if (!url && crawlOnly.length > 0) {
     io.err(`kb:ingest: ${crawlOnly.join(', ')} ${crawlOnly.length === 1 ? 'is' : 'are'} for a url only\n${USAGE}`);
     return 2;
@@ -155,7 +158,9 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
               include: lists['--include']!,
               allowHosts: lists['--allow-host']!,
               userAgent: USER_AGENT,
+              ...(flags.has('--allow-private') ? { allowPrivate: true } : {}),
               ...(io.fetch ? { fetch: io.fetch } : {}),
+              ...(io.resolve ? { resolve: io.resolve } : {}),
               ...(io.sleep ? { sleep: io.sleep } : {}),
               ...(io.now ? { now: io.now } : {}),
             },

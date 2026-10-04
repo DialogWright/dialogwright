@@ -454,12 +454,29 @@ describe('the review page\'s Gaps tab', () => {
   });
 
   it('links a stale passage only while it is withheld: once approved again its page is gone, and so is the link', async () => {
-    expect(approve(place, 'late-fees-adult', { by: 'Jane Smith', owner: 'Patron Services' }, '2026-10-03')).toMatchObject({ ok: true });
-    const { text } = await get('/gaps');
-    // The traces still record the withheld passage, so the fix is listed, now with nothing to open.
-    expect(text).toContain('Re-approve passage &quot;late-fees-adult&quot;');
-    expect(text).not.toContain('href="/passage/late-fees-adult');
-    expect((await get('/passage/late-fees-adult')).status).toBe(404);
+    // Its own copy of the app: approving here changes nothing the other tests read, whatever order they run in.
+    const own = join(scratchDir(), 'app');
+    cpSync(dir, own, { recursive: true });
+    const ownPlace = findKb(own, 'app');
+    if (typeof ownPlace === 'string') throw new Error(ownPlace);
+    const ownServer = await startReviewServer({ place: ownPlace, today: () => '2026-10-03', token: TOKEN, traces: [traces], cwd: own });
+    try {
+      const at = async (path: string) => {
+        const r = await fetch(`${ownServer.origin}${path}?token=${TOKEN}`, { redirect: 'manual' });
+        return { status: r.status, text: await r.text() };
+      };
+      expect((await at('/passage/late-fees-adult')).status).toBe(200);
+      expect(approve(ownPlace, 'late-fees-adult', { by: 'Jane Smith', owner: 'Patron Services' }, '2026-10-03')).toMatchObject({ ok: true });
+      const { text } = await at('/gaps');
+      // The traces still record the withheld passage, so the fix is listed, now with nothing to open.
+      expect(text).toContain('Re-approve passage &quot;late-fees-adult&quot;');
+      expect(text).not.toContain('href="/passage/late-fees-adult');
+      expect((await at('/passage/late-fees-adult')).status).toBe(404);
+    } finally {
+      await ownServer.close();
+    }
+    // The shared copy is as it was: its passage still withheld.
+    expect((await get('/passage/late-fees-adult')).status).toBe(200);
   });
 
   it('says where it looked when there are no traces, and why when the knowledge base does not load', async () => {

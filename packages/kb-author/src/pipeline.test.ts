@@ -63,19 +63,40 @@ const RULES: FakeRule[] = [
   { section: 'intro', topic: 'opening_hours', answer: OPENING_HOURS_ANSWER },
 ];
 
-/** A client of the review page: GETs and form POSTs with or without the token, redirects not followed. */
+/**
+ * A browser on the review page: GETs and form POSTs with or without the token, redirects not
+ * followed, the session cookie kept. A POST to a draft's, passage's or topic's action opens its page
+ * first and sends back the form's `seen` (what the page showed), as a person submitting it would.
+ */
 function client(server: ReviewServer) {
   const at = (path: string, token: string | null = server.token): string => `${server.origin}${path}${token === null ? '' : `?token=${encodeURIComponent(token)}`}`;
+  const jar = new Map<string, string>();
+  const headers = (): Record<string, string> => (jar.size > 0 ? { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } : {});
+  const keep = (r: Response): void => {
+    for (const c of r.headers.getSetCookie()) {
+      const [pair] = c.split(';');
+      const eq = pair!.indexOf('=');
+      jar.set(pair!.slice(0, eq), pair!.slice(eq + 1));
+    }
+  };
+  const get = async (path: string, token: string | null = server.token) => {
+    const r = await fetch(at(path, token), { redirect: 'manual', headers: headers() });
+    keep(r);
+    return { status: r.status, text: await r.text() };
+  };
   return {
-    get: async (path: string, token: string | null = server.token) => {
-      const r = await fetch(at(path, token), { redirect: 'manual' });
-      return { status: r.status, text: await r.text() };
-    },
+    get,
     post: async (path: string, fields: Record<string, string | string[]>, token: string | null = server.token) => {
       const body = new URLSearchParams();
       if (token !== null) body.set('token', token);
+      const action = /^(\/(?:draft|passage|topic)\/[^/]+)\/[a-z]+$/.exec(path);
+      if (action && !('seen' in fields)) {
+        const form = new RegExp(`action="${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*><input type="hidden" name="token" value="[^"]*"><input type="hidden" name="seen" value="([^"]*)">`).exec((await get(action[1]!)).text);
+        if (form) body.set('seen', form[1]!);
+      }
       for (const [k, v] of Object.entries(fields)) for (const one of typeof v === 'string' ? [v] : v) body.append(k, one);
-      const r = await fetch(`${server.origin}${path}`, { method: 'POST', body, redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+      const r = await fetch(`${server.origin}${path}`, { method: 'POST', body, redirect: 'manual', headers: { ...headers(), 'content-type': 'application/x-www-form-urlencoded' } });
+      keep(r);
       await r.text();
       return { status: r.status, location: r.headers.get('location') };
     },
@@ -107,9 +128,9 @@ describe('the pipeline: ingest, draft, review, speak', () => {
     ]);
     expect(report.rejected.map((r) => [r.section, r.reasons])).toEqual([
       ['late-fees', ['its excerpt is not in kb/sources/patron-guide-pdf.yaml section "late-fees" word for word']],
-      ['opening-hours', ['its answer is 487 characters, over the 400 kb.yaml allows (maxAnswerChars): a spoken answer is one or two short sentences']],
+      ['opening-hours', ['its excerpt does not say 8, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes', 'its answer is 487 characters, over the 400 kb.yaml allows (maxAnswerChars): a spoken answer is one or two short sentences']],
       ['opening-hours', ['its answer has a brace: an answer is fixed text, said word for word, with no variables']],
-      ['intro', ['it repeats the answer of the passage "opening-hours"']],
+      ['intro', ['its excerpt does not say 9, 8, 10 and 4, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes', 'it repeats the answer of the passage "opening-hours"']],
     ]);
     expect(report.proposed.map((t) => t.id)).toEqual(['meeting_rooms', 'renewing_items', 'library_cards']);
     // The drafter saw the sections, the knowledge base's topics and its limits.
@@ -257,6 +278,7 @@ describe('refreshing the sources', () => {
     const io: Io = { out: (l) => out.push(l), err: (l) => out.push(l), cwd: dir, today: () => TODAY, fetch: guardedFetch('http://127.0.0.1:9').fetch, sleep: clock.sleep, now: clock.now };
     expect(await main(['kb:refresh'], io)).toBe(0);
     expect(out).toEqual([
+      'kb:refresh: asking library.example (the hosts the sources were read from)',
       'kb:refresh kb: 2 reads (1 document): 0 added, 1 changed, 0 unchanged',
       '  changed   faq: ~ borrowing/lost-cards',
       '  not read  fee-schedule-2025: not read again this time (see what was skipped); the source is left as it is',

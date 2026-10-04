@@ -41,7 +41,7 @@ export const SYSTEM_PROMPT = [
   '- Write the answer as one or two short spoken sentences, at most the number of characters you are given, in the language you are given. Say it to the caller ("you", "we"), in plain words.',
   '- Say only what the document says. Add no advice, no opinion, no promise and nothing from outside the document. Leave out anything the document does not state.',
   '- Never use variables, placeholders, braces or markup: the answer is fixed text.',
-  '- Copy into "excerpt" the exact words of the section that support the answer, character for character: a sentence or a few, never paraphrased, never joined across sections.',
+  '- Copy into "excerpt" the exact words of the section that support the answer, character for character: a sentence or a few (at least four words), never paraphrased, never joined across sections. Every number, amount, time and date the answer says must be in the excerpt.',
   '- Give "section" as the id of the section the excerpt is copied from.',
   '- Use an existing topic id in "topic" when the answer fits it, with "newTopic" null. Otherwise give a new topic id (lowercase letters, digits and underscores, starting with a letter) and "newTopic" with a short title, a few exact keywords, and two or three example questions in a caller\'s words.',
   '- Use "applies" only when the document says the answer is for some callers and not others, with the facts and values you are given; otherwise an empty list. Give "effectiveFrom" and "effectiveTo" (YYYY-MM-DD) only when the document states the dates; otherwise null.',
