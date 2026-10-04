@@ -1,7 +1,9 @@
 import { createServer, type Server } from 'node:http';
+import { applyEnvFile, envFilePathOf } from './envFile';
+import { SIGNAL_REPEAT_MS } from './signals';
 import { join } from 'node:path';
-import { consoleExposure, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
-import { createRequestHandler } from './http';
+import { consoleExposure, DEFAULT_DRAIN_MS, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
+import { createRequestHandler, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, type AdapterDeps } from './adapter';
 import { SessionStore } from './sessions';
@@ -28,6 +30,7 @@ import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoute
 import { localOnlyPaths } from './localOnly';
 import { VOICE_RELAY } from '../channel/caps';
 import { CHAT_PATH, chatEndpoint, type ChatEndpoint } from './chat/socket';
+import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
 
 export interface RunningServer {
   server: Server;
@@ -42,6 +45,21 @@ export interface RunningServer {
   chat?: ChatEndpoint;
   /** One pass of the idle sweep the evictor runs on its interval; exposed for tests. */
   sweep(): void;
+  /** Whether the server is stopping: drain (or close) has begun, and `/ready` answers 503. */
+  readonly draining: boolean;
+  /**
+   * The first half of a stop: the server stops taking new work and waits for what is live. From now on
+   * `/ready` answers 503, a new call is put through to the handoff number, and a new chat is refused
+   * `busy`; a live call's turns and its reconnects, and a chat's resume, go on. It resolves once no call
+   * is live and no one is in a chat, or after `ms` (default DRAIN_MS; 0 at once), when it closes the
+   * calls still live with 1001 (going away), so the carrier calls back for them, and answers each of those
+   * callbacks with the handoff number (a few seconds at most). close() follows it.
+   */
+  drain(ms?: number): Promise<void>;
+  /**
+   * Closes the server: it lets turns already running finish (up to two seconds), then closes every
+   * socket and stops listening. Called alone, as a test does, it waits for no call to end.
+   */
   close(): Promise<void>;
 }
 
@@ -81,8 +99,20 @@ export interface ServerOverrides {
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
 const EVICT_EVERY_MS = 60 * 1000;
-/** How long a shutdown waits for turns already in flight before it terminates the sockets anyway. */
+/** How often the idle sweep also sweeps old traces and audit days, when a retention is set. */
+const RETENTION_EVERY_MS = 60 * 60 * 1000;
+/**
+ * How long close() waits for turns already in flight before it terminates the sockets anyway. It is
+ * not the drain: DRAIN_MS (config.ts) is how long a stopping server waits for whole calls to end.
+ */
 const DRAIN_TIMEOUT_MS = 2_000;
+/** How often a drain looks for the last call to have ended. */
+const DRAIN_POLL_MS = 100;
+/**
+ * After the drain closes the calls still live with 1001, how long it waits for their sockets to close
+ * and for the carrier's callback for each (answered with the handoff number) before close() goes on.
+ */
+const GOING_AWAY_MS = 3_000;
 
 /**
  * Call SIDs come from Twilio (CA + 32 hex), but they arrive over the socket, so never let one shape a path.
@@ -180,9 +210,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (bus || routes.some((r) => r.localOnly)) log(consoleExposure(config, localOnlyPaths(routes)));
   for (const warning of mounted.warnings ?? []) log(`WARNING: ${warning}`);
   const app = getApp(defaultAppId());
-  const deps = { config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app };
-
-  const server = createServer(createRequestHandler(deps));
+  let draining = false;
+  /** Set once the drain's wait is over (or close() has begun): a live call's reconnect goes to the handoff number. */
+  let closing = false;
   // The engine's own web chat, when CHAT=on: each session with the phone line's client, tools, audit chain and console.
   const chatSettings = config.chat;
   const chat = chatSettings
@@ -202,6 +232,34 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       },
     })
     : undefined;
+  // Retention, when TRACE_RETENTION_DAYS or AUDIT_RETENTION_DAYS is set: a sweep now and once an hour after.
+  const retention: RetentionSettings = {
+    traceDir: config.traceDir, auditDir: config.auditDir, traceDays: config.traceRetentionDays, auditDays: config.auditRetentionDays,
+  };
+  const retaining = config.traceRetentionDays !== undefined || config.auditRetentionDays !== undefined;
+  let retentionAt = now();
+  const sweepDisk = (): void => {
+    retentionAt = now();
+    const inUse = new Set(store.liveCallSids().map(safeFileStem));
+    const r = sweepRetention(retention, { now: retentionAt, inUse });
+    log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days`);
+  };
+  if (retaining) {
+    const kept = (days: number | undefined) => (days === undefined ? 'forever' : `${days} days`);
+    log(`retention: traces kept ${kept(config.traceRetentionDays)}, audit days kept ${kept(config.auditRetentionDays)}`);
+    if (config.auditRetentionDays !== undefined) {
+      log(`WARNING: AUDIT_RETENTION_DAYS=${config.auditRetentionDays}: audit day files older than ${config.auditRetentionDays} days are deleted, which ends the record for those days`);
+    }
+    sweepDisk();
+  }
+  const deps: HttpDeps = {
+    config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
+    draining: () => draining,
+    closing: () => closing,
+    ...(chat ? { chatLive: () => chat.liveCount() } : {}),
+    ...(retaining ? { disk: diskUsageCache(config.traceDir, config.auditDir, now) } : {}),
+  };
+  const server = createServer(createRequestHandler(deps));
   if (chatSettings) {
     log(`chat: ${CHAT_PATH} for ${chatSettings.origins.any ? 'any origin (laptop)' : [...chatSettings.origins.set].join(', ')}, sign-in ${chatSettings.signIn.method}`);
     // A sign-in method with nothing to sign in as: every token would be refused.
@@ -250,6 +308,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     chat?.sweep();
     const swept = tokens.evictExpired();
     if (swept) log(`swept ${swept} expired call tokens`);
+    if (retaining && now() - retentionAt >= RETENTION_EVERY_MS) sweepDisk();
   };
   const evictor = setInterval(sweep, EVICT_EVERY_MS);
   evictor.unref();
@@ -282,7 +341,70 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     routes,
     ...(chat ? { chat } : {}),
     sweep,
+    get draining() {
+      return draining;
+    },
+    drain: async (ms = config.drainMs ?? DEFAULT_DRAIN_MS) => {
+      draining = true;
+      chat?.drain();
+      const calls = () => store.liveCount();
+      const chats = () => chat?.activeCount() ?? 0;
+      const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+      if (calls() + chats() === 0) {
+        log('drained: no calls or chats left');
+        return;
+      }
+      log(`draining: up to ${ms} ms for ${plural(calls(), 'call')} and ${plural(chats(), 'chat')}; new calls go to the handoff number`);
+      const ended = await new Promise<boolean>((resolve) => {
+        if (ms === 0) return resolve(false);
+        const poll = setInterval(() => {
+          if (calls() + chats() > 0) return;
+          clearInterval(poll);
+          clearTimeout(deadline);
+          resolve(true);
+        }, DRAIN_POLL_MS);
+        const deadline = setTimeout(() => {
+          clearInterval(poll);
+          resolve(false);
+        }, ms);
+      });
+      if (ended) {
+        log('drained: no calls or chats left');
+        return;
+      }
+      log(`drain: ${ms} ms passed with ${plural(calls(), 'call')} and ${plural(chats(), 'chat')} live; closing them`);
+      // Going away, not an error: the carrier posts its action callback for each, and this server, about
+      // to close, answers it with the handoff number (http.ts decideAction), so the caller reaches a person.
+      closing = true;
+      const open = [...wss.clients];
+      for (const c of open) c.close(1001, 'server restarting');
+      if (open.length) {
+        const socketsClosed = Promise.allSettled(open.map((c) => new Promise<void>((resolve) => (c.readyState === c.CLOSED ? resolve() : c.once('close', () => resolve())))));
+        // Each callback ends its call, so the wait is over once every socket has closed and no call is live.
+        await new Promise<void>((resolve) => {
+          let socketsDone = false;
+          const finish = (): void => {
+            clearInterval(poll);
+            clearTimeout(timer);
+            resolve();
+          };
+          const check = (): void => {
+            if (socketsDone && calls() === 0) finish();
+          };
+          const poll = setInterval(check, DRAIN_POLL_MS);
+          const timer = setTimeout(finish, GOING_AWAY_MS);
+          void socketsClosed.then(() => {
+            socketsDone = true;
+            check();
+          });
+        });
+        const left = calls();
+        if (left > 0) log(`drain: no callback for ${plural(left, 'call')}; closing`);
+      }
+    },
     close: async () => {
+      draining = true;
+      closing = true;
       clearInterval(evictor);
       // Let turns that are already running finish (and flush their frames) before the sockets go away.
       const tails = [...store.tails(), ...routes.flatMap((r) => r.tails?.() ?? []), ...(chat?.tails() ?? [])];
@@ -315,17 +437,85 @@ export interface Sidecars {
   close?(): Promise<void>;
 }
 
+export { SIGNAL_REPEAT_MS } from './signals';
+/** How long a crash waits for the server to close before the process exits anyway. */
+export const CRASH_CLOSE_MS = 3_000;
+
+/**
+ * An error as the log takes it: its stack (which names no setting), and its causes' (a failed request
+ * says why in its cause), or for a value that is not an Error, what kind of value it is. Never an
+ * object's contents, which could hold anything (a request's headers, say).
+ */
+export function describeCrash(err: unknown, depth = 0): string {
+  if (!(err instanceof Error)) {
+    if (err === null || err === undefined) return `${String(err)} (not an Error)`;
+    if (typeof err !== 'object') return `${String(err)} (a ${typeof err}, not an Error)`;
+    const kind = (err as { constructor?: { name?: string } }).constructor?.name || 'object';
+    return `${/^[aeiou]/i.test(kind) ? 'an' : 'a'} ${kind}, not an Error`;
+  }
+  const own = err.stack ?? `${err.name}: ${err.message}`;
+  const cause = (err as { cause?: unknown }).cause;
+  return cause === undefined || depth >= 3 ? own : `${own}\n  caused by: ${describeCrash(cause, depth + 1)}`;
+}
+
 /**
  * The process entry point, run by an app's launcher after it has registered the app. `start`, if
  * given, starts what the app runs beside the server, once the config has loaded.
+ *
+ * It reads a settings file first when ENV_FILE or `--env-file <path>` names one (envFile.ts; a
+ * variable already in the environment wins). A crash (an uncaught exception or an unhandled
+ * rejection) is logged with its stack and exits 1 after a short best-effort close (CRASH_CLOSE_MS),
+ * so the service manager restarts the process. That is Node's own rule for an unhandled rejection,
+ * kept on purpose and not an option: a server in a state nothing planned for should start again
+ * rather than go on answering calls. Code that means to carry on after a rejection catches it. The first SIGINT or SIGTERM stops the server; a second one exits at
+ * once, 130 for SIGINT and 143 for SIGTERM.
  */
 export async function main(start?: (config: ServerConfig) => Promise<Sidecars>): Promise<void> {
+  // What a crash closes, once there is something to close.
+  let closeOnCrash: (() => Promise<unknown>) | null = null;
+  let crashed = false;
+  const crash = (kind: string) => (err: unknown): void => {
+    console.error(`[server] fatal: ${kind}: ${describeCrash(err)}`);
+    if (crashed) return;
+    crashed = true;
+    // Set first: the deadline timer does not hold the process open, so it may end on its own before process.exit.
+    process.exitCode = 1;
+    if (closeOnCrash !== null) console.error(`[server] closing (up to ${CRASH_CLOSE_MS / 1000} s: turns under way finish, a new call goes to the handoff number), then exit 1`);
+    const deadline = new Promise<void>((resolve) => setTimeout(resolve, CRASH_CLOSE_MS).unref());
+    void Promise.race([Promise.resolve().then(() => closeOnCrash?.()), deadline]).catch(() => {}).finally(() => process.exit(1));
+  };
+  process.on('uncaughtException', crash('uncaught exception'));
+  process.on('unhandledRejection', crash('unhandled rejection'));
   try {
+    const envFile = envFilePathOf(process.argv.slice(2), process.env);
+    if (envFile !== null) applyEnvFile(envFile, process.env);
     const config = loadConfig(process.env);
+    if (envFile !== null) console.log(`[server] settings from ${envFile} (a variable already in the environment wins over the file)`);
     console.log(`[server] ${describeConfig(config)}`);
     if (!config.signatureCheck) console.log('[server] WARNING: webhook signature validation is OFF');
     const sidecars = start ? await start(config) : {};
     const running = await startServer(config, sidecars.overrides ?? {});
+    closeOnCrash = () => Promise.allSettled([running.close(), sidecars.close?.()]);
+    let stoppedAt: number | null = null;
+    const stop = (signal: NodeJS.Signals): void => {
+      const at = Date.now();
+      if (stoppedAt === null) {
+        stoppedAt = at;
+        console.log(`[server] shutting down (${signal}; a second one stops at once)`);
+        // The app's own services stay up while live calls finish, since those calls still use them.
+        void running
+          .drain()
+          .catch(() => {})
+          .then(() => Promise.allSettled([running.close(), sidecars.close?.()]))
+          .then(() => process.exit(0));
+        return;
+      }
+      if (at - stoppedAt < SIGNAL_REPEAT_MS) return;
+      console.log(`[server] forced exit (${signal} while shutting down)`);
+      process.exit(signal === 'SIGINT' ? 130 : 143);
+    };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
     const base = publicBase(config, running.port);
     const webhooks = config.voiceProviders.map((id) => `${base}/voice/${id}`).join(', ');
     const legacy = config.voiceProviders.includes('twilio') ? ' (Twilio also on /voice)' : '';
@@ -333,12 +523,6 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
     const consoleBase = config.consoleLocalOnly ? localBase(running.port) : base;
     if (running.bus) console.log(`[server] console ${consoleBase}/dashboard`);
     for (const r of running.routes) console.log(`[server] ${r.label} ${(r.localOnly ? consoleBase : base)}${r.path}`);
-    const stop = () => {
-      console.log('[server] shutting down');
-      void Promise.allSettled([running.close(), sidecars.close?.()]).then(() => process.exit(0));
-    };
-    process.on('SIGINT', stop);
-    process.on('SIGTERM', stop);
   } catch (e) {
     console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);

@@ -95,26 +95,55 @@
 <pre data-copy><code>git clone https://github.com/DialogWright/dialogwright.git
 cd dialogwright
 pnpm install
-pnpm check</code></pre>
-        <p>Talk to the clinic example in a text console:</p>
-<pre data-copy><code>pnpm --filter @dialogwright/example-clinic cli --client heuristic</code></pre>
-        <p>Or run the utility example's server on your laptop and chat with it in a browser, through the same engine a call uses:</p>
-<pre data-copy><code>pnpm --filter @dialogwright/widget build
-PUBLIC_HOST=localhost TWILIO_AUTH_TOKEN=unused HANDOFF_NUMBER=+15551234567 \
-  CHAT=on CHAT_ALLOWED_ORIGINS=http://localhost:3000 CHAT_SIGNIN=mock WIDGET=on \
-  pnpm --filter @dialogwright/example-utility serve</code></pre>
+pnpm --filter @dialogwright/widget build
+pnpm configure --app utility --mode try
+pnpm start --app utility</code></pre>
         <p>
-          Then open <code>http://localhost:3000/chat-demo</code> (a fictional account page with the chat widget on it) and
+          <code>pnpm configure</code> asks which app and how to try it (the flags above answer for the utility example, on this
+          computer) and writes the app's settings to <code>apps/utility/.env</code>: the server on <code>localhost</code>, the web
+          chat and its widget on, no model. <code>pnpm start</code> runs the app's server with that file. Then open
+          <code>http://localhost:3000/chat-demo</code> (a fictional account page with the chat widget on it) and
           <code>http://localhost:3000/dashboard</code> (the operator console, showing the chat as it happens). Both exist
           only on this machine. The <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/README.md#try-the-web-chat-on-your-laptop">utility's README</a>
-          says what to try.
+          says what to try. Ctrl-C stops it.
         </p>
+        <p>The same server by hand, with its settings on the command line instead of in a file:</p>
+<pre data-copy><code>PUBLIC_HOST=localhost TWILIO_AUTH_TOKEN=unused HANDOFF_NUMBER=+15551234567 \
+  CHAT=on CHAT_ALLOWED_ORIGINS=http://localhost:3000 CHAT_SIGNIN=mock WIDGET=on \
+  pnpm --filter @dialogwright/example-utility serve</code></pre>
+        <p>Or talk to the clinic example in a text console, with no server at all:</p>
+<pre data-copy><code>pnpm --filter @dialogwright/example-clinic cli --client heuristic</code></pre>
         <p>
           With one key you can hear the real model in the same console:
           <code>pnpm --filter @dialogwright/example-clinic cli --client jev</code> with <code>TYPESAFE_API_KEY</code> set
           (or another provider, <a href="#accounts">section 3</a>). To build your own app, run
           <code>pnpm create-app myline</code> and read
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md">Authoring an app</a>.
+        </p>
+
+        <h3>Then a phone line, the same evening</h3>
+        <p>
+          With a carrier account and a number (Telnyx or Twilio), a decision model key (<a href="#accounts">section 3</a>) and
+          <code>cloudflared</code> installed (<code>brew install cloudflared</code> on a Mac; <a href="#tunnel">section 6</a>):
+        </p>
+<pre data-copy><code>pnpm configure --app utility --force
+pnpm start --app utility</code></pre>
+        <p>
+          This time choose a phone line. <code>pnpm configure</code> asks for the carrier and its key, the model and its key, and
+          the number a call goes to for a person. A key is read with the echo off (or taken from the environment variable of its
+          own name, never from a flag) and written only to the app's <code>.env</code>, readable by you alone; the command prints
+          its length, never the key, and sends it nowhere. It then checks the file (<code>pnpm diagnose --offline</code>) and
+          says where to paste the webhook in the carrier's console. <code>pnpm start</code> opens a Cloudflare quick tunnel,
+          which needs no account, starts the server with the tunnel's hostname, and prints the webhook URL
+          (<code>https://&lt;words&gt;.trycloudflare.com/voice/telnyx</code>): paste it into your number
+          (<a href="#carrier">section 7</a>) and call. It also prints a <code>pnpm diagnose</code> line with the tunnel's
+          hostname: run it in another terminal while the server runs, and it checks the line end to end
+          (<a href="#checking">section 8</a>).
+        </p>
+        <p>
+          The hostname changes every time <code>pnpm start</code> runs, so the webhook does too: fine for an evening, wrong for a
+          line people rely on. The sections below make it permanent: a machine that stays on, the settings outside the
+          repository, a named tunnel, and a service that starts it at boot.
         </p>
       </section>
 
@@ -345,9 +374,15 @@ chmod 700 ~/ivr</code></pre>
       <section id="configuration" aria-labelledby="configuration-title">
         <h2 id="configuration-title">5. Configuration</h2>
         <p>
-          The server reads only its environment; it does not read a <code>.env</code> file itself. Keep the settings in
-          <code>~/ivr/myline.env</code>, outside the repository and readable by you alone; you load it into a shell, and
-          the service loads it the same way. The values below are made up. The variables, their defaults and their checks
+          The server reads its environment and, when <code>ENV_FILE</code> names one, a settings file; a variable already in
+          the environment wins over the file. <code>pnpm configure</code> writes one in the app's folder. For a line that stays
+          up, keep it outside the repository instead, in <code>~/ivr/myline.env</code>, readable by you alone, and name it:
+          <code>ENV_FILE=~/ivr/myline.env pnpm start --app myline</code> and
+          <code>ENV_FILE=~/ivr/myline.env pnpm diagnose --app myline</code> read it, and the service file
+          (<a href="#running">section 9</a>) names it the same way. (<code>--env-file &lt;path&gt;</code> works too where pnpm
+          passes it on, but some pnpm builds read a <code>--env-file</code> themselves, and fail on a relative path before the
+          command starts, so <code>ENV_FILE=</code> is the form to use.) Write it by hand from the example below, or move the one <code>pnpm configure</code> wrote
+          (<code>mv apps/myline/.env ~/ivr/myline.env</code>). The values below are made up. The variables, their defaults and their checks
           are the server's own (<code>packages/dialogwright/src/server/config.ts</code>): it refuses to start, naming the
           variable, when one is missing or malformed.
         </p>
@@ -452,7 +487,12 @@ TIMEZONE=America/Chicago
         </p>
 
         <h3>To try it: a quick tunnel, no account</h3>
-        <p>In one terminal:</p>
+        <p>
+          <code>pnpm start</code> does this for you when <code>PUBLIC_HOST</code> is unset (or with <code>--tunnel quick</code>):
+          it starts <code>cloudflared</code>, reads the hostname it is given, starts the server with it, prints the webhook URL,
+          and stops the tunnel only once the server has finished its calls. Without <code>cloudflared</code> it says how to
+          install it. By hand, in one terminal:
+        </p>
 <pre data-copy><code>cloudflared tunnel --url http://localhost:3000</code></pre>
         <p>
           It prints a random <code>https://&lt;words&gt;.trycloudflare.com</code> address. Put that hostname (without
@@ -610,7 +650,19 @@ cloudflared tunnel run myline</code></pre>
               machine and through the tunnel:</p>
 <pre data-copy><code>curl -s http://localhost:3000/health
 curl -s https://ivr.example.com/health</code></pre>
-            <p>Both print <code>{"ok":true,"sessions":0,"retained":0}</code>: the calls live now, and the ended ones still held for a minute.</p>
+            <p>Both print <code>{"ok":true,"sessions":0,"retained":0}</code>: the calls live now, and the ended ones still held for a
+              minute. <code>/health</code> says the process is up; <code>/ready</code> says whether it takes new calls
+              (<code>{"ready":true}</code>, or 503 while it drains before a stop).</p>
+          </li>
+          <li>
+            <p>Or let <code>pnpm diagnose</code> check all of it, and more, one line each with its fix: the settings load, the
+              hostname resolves and <code>/health</code> answers through the tunnel, the console is a 404 there, the carrier's
+              secret has its shape, the model and its key variable, the handoff number is not a 555 number, the folders can be
+              written with space to spare, the settings file is yours alone, and the clock is right against the carrier's (Telnyx
+              refuses a webhook whose signature is more than five minutes off). It sends no key anywhere and calls no carrier or
+              model API: its requests are to your own hostname, and one <code>HEAD</code> to the carrier's API host to read the
+              time it answers with.</p>
+<pre data-copy><code>cd ~/dialogwright &amp;&amp; ENV_FILE=~/ivr/myline.env pnpm diagnose --app myline</code></pre>
           </li>
           <li>
             <p>The console is not public. This prints <code>404</code>:</p>
@@ -630,7 +682,7 @@ curl -s https://ivr.example.com/health</code></pre>
               model answered, what the gate decided, how long each step took), and <code>&lt;call&gt;.frames.jsonl</code>, every frame in
               and out. The audit folder has one hash-chained file per UTC day; check the chains:</p>
 <pre data-copy><code>ls -lt ~/ivr/data/traces | head
-cd ~/dialogwright &amp;&amp; pnpm --filter dialogwright exec tsx src/audit/verifyCli.ts ~/ivr/data/audit</code></pre>
+cd ~/dialogwright &amp;&amp; pnpm audit:verify ~/ivr/data/audit</code></pre>
           </li>
         </ol>
         <p>
@@ -643,89 +695,80 @@ cd ~/dialogwright &amp;&amp; pnpm --filter dialogwright exec tsx src/audit/verif
       <section id="running" aria-labelledby="running-title">
         <h2 id="running-title">9. Keeping it running</h2>
         <p>
-          Once the line works, hand it to the system's service manager: it starts the server at boot or login, restarts it when
-          it exits, and keeps its output. Either way the service loads <code>~/ivr/myline.env</code> and runs
-          <code>pnpm --filter @dialogwright/example-myline serve</code> from the repository. A stop sends SIGTERM, which pnpm passes
-          to the server; the server lets turns already running finish (for up to about two seconds), closes the sockets and exits.
-          Use the paths <code>which node pnpm</code> printed.
+          Once the line works, hand it to the system's service manager: it starts the server at login or boot, restarts it when
+          it exits, and keeps its output. <code>pnpm service</code> writes the service file for this machine, with the absolute
+          paths of the repository, pnpm, node and the settings file, and prints the commands that install it; it runs none of
+          them. The service runs <code>pnpm --filter @dialogwright/example-myline serve</code> from the repository with
+          <code>ENV_FILE</code> naming <code>~/ivr/myline.env</code>, so the server reads the same file <code>pnpm start</code>
+          and <code>pnpm diagnose</code> read. Nothing from the file goes into the service file but its path.
+        </p>
+        <p>
+          A stop sends SIGTERM to pnpm, which passes it to the server and waits. The server drains: <code>/ready</code> answers
+          503, a new call is put through to <code>HANDOFF_NUMBER</code>, a new chat is told it is busy, and live calls go on
+          until they end or <code>DRAIN_MS</code> passes (30 seconds by default); a call still going then is put through to
+          <code>HANDOFF_NUMBER</code>, and the server exits. The service gives a stop <code>DRAIN_MS</code> and ten seconds more
+          before it kills anything. A second signal stops the server at once. A crash is logged with its stack and exits 1
+          after a short close, and the service manager starts it again.
         </p>
 
-        <h3>Linux: a systemd unit</h3>
-        <p>systemd reads the settings file as it is (<code>KEY=value</code> lines; <code>#</code> lines are comments).</p>
-        <figure>
-          <figcaption><code>/etc/systemd/system/myline.service</code></figcaption>
-<pre data-copy><code>[Unit]
-Description=DialogWright phone line (myline)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=alex
-WorkingDirectory=/home/alex/dialogwright
-EnvironmentFile=/home/alex/ivr/myline.env
-ExecStart=/usr/local/bin/pnpm --filter @dialogwright/example-myline serve
-Restart=always
-RestartSec=10
-TimeoutStopSec=15
-
-[Install]
-WantedBy=multi-user.target</code></pre>
-        </figure>
-<pre data-copy><code>sudo systemctl daemon-reload
-sudo systemctl enable --now myline   # start now, and at every boot
-systemctl status myline              # running or not
-journalctl -u myline -f              # its output
-sudo systemctl restart myline        # drops live calls
-sudo systemctl stop myline</code></pre>
-
         <h3>macOS: a launchd agent</h3>
+<pre data-copy><code>cd ~/dialogwright
+ENV_FILE=~/ivr/myline.env pnpm service launchd --app myline --label com.example.myline</code></pre>
+        <p>It writes <code>~/Library/LaunchAgents/com.example.myline.plist</code> from this template, its values filled in:</p>
         <figure>
-          <figcaption><code>~/Library/LaunchAgents/com.example.myline.plist</code></figcaption>
-<pre data-copy><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+          <figcaption><code>packages/dialogwright/templates/service/launchd.plist</code></figcaption>
+<pre data-from="packages/dialogwright/templates/service/launchd.plist"><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
 &lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;!-- Written by pnpm service: the DialogWright app {{app}}, run from the repository with its settings file. --&gt;
 &lt;plist version="1.0"&gt;
 &lt;dict&gt;
   &lt;key&gt;Label&lt;/key&gt;
-  &lt;string&gt;com.example.myline&lt;/string&gt;
-  &lt;!-- Load the settings, then run the app's server from the repository. --&gt;
+  &lt;string&gt;{{label}}&lt;/string&gt;
   &lt;key&gt;ProgramArguments&lt;/key&gt;
   &lt;array&gt;
-    &lt;string&gt;/bin/bash&lt;/string&gt;
-    &lt;string&gt;-c&lt;/string&gt;
-    &lt;string&gt;set -a; source /Users/alex/ivr/myline.env; set +a; exec pnpm --filter @dialogwright/example-myline serve&lt;/string&gt;
+    &lt;string&gt;{{pnpm}}&lt;/string&gt;
+    &lt;string&gt;--filter&lt;/string&gt;
+    &lt;string&gt;{{app}}&lt;/string&gt;
+    &lt;string&gt;serve&lt;/string&gt;
   &lt;/array&gt;
   &lt;key&gt;WorkingDirectory&lt;/key&gt;
-  &lt;string&gt;/Users/alex/dialogwright&lt;/string&gt;
-  &lt;!-- launchd starts with a short PATH: name the folders node and pnpm are in. --&gt;
+  &lt;string&gt;{{root}}&lt;/string&gt;
+  &lt;!-- The server reads the settings file itself (ENV_FILE). launchd starts with a short PATH: these hold node and pnpm. --&gt;
   &lt;key&gt;EnvironmentVariables&lt;/key&gt;
   &lt;dict&gt;
+    &lt;key&gt;ENV_FILE&lt;/key&gt;
+    &lt;string&gt;{{envFile}}&lt;/string&gt;
     &lt;key&gt;PATH&lt;/key&gt;
-    &lt;string&gt;/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin&lt;/string&gt;
+    &lt;string&gt;{{path}}&lt;/string&gt;
     &lt;key&gt;COREPACK_ENABLE_DOWNLOAD_PROMPT&lt;/key&gt;
     &lt;string&gt;0&lt;/string&gt;
   &lt;/dict&gt;
-  &lt;!-- Start when loaded, and again whenever it exits (at most once every 10 seconds). --&gt;
+  &lt;!-- Start when loaded, and again whenever it exits, at most once every 10 seconds. --&gt;
   &lt;key&gt;RunAtLoad&lt;/key&gt;
   &lt;true/&gt;
   &lt;key&gt;KeepAlive&lt;/key&gt;
   &lt;true/&gt;
   &lt;key&gt;ThrottleInterval&lt;/key&gt;
   &lt;integer&gt;10&lt;/integer&gt;
-  &lt;!-- On stop: SIGTERM, then this many seconds before SIGKILL. --&gt;
+  &lt;key&gt;ProcessType&lt;/key&gt;
+  &lt;string&gt;Interactive&lt;/string&gt;
+  &lt;!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_MS and 10 more) before SIGKILL. --&gt;
   &lt;key&gt;ExitTimeOut&lt;/key&gt;
-  &lt;integer&gt;15&lt;/integer&gt;
+  &lt;integer&gt;{{stopSeconds}}&lt;/integer&gt;
   &lt;key&gt;StandardOutPath&lt;/key&gt;
-  &lt;string&gt;/Users/alex/ivr/logs/myline.out.log&lt;/string&gt;
+  &lt;string&gt;{{logDir}}/out.log&lt;/string&gt;
   &lt;key&gt;StandardErrorPath&lt;/key&gt;
-  &lt;string&gt;/Users/alex/ivr/logs/myline.err.log&lt;/string&gt;
+  &lt;string&gt;{{logDir}}/err.log&lt;/string&gt;
 &lt;/dict&gt;
 &lt;/plist&gt;</code></pre>
         </figure>
-<pre data-copy><code>plutil -lint ~/Library/LaunchAgents/com.example.myline.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.myline.plist   # start, and at every login
+        <p>and prints the commands that install, check and stop it:</p>
+<pre data-copy><code>mkdir -p ~/Library/Logs/com.example.myline
+plutil -lint ~/Library/LaunchAgents/com.example.myline.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.myline.plist   # start now, and at every login
 launchctl print gui/$(id -u)/com.example.myline | grep -E 'state|pid'             # running or not
-tail -f ~/ivr/logs/myline.out.log ~/ivr/logs/myline.err.log                       # its output
-launchctl kickstart -k gui/$(id -u)/com.example.myline                            # restart: drops live calls
+tail -f ~/Library/Logs/com.example.myline/out.log ~/Library/Logs/com.example.myline/err.log   # its output
+launchctl kickstart -k gui/$(id -u)/com.example.myline                            # restart: live calls get DRAIN_MS to finish
 launchctl bootout gui/$(id -u)/com.example.myline                                 # stop, and keep it stopped</code></pre>
         <p>
           An agent runs while you are logged in: turn on automatic login, or run it at boot as a daemon (copy the file to
@@ -733,9 +776,59 @@ launchctl bootout gui/$(id -u)/com.example.myline                               
           and use <code>sudo launchctl bootstrap system ...</code> and <code>system/com.example.myline</code>). With
           <code>KeepAlive</code> on, killing the process only restarts it: <code>bootout</code> stops it.
         </p>
+
+        <h3>Linux: a systemd user unit</h3>
+<pre data-copy><code>cd ~/dialogwright
+ENV_FILE=~/ivr/myline.env pnpm service systemd --app myline --label myline</code></pre>
+        <p>It writes <code>~/.config/systemd/user/myline.service</code> from this template:</p>
+        <figure>
+          <figcaption><code>packages/dialogwright/templates/service/systemd.service</code></figcaption>
+<pre data-from="packages/dialogwright/templates/service/systemd.service"><code># Written by pnpm service: the DialogWright app {{app}}, run from the repository with its settings file.
+[Unit]
+Description=DialogWright: {{app}}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory={{root}}
+# The server reads the settings file itself (ENV_FILE), as pnpm start and pnpm diagnose do.
+Environment="ENV_FILE={{envFile}}"
+Environment="PATH={{path}}"
+Environment="COREPACK_ENABLE_DOWNLOAD_PROMPT=0"
+ExecStart={{pnpm}} --filter {{app}} serve
+Restart=always
+RestartSec=10
+# On stop: SIGTERM to pnpm, which passes it to the server and waits while it drains; the rest of
+# the service gets SIGKILL only if it is still there after TimeoutStopSec (DRAIN_MS and 10 more).
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec={{stopSeconds}}
+
+[Install]
+WantedBy=default.target</code></pre>
+        </figure>
+        <p>
+          and prints the commands below. A systemd user service runs only while you are logged in: systemd starts it at your
+          first login and stops it when your last session ends, an ssh session too. For a line that starts at boot and stays
+          up with no one logged in, turn on lingering for your user once, with <code>loginctl enable-linger</code> (some systems
+          ask for sudo; <code>loginctl show-user "$USER" --property=Linger</code> says <code>yes</code> when it is on).
+        </p>
+<pre data-copy><code>systemctl --user daemon-reload
+systemctl --user enable --now myline   # start now, and at every login
+loginctl enable-linger "$USER"         # and at boot, with no one logged in (once)
+systemctl --user status myline         # running or not
+journalctl --user -u myline -f         # its output
+systemctl --user restart myline        # restart: live calls get DRAIN_MS to finish
+systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
+        <p>
+          A system unit works the same way: copy the file to <code>/etc/systemd/system/</code>, add <code>User=alex</code> under
+          <code>[Service]</code>, make it <code>WantedBy=multi-user.target</code>, and use <code>sudo systemctl</code> without
+          <code>--user</code> (and without the linger).
+        </p>
         <p>
           On either system, a wrong setting shows as a restart every ten seconds, with the variable named in the output
-          (<code>missing required environment variable TELNYX_PUBLIC_KEY (VOICE_PROVIDERS includes telnyx)</code>).
+          (<code>missing required environment variable TELNYX_PUBLIC_KEY (VOICE_PROVIDERS includes telnyx)</code>):
+          run <code>ENV_FILE=~/ivr/myline.env pnpm diagnose --app myline</code> first.
         </p>
       </section>
 
@@ -744,8 +837,10 @@ launchctl bootout gui/$(id -u)/com.example.myline                               
         <h3>Updating</h3>
         <p>
           DialogWright is pre-release and its APIs change, so update on purpose, and note the commit you last ran well
-          (<code>git rev-parse --short HEAD</code>) so you can go back. An update restarts the server, which drops live calls:
-          check <code>/health</code> says <code>"sessions":0</code> first.
+          (<code>git rev-parse --short HEAD</code>) so you can go back. An update restarts the server: it stops taking new calls
+          and gives live ones <code>DRAIN_MS</code> to finish, but a call still going after that is put through to
+          <code>HANDOFF_NUMBER</code> rather than carried on (the server does not keep its calls across a restart yet), so check
+          <code>/health</code> says <code>"sessions":0</code> first.
         </p>
 <pre data-copy><code>cd ~/dialogwright
 git pull
@@ -754,7 +849,7 @@ pnpm check
 pnpm --filter @dialogwright/example-myline test
 pnpm --filter @dialogwright/widget build     # if you serve the widget
 curl -s http://localhost:3000/health
-sudo systemctl restart myline                # or: launchctl kickstart -k gui/$(id -u)/com.example.myline</code></pre>
+systemctl --user restart myline              # or: launchctl kickstart -k gui/$(id -u)/com.example.myline</code></pre>
         <p>Update the operating system, Node and <code>cloudflared</code> on the same quiet occasions.</p>
 
         <h3>Backing up</h3>
@@ -766,9 +861,13 @@ sudo systemctl restart myline                # or: launchctl kickstart -k gui/$(
 
         <h3>What to watch</h3>
         <ul>
-          <li><strong>Disk.</strong> Nothing deletes old traces: two files per call, kept until you remove them. Check
-            <code>du -sh ~/ivr/data/*</code> now and then. The traces are what <code>pnpm kb:gaps</code> reads to find the
-            questions your knowledge base did not answer, so archive them before you prune them.</li>
+          <li><strong>Disk.</strong> Unless you say otherwise, nothing deletes old traces: two files per call, kept until you
+            remove them. <code>TRACE_RETENTION_DAYS=30</code> deletes traces and frame logs last written more than 30 days ago,
+            swept at startup and once an hour, and <code>/health</code> then reports <code>disk</code>
+            (<code>traceBytes</code>, <code>auditBytes</code>) for a monitor. <code>AUDIT_RETENTION_DAYS</code> does the same
+            for audit days, which ends the record for those days: keep them as long as you must keep the record. The traces are
+            what <code>pnpm kb:gaps</code> reads to find the questions your knowledge base did not answer, so archive them
+            before they go.</li>
           <li><strong>The output.</strong> Errors and restarts show there first.</li>
           <li><strong>Slow turns.</strong> Each trace record carries its timing (<code>timing.askMs</code>, <code>timing.totalMs</code>).
             A model request slower than <code>JEV_TIMEOUT_MS</code> plays the slow-turn line and keeps the question open.</li>
@@ -795,10 +894,11 @@ sudo systemctl restart myline                # or: launchctl kickstart -k gui/$(
       <section id="coming" aria-labelledby="coming-title">
         <h2 id="coming-title">11. What is coming</h2>
         <p>
-          Phase 8 is production: store interfaces with production implementations, resume across instances, idempotent writes,
-          readiness and drain, a <code>docker compose</code> stack, a reference deployment and console access control. For one
-          machine the piece that matters most is a session store that outlives the process, so an update no longer drops a call.
-          Until then, update when the line is quiet. When one machine is no longer enough, the same app folder is designed to
+          Phase 8 is a machine you own, run for months. Its first part is here: <code>pnpm configure</code>,
+          <code>pnpm start</code> with a quick tunnel, settings files, readiness and a drain, retention, <code>pnpm diagnose</code>
+          and service files. Next for one machine is a session store that outlives the process, so a restart no longer drops a
+          call; then writes that are never done twice after a crash, carrier fallback documents, and console sign-in. Until the
+          store, update when the line is quiet. When one machine is no longer enough, the same app folder is designed to
           run on many servers.
         </p>
         <p class="links">

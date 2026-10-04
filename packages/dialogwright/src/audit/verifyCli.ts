@@ -1,15 +1,19 @@
 import { existsSync, readdirSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyChain } from './verify';
 
 /**
  * Re-walk every audit day-file's hash chain and report. The server writes where AUDIT_DIR points
- * (src/server/config.ts), so this reads the same place; a directory argument overrides both.
- * Returns the process exit code (0 when every chain is intact or there are no files, 1 otherwise).
+ * (src/server/config.ts), so this reads the same place; a directory argument overrides both. A
+ * relative one is from where the command was run (pnpm's INIT_CWD: `pnpm audit:verify` runs this in
+ * the engine package's folder), else from the working directory. It is `pnpm audit:verify [dir]` at
+ * the repository root. Returns the process exit code (0 when every chain is intact or there are no
+ * files, 1 otherwise).
  */
 export function main(argv: string[] = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): number {
-  const dir = argv[0] ?? (env.AUDIT_DIR?.trim() || 'audit');
+  const named = argv[0] ?? (env.AUDIT_DIR?.trim() || 'audit');
+  const dir = isAbsolute(named) ? named : resolve(env.INIT_CWD?.trim() || process.cwd(), named);
   if (!existsSync(dir)) {
     console.log(`no audit files in ${dir}`);
     return 0;

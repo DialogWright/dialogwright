@@ -80,13 +80,13 @@ PORT=3200 PUBLIC_HOST=clinic.example.test TWILIO_AUTH_TOKEN=x HANDOFF_NUMBER=+15
   HANDOFF_SUMMARY=off CONSOLE_LOCAL_ONLY=off pnpm --filter @dialogwright/example-clinic serve
 ```
 
-The operator console is then at `http://localhost:3200/dashboard`, branded for the practice.
+The operator console is then at `http://localhost:3200/dashboard`, branded for the practice. The server also reads a settings file when `ENV_FILE=<path>` names one: `ENV_FILE=$PWD/apps/clinic/.env pnpm --filter @dialogwright/example-clinic serve`. A variable already in the environment wins over the file. `pnpm configure --app clinic` asks and writes that file (mode 600), and `pnpm start --app clinic` runs the server with it, through a quick tunnel when `PUBLIC_HOST` is unset.
 
 ## Recording the cassette
 
 The stub answers from the corpus labels. A cassette is the decision model's own answers, recorded once and replayed offline, so a run can show how a real model does on the clinic's calls without calling it again. Recording calls the paid perception API (a full recording of the clinic is about 3.2 million input tokens, about $0.13 at the time of writing), so it is a deliberate local step and never part of CI.
 
-You need a key for the decision model: a TypeSafe API key, or a key from OpenRouter or the Vercel AI Gateway, which serve the same Jev (`JEV_PROVIDER`; `.env.example` lists the four options, the fourth a compatible endpoint). Copy `apps/clinic/.env.example` to `apps/clinic/.env` (git-ignored), put the key in it (`TYPESAFE_API_KEY` for TypeSafe), and load it into your shell, since the launchers do not read a `.env` file themselves:
+You need a key for the decision model: a TypeSafe API key, or a key from OpenRouter or the Vercel AI Gateway, which serve the same Jev (`JEV_PROVIDER`; `.env.example` lists the four options, the fourth a compatible endpoint). Copy `apps/clinic/.env.example` to `apps/clinic/.env` (git-ignored), put the key in it (`TYPESAFE_API_KEY` for TypeSafe), and load it into your shell, since `regress` and `cli` do not read a `.env` file themselves (the server does, when `ENV_FILE` names it):
 
 ```sh
 # at the repository root

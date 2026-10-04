@@ -101,6 +101,13 @@ export interface ChatEndpoint {
   close(): void;
   /** Sessions not yet ended. */
   liveCount(): number;
+  /**
+   * Sessions someone is in now: with a socket open, or a turn under way. A session whose socket has
+   * dropped waits for a resume until it is idle (CHAT_IDLE_MS), but no one is waiting on it.
+   */
+  activeCount(): number;
+  /** The server is stopping: a new chat is refused `busy` from now on, and a resume is still taken. */
+  drain(): void;
 }
 
 const fresh = (): string => randomBytes(16).toString('hex');
@@ -152,6 +159,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   let fullLogged = false;
   const resumeIds = new Map<string, string>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: CHAT_MAX_PAYLOAD });
+  /** Set when the server starts to stop (ChatEndpoint.drain). */
+  let draining = false;
 
   const unwritable = new WeakSet<FrameLog>();
   /**
@@ -305,6 +314,12 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   /** A new session for a start, its opening turn queued: ready, then the opening lines. */
   const open = (conn: ChatConnection, m: Extract<ClientMessage, { type: 'start' }>): void => {
     // A new chat only: a resume reopens a session already counted, and is never refused for the limit.
+    if (draining) {
+      log('chat refused: the server is stopping');
+      send(conn.ws, null, { type: 'error', code: 'busy', message: 'the chat is restarting: try again in a moment' });
+      conn.ws.close(1013, 'busy');
+      return;
+    }
     if (sessions.size >= deps.settings.maxSessions) {
       if (!fullLogged) log(`chat refused: ${sessions.size} chat sessions are live, the most CHAT_MAX_SESSIONS allows`);
       fullLogged = true;
@@ -520,6 +535,14 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     },
     liveCount() {
       return sessions.size;
+    },
+    activeCount() {
+      let n = 0;
+      for (const e of sessions.values()) if (e.socket !== null || e.inFlight > 0 || e.waiting > 0) n += 1;
+      return n;
+    },
+    drain() {
+      draining = true;
     },
   };
 }
