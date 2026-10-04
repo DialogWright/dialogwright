@@ -40,6 +40,13 @@ export interface HttpDeps {
    * starts in, and each locale's languages and voices. Without it, a start document names no language.
    */
   app?: App;
+  /**
+   * Whether the server is draining (index.ts RunningServer.drain): `/ready` answers 503 and a new call
+   * goes to the handoff number. Absent, never: the server is ready whenever it answers.
+   */
+  draining?: () => boolean;
+  /** Live web chats, for `/health`'s `chat`; absent when the engine's chat is off, and `/health` then has no `chat`. */
+  chatLive?: () => number;
 }
 
 const MAX_BODY = 64 * 1024;
@@ -80,6 +87,16 @@ function lowerHeaders(h: IncomingHttpHeaders): Record<string, string | undefined
   const out: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(h)) out[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;
   return out;
+}
+
+/** A JSON body, or for HEAD its headers alone. */
+function answerJson(req: IncomingMessage, res: ServerResponse, status: number, body: string): void {
+  if (req.method === 'HEAD') {
+    res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+    res.end();
+  } else {
+    reply(res, status, 'application/json', body);
+  }
 }
 
 function reply(res: ServerResponse, status: number, type: string, body: string): void {
@@ -346,16 +363,25 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         return;
       }
       if ((req.method === 'GET' || req.method === 'HEAD') && path === '/health') {
-        // `sessions` is what is live; `retained` is ended calls still inside their grace period,
-        // which are memory but not callers.
+        // Liveness: the process answers. `sessions` is what is live; `retained` is ended calls still
+        // inside their grace period, which are memory but not callers. `chat` is there when the chat
+        // is on, and `draining` while the server is stopping, so a body is what it was before either.
         const live = deps.store.liveCount();
-        const body = JSON.stringify({ ok: true, sessions: live, retained: deps.store.size() - live });
-        if (req.method === 'HEAD') {
-          res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
-          res.end();
-        } else {
-          reply(res, 200, 'application/json', body);
-        }
+        const body = JSON.stringify({
+          ok: true,
+          sessions: live,
+          retained: deps.store.size() - live,
+          ...(deps.chatLive ? { chat: deps.chatLive() } : {}),
+          ...(deps.draining?.() ? { draining: true } : {}),
+        });
+        answerJson(req, res, 200, body);
+        return;
+      }
+      if ((req.method === 'GET' || req.method === 'HEAD') && path === '/ready') {
+        // Readiness: whether to send this server new calls. A load balancer or a monitor reads it; a
+        // stopping server says no while its live calls finish.
+        const draining = deps.draining?.() ?? false;
+        answerJson(req, res, draining ? 503 : 200, JSON.stringify(draining ? { ready: false, draining: true } : { ready: true }));
         return;
       }
       // A carrier's webhooks: `/voice/<id>` and `/cr-action/<id>` for an enabled provider, and the
@@ -385,8 +411,14 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           reply(res, 400, 'text/plain', 'missing CallSid');
           return;
         }
-        const token = deps.tokens.mint(params.callId, provider.id);
         // The caller's number is theirs, not the console's: the last four tell calls apart.
+        if (deps.draining?.()) {
+          // A server about to stop starts no call it may not finish: the caller is put through to a person.
+          deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}: draining: new call sent to handoff`);
+          reply(res, 200, provider.contentType, provider.dialDocument(deps.config.handoffNumber));
+          return;
+        }
+        const token = deps.tokens.mint(params.callId, provider.id);
         deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}`);
         const options = connectOptions(deps, provider, token, deps.app ? startLocale(deps.app, params.to) : undefined);
         reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));

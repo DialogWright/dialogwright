@@ -1,8 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import { applyEnvFile, envFilePathOf } from './envFile';
 import { join } from 'node:path';
-import { consoleExposure, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
-import { createRequestHandler } from './http';
+import { consoleExposure, DEFAULT_DRAIN_MS, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
+import { createRequestHandler, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, type AdapterDeps } from './adapter';
 import { SessionStore } from './sessions';
@@ -43,6 +43,20 @@ export interface RunningServer {
   chat?: ChatEndpoint;
   /** One pass of the idle sweep the evictor runs on its interval; exposed for tests. */
   sweep(): void;
+  /** Whether the server is stopping: drain (or close) has begun, and `/ready` answers 503. */
+  readonly draining: boolean;
+  /**
+   * The first half of a stop: the server stops taking new work and waits for what is live. From now on
+   * `/ready` answers 503, a new call is put through to the handoff number, and a new chat is refused
+   * `busy`; a live call's turns and its reconnects, and a chat's resume, go on. It resolves once no call
+   * is live and no one is in a chat, or after `ms` (default DRAIN_MS; 0 at once), when it closes the
+   * calls still live with 1001 (going away), so the carrier calls back for them. close() follows it.
+   */
+  drain(ms?: number): Promise<void>;
+  /**
+   * Closes the server: it lets turns already running finish (up to two seconds), then closes every
+   * socket and stops listening. Called alone, as a test does, it waits for no call to end.
+   */
   close(): Promise<void>;
 }
 
@@ -82,8 +96,15 @@ export interface ServerOverrides {
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
 const EVICT_EVERY_MS = 60 * 1000;
-/** How long a shutdown waits for turns already in flight before it terminates the sockets anyway. */
+/**
+ * How long close() waits for turns already in flight before it terminates the sockets anyway. It is
+ * not the drain: DRAIN_MS (config.ts) is how long a stopping server waits for whole calls to end.
+ */
 const DRAIN_TIMEOUT_MS = 2_000;
+/** How often a drain looks for the last call to have ended. */
+const DRAIN_POLL_MS = 100;
+/** How long the drain's 1001 closes are given before close() terminates what is left. */
+const GOING_AWAY_MS = 1_000;
 
 /**
  * Call SIDs come from Twilio (CA + 32 hex), but they arrive over the socket, so never let one shape a path.
@@ -181,9 +202,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (bus || routes.some((r) => r.localOnly)) log(consoleExposure(config, localOnlyPaths(routes)));
   for (const warning of mounted.warnings ?? []) log(`WARNING: ${warning}`);
   const app = getApp(defaultAppId());
-  const deps = { config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app };
-
-  const server = createServer(createRequestHandler(deps));
+  let draining = false;
   // The engine's own web chat, when CHAT=on: each session with the phone line's client, tools, audit chain and console.
   const chatSettings = config.chat;
   const chat = chatSettings
@@ -203,6 +222,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       },
     })
     : undefined;
+  const deps: HttpDeps = {
+    config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
+    draining: () => draining,
+    ...(chat ? { chatLive: () => chat.liveCount() } : {}),
+  };
+  const server = createServer(createRequestHandler(deps));
   if (chatSettings) {
     log(`chat: ${CHAT_PATH} for ${chatSettings.origins.any ? 'any origin (laptop)' : [...chatSettings.origins.set].join(', ')}, sign-in ${chatSettings.signIn.method}`);
     // A sign-in method with nothing to sign in as: every token would be refused.
@@ -283,7 +308,55 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     routes,
     ...(chat ? { chat } : {}),
     sweep,
+    get draining() {
+      return draining;
+    },
+    drain: async (ms = config.drainMs ?? DEFAULT_DRAIN_MS) => {
+      draining = true;
+      chat?.drain();
+      const calls = () => store.liveCount();
+      const chats = () => chat?.activeCount() ?? 0;
+      const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+      if (calls() + chats() === 0) {
+        log('drained: no calls or chats left');
+        return;
+      }
+      log(`draining: up to ${ms} ms for ${plural(calls(), 'call')} and ${plural(chats(), 'chat')}; new calls go to the handoff number`);
+      const ended = await new Promise<boolean>((resolve) => {
+        if (ms === 0) return resolve(false);
+        const poll = setInterval(() => {
+          if (calls() + chats() > 0) return;
+          clearInterval(poll);
+          clearTimeout(deadline);
+          resolve(true);
+        }, DRAIN_POLL_MS);
+        const deadline = setTimeout(() => {
+          clearInterval(poll);
+          resolve(false);
+        }, ms);
+      });
+      if (ended) {
+        log('drained: no calls or chats left');
+        return;
+      }
+      log(`drain: ${ms} ms passed with ${plural(calls(), 'call')} and ${plural(chats(), 'chat')} live; closing them`);
+      // Going away, not an error: the carrier posts its action callback for each, which a server that
+      // keeps its sessions (or the handoff, for one that does not) answers once this one has restarted.
+      const open = [...wss.clients];
+      for (const c of open) c.close(1001, 'server restarting');
+      if (open.length) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          Promise.allSettled(open.map((c) => new Promise<void>((resolve) => (c.readyState === c.CLOSED ? resolve() : c.once('close', () => resolve()))))),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, GOING_AWAY_MS);
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+      }
+    },
     close: async () => {
+      draining = true;
       clearInterval(evictor);
       // Let turns that are already running finish (and flush their frames) before the sockets go away.
       const tails = [...store.tails(), ...routes.flatMap((r) => r.tails?.() ?? []), ...(chat?.tails() ?? [])];
@@ -372,7 +445,12 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
       if (stoppedAt === null) {
         stoppedAt = at;
         console.log(`[server] shutting down (${signal}; a second one stops at once)`);
-        void Promise.allSettled([running.close(), sidecars.close?.()]).then(() => process.exit(0));
+        // The app's own services stay up while live calls finish, since those calls still use them.
+        void running
+          .drain()
+          .catch(() => {})
+          .then(() => Promise.allSettled([running.close(), sidecars.close?.()]))
+          .then(() => process.exit(0));
         return;
       }
       if (at - stoppedAt < SIGNAL_REPEAT_MS) return;

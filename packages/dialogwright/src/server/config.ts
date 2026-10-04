@@ -142,7 +142,16 @@ export interface ServerConfig {
    * deployment publishes it). Absent when off. WIDGET_FILE is the built script.
    */
   widget?: WidgetSettings;
+  /**
+   * DRAIN_MS, default 30000 (DEFAULT_DRAIN_MS): how long a stopping server waits for its live calls and
+   * chats to end before it closes what is left (index.ts RunningServer.drain); 0 closes at once.
+   * Optional in the type only, for a config made by hand before it existed: loadConfig always sets it.
+   */
+  drainMs?: number;
 }
+
+/** How long a stopping server waits for live calls and chats, unless DRAIN_MS says otherwise. */
+export const DEFAULT_DRAIN_MS = 30_000;
 
 export interface WidgetSettings {
   /** WIDGET_FILE, default DEFAULT_WIDGET_FILE resolved from where the server runs: the built script, which must exist. */
@@ -285,6 +294,7 @@ export function loadConfig(env: Env): ServerConfig {
     anthropicApiKey,
     handoffSummary: handoffSummarySwitch === 'on',
     consoleLocalOnly: localOnlySwitch === 'on',
+    drainMs: integer(env, 'DRAIN_MS', DEFAULT_DRAIN_MS),
     ...(chat ? { chat } : {}),
     ...(widget ? { widget } : {}),
   };
@@ -437,6 +447,7 @@ export function describeConfig(c: ServerConfig): string {
     `screen ${c.screen}`,
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
     `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
+    `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,
     `clips ${c.clips ? 'on' : 'OFF (all TTS)'}`,
     `anthropic key ${mask(c.anthropicApiKey)}`,
     c.handoffSummary ? `handoff note on${c.anthropicApiKey ? '' : ' (no key: none generated)'}` : 'handoff note OFF',
