@@ -22,21 +22,25 @@ provenance:
   file: docs/patron-guide.pdf
   retrieved: 2026-10-03
 sections:
-  p1:
+  intro:
     text: This guide explains how to use the branches of the Example Town Library.
-  p1-opening-hours:
+    page: 1
+  opening-hours:
     heading: Opening hours
     text: All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m. to 4 p.m. All branches are closed on Sunday.
-  p2-late-fees:
-    heading: Late fees
+    page: 1
+  renewing-items:
+    heading: Renewing items
     text: |-
-      An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.
+      Most items can be renewed twice, online or at any branch desk, unless another patron has placed a hold on them.
 
-      Junior cards are not charged late fees.
+      Items borrowed from another library through the interlibrary service cannot be renewed.
+    page: 2
+    lastPage: 3
 ```
 
-- **Provenance** is the document's URL, or its file's path from the app folder, and the day it was read. A section keeps its heading, and a PDF section's id names its page.
-- **Section ids** are the slugs of the heading path (`late-fees`, `shifts/training`), so they read as the document's outline and stay put when a section is added elsewhere. Text before the first heading is `intro`; a document with no headings is one section, `text`. A PDF's ids start with the page the section starts on (`p2-late-fees`), and a PDF with no headings is cut by page (`p1`, `p2`). Two sections with one id are told apart in order (`services`, `services-2`).
+- **Provenance** is the document's URL, or its file's path from the app folder, and the day it was read. A section keeps its heading, and a PDF's section records the page it starts on (`page`) and, when it runs on, the page it ends on (`lastPage`). Pages are provenance: no approval hashes them, but a section that moves to another page is reported as changed (`its pages only`) so the file says where it is now.
+- **Section ids** are the slugs of the heading path (`late-fees`, `shifts/training`), so they read as the document's outline and stay put when a section is added elsewhere. Text before the first heading is `intro`; a document with no headings is one section, `text`. A PDF's ids are by heading too, so a section that moves to another page keeps its id; a PDF with no headings is cut by page (`p1`, `p2`). Two sections with one id are told apart in order (`services`, `services-2`).
 - **The title heading** (the first heading, when no other is at its level or above) names the document and starts no section. A DOCX Title paragraph or Markdown front matter `title:` names it instead.
 - **Text** keeps its paragraphs (a blank line between them, list items and table rows one to a line) with whitespace collapsed inside each. Approvals hash it with whitespace collapsed, so a re-wrapped paragraph is not a change and a changed word is.
 
@@ -45,7 +49,7 @@ sections:
 | Format | Read with | Sections |
 | --- | --- | --- |
 | HTML (`.html`, `.htm`) | linkedom (no browser, no scripts run); the content is the page's `<main>` or one `<article>`, else what Mozilla Readability picks, else the body; navigation, asides, footers, forms and media are dropped | at h1 to h3 |
-| PDF (`.pdf`) | unpdf (pdf.js for servers, pure JavaScript); lines from positioned text, headings by font size (15% over the body size), paragraphs by vertical gaps | at headings, with page ids; by page when there are none |
+| PDF (`.pdf`) | unpdf (pdf.js for servers, pure JavaScript); lines from positioned text, headings by font size (15% over the body size), paragraphs by vertical gaps | at headings, each with its pages; by page when there are none |
 | DOCX (`.docx`) | mammoth to HTML by paragraph style, then the HTML path | at Heading 1 to 3 |
 | Markdown (`.md`, `.markdown`) | a light reader: ATX and setext headings, lists, fenced code; inline markup stripped to its words | at `#` to `###` |
 | Text (`.txt`) | paragraphs between blank lines | one section |

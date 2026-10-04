@@ -219,7 +219,7 @@ export function formatReport(report: IngestReport, labels: { input: string; sour
       lines.push(`  changed   ${d.id} (${where}): ${by('added')} added, ${by('changed')} changed, ${by('unchanged')} unchanged, ${by('removed')} removed; ${verb} ${labels.sources}/${d.id}.yaml`);
       for (const s of d.sections) {
         if (s.status === 'added') lines.push(`    + ${s.id}`);
-        else if (s.status === 'changed') lines.push(`    ~ ${s.id}${s.headingOnly ? ' (its heading only)' : ''}`);
+        else if (s.status === 'changed') lines.push(`    ~ ${s.id}${s.headingOnly ? ' (its heading only)' : s.pageOnly ? ' (its pages only)' : ''}`);
         else if (s.status === 'removed') lines.push(`    - ${s.id}`);
       }
     }

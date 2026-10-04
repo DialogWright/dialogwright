@@ -6,7 +6,7 @@ import { distinct, type ExtractedSection } from './sections';
 
 /**
  * Writing what was read into a knowledge base's `kb/sources/<doc>.yaml`, the format dialogwright's
- * loader reads (`{ document, provenance: { url | file, retrieved }, sections: { <id>: { heading?, text } } }`),
+ * loader reads (`{ document, provenance: { url | file, retrieved }, sections: { <id>: { heading?, text, page?, lastPage? } } }`),
  * and saying what changed.
  *
  * - A document's id is kept from run to run: a source file whose provenance (its URL, or its file's
@@ -41,6 +41,8 @@ export interface SectionChange {
   status: SectionStatus;
   /** Only its heading changed (its text, which approvals hash, did not): it counts as changed. */
   headingOnly?: boolean;
+  /** Only the pages it is on changed (its text and heading did not): it counts as changed, though no approval hashes its pages. */
+  pageOnly?: boolean;
 }
 
 /** What happened to one document. */
@@ -65,7 +67,7 @@ export const MAX_SOURCE_BYTES = 1024 * 1024;
 export interface Existing {
   id: string;
   key: string | undefined;
-  data: { document?: unknown; provenance?: { url?: unknown; file?: unknown; retrieved?: unknown }; sections?: Record<string, { heading?: unknown; text?: unknown }> } | null;
+  data: { document?: unknown; provenance?: { url?: unknown; file?: unknown; retrieved?: unknown }; sections?: Record<string, { heading?: unknown; text?: unknown; page?: unknown; lastPage?: unknown }> } | null;
 }
 
 /** A provenance as one string, to compare. */
@@ -106,7 +108,12 @@ export function schemaPathFor(sourcesDir: string): string | undefined {
 
 /** A source document as YAML. */
 export function sourceYaml(input: { title: string; provenance: SourceInput['provenance']; retrieved: string; sections: readonly ExtractedSection[] }, schemaPath?: string): string {
-  const sections = new Map(input.sections.map((s) => [s.id, s.heading === undefined ? { text: s.text } : { heading: s.heading, text: s.text }]));
+  const sections = new Map(
+    input.sections.map((s) => [
+      s.id,
+      { ...(s.heading === undefined ? {} : { heading: s.heading }), text: s.text, ...(s.page === undefined ? {} : { page: s.page }), ...(s.lastPage === undefined ? {} : { lastPage: s.lastPage }) },
+    ]),
+  );
   const doc = new Document({ document: input.title, provenance: { ...input.provenance, retrieved: input.retrieved }, sections });
   if (schemaPath !== undefined) doc.commentBefore = ` yaml-language-server: $schema=${schemaPath}`;
   return doc.toString({ lineWidth: 0 });
@@ -120,6 +127,7 @@ function sectionChanges(previous: Existing['data'], next: readonly ExtractedSect
     const old = before[s.id]!;
     if (typeof old?.text !== 'string' || sourceHashOf(old.text) !== sourceHashOf(s.text)) return { id: s.id, status: 'changed' };
     if ((typeof old.heading === 'string' ? old.heading : undefined) !== s.heading) return { id: s.id, status: 'changed', headingOnly: true };
+    if (old.page !== s.page || old.lastPage !== s.lastPage) return { id: s.id, status: 'changed', pageOnly: true };
     return { id: s.id, status: 'unchanged' };
   });
   const ids = new Set(next.map((s) => s.id));

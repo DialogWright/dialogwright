@@ -36,7 +36,7 @@ describe('crawling the fixture site', () => {
     const home = result.documents[0]!.document;
     expect(home.title).toBe('Welcome to the Example Town Library');
     expect(home.sections.map((s) => s.id)).toEqual(['intro', 'visit-us']);
-    expect(result.documents[4]!.document.sections.map((s) => s.id)).toContain('p2-late-fees');
+    expect(result.documents[4]!.document.sections.map((s) => s.id)).toContain('late-fees');
     expect(result.documents[7]!.document.title).toBe('Example Town Library Volunteer Handbook');
     // A clear User-Agent on every request, and no cookie sent back though the server sets one.
     expect(served.every((r) => r.userAgent === UA)).toBe(true);

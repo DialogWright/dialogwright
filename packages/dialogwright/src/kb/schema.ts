@@ -210,6 +210,8 @@ export const kbSourceSchema = z
         z.strictObject({
           heading: text().optional().describe('The section\'s heading in the document.'),
           text: text().describe('The section\'s text, as the document has it. Approvals hash it (whitespace collapsed), so a changed word makes its passages stale.'),
+          page: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('For a document with pages (a PDF): the page the section starts on. Provenance only: approvals do not hash it.'),
+          lastPage: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('For a section that runs on past its first page: the page it ends on. Provenance only.'),
         }),
         { error: 'must be a map from section id to the section' },
       )

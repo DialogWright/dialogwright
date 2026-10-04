@@ -83,20 +83,22 @@ describe('Markdown and text', () => {
 });
 
 describe('PDF', () => {
-  it('finds headings by size and gives sections page ids, a section running on to the next page', async () => {
+  it('finds headings by size and gives sections heading ids with the page each starts on', async () => {
     const doc = await extractPdf(bytes('patron-guide.pdf'));
     expect(doc.pages).toBe(3);
     expect(doc.title).toBe('Example Town Library Patron Guide');
     expect(doc.sections.map((s) => [s.id, s.heading, s.page])).toEqual([
-      ['p1', undefined, 1],
-      ['p1-opening-hours', 'Opening hours', 1],
-      ['p1-library-cards', 'Library cards', 1],
-      ['p2-late-fees', 'Late fees', 2],
-      ['p2-renewing-items', 'Renewing items', 2],
-      ['p3-meeting-rooms', 'Meeting rooms', 3],
+      ['intro', undefined, 1],
+      ['opening-hours', 'Opening hours', 1],
+      ['library-cards', 'Library cards', 1],
+      ['late-fees', 'Late fees', 2],
+      ['renewing-items', 'Renewing items', 2],
+      ['meeting-rooms', 'Meeting rooms', 3],
     ]);
     expect(doc.sections[1]!.text).toBe('All branches are open Monday to Friday from 9 a.m. to 8 p.m. and on Saturday from 10 a.m. to 4 p.m. All branches are closed on Sunday.');
     expect(doc.sections[3]!.text).toBe('An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.\n\nJunior cards are not charged late fees.');
+    // A section running on to the next page says where it ends.
+    expect([doc.sections[4]!.page, doc.sections[4]!.lastPage, doc.sections[3]!.lastPage]).toEqual([2, 3, undefined]);
     expect(doc.sections[4]!.text).toBe('Most items can be renewed twice, online or at any branch desk, unless another patron has placed a hold on them.\n\nItems borrowed from another library through the interlibrary service cannot be renewed.');
   });
 

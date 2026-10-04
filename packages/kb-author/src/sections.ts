@@ -13,8 +13,10 @@
  * - A section's id is the slug of its heading path (`late-fees`, `shifts/training`), so it reads as
  *   the document's outline and does not move when a section is added elsewhere. Content before any
  *   heading is `intro`; a document with no headings at all is one section, `text`.
- * - With pages (a PDF), every id says the page its section starts on: `p2-late-fees`, and `p3` for
- *   a page's text before its first heading. A PDF with no headings is cut by page: `p1`, `p2`, ...
+ * - With pages (a PDF), ids are by heading as for any document, and each section records the page it
+ *   starts on (`page`) and, when it runs on, the page it ends on (`lastPage`): provenance, never part
+ *   of the id, so a section that moves to another page keeps its id. A PDF with no headings is cut by
+ *   page, and only then does the page name the section: `p1`, `p2`, ...
  * - Two sections with the same id are told apart in document order: `training`, `training-2`.
  *
  * A section's text keeps its paragraphs (a blank line between them; list items one to a line), with
@@ -28,7 +30,7 @@ export type Block =
 
 /** One section of an extracted document. */
 export interface ExtractedSection {
-  /** Its id: the slug of its heading path, with its first page for a paged document. */
+  /** Its id: the slug of its heading path (`p<n>` for a page of a paged document without headings). */
   readonly id: string;
   /** Its heading as the document has it (none for `intro`, `text` and a page's text). */
   readonly heading?: string;
@@ -36,6 +38,8 @@ export interface ExtractedSection {
   readonly text: string;
   /** The page it starts on, for a paged document. */
   readonly page?: number;
+  /** The page it ends on, when that is a later page than `page`. */
+  readonly lastPage?: number;
 }
 
 /** A document read into sections. */
@@ -120,7 +124,14 @@ export function sectionsOf(blocks: readonly Block[], options: { paged?: boolean;
   const push = (base: string, heading: string | undefined, body: Block[], page: number | undefined): void => {
     const content = body.filter((b) => b.text !== '');
     if (content.length === 0) return;
-    sections.push({ id: distinct(base, taken), ...(heading === undefined ? {} : { heading }), text: joinBlocks(content), ...(page === undefined ? {} : { page }) });
+    const last = Math.max(...content.map((b) => b.page ?? page ?? 0));
+    sections.push({
+      id: distinct(base, taken),
+      ...(heading === undefined ? {} : { heading }),
+      text: joinBlocks(content),
+      ...(page === undefined ? {} : { page }),
+      ...(page !== undefined && last > page ? { lastPage: last } : {}),
+    });
   };
 
   if (paged && !headed) {
@@ -141,7 +152,7 @@ export function sectionsOf(blocks: readonly Block[], options: { paged?: boolean;
     if (current) push(current.base, current.heading, current.body, current.page);
     current = null;
   };
-  const preamble = (page: number | undefined): string => (paged ? `p${page ?? 1}` : headed ? 'intro' : 'text');
+  const preamble = (): string => (headed ? 'intro' : 'text');
 
   blocks.forEach((b, i) => {
     if (i === titleAt) return;
@@ -150,10 +161,10 @@ export function sectionsOf(blocks: readonly Block[], options: { paged?: boolean;
       while (stack.length > 0 && stack[stack.length - 1]!.level >= b.level) stack.pop();
       stack.push({ level: b.level, slug: slugOf(b.text) });
       const path = stack.map((s) => s.slug).join('/');
-      current = { base: paged ? `p${b.page ?? 1}-${path}` : path, heading: b.text, body: [], page: b.page };
+      current = { base: path, heading: b.text, body: [], page: b.page };
       return;
     }
-    if (current === null) current = { base: preamble(b.page), heading: undefined, body: [], page: b.page };
+    if (current === null) current = { base: preamble(), heading: undefined, body: [], page: b.page };
     current.body.push(b);
   });
   flush();

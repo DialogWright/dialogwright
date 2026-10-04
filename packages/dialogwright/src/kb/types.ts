@@ -96,7 +96,8 @@ export interface KbSourceDocument {
   /** Its title. */
   readonly document: string;
   readonly provenance?: { readonly url?: string; readonly file?: string; readonly retrieved?: string };
-  readonly sections: Readonly<Record<string, { readonly heading?: string; readonly text: string }>>;
+  /** Its sections by id; a paged document's say the pages they are on (provenance only, never hashed). */
+  readonly sections: Readonly<Record<string, { readonly heading?: string; readonly text: string; readonly page?: number; readonly lastPage?: number }>>;
 }
 
 /** An app's knowledge base: the `kb/` folder, loaded. */

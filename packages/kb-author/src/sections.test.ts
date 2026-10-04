@@ -58,13 +58,16 @@ describe('sectionsOf', () => {
     expect(sectionsOf([h(1, 'Borrowing'), p('Twenty items.')], { titled: true }).sections).toEqual([{ id: 'borrowing', heading: 'Borrowing', text: 'Twenty items.' }]);
   });
 
-  it('gives a paged document page ids, by heading or by page', () => {
+  it('gives a paged document heading ids with the pages each section is on, or page ids when it has no headings', () => {
     const headed = sectionsOf([h(1, 'Guide', 1), p('Intro.', 1), h(2, 'Hours', 1), p('Nine to five.', 1), h(2, 'Fees', 2), p('Some.', 2), p('More, on the next page.', 3)], { paged: true });
     expect(headed.sections).toEqual([
-      { id: 'p1', text: 'Intro.', page: 1 },
-      { id: 'p1-hours', heading: 'Hours', text: 'Nine to five.', page: 1 },
-      { id: 'p2-fees', heading: 'Fees', text: 'Some.\n\nMore, on the next page.', page: 2 },
+      { id: 'intro', text: 'Intro.', page: 1 },
+      { id: 'hours', heading: 'Hours', text: 'Nine to five.', page: 1 },
+      { id: 'fees', heading: 'Fees', text: 'Some.\n\nMore, on the next page.', page: 2, lastPage: 3 },
     ]);
+    // A section that moves to another page keeps its id.
+    const moved = sectionsOf([h(1, 'Guide', 1), p('Intro.', 1), h(2, 'Hours', 2), p('Nine to five.', 2)], { paged: true });
+    expect(moved.sections.map((s) => [s.id, s.page])).toEqual([['intro', 1], ['hours', 2]]);
     const plain = sectionsOf([p('One.', 1), p('Two.', 2), p('Three.', 2)], { paged: true });
     expect(plain.sections).toEqual([
       { id: 'p1', text: 'One.', page: 1 },

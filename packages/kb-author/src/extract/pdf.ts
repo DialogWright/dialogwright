@@ -13,8 +13,8 @@ import { cleanText, sectionsOf, type Block, type ExtractedDocument } from '../se
  * - Body lines make paragraphs; a vertical gap over 1.6 times the line's size starts a new one. A line
  *   ending in a hyphen joins the next with no space (the hyphen kept), others with one space.
  *
- * `sectionsOf` then cuts the blocks at the headings with page ids (`p2-late-fees`), or by page (`p1`,
- * `p2`) when the document has no headings. A scanned PDF has no text layer and yields no sections:
+ * `sectionsOf` then cuts the blocks at the headings (`late-fees`, with `page: 2` recorded), or by page
+ * (`p1`, `p2`) when the document has no headings. A scanned PDF has no text layer and yields no sections:
  * it needs OCR before it can be read.
  */
 
