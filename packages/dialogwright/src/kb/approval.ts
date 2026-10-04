@@ -203,8 +203,12 @@ function notLoaded(id: string, loaded: Loaded, files: readonly string[]): Approv
   return { id, outcome: 'refused', reason: `the knowledge base does not load (${n} problem${n === 1 ? '' : 's'} elsewhere): fix ${n === 1 ? 'it' : 'them'} first; pnpm check lists ${n === 1 ? 'it' : 'them'}`, problems: [] };
 }
 
-/** Appends one approval to kb/approvals.jsonl, on a line of its own. */
-function appendLog(kbDir: string, line: ApprovalLogLine): void {
+/**
+ * Appends one approval to kb/approvals.jsonl, on a line of its own (after a last line someone left
+ * without its newline). The one writer of the log's lines: kb:approve's, and kb:review's when a person
+ * confirms an approval a migration carried over.
+ */
+export function appendApprovalLog(kbDir: string, line: ApprovalLogLine): void {
   const file = join(kbDir, APPROVALS_LOG);
   let lead = '';
   if (existsSync(file) && statSync(file).size > 0 && !readFileSync(file, 'utf8').endsWith('\n')) lead = '\n';
@@ -262,7 +266,7 @@ function approvePassage(place: KbPlace, loaded: Loaded, id: string, file: string
     return { id, outcome: 'refused', reason: `the approval written to ${file} did not read back as fresh (${after?.freshness ?? 'not loaded'}), so the file is as it was`, problems: [] };
   }
   const line: ApprovalLogLine = { id, version: passage.version, approvedBy: options.by, owner, on: options.today, sourceHash: approval.sourceHash, hash: approval.hash, from: 'passage', sourceText: sourceTextOf(kb.sources, passage.source)! };
-  appendLog(place.kbDir, line);
+  appendApprovalLog(place.kbDir, line);
   return { id, outcome: 'approved', from: 'passage', file, line };
 }
 
@@ -330,7 +334,7 @@ function approveDraft(place: KbPlace, loaded: Loaded, id: string, pendingFile: s
     return { id, outcome: 'refused', reason: `the passage written to ${target} did not read back as fresh (${after?.freshness ?? 'not loaded'}), so it was taken out again and the draft left as it was`, problems: [] };
   }
   const line: ApprovalLogLine = { id, version: draft.version, approvedBy: options.by, owner: options.owner, on: options.today, sourceHash: approval.sourceHash, hash: approval.hash, from: 'pending', sourceText: sectionText ?? '' };
-  appendLog(place.kbDir, line);
+  appendApprovalLog(place.kbDir, line);
   return { id, outcome: 'approved', from: 'pending', file: target, line, moved: pendingFile };
 }
 

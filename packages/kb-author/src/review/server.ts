@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import type { KbPlace } from 'dialogwright';
-import { acceptTopic, approve, approvedSectionText, draftReviewProblems, editAndApprove, heldPassages, KB_FILE_ID, mergeTopic, reject, rejectedDrafts, returnToDrafts, reviewerProblem, reviewState, seenOf, type ActionResult, type Edits, type Reviewer } from './actions';
+import { acceptTopic, approve, approvedSectionText, confirmApproval, draftReviewProblems, editAndApprove, heldPassages, KB_FILE_ID, mergeTopic, reject, rejectedDrafts, returnToDrafts, reviewerProblem, reviewState, seenOf, type ActionResult, type Edits, type Reviewer } from './actions';
 import { TOPIC_ID } from '../draft/validate';
 import { reportFromFiles, NO_NEAR_TOPIC } from '../gaps/report';
 import { gapGroupPage, gapsPage, kbTopicPage, type GapsView } from './gapPages';
@@ -34,6 +34,7 @@ import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, 
  *   through the same token, and shows the callers' words as the traces recorded them.
  * - The Knowledge base tab shows what it holds when nothing waits: every passage (each has a page, an
  *   approved and fresh one too) and every rejected draft (whose page can return it to the drafts).
+ *   A passage whose approval a migration carried over is listed to confirm, and its page confirms it.
  * - The operator console is not where it lives: the console has no access control until Phase 8,
  *   and a page that approves what callers are told should not be reachable through the console's
  *   tunnel. It stops with Ctrl-C.
@@ -245,6 +246,10 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
           const result = editAndApprove(place, id, editsOf(form, facts), reviewer, today, seen);
           return done(result, result.ok ? '/' : `/${kind}/${encodeURIComponent(id)}`);
         }
+        if (action === 'confirm' && kind === 'passage') {
+          const result = confirmApproval(place, id, reviewer, today, seen);
+          return done(result, result.ok ? '/' : `/passage/${encodeURIComponent(id)}`);
+        }
         if (action === 'reject' && kind === 'draft') {
           const result = reject(place, id, form.get('reason') ?? '', reviewer, today, seen);
           return done(result, result.ok ? '/' : `/draft/${encodeURIComponent(id)}`);
@@ -280,7 +285,7 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
     if (parts.length === 2 && kind === 'passage' && state.kb) {
       const w = state.withheld.find((x) => x.passage.id === id);
       if (w) return send(res, 200, passagePage(ctx(url.pathname, seenOf(place, state, 'passage', w.passage.id)), state.kb, w, approvedSectionText(place, w.passage)), undefined, nonce);
-      // Approved, fresh and logged: its page offers only an edit, approved again.
+      // Approved, fresh and logged: its page offers an edit, approved again (and a confirmation, when a migration carried its approval over).
       const held = heldPassages(place, state, today).find((h) => h.passage.id === id);
       if (held) return send(res, 200, heldPassagePage(ctx(url.pathname, seenOf(place, state, 'passage', held.passage.id)), state.kb, held), undefined, nonce);
     }

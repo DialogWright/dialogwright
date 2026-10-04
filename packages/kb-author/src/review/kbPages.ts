@@ -1,14 +1,15 @@
 import type { ApprovalLogLine, KbPassage, KnowledgeBase } from 'dialogwright';
-import type { HeldPassage, RejectedDraft, Standing } from './actions';
+import { awaitsConfirmation, type HeldPassage, type RejectedDraft, type Standing } from './actions';
 import { appliesText, editFields, esc, href, page, sectionHtml, tokenField, WHY, type PageContext } from './pages';
 
 /**
  * The review page's Knowledge base tab: what the knowledge base holds, read-mostly, so a reviewer can
  * see it when nothing waits. Every topic with its passages (where each stands today, and who approved
  * it, from the log of approvals), and the drafts rejected (who, when and why). A passage's page shows
- * its answer against the section it was approved over, with its approval; the one change it offers is
- * an edit, checked as a draft is and approved again. A rejected draft's page can return it to the
- * drafts, to be reviewed again.
+ * its answer against the section it was approved over, with its approval; the change it offers is an
+ * edit, checked as a draft is and approved again, and, when a migration carried its approval over, a
+ * confirmation of that approval under the reviewer's name. A rejected draft's page can return it to
+ * the drafts, to be reviewed again.
  */
 
 /** What the Knowledge base tab is drawn from. */
@@ -46,7 +47,7 @@ function approvedHtml(p: KbPassage, line: ApprovalLogLine | null): string {
 /** What a line of the log says was approved. */
 const FROM: Record<ApprovalLogLine['from'], string> = {
   pending: 'a draft from kb/pending, approved with kb:approve',
-  passage: 'a passage in kb/passages, approved with kb:approve',
+  passage: 'a passage in kb/passages, approved with kb:approve (or confirmed in kb:review)',
   migration: 'carried over by a migration from an earlier format',
 };
 
@@ -59,6 +60,8 @@ export function kbPage(ctx: PageContext, view: KbView): string {
   parts.push(
     `<p class="muted">As of ${esc(view.today)}: ${topics.length} ${topics.length === 1 ? 'topic' : 'topics'}, ${view.passages.length} ${view.passages.length === 1 ? 'passage' : 'passages'} (${inForce} in force), ${view.rejected.length} rejected ${view.rejected.length === 1 ? 'draft' : 'drafts'}. A passage's page shows the section it was approved against.</p>`,
   );
+  const toConfirm = view.passages.filter((h) => awaitsConfirmation(h.passage, h.line)).length;
+  if (toConfirm > 0) parts.push(`<p><a href="${href(ctx, '/')}">${toConfirm} ${toConfirm === 1 ? 'approval' : 'approvals'} carried over by a migration ${toConfirm === 1 ? 'awaits' : 'await'} confirmation</a>: a passage's page confirms it.</p>`);
   parts.push(`<section aria-labelledby="kb-topics-h"><h2 id="kb-topics-h">Topics (${topics.length})</h2>`);
   topics.forEach((t, i) => {
     const passages = view.passages.filter((h) => h.passage.topic === t.id);
@@ -95,7 +98,7 @@ export function kbPage(ctx: PageContext, view: KbView): string {
   return page(ctx, 'Knowledge base', parts.join('\n'));
 }
 
-/** A passage that is not withheld (approved, fresh and logged): its answer, its source and its approval, and an edit that is approved again. */
+/** A passage that is not withheld (approved, fresh and logged): its answer, its source and its approval, a confirmation of an approval a migration carried over, and an edit that is approved again. */
 export function heldPassagePage(ctx: PageContext, kb: KnowledgeBase, held: HeldPassage): string {
   const { passage: p, standing, line } = held;
   const topic = Object.hasOwn(kb.topics, p.topic) ? kb.topics[p.topic] : undefined;
@@ -126,6 +129,15 @@ export function heldPassagePage(ctx: PageContext, kb: KnowledgeBase, held: HeldP
     ${p.locale.toLowerCase() !== kb.defaultLocale.toLowerCase() ? `<dt>Language</dt><dd class="mono">${esc(p.locale)}${p.translates ? ` <span class="muted">(translates ${esc(p.translates)})</span>` : ''}</dd>` : ''}
     <dt>File</dt><dd class="mono">${esc(p.file)}</dd>
   </dl>
+  ${
+    awaitsConfirmation(p, line)
+      ? `<form class="action" method="post" action="/passage/${encodeURIComponent(p.id)}/confirm">${tokenField(ctx)}
+    <h3>Confirm this approval</h3>
+    <p class="hint">A migration carried this approval over from an earlier format. Confirming records that you read this answer against its source and answer for it: a line under your name in the log of approvals; the passage is not changed.</p>
+    <button class="primary" type="submit"${can ? '' : ' disabled'}>Confirm the approval</button>
+  </form>`
+      : ''
+  }
   <form class="action" method="post" action="/passage/${encodeURIComponent(p.id)}/edit">${tokenField(ctx)}
     <h3>Edit, then approve</h3>
     <p class="hint">The edit is checked as a draft is, then approved under your name; if either refuses it, the passage stays as it is.</p>
