@@ -186,11 +186,11 @@ export async function kbIndexCommand(args: readonly string[], io: KbIo, discover
   return failed ? 1 : 0;
 }
 
-/** `kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today date]`: each retriever's recall, candidates and latency. */
+/** `kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today date] [--onnx-revision commit]`: each retriever's recall, candidates and latency (onnx only with its package and a pinned revision). */
 export async function kbBakeoffCommand(args: readonly string[], io: KbIo): Promise<number> {
-  const parsed = parseArgs(args, { values: ['--paraphrases', '--locale', '--today'], flags: ['--sweep'] });
+  const parsed = parseArgs(args, { values: ['--paraphrases', '--locale', '--today', '--onnx-revision'], flags: ['--sweep'] });
   if (typeof parsed === 'string' || parsed.positional.length !== 1 || parsed.values['--paraphrases'] === undefined) {
-    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and --paraphrases <file>'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD]`);
+    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and --paraphrases <file>'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD] [--onnx-revision <commit>]`);
     return 2;
   }
   const dir = resolve(io.cwd, parsed.positional[0]!);
@@ -228,13 +228,16 @@ export async function kbBakeoffCommand(args: readonly string[], io: KbIo): Promi
   } else io.out(`static, hybrid: skipped, ${model.id} is not in the cache (run pnpm kb:model)`);
   try {
     const onnx = await import('./onnx');
-    if (await onnx.onnxAvailable()) {
-      const embedder = await onnx.OnnxEmbedder.create();
+    const revision = parsed.values['--onnx-revision'];
+    if (!(await onnx.onnxAvailable())) io.out(`onnx: skipped, ${onnx.ONNX_PACKAGE} is not installed`);
+    else if (revision === undefined) io.out(`onnx: skipped, no --onnx-revision (the commit of ${onnx.ONNX_DEFAULT_MODEL} to load: a model is always pinned)`);
+    else {
+      const embedder = await onnx.OnnxEmbedder.create({ revision });
       const built = await buildIndex(kb, embedder);
       const d = new DenseRetriever(kb, { embedder, vectors: built.data, floor: onnx.ONNX_DEFAULT_FLOOR, cap });
       runs.push({ name: `onnx (floor ${onnx.ONNX_DEFAULT_FLOOR})`, retriever: d }, { name: 'onnx hybrid', retriever: new HybridRetriever(kb, { embedder, vectors: built.data, floor: onnx.ONNX_DEFAULT_FLOOR, cap, keyword }) });
       dense.push({ name: embedder.id, dense: d });
-    } else io.out(`onnx: skipped, ${onnx.ONNX_PACKAGE} is not installed`);
+    }
   } catch (error) {
     io.out(`onnx: skipped (${error instanceof Error ? error.message : String(error)})`);
   }
