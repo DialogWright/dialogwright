@@ -140,6 +140,39 @@ describe('relay boundary', () => {
   });
 });
 
+/**
+ * The web chat wire (src/channel/chat) is the engine's own JSON, spoken by the chat endpoint
+ * (src/server/chat) and any client. The core never needs it (it speaks SessionEvent and Action), and
+ * the wire never reaches into the server that carries it.
+ */
+const CHAT_WIRE = 'src/channel/chat';
+
+function importsUnder(file: string, src: string, dir: string): boolean {
+  return importsOf(src).some((spec) => {
+    const target = normalize(join(dirname(file), spec));
+    return target === dir || target.startsWith(`${dir}/`);
+  });
+}
+
+describe('chat wire boundary', () => {
+  it('the core, run and prompts never import src/channel/chat', () => {
+    const inner = ['core', 'run', 'prompts'].flatMap((d) => allFiles(join('src', d)));
+    expect(inner.filter((f) => importsUnder(f, readFileSync(f, 'utf8'), CHAT_WIRE))).toEqual([]);
+  });
+
+  it('nothing in src/channel/chat imports src/server', () => {
+    const wire = allFiles(CHAT_WIRE);
+    expect(wire.length).toBeGreaterThan(0);
+    expect(wire.filter((f) => importsUnder(f, readFileSync(f, 'utf8'), 'src/server'))).toEqual([]);
+  });
+
+  it('the detector resolves relative paths into the chat wire and the server', () => {
+    expect(importsUnder('src/core/x.ts', `import { a } from '../channel/chat/protocol';`, CHAT_WIRE)).toBe(true);
+    expect(importsUnder('src/channel/chat/x.ts', `import { a } from '../../server/chat/socket';`, 'src/server')).toBe(true);
+    expect(importsUnder('src/channel/chat/x.ts', `import { a } from '../actions';`, 'src/server')).toBe(false);
+  });
+});
+
 /** Every file under src, tests too: a layering shortcut in a test is still a shortcut. */
 function allFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
