@@ -19,8 +19,8 @@ const MAX_TTL_MS = 24 * 60 * 60_000;
 /** The fewest milliseconds between two fetches, whatever is asked. */
 export const JWKS_MIN_REFETCH_MS = 30_000;
 const FETCH_TIMEOUT_MS = 5_000;
-/** A key set is a few kilobytes; anything near this is not one. */
-const MAX_BODY_CHARS = 256 * 1024;
+/** A key set is a few kilobytes; anything near this is not one, and is not read past it. */
+const MAX_BODY_BYTES = 256 * 1024;
 
 /** CHAT_JWKS_URL's rule, checked by the config and here alike: https, so the keys cannot be swapped on the way. */
 export function checkJwksUrl(url: string): void {
@@ -31,6 +31,31 @@ export function checkJwksUrl(url: string): void {
     parsed = null;
   }
   if (parsed === null || parsed.protocol !== 'https:') throw new Error(`CHAT_JWKS_URL must be an https URL, got "${url}"`);
+}
+
+/** A response's body as text, read no further than `max` bytes: a larger one (said, or as it arrives) is refused. */
+async function cappedText(res: Response, max: number): Promise<string> {
+  const tooLarge = (): Error => new Error(`the key set is larger than ${max} bytes`);
+  const declared = Number(res.headers.get('content-length') ?? NaN);
+  if (Number.isFinite(declared) && declared > max) {
+    await res.body?.cancel().catch(() => {});
+    throw tooLarge();
+  }
+  if (res.body === null) return '';
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => {});
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 /** The signing keys a JWKS document lists, by kid; anything else (an encryption key, a key without a kid, one Node cannot read) is left out. */
@@ -67,10 +92,11 @@ export function jwksKeys(o: JwksOptions): (kid: string) => Promise<KeyObject | n
     lastFetch = now();
     try {
       const res = await doFetch(o.url, { headers: { accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      if (text.length > MAX_BODY_CHARS) throw new Error('the key set is too large');
-      keys = keysOf(JSON.parse(text));
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => {});
+        throw new Error(`HTTP ${res.status}`);
+      }
+      keys = keysOf(JSON.parse(await cappedText(res, MAX_BODY_BYTES)));
       const maxAge = /(?:^|[,\s])max-age=(\d+)/.exec(res.headers.get('cache-control') ?? '');
       expiresAt = now() + Math.min(maxAge ? Number(maxAge[1]) * 1000 : DEFAULT_TTL_MS, MAX_TTL_MS);
       failing = false;

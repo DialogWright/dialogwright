@@ -119,6 +119,31 @@ describe('the published keys', () => {
     expect(logs).toHaveLength(2);
   });
 
+  it('stops reading a key set past its size cap, without waiting for the rest, and keeps the keys it has', async () => {
+    let calls = 0;
+    const logs: string[] = [];
+    // A first, good key set; then a body that never ends, and one that says it is too large.
+    const fetch = (async () => {
+      calls += 1;
+      if (calls === 1) return new Response(JSON.stringify({ keys: [jwk(rsa.publicKey, 'r1')] }), { status: 200 });
+      if (calls === 2) {
+        const chunk = new Uint8Array(64 * 1024).fill(32);
+        return new Response(new ReadableStream({ pull: (c) => c.enqueue(chunk) }), { status: 200 });
+      }
+      return new Response('{}', { status: 200, headers: { 'content-length': String(10 * 1024 * 1024) } });
+    }) as unknown as typeof globalThis.fetch;
+    let now = 0;
+    const keyFor = jwksKeys({ url: URL_, fetch, nowMs: () => now, log: (l) => logs.push(l) });
+    expect(await keyFor('r1')).not.toBeNull();
+    now = 31_000;
+    expect(await keyFor('unseen')).toBeNull();
+    expect(await keyFor('r1')).not.toBeNull();
+    now = 62_000;
+    expect(await keyFor('unseen')).toBeNull();
+    expect(calls).toBe(3);
+    expect(logs).toEqual([`chat sign-in: could not fetch ${URL_}: the key set is larger than 262144 bytes (keeping the keys already fetched)`]);
+  });
+
   it('takes https only', () => {
     expect(() => jwksKeys({ url: 'http://id.example.com/jwks.json' })).toThrow('CHAT_JWKS_URL must be an https URL, got "http://id.example.com/jwks.json"');
   });
