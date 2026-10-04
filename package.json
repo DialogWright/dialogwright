@@ -29,7 +29,8 @@
     "diagnose": "tsx packages/dialogwright/src/server/doctor.ts",
     "configure": "tsx packages/dialogwright/src/server/setup.ts",
     "start": "tsx packages/dialogwright/src/server/start.ts",
-    "service": "tsx packages/dialogwright/src/server/serviceFile.ts"
+    "service": "tsx packages/dialogwright/src/server/serviceFile.ts",
+    "fallback": "tsx packages/dialogwright/src/server/fallback.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.0"

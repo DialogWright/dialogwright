@@ -62,6 +62,7 @@ pnpm configure [--app <name>]   # asks, and writes <app>/.env (mode 600): a lapt
 [ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]   # what is misconfigured, one line per check with its fix; sends no key and calls no carrier or model API
 pnpm audit:verify <audit folder>   # each audit day file's hash chain; exit 1 at the first break
 ENV_FILE=<path> pnpm service <launchd|systemd> --app <name> [--label <label>] [--out <file>]   # a service file with this machine's paths; prints the install commands, runs none
+pnpm fallback --provider <twilio|telnyx> --number <E.164> [--message "..."] --out <file>   # the document a carrier plays when it cannot reach the server; host it elsewhere, paste its URL where it says
 ```
 
 `pnpm check` prints one line per problem, `file:line:column  path  message  ->  fix`, and exits 1 when there is any. Act on the fix text.
