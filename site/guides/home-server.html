@@ -709,14 +709,17 @@ cd ~/dialogwright &amp;&amp; pnpm audit:verify ~/ivr/data/audit</code></pre>
           It prints <code>https://ivr.example.com/dashboard/login?code=...</code>. Send it to your phone (a note to yourself, say),
           open it, and press <strong>Sign in</strong>: the phone stays signed in for twelve hours (<code>CONSOLE_SESSION_HOURS</code>),
           or until you press <strong>Sign out</strong> in the console's header. Each new link retires the one before it. A restart signs
-          everyone out unless <code>CONSOLE_SESSION_KEY</code> is set. Without a sign-in, <code>https://ivr.example.com/dashboard</code>
-          shows only the sign-in page, and <code>pnpm diagnose</code> checks that it does.
+          everyone out unless <code>CONSOLE_SESSION_KEY</code> is set; with it, a sign-out is kept on disk and still holds after a restart.
+          Without a sign-in, <code>https://ivr.example.com/dashboard</code> shows only the sign-in page, and <code>pnpm diagnose</code>
+          checks that it does.
         </p>
         <p>
           Every sign-in, every refused attempt, the first look at the live feed and every replay of a stored call go into the audit,
           as <code>console_access</code> entries naming the session by a hash and never the link: the record of who looked at
-          which call. Failed attempts are limited per address and in all. Your app's own pages that are local only (its chats)
-          stay local only.
+          which call. Failed attempts are limited per address and in all. The address is the one your tunnel reports: with
+          Cloudflare's tunnel, as here, <code>CONSOLE_CLIENT_ADDRESS=cf-connecting-ip</code> reads only Cloudflare's header (the
+          default, <code>auto</code>, reads it first too); behind ngrok or another proxy, set <code>x-forwarded-for</code>. Your app's
+          own pages that are local only (its chats) stay local only.
         </p>
         <p>
           Then go deeper with <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/live-checks.md">the live checks</a>:
