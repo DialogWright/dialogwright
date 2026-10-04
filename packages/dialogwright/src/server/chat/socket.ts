@@ -189,7 +189,11 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     e.ended = true;
     sessions.delete(e.id);
     resumeIds.delete(e.resume);
-    e.frames.write('log', { ended: reason });
+    try {
+      e.frames.write('log', { ended: reason });
+    } catch (err) {
+      log(`chat ${e.id}: could not log the end: ${describeError(err)}`);
+    }
     e.socket?.close(1000, 'chat ended');
   };
 
@@ -415,7 +419,12 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       // A drop is not the end: the session waits for a resume until it is idle too long.
       if (e !== undefined && e.socket === ws) {
         e.socket = null;
-        e.frames.write('log', { socketClosed: true });
+        // An event handler must never throw (a full disk, a removed trace directory): it would take the server down.
+        try {
+          e.frames.write('log', { socketClosed: true });
+        } catch (err) {
+          log(`chat ${e.id}: close handler failed: ${describeError(err)}`);
+        }
       }
     });
     ws.on('error', (err) => log(`chat ${conn.id ?? 'unstarted'}: socket error ${err.message}`));
@@ -437,10 +446,15 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       for (const e of [...sessions.values()]) {
         if (e.ended || e.inFlight > 0 || e.lastActivityMs > cutoff) continue;
         log(`chat ${e.id}: ended after ${deps.settings.idleMs} ms idle`);
-        const entry = deps.audit.append(e.id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } });
-        e.auditEntries.push(entry);
-        deps.bus?.publish({ type: 'ended', callSid: e.id, at: now(), reason: 'hangup' });
-        sendTo(e, { type: 'end' });
+        try {
+          const entry = deps.audit.append(e.id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } });
+          e.auditEntries.push(entry);
+          deps.bus?.publish({ type: 'ended', callSid: e.id, at: now(), reason: 'hangup' });
+          sendTo(e, { type: 'end' });
+        } catch (err) {
+          log(`chat ${e.id}: idle end failed: ${describeError(err)}`);
+        }
+        // Forgotten whatever failed above: an idle session is never kept for want of a log line.
         finish(e, 'idle');
       }
     },

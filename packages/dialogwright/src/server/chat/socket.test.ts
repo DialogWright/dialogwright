@@ -38,6 +38,8 @@ const clients: ChatClient[] = [];
 afterEach(async () => {
   for (const c of clients.splice(0)) c.close();
   await running?.close();
+  // The server's side of each socket closes after the client's: let it, before the trace directory goes.
+  await new Promise((resolve) => setTimeout(resolve, 20));
   running = null;
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -309,6 +311,26 @@ describe('the chat endpoint', () => {
     expect(c.received.at(-1)).toEqual({ type: 'end' });
     const session = (c.received[0] as Extract<Msg, { type: 'ready' }>).session;
     expect(auditEntries(config).filter((e) => e.callId === session).at(-1)).toMatchObject({ type: 'call_ended', channel: 'chat', detail: { reason: 'abandoned' } });
+  });
+
+  it('outlives a frame log it can no longer write: a drop and an idle end with the trace directory gone', async () => {
+    let clock = 1_000_000;
+    const { url, config, logs } = await start({ CHAT_IDLE_MS: '60000' }, { now: () => clock });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    rmSync(config.traceDir, { recursive: true, force: true });
+    c.close();
+    await c.closed;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    clock += 60_000;
+    running!.sweep();
+    expect(running!.chat!.liveCount()).toBe(0);
+    expect(logs.some((l) => l.includes('close handler failed'))).toBe(true);
+    // The server still serves.
+    const d = await ChatClient.connect(url);
+    d.send({ type: 'ping' });
+    await d.until((r) => r.some((m) => m.type === 'pong'));
   });
 
   it('writes the frame log without the resume token', async () => {
