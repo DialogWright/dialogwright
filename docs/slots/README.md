@@ -35,7 +35,7 @@ Each type has a page with every option, its default, the default question text, 
 | [`birthdate`](birthdate.md) | A date of birth | You ask for a birth date to know or verify who is calling. A month and day without the year are held and the year is asked for alone. Masked to its year by default. |
 | [`name`](name.md) | The caller's own name | The caller says who they are. `exclude` lists words that never belong to the caller's name, such as the names of people discussed on the call. |
 | [`record`](record.md) | One of the app's own records, found by a tool and chosen by what the caller says of it | The list differs from caller to caller: their parcels, orders or bookings. The slot takes the record's key, never anything the model wrote. |
-| [`text`](text.md) | The caller's own words, kept as said | The value is free text no list holds and no code can check: a description, a note, a reason. A summary reads it back by a stand-in. |
+| [`text`](text.md) | The caller's own words, kept as said | The value is free text no list holds and no code can check: a description, a note, a reason. A summary reads it back by a stand-in. With `pick`, the value is the part of the words the model chooses among those code split them into. |
 | [`topic`](topic.md) | Which of the knowledge base's topics the caller asks about | The app answers general questions from approved passages. The app's retriever nominates a few topics for the caller's words, the question offers only those, and a turn that nominates none asks nothing. The answer is never the slot's: its value is a topic id, and the form's completion finds the approved passage and says it word for word ([the knowledge base](../authoring-an-app.md#12-the-knowledge-base)). |
 
 When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or contribute a type: see [Adding a slot type](../../CONTRIBUTING.md#adding-a-slot-type).
@@ -67,7 +67,7 @@ Every slot takes `listen:` beside its type's options, so each page lists it: `up
 
 ### Locales
 
-Every type reads and says en-US exactly as it did before there were locales. In a Spanish session (`es`, or any `es-*`) the types also read Spanish number words, names and dates and say values in Spanish formats, and a day-first keypad applies. `choice` options and a `text` slot's stand-in can be worded per locale in `locale/<tag>/slots.yaml`; a `topic` slot says a topic by the title the knowledge base gives that locale. The questions the model reads are never translated. See section 7 of the authoring guide and the "Notes" of each page.
+Every type reads and says en-US exactly as it did before there were locales. In a Spanish session (`es`, or any `es-*`) the types also read Spanish number words, names and dates and say values in Spanish formats, and a day-first keypad applies. `choice` options and a `text` slot's stand-in can be worded per locale in `locale/<tag>/slots.yaml`; a `text` slot's `pick` splits the words with the session's language's joining words and prepositions (English, Spanish, or the slot's own in `pick.words`); a `topic` slot says a topic by the title the knowledge base gives that locale. The questions the model reads are never translated. See section 7 of the authoring guide and the "Notes" of each page.
 
 ## Not yet in the library
 

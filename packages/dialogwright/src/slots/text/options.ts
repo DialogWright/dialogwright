@@ -1,17 +1,58 @@
 import { z } from 'zod';
+import { localeTag } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
+import { MAX_PICK_CANDIDATES } from './pick';
 
-/** The text parts of a `text` slot: its one question, as a template over the options. */
+/**
+ * The text parts of a `text` slot, as templates over the options: its yes-or-no question, and with
+ * `pick` the question that asks which part of the words is the value and the criterion of its
+ * `none` label (their `{what}` is `pick.what`).
+ */
 export const TEXT_PARTS = textParts('text', {
   given: {
     template: 'Read asr.text. Does the caller give {what}? A request alone is not {what}.{instructions}',
     vars: ['what', 'instructions'],
     about: 'The yes-or-no question that asks whether the caller gives the text, word for word.',
   },
+  pick: {
+    template: 'Read asr.text. Which of these parts of the caller\'s words is {what}, with nothing else in it?',
+    vars: ['what'],
+    about: 'With `pick`: the question that asks which of the candidate parts is the value; {what} is pick.what.',
+  },
+  pickNone: {
+    template: 'None of these is {what}',
+    vars: ['what'],
+    about: 'With `pick`: what the pick question\'s "none" label means, which keeps the whole words; {what} is pick.what.',
+  },
 });
 
-/** The questions of a `text` slot, by part. */
-export const TEXT_QUESTIONS = questionParts({ given: 'whether the caller gives the text' });
+/** The questions of a `text` slot, by part: `given`, and `pick` with the option. */
+export const TEXT_QUESTIONS = questionParts({ given: 'whether the caller gives the text', pick: 'which part of the caller\'s words is the value (with `pick`)' });
+
+/** A joining word or preposition a slot gives for a language: a word or a phrase, on one line. */
+const pickWord = () => questionText().regex(/[\p{L}\p{N}]/u, { error: 'must hold a word' });
+const pickWordList = (what: string) => z.array(pickWord()).min(1).optional().describe(what);
+
+/** The `pick` option. */
+const pickOption = z
+  .strictObject({
+    what: questionText().describe('What the value is, as a noun phrase the pick question names ("the street address").'),
+    words: z
+      .record(
+        localeTag(),
+        z
+          .strictObject({
+            joiners: pickWordList('Words or phrases that join two clauses, where the words are split ("et", "parce que"). Replaces the built-in list of the language.'),
+            prepositions: pickWordList('Words or phrases after which a clause\'s tail is offered too ("au", "près de"). Replaces the built-in list of the language.'),
+          })
+          .describe('The words of one language: either list left out is the built-in one.'),
+      )
+      .optional()
+      .describe('The joining words and prepositions by language tag ("fr", or "fr-CA" for one region, whose missing list is the language\'s), for a language with no built-in list or to replace one. Built in: English ("and", "but", "so", "because"; "at", "on", "in", "near", "by"), also read with no locale, and Spanish ("y", "e", "pero", "porque", "así que"; "en", "cerca de", "junto a"). A language with neither splits at punctuation only.'),
+  })
+  .describe(
+    `Pick the value out of the words. Code splits the caller's words into candidate parts (clauses, split at punctuation and at joining words, and each clause's tail after a preposition; then two clauses side by side joined as said, and that join's tails; each verbatim, at most ${MAX_PICK_CANDIDATES}), and a second question (\`ids.pick\`, default \`<slot>Pick\`) asks which of them is \`pick.what\`, by letter, or none of these. The value is the part chosen, as said; none, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. Default: off, the value is the whole words and only the one question is asked.`,
+  );
 
 /** The most of the caller's words a text slot keeps, unless maxLength says otherwise. */
 export const DEFAULT_MAX_LENGTH = 500;
@@ -39,6 +80,7 @@ export const textOptions = z
       .enum(['length', 'none'])
       .default('length')
       .describe('"length": the words leave the turn (the trace, a tool call\'s param) as their length only, and the display is kept. "none": as they are.'),
+    pick: pickOption.optional(),
     text: TEXT_PARTS.schema,
     ids: TEXT_QUESTIONS.schema,
   })
@@ -59,6 +101,17 @@ export const textOptions = z
           path: [key],
           message: `"${key}" is not used, since text.given replaces the whole question`,
           params: { fix: `delete "${key}", or write its words into text.given` },
+        });
+      }
+    }
+    if (o.pick === undefined) {
+      for (const [group, part] of [['text', 'pick'], ['text', 'pickNone'], ['ids', 'pick']] as const) {
+        if (o[group]?.[part as 'pick'] === undefined) continue;
+        ctx.addIssue({
+          code: 'custom',
+          path: [group, part],
+          message: `${group}.${part} is not used without "pick"`,
+          params: { fix: `add "pick: { what: ... }", or delete ${group}.${part}` },
         });
       }
     }

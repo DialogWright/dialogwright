@@ -32,9 +32,27 @@ function pickSpan(labels: string[], raw: string | undefined, entryId: string, wh
   return choiceAnswer(sharp(labels, span ?? 'none', sharpness));
 }
 
+/** Words as a criterion is compared with a label: lower case, spacing collapsed. */
+const criterionKey = (s: string): string => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * The labels of a choice whose criterion is `words`: those whose criterion is exactly the words if
+ * any is, else those equal to them case and spacing aside. A label named by what it offers, such
+ * as the part of the words a text slot's pick offers under a letter.
+ */
+function labelsByCriterion(q: Extract<Question, { type: 'choice' }>, words: string): string[] {
+  const criteria = Object.entries(q.criteria).filter((e): e is [string, string] => typeof e[1] === 'string');
+  const exact = criteria.filter(([, c]) => c === words);
+  if (exact.length > 0) return exact.map(([l]) => l);
+  const want = criterionKey(words);
+  return criteria.filter(([, c]) => criterionKey(c) === want).map(([l]) => l);
+}
+
 /**
  * The entry's own label for a question (CorpusEntry.labels): a choice or score question's label, or
- * a yes or no. One the question cannot give is a corpus bug, so it throws with the entry id.
+ * a yes or no. A choice's label may also be named by its criterion's words (a text slot's pick: the
+ * part picked, as said); a label itself comes first. One the question cannot give, or words that
+ * name more than one, is a corpus bug, so it throws with the entry id.
  */
 function questionLabel(id: string, q: Question, label: string | boolean, entryId: string, sharpness: number): Answer {
   if (q.type === 'noul') {
@@ -42,6 +60,15 @@ function questionLabel(id: string, q: Question, label: string | boolean, entryId
     return noulAnswer(label ? 0.9 : 0.05);
   }
   const labels = q.type === 'choice' ? choiceLabels(q) : q.levels.map((l) => l.label);
+  if (q.type === 'choice' && typeof label === 'string' && !labels.includes(label)) {
+    const named = labelsByCriterion(q, label);
+    if (named.length > 1) throw new Error(`corpus ${entryId}: label ${JSON.stringify(label)} for ${id} names the words of more than one choice (${named.join(', ')}); write them as said, or the letter`);
+    if (named.length === 0) {
+      const words = labels.map((l) => `${l} ${JSON.stringify(q.criteria[l] ?? '')}`).join(', ');
+      throw new Error(`corpus ${entryId}: label ${JSON.stringify(label)} for ${id} is not one the question offers (${labels.join(', ')}), nor the words of one: ${words}`);
+    }
+    label = named[0]!;
+  }
   if (typeof label !== 'string' || !labels.includes(label)) throw new Error(`corpus ${entryId}: label ${JSON.stringify(label)} for ${id} is not one the question offers (${labels.join(', ')})`);
   const probabilities = sharp(labels, label, sharpness);
   return q.type === 'choice' ? choiceAnswer(probabilities) : scoreAnswer(q, probabilities);
