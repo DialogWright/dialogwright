@@ -22,6 +22,7 @@ Two apps in this repository are the examples, and the snippets below are copied 
 11. [Walkthroughs](#11-walkthroughs)
 12. [The knowledge base](#12-the-knowledge-base)
 13. [Channels](#13-channels)
+14. [Running it](#14-running-it)
 
 ## 1. The folder
 
@@ -2186,3 +2187,30 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`, and, for `getT
 **Theming.** The panel renders in a shadow root on a `dialogwright-chat` element, so a site's CSS cannot break it; it is themed with CSS custom properties on that element: `--dw-accent`, `--dw-accent-fg`, `--dw-bg`, `--dw-fg`, `--dw-user-bg`, `--dw-agent-bg`, `--dw-radius`, `--dw-font` and `--dw-z`. Colours a site leaves unset follow the visitor's light or dark scheme.
 
 **Behaviour.** A dropped chat reconnects after each step of `backoffMs` and resumes, for as long as the page is open unless `maxReconnects` says otherwise; what is typed meanwhile is sent once it is back. A chat that never starts (an origin the server refuses, an endpoint it cannot reach, a full server) is tried once per step of `backoffMs`, then the panel says `unavailable`, with no loop. A chat whose session has ended starts afresh (`restarted`), signed in again with the site's token if it was signed in. A site that wants its own interface uses the client alone, `createChatClient`. The package's [README](../packages/widget/README.md) has the events, the words and the accessibility notes.
+
+## 14. Running it
+
+An app's server is `pnpm --filter <app> serve`, configured by its environment. On a machine you own, four commands at the repository root do the rest; each prints what it does, and none sends a key anywhere.
+
+```sh
+pnpm configure [--app <name>]                # asks, and writes <app>/.env (mode 600): a laptop with no keys, or a phone line
+pnpm start [--app <name>] [--tunnel quick|named|none]   # the server with that file; quick opens a tunnel that needs no account
+pnpm diagnose [--app <name>] [--offline]     # what is misconfigured, one line per check with its fix
+pnpm audit:verify <audit folder>             # each audit day's hash chain, exit 1 at the first break
+ENV_FILE=<path> pnpm service <launchd|systemd> --app <name>   # a service file that keeps it running; prints the install commands, runs none
+```
+
+`pnpm configure` asks for a key with the echo off, or takes it from the environment variable of its own name, never from a flag; `--non-interactive` with `--mode`, `--carrier`, `--model` and `--handoff` answers every question for a script. `pnpm start` opens Cloudflare's quick tunnel when `PUBLIC_HOST` is unset (`cloudflared` must be installed; its hostname changes every run, so it prints the webhook URL to paste each time), runs the server alone when `PUBLIC_HOST` is set, and stops the tunnel only after the server has drained. `pnpm service` writes a launchd agent or a systemd user unit with this machine's absolute paths: it runs the app's server with `ENV_FILE`, restarts it when it exits, and gives a stop `DRAIN_MS` and ten seconds more. The full guide to a machine that keeps a line up is the website's [running your own IVR](https://dialogwright.com/guides/home-server.html).
+
+| Choice | Where it is set | Default | When to choose otherwise |
+|---|---|---|---|
+| A settings file read at startup | `ENV_FILE` (env), or `--env-file <path>` | none: the environment alone | Always on a machine you own (`pnpm start` sets it). A variable already in the environment wins over the file. |
+| How long a stopping server waits for live calls | `DRAIN_MS` (env) | `30000` | Longer for long calls; `0` to close at once. A service manager's stop timeout must be longer than it. |
+| How long traces and frame logs are kept | `TRACE_RETENTION_DAYS` (env) | unset: forever | To keep the disk in check. Archive what `pnpm kb:gaps` should still read first. |
+| How long audit day files are kept | `AUDIT_RETENTION_DAYS` (env) | unset: forever (the audit is a record) | Only as long as the record must be kept; deleting a day ends its record. |
+
+A settings file kept outside the app's folder (the right place on a machine that stays up) is named with `ENV_FILE=<path>` in front of the command: `ENV_FILE=~/ivr/myline.env pnpm start --app myline`, and the same for `pnpm diagnose` and `pnpm service`. `--env-file <path>` works too where pnpm passes it on, but some pnpm builds read a `--env-file` themselves, and fail on a relative path before the command starts, so `ENV_FILE=` is the form to use.
+
+A stopping server (SIGTERM, or Ctrl-C) first drains: `GET /ready` answers 503, a new call is put through to `HANDOFF_NUMBER`, a new chat is told `busy`, and live calls and chats go on until they end or `DRAIN_MS` passes. Then the calls still live are closed as going away (WebSocket 1001); the carrier calls back for each, and the server, about to close, puts that caller through to `HANDOFF_NUMBER` (it waits a few seconds for those callbacks); then it closes. A second signal stops it at once (exit 130 or 143). `GET /health` stays 200 while the process runs: it counts live calls (`sessions`), and adds `chat` with the chat on, `draining` while it drains, and `disk` (`traceBytes`, `auditBytes`) when a retention is set.
+
+A crash (an uncaught exception, or a promise rejected with nothing to catch it) is logged with its stack and its causes' stacks (never the settings), then the server closes as far as it can in three seconds (turns under way finish; a new call goes to `HANDOFF_NUMBER`) and exits 1, for the service manager to start it again. That is Node's own rule for an unhandled rejection, kept on purpose rather than made an option: a server in a state nothing planned for should start again, not go on answering calls. Code that means to carry on after a failed promise catches it where it happens.

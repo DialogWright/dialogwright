@@ -1,0 +1,5 @@
+# cloudflared quick tunnel output
+
+`cloudflared-quick-2024.txt` and `cloudflared-quick-2022.txt` are what `cloudflared tunnel --url http://localhost:3000` prints on standard error when it opens a quick tunnel (no account), in the format of two releases: the 2024 line, whose connection line reads `Registered tunnel connection`, and the 2022 line, whose reads `Connection <id> registered`. `server/tunnel.test.ts` reads them to show that `quickTunnelHost` finds the assigned `https://<words>.trycloudflare.com` hostname, inside the box cloudflared draws around it, and not the other https addresses on the lines before and after.
+
+Source: the format of cloudflared's own log lines (github.com/cloudflare/cloudflared, `cmd/cloudflared/tunnel/quick_tunnel.go`, which draws the box, and its startup logging). They were written for these tests, not captured from a run: the hostnames, connector ids, addresses (192.0.2.0/24, the documentation range), locations and checksums are made up, and the long notice on the first line is cut short. No test runs cloudflared.
