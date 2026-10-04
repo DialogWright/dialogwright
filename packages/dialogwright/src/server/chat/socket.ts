@@ -288,7 +288,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     });
   };
 
-  /** A sign-in after the start (a sign_in message, or a resume's token): a subject only, since a delegate's chat begins as theirs. */
+  /** A sign-in after the start (a sign_in message, or a resume's token on a chat still anonymous): a subject only, since a delegate's chat begins as theirs. */
   const laterSignIn = async (e: ChatEntry, token: string): Promise<void> => {
     const r = await verify(e, token);
     if (!r.ok) {
@@ -370,8 +370,15 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         // At once, ahead of a reply still in flight (which goes to this socket when it is done), so the
         // client has its session and new resume token before any line; nothing is resent.
         for (const r of ready(e)) sendTo(e, r);
+        // A resume keeps the sign-in the chat had. A token beside it is there for the new chat that
+        // starts if this one has ended (below), so a client can ask for both without knowing which it
+        // gets: it signs in a chat still anonymous, and is not used (nor refused) on one signed in.
         const token = m.token;
-        if (token !== undefined) void enqueue(e, (s) => laterSignIn(s, token));
+        if (token !== undefined) {
+          void enqueue(e, async (s) => {
+            if (isAnonymous(s.session.principal)) await laterSignIn(s, token);
+          });
+        }
         return;
       }
       send(conn.ws, null, { type: 'error', code: 'session_unknown', message: 'that chat has ended; a new one starts' });

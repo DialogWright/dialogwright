@@ -9,6 +9,11 @@ export const CHAT_PROTOCOL_VERSION = 1;
 /** The longest message a person may type in one turn; the server refuses longer with `too_long`. */
 export const CHAT_TEXT_MAX = 500;
 
+/** A language tag as `start.locale` takes one (the engine's LOCALE_TAG, at most 35 characters): a start with any other is refused. */
+export function isLocaleTag(tag: string): boolean {
+  return tag.length <= 35 && /^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8})*$/.test(tag);
+}
+
 export type ClientMessage =
   | { type: 'start'; v: 1; locale?: string; token?: string; resume?: string }
   | { type: 'text'; text: string }
