@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { tokenHash, type TokenStore } from './stores/types';
 
 /**
  * Constant-time string comparison. A length mismatch returns false at once: every minted token is
@@ -10,8 +11,9 @@ export function sameToken(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-interface Entry {
-  token: string;
+/** What is kept of a live token: its hash (stores/types.ts tokenHash), never the token itself. */
+export interface TokenEntry {
+  hash: string;
   /** The carrier whose webhook minted it (server/voice/registry.ts): only that carrier's socket path takes it. */
   provider: string;
   expiresAt: number;
@@ -24,16 +26,20 @@ const LEGACY_TOKEN_PROVIDER = 'twilio';
  * One live token per call SID, carried in the relay URL and checked at setup. A token is tied to the
  * carrier whose webhook minted it, so a Telnyx call's token never opens `/conversation/twilio` (or the
  * legacy `/conversation`, Twilio's), and a Twilio call's never opens `/conversation/telnyx`.
+ *
+ * The memory TokenStore (stores/types.ts), and the one the server uses with SESSION_STORE=memory. It
+ * keeps each token's hash, not the token: a token is compared by its hash, so a store that keeps its
+ * entries somewhere (stores/file.ts FileTokens) never writes one down.
  */
-export class CallTokens {
-  private readonly byCall = new Map<string, Entry>();
+export class CallTokens implements TokenStore {
+  protected readonly byCall = new Map<string, TokenEntry>();
 
-  constructor(private readonly ttlMs: number, private readonly now: () => number = Date.now) {}
+  constructor(protected readonly ttlMs: number, protected readonly now: () => number = Date.now) {}
 
   /** A fresh token for a call on `provider` (default Twilio, the legacy `/voice`'s), replacing the call's last one. */
   mint(callSid: string, provider: string = LEGACY_TOKEN_PROVIDER): string {
     const token = randomBytes(16).toString('hex');
-    this.byCall.set(callSid, { token, provider, expiresAt: this.now() + this.ttlMs });
+    this.byCall.set(callSid, { hash: tokenHash(token), provider, expiresAt: this.now() + this.ttlMs });
     return token;
   }
 
@@ -45,7 +51,7 @@ export class CallTokens {
       this.byCall.delete(callSid);
       return false;
     }
-    return sameToken(e.token, token) && e.provider === provider;
+    return sameToken(e.hash, tokenHash(token)) && e.provider === provider;
   }
 
   /**
@@ -55,8 +61,9 @@ export class CallTokens {
    */
   has(token: string, provider: string): boolean {
     const now = this.now();
+    const hash = tokenHash(token);
     for (const [callSid, e] of this.byCall) {
-      if (!sameToken(e.token, token)) continue;
+      if (!sameToken(e.hash, hash)) continue;
       if (now > e.expiresAt) {
         this.byCall.delete(callSid);
         return false;
