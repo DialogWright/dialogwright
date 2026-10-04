@@ -61,6 +61,8 @@ export type { ApprovedContent } from './kb/hash';
 // draft, review and refresh it): approving one passage or draft as the command does, and what waits.
 export { APPROVALS_LOG, approveOne, excerptInSource, formatApproveResult, notAPerson, pendingDrafts, placeOf as kbPlaceOf, proposedTopics, readApprovalLog } from './kb/approval';
 export { approvalLogged, parseApprovalLog } from './kb/log';
+// What a draft's excerpt must be (kb:approve, and kb:draft and kb:review hold a draft to the same rules).
+export { excerptProblems, MIN_EXCERPT_CHARS, MIN_EXCERPT_WORDS, NO_EXCERPT, numbersIn, numbersNotInExcerpt } from './kb/excerpt';
 export type { ApprovalLogLine, ApproveOptions, ApproveResult, KbPlace, PendingDraft, ProposedTopic } from './kb/approval';
 export { PENDING_TOPICS_FILE } from './kb/folder';
 export { parseKbFile } from './define/load';

@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import {
-  APPROVALS_LOG,
   approvalLogged,
   approveOne,
   collapseWhitespace,
@@ -10,8 +9,8 @@ import {
   notAPerson,
   parseKbFile,
   PENDING_TOPICS_FILE,
+  readApprovalLog,
   sourceHashOf,
-  type ApprovalLogLine,
   type KbPassage,
   type KbPendingYaml,
   type KbPlace,
@@ -154,23 +153,17 @@ export function reviewState(place: KbPlace): ReviewState {
 }
 
 /**
- * The section's text as it was when the passage was last approved, from kb/approvals.jsonl (null when
- * no approval kept it). A line's text is taken only when it hashes to the approval's sourceHash: the
+ * The section's text as it was when the passage was last approved, from kb/approvals.jsonl as
+ * dialogwright reads it (readApprovalLog: lines that do not parse are passed over), null when no
+ * approval kept it. A line's text is taken only when it hashes to the approval's sourceHash: the
  * log is a file anyone can edit, and the diff the reviewer reads must be of what was approved.
  */
 export function approvedSectionText(place: KbPlace, passage: KbPassage): string | null {
   if (!passage.approval) return null;
-  const file = join(place.kbDir, APPROVALS_LOG);
-  if (!existsSync(file)) return null;
+  const { sourceHash } = passage.approval;
   let found: string | null = null;
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (line.trim() === '') continue;
-    try {
-      const l = JSON.parse(line) as Partial<ApprovalLogLine>;
-      if (l.id === passage.id && l.sourceHash === passage.approval.sourceHash && typeof l.sourceText === 'string' && sourceHashOf(l.sourceText) === passage.approval.sourceHash) found = l.sourceText;
-    } catch {
-      // a line that does not parse is passed over
-    }
+  for (const l of readApprovalLog(place.kbDir)) {
+    if (l.id === passage.id && l.sourceHash === sourceHash && typeof l.sourceText === 'string' && sourceHashOf(l.sourceText) === sourceHash) found = l.sourceText;
   }
   return found;
 }

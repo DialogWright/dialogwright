@@ -397,6 +397,12 @@ describe('the section as it was approved', () => {
     // The log is a file anyone can edit: a text that is not what the hash says is not shown as what was approved.
     writeFileSync(join(dir, 'kb', 'approvals.jsonl'), line('All branches are open every day, Sunday too.'));
     expect(approvedSectionText(place, passage)).toBeNull();
+    // Read as dialogwright reads the log: a line that does not parse, or lacks what a line has, is passed over.
+    const { from: _from, ...noFrom } = JSON.parse(line(text)) as Record<string, unknown>;
+    writeFileSync(join(dir, 'kb', 'approvals.jsonl'), `not json\n${JSON.stringify(noFrom)}\n`);
+    expect(approvedSectionText(place, passage)).toBeNull();
+    writeFileSync(join(dir, 'kb', 'approvals.jsonl'), `not json\n${line(text)}`);
+    expect(approvedSectionText(place, passage)).toBe(text);
   });
 });
 

@@ -7,7 +7,7 @@ import { main, type Io } from '../cli';
 import { ClaudeDrafter, DEFAULT_DRAFT_MODEL, draftsOfResponse, MESSAGES_URL, partsOf, RESPONSE_SCHEMA, SYSTEM_PROMPT } from './claude';
 import type { Draft, DraftRequest } from './drafter';
 import { FakeDrafter, firstSentence } from './fake';
-import { draftProblems, numbersIn, numbersNotInExcerpt } from './validate';
+import { draftProblems } from './validate';
 
 /**
  * Drafting: the checks every draft passes before it is written (with the messages an author reads),
@@ -72,12 +72,6 @@ describe('the checks on a draft', () => {
     expect(check({ section: '2.1', topic: 'card_renewal', answer: 'An adult card lasts 4 years.', excerpt: 'An adult card is valid for three years.' })).toEqual(['its excerpt does not say 4, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes']);
     expect(check({ section: '1.1', topic: 'opening_hours', answer: 'Weekdays we open at 9:00 and close at 8.', excerpt: 'from 9 a.m. to 8 p.m. and on Saturday' })).toEqual([]);
     expect(check({ section: '1.1', topic: 'opening_hours', answer: 'Weekdays we open at 9:30.', excerpt: 'from 9 a.m. to 8 p.m. and on Saturday' })).toEqual(['its excerpt does not say 9:30, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes']);
-  });
-
-  it('reads numbers in figures and in words', () => {
-    expect([...numbersIn('twenty-five cents, sixty days, 1,000 books, $5.00, 9:00, 07 and twenty one')].sort()).toEqual(['1', '1000', '20', '21', '25', '5', '60', '7', '9'].sort());
-    expect(numbersNotInExcerpt('It is 1,000 books and $5.', 'one thousand books, 5 dollars, 1000 in all')).toEqual([]);
-    expect(numbersNotInExcerpt('Call 555-0100.', 'Call the desk.')).toEqual(['555-0100']);
   });
 
   it('the fake drafter quotes a section\'s first sentence when its rule gives no excerpt', () => {

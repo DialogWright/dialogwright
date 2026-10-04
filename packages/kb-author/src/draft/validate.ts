@@ -1,4 +1,4 @@
-import { collapseWhitespace, excerptInSource, type KnowledgeBase } from 'dialogwright';
+import { collapseWhitespace, excerptInSource, excerptProblems, type KnowledgeBase } from 'dialogwright';
 import type { Draft, ProposedTopic } from './drafter';
 
 /**
@@ -8,11 +8,11 @@ import type { Draft, ProposedTopic } from './drafter';
  * answer says what its excerpt says is the person's half.
  *
  * - The section is one the source has.
- * - The excerpt is in that section word for word (whitespace aside), and is long enough to hold the
- *   answer to: at least 4 words and 20 characters.
- * - Every number in the answer (an amount, a time, a date, a count written in figures) is in the
- *   excerpt, compared as numbers: `$5.00` and `5`, `9:00` and `9`, `1,000` and `1000` are alike, and
- *   the excerpt's numbers written as words (`sixty`, `twenty-five`) count.
+ * - The excerpt is in that section word for word (whitespace aside), and holds to kb:approve's own
+ *   rules for an excerpt (dialogwright's kb/excerpt.ts excerptProblems): long enough to hold the
+ *   answer to (at least 4 words and 20 characters), and every number the answer says in figures is
+ *   in it, compared as numbers (`$5.00` and `5`, `9:00` and `9`, `1,000` and `1000` are alike, and
+ *   the excerpt's numbers written as words, `sixty` or `twenty-five`, count).
  * - The answer is not empty, is no longer than kb.yaml's maxAnswerChars, and has no braces (an
  *   answer is fixed text, never a template).
  * - The topic is a valid id; one topics.yaml does not have is a new topic, which the draft must
@@ -21,64 +21,6 @@ import type { Draft, ProposedTopic } from './drafter';
  *   the end not before the start.
  * - Its answer is not another passage's or draft's answer (whitespace and case aside).
  */
-
-/** The least an excerpt quotes: enough words to hold an answer to. */
-export const MIN_EXCERPT_WORDS = 4;
-export const MIN_EXCERPT_CHARS = 20;
-
-const UNITS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
-const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
-
-/** A number in figures as it is written: digits, with separators between them (`1,000`, `5.00`, `9:30`, `2026-01-05`). */
-const NUMBER = /\d(?:[\d,.:/-]*\d)?/g;
-
-/** A number written in figures, as it is compared: `5.00` is `5`, `1,000` is `1000`, `9:00` is `9`, `07` is `7`. */
-function normalNumber(token: string): string[] {
-  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(token)) token = token.replace(/,/g, '');
-  if (token.includes(',')) return token.split(',').flatMap(normalNumber);
-  const time = /^(\d{1,2}):(\d{2})$/.exec(token);
-  if (time) return time[2] === '00' ? [String(Number(time[1]))] : [`${Number(time[1])}:${time[2]}`];
-  if (token.includes(':')) return token.split(':').flatMap(normalNumber);
-  if (/[-/]/.test(token)) return token.split(/[-/]/).flatMap(normalNumber);
-  if (/^\d+(\.\d+)?$/.test(token)) return [String(Number(token))];
-  return token.split('.').filter((t) => t !== '').map((t) => String(Number(t)));
-}
-
-/** The numbers written in figures in a text, compared as numbers (see normalNumber). */
-export function figuresIn(text: string): string[] {
-  return [...text.matchAll(NUMBER)].flatMap((m) => normalNumber(m[0]));
-}
-
-/** The numbers a text says: in figures, and the whole numbers up to ninety-nine written as words. */
-export function numbersIn(text: string): Set<string> {
-  const out = new Set(figuresIn(text));
-  const lower = text.toLowerCase();
-  for (const w of lower.match(/[a-z]+/g) ?? []) {
-    const unit = UNITS.indexOf(w);
-    if (unit >= 0) out.add(String(unit));
-    const ten = TENS.indexOf(w);
-    if (ten >= 2) out.add(String(ten * 10));
-  }
-  for (const m of lower.matchAll(/\b([a-z]+)(?=[-\s]+([a-z]+)\b)/g)) {
-    const ten = TENS.indexOf(m[1]!);
-    const unit = UNITS.indexOf(m[2]!);
-    if (ten >= 2 && unit >= 1 && unit <= 9) out.add(String(ten * 10 + unit));
-  }
-  return out;
-}
-
-/** The numbers an answer says in figures that its excerpt does not say, as the answer writes them. */
-export function numbersNotInExcerpt(answer: string, excerpt: string): string[] {
-  const quoted = numbersIn(excerpt);
-  const missing: string[] = [];
-  for (const m of answer.matchAll(NUMBER)) {
-    if (normalNumber(m[0]).some((n) => !quoted.has(n)) && !missing.includes(m[0])) missing.push(m[0]);
-  }
-  return missing;
-}
-
-/** A list said in words: "a", "a and b", "a, b and c". */
-const listed = (items: readonly string[]): string => (items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
 
 /** A topic id, as topics.yaml keys it. */
 export const TOPIC_ID = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -124,16 +66,12 @@ export function draftProblems(draft: Draft, ctx: DraftContext): string[] {
   if (!source) problems.push(`its source document "${ctx.document}" is not in ${base}/sources`);
   else if (!section) problems.push(`section "${draft.section}" is not a section of ${where}`);
   const excerpt = typeof draft.excerpt === 'string' ? draft.excerpt : '';
-  const quoted = collapseWhitespace(excerpt);
   const answer = typeof draft.answer === 'string' ? collapseWhitespace(draft.answer) : '';
-  if (quoted === '') problems.push('its excerpt is empty: a draft quotes the words of the section that support it');
+  // Said as the review page's edit says it (every excerpt problem starts "its excerpt"); kb:approve's own words for it are for the file.
+  if (collapseWhitespace(excerpt) === '') problems.push('its excerpt is empty: a draft quotes the words of the section that support it');
   else {
     if (section && !excerptInSource(excerpt, section.text)) problems.push(`its excerpt is not in ${where} section "${draft.section}" word for word`);
-    if (quoted.split(' ').length < MIN_EXCERPT_WORDS || quoted.length < MIN_EXCERPT_CHARS) {
-      problems.push(`its excerpt "${quoted}" is too short to hold the answer to: quote at least ${MIN_EXCERPT_WORDS} words and ${MIN_EXCERPT_CHARS} characters of the section`);
-    }
-    const missing = answer === '' ? [] : numbersNotInExcerpt(answer, quoted);
-    if (missing.length > 0) problems.push(`its excerpt does not say ${listed(missing)}, which its answer does: every number, amount and date in the answer must be in the excerpt it quotes`);
+    problems.push(...excerptProblems(excerpt, answer));
   }
 
   // The answer.
