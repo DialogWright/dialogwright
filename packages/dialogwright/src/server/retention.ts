@@ -30,7 +30,7 @@ export interface SweepResult {
   auditDays: number;
 }
 
-/** A folder's file names, or none when it does not exist (yet). */
+/** A folder's plain file names (not a link, not a folder), or none when it does not exist (yet). */
 function names(dir: string): string[] {
   try {
     return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name);
@@ -54,7 +54,8 @@ export function sweepRetention(s: RetentionSettings, at: { now: number; inUse: R
     const cutoff = at.now - s.traceDays * DAY_MS;
     for (const name of names(s.traceDir)) {
       const m = TRACE_FILE.exec(name);
-      if (!m || at.inUse.has(m[1]!)) continue;
+      // An audit day file is never a trace, even in a folder the two share (TRACE_DIR and AUDIT_DIR the same).
+      if (!m || at.inUse.has(m[1]!) || AUDIT_DAY.test(name)) continue;
       const path = join(s.traceDir, name);
       try {
         if (statSync(path).mtimeMs >= cutoff) continue;

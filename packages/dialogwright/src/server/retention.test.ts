@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { diskUsageCache, sweepRetention } from './retention';
@@ -69,6 +69,28 @@ describe('sweepRetention', () => {
     const r = sweepRetention({ traceDir, auditDir, auditDays: 2 }, { now: NOW, inUse: new Set() });
     expect(r).toEqual({ traceFiles: 0, auditDays: 2 });
     expect(readdirSync(auditDir).sort()).toEqual(['2026-10-02.jsonl', '2026-10-03.jsonl', '2026-10-04.jsonl', 'export.jsonl']);
+  });
+
+  it('never removes an audit day by the trace retention, when the two share a folder', () => {
+    const { traceDir } = folders();
+    aged(join(traceDir, '2026-09-01.jsonl'), 30);
+    aged(join(traceDir, 'CA-old.jsonl'), 30);
+    const r = sweepRetention({ traceDir, auditDir: traceDir, traceDays: 7 }, { now: NOW, inUse: new Set() });
+    expect(r).toEqual({ traceFiles: 1, auditDays: 0 });
+    expect(readdirSync(traceDir)).toEqual(['2026-09-01.jsonl']);
+  });
+
+  it('leaves links and folders alone, and what a link points to', () => {
+    const { root, traceDir, auditDir } = folders();
+    const outside = join(root, 'elsewhere.jsonl');
+    aged(outside, 30);
+    symlinkSync(outside, join(traceDir, 'CA-link.jsonl'));
+    symlinkSync(outside, join(auditDir, '2026-09-01.jsonl'));
+    mkdirSync(join(traceDir, 'CA-folder.jsonl'));
+    const r = sweepRetention({ traceDir, auditDir, traceDays: 1, auditDays: 1 }, { now: NOW, inUse: new Set() });
+    expect(r).toEqual({ traceFiles: 0, auditDays: 0 });
+    expect(existsSync(outside)).toBe(true);
+    expect(readdirSync(traceDir).sort()).toEqual(['CA-folder.jsonl', 'CA-link.jsonl']);
   });
 
   it('removes nothing with no retention set, and copes with folders that do not exist yet', () => {
