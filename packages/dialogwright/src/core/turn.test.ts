@@ -14,7 +14,7 @@ import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { framesOf } from '../testing/frames';
 import { useTestkit } from '../testing/apps';
 import { registerApp } from './app/registry';
-import type { SlotId } from './app/types';
+import type { App, IntentDef, SlotId } from './app/types';
 import type { SlotListen } from './slots/types';
 import { testkitApp } from '../testing/testkit';
 import { CUSTOMERS, STAFF } from '../testing/testkit/domain/data';
@@ -1619,5 +1619,53 @@ describe('where a slot listens', () => {
       // Unset, the form empties it as it closes.
       expect(filed().slots.expectedDate!.value).toBeNull();
     });
+  });
+});
+
+/**
+ * Whether an intent the model is unsure of is confirmed (App.unsureIntent, IntentDef.unsure), turn
+ * by turn: a reading from INTENT_EXPLICIT up to INTENT_IMPLICIT is confirmed by default; set to
+ * no-match it is the no-match line, counted, as below the band.
+ */
+describe('an unsure intent', () => {
+  const withUnsure = (id: string, app: App['unsureIntent'], intents: Record<string, IntentDef['unsure']> = {}): string => {
+    const own = Object.fromEntries(Object.entries(intents).map(([i, unsure]) => [i, { ...testkitApp.intents[i]!, unsure }]));
+    registerApp({ ...testkitApp, id, ...(app !== undefined ? { unsureIntent: app } : {}), intents: { ...testkitApp.intents, ...own } });
+    return id;
+  };
+  const OFF = withUnsure('testkit-turn-unsure-off', 'no-match');
+  const OFF_BUT = withUnsure('testkit-turn-unsure-off-but', 'no-match', { report_missing: 'confirm', capabilities: 'confirm' });
+  const ON_BUT = withUnsure('testkit-turn-unsure-on-but', undefined, { report_missing: 'no-match', capabilities: 'no-match' });
+  const FORM = choice({ report_missing: 0.5, none: 0.3, other: 0.2 });
+  const INFO = choice({ capabilities: 0.55, other: 0.25, none: 0.2 });
+  const confirmed = (r: TurnResult, label: string) => {
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_intent_explicit', target: 'intent', vars: { intentLabel: label } });
+    expect(r.session.intentAttempts).toBe(0);
+  };
+  const noMatch = (r: TurnResult) => {
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_open', target: 'intent' });
+    expect(r.session.pendingConfirmation).toBeNull();
+    expect(r.session.intentAttempts).toBe(1);
+  };
+
+  it('is confirmed by default, a form intent and an informational one', () => {
+    confirmed(say(started(), 'my parcel maybe', { intent: FORM }), 'report a missing parcel');
+    confirmed(say(started(), 'so what is this exactly', { intent: INFO }), 'hear what I can do');
+  });
+
+  it('is the no-match line, counted, when the app says no-match', () => {
+    noMatch(say(started(OFF), 'my parcel maybe', { intent: FORM }));
+    noMatch(say(started(OFF), 'so what is this exactly', { intent: INFO }));
+    // A sure reading is unchanged.
+    expect(say(started(OFF), 'so what is this exactly', { intent: choice({ capabilities: 0.9, none: 0.1 }) }).decision).toMatchObject({ promptId: 'ask_intent', acks: [{ promptId: 'capabilities' }] });
+  });
+
+  it('follows the intent\'s own setting over the app\'s, in each direction', () => {
+    confirmed(say(started(OFF_BUT), 'my parcel maybe', { intent: FORM }), 'report a missing parcel');
+    confirmed(say(started(OFF_BUT), 'so what is this exactly', { intent: INFO }), 'hear what I can do');
+    noMatch(say(started(OFF_BUT), 'where is it maybe', { intent: choice({ track_parcel: 0.5, none: 0.3, other: 0.2 }) }));
+    noMatch(say(started(ON_BUT), 'my parcel maybe', { intent: FORM }));
+    noMatch(say(started(ON_BUT), 'so what is this exactly', { intent: INFO }));
+    confirmed(say(started(ON_BUT), 'where is it maybe', { intent: choice({ track_parcel: 0.5, none: 0.3, other: 0.2 }) }), 'track a parcel');
   });
 });

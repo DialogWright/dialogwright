@@ -327,6 +327,11 @@ export function crossLink(
       yaml('intents.yaml', ['intents', id], `intent "${id}" is a form intent, but forms.yaml has no form "${id}"`, `add "${id}:" under forms in forms.yaml (its slots, summaryPromptId and hooks), or change this intent's kind`);
     }
     if (def.promptId !== undefined) promptExists('intents.yaml', ['intents', id, 'promptId'], def.promptId);
+    // Only a form intent, an informational one and done are confirmed when the model is unsure (gates.ts):
+    // agent and repeat_prompt act only when it is sure, and other and none are never acted on.
+    if (def.unsure !== undefined && def.kind === 'control' && id !== 'done') {
+      yaml('intents.yaml', ['intents', id, 'unsure'], `the control intent "${id}" is never confirmed, so "unsure" does nothing for it`, 'delete "unsure": only a form intent, an informational one and done are confirmed when the model is unsure of them', true);
+    }
     if (def.passage !== undefined) {
       promptExists('intents.yaml', ['intents', id, 'passage'], KB_ANSWER_PROMPT);
       promptExists('intents.yaml', ['intents', id, 'passage'], KB_UNAVAILABLE_PROMPT);
@@ -678,6 +683,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'blockPromptId', code.blockPromptId);
   put(app, 'wording', a.wording as ModelWording | undefined);
   put(app, 'carrySlots', a.carrySlots);
+  put(app, 'unsureIntent', a.unsureIntent);
   put(app, 'thresholds', a.thresholds);
   put(app, 'callerState', code.callerState);
   put(app, 'questions', code.questions);
@@ -707,6 +713,7 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
   const intent: IntentDef = { criteria: def.criteria, label: def.label, kind: def.kind };
   put(intent, 'promptId', def.promptId);
   put(intent, 'passage', def.passage);
+  put(intent, 'unsure', def.unsure);
   return intent;
 }
 

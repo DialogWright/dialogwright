@@ -1,4 +1,4 @@
-import type { App, FormDef, FormId, IdentityConfig, SlotId, ToolDef, ToolName } from './types';
+import type { App, FormDef, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 
@@ -56,6 +56,11 @@ export function listenOf(app: App, id: SlotId): SlotListen | null {
  */
 export function isCarried(app: App, id: SlotId): boolean {
   return app.carrySlots?.includes(id) === true || listenOf(app, id) === 'call';
+}
+
+/** What an intent the model is unsure of gets: its own setting (IntentDef.unsure), else the app's (App.unsureIntent), else `confirm`. */
+export function unsureOf(app: App, intent: Intent): UnsureIntent {
+  return app.intents[intent]?.unsure ?? app.unsureIntent ?? 'confirm';
 }
 
 /** How many digits a one-time code has where the identity gives none (IdentityConfig.codeLength). */

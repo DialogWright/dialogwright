@@ -179,6 +179,41 @@ describe('defineApp: a call through resolve', () => {
   });
 });
 
+describe('defineApp: what an unsure intent gets (app.yaml unsureIntent, intents.yaml unsure)', () => {
+  const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
+  const withIntent = (intent: string, line: string): string => read('intents.yaml').replace(`  ${intent}:\n`, `  ${intent}:\n    ${line}\n`);
+
+  it('leaves both off the App unless written, and puts each on it as written', () => {
+    expect('unsureIntent' in libraryApp).toBe(false);
+    expect(Object.values(libraryApp.intents).some((def) => 'unsure' in def)).toBe(false);
+    const dir = folder({
+      'app.yaml': read('app.yaml').replace('carrySlots: [branch]', 'carrySlots: [branch]\nunsureIntent: no-match'),
+      'intents.yaml': withIntent('hours', 'unsure: confirm').replace('  renew_loan:\n', '  renew_loan:\n    unsure: confirm\n'),
+    });
+    const app = defineApp(dir, libraryCode);
+    expect(app.unsureIntent).toBe('no-match');
+    expect(app.intents.hours!.unsure).toBe('confirm');
+    expect(app.intents.renew_loan!.unsure).toBe('confirm');
+    expect('unsure' in app.intents.check_hold!).toBe(false);
+  });
+
+  it('refuses a value it does not have, offering the near one', () => {
+    expect(problems(libraryCode, folder({ 'app.yaml': read('app.yaml').replace('carrySlots: [branch]', 'carrySlots: [branch]\nunsureIntent: nomatch') }))).toEqual([
+      'app.yaml:28:15  unsureIntent  "unsureIntent" is "nomatch", which is not allowed here; it must be one of "confirm", "no-match"  ->  change it to "no-match"',
+    ]);
+    expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('hours', 'unsure: confrim') }))).toEqual([
+      'intents.yaml:16:13  intents.hours.unsure  "unsure" is "confrim", which is not allowed here; it must be one of "confirm", "no-match"  ->  change it to "confirm"',
+    ]);
+  });
+
+  it('refuses it on a control intent that is never confirmed, and takes it on done', () => {
+    expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('agent', 'unsure: no-match') }))).toEqual([
+      'intents.yaml:21:5  intents.agent.unsure  the control intent "agent" is never confirmed, so "unsure" does nothing for it  ->  delete "unsure": only a form intent, an informational one and done are confirmed when the model is unsure of them',
+    ]);
+    expect(defineApp(folder({ 'intents.yaml': withIntent('done', 'unsure: no-match') }), libraryCode).intents.done!.unsure).toBe('no-match');
+  });
+});
+
 describe('defineApp: the folder and the code must name the same things', () => {
   const { complete } = libraryCode.forms.renew_loan!;
 

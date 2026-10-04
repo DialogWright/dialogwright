@@ -13,6 +13,9 @@ import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
 import { SLOT_LISTEN_VALUES } from '../slots/types';
 
+/** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
+const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
+
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
 const RESERVED_KINDS: readonly string[] = ['anonymous', 'channel', 'principal', 'level', 'factor', 'pass', 'config', 'configFiles'];
 
@@ -64,6 +67,10 @@ export function validateApp(app: App): void {
     if (!SLOT_LISTEN_VALUES.includes(listen)) fail(`slot "${id}" says listen: ${JSON.stringify(listen)}, which is not one of ${SLOT_LISTEN_VALUES.map((v) => `"${v}"`).join(', ')}`);
     if (app.identity?.factorSlots.includes(id)) fail(`slot "${id}" is an identity factor, which listens as identity says: delete its listen`);
     if (listen !== 'call' && app.carrySlots?.includes(id)) fail(`slot "${id}" is carried (carrySlots), which is listen: call, but says listen: ${listen}`);
+  }
+  if (app.unsureIntent !== undefined && !UNSURE_VALUES.includes(app.unsureIntent)) fail(`unsureIntent "${app.unsureIntent}" is not "confirm" or "no-match"`);
+  for (const [id, def] of Object.entries(app.intents)) {
+    if (def.unsure !== undefined && !UNSURE_VALUES.includes(def.unsure)) fail(`intent "${id}" has unsure "${def.unsure}", which is not "confirm" or "no-match"`);
   }
   // A slot that declares its question ids (SlotSpec.questionIds) is checked here.
   for (const clash of declaredQuestionIdClashes(app.slots)) fail(clashMessage(clash));

@@ -7,6 +7,9 @@ import { DEFAULT_THRESHOLDS } from './thresholds';
 import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap } from '../jev/types';
 import { VOICE_RELAY } from '../channel/caps';
+import { registerApp } from './app/registry';
+import { testkitApp } from '../testing/testkit';
+import type { App, IntentDef } from './app/types';
 
 useTestkit();
 
@@ -503,5 +506,66 @@ describe('evaluateGates', () => {
     expect(run(explicit, baseAnswers({ intent: choice({ capabilities: 0.8, none: 0.2 }), confirmsYes: noul(0.1), confirmsNo: noul(0.1) })).verdict).toEqual({ kind: 'inform', promptId: 'capabilities' });
     const angry = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ intent: choice({ capabilities: 0.8, none: 0.2 }), frustration: score({ none: 0.1, mild: 0.2, high: 0.7 }) }));
     expect(angry.verdict).toEqual({ kind: 'inform', promptId: 'capabilities', frustration: 'ack' });
+  });
+});
+
+/**
+ * Whether an intent the model is unsure of is confirmed (App.unsureIntent, IntentDef.unsure): by
+ * default it is, for a form intent and an informational one alike; an app may turn that off for
+ * every intent or for one, and an intent may turn it back on.
+ */
+describe('evaluateGates: an unsure intent', () => {
+  const withUnsure = (id: string, app: App['unsureIntent'], intents: Record<string, IntentDef['unsure']> = {}): string => {
+    const own = Object.fromEntries(Object.entries(intents).map(([intent, unsure]) => [intent, { ...testkitApp.intents[intent]!, unsure }]));
+    registerApp({ ...testkitApp, id, ...(app !== undefined ? { unsureIntent: app } : {}), intents: { ...testkitApp.intents, ...own } });
+    return id;
+  };
+  const OFF = withUnsure('testkit-unsure-off', 'no-match');
+  const OFF_BUT = withUnsure('testkit-unsure-off-but', 'no-match', { report_missing: 'confirm', capabilities: 'confirm' });
+  const ON_BUT = withUnsure('testkit-unsure-on-but', undefined, { report_missing: 'no-match', capabilities: 'no-match' });
+  const EXPLICIT_ON = withUnsure('testkit-unsure-on', 'confirm');
+
+  const at = (app?: string): Session => newSession('s', 0, VOICE_RELAY, undefined, app);
+  const FORM = choice({ report_missing: 0.5, none: 0.3, other: 0.2 });
+  const OTHER_FORM = choice({ track_parcel: 0.5, none: 0.3, other: 0.2 });
+  const INFO = choice({ capabilities: 0.55, other: 0.25, none: 0.2 });
+  const outcomeOf = (r: ReturnType<typeof run>) => r.rows.find((g) => g.gate === 'intent')?.outcome;
+
+  it('is confirmed by default and when the app says confirm, a form intent and an informational one alike', () => {
+    for (const app of [undefined, EXPLICIT_ON]) {
+      expect(run(at(app), baseAnswers({ intent: FORM })).verdict).toEqual({ kind: 'route', intent: 'report_missing', confirm: 'explicit' });
+      expect(run(at(app), baseAnswers({ intent: INFO })).verdict).toEqual({ kind: 'route', intent: 'capabilities', confirm: 'explicit' });
+    }
+  });
+
+  it('is no match when the app says no-match: for a form intent and an informational one, with its own row outcome', () => {
+    const form = run(at(OFF), baseAnswers({ intent: FORM }));
+    expect(form.verdict).toEqual({ kind: 'intent_failed' });
+    expect(outcomeOf(form)).toBe('unsure_no_match:report_missing');
+    const info = run(at(OFF), baseAnswers({ intent: INFO }));
+    expect(info.verdict).toEqual({ kind: 'intent_failed' });
+    expect(outcomeOf(info)).toBe('unsure_no_match:capabilities');
+  });
+
+  it('changes nothing above the band, below it, for a hedged request, or inside a form', () => {
+    expect(run(at(OFF), baseAnswers({ intent: choice({ report_missing: 0.65, none: 0.35 }) })).verdict).toEqual({ kind: 'route', intent: 'report_missing', confirm: 'implicit' });
+    expect(run(at(OFF), baseAnswers({ intent: choice({ capabilities: 0.65, none: 0.35 }) })).verdict).toEqual({ kind: 'inform', promptId: 'capabilities' });
+    expect(run(at(OFF), baseAnswers({ intent: choice({ report_missing: 0.35, none: 0.65 }) })).verdict).toEqual({ kind: 'intent_failed' });
+    // A hedge is the caller's, not the model's doubt: still confirmed.
+    expect(run(at(OFF), baseAnswers({ intent: choice({ report_missing: 0.9, none: 0.1 }), intentTentative: noul(0.9) })).verdict).toEqual({ kind: 'route', intent: 'report_missing', confirm: 'explicit' });
+    // A switch away from the form in hand is confirmed in its band whatever the app says.
+    const s = setForm(at(OFF), 'report_missing');
+    expect(run(s, baseAnswers({ intent: choice({ track_parcel: 0.7, none: 0.3 }), intentChange: choice({ replacing: 0.9, answering: 0.05, adding: 0.05 }) })).verdict).toEqual({ kind: 'route', intent: 'track_parcel', confirm: 'explicit' });
+  });
+
+  it('follows the intent\'s own setting over the app\'s, in each direction', () => {
+    // The app says no-match; the two intents say confirm; another form still fails.
+    expect(run(at(OFF_BUT), baseAnswers({ intent: FORM })).verdict).toEqual({ kind: 'route', intent: 'report_missing', confirm: 'explicit' });
+    expect(run(at(OFF_BUT), baseAnswers({ intent: INFO })).verdict).toEqual({ kind: 'route', intent: 'capabilities', confirm: 'explicit' });
+    expect(run(at(OFF_BUT), baseAnswers({ intent: OTHER_FORM })).verdict).toEqual({ kind: 'intent_failed' });
+    // The app confirms; the two intents say no-match; another form is still confirmed.
+    expect(run(at(ON_BUT), baseAnswers({ intent: FORM })).verdict).toEqual({ kind: 'intent_failed' });
+    expect(run(at(ON_BUT), baseAnswers({ intent: INFO })).verdict).toEqual({ kind: 'intent_failed' });
+    expect(run(at(ON_BUT), baseAnswers({ intent: OTHER_FORM })).verdict).toEqual({ kind: 'route', intent: 'track_parcel', confirm: 'explicit' });
   });
 });

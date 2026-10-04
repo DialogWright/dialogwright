@@ -3,7 +3,7 @@ import { checkAlways, identifier, matching, name, text, textMap, unique } from '
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, fixtures, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, fixtures, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -261,6 +261,13 @@ export const appSchema = z
       .optional()
       .describe("The app's own named thresholds and their defaults (for example TIME_OF_DAY: 0.6), read where the engine's are. A name may not be one of the engine's. A run's --threshold NAME=VALUE overrides one."),
     carrySlots: unique(identifier(), 'slot').optional().describe("Slots that, like identity, outlast the form that filled them (for example the caller's own name and birthday). Every other slot of a form is emptied as it closes. Shorthand for listen: call on each (slots.yaml): a value said outside a form is kept too. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary."),
+    unsureIntent: z
+      .enum(['confirm', 'no-match'])
+      .optional()
+      .describe(
+        'What an intent the model is unsure of gets, for every intent that does not say (its own unsure: in intents.yaml). Outside a form, a reading from INTENT_EXPLICIT (0.4) up to INTENT_IMPLICIT (0.6) is ' +
+          '"confirm": asked about ("Just to check, do you want to ...?"), or "no-match": taken as no match (the no-match line, counted, as a reading below the band). A form intent, an informational one and done alike. Default "confirm".',
+      ),
     fixtures: z
       .strictObject({
         dir: matching(

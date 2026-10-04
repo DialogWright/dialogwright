@@ -46,7 +46,7 @@ This is the old form-filling pattern of VoiceXML, made to work with mixed initia
 Every turn has three steps: perception (what did they mean), the decision (what happens next, and is it allowed), and wording (how it is said).
 
 1. **The perceiver.** A decision model reads the caller's words and the current state and answers the core's typed questions. Perceivers are pluggable: the first adapter is TypeSafe's Jev; others, such as an LLM with structured outputs or another decision-model provider, implement the same typed interface.
-2. **The core.** Deterministic code runs the fill-and-ask loop: intents start forms, forms collect slots, filled forms are read back and confirmed, and silence, repetition, frustration and handoff are handled in one place. The core never imports an app; it reads everything app-specific through the `App` contract.
+2. **The core.** Deterministic code runs the fill-and-ask loop: intents start forms, forms collect slots, filled forms are read back and confirmed, and silence, repetition, frustration and handoff are handled in one place. An intent the model is unsure of is confirmed with the caller by default, or taken as no match where the app or the intent says so (`unsureIntent` in app.yaml, `unsure:` on an intent). The core never imports an app; it reads everything app-specific through the `App` contract.
 3. **The gate.** Every tool call goes through the gate, which returns one of four verdicts: `ALLOW`, `BLOCK`, `STEP_UP` (verify identity further, then try again) or `NEEDS_HUMAN`. Every verdict, with each rule's comparison, goes to the audit log.
 
 **The renderer** turns the core's structured decision into words. Its default is approved templates; an opt-in generated-wording option (§5) can phrase a line an author flags, inside checks, but never chooses what is said.
@@ -93,7 +93,7 @@ An app is a folder of YAML for what is data, plus TypeScript for what runs. `def
 
 ```
 my-app/
-  app.yaml          id, locale, brand, console, voice, handoff, wording, thresholds, carried slots, fixtures
+  app.yaml          id, locale, brand, console, voice, handoff, wording, thresholds, carried slots, unsure intents, fixtures
   intents.yaml      intents and the keypad menu
   forms.yaml        each form's slots, summary prompt and the code hooks it has
   prompts.yaml      every line the caller hears (mode: fixed)

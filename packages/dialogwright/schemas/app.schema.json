@@ -681,6 +681,14 @@
         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
       }
     },
+    "unsureIntent": {
+      "description": "What an intent the model is unsure of gets, for every intent that does not say (its own unsure: in intents.yaml). Outside a form, a reading from INTENT_EXPLICIT (0.4) up to INTENT_IMPLICIT (0.6) is \"confirm\": asked about (\"Just to check, do you want to ...?\"), or \"no-match\": taken as no match (the no-match line, counted, as a reading below the band). A form intent, an informational one and done alike. Default \"confirm\".",
+      "type": "string",
+      "enum": [
+        "confirm",
+        "no-match"
+      ]
+    },
     "fixtures": {
       "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",
       "type": "object",
