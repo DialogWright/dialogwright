@@ -141,7 +141,8 @@ export const WIDGET_PATH = '/widget.js';
 /**
  * The widget's built script (WIDGET_FILE), read on each request so a rebuild on the laptop is served
  * without a restart, and never cached by the browser for the same reason. A file gone since the
- * server started is a 404, with the reason in the log.
+ * server started is a 404, with the reason in the log. WIDGET=on is for a laptop or a simple
+ * deployment; a production site loads the bundle from its own CDN.
  */
 function serveWidget(req: IncomingMessage, res: ServerResponse, file: string, log: (line: string) => void): void {
   let body: Buffer;
@@ -152,7 +153,9 @@ function serveWidget(req: IncomingMessage, res: ServerResponse, file: string, lo
     reply(res, 404, 'text/plain', 'not found');
     return;
   }
-  res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'content-length': body.length, 'cache-control': 'no-cache' });
+  // A public script by design (a site's pages load it, through the tunnel too), so it is sent as one:
+  // its type, and nosniff so a browser never takes it for anything else.
+  res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'content-length': body.length, 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' });
   res.end(req.method === 'HEAD' ? undefined : body);
 }
 

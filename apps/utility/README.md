@@ -133,10 +133,10 @@ The app's chat can be tried in a browser, with the web chat widget (`packages/wi
 ```sh
 pnpm --filter @dialogwright/widget build
 PUBLIC_HOST=localhost TWILIO_AUTH_TOKEN=unused HANDOFF_NUMBER=+15551234567 \
-  CHAT=on CHAT_ALLOWED_ORIGINS=http://127.0.0.1:3000 CHAT_SIGNIN=mock WIDGET=on \
+  CHAT=on CHAT_ALLOWED_ORIGINS=http://localhost:3000 CHAT_SIGNIN=mock WIDGET=on \
   pnpm --filter @dialogwright/example-utility serve
 ```
 
-Then open <http://127.0.0.1:3000/chat-demo> (on this machine only: the page, like the console, does not exist through a tunnel, and it is served at `127.0.0.1` because a request naming `PUBLIC_HOST` itself is treated as one from outside). Chat from the button in the corner. "Sign in as" lists the app's fictional customers (its portal listing): choosing one starts a new chat signed in as them, through the laptop's mock sign-in (`mock:<account>`), so a question that needs a verified customer is answered at once. Ask for a person to see what the page does on a transfer (the widget's `onTransfer`).
+Then open <http://localhost:3000/chat-demo>, the address the server prints at startup (on this machine only: the page, like the console, does not exist through a tunnel; `CHAT_ALLOWED_ORIGINS` names the page's own origin, so open it at `localhost`, or list `http://127.0.0.1:3000` too). Chat from the button in the corner. "Sign in as" lists the app's fictional customers (its portal listing): choosing one starts a new chat signed in as them, through the laptop's mock sign-in (`mock:<account>`), so a question that needs a verified customer is answered at once. Ask for a person to see what the page does on a transfer (the widget's `onTransfer`).
 
-The page is mounted only when all four of `PUBLIC_HOST=localhost`, `CHAT=on`, `CHAT_SIGNIN=mock` and `WIDGET=on` are set; with chat or the widget on and the rest not, the server says so at startup. On a real site, the script comes from wherever the deployment publishes it, its options are the site's own (`packages/widget/README.md`), and sign-in is the site's identity provider (`CHAT_SIGNIN=jwt`).
+The page is mounted only when all four of `PUBLIC_HOST=localhost`, `CHAT=on`, `CHAT_SIGNIN=mock` and `WIDGET=on` are set; with chat or the widget on and the rest not, the server says so at startup. On a real site, the script comes from the site's own CDN (`WIDGET=on` is for a laptop or a simple deployment), its options are the site's own (`packages/widget/README.md`), and sign-in is the site's identity provider (`CHAT_SIGNIN=jwt`).

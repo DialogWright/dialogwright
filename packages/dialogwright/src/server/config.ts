@@ -8,6 +8,7 @@ import { RECOGNIZER_NAME } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 import { checkJwksUrl } from './chat/jwks';
+import { isLoopbackHost } from './localOnly';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -393,9 +394,26 @@ function listed(items: readonly string[]): string {
  * from. `paths` are the ones CONSOLE_LOCAL_ONLY guards (localOnly.ts localOnlyPaths).
  */
 export function consoleExposure(c: ServerConfig, paths: readonly string[] = ['/dashboard']): string {
-  return c.consoleLocalOnly
-    ? `console: ${listed(paths)} local only (http://localhost:${c.port}); 404 through the tunnel on ${c.publicHost}`
+  const laptop = isLoopbackHost(c.publicHost);
+  if (c.consoleLocalOnly) {
+    return `console: ${listed(paths)} local only (${localBase(c.port)}); 404 through ${laptop ? 'any tunnel' : `the tunnel on ${c.publicHost}`}`;
+  }
+  return laptop
+    ? `console: ${listed(paths)} on ${localBase(c.port)}, and PUBLIC through any tunnel to it (CONSOLE_LOCAL_ONLY=off)`
     : `console: ${listed(paths)} PUBLIC on https://${c.publicHost} (CONSOLE_LOCAL_ONLY=off)`;
+}
+
+/** Where a person on this machine opens the server's pages. */
+export function localBase(port: number): string {
+  return `http://localhost:${port}`;
+}
+
+/**
+ * Where the server's public paths are reached: https://PUBLIC_HOST, or, on a laptop whose PUBLIC_HOST
+ * is a name for this machine (localhost), this machine's own address, since nothing public points at it.
+ */
+export function publicBase(c: Pick<ServerConfig, 'publicHost'>, port: number): string {
+  return isLoopbackHost(c.publicHost) ? localBase(port) : `https://${c.publicHost}`;
 }
 
 export function describeConfig(c: ServerConfig): string {

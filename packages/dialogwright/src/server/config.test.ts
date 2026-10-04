@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { loadConfig, describeConfig, consoleExposure, recognitionFor } from './config';
+import { loadConfig, describeConfig, consoleExposure, publicBase, recognitionFor } from './config';
 import { defaultTimeZone } from '../run/clock';
 
 /** A Telnyx public key as Telnyx shows it: 32 bytes, base64. Made up; nothing signs with it. */
@@ -188,6 +188,15 @@ describe('loadConfig', () => {
     expect(describeConfig(open)).toContain('console PUBLIC');
     expect(consoleExposure(open, CONSOLE_PATHS)).toMatch(/PUBLIC on https:\/\/.+ \(CONSOLE_LOCAL_ONLY=off\)$/);
     expect(() => loadConfig({ ...base, CONSOLE_LOCAL_ONLY: 'maybe' })).toThrow('CONSOLE_LOCAL_ONLY must be on or off, got "maybe"');
+  });
+
+  it('names this machine\'s address, not https://localhost, on a laptop (PUBLIC_HOST=localhost)', () => {
+    const laptop = loadConfig({ ...base, PUBLIC_HOST: 'localhost', PORT: '3000' });
+    expect(consoleExposure(laptop, CONSOLE_PATHS)).toBe('console: /dashboard, /staff and /portal local only (http://localhost:3000); 404 through any tunnel');
+    expect(consoleExposure(loadConfig({ ...base, PUBLIC_HOST: 'localhost', PORT: '3000', CONSOLE_LOCAL_ONLY: 'off' }))).toBe('console: /dashboard on http://localhost:3000, and PUBLIC through any tunnel to it (CONSOLE_LOCAL_ONLY=off)');
+    expect(publicBase(laptop, 3000)).toBe('http://localhost:3000');
+    expect(publicBase({ publicHost: '127.0.0.1' }, 3000)).toBe('http://localhost:3000');
+    expect(publicBase(loadConfig(base), 3000)).toBe(`https://${loadConfig(base).publicHost}`);
   });
 });
 

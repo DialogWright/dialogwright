@@ -25,7 +25,7 @@ function laptop(extra: Record<string, string> = {}) {
   return {
     PUBLIC_HOST: 'localhost', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15551234567', PORT: '0', TODAY_OVERRIDE: '2026-09-18',
     TRACE_DIR: dir, AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, DASHBOARD: 'off',
-    CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'http://127.0.0.1:3000', CHAT_SIGNIN: 'mock', WIDGET: 'on', WIDGET_FILE: widget,
+    CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'http://localhost:3000', CHAT_SIGNIN: 'mock', WIDGET: 'on', WIDGET_FILE: widget,
     ...extra,
   };
 }
@@ -33,7 +33,8 @@ function laptop(extra: Record<string, string> = {}) {
 async function serve(env: Record<string, string>) {
   const logs: string[] = [];
   running = await startServer(loadConfig(env), { client: new HeuristicStubClient({ todayIso: '2026-09-18' }), log: (l) => logs.push(l), routes: chatDemoRoutes });
-  return { base: `http://127.0.0.1:${running.port}`, logs };
+  // At the address the README gives and the server prints: localhost, as a laptop's PUBLIC_HOST is.
+  return { base: `http://localhost:${running.port}`, logs };
 }
 
 const subjects = app.portal!.subjects!();
@@ -58,7 +59,7 @@ describe('the chat demo page', () => {
     expect(html).not.toContain('<b>bold');
   });
 
-  it('is served on a laptop, to this machine only: through a tunnel it does not exist', async () => {
+  it('is served on a laptop at localhost, to this machine only: through a tunnel it does not exist', async () => {
     const { base } = await serve(laptop());
     const res = await fetch(base + CHAT_DEMO_PATH);
     expect(res.status).toBe(200);
