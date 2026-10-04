@@ -75,6 +75,27 @@ describe('the Telnyx voice provider', () => {
     expect(json).toMatchObject({ callId: 'v2:abc', from: '+15555550100', callStatus: 'in-progress', handoffData: '{}' });
   });
 
+  it('says whether the call is live in its own words: active (the relay\'s setup) and in-progress (TeXML) are live, any other status is not', () => {
+    const live = (status: string, body: 'form' | 'json' = 'form') =>
+      telnyxProvider.parse(body === 'form'
+        ? { url: '/cr-action/telnyx', headers: FORM, rawBody: `CallSid=v2%3Aabc&CallStatus=${status}`, nowSec: 0 }
+        : { url: '/cr-action/telnyx', headers: JSON_TYPE, rawBody: JSON.stringify({ CallSid: 'v2:abc', CallStatus: status }), nowSec: 0 })?.live;
+    expect(live('active', 'json')).toBe(true);
+    expect(live('active')).toBe(true);
+    expect(live('in-progress')).toBe(true);
+    expect(live('Active', 'json')).toBe(true);
+    for (const status of ['completed', 'ringing', 'busy', 'failed', 'no-answer', 'canceled']) expect(live(status), status).toBe(false);
+    // The relay's own spelling of the field, as its setup frame has it, is read too.
+    expect(telnyxProvider.parse({ url: '/cr-action/telnyx', headers: JSON_TYPE, rawBody: JSON.stringify({ CallSid: 'v2:abc', callStatus: 'active' }), nowSec: 0 })).toMatchObject({ callStatus: 'active', live: true });
+  });
+
+  it('says nothing of whether the call is live when the callback carries no status', () => {
+    const p = telnyxProvider.parse({ url: '/cr-action/telnyx', headers: JSON_TYPE, rawBody: JSON.stringify({ CallSid: 'v2:abc', SessionStatus: 'failed' }), nowSec: 0 });
+    expect(p).toMatchObject({ callId: 'v2:abc', sessionStatus: 'failed' });
+    expect(p).not.toHaveProperty('live');
+    expect(p).not.toHaveProperty('callStatus');
+  });
+
   it('takes the call id from call_control_id when CallSid is absent, and lower-case from and to', () => {
     const p = telnyxProvider.parse({ url: '/voice/telnyx', headers: JSON_TYPE, rawBody: JSON.stringify({ call_control_id: 'v2:xyz', from: '+15555550100', to: '+15555550111' }), nowSec: 0 });
     expect(p).toMatchObject({ callId: 'v2:xyz', from: '+15555550100', to: '+15555550111' });

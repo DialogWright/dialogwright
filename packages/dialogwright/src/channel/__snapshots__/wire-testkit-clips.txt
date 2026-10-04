@@ -164,7 +164,7 @@
 11 {"type":"text","token":"Wednesday, September 16","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 11 {"type":"play","source":"https://example.test/audio/confirm_report.1.mp3","loop":1,"preemptible":false,"interruptible":true}
 12 {"type":"play","source":"https://example.test/audio/handoff_delivered.0.mp3","loop":1,"preemptible":false,"interruptible":false}
-12 {"type":"end","handoffData":"{\"reasonCode\":\"delivered\",\"slots\":{\"accountId\":\"...1234\",\"dob\":\"verified\",\"missingNote\":\"your description\",\"expectedDate\":\"Wednesday, September 16\"}}"}
+12 {"type":"end","handoffData":"{\"reasonCode\":\"delivered\",\"slots\":{\"missingNote\":\"your description\",\"expectedDate\":\"Wednesday, September 16\"}}"}
 # report-change-date
 0 {"type":"play","source":"https://example.test/audio/greeting.0.mp3","loop":1,"preemptible":false,"interruptible":true}
 1 {"type":"play","source":"https://example.test/audio/ack_intent.0.mp3","loop":1,"preemptible":false,"interruptible":true}
@@ -250,7 +250,7 @@
 5 {"type":"play","source":"https://example.test/audio/ask_otp.1.mp3","loop":1,"preemptible":false,"interruptible":true}
 6 {"type":"play","source":"https://example.test/audio/no_input.0.mp3","loop":1,"preemptible":false,"interruptible":false}
 6 {"type":"play","source":"https://example.test/audio/handoff_max_attempts.0.mp3","loop":1,"preemptible":false,"interruptible":false}
-6 {"type":"end","handoffData":"{\"reasonCode\":\"max-attempts\",\"slots\":{\"accountId\":\"...1234\",\"dob\":\"verified\"}}"}
+6 {"type":"end","handoffData":"{\"reasonCode\":\"max-attempts\"}"}
 # frustration-offer-yes
 0 {"type":"play","source":"https://example.test/audio/greeting.0.mp3","loop":1,"preemptible":false,"interruptible":true}
 1 {"type":"play","source":"https://example.test/audio/ack_intent.0.mp3","loop":1,"preemptible":false,"interruptible":true}

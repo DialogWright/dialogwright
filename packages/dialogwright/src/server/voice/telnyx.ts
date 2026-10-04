@@ -9,8 +9,12 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *
  * Documented by Telnyx (developers.telnyx.com, "Conversation Relay" and the TeXML
  * `<ConversationRelay>` reference): the `<Connect><ConversationRelay>` document and its attributes
- * (url, voice, language, transcriptionProvider, dtmfDetection, interruptible), the socket frames, and
- * the webhook signature headers.
+ * (url, voice, language, transcriptionProvider, dtmfDetection, interruptible); its two children,
+ * `<Language code>` with optional per-language `voice`, `ttsProvider`, `transcriptionProvider` and
+ * `speechModel`, and `<Parameter name value>`, whose pairs come back in the setup frame's
+ * `customParameters`; the socket frames, the `language` frame among them (`ttsLanguage`,
+ * `transcriptionLanguage`: it changes the speech and transcription language); and the webhook
+ * signature headers.
  *
  * ASSUMPTIONS, not in Telnyx's published pages, to confirm with a live capture of a Telnyx call:
  * 1. The TeXML voice and action webhooks are form-encoded with Twilio-compatible field names
@@ -22,13 +26,22 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *    honours it, on the understanding that TeXML ignores an attribute it does not know.
  * 4. For an app that names its languages, the call's language is the documented `language`
  *    attribute (one tag for speech and recognition), and the languages it may switch to and the
- *    `locale` custom parameter are `<Language code voice>` and `<Parameter name value>` children, in
- *    the shape Twilio documents. A live call should confirm Telnyx reads the children, the text
- *    frames' `lang` and the `language` frame (set_language) the same way.
+ *    `locale` custom parameter are the documented `<Language code voice>` and `<Parameter name
+ *    value>` children; a switch is the documented `language` frame. Still to confirm on a live call:
+ *    that a text frame's `lang` is read (Telnyx's text frame example carries `token` and `last`
+ *    only), and that a `<Language>` child's voice and recognizer apply to the call's first language
+ *    (the `language` attribute) as well as to a switch.
  * 5. The recognizer: the documented `transcriptionProvider` attribute (TELNYX_TRANSCRIPTION_PROVIDER,
- *    or a locale's own); a model only on `<Language>`, the one element Telnyx documents
- *    `speechModel` on. A child inheriting what it leaves out from the relay element is assumed to
- *    work as Twilio documents it.
+ *    or a locale's own); a model only on `<Language>`, as its documented `speechModel` (the relay
+ *    element documents none). That a child inherits what it leaves out from the relay element is
+ *    not documented, and is assumed to work as Twilio documents it.
+ * 6. The action callback's call status. Telnyx documents `callStatus: "active"` on the relay's setup
+ *    frame and `in-progress` among TeXML's call statuses (ringing, in-progress, canceled, completed,
+ *    failed, busy, no-answer), but not the callback's own fields. Both words read as a live call
+ *    (CallbackParams.live), in `CallStatus` or `callStatus`, in any case; any other status as not
+ *    live. A callback with no status at all says nothing, and the engine then reconnects only when
+ *    its `SessionStatus` is `failed` and it still holds the call live (server/http.ts decideAction);
+ *    anything else hangs up. A live capture of a relay failure should confirm the fields and words.
  * The conformance fixtures (__fixtures__/telnyx) say which of their entries are documented and which assumed.
  */
 
@@ -55,13 +68,20 @@ function first(raw: Record<string, string>, ...names: string[]): string | undefi
   return undefined;
 }
 
+/**
+ * The statuses of a live call in Telnyx's words: `active`, the relay's (its setup frame's
+ * `callStatus`), and `in-progress`, TeXML's (its instruction requests; the TeXML call statuses are
+ * ringing, in-progress, canceled, completed, failed, busy and no-answer). Compared in lower case.
+ */
+const LIVE_STATUSES: ReadonlySet<string> = new Set(['active', 'in-progress']);
+
 function parse(req: WebhookRequest): CallbackParams | null {
   const raw = fields(req);
   const callId = (first(raw, 'CallSid', 'call_control_id', 'CallControlId') ?? '').trim();
   if (!callId) return null;
   const from = first(raw, 'From', 'from');
   const to = first(raw, 'To', 'to');
-  const callStatus = first(raw, 'CallStatus');
+  const callStatus = first(raw, 'CallStatus', 'callStatus');
   const sessionStatus = first(raw, 'SessionStatus');
   const handoffData = first(raw, 'HandoffData', 'handoffData');
   return {
@@ -69,7 +89,7 @@ function parse(req: WebhookRequest): CallbackParams | null {
     raw,
     ...(from !== undefined ? { from } : {}),
     ...(to !== undefined ? { to } : {}),
-    ...(callStatus !== undefined ? { callStatus } : {}),
+    ...(callStatus !== undefined ? { callStatus, live: LIVE_STATUSES.has(callStatus.trim().toLowerCase()) } : {}),
     ...(sessionStatus !== undefined ? { sessionStatus } : {}),
     ...(handoffData !== undefined ? { handoffData } : {}),
   };

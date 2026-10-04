@@ -260,6 +260,16 @@ function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, 
 }
 
 /**
+ * Whether the callback's call is still live: the provider's own reading (CallbackParams.live), or,
+ * for params a caller built without it, Twilio's word (`in-progress`) as the engine always read it.
+ * Undefined when the callback carries no status at all.
+ */
+function callIsLive(params: CallbackParams): boolean | undefined {
+  if (params.live !== undefined) return params.live;
+  return params.callStatus === undefined ? undefined : params.callStatus === 'in-progress';
+}
+
+/**
  * The legacy Twilio `<Connect action>` decision on Twilio's raw form fields, a reconnect answered at the
  * legacy socket path. Kept for existing callers; the webhook itself calls decideAction.
  */
@@ -291,9 +301,14 @@ export function decideAction(
     return { document: provider.dialDocument(deps.config.handoffNumber), note: `dial:${handoff.reasonCode}` };
   }
 
-  // (b) No handoff: an ordinary caller hangup (or any status that isn't a live in-progress call)
-  // just ends the call. This must not be logged as gave-up or dialed.
-  if (params.sessionStatus === 'completed' || params.callStatus !== 'in-progress') {
+  // (b) No handoff: an ordinary caller hangup (or any status that isn't a live call, in the
+  // provider's words: CallbackParams.live) just ends the call. This must not be logged as gave-up
+  // or dialed. A callback that says nothing of the call's status (callIsLive undefined) goes on to a
+  // reconnect only when the relay reports its session failed, and (c) then reconnects only a call
+  // the engine still holds live; anything else hangs up.
+  const live = callIsLive(params);
+  const reconnectable = live ?? params.sessionStatus?.trim().toLowerCase() === 'failed';
+  if (params.sessionStatus === 'completed' || !reconnectable) {
     // Read before `end`, and published only for a call that was still live: this branch is the
     // one place that knows a socket close was a hangup rather than the reconnect branch below,
     // so it is the dashboard's only producer of `ended{hangup}`. A call that ended on its own

@@ -13,6 +13,7 @@ import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
 import { SLOT_LISTEN_VALUES } from '../slots/types';
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS, VOICE_PROVIDER_IDS } from '../../channel/voiceProviders';
+import { handoffDataProblems } from '../../handoff/data';
 
 /** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
 const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
@@ -60,6 +61,8 @@ export function validateApp(app: App): void {
   }
   for (const slot of app.identity?.factorSlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`identity factor slot "${slot}" is not a slot`);
   for (const slot of app.carrySlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`carried slot "${slot}" is not a slot`);
+  // What a transfer hands the channel (handoff.data): the same problems `check` finds in app.yaml.
+  for (const p of handoffDataProblems(app.handoff?.data, app.slots, app.identity?.factorSlots ?? [])) fail(`handoff data: ${p.message} (handoff.data.${p.path.join('.')}): ${p.fix}`);
   // Where a slot listens (SlotSpec.listen): one of its values, never on an identity factor (which
   // listens as identity says), and only `call` on a slot carrySlots names (its shorthand).
   for (const [id, spec] of Object.entries(app.slots)) {

@@ -1371,14 +1371,17 @@ describe('keyed identity and the handoff on the wire', () => {
     }
   });
 
-  it('hands the agent the account ID by its last four and the birth date only as verified, on the wire and in the frame log', async () => {
+  it('keeps the identity factors (the account ID and the birth date) off the carrier by default, on the wire and in the frame log', async () => {
     const { d, sock } = await keyedCall(false);
     const end = sock.sent.at(-1) as { type: string; handoffData: string };
     expect(end.type).toBe('end');
-    expect(JSON.parse(end.handoffData)).toMatchObject({ reasonCode: 'live-agent', slots: { accountId: '...1234', dob: 'verified' } });
+    const sent = JSON.parse(end.handoffData) as { reasonCode: string; slots?: Record<string, string> };
+    expect(sent.reasonCode).toBe('live-agent');
+    expect(sent.slots ?? {}).not.toHaveProperty('accountId');
+    expect(sent.slots ?? {}).not.toHaveProperty('dob');
     const out = frameLines(d.dir).filter((f) => f.dir === 'out' && f.msg.type === 'end');
     expect(out).toHaveLength(1);
-    expect(JSON.parse(out[0]!.msg.handoffData as string).slots).toMatchObject({ accountId: '...1234', dob: 'verified' });
+    expect(out[0]!.msg.handoffData).toBe(end.handoffData);
   });
 
   it('masks a dropped end frame in the frame log too', async () => {
@@ -1386,7 +1389,8 @@ describe('keyed identity and the handoff on the wire', () => {
     expect(sock.sent.some((m) => (m as { type: string }).type === 'end')).toBe(false);
     const dropped = frameLines(d.dir).filter((f) => f.dir === 'log' && 'dropped' in f.msg).map((f) => f.msg.dropped as { type: string; handoffData?: string });
     const end = dropped.find((f) => f.type === 'end')!;
-    expect(JSON.parse(end.handoffData!).slots).toMatchObject({ accountId: '...1234', dob: 'verified' });
+    expect(JSON.parse(end.handoffData!)).toMatchObject({ reasonCode: 'live-agent' });
+    expect(JSON.parse(end.handoffData!).slots ?? {}).not.toHaveProperty('accountId');
     const frameLog = readFileSync(join(d.dir, 'CA1.frames.jsonl'), 'utf8');
     for (const secret of IDENTITY) expect(frameLog, secret).not.toContain(secret);
   });

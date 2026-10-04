@@ -55,7 +55,7 @@
           },
           "handoff": {
             "default": "display",
-            "description": "What a transfer to a person hands over: the date as it is said (\"display\"), or, for a birth date asked to verify identity, only whether the caller was \"verified\".",
+            "description": "What a transfer to a person hands over: the date as it is said (\"display\"), or, for a birth date asked to verify identity, only whether the caller was \"verified\". app.yaml's handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.",
             "type": "string",
             "enum": [
               "display",
@@ -741,7 +741,7 @@
           },
           "handoff": {
             "default": "last4",
-            "description": "What a transfer to a person hands over: its \"last4\", only whether the caller was \"verified\", or its \"display\" in full.",
+            "description": "What a transfer to a person hands over: its \"last4\", only whether the caller was \"verified\", or its \"display\" in full. app.yaml's handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.",
             "type": "string",
             "enum": [
               "last4",
@@ -848,7 +848,7 @@
           },
           "handoff": {
             "default": "display",
-            "description": "What a transfer to a person hands over: the name as its \"display\", or only whether the caller was \"verified\", never the name.",
+            "description": "What a transfer to a person hands over: the name as its \"display\", or only whether the caller was \"verified\", never the name. app.yaml's handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.",
             "type": "string",
             "enum": [
               "display",

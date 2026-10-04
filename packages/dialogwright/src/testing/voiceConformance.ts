@@ -18,8 +18,8 @@ export interface WebhookFixture {
   source: string;
   headers: Record<string, string>;
   rawBody: string;
-  /** The CallbackParams fields the provider must read (callId, from, callStatus, handoffData, ...). */
-  expect: Record<string, string>;
+  /** The CallbackParams fields the provider must read (callId, from, callStatus, live, handoffData, ...). */
+  expect: Record<string, string | boolean>;
 }
 
 export interface VoiceFixtures {

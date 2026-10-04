@@ -240,8 +240,24 @@ const handoff = z
       })
       .optional()
       .describe("Records the call created, read from an audit row's detail field and listed in the facts under `key`."),
+    data: z
+      .strictObject({
+        slots: z
+          .union([z.enum(['all', 'none']), unique(identifier(), 'slot')])
+          .optional()
+          .describe('Which collected slots a transfer hands over: "all" (the default), "none", or a list of slot ids.'),
+        send: z
+          .record(identifier(), z.enum(['omit', 'masked', 'as-is']))
+          .optional()
+          .describe(
+            'How a slot goes, by slot id, in place of its default: "omit" (left out), "masked" (as the trace masks it: by its redact setting, or its handoff setting where that is last4 or verified) or "as-is" (its display, in the clear). ' +
+              'Default: an identity factor is omitted, a slot with a redact setting goes masked, any other slot as it is. Name a slot "as-is" only when the person taking the call needs it in the clear.',
+          ),
+      })
+      .optional()
+      .describe("What a transfer hands the channel of the collected slots: on a phone call, the relay's end frame, which the carrier holds and posts back on its action callback. A chat's transfer sends none. Default: no identity factor, a redacted slot masked, any other slot as it is."),
   })
-  .describe("The handoff note's words about the app's domain. Each field is optional; without one the engine's own neutral words are used.");
+  .describe("The handoff: the note's words about the app's domain, and what a transfer hands the channel (data). Each field is optional; without one the engine's own neutral words and the safe default are used.");
 
 const criterion = () => z.strictObject({ true: text().describe('The criterion for answering yes.'), false: text().describe('The criterion for answering no.') });
 

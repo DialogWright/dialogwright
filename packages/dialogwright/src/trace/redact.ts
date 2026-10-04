@@ -125,6 +125,15 @@ function redactCollected(app: Slots, slots: Record<string, string>, mode: Statem
   return out;
 }
 
+/**
+ * One collected slot's handoff value masked as the trace file masks it (redactCollected, a
+ * statement by its length): what a transfer hands the channel for a slot it sends `masked`
+ * (handoff/data.ts).
+ */
+export function maskCollectedSlot(app: Slots, slot: string, v: string): string {
+  return redactCollected(app, { [slot]: v }, 'length')[slot]!;
+}
+
 /** A prompt's variables by slot name: a summary is handed every slot's display, spoken or not. */
 function redactVars(app: Slots, vars: unknown, mode: StatementMode): unknown {
   return isObject(vars) ? redactCollected(app, vars as Record<string, string>, mode) : vars;

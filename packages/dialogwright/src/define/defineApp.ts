@@ -1,5 +1,5 @@
 import type {
-  App, AppBrand, AppLocales, ConsoleConfig, FormDef, FormId, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
+  App, AppBrand, AppLocales, ConsoleConfig, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
   PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale,
 } from '../core/app/types';
 import { SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
@@ -28,6 +28,7 @@ import { warnFallback } from '../kb/fallback';
 import { KB_ANSWER_PROMPT, KB_UNAVAILABLE_PROMPT, kbCompletion } from '../kb/answer';
 import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
 import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
+import { handoffDataProblems } from '../handoff/data';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -511,6 +512,14 @@ export function crossLink(
   // app.yaml
   const app = config.app;
   app.carrySlots?.forEach((slot, i) => slotExists('app.yaml', ['carrySlots', i], slot));
+  // What a transfer hands the channel (handoff.data): every slot it names is one, and what it says
+  // of each is something it can do (handoff/data.ts). An unknown slot gets the usual fix.
+  const handoffData = app.handoff?.data as HandoffData | undefined;
+  for (const p of handoffDataProblems(handoffData, linked.slots, config.identity?.levels[1].factors ?? [])) {
+    const path: DataPath = ['handoff', 'data', ...p.path];
+    if (p.unknownSlot !== undefined) slotExists('app.yaml', path, p.unknownSlot);
+    else yaml('app.yaml', path, p.message, p.fix);
+  }
 
   // Where each slot listens (SlotSpec.listen): written in slots.yaml for a library slot, on the
   // spec for the code's. An identity factor listens as identity.yaml says, so it takes none; a slot

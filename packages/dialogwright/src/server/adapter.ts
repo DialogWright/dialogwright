@@ -315,10 +315,10 @@ function sendOne(socket: SocketLike, frame: OutboundFrame, timeoutMs: number): P
  */
 /**
  * A frame as the frame log records it. The `end` frame's handoff data carries what the call
- * collected. The core already hands over identity only as an identifier's last four and whether it
- * was verified (decision.ts), and the statement only as its stand-in; the handoff data is masked
- * again here, at write time, the way the trace writer masks it, so the file can never hold an
- * identity value whatever a future decision puts in it.
+ * collected, as the app's handoff data option lets it leave the engine (handoff/data.ts: by default
+ * no identity factor, a redacted slot masked); the handoff data is masked again here, at write time,
+ * the way the trace writer masks it, so the file can never hold an identity value whatever a future
+ * decision puts in it, even one an app sends the carrier as it is.
  */
 export function loggedFrame(frame: OutboundFrame, scrub: Scrub | null): OutboundFrame {
   if (frame.type === 'end') return { ...frame, handoffData: redactHandoffData(frame.handoffData, 'length') };

@@ -9,7 +9,8 @@
       "callId": "CA00000000000000000000000000000000",
       "from": "+15555550100",
       "to": "+15555550101",
-      "callStatus": "ringing"
+      "callStatus": "ringing",
+      "live": false
     }
   },
   "action": {
@@ -21,6 +22,7 @@
     "expect": {
       "callId": "CA00000000000000000000000000000000",
       "callStatus": "in-progress",
+      "live": true,
       "sessionStatus": "ended",
       "handoffData": "{\"reasonCode\":\"live-agent-handoff\"}"
     }

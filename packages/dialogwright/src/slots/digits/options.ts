@@ -90,7 +90,7 @@ export const digitsOptions = z
     handoff: z
       .enum(['last4', 'verified', 'display'])
       .default('last4')
-      .describe('What a transfer to a person hands over: its "last4", only whether the caller was "verified", or its "display" in full.'),
+      .describe('What a transfer to a person hands over: its "last4", only whether the caller was "verified", or its "display" in full. app.yaml\'s handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.'),
     text: DIGITS_PARTS.schema,
     ids: DIGITS_QUESTIONS.schema,
   })

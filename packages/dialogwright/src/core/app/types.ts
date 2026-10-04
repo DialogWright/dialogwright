@@ -707,6 +707,34 @@ export interface HandoffWording {
   readonly reasons?: Readonly<Record<string, string>>;
   /** Records the call created, read from an audit row's detail field, and listed in the facts under `key` (e.g. report_created, report, reportsFiled). */
   readonly created?: { readonly type: string; readonly field: string; readonly key: string };
+  /**
+   * What a transfer hands the channel of the collected slots (Transfer.slots; on a phone call, the
+   * relay's `end` frame, which the carrier holds and posts back on its action callback). Without
+   * it, the default (HandoffData).
+   */
+  readonly data?: HandoffData;
+}
+
+/**
+ * How one collected slot goes into a transfer's handoff data: left out (`omit`), masked as the trace
+ * masks it (`masked`: by the slot's `redact`, or by its own `handoff` setting where that is `last4`
+ * or `verified`), or as the handoff holds it (`as-is`: its display, or what the slot's own `handoff`
+ * setting hands over).
+ */
+export type HandoffSend = 'omit' | 'masked' | 'as-is';
+
+/**
+ * What a transfer hands the channel of the collected slots (app.yaml `handoff.data`). The default
+ * keeps verification factors off the carrier: an identity factor slot is omitted, a slot the app
+ * redacts (SlotSpec.redact) goes masked, and any other slot goes as it is. An app that needs a value
+ * in the clear for its human desk names it in `send`. A chat's transfer sends no collected values
+ * whatever this says (channel/chat/protocol.ts).
+ */
+export interface HandoffData {
+  /** Which collected slots go: `all` (the default), `none`, or the slot ids listed. */
+  readonly slots?: 'all' | 'none' | readonly SlotId[];
+  /** How a slot goes, by slot id, in place of its default (HandoffSend). */
+  readonly send?: Readonly<Record<SlotId, HandoffSend>>;
 }
 
 export interface App {
@@ -817,7 +845,10 @@ export interface App {
   console?: ConsoleConfig;
   /** The phone line's speech hints and digit spelling. Without it, number words only, and no digits spelled out. */
   voice?: VoiceConfig;
-  /** The handoff note's words about the app's domain. Without it, neutral words. */
+  /**
+   * The handoff note's words about the app's domain (without them, neutral words), and what a
+   * transfer hands the channel of the collected slots (`data`; without it, HandoffData's default).
+   */
   handoff?: HandoffWording;
   /** The prompt manifest and voice tags, plus the spoken vocabulary that gets a clip of its own. */
   prompts: {

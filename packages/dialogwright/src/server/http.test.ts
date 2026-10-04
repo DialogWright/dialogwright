@@ -4,7 +4,9 @@ import { createServer, request, type Server } from 'node:http';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { clipName, createRequestHandler, decideActionTwiml, type HttpDeps } from './http';
+import { clipName, createRequestHandler, decideAction, decideActionTwiml, type HttpDeps } from './http';
+import { telnyxProvider } from './voice/telnyx';
+import { twilioProvider } from './voice/twilio';
 import { loadConfig } from './config';
 import { computeTwilioSignature } from './signature';
 import { SessionStore } from './sessions';
@@ -24,6 +26,7 @@ import { libraryApp } from '../define/fixture/app';
 useTestkit();
 
 const TOKEN = 'authtok';
+const FORM_TYPE = { 'content-type': 'application/x-www-form-urlencoded' };
 let server: Server | null = null;
 afterEach(() => new Promise<void>((r) => (server ? server.close(() => r()) : r())));
 
@@ -485,6 +488,39 @@ describe('Telnyx webhooks', () => {
     expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/telnyx?token=');
   });
 
+  it('reconnects a Telnyx call whose callback says active, the relay\'s own word for a live call', async () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const base = await listen(d);
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    const r = await postTelnyx(base, '/cr-action/telnyx', JSON.stringify({ CallSid: 'v2:abc', CallStatus: 'active', SessionStatus: 'failed' }), { type: 'application/json' });
+    expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/telnyx?token=');
+    expect(d.store.get('v2:abc')?.reconnects).toBe(1);
+  });
+
+  it('with no call status at all, reconnects only a relay failure on a call the engine still holds live, and otherwise hangs up', () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    const act = (body: Record<string, string>) =>
+      decideAction(d, telnyxProvider, telnyxProvider.parse({ url: '/cr-action/telnyx', headers: { 'content-type': 'application/json' }, rawBody: JSON.stringify(body), nowSec: 0 })!);
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    expect(act({ CallSid: 'v2:abc', SessionStatus: 'failed' }).note).toBe('reconnect:1');
+    // No status and no failure: the call is ended, not reconnected.
+    expect(act({ CallSid: 'v2:abc' }).note).toBe('hangup:unknown');
+    expect(d.store.get('v2:abc')?.ended).toBe(true);
+    // A failure on a call the engine no longer holds live, or never held, hangs up.
+    expect(act({ CallSid: 'v2:abc', SessionStatus: 'failed' }).note).toBe('hangup');
+    expect(act({ CallSid: 'v2:new', SessionStatus: 'failed' }).note).toBe('hangup');
+    // A status the relay ended normally on hangs up whatever else it says.
+    d.store.create('v2:def', { send: () => {}, close: () => {} });
+    expect(act({ CallSid: 'v2:def', SessionStatus: 'completed' }).note).toBe('hangup:completed');
+  });
+
+  it('with a status that is not live, hangs up even on a relay failure', () => {
+    const d = deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY });
+    d.store.create('v2:abc', { send: () => {}, close: () => {} });
+    const p = telnyxProvider.parse({ url: '/cr-action/telnyx', headers: FORM_TYPE, rawBody: 'CallSid=v2%3Aabc&CallStatus=completed&SessionStatus=failed', nowSec: 0 })!;
+    expect(decideAction(d, telnyxProvider, p).note).toBe('hangup:failed');
+  });
+
   it('gives each carrier only its own voice when a deployment answers on both', async () => {
     const d = deps({
       VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY,
@@ -756,6 +792,29 @@ describe('decideActionTwiml', () => {
     expect(result.twiml).toContain('<Hangup/>');
     expect(d.store.get('CA1')?.ended).toBe(true);
     expect(d.tokens.verify(token, 'CA1', 'twilio')).toBe(false);
+  });
+
+  it('keeps the legacy path exactly as it was: no CallStatus is not a live call, even on a relay failure', () => {
+    const d = deps();
+    d.store.create('CA1', { send: () => {}, close: () => {} });
+    const r = decideActionTwiml(d, { CallSid: 'CA1', SessionStatus: 'failed' });
+    expect(r.twiml).toContain('<Hangup/>');
+    expect(r.note).toBe('hangup:failed');
+    expect(d.store.get('CA1')?.ended).toBe(true);
+  });
+
+  it('reads a caller\'s own params with a status and no live flag as Twilio\'s words, as before', () => {
+    const d = deps();
+    d.store.create('CA1', { send: () => {}, close: () => {} });
+    expect(decideAction(d, twilioProvider, { callId: 'CA1', callStatus: 'in-progress', sessionStatus: 'failed', raw: {} }).note).toBe('reconnect:1');
+    expect(decideAction(d, twilioProvider, { callId: 'CA1', callStatus: 'active', sessionStatus: 'failed', raw: {} }).note).toBe('hangup:failed');
+  });
+
+  it('takes the provider\'s live flag over its status words', () => {
+    const d = deps();
+    d.store.create('CA1', { send: () => {}, close: () => {} });
+    expect(decideAction(d, twilioProvider, { callId: 'CA1', callStatus: 'up', live: true, sessionStatus: 'failed', raw: {} }).note).toBe('reconnect:1');
+    expect(decideAction(d, twilioProvider, { callId: 'CA1', callStatus: 'in-progress', live: false, raw: {} }).note).toBe('hangup:in-progress');
   });
 
   it('treats empty HandoffData as absent', () => {
