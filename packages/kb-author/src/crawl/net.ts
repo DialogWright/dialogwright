@@ -2,7 +2,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { request as httpRequest, type IncomingMessage, type RequestOptions } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
-import { Readable } from 'node:stream';
+import { pipeline, Readable, type Transform } from 'node:stream';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
 
 /**
@@ -152,13 +152,14 @@ export function pinnedLookup(address: string, family: 4 | 6): LookupFunction {
   }) as LookupFunction;
 }
 
-/** A body read as the server encoded it, decoded (it is asked for unencoded, but may come compressed). */
+/** A body read as the server encoded it, decoded (it is asked for unencoded, but may come compressed); an error on either side ends both. */
 function decoded(res: IncomingMessage): Readable {
   const encoding = (res.headers['content-encoding'] ?? '').trim().toLowerCase();
-  if (encoding === 'gzip' || encoding === 'x-gzip') return res.pipe(createGunzip());
-  if (encoding === 'deflate') return res.pipe(createInflate());
-  if (encoding === 'br') return res.pipe(createBrotliDecompress());
-  return res;
+  const decoder: Transform | null =
+    encoding === 'gzip' || encoding === 'x-gzip' ? createGunzip() : encoding === 'deflate' ? createInflate() : encoding === 'br' ? createBrotliDecompress() : null;
+  if (decoder === null) return res;
+  pipeline(res, decoder, () => undefined);
+  return decoder;
 }
 
 /** The statuses whose response has no body. */

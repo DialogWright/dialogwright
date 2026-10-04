@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fakeClock, guardedFetch, serveSite, type FixtureSite } from '../__fixtures__/server';
 import { crawl, CrawlError, type CrawlOptions } from './crawl';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { gzipSync } from 'node:zlib';
 import { NetworkRefusal, pinnedLookup, privateAddressKind, publicFetch } from './net';
 
 const UA = 'dialogwright-kb-ingest/0.0.0 (+https://github.com/DialogWright/dialogwright)';
@@ -288,6 +291,21 @@ describe('the crawler stays off private networks', () => {
     lookup('rebind.test', {}, (...a) => got.push(a));
     lookup('anything.else', { all: true }, (...a) => got.push(a));
     expect(got).toEqual([[null, '203.0.113.9', 4], [null, [{ address: '203.0.113.9', family: 4 }]]]);
+  });
+
+  it('reads a compressed answer, decoded, though it asks for none', async () => {
+    const page = '<html><body><main><p>Compressed hello.</p></main></body></html>';
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html', 'content-encoding': 'gzip' });
+      res.end(gzipSync(page));
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    try {
+      const res = await publicFetch({ allowPrivate: true })(`http://127.0.0.1:${(server.address() as AddressInfo).port}/z.html`);
+      expect(await res.text()).toBe(page);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 
   it('knows which addresses are not public', () => {
