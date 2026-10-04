@@ -49,6 +49,8 @@ export interface HandoffDecision {
    * never handed over as collected (SlotSpec.handoff): an identifier by its last four, a factor only
    * as IDENTITY_VERIFIED or IDENTITY_UNVERIFIED. The human agent needs to know who, and
    * how strongly; the whole identifier and the factor would put PHI on Twilio's side of the call.
+   * What of this a transfer sends the channel is the app's handoff data option (handoff/data.ts):
+   * by default no identity factor at all, and a redacted slot masked.
    */
   slots: Record<string, string>;
 }

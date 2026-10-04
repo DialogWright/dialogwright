@@ -95,6 +95,9 @@ export function twilioCallbackParams(raw: Record<string, string>): CallbackParam
     ...(raw.From !== undefined ? { from: raw.From } : {}),
     ...(raw.To !== undefined ? { to: raw.To } : {}),
     ...(raw.CallStatus !== undefined ? { callStatus: raw.CallStatus } : {}),
+    // Twilio always says: a call is live only while it is in-progress, and a callback without the
+    // field is read as not live, exactly as the engine read it before providers said so themselves.
+    live: raw.CallStatus === 'in-progress',
     ...(raw.SessionStatus !== undefined ? { sessionStatus: raw.SessionStatus } : {}),
     ...(raw.HandoffData !== undefined ? { handoffData: raw.HandoffData } : {}),
   };

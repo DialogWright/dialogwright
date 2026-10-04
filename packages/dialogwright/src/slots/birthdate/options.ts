@@ -103,7 +103,7 @@ export const birthdateOptions = z
     handoff: z
       .enum(['display', 'verified'])
       .default('display')
-      .describe('What a transfer to a person hands over: the date as it is said ("display"), or, for a birth date asked to verify identity, only whether the caller was "verified".'),
+      .describe('What a transfer to a person hands over: the date as it is said ("display"), or, for a birth date asked to verify identity, only whether the caller was "verified". app.yaml\'s handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.'),
     confirm: z
       .enum(['summary'])
       .default('summary')
