@@ -1,12 +1,6 @@
 import type { GateEvent } from '../core/lifecycle';
 import { appOf } from '../core/app/registry';
-import { loadCorpus, type CorpusEntry } from '../jev/corpus';
-import { isCassetteMiss } from '../jev/cassette';
-import { buildClient, buildThresholds } from '../run/client';
-import { defaultCorpusFile, scenariosDir } from '../run/fixtures';
-import type { TurnRun } from '../run/turn';
-import { REGRESS_TODAY } from '../harness-text/baseline';
-import { loadScenarios, runCorpusEntry, runScenario, type RunOptions, type Scenario } from '../harness-text/runner';
+import { goldenRuns, type GoldenClient, type GoldenRunOptions } from './goldenRuns';
 
 /**
  * Gate-event goldens: every decision the action gate makes on an app's regression run, written out
@@ -45,38 +39,22 @@ export interface GateEventGolden {
 }
 
 /** The clients a golden is taken with: the label stubs, and the app's recorded cassette replayed. */
-export type GateGoldenClient = 'stub' | 'recorded';
+export type GateGoldenClient = GoldenClient;
 
-export interface GateEventGoldenOptions {
-  /** Default: the default app's corpus and scenarios (App.fixtures). */
-  readonly corpus?: readonly CorpusEntry[];
-  readonly scenarios?: readonly Scenario[];
-}
+export type GateEventGoldenOptions = GoldenRunOptions;
 
 /**
- * Runs the default app's corpus and scenarios exactly as `regress` does (its thresholds, its day,
- * its clock, the screen's default mode) with the stubs or the recorded cassette, and writes every
- * gate event of every turn.
+ * Runs the default app's corpus and scenarios exactly as `regress` does (goldenRuns.ts) with the
+ * stubs or the recorded cassette, and writes every gate event of every turn.
  */
 export async function gateEventGolden(kind: GateGoldenClient, options: GateEventGoldenOptions = {}): Promise<GateEventGolden> {
-  const thresholds = buildThresholds([]);
-  const opts: RunOptions = {
-    client: buildClient(kind, defaultCorpusFile(), thresholds, REGRESS_TODAY),
-    thresholds,
-    todayIso: REGRESS_TODAY,
-    now: () => 0,
-  };
-  const corpus = options.corpus ?? loadCorpus(defaultCorpusFile());
-  const scenarios = options.scenarios ?? loadScenarios(scenariosDir());
+  const runs = await goldenRuns(kind, options);
   const lines: string[] = [];
-  let turns = 0;
   let events = 0;
-  let misses = 0;
   const unlisted = new Set<string>();
-  const write = (runs: readonly TurnRun[]): void => {
-    runs.forEach((run, i) => {
-      turns += 1;
-      if (isCassetteMiss(run.record)) misses += 1;
+  for (const section of runs.sections) {
+    lines.push(`# ${section.heading}`);
+    section.runs.forEach((run, i) => {
       const tools = appOf(run.result.session).tools;
       for (const event of run.result.gateEvents) {
         events += 1;
@@ -86,16 +64,8 @@ export async function gateEventGolden(kind: GateGoldenClient, options: GateEvent
         if (Array.isArray(listed)) for (const param of Object.keys(params)) if (!listed.includes(param)) unlisted.add(`${tool}.${param}`);
       }
     });
+  }
+  return {
+    text: `${lines.join('\n')}\n`, entries: runs.sections.length, turns: runs.turns, events, misses: runs.misses, unlistedParams: [...unlisted].sort(),
   };
-  for (const entry of corpus) {
-    const r = await runCorpusEntry(entry, opts);
-    lines.push(`# corpus ${entry.id}`);
-    write([r.setup, r.run]);
-  }
-  for (const scenario of scenarios) {
-    const r = await runScenario(scenario, opts);
-    lines.push(`# scenario ${scenario.id}`);
-    write(r.runs);
-  }
-  return { text: `${lines.join('\n')}\n`, entries: corpus.length + scenarios.length, turns, events, misses, unlistedParams: [...unlisted].sort() };
 }
