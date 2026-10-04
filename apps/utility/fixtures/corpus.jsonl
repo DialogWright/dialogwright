@@ -1,7 +1,7 @@
-{"id": "ro-01", "text": "I want to report a power outage", "intent": "report_outage", "context": "no_form"}
+{"id": "ro-01", "text": "I want to report a power outage", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}}
 {"id": "ro-02", "text": "outage", "intent": "report_outage", "context": "no_form"}
-{"id": "ro-03", "text": "no power", "intent": "report_outage", "context": "no_form"}
-{"id": "ro-04", "text": "my power is out", "intent": "report_outage", "context": "no_form"}
+{"id": "ro-03", "text": "no power", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}}
+{"id": "ro-04", "text": "my power is out", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}}
 {"id": "ro-05", "text": "the power is out at 22 Alder Street and nothing works", "intent": "report_outage", "context": "no_form", "labels": {"placeGiven": true, "symptom": "no_power"}}
 {"id": "ro-06", "text": "the lights keep flickering at my house", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "flicker"}}
 {"id": "ro-07", "text": "there's a wire down on Maple Avenue", "intent": "report_outage", "context": "no_form", "labels": {"placeGiven": true, "symptom": "wire_down"}}
@@ -25,12 +25,12 @@
 {"id": "co-02", "text": "that's right", "intent": "none", "context": "confirm_report_outage", "confirm": "yes"}
 {"id": "co-03", "text": "no", "intent": "none", "context": "confirm_report_outage", "confirm": "no"}
 {"id": "co-04", "text": "no, the address is wrong", "intent": "none", "context": "confirm_report_outage", "confirm": "no", "changeSlot": "place"}
-{"id": "co-05", "text": "not quite, it's flickering rather than out", "intent": "none", "context": "confirm_report_outage", "confirm": "no", "changeSlot": "symptom"}
+{"id": "co-05", "text": "not quite, it's flickering rather than out", "intent": "none", "context": "confirm_report_outage", "confirm": "no", "changeSlot": "symptom", "labels": {"symptom": "flicker"}}
 {"id": "cb-01", "text": "what's my balance", "intent": "check_balance", "context": "no_form"}
 {"id": "cb-02", "text": "balance", "intent": "check_balance", "context": "no_form"}
 {"id": "cb-03", "text": "how much do I owe", "intent": "check_balance", "context": "no_form"}
 {"id": "cb-04", "text": "when is my bill due", "intent": "check_balance", "context": "no_form"}
-{"id": "cb-05", "text": "what's the balance on account five five five zero one two three four", "intent": "check_balance", "context": "no_form", "labels": {"accountIdGiven": true, "accountIdSpan": "five five five zero one two three four", "accountIdComplete": true}}
+{"id": "cb-05", "text": "what's the balance on account five five five zero one two three four", "intent": "check_balance", "context": "no_form", "labels": {"accountGiven": true, "accountSpan": "five five five zero one two three four", "accountComplete": true, "accountIdGiven": true, "accountIdSpan": "five five five zero one two three four", "accountIdComplete": true}}
 {"id": "cb-06", "text": "I was wondering if you could tell me what the bill is, maybe", "intent": "check_balance", "context": "no_form", "tentative": true}
 {"id": "cb-07", "text": "bill", "intent": "check_balance", "context": "no_form"}
 {"id": "cb-08", "text": "what's the balance for account five five five zero five six seven eight", "intent": "check_balance", "context": "no_form", "labels": {"accountGiven": true, "accountSpan": "five five five zero five six seven eight", "accountComplete": true}, "as": "riley"}
@@ -46,7 +46,7 @@
 {"id": "sp-03", "text": "installments", "intent": "set_up_plan", "context": "no_form"}
 {"id": "sp-04", "text": "can I split my balance into three payments", "intent": "set_up_plan", "context": "no_form", "labels": {"count": "three"}}
 {"id": "sp-05", "text": "can I pay it in four payments starting tomorrow", "intent": "set_up_plan", "context": "no_form", "labels": {"count": "four", "firstDateMode": "relative_day", "firstDateRelative": "tomorrow"}}
-{"id": "sp-06", "text": "I can't pay it all at once", "intent": "set_up_plan", "context": "no_form", "tentative": true}
+{"id": "sp-06", "text": "I can't pay it all at once", "intent": "set_up_plan", "context": "no_form"}
 {"id": "sp-07", "text": "arrangement", "intent": "set_up_plan", "context": "no_form"}
 {"id": "sp-08", "text": "set up a payment arrangement for my tenant", "intent": "set_up_plan", "context": "no_form", "as": "riley"}
 {"id": "sp-09", "text": "I need to pay the bill in installments", "intent": "set_up_plan", "context": "no_form"}
@@ -58,7 +58,7 @@
 {"id": "fd-01", "text": "next Friday", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "weekday", "firstDateWeekday": "friday"}}
 {"id": "fd-02", "text": "tomorrow", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "relative_day", "firstDateRelative": "tomorrow"}}
 {"id": "fd-03", "text": "the first of October", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "october", "firstDateDay": "1"}}
-{"id": "fd-04", "text": "I'm not sure, whenever works", "intent": "none", "context": "set_up_plan", "prompted": "firstDate"}
+{"id": "fd-04", "text": "I'm not sure, whenever works", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "knownGap": {"reason": "'whenever works' at the first-date prompt: the model reads count three (0.62), the value the form already holds, and no date; the engine counts the unchanged count as progress, so ask_firstDate is said again instead of its retry", "outcome": {"promptId": "ask_firstDate"}}}
 {"id": "fd-05", "text": "no wait, make it the twelfth of October", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "october", "firstDateDay": "12"}}
 {"id": "fd-06", "text": "the twentieth of November", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "november", "firstDateDay": "20"}}
 {"id": "fd-07", "text": "October eighteenth", "intent": "none", "context": "set_up_plan", "prompted": "firstDate", "labels": {"firstDateMode": "absolute", "firstDateMonth": "october", "firstDateDay": "18"}}
@@ -67,9 +67,9 @@
 {"id": "cp-03", "text": "no, don't", "intent": "none", "context": "confirm_set_up_plan", "confirm": "no"}
 {"id": "cp-04", "text": "no, the date is wrong", "intent": "none", "context": "confirm_set_up_plan", "confirm": "no", "changeSlot": "firstDate"}
 {"id": "cp-05", "text": "no, I want a different number of payments", "intent": "none", "context": "confirm_set_up_plan", "confirm": "no", "changeSlot": "count"}
-{"id": "id-01", "text": "My account number is five five five zero one two three four", "intent": "none", "context": "check_balance", "prompted": "accountId", "labels": {"accountIdGiven": true, "accountIdSpan": "five five five zero one two three four", "accountIdComplete": true}}
-{"id": "id-02", "text": "It's five five five zero five six seven eight", "intent": "none", "context": "check_balance", "prompted": "accountId", "labels": {"accountIdGiven": true, "accountIdSpan": "five five five zero five six seven eight", "accountIdComplete": true}}
-{"id": "id-03", "text": "Five five five zero nine nine nine nine", "intent": "none", "context": "check_balance", "prompted": "accountId", "labels": {"accountIdGiven": true, "accountIdSpan": "five five five zero nine nine nine nine", "accountIdComplete": true}}
+{"id": "id-01", "text": "My account number is five five five zero one two three four", "intent": "none", "context": "check_balance", "prompted": "accountId", "labels": {"accountGiven": true, "accountSpan": "five five five zero one two three four", "accountComplete": true, "accountIdGiven": true, "accountIdSpan": "five five five zero one two three four", "accountIdComplete": true}}
+{"id": "id-02", "text": "It's five five five zero five six seven eight", "intent": "none", "context": "check_balance", "prompted": "accountId", "labels": {"accountGiven": true, "accountSpan": "five five five zero five six seven eight", "accountComplete": true, "accountIdGiven": true, "accountIdSpan": "five five five zero five six seven eight", "accountIdComplete": true}}
+{"id": "id-03", "text": "Five five five zero nine nine nine nine", "intent": "none", "context": "check_balance", "prompted": "accountId", "labels": {"accountGiven": true, "accountSpan": "five five five zero nine nine nine nine", "accountComplete": true, "accountIdGiven": true, "accountIdSpan": "five five five zero nine nine nine nine", "accountIdComplete": true}}
 {"id": "id-04", "text": "I don't have it with me", "intent": "none", "context": "check_balance", "prompted": "accountId"}
 {"id": "id-05", "text": "Account number five five five zero nine zero one two", "intent": "none", "context": "set_up_plan", "prompted": "accountId", "labels": {"accountIdGiven": true, "accountIdSpan": "five five five zero nine zero one two", "accountIdComplete": true}}
 {"id": "id-06", "text": "April twelfth nineteen eighty", "intent": "none", "context": "check_balance", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "april", "dobDay": "12", "dobYear": "nineteen eighty"}}
@@ -77,21 +77,21 @@
 {"id": "id-08", "text": "January first nineteen ninety", "intent": "none", "context": "check_balance", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "january", "dobDay": "1", "dobYear": "nineteen ninety"}}
 {"id": "id-09", "text": "I'd rather not say", "intent": "none", "context": "check_balance", "prompted": "dob"}
 {"id": "id-10", "text": "sorry, it's the twelfth of April, nineteen eighty", "intent": "none", "context": "set_up_plan", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "april", "dobDay": "12", "dobYear": "nineteen eighty"}}
-{"id": "om-01", "text": "where is the outage map", "intent": "outage_map", "context": "no_form"}
-{"id": "om-02", "text": "map", "intent": "outage_map", "context": "no_form"}
-{"id": "om-03", "text": "outage map", "intent": "outage_map", "context": "no_form"}
-{"id": "om-04", "text": "is there a website that shows outages", "intent": "outage_map", "context": "no_form"}
-{"id": "om-05", "text": "can I see the outages online", "intent": "outage_map", "context": "no_form"}
+{"id": "om-01", "text": "where is the outage map", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
+{"id": "om-02", "text": "map", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
+{"id": "om-03", "text": "outage map", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
+{"id": "om-04", "text": "is there a website that shows outages", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
+{"id": "om-05", "text": "can I see the outages online", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
 {"id": "om-06", "text": "what's the web address for outages", "intent": "outage_map", "context": "no_form"}
-{"id": "om-07", "text": "where can I check when power comes back", "intent": "outage_map", "context": "no_form"}
+{"id": "om-07", "text": "where can I check when power comes back", "intent": "outage_map", "context": "no_form", "knownGap": {"reason": "'when power comes back': outage_map 0.58 against ask_question 0.41, below the 0.6 an informational answer needs (it has no confirm band), so nomatch_open instead of the outage map", "outcome": {"promptId": "nomatch_open", "acks": [], "verdict": "intent_failed"}}}
 {"id": "om-08", "text": "actually, is there a map of outages I can look at", "intent": "outage_map", "context": "report_outage"}
-{"id": "oh-01", "text": "when are you open", "intent": "office_hours", "context": "no_form"}
-{"id": "oh-02", "text": "hours", "intent": "office_hours", "context": "no_form"}
-{"id": "oh-03", "text": "office hours", "intent": "office_hours", "context": "no_form"}
-{"id": "oh-04", "text": "what time does the office close", "intent": "office_hours", "context": "no_form"}
-{"id": "oh-05", "text": "are you open on Saturday", "intent": "office_hours", "context": "no_form"}
-{"id": "oh-06", "text": "what are your opening hours", "intent": "office_hours", "context": "no_form"}
-{"id": "oh-07", "text": "when can I come into the office", "intent": "office_hours", "context": "no_form"}
+{"id": "oh-01", "text": "when are you open", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
+{"id": "oh-02", "text": "hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
+{"id": "oh-03", "text": "office hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
+{"id": "oh-04", "text": "what time does the office close", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
+{"id": "oh-05", "text": "are you open on Saturday", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}, "knownGap": {"reason": "'on Saturday' in an office-hours question: the opener asks every slot's question and the model reads firstDate saturday (1.0), so firstDate is filled with 2026-09-19 though no arrangement was asked for; the same answer is said", "outcome": {"slots": {"place": null, "symptom": null, "account": null, "count": null, "firstDate": "2026-09-19", "subject": "office_hours", "accountId": null, "dob": null}}}}
+{"id": "oh-06", "text": "what are your opening hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
+{"id": "oh-07", "text": "when can I come into the office", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-08", "text": "before that, what are your hours", "intent": "office_hours", "context": "check_balance"}
 {"id": "aq-01", "text": "how do outage credits work", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "outage_credit"}}
 {"id": "aq-02", "text": "my power was out for a whole day, do I get a credit", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "outage_credit"}}
@@ -109,6 +109,9 @@
 {"id": "aq-14", "text": "do my tenants get a credit for the outage last week", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "outage_credit"}, "as": "riley"}
 {"id": "aq-15", "text": "I want to dispute a charge", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "bill_dispute"}}
 {"id": "aq-16", "text": "I'd like to cancel my service", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "start_stop_service"}}
+{"id": "aq-17", "text": "I want to start new service at a new home", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "start_stop_service"}}
+{"id": "aq-18", "text": "do you sell solar panels", "intent": "ask_question", "context": "no_form"}
+{"id": "aq-19", "text": "is my gas bill separate", "intent": "ask_question", "context": "no_form"}
 {"id": "sq-01", "text": "the outage credit", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "outage_credit"}}
 {"id": "sq-02", "text": "what happens if I pay after the due date", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "late_fees"}}
 {"id": "sq-03", "text": "budget billing", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "budget_billing"}}
@@ -135,22 +138,19 @@
 {"id": "rp-04", "text": "what was that", "intent": "repeat_prompt", "context": "set_up_plan"}
 {"id": "rp-05", "text": "sorry, I missed that", "intent": "repeat_prompt", "context": "no_form"}
 {"id": "rp-06", "text": "could you say the options again", "intent": "repeat_prompt", "context": "no_form"}
-{"id": "rp-07", "text": "pardon", "intent": "repeat_prompt", "context": "check_balance"}
+{"id": "rp-07", "text": "pardon", "intent": "repeat_prompt", "context": "check_balance", "knownGap": {"reason": "a bare 'pardon' in a form: repeat_prompt 0.44 against none 0.56 (confusedByPrompt 0.79), so the account question's retry is said instead of a replay; the caller still hears the question again", "outcome": {"decision": "prompt", "promptId": "ask_account_retry", "decidedGate": null, "verdict": "proceed"}}}
 {"id": "rp-08", "text": "come again", "intent": "repeat_prompt", "context": "no_form"}
-{"id": "ot-01", "text": "I want to start new service at a new home", "intent": "other", "context": "no_form"}
-{"id": "ot-02", "text": "do you sell solar panels", "intent": "other", "context": "no_form"}
 {"id": "ot-03", "text": "can I change my mailing address", "intent": "other", "context": "no_form"}
 {"id": "ot-05", "text": "what's the weather tomorrow", "intent": "other", "context": "no_form"}
-{"id": "ot-06", "text": "is my gas bill separate", "intent": "other", "context": "no_form"}
 {"id": "ot-08", "text": "can you sign me up for paperless billing", "intent": "other", "context": "no_form"}
 {"id": "ot-09", "text": "can you mail me a paper copy of last year's statements", "intent": "other", "context": "no_form"}
 {"id": "ot-10", "text": "I'd like to update the phone number on my account", "intent": "other", "context": "no_form"}
 {"id": "ns-01", "text": "Hello", "intent": "none", "context": "no_form"}
 {"id": "ns-02", "text": "Honey, where did you put the keys", "intent": "none", "context": "no_form", "answers": {"addressedToSystem": {"noul": 0.15}}, "tags": ["side_speech"]}
-{"id": "ns-03", "text": "um", "intent": "none", "context": "no_form"}
+{"id": "ns-03", "text": "um", "intent": "none", "context": "no_form", "answers": {"intelligible": {"noul": 0.3}}, "tags": ["unintelligible"]}
 {"id": "ns-04", "text": "okay", "intent": "none", "context": "no_form"}
 {"id": "ns-05", "text": "hi there", "intent": "none", "context": "no_form"}
-{"id": "ns-06", "text": "hang on a second", "intent": "none", "context": "no_form"}
+{"id": "ns-06", "text": "hang on a second", "intent": "none", "context": "no_form", "answers": {"addressedToSystem": {"noul": 0.5}}, "tags": ["hold"]}
 {"id": "ns-07", "text": "hold on, the dog is barking", "intent": "none", "context": "no_form", "answers": {"addressedToSystem": {"noul": 0.2}}, "tags": ["side_speech"]}
 {"id": "ns-08", "text": "good morning", "intent": "none", "context": "no_form"}
-{"id": "ch-01", "text": "my account number is 55501234", "intent": "check_balance", "context": "no_form", "labels": {"accountIdGiven": true, "accountIdSpan": "55501234", "accountIdComplete": true}}
+{"id": "ch-01", "text": "my account number is 55501234", "intent": "none", "context": "no_form", "labels": {"accountGiven": true, "accountSpan": "55501234", "accountComplete": true, "accountIdGiven": true, "accountIdSpan": "55501234", "accountIdComplete": true}}

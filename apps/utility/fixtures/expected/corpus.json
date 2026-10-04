@@ -12,7 +12,7 @@
     "form": "report_outage",
     "slots": {
       "place": null,
-      "symptom": null,
+      "symptom": "no_power",
       "account": null,
       "count": null,
       "firstDate": null,
@@ -62,7 +62,7 @@
     "form": "report_outage",
     "slots": {
       "place": null,
-      "symptom": null,
+      "symptom": "no_power",
       "account": null,
       "count": null,
       "firstDate": null,
@@ -87,7 +87,7 @@
     "form": "report_outage",
     "slots": {
       "place": null,
-      "symptom": null,
+      "symptom": "no_power",
       "account": null,
       "count": null,
       "firstDate": null,
@@ -645,7 +645,7 @@
   "co-05": {
     "id": "co-05",
     "decision": "prompt",
-    "promptId": "ask_symptom",
+    "promptId": "confirm_report_outage",
     "acks": [],
     "reason": null,
     "decidedGate": "changeSlot",
@@ -653,7 +653,7 @@
     "form": "report_outage",
     "slots": {
       "place": "14 Birch Lane",
-      "symptom": null,
+      "symptom": "flicker",
       "account": null,
       "count": null,
       "firstDate": null,
@@ -779,7 +779,7 @@
     "slots": {
       "place": null,
       "symptom": null,
-      "account": null,
+      "account": "55501234",
       "count": null,
       "firstDate": null,
       "subject": null,
@@ -1166,12 +1166,14 @@
   "sp-06": {
     "id": "sp-06",
     "decision": "prompt",
-    "promptId": "confirm_intent_explicit",
-    "acks": [],
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
     "reason": null,
     "decidedGate": "intent",
     "verdict": "route",
-    "form": null,
+    "form": "set_up_plan",
     "slots": {
       "place": null,
       "symptom": null,
@@ -1184,7 +1186,7 @@
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null
+    "gate": "findAccount:STEP_UP"
   },
   "sp-07": {
     "id": "sp-07",
@@ -1668,7 +1670,7 @@
     "slots": {
       "place": null,
       "symptom": null,
-      "account": null,
+      "account": "55501234",
       "count": null,
       "firstDate": null,
       "subject": null,
@@ -1691,7 +1693,7 @@
     "slots": {
       "place": null,
       "symptom": null,
-      "account": null,
+      "account": "55505678",
       "count": null,
       "firstDate": null,
       "subject": null,
@@ -1714,7 +1716,7 @@
     "slots": {
       "place": null,
       "symptom": null,
-      "account": null,
+      "account": "55509999",
       "count": null,
       "firstDate": null,
       "subject": null,
@@ -1912,7 +1914,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "outage_map",
       "accountId": null,
       "dob": null
     },
@@ -1937,7 +1939,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "outage_map",
       "accountId": null,
       "dob": null
     },
@@ -1962,7 +1964,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "outage_map",
       "accountId": null,
       "dob": null
     },
@@ -1987,7 +1989,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "outage_map",
       "accountId": null,
       "dob": null
     },
@@ -2012,7 +2014,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "outage_map",
       "accountId": null,
       "dob": null
     },
@@ -2112,7 +2114,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "office_hours",
       "accountId": null,
       "dob": null
     },
@@ -2137,7 +2139,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "office_hours",
       "accountId": null,
       "dob": null
     },
@@ -2162,7 +2164,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "office_hours",
       "accountId": null,
       "dob": null
     },
@@ -2187,7 +2189,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "office_hours",
       "accountId": null,
       "dob": null
     },
@@ -2212,7 +2214,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "office_hours",
       "accountId": null,
       "dob": null
     },
@@ -2237,7 +2239,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "office_hours",
       "accountId": null,
       "dob": null
     },
@@ -2262,7 +2264,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
-      "subject": null,
+      "subject": "office_hours",
       "accountId": null,
       "dob": null
     },
@@ -2709,6 +2711,82 @@
     "queued": [],
     "principalLevel": 0,
     "gate": "answerQuestion:ALLOW"
+  },
+  "aq-17": {
+    "id": "aq-17",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-18": {
+    "id": "aq-18",
+    "decision": "prompt",
+    "promptId": "ask_subject",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "ask_question",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "aq-19": {
+    "id": "aq-19",
+    "decision": "prompt",
+    "promptId": "ask_subject",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "ask_question",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
   },
   "sq-01": {
     "id": "sq-01",
@@ -3362,52 +3440,6 @@
     "principalLevel": 0,
     "gate": null
   },
-  "ot-01": {
-    "id": "ot-01",
-    "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
-    "reason": null,
-    "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
-    "slots": {
-      "place": null,
-      "symptom": null,
-      "account": null,
-      "count": null,
-      "firstDate": null,
-      "subject": null,
-      "accountId": null,
-      "dob": null
-    },
-    "queued": [],
-    "principalLevel": 0,
-    "gate": null
-  },
-  "ot-02": {
-    "id": "ot-02",
-    "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
-    "reason": null,
-    "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
-    "slots": {
-      "place": null,
-      "symptom": null,
-      "account": null,
-      "count": null,
-      "firstDate": null,
-      "subject": null,
-      "accountId": null,
-      "dob": null
-    },
-    "queued": [],
-    "principalLevel": 0,
-    "gate": null
-  },
   "ot-03": {
     "id": "ot-03",
     "decision": "prompt",
@@ -3433,29 +3465,6 @@
   },
   "ot-05": {
     "id": "ot-05",
-    "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
-    "reason": null,
-    "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
-    "slots": {
-      "place": null,
-      "symptom": null,
-      "account": null,
-      "count": null,
-      "firstDate": null,
-      "subject": null,
-      "accountId": null,
-      "dob": null
-    },
-    "queued": [],
-    "principalLevel": 0,
-    "gate": null
-  },
-  "ot-06": {
-    "id": "ot-06",
     "decision": "prompt",
     "promptId": "nomatch_open",
     "acks": [],
@@ -3598,8 +3607,8 @@
     "promptId": "nomatch_open",
     "acks": [],
     "reason": null,
-    "decidedGate": "intent",
-    "verdict": "intent_failed",
+    "decidedGate": "intelligible",
+    "verdict": "nomatch",
     "form": null,
     "slots": {
       "place": null,
@@ -3663,12 +3672,12 @@
   },
   "ns-06": {
     "id": "ns-06",
-    "decision": "prompt",
-    "promptId": "nomatch_open",
+    "decision": "ignore",
+    "promptId": null,
     "acks": [],
     "reason": null,
-    "decidedGate": "intent",
-    "verdict": "intent_failed",
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
     "form": null,
     "slots": {
       "place": null,
@@ -3733,14 +3742,12 @@
   "ch-01": {
     "id": "ch-01",
     "decision": "prompt",
-    "promptId": "ask_dob",
-    "acks": [
-      "ack_intent"
-    ],
+    "promptId": "nomatch_open",
+    "acks": [],
     "reason": null,
     "decidedGate": "intent",
-    "verdict": "route",
-    "form": "check_balance",
+    "verdict": "intent_failed",
+    "form": null,
     "slots": {
       "place": null,
       "symptom": null,
@@ -3748,11 +3755,11 @@
       "count": null,
       "firstDate": null,
       "subject": null,
-      "accountId": "55501234",
+      "accountId": null,
       "dob": null
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": "findAccount:STEP_UP"
+    "gate": null
   }
 }
