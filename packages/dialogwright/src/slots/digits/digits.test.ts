@@ -392,7 +392,7 @@ describe('the docs', () => {
   it('the docs page names every option', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/digits.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(digitsType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['article', 'confirm', 'group', 'handoff', 'ids', 'keypad', 'length', 'lengthRetryPromptId', 'mask', 'minConfidence', 'noun', 'readBack', 'redact', 'text']);
+    expect(options.sort()).toEqual(['article', 'confirm', 'group', 'handoff', 'ids', 'keypad', 'length', 'lengthRetryPromptId', 'listen', 'mask', 'minConfidence', 'noun', 'readBack', 'redact', 'text']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
   });
 });

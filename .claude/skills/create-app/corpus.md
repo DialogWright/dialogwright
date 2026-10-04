@@ -45,7 +45,7 @@ Each library slot asks the model questions with ids built from the slot's id. A 
 
 A span label must be one of the spans the engine finds in the text, or the regression stops with `span "..." is not a candidate span of the text`. The regression's day is Friday 2026-09-18, so "tomorrow" is 2026-09-19 and "Friday" (ahead) is 2026-09-25.
 
-Every slot listens on every turn (inside a form, the form's slots; outside one, every slot), so a line can fill several slots at once: label each value it says. That is how over-answering is tested.
+Every slot listens on every turn (inside a form, the form's slots; outside one, every slot but one that says `listen: form`), so a line can fill several slots at once: label each value it says. That is how over-answering is tested.
 
 ## What to write
 

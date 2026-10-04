@@ -2,7 +2,7 @@ import type {
   App, AppBrand, AppLocales, ConsoleConfig, FormDef, FormId, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
   PromptManifestEntry, RoleAccess, SlotId, SpokenDigitRule, ToolDef, ToolName, VoiceConfig,
 } from '../core/app/types';
-import type { SlotSpec } from '../core/slots/types';
+import { SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { askedQuestionIds, probeContexts } from '../core/app/probeQuestions';
@@ -327,6 +327,11 @@ export function crossLink(
       yaml('intents.yaml', ['intents', id], `intent "${id}" is a form intent, but forms.yaml has no form "${id}"`, `add "${id}:" under forms in forms.yaml (its slots, summaryPromptId and hooks), or change this intent's kind`);
     }
     if (def.promptId !== undefined) promptExists('intents.yaml', ['intents', id, 'promptId'], def.promptId);
+    // Only a form intent, an informational one and done are confirmed when the model is unsure (gates.ts):
+    // agent and repeat_prompt act only when it is sure, and other and none are never acted on.
+    if (def.unsure !== undefined && def.kind === 'control' && id !== 'done') {
+      yaml('intents.yaml', ['intents', id, 'unsure'], `the control intent "${id}" is never confirmed, so "unsure" does nothing for it`, 'delete "unsure": only a form intent, an informational one and done are confirmed when the model is unsure of them', true);
+    }
     if (def.passage !== undefined) {
       promptExists('intents.yaml', ['intents', id, 'passage'], KB_ANSWER_PROMPT);
       promptExists('intents.yaml', ['intents', id, 'passage'], KB_UNAVAILABLE_PROMPT);
@@ -493,6 +498,29 @@ export function crossLink(
   // app.yaml
   const app = config.app;
   app.carrySlots?.forEach((slot, i) => slotExists('app.yaml', ['carrySlots', i], slot));
+
+  // Where each slot listens (SlotSpec.listen): written in slots.yaml for a library slot, on the
+  // spec for the code's. An identity factor listens as identity.yaml says, so it takes none; a slot
+  // app.yaml carries listens for the call (carrySlots is the shorthand), so it may say only that.
+  const factors: readonly string[] = config.identity?.levels[1].factors ?? [];
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    const listen = spec?.listen;
+    if (listen === undefined) continue;
+    const library = linked.library.has(id);
+    const at = (message: string, fix: string): void => {
+      if (library) yaml(SLOTS_FILE, [id, 'listen'], message, fix);
+      else inTs(['slots', id, 'listen'], message, fix);
+    };
+    const deleteIt = library ? 'delete "listen"' : `delete "listen" from ${inCode('slots', id)}`;
+    if (!library && !SLOT_LISTEN_VALUES.includes(listen)) {
+      const guess = typeof listen === 'string' ? closest(listen, SLOT_LISTEN_VALUES) : undefined;
+      at(`the slot "${id}" says listen: ${JSON.stringify(listen)}, which is not one of ${SLOT_LISTEN_VALUES.map((v) => `"${v}"`).join(', ')}`, guess ? `change it to "${guess}"` : `use one of ${SLOT_LISTEN_VALUES.map((v) => `"${v}"`).join(', ')}, or ${deleteIt} for "up-front"`);
+    } else if (factors.includes(id)) {
+      at(`the slot "${id}" is an identity factor (identity.yaml), which listens while the caller is still to be verified and stays for the call, so listen does not apply to it`, deleteIt);
+    } else if (listen !== 'call' && app.carrySlots?.includes(id)) {
+      at(`the slot "${id}" is in app.yaml's carrySlots, which keeps it for the whole call (listen: call), but it says listen: ${listen}`, `${deleteIt} (carrySlots already makes it call), or take "${id}" out of carrySlots in app.yaml`);
+    }
+  }
   for (const name of Object.keys(app.thresholds ?? {})) {
     if (has(DEFAULT_THRESHOLDS, name)) yaml('app.yaml', ['thresholds', name], `threshold "${name}" is one of the engine's own`, `rename it: an app's thresholds need names of their own (the engine's are set with --threshold ${name}=VALUE on a run)`);
   }
@@ -655,6 +683,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'blockPromptId', code.blockPromptId);
   put(app, 'wording', a.wording as ModelWording | undefined);
   put(app, 'carrySlots', a.carrySlots);
+  put(app, 'unsureIntent', a.unsureIntent);
   put(app, 'thresholds', a.thresholds);
   put(app, 'callerState', code.callerState);
   put(app, 'questions', code.questions);
@@ -684,6 +713,7 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
   const intent: IntentDef = { criteria: def.criteria, label: def.label, kind: def.kind };
   put(intent, 'promptId', def.promptId);
   put(intent, 'passage', def.passage);
+  put(intent, 'unsure', def.unsure);
   return intent;
 }
 

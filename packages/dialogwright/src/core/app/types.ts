@@ -36,7 +36,17 @@ export interface IntentDef {
    * `kb_unavailable` line is said and a person offered, once per call (kb/answer.ts).
    */
   passage?: string;
+  /**
+   * When the model is unsure of this intent (outside a form, read from INTENT_EXPLICIT up to
+   * INTENT_IMPLICIT): `confirm` asks the caller ("Just to check, do you want to ...?"), `no-match`
+   * treats the reading as no match (the no-match line, counted). For a form intent, an informational
+   * one and `done`. Absent: the app's (App.unsureIntent).
+   */
+  unsure?: UnsureIntent;
 }
+
+/** What an intent the model is unsure of gets: a confirmation, or the no-match line (IntentDef.unsure, App.unsureIntent). */
+export type UnsureIntent = 'confirm' | 'no-match';
 
 export interface FormDef {
   /** Business slots, in prompt priority order. */
@@ -692,7 +702,9 @@ export interface App {
   /**
    * Slots that, like identity, outlast the form that filled them (e.g. the caller's own name and
    * birthday, so a second task on the call does not ask for them again). Every other slot of a
-   * form is emptied as it closes. Without it, none.
+   * form is emptied as it closes. Without it, none. Shorthand for `listen: 'call'` on each slot it
+   * names (SlotSpec.listen): a value said outside a form is kept too. A slot named here that sets
+   * another `listen` is refused (validateApp, `check`).
    *
    * A carried value pre-fills the next form that has the slot, as it was confirmed on the form that
    * filled it: the caller is not asked for it again, and hears it again only where that form has a
@@ -702,6 +714,14 @@ export interface App {
    * a carried value a summary.
    */
   carrySlots?: readonly SlotId[];
+  /**
+   * What an intent the model is unsure of gets, for every intent that does not say (IntentDef.unsure):
+   * outside a form, a reading from INTENT_EXPLICIT up to INTENT_IMPLICIT is confirmed (`confirm`,
+   * "Just to check, do you want to ...?") or taken as no match (`no-match`: the no-match line,
+   * counted, as a reading below the band). A form intent, an informational one and `done` alike.
+   * Without it, `confirm`.
+   */
+  unsureIntent?: UnsureIntent;
   /**
    * The app's own named thresholds and their defaults (e.g. how sure the model must be of a part
    * of the day before a hook keeps it), read where the engine's are: TurnContext.thresholds and

@@ -1,4 +1,5 @@
 import type { SlotType } from './types';
+import { LISTEN_OPTION } from '../define/schema/slots';
 
 /** A type's name: what an app writes after `type:`. */
 export const SLOT_TYPE_NAME = /^[a-z][a-z0-9-]*$/;
@@ -18,11 +19,14 @@ export function defineSlotType<O, W = unknown>(def: SlotType<O, W>): SlotType<O,
   if (!refusesUnknownKeys(def)) {
     throw new Error(`the "${def.type}" type's options must refuse unknown keys: build them with z.strictObject`);
   }
+  if (!refusesUnknownKeys(def, LISTEN_OPTION)) {
+    throw new Error(`the "${def.type}" type has an option "${LISTEN_OPTION}", which every slot takes beside its type's options (SlotSpec.listen): give the option another name`);
+  }
   return def;
 }
 
-/** Whether a type's options schema refuses a key it does not know. */
-export function refusesUnknownKeys(def: Pick<SlotType<unknown, unknown>, 'options'>): boolean {
-  const result = def.options.safeParse({ [PROBE_KEY]: true });
-  return !result.success && result.error.issues.some((issue) => issue.code === 'unrecognized_keys' && issue.keys.includes(PROBE_KEY));
+/** Whether a type's options schema refuses a key it does not know (or `key`, as one it should not know). */
+export function refusesUnknownKeys(def: Pick<SlotType<unknown, unknown>, 'options'>, key: string = PROBE_KEY): boolean {
+  const result = def.options.safeParse({ [key]: true });
+  return !result.success && result.error.issues.some((issue) => issue.code === 'unrecognized_keys' && issue.keys.includes(key));
 }

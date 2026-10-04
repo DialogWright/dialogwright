@@ -5,7 +5,7 @@ import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotContext } from './slots/types';
 import { informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
-import { formOf, identityOf, slotSpecOf } from './app/lookup';
+import { formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, Completion, FormId, SlotId, SummaryMove } from './app/types';
 import { candidateSpans, candidateWordSpans } from './spans';
@@ -745,6 +745,10 @@ function summaryMove(s: Session, form: FormId, answers: AnswerMap, io: TurnIO): 
  * yes that confirmed it, which the form hears after the opener's (they are newer) but never fills from.
  */
 function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContext, io: TurnIO, queue?: FormId, yes?: AnswerMap): { decision: Decision; events: FillEvent[] } {
+  // Words said outside a form (the request, or the request a yes confirmed) asked nothing of a slot
+  // that listens only in its form (SlotSpec.listen `form`), so nothing is taken for it up front,
+  // whatever such a slot would make of the words without its question.
+  const fromOutside = s.form === null;
   // Entering a form is always said out loud, however sure the intent was: it is what tells
   // the caller which task started, whether the route was confident, mid-confidence, or a
   // switch away from another form.
@@ -758,7 +762,8 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
   const acks: Ack[] = queued.length && queue !== undefined
     ? [{ promptId: 'ack_intent_then', vars: { a: intentLabel(io.app, form), b: intentLabel(io.app, queue) } }]
     : [ackIntent(s, form)];
-  const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+  const specs = fromOutside ? slotsToFill(s).filter((spec) => listenOf(io.app, spec.id) !== 'form') : slotsToFill(s);
+  const fill = fillSlots(s, answers, ctx, specs);
   return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
 }
 

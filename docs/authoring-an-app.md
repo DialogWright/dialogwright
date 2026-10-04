@@ -91,7 +91,8 @@ prompts:
 - `brand` and `console` are what the operator console shows: the app's name, form and slot labels, the badge for each identity level, and the facts a tool call leaves.
 - `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech.
 - `wording` is the engine's own questions to the decision model, in the app's words (whom the caller is addressing, what counts as a hedge). Every string is sent to the model as written.
-- `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again).
+- `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again). It is shorthand for `listen: call` on each slot it names ([Where a slot listens](#where-a-slot-listens-listen)); a carried slot that says another `listen` is refused.
+- `unsureIntent` says what an intent the model is unsure of gets, for every intent that does not say: `confirm` (the default) or `no-match` ([When the model is unsure](#when-the-model-is-unsure-unsure), under intents.yaml).
 - `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. The folder is relative to the app's package root, which is the folder its commands run in: the engine reads it from the working directory, and an app's `regress`, `cli` and `serve` scripts run in its package. It must stay inside the package, so an absolute path or one with `..` is refused. `check` then requires every intent to have examples there.
 - `prompts` holds what is said about prompts besides their text: which opening lines to use, which variables are always spoken by text to speech, the clips' vocabulary.
 
@@ -129,10 +130,30 @@ menu:
 - `criteria` is sent to the decision model as written, so changing it changes what the model sees (a recorded cassette then misses). `label` is how the line says the intent ("Sure, I can help you renew a book").
 - `kind: form` starts the form with the same id in forms.yaml. `kind: informational` plays its `promptId` and goes back to where the caller was; its key on the menu does the same, then gives the menu back. `kind: control` is the engine's own.
 - How sure the model must be. Outside a form, a form intent read at `INTENT_IMPLICIT` (0.6) or more starts its form, and one read from `INTENT_EXPLICIT` (0.4) up to that is confirmed first with `confirm_intent_explicit` ("Just to check, do you want to {intentLabel}?"); below that the caller hears `nomatch_open`. An informational intent has the same band: said at 0.6 or more, confirmed from 0.4, and said on the yes, so a caller the model half understood is asked rather than told the words were not understood. A form close behind either (within `GATE_INTENT_MARGIN`) is asked about as a choice between the two (`disambiguate_intent`). Inside a form, an informational intent is said at `INTENT_SWITCH` (0.85) and has no band: a confirmation there would stand in for the question the form is asking.
+- When the model is unsure, see the next subsection: an app or an intent can say that such a reading is no match rather than confirmed.
 - Two control intents are required, because the engine reads them by name: `agent` and `repeat_prompt`. The snippet above shows both. The other control intents (`done`, `other`, `none`) are optional; the library has all three, and the clinic leaves out `done`, since its calls end when a task completes.
 - Keypad digits are quoted strings.
 - A key on the menu starts a form, plays an informational intent's line, or (`agent`) goes to a person. A key for any other control intent does nothing on a call (the caller hears nothing), so `pnpm check` refuses one.
 - The menu listens only once it has been offered. On a call with a keypad (a phone call; a chat has none), the second missed answer to the intent question (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the keys of the next turn are menu keys; with `MAX_ATTEMPTS` at its default of 3, a third miss goes to a person. A key pressed before then, at the greeting for example, is ignored. After an informational key the menu is offered again, so it keeps listening. A scripted call that presses a menu key therefore misses twice first.
+
+#### When the model is unsure: `unsure`
+
+The band above, a reading from `INTENT_EXPLICIT` (0.4) up to `INTENT_IMPLICIT` (0.6) outside a form, is an option. `confirm`, the default, asks the caller ("Just to check, do you want to {intentLabel}?"); a yes starts the form or says the answer, and a no is the intent question again, counted. `no-match` takes such a reading as no match: the caller hears `nomatch_open` and the attempt is counted, as for a reading below 0.4 (the debug table's intent row says `unsure_no_match`). app.yaml's `unsureIntent` sets it for every intent, and an intent's own `unsure:` overrides it, in either direction:
+
+```yaml
+# app.yaml: no intent the model is unsure of is confirmed...
+unsureIntent: no-match
+
+# intents.yaml: ...but this one is
+intents:
+  renew_loan:
+    criteria: Wants to renew a book they have borrowed, so it is due back later
+    label: renew a book
+    kind: form
+    unsure: confirm
+```
+
+It applies alike to a form intent, an informational one and `done`; `check` refuses it on another control intent, which is never confirmed. It changes nothing else: a reading of 0.6 or more acts as before, a hedged request read at 0.6 or more ("I think I might want to ...") is still confirmed, since the doubt is the caller's and not the model's, a switch away from the form in hand is still confirmed in its own band, since it would drop what the caller has given, and inside a form an informational intent still needs `INTENT_SWITCH`. Keep `confirm` where a caller half understood is better asked one yes-or-no question than told the words were not understood. Choose `no-match` where a wrong guess costs more than a second try: intents that sound alike, so that "did you want X?" would often be wrong, or a request that should start only when the caller is understood plainly. The setting is the app's, and changes no question the model is sent.
 
 ### forms.yaml
 
@@ -259,6 +280,7 @@ The rules, each checked by `defineApp` and `check` with the file and line:
 - **The order is the file's.** Outside a form the engine fills slots in that order, says their acknowledgements in it, asks the first slot that needs the caller to choose between two values, and lists the slots in it in the model's turn state and in a transfer's handoff. A form's own slots stay in the order forms.yaml gives. Without a slots.yaml, the order is whatever order `code.slots` was written in, which is easy to change unintentionally; with one, it is written down in one place, and a reorder shows in a diff.
 - **A type is a library type, an app type or `code`.** An app adds its own types with `slotTypes` in its code (`code.slotTypes: registerSlotType(myType)`); a name a built-in type has, and `code`, are refused. An unknown type names the closest one.
 - **A library slot's options are checked by its type**, strictly: a misspelt option is refused with the one meant, at its line in slots.yaml.
+- **Every slot takes `listen:`** beside its type's options: where it listens outside a form (`up-front`, the default, `form`, `anywhere` or `call`). Section 5, [Where a slot listens](#where-a-slot-listens-listen), says what each does and when to choose it.
 
 Without the file, every slot is the code's, as before. The file is part of the configuration hashes (section 9). An app that is not built from a folder gets the same rules from `defineSlots(source, codeSlots, types?)`, where `source` is the path of a slots.yaml or the same map as an object; it returns the slots in the file's order, or throws an `AppDefinitionError` listing every problem.
 
@@ -860,12 +882,40 @@ An app that is not built from a folder gets the same slots from code: `defineSlo
 
 ### Every slot listens on every turn
 
-The engine asks the questions of every slot the turn listens for, not only the one it just asked about: inside a form, the form's slots (and, while an anonymous caller is still to be verified, the identity factors); outside a form, every slot the app has. That is what lets a caller volunteer several details at once, and lets "what do I have out on card 5552 0417" fill the card on the opening turn. Outside a form, what is heard for a form's slot is kept only for the form the turn opens: the turn routes, the form opens and fills from what was said for it. A turn that opens no form (an informational answer, a declined offer of a person) keeps only what belongs to the call, the identity factors and the slots the app carries (`carrySlots`); a topic or a day said in an informational question is not kept for a form asked for later, which starts from what is said then. It is true of library slots and slots in code alike, and it has two consequences:
+The engine asks the questions of every slot the turn listens for, not only the one it just asked about: inside a form, the form's slots (and, while an anonymous caller is still to be verified, the identity factors); outside a form, every slot the app has but one that listens only in its form (`listen: form`, below). That is what lets a caller volunteer several details at once, and lets "what do I have out on card 5552 0417" fill the card on the opening turn. Outside a form, what is heard for a form's slot is kept only for the form the turn opens: the turn routes, the form opens and fills from what was said for it. A turn that opens no form (an informational answer, a declined offer of a person) keeps only what belongs to the call, the identity factors and the slots the app carries (`carrySlots`, or `listen: call`), and the slots that keep a value said anywhere (`listen: anywhere`); a topic or a day said in an informational question is not kept for a form asked for later, which starts from what is said then. It is true of library slots and slots in code alike, and it has two consequences:
 
 - A slot must give `absent` when the words say nothing about it. The library types do; a slot in code must.
 - Adding or changing a slot changes the model's request on every turn where it listens, because its questions are in the request and every slot's display is in the turn state. A recorded cassette then misses until it is recorded again, which calls the paid model and is a deliberate step (the clinic's README, "Recording the cassette").
 
-A per-slot `listen:` option, to narrow when a slot's questions are asked, is not built. Any non-default value would change the questions on most turns, so it belongs with a deliberate re-record, not with a type's options.
+### Where a slot listens: `listen`
+
+Every slot takes `listen:` beside its type's options: in slots.yaml, in `defineSlot`'s configuration, or on a slot written in code (`SlotSpec.listen`). It says what the slot does outside a form; inside a form that has the slot, it always listens.
+
+| `listen` | Its question, outside a form | A value said outside a form |
+|---|---|---|
+| `up-front` (the default) | asked | kept only when the turn enters a form that has the slot: values said up front with the request. A turn that opens no form keeps none. |
+| `form` | not sent | never taken: the form asks for it once it is open, even when it was said with the request |
+| `anywhere` | asked | kept whenever it is said, until a form that has the slot uses it and empties it as it closes |
+| `call` | asked | kept, and it outlasts every form, for the whole call |
+
+```yaml
+firstDate:
+  type: date
+  range: future
+  listen: form
+```
+
+When to choose each:
+
+- **`up-front`** suits most slots. "Book a delivery window for tomorrow morning" has its day and time of day taken with the request, and an informational question that mentions a day leaves nothing behind for a later form.
+- **`form`** is for a value whose words come up in other requests, to be heard only in answer to its own form. A payment arrangement's first payment date is one: "are you open on Saturday", a question about office hours, mentions a day, and the arrangement should never take it as the first payment. The slot's question is then not sent outside its form, and a date said with the request ("set up a payment plan starting Friday") is asked for again once the form is open.
+- **`anywhere`** is for a value a caller often gives before saying what they want, which a later form should not ask for again: a reference number said at the greeting, an order number said with a question. That is how every slot behaved before a value said outside a form was tied to the form the turn enters.
+- **`call`** is for a value that is the caller's rather than one task's: their name, their date of birth. It is what app.yaml's `carrySlots` does, and `carrySlots` is shorthand for it; a slot `carrySlots` names that says another `listen` is refused by `check`. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary.
+
+An identity factor (identity.yaml) listens as identity says: while an anonymous caller is still to be verified, inside a form and out, and it stays for the call. `listen` does not apply to it, and `check` refuses it there. An unknown value is refused with the near one (`change it to "anywhere"`).
+
+Any value but the default changes what the model is sent: `form` takes the slot's questions out of every turn outside a form, and `anywhere` and `call` keep values that then show in the turn state of later turns. A recorded cassette misses where they differ, so choose one with a deliberate re-record.
+
 ### Thresholds
 
 Compare the model's numbers against `ctx.thresholds`, by name, never against a number written in the slot. Thresholds can then be overridden for a run (`--threshold SLOT_DETECT=0.7`) and tuned by the sweep, and every slot moves together. The slot thresholds (their defaults are in `core/thresholds.ts`):
@@ -1247,7 +1297,7 @@ When a schema problem is found, the cross-checks against the code do not run unt
 These are real messages. The folder was a copy of the library fixture, with these edits: an unknown key `colour: blue` in app.yaml, `level: three` for `renewLoan` in policy.yaml. The first run:
 
 ```
-app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, fixtures, prompts
+app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, fixtures, prompts
 policy.yaml:4:12  actions.renewLoan.level  "level" is "three", which is not allowed here; it must be one of 0, 1, 2  ->  use one of 0, 1, 2
 2 problems in broken-library
 ```

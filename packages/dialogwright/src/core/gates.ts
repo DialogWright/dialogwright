@@ -1,6 +1,6 @@
 import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from '../jev/types';
 import { informationOf, isFormIntent, type Informs } from './app/intents';
-import { formOf } from './app/lookup';
+import { formOf, unsureOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
@@ -279,6 +279,10 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     // caller a different turn from a plain route -- only the dropped second task below and the
     // 'route_implicit' debug label still tell the two apart.
     else if (isRoutable(app, label) && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'route', intent: label, confirm: 'implicit' }; outcome = 'route_implicit'; }
+    // The band where the model is unsure, from INTENT_EXPLICIT up to INTENT_IMPLICIT: the app (or the
+    // intent) says whether the caller is asked (App.unsureIntent, IntentDef.unsure). Told no-match,
+    // the reading fails as one below the band does, with an outcome of its own for the debug table.
+    else if ((isRoutable(app, label) || informs !== undefined) && atLeast(top.p, t.INTENT_EXPLICIT) && unsureOf(app, label) === 'no-match') { routeVerdict = { kind: 'intent_failed' }; outcome = 'unsure_no_match'; }
     else if (isRoutable(app, label) && atLeast(top.p, t.INTENT_EXPLICIT)) { routeVerdict = { kind: 'route', intent: label, confirm: 'explicit' }; outcome = 'route_explicit'; }
     // An informational intent gets the band a form gets: read at INTENT_IMPLICIT or more it is said
     // (above), and below that, down to INTENT_EXPLICIT, the caller is asked whether that is what they

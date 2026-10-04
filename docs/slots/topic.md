@@ -22,6 +22,7 @@ A slot of this type is written under its id in slots.yaml, with `type: topic` an
 | `missReason` | string | `no_topic` | The reason of the invalid outcome when the slot was asked for and the caller chose no topic (or the model was not sure enough). Not asked for, that is absent. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: instructions, none. |
 | `ids` | map | unset | Question ids in place of the default: `ids.choice` is the question's id (default: the slot's id followed by "Topic"), to keep the id an existing slot used. |
+| `listen` | one of `up-front`, `form`, `anywhere`, `call` | `up-front` | Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). "form": asked and filled only while a form that has it is open; outside one its question is not sent. "anywhere": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. "call": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. |
 
 ### Text parts
 

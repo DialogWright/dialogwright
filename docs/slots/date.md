@@ -33,6 +33,7 @@ A slot of this type is written under its id in slots.yaml, with `type: date` and
 | `exclude` | string | unset | A sentence naming a date the caller may also say that is not this day ("A date of birth is not the day the parcel was due."), which the default mode, month and day questions end with. Default: none. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: mode, modeNone, relative, weekday, qualifier, month, day, window. |
 | `ids` | map | unset | Question ids in place of the defaults (the slot's id followed by the part: mode, relative, weekday, qualifier, month, day, window), to keep the ids an existing slot used. |
+| `listen` | one of `up-front`, `form`, `anywhere`, `call` | `up-front` | Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). "form": asked and filled only while a form that has it is open; outside one its question is not sent. "anywhere": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. "call": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. |
 
 ### Text parts
 

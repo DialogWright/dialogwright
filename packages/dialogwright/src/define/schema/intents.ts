@@ -23,6 +23,13 @@ const intentDef = z
           'No retrieval and no gate: the passage in force today for its topic, in the call\'s language, for every caller (it has no applies). ' +
           'When none can be said, the kb_unavailable line is said and a person offered, once per call.',
       ),
+    unsure: z
+      .enum(['confirm', 'no-match'])
+      .optional()
+      .describe(
+        'When the model is unsure of this intent (outside a form, read from INTENT_EXPLICIT, 0.4, up to INTENT_IMPLICIT, 0.6): "confirm" asks the caller ("Just to check, do you want to ...?"), ' +
+          '"no-match" takes it as no match (the no-match line, counted). For a form intent, an informational one and done. Default: app.yaml\'s unsureIntent, else "confirm".',
+      ),
   })
   .check(checkAlways((value, ctx) => {
     const def = value as { kind?: unknown; promptId?: unknown; passage?: unknown } | null;

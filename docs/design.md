@@ -46,7 +46,7 @@ This is the old form-filling pattern of VoiceXML, made to work with mixed initia
 Every turn has three steps: perception (what did they mean), the decision (what happens next, and is it allowed), and wording (how it is said).
 
 1. **The perceiver.** A decision model reads the caller's words and the current state and answers the core's typed questions. Perceivers are pluggable: the first adapter is TypeSafe's Jev; others, such as an LLM with structured outputs or another decision-model provider, implement the same typed interface.
-2. **The core.** Deterministic code runs the fill-and-ask loop: intents start forms, forms collect slots, filled forms are read back and confirmed, and silence, repetition, frustration and handoff are handled in one place. The core never imports an app; it reads everything app-specific through the `App` contract.
+2. **The core.** Deterministic code runs the fill-and-ask loop: intents start forms, forms collect slots, filled forms are read back and confirmed, and silence, repetition, frustration and handoff are handled in one place. An intent the model is unsure of is confirmed with the caller by default, or taken as no match where the app or the intent says so (`unsureIntent` in app.yaml, `unsure:` on an intent). The core never imports an app; it reads everything app-specific through the `App` contract.
 3. **The gate.** Every tool call goes through the gate, which returns one of four verdicts: `ALLOW`, `BLOCK`, `STEP_UP` (verify identity further, then try again) or `NEEDS_HUMAN`. Every verdict, with each rule's comparison, goes to the audit log.
 
 **The renderer** turns the core's structured decision into words. Its default is approved templates; an opt-in generated-wording option (§5) can phrase a line an author flags, inside checks, but never chooses what is said.
@@ -93,7 +93,7 @@ An app is a folder of YAML for what is data, plus TypeScript for what runs. `def
 
 ```
 my-app/
-  app.yaml          id, locale, brand, console, voice, handoff, wording, thresholds, carried slots, fixtures
+  app.yaml          id, locale, brand, console, voice, handoff, wording, thresholds, carried slots, unsure intents, fixtures
   intents.yaml      intents and the keypad menu
   forms.yaml        each form's slots, summary prompt and the code hooks it has
   prompts.yaml      every line the caller hears (mode: fixed)
@@ -136,7 +136,7 @@ Built, with their main options (each has a [page](slots/README.md) generated fro
 | `text` | A short description of the problem | The caller's words kept as said; `maxLength`; a stand-in `say`; `redact: length` |
 | `topic` | Which knowledge-base topic a caller asks about | One choice question over the topics retrieval nominated for the caller's words (none nominated, none asked); `cap`; `accept` (only a nominated topic, or any of the catalog); `disambiguate`; `fillAt`; `criterion` and `text.<part>` for the wording |
 
-Every type also takes `text.<part>` (a literal in place of any default question text, sent word for word) and `ids.<part>` (an existing question id), so an app keeps its own wording, or the words a recording was made with, while the library's defaults stay neutral.
+Every type also takes `text.<part>` (a literal in place of any default question text, sent word for word) and `ids.<part>` (an existing question id), so an app keeps its own wording, or the words a recording was made with, while the library's defaults stay neutral. Every slot, of a type or in code, also says where it listens outside a form (`listen:`): `up-front` by default (asked there, kept only for the form the turn enters), `form` (asked only inside its form), `anywhere` (kept whenever said) or `call` (kept for the whole call, which is what app.yaml's `carrySlots` does); an identity factor listens as identity says.
 
 Not built yet:
 
@@ -424,7 +424,7 @@ The foundations (§11) land in the phase that owns their area.
 
 What each phase left for later:
 
-- **Slot library (Phase 3):** `time-slot` (later, with a re-record, since it would re-key every recorded request); and a per-slot `listen:` option that narrows which turns a slot's questions are asked on (later, with a re-record, for the same reason; every slot listens on every turn today). The one-time code never became a slot type: it is a factor of `identity.yaml` (§6).
+- **Slot library (Phase 3):** `time-slot` (later, with a re-record, since it would re-key every recorded request). The per-slot `listen:` option is built, with today's behaviour as its default (`up-front`); an app that chooses another value for a slot records again. The one-time code never became a slot type: it is a factor of `identity.yaml` (§6).
 - **App definition (Phase 2):** `style.yaml` and generated wording (Phase 9); and a locale carried end to end on the channels (Phase 7: the TwiML's `locale` parameter and language attributes, the `set_language` action, a chat request for a locale, and the outbound text frames' language tag).
 - **Policy and identity (Phase 4):** the shared adversarial suite, which every app inherits (Phase 10); a link from a form to the action it writes, which would let each `confirmed` rule name its own fields (until then every `confirmed` rule of an app names the same fields in the same order, since a read-back's hash is taken once); the config hashes on each gate decision (§11); and a review item for apps: a tool of an app's own that contacts a subject directly (a text or an email to the contact on file, a link to send a document, say) and that a party acting for subjects may call. The engine keeps its identity tools for the subject alone, but such a tool is the app's, so whether a party acting for subjects may set it going is the app's policy to say (a role rule, or a check that the contact asked for it); the policy card lists it among the actions every role may ask for until the policy says otherwise.
 - **Knowledge base (Phase 6):** two-part questions, where one call asks two things and hears two passages (one choice question cannot select two topics, and adding a second re-keys the requests of every turn, so it waits for a deliberate re-record); moving an app that keeps a retriever of its own to the engine's hybrid retrieval (the candidates some turns offer change, so the calls those turns are in are re-recorded); pgvector for production, which Phase 8 implements behind the same `VectorIndex` interface; low-risk answers in generated wording grounded in approved passages, for topics marked `risk: low` (Phase 9, opt-in, under §5's checks); and the review page in the operator console, once Phase 8's access control exists (until then it is a local server behind a one-time token, §9).

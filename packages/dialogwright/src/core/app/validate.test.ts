@@ -27,6 +27,34 @@ describe('validateApp', () => {
     expect(() => validateApp(app)).toThrow(/track_parcel.*ghostSlot/);
   });
 
+  describe('where a slot listens (SlotSpec.listen) and what an unsure intent gets (unsureIntent, IntentDef.unsure)', () => {
+    const listening = (id: string, listen: unknown): App => ({ ...copy(), slots: { ...testkitApp.slots, [id]: { ...testkitApp.slots[id]!, listen: listen as never } } });
+
+    it('accepts each value on a slot of a form', () => {
+      for (const listen of ['up-front', 'form', 'anywhere', 'call']) expect(() => validateApp(listening('deliveryDay', listen))).not.toThrow();
+    });
+
+    it('refuses a value it does not have', () => {
+      expect(() => validateApp(listening('deliveryDay', 'anywere'))).toThrow('slot "deliveryDay" says listen: "anywere", which is not one of "up-front", "form", "anywhere", "call"');
+    });
+
+    it('refuses listen on an identity factor', () => {
+      expect(() => validateApp(listening('accountId', 'form'))).toThrow('slot "accountId" is an identity factor, which listens as identity says: delete its listen');
+    });
+
+    it('refuses a carried slot that says it listens other than for the call', () => {
+      expect(() => validateApp({ ...listening('deliveryDay', 'form'), carrySlots: ['deliveryDay'] })).toThrow('slot "deliveryDay" is carried (carrySlots), which is listen: call, but says listen: form');
+      expect(() => validateApp({ ...listening('deliveryDay', 'call'), carrySlots: ['deliveryDay'] })).not.toThrow();
+    });
+
+    it('refuses an unsure setting it does not have, on the app or an intent', () => {
+      expect(() => validateApp({ ...copy(), unsureIntent: 'no-match' })).not.toThrow();
+      expect(() => validateApp({ ...copy(), unsureIntent: 'never' as never })).toThrow('unsureIntent "never" is not "confirm" or "no-match"');
+      const intents = { ...testkitApp.intents, report_missing: { ...testkitApp.intents.report_missing!, unsure: 'maybe' as never } };
+      expect(() => validateApp({ ...copy(), intents })).toThrow('intent "report_missing" has unsure "maybe", which is not "confirm" or "no-match"');
+    });
+  });
+
   it('names an identity factor slot that is not a slot', () => {
     const app = copy();
     app.identity!.factorSlots = ['accountId', 'ghostFactor'];
