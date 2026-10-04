@@ -58,7 +58,8 @@ export function linePrompt(input: NodeJS.ReadableStream & { isTTY?: boolean }, o
       cb();
     },
   });
-  const rl = createInterface({ input, output: sink, terminal: input.isTTY === true });
+  // No history: the up arrow at a later question would otherwise bring back, and show, a key typed earlier.
+  const rl = createInterface({ input, output: sink, terminal: input.isTTY === true, historySize: 0 });
   const lines: string[] = [];
   const waiting: ((line: string | null) => void)[] = [];
   let ended = false;

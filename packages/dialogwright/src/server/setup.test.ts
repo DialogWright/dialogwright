@@ -211,6 +211,24 @@ describe('linePrompt', () => {
     expect(shown).not.toContain('hunter2');
   });
 
+  it('keeps no history a later question could bring a key back from (the up arrow)', async () => {
+    const input = Object.assign(new PassThrough(), { isTTY: true });
+    let shown = '';
+    const output = new PassThrough();
+    output.on('data', (d: Buffer) => (shown += d.toString('utf8')));
+    const prompt = linePrompt(input, output);
+    const secret = prompt.ask('Key (not shown):', { secret: true });
+    input.write('hunter2-made-up\r');
+    await secret;
+    const next = prompt.ask('Number:');
+    input.write('\u001b[A');
+    await new Promise((r) => setTimeout(r, 20));
+    input.write('\r');
+    await next;
+    prompt.close?.();
+    expect(shown).not.toContain('hunter2');
+  });
+
   it('reads answers piped in all at once, one per question', async () => {
     const input = new PassThrough();
     const output = new PassThrough();
