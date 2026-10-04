@@ -1,0 +1,36 @@
+{
+  "name": "@dialogwright/widget",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The DialogWright web chat widget: a small script a site embeds to talk to a DialogWright chat endpoint.",
+  "license": "Apache-2.0",
+  "homepage": "https://dialogwright.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DialogWright/dialogwright.git",
+    "directory": "packages/widget"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/ws": "^8.5.0",
+    "dialogwright": "workspace:*",
+    "esbuild": "^0.28.2",
+    "happy-dom": "^20.14.5",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "ws": "^8.18.0"
+  }
+}
