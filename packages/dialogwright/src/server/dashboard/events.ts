@@ -44,7 +44,8 @@ export type DashboardEvent =
    * by a model: the card says so. Live calls never set it.
    */
   | (Base & { type: 'handoff_summary'; text: string | null; demo?: boolean })
-  | (Base & { type: 'ended'; reason: 'completed' | 'hangup' | 'handoff' | 'error' });
+  /** `abandoned`: a chat nobody wrote to for its idle limit (server/chat/socket.ts), audited so too. */
+  | (Base & { type: 'ended'; reason: 'completed' | 'hangup' | 'handoff' | 'error' | 'abandoned' });
 
 export type DashboardEventType = DashboardEvent['type'];
 

@@ -26,6 +26,9 @@ import { actionsToChatMessages, type ServerMessage } from '../../channel/chat/pr
 import { runChatTurnActions, type ChatTurnEntry } from '../chatTurn';
 import type { JevClient } from '../../jev/types';
 import { CHAT_MAX_WAITING } from './socket';
+import { replayEvents } from '../dashboard/view.js';
+import { readFrameLog } from '../frameLog';
+import type { DashboardEvent } from '../dashboard/events';
 
 useTestkit();
 
@@ -155,6 +158,12 @@ async function expectedMessages(events: SessionEvent[]): Promise<Msg[][]> {
 
 function auditEntries(config: ReturnType<typeof makeConfig>): Array<{ type: string; callId: string; channel: string; detail: Record<string, unknown> }> {
   return readdirSync(config.auditDir).flatMap((f) => readFileSync(join(config.auditDir, f), 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
+}
+
+/** The console's replay of a chat, from the trace and frame log the server wrote for it. */
+function replayOf(config: ReturnType<typeof makeConfig>, session: string): DashboardEvent[] {
+  const records = readFileSync(join(config.traceDir, `${session}.jsonl`), 'utf8').trim().split('\n').map((l) => ({ ...JSON.parse(l), spokenText: '' }));
+  return replayEvents(records, readFrameLog(join(config.traceDir, `${session}.frames.jsonl`)), {});
 }
 
 const says = (ms: Msg[]): string[] => ms.flatMap((m) => (m.type === 'say' ? [m.text] : []));
@@ -294,11 +303,19 @@ describe('the chat endpoint', () => {
     expect(audit[0]).toMatchObject({ type: 'call_started', channel: 'chat' });
     expect(audit.find((e) => e.type === 'call_ended')).toMatchObject({ type: 'call_ended', channel: 'chat', detail: { reason: 'handoff' } });
     expect(running!.chat!.liveCount()).toBe(0);
+    // The console replays it as the chat it was, handed over for its reason.
+    const replayed = replayOf(config, session);
+    expect(replayed[0]).toMatchObject({ type: 'call_started', callSid: session, channel: 'chat' });
+    expect(replayed.filter((e) => e.type === 'handoff' || e.type === 'ended').map((e) => [e.type, (e as { reason: string }).reason])).toEqual([['handoff', 'live-agent'], ['ended', 'handoff']]);
   });
 
   it('ends a chat nobody writes to, and says so', async () => {
     let clock = 1_000_000;
-    const { url, config } = await start({ CHAT_IDLE_MS: '60000' }, { now: () => clock });
+    const { url, config } = await start({ CHAT_IDLE_MS: '60000', DASHBOARD: 'on' }, { now: () => clock });
+    const ended: DashboardEvent[] = [];
+    running!.bus!.subscribe((e) => {
+      if (e.type === 'ended') ended.push(e);
+    });
     const c = await ChatClient.connect(url);
     c.send({ type: 'start', v: 1 });
     await c.until((r) => r.some((m) => m.type === 'say'));
@@ -312,6 +329,10 @@ describe('the chat endpoint', () => {
     expect(c.received.at(-1)).toEqual({ type: 'end' });
     const session = (c.received[0] as Extract<Msg, { type: 'ready' }>).session;
     expect(auditEntries(config).filter((e) => e.callId === session).at(-1)).toMatchObject({ type: 'call_ended', channel: 'chat', detail: { reason: 'abandoned' } });
+    // The console, live and in replay, says it was abandoned.
+    expect(ended).toHaveLength(1);
+    expect(ended[0]).toMatchObject({ type: 'ended', callSid: session, reason: 'abandoned' });
+    expect(replayOf(config, session).filter((e) => e.type === 'ended').map((e) => (e as { reason: string }).reason)).toEqual(['abandoned']);
   });
 
   it('outlives a frame log it can no longer write: a drop and an idle end with the trace directory gone', async () => {

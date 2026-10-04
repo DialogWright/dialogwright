@@ -478,7 +478,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         try {
           const entry = deps.audit.append(e.id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } });
           e.auditEntries.push(entry);
-          deps.bus?.publish({ type: 'ended', callSid: e.id, at: now(), reason: 'hangup' });
+          deps.bus?.publish({ type: 'ended', callSid: e.id, at: now(), reason: 'abandoned' });
           sendTo(e, { type: 'end' });
         } catch (err) {
           log(`chat ${e.id}: idle end failed: ${describeError(err)}`);
