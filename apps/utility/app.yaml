@@ -18,18 +18,24 @@ console:
     report_outage: Report an outage
     check_balance: Check a balance
     set_up_plan: Set up a payment arrangement
+    ask_question: Answer a question
   slotLabels:
     place: Address
     symptom: What they see
     account: Account
     count: Installments
     firstDate: First payment
+    subject: Question topic
     accountId: Account number
     dob: Date of birth
 
 # The phone line's speech settings: words a caller says first, which the recognizer should expect.
 voice:
-  hints: [outage, power, balance, bill, arrangement, installments, payment, map, hours, agent]
+  hints: [outage, power, balance, bill, arrangement, installments, payment, map, hours, credit, budget billing, reconnection, agent]
+
+# A knowledge answer (kb_answer's {answer}) is an approved passage: spoken whole, never stitched from clips.
+prompts:
+  dataVars: [answer]
 
 # The engine's own model questions need to know whom the caller is addressing.
 wording:

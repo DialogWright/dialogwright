@@ -141,5 +141,38 @@ setUpPlan · level 2 · identity, role(manager person), scope(accountId), confir
   roleless            as unlisted-role
   other-party         as unlisted-role
 
+answerQuestion · level 0 · identity
+  anonymous           purpose none|entry-check|retry-check  ALLOW
+                      purpose set_up_plan                   STEP_UP to 2
+  subject@1           as anonymous
+  subject@2           ALLOW
+  delegate:manager    as subject@2
+  delegate:manager@1  purpose none|entry-check|retry-check  ALLOW
+                      purpose set_up_plan                   BLOCK identity
+  unlisted-role       as subject@2
+  roleless            as subject@2
+  other-party         as subject@2
+
+getOutageHistory · level 1 · identity, scope(accountId)
+  anonymous           purpose none|entry-check|retry-check  STEP_UP to 1
+                      purpose set_up_plan                   STEP_UP to 2
+  subject@1           purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                      purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                      purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                      purpose set_up_plan                                                             STEP_UP to 2
+  subject@2           subject own, fields exact|extra           ALLOW
+                      subject own, fields missing               BLOCK scope
+                      subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:manager    subject own|outOfScope|unknown|empty  BLOCK scope
+                      subject inScope, fields exact|extra   ALLOW
+                      subject inScope, fields missing       BLOCK scope
+  delegate:manager@1  purpose none|entry-check|retry-check, subject own|outOfScope|unknown|empty  BLOCK scope
+                      purpose none|entry-check|retry-check, subject inScope, fields exact|extra   ALLOW
+                      purpose none|entry-check|retry-check, subject inScope, fields missing       BLOCK scope
+                      purpose set_up_plan                                                         BLOCK identity
+  unlisted-role       BLOCK scope
+  roleless            as unlisted-role
+  other-party         as unlisted-role
+
 (unlisted) · not in the policy
   every caller        BLOCK unknown-tool

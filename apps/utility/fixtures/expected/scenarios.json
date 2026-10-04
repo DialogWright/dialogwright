@@ -16,6 +16,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -42,6 +43,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -68,6 +70,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -94,6 +97,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -118,6 +122,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -144,6 +149,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -171,6 +177,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -198,6 +205,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -225,6 +233,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -249,6 +258,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -276,6 +286,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -300,6 +311,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -327,6 +339,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -353,6 +366,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -379,6 +393,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -406,6 +421,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -432,6 +448,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -458,6 +475,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -484,6 +502,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -510,6 +529,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -536,6 +556,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -562,6 +583,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55509012",
       "dob": "1990-01-01"
     },
@@ -588,6 +610,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -612,6 +635,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -638,6 +662,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -664,6 +689,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -690,6 +716,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -714,6 +741,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -738,6 +766,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -762,6 +791,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -786,6 +816,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -810,6 +841,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -834,6 +866,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -858,6 +891,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -882,6 +916,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -906,6 +941,7 @@
       "account": null,
       "count": "three",
       "firstDate": "2026-09-19",
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },
@@ -920,7 +956,7 @@
     "decision": "prompt",
     "promptId": "ask_intent",
     "acks": [
-      "outage_map"
+      "kb_answer"
     ],
     "reason": null,
     "decidedGate": "intent",
@@ -932,6 +968,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -946,7 +983,7 @@
     "decision": "prompt",
     "promptId": "ask_intent",
     "acks": [
-      "office_hours"
+      "kb_answer"
     ],
     "reason": null,
     "decidedGate": "intent",
@@ -958,6 +995,305 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "question-outage-credit": {
+    "id": "question-outage-credit",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getOutageHistory:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-outage-credit-verified": {
+    "id": "question-outage-credit-verified",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getOutageHistory:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-outage-credit-chat": {
+    "id": "question-outage-credit-chat",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getOutageHistory:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-by-a-manager": {
+    "id": "question-by-a-manager",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getOutageHistory:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-asked-for": {
+    "id": "question-asked-for",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getOutageHistory:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-late-charge": {
+    "id": "question-late-charge",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-rights-notice": {
+    "id": "question-rights-notice",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-not-in-force": {
+    "id": "question-not-in-force",
+    "decision": "prompt",
+    "promptId": "offer_transfer",
+    "acks": [
+      "ack_intent",
+      "kb_unavailable"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "ask_question",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": "seasonal_assistance",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-not-in-force-declined": {
+    "id": "question-not-in-force-declined",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": null,
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-not-in-force-accepted": {
+    "id": "question-not-in-force-accepted",
+    "decision": "handoff",
+    "promptId": "handoff_frustrated",
+    "acks": [],
+    "reason": "frustrated",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "ask_question",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": "seasonal_assistance",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-none": {
+    "id": "question-none",
+    "decision": "prompt",
+    "promptId": "ask_subject_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "ask_question",
+    "slots": {
+      "place": null,
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -984,6 +1320,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -998,7 +1335,7 @@
     "decision": "prompt",
     "promptId": "nomatch_dtmf_menu",
     "acks": [
-      "outage_map"
+      "kb_answer"
     ],
     "reason": null,
     "decidedGate": null,
@@ -1010,6 +1347,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": null,
       "dob": null
     },
@@ -1037,6 +1375,7 @@
       "account": null,
       "count": null,
       "firstDate": null,
+      "subject": null,
       "accountId": "55501234",
       "dob": "1980-04-12"
     },

@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import {
-  defineApp, describeDay, handoff, localeOf,
+  defineApp, describeDay, handoff, kbAnswerTool, localeOf,
   type AppCode, type Completion, type CompletionContext, type Party, type Principal, type Session, type ToolDef, type VerifyOutcome,
 } from 'dialogwright';
 import { ACCOUNTS, MANAGERS, accountOf, amountDue } from './data';
@@ -138,6 +138,20 @@ export const TOOLS: Record<string, ToolDef> = {
     run(call) {
       const account = accountOf(call.params.accountId ?? '');
       return { value: account ? { balance: account.balance, due: account.due } : null, summary: account ? 'balance read' : 'no account' };
+    },
+  },
+  // Answers a general question: the approved passage in force today for the topic the caller chose
+  // (kb/). Every answer is for every caller, so it reads none of the caller's facts.
+  answerQuestion: kbAnswerTool(),
+  // The last outage on the caller's own account, for the line after an outage credit answer
+  // (kb/topics.yaml accountLine). Its two fields are what the line says; none on record: no line.
+  getOutageHistory: {
+    params: ['accountId', 'topic'],
+    fields: ['lastOutageDay', 'lastOutageHours'],
+    run(call, _sys, { s }) {
+      const outage = accountOf(call.params.accountId ?? '')?.lastOutage ?? null;
+      if (outage === null) return { value: { lastOutageDay: null, lastOutageHours: null }, summary: 'no outage on record' };
+      return { value: { lastOutageDay: describeDay(outage.day, localeOf(s)), lastOutageHours: outage.hours }, summary: 'last outage read' };
     },
   },
   // Sets up the arrangement: the total split into the installments, the first on the day given.
@@ -278,6 +292,7 @@ export const code: AppCode = {
         ['set_up_plan', /\b(arrangement|installments?|plan|split)\b/],
         ['check_balance', /\b(balance|owe|bill|due)\b/],
         ['report_outage', /\b(outage|power|lights?|flicker\w*|wire)\b/],
+        ['ask_question', /\b(credit|budget|assistance|disconnect\w*|reconnect\w*|rates?|late|dispute|start|stop|moving)\b/],
       ],
     },
     seed: {
@@ -291,8 +306,11 @@ export const code: AppCode = {
         account: { value: ACCOUNTS[0]!.accountId, display: '5550 1234' },
         count: { value: 'three', display: 'three payments' },
         firstDate: { value: '2026-09-25', display: 'Friday, September 25th' },
+        subject: { value: 'outage_credit', display: 'outage credits' },
       },
     },
+    // A corpus line answering the offer of a person (after an answer that could not be given) is seeded in the question form.
+    offerTransferForm: 'ask_question',
     policyMatrix: () => ({
       principals: {
         subject1: customerPrincipal('55501234', 1)!,
@@ -308,7 +326,7 @@ export const code: AppCode = {
         outOfScope: { subject: '55509012', record: 'R-3' },
         unknown: { subject: '55500000', record: 'R-9' },
       },
-      values: { ...PLAN_CALL, place: '14 Birch Lane', symptom: 'no_power' },
+      values: { ...PLAN_CALL, place: '14 Birch Lane', symptom: 'no_power', topic: 'outage_credit' },
     }),
   },
 };

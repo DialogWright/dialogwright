@@ -28,3 +28,14 @@ forms:
     summaryPromptId: confirm_set_up_plan
     hooks: [entry, principalEntry, onSummaryRead, confirmedParams, complete]
     calls: [findAccount, setUpPlan]
+
+  # A general question: the topic slot (`subject`) asks which of the topics retrieval nominates the
+  # caller means, and the engine's knowledge completion says the approved passage through
+  # answerQuestion (kbAnswerTool, level 0: anyone may ask). Outage credits add a line from the
+  # caller's own account, read through getOutageHistory (level 1, their own account), and said only
+  # when the gate allows it. No passage in force: the unavailable line, and a person offered once.
+  ask_question:
+    slots: [subject]
+    summaryPromptId: null
+    answers: { slot: subject }
+    calls: [answerQuestion, getOutageHistory]

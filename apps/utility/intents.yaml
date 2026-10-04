@@ -15,16 +15,24 @@ intents:
     criteria: Wants a payment arrangement, to pay the balance in installments or split it into several payments
     label: set up a payment arrangement
     kind: form
+  # A general question, answered from the knowledge base (kb/): the topic slot asks which topic,
+  # among those retrieval nominates for the words, and the approved passage is said word for word.
+  ask_question:
+    criteria: Asks a general question about the utility's policies, programs, rates or services, such as outage credits, ways to pay, budget billing, help paying a bill, disconnection or reconnection, starting or stopping service, rates, late charges or disputing a bill
+    label: answer a question
+    kind: form
+  # The two fixed answers are passages of the knowledge base, approved like any other answer, and
+  # said with no gate and no retrieval (the passage in force today, for every caller).
   outage_map:
     criteria: Asks where to see outages online, the outage map, or the website for outages
     label: hear where the outage map is
     kind: informational
-    promptId: outage_map
+    passage: outage-map
   office_hours:
     criteria: Asks when the office is open, the office hours, or what time the office opens or closes
     label: hear the office hours
     kind: informational
-    promptId: office_hours
+    passage: office-hours
 
   # The engine's own control intents. agent and repeat_prompt are required.
   agent:
@@ -45,7 +53,7 @@ intents:
     kind: control
 
 # The keypad menu: each task by digit, the two answers, and 0 for a person. A key for an answer
-# plays its line and offers the menu again.
+# says its passage and offers the menu again. A general question has no key: it needs words.
 menu:
   - digit: "1"
     intent: report_outage

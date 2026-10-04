@@ -61,6 +61,12 @@ firstDate:
   range: future
   keypad: true
 
+# Which topic of the knowledge base a general question is about (kb/topics.yaml). The model is asked
+# only about the topics retrieval nominates for the caller's words (at most kb.yaml's cap), so a
+# turn that nominates nothing asks nothing.
+subject:
+  type: topic
+
 # The identity factors (identity.yaml): an account number and a date of birth.
 accountId:
   type: digits
