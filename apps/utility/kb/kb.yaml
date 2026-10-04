@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../../packages/dialogwright/schemas/kb-settings.schema.json
+# Example Power & Light's knowledge base: what a caller hears when they ask a general question about
+# outage credits, paying, programs, rates, their rights, or starting and stopping service. Each answer
+# is a short passage approved by a person against a section of the utility's own documents (the
+# help pages and the two PDFs under docs-src/, read into kb/sources by pnpm kb:ingest), said word for
+# word. answerQuestion (kbAnswerTool) resolves the passage in force today; anyone may ask (level 0).
+action: answerQuestion
+# Every answer is for every caller: no passage depends on who is asking.
+applies: {}
+# The line speaks English only; a caller in another language hears that there is no answer and is offered a person.
+localeFallback: none
+# A spoken answer is one or two short sentences.
+maxAnswerChars: 300
+# Topics are found by their words and by their meaning (potion-base-8M, its vectors in
+# kb/.index/potion-base-8M.json, written by pnpm kb:index). The cap and floor were chosen offline
+# with pnpm kb:bakeoff on fixtures/kb/paraphrases.yaml (see DESIGN.md, "The knowledge base").
+retrieval:
+  cap: 8
+  embedder: potion-base-8M

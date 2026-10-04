@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Residential Rate Schedule R-1
+provenance:
+  file: docs-src/documents/rate-schedule.pdf
+  retrieved: 2026-10-04
+sections:
+  intro:
+    text: Example Power & Light. Effective January 1, 2026, until replaced by a later schedule.
+    page: 1
+  availability:
+    heading: Availability
+    text: This schedule applies to electric service for residential use in single-family homes and individually metered apartments in the Example Power & Light service area.
+    page: 1
+  monthly-rate:
+    heading: Monthly rate
+    text: The monthly bill is a customer charge of 12 dollars, plus an energy charge of 14.2 cents for each kilowatt-hour used in the billing period.
+    page: 1
+  summer-usage:
+    heading: Summer usage
+    text: From June through September, each kilowatt-hour used above 1,000 in a billing period is charged at 16.8 cents instead of 14.2 cents.
+    page: 1
+  late-payment-charge:
+    heading: Late payment charge
+    text: A bill that is not paid in full by its due date is charged a late payment charge of 1.5 percent of the unpaid balance. The charge is applied once for each bill.
+    page: 2
+  minimum-bill:
+    heading: Minimum bill
+    text: The minimum monthly bill is the customer charge of 12 dollars, even in a month with no use.
+    page: 2
+  taxes-and-surcharges:
+    heading: Taxes and surcharges
+    text: State and local taxes, and any surcharges the State Utility Commission approves, are added to every bill.
+    page: 2

@@ -3,10 +3,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import type { KbPlace } from 'dialogwright';
-import { acceptTopic, approve, approvedSectionText, draftReviewProblems, editAndApprove, KB_FILE_ID, mergeTopic, reject, reviewerProblem, reviewState, seenOf, type ActionResult, type Edits, type Reviewer } from './actions';
+import { acceptTopic, approve, approvedSectionText, draftReviewProblems, editAndApprove, heldPassages, KB_FILE_ID, mergeTopic, reject, rejectedDrafts, returnToDrafts, reviewerProblem, reviewState, seenOf, type ActionResult, type Edits, type Reviewer } from './actions';
 import { TOPIC_ID } from '../draft/validate';
 import { reportFromFiles, NO_NEAR_TOPIC } from '../gaps/report';
 import { gapGroupPage, gapsPage, kbTopicPage, type GapsView } from './gapPages';
+import { heldPassagePage, kbPage, rejectedPage } from './kbPages';
 import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, type PageContext } from './pages';
 
 /**
@@ -27,9 +28,12 @@ import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, 
  *   it was opened (actions.ts seenOf: the file as it is on disk, with its source section's text), and
  *   the change is refused when it no longer matches ("changed since you opened it: reload").
  * - Its pages load nothing from anywhere else (a Content-Security-Policy says so), are not cached and
- *   send no Referer.
+ *   send a Referer to no other site (same-origin: under no-referrer a browser's own form post says
+ *   `Origin: null`).
  * - The Gaps tab (what callers asked that the knowledge base did not answer, from the traces) is read
  *   through the same token, and shows the callers' words as the traces recorded them.
+ * - The Knowledge base tab shows what it holds when nothing waits: every passage (each has a page, an
+ *   approved and fresh one too) and every rejected draft (whose page can return it to the drafts).
  * - The operator console is not where it lives: the console has no access control until Phase 8,
  *   and a page that approves what callers are told should not be reachable through the console's
  *   tunnel. It stops with Ctrl-C.
@@ -159,7 +163,10 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
     res.writeHead(status, {
       'content-type': type,
       'cache-control': 'no-store',
-      'referrer-policy': 'no-referrer',
+      // same-origin, not no-referrer: under no-referrer a browser sends `Origin: null` with the page's
+      // own form posts, which the Origin check below would refuse. Nothing leaves for another site:
+      // a link off the page carries rel="noreferrer".
+      'referrer-policy': 'same-origin',
       'x-content-type-options': 'nosniff',
       'x-frame-options': 'DENY',
       'content-security-policy': `default-src 'none'; style-src 'nonce-${nonce ?? 'none'}'; script-src 'nonce-${nonce ?? 'none'}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
@@ -168,7 +175,7 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
   };
   const refuse = (res: ServerResponse, status: number, why: string): void => send(res, status, `${why}\n`, 'text/plain; charset=utf-8');
   const redirect = (res: ServerResponse, path: string): void => {
-    res.writeHead(303, { location: `${path}?token=${encodeURIComponent(token)}`, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+    res.writeHead(303, { location: `${path}?token=${encodeURIComponent(token)}`, 'cache-control': 'no-store', 'referrer-policy': 'same-origin' });
     res.end();
   };
 
@@ -207,7 +214,7 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
     }
     // An id from the URL names a draft, a passage or a topic, never a path: one that is not an id is not there.
     const [kindOf, idOf] = parts;
-    if (idOf !== undefined && (((kindOf === 'draft' || kindOf === 'passage') && !KB_FILE_ID.test(idOf)) || (kindOf === 'topic' && !TOPIC_ID.test(idOf)))) {
+    if (idOf !== undefined && (((kindOf === 'draft' || kindOf === 'passage' || kindOf === 'rejected') && !KB_FILE_ID.test(idOf)) || (kindOf === 'topic' && !TOPIC_ID.test(idOf)))) {
       return method === 'POST' ? refuse(res, 404, 'no such action') : send(res, 404, notFoundPage(ctx(url.pathname), `${url.pathname} is not waiting for review.`), undefined, nonce);
     }
     const today = options.today();
@@ -243,6 +250,10 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
           return done(result, result.ok ? '/' : `/draft/${encodeURIComponent(id)}`);
         }
       }
+      if (kind === 'rejected' && action === 'return') {
+        const result = returnToDrafts(place, id, reviewer, seen);
+        return done(result, result.ok ? '/' : `/rejected/${encodeURIComponent(id)}`);
+      }
       if (kind === 'topic') {
         if (action === 'accept') {
           const as = form.get('as');
@@ -269,6 +280,18 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
     if (parts.length === 2 && kind === 'passage' && state.kb) {
       const w = state.withheld.find((x) => x.passage.id === id);
       if (w) return send(res, 200, passagePage(ctx(url.pathname, seenOf(place, state, 'passage', w.passage.id)), state.kb, w, approvedSectionText(place, w.passage)), undefined, nonce);
+      // Approved, fresh and logged: its page offers only an edit, approved again.
+      const held = heldPassages(place, state, today).find((h) => h.passage.id === id);
+      if (held) return send(res, 200, heldPassagePage(ctx(url.pathname, seenOf(place, state, 'passage', held.passage.id)), state.kb, held), undefined, nonce);
+    }
+    if (parts.length === 2 && kind === 'rejected') {
+      const r = rejectedDrafts(place).find((x) => x.id === id);
+      if (r) return send(res, 200, rejectedPage(ctx(url.pathname, seenOf(place, state, 'rejected', r.id)), state.kb, r), undefined, nonce);
+    }
+    if (parts.length === 1 && kind === 'kb') {
+      const c = ctx(url.pathname);
+      if (!state.kb) return send(res, 200, page(c, 'Knowledge base', `<h1>Knowledge base</h1><section class="card" role="alert"><h2>The knowledge base does not load</h2><ul class="problems">${state.problems.map((p) => `<li class="mono">${esc(p)}</li>`).join('')}</ul></section>`), undefined, nonce);
+      return send(res, 200, kbPage(c, { kb: state.kb, today, passages: heldPassages(place, state, today), rejected: rejectedDrafts(place) }), undefined, nonce);
     }
     if (parts.length === 2 && kind === 'topic' && state.kb) {
       const t = state.proposed.find((x) => x.id === id);

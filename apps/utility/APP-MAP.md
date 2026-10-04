@@ -11,8 +11,9 @@
 | `report_outage` | form | report an outage | opens the form, which asks for address, what they see |
 | `check_balance` | form | check a balance | opens the form, which asks for account |
 | `set_up_plan` | form | set up a payment arrangement | opens the form, which asks for installments, first payment |
-| `outage_map` | informational | hear where the outage map is | says "You can see current outages and restoration times on our outage map, at example dot com..." and goes back to the question |
-| `office_hours` | informational | hear the office hours | says "Our customer office is open Monday through Friday, eight in the morning to five in the ..." and goes back to the question |
+| `ask_question` | form | answer a question | opens the form, which asks for question topic |
+| `outage_map` | informational | hear where the outage map is | says the passage outage-map from the knowledge base and goes back to the question |
+| `office_hours` | informational | hear the office hours | says the passage office-hours from the knowledge base and goes back to the question |
 | `agent` | control | speak with someone | handled by the engine |
 | `repeat_prompt` | control | hear that again | handled by the engine |
 | `other` | control | something else | handled by the engine |
@@ -30,11 +31,11 @@ flowchart LR
   i_set_up_plan["set up a payment arrangement<br/>form set_up_plan"]
   menu -->|"press 3"| i_set_up_plan
   i_outage_map["hear where the outage map is<br/>informational"]
-  p_outage_map[/"line outage_map"/]
+  p_outage_map[/"passage outage-map"/]
   i_outage_map --> p_outage_map
   menu -->|"press 4"| i_outage_map
   i_office_hours["hear the office hours<br/>informational"]
-  p_office_hours[/"line office_hours"/]
+  p_office_hours[/"passage office-hours"/]
   i_office_hours --> p_office_hours
   menu -->|"press 5"| i_office_hours
   i_agent["speak with someone<br/>control"]
@@ -104,6 +105,27 @@ flowchart LR
   summary -->|"calls"| a_setUpPlan
   r_setUpPlan(["Rules, in order<br/>1. identity<br/>2. role<br/>3. scope<br/>4. confirmed<br/>5. limit total<br/>6. dateInRange firstDate"])
   a_setUpPlan --> r_setUpPlan
+```
+
+## Answer a question
+
+Intent `ask_question` to its slots, the summary, the action and its rules.
+
+```mermaid
+flowchart LR
+  intent("Intent<br/>ask_question<br/>answer a question")
+  subgraph slots["Slots, in the order they are asked (a caller may give them in any order)"]
+    s_subject["subject<br/>type: topic"]
+  end
+  intent --> slots
+  a_answerQuestion["Answer a question from the knowledge base<br/>level 0: anonymous"]
+  slots -->|"calls"| a_answerQuestion
+  r_answerQuestion(["Rules, in order<br/>1. identity"])
+  a_answerQuestion --> r_answerQuestion
+  a_getOutageHistory["Read the last outage on the account<br/>level 1: verified"]
+  slots -->|"calls"| a_getOutageHistory
+  r_getOutageHistory(["Rules, in order<br/>1. identity<br/>2. scope"])
+  a_getOutageHistory --> r_getOutageHistory
 ```
 
 ## Dangling references

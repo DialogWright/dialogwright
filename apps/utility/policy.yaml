@@ -67,6 +67,23 @@ actions:
       - limit: { field: total, min: 0.01, max: amountDue(accountId) }
       - dateInRange: { field: firstDate, notBefore: today, notAfter: today+30 }
 
+  # Answers a general question from the knowledge base: the approved passage in force today for the
+  # topic (kbAnswerTool). Anyone may ask, and every answer is for every caller (kb/kb.yaml has no
+  # applies domain), so it reads nothing of the caller's.
+  answerQuestion:
+    say: answer a question from the knowledge base
+    level: 0
+    rules: [identity]
+  # The line after an outage credit answer: the last outage on the caller's own account. A verified
+  # customer's own account only; anyone else (an anonymous caller, a property manager) hears the
+  # answer without it.
+  getOutageHistory:
+    say: read the last outage on the account
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+
 # The arrangement form asks for the one-time code before its own questions.
 purposes:
   set_up_plan: { level: 2 }
@@ -77,10 +94,12 @@ purposes:
 # param the tools list (src/app.ts) is declared here. The outage address is the caller's own
 # words, recorded as said, as its slot says (`redact: none`, see DESIGN.md): an address is where the
 # crew goes, not a secret, and a summary that reads it back as said needs it. The rest are choices
-# from short lists and a date and an amount, recorded as they are.
+# from short lists and a date and an amount, recorded as they are. The topic of a general question is
+# a topic id of the knowledge base (kb/topics.yaml), recorded as it is.
 audit:
   place: keep
   symptom: keep
   count: keep
   firstDate: keep
   total: keep
+  topic: keep

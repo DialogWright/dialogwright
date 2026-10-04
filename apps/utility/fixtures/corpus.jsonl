@@ -93,6 +93,29 @@
 {"id": "oh-06", "text": "what are your opening hours", "intent": "office_hours", "context": "no_form"}
 {"id": "oh-07", "text": "when can I come into the office", "intent": "office_hours", "context": "no_form"}
 {"id": "oh-08", "text": "before that, what are your hours", "intent": "office_hours", "context": "check_balance"}
+{"id": "aq-01", "text": "how do outage credits work", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "outage_credit"}}
+{"id": "aq-02", "text": "my power was out for a whole day, do I get a credit", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "outage_credit"}}
+{"id": "aq-03", "text": "what are the ways I can pay my bill", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "payment_options"}}
+{"id": "aq-04", "text": "what is budget billing", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "budget_billing"}}
+{"id": "aq-05", "text": "is there any help paying my heating bill this winter", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "seasonal_assistance"}}
+{"id": "aq-06", "text": "how much notice do you give before you shut off the power", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "disconnection"}}
+{"id": "aq-07", "text": "how soon do you turn the power back on after I pay", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "reconnection"}}
+{"id": "aq-08", "text": "I'm moving next month, how do I stop my service", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "start_stop_service"}}
+{"id": "aq-09", "text": "how much do you charge per kilowatt hour", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "residential_rates"}}
+{"id": "aq-10", "text": "is there a fee if I pay late", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "late_fees"}}
+{"id": "aq-11", "text": "I think there's a mistake on my bill, what can I do", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "bill_dispute"}}
+{"id": "aq-12", "text": "I have a question", "intent": "ask_question", "context": "no_form"}
+{"id": "aq-13", "text": "do you install solar panels", "intent": "ask_question", "context": "no_form"}
+{"id": "aq-14", "text": "do my tenants get a credit for the outage last week", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "outage_credit"}, "as": "riley"}
+{"id": "aq-15", "text": "I want to dispute a charge", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "bill_dispute"}}
+{"id": "aq-16", "text": "I'd like to cancel my service", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "start_stop_service"}}
+{"id": "sq-01", "text": "the outage credit", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "outage_credit"}}
+{"id": "sq-02", "text": "what happens if I pay after the due date", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "late_fees"}}
+{"id": "sq-03", "text": "budget billing", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "budget_billing"}}
+{"id": "sq-04", "text": "rebates for solar panels", "intent": "none", "context": "ask_question", "prompted": "subject"}
+{"id": "sq-05", "text": "how do I get the power put in my name at my new place", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "start_stop_service"}}
+{"id": "ft-01", "text": "no thanks", "intent": "none", "context": "offer_transfer", "prompted": "subject", "confirm": "no", "tags": ["offer_transfer"]}
+{"id": "ft-02", "text": "yes, put me through to someone", "intent": "agent", "context": "offer_transfer", "prompted": "subject", "confirm": "yes", "tags": ["offer_transfer"]}
 {"id": "ag-01", "text": "I want to talk to a person", "intent": "agent", "context": "no_form"}
 {"id": "ag-02", "text": "agent", "intent": "agent", "context": "no_form"}
 {"id": "ag-03", "text": "representative", "intent": "agent", "context": "no_form"}
@@ -117,11 +140,11 @@
 {"id": "ot-01", "text": "I want to start new service at a new home", "intent": "other", "context": "no_form"}
 {"id": "ot-02", "text": "do you sell solar panels", "intent": "other", "context": "no_form"}
 {"id": "ot-03", "text": "can I change my mailing address", "intent": "other", "context": "no_form"}
-{"id": "ot-04", "text": "I want to dispute a charge", "intent": "other", "context": "no_form"}
 {"id": "ot-05", "text": "what's the weather tomorrow", "intent": "other", "context": "no_form"}
 {"id": "ot-06", "text": "is my gas bill separate", "intent": "other", "context": "no_form"}
-{"id": "ot-07", "text": "I'd like to cancel my service", "intent": "other", "context": "no_form"}
 {"id": "ot-08", "text": "can you sign me up for paperless billing", "intent": "other", "context": "no_form"}
+{"id": "ot-09", "text": "can you mail me a paper copy of last year's statements", "intent": "other", "context": "no_form"}
+{"id": "ot-10", "text": "I'd like to update the phone number on my account", "intent": "other", "context": "no_form"}
 {"id": "ns-01", "text": "Hello", "intent": "none", "context": "no_form"}
 {"id": "ns-02", "text": "Honey, where did you put the keys", "intent": "none", "context": "no_form", "answers": {"addressedToSystem": {"noul": 0.15}}, "tags": ["side_speech"]}
 {"id": "ns-03", "text": "um", "intent": "none", "context": "no_form"}

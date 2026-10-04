@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: reconnection
+topic: reconnection
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: disconnection-and-reconnection
+  section: reconnecting-service
+answer: Once the past-due amount is paid, or a payment arrangement is set up, your service is reconnected within 24 hours. There's a 30 dollar reconnection fee, waived the first time in any 12 months.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: a1b400e425c952793b669a5fa5d39996cbab2b6fede1be9de2e7ac6112c4b124
+  hash: 68f01e6199b2e8b015c5a456468550e381d8761927b8a97679cc6244f03095f3

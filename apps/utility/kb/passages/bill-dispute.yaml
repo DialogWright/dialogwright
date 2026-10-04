@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: bill-dispute
+topic: bill_dispute
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: customer-rights-notice
+  section: disputing-a-bill
+answer: If you think your bill is wrong, call us or write to us within 30 days of the bill date. While we review it, you only pay the part you don't dispute, and we won't disconnect you over the disputed amount.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: 82f47349c05e079b603f09214ce2f9d022a3b914641d5bb35fe2fb8fbd0fe61f
+  hash: d77eda1770d4c85a0cc23d7ef55292d84e38c304b5544b1aed46bd6a007fe5ea

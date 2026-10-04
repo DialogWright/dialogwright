@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: payment-options
+topic: payment_options
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: payment-options
+  section: ways-to-pay
+answer: You can pay online at example dot com slash pay, by automatic payment from your bank account, by phone, by mail, or in person at our customer office. None of these has a fee.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: J. S.
+  on: 2026-10-04
+  sourceHash: 7823e4a9f116f444c80e4b411bc73417a84774f836afb856f865846a66c41022
+  hash: efc98d703e53ce3b81a7daefa28a1c69e7b2dae598ea8b75c44a47f38f8c786d

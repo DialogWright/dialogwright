@@ -16,12 +16,13 @@ describe('the app folder', () => {
     expect(app.locales).toMatchObject({ default: 'en-US' });
   });
 
-  it('has the three forms, the two answers and the engine\'s control intents', () => {
+  it('has the three tasks, the question form, the two answers and the engine\'s control intents', () => {
     expect(Object.keys(app.intents)).toEqual([
-      'report_outage', 'check_balance', 'set_up_plan', 'outage_map', 'office_hours', 'agent', 'repeat_prompt', 'other', 'none',
+      'report_outage', 'check_balance', 'set_up_plan', 'ask_question', 'outage_map', 'office_hours', 'agent', 'repeat_prompt', 'other', 'none',
     ]);
-    expect(app.intents.outage_map!.kind).toBe('informational');
-    expect(app.intents.office_hours!.kind).toBe('informational');
+    // The two answers are passages of the knowledge base, approved like any other.
+    expect(app.intents.outage_map).toMatchObject({ kind: 'informational', passage: 'outage-map' });
+    expect(app.intents.office_hours).toMatchObject({ kind: 'informational', passage: 'office-hours' });
   });
 
   it('has an action in policy.yaml for every tool, and no other', () => {
@@ -32,7 +33,7 @@ describe('the app folder', () => {
 describe('identity', () => {
   it('verifies a customer with an account number and a date of birth, and a code for level 2', () => {
     expect(app.identity).toMatchObject({ subjectKind: 'customer', factorSlots: ['accountId', 'dob'], verifyTool: 'verifyCustomer' });
-    expect(app.policy.toolLevel).toMatchObject({ reportOutage: 0, readBalance: 1, findAccount: 1, setUpPlan: 2 });
+    expect(app.policy.toolLevel).toMatchObject({ reportOutage: 0, readBalance: 1, findAccount: 1, setUpPlan: 2, answerQuestion: 0, getOutageHistory: 1 });
   });
 
   it('verifies only when both factors match one account', async () => {
@@ -123,5 +124,29 @@ describe('the bounds, at their edges', () => {
     expect(decide('reportOutage', outage, anonymous)).toBe('ALLOW');
     expect(decide('reportOutage', outage, manager)).toBe('ALLOW');
     expect(decide('reportOutage', outage, anonymous, false)).toBe('BLOCK confirmation');
+  });
+});
+
+describe('the knowledge answers\' gated reads', () => {
+  const gate = gateEvaluator(app);
+  const facts: GateFacts = { attempts: 0, todayIso: '2026-09-18', confirmedHash: null };
+  const decide = (tool: string, params: Record<string, string>, p: Principal): string => {
+    const d = gate({ tool, params } as ToolCall, p, facts, app.systems().lookups);
+    return d.reason ? `${d.verdict} ${d.reason}` : d.verdict;
+  };
+
+  it('lets anyone ask a question, and only a verified customer read the last outage on their own account', () => {
+    expect(decide('answerQuestion', { topic: 'outage_credit' }, { kind: 'anonymous', level: 0 })).toBe('ALLOW');
+    expect(decide('getOutageHistory', { accountId: '', topic: 'outage_credit' }, { kind: 'anonymous', level: 0 })).toBe('STEP_UP');
+    expect(decide('getOutageHistory', { accountId: '55501234', topic: 'outage_credit' }, customerPrincipal('55501234', 1)!)).toBe('ALLOW');
+    expect(decide('getOutageHistory', { accountId: '55505678', topic: 'outage_credit' }, customerPrincipal('55501234', 1)!)).toBe('BLOCK scope');
+    // A property manager's knowledge read names no subject (kbCallParams sends '' for anyone not a customer): refused.
+    expect(decide('getOutageHistory', { accountId: '', topic: 'outage_credit' }, managerPrincipal('riley')!)).toBe('BLOCK scope');
+  });
+
+  it('reads the last outage on record as the account line says it, and nothing when there is none', async () => {
+    const read = (accountId: string) => TOOLS.getOutageHistory!.run({ tool: 'getOutageHistory', params: { accountId, topic: 'outage_credit' } }, new Systems(), { s: { locale: 'en-US' } } as never);
+    expect(await read('55501234')).toMatchObject({ value: { lastOutageDay: 'Wednesday, September 2', lastOutageHours: 26 }, summary: 'last outage read' });
+    expect(await read('55509012')).toMatchObject({ value: { lastOutageDay: null, lastOutageHours: null }, summary: 'no outage on record' });
   });
 });

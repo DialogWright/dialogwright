@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `6989715d0d7de11fb099fc93819437d9e530afb7d11b748c9a63ae2c73c8d14b` |
+| `policy.yaml` | `41947155e131bcf881136c2fc7303c866bb82a22a7ea579fdc8510ad3e92b4c9` |
 | `identity.yaml` | `70a08a016eb7eab0df6ab30fe736773c565cc32764ff494321428bd1870e939f` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -54,7 +54,7 @@ What each role may do. In the actions that have a role rule, a role the rule doe
 | Role | Goes ahead | Goes to a person | Refused |
 | --- | --- | --- | --- |
 | manager | file an outage report<br/>read the balance and due date | set up a payment arrangement | none |
-| every role, and a party with no role | look up the account | none | check the account number and date of birth<br/>text a one-time code<br/>check the one-time code |
+| every role, and a party with no role | look up the account<br/>answer a question from the knowledge base<br/>read the last outage on the account | none | check the account number and date of birth<br/>text a one-time code<br/>check the one-time code |
 
 ## What is recorded
 
@@ -80,6 +80,9 @@ What the record of a call keeps of each value the action is sent: the gate's dec
 | Set up a payment arrangement (`setUpPlan`) | installments (`count`) | as it is |
 | Set up a payment arrangement (`setUpPlan`) | first payment (`firstDate`) | as it is |
 | Set up a payment arrangement (`setUpPlan`) | total (`total`) | as it is |
+| Answer a question from the knowledge base (`answerQuestion`) | topic (`topic`) | as it is |
+| Read the last outage on the account (`getOutageHistory`) | account (`accountId`) | by its last four characters |
+| Read the last outage on the account (`getOutageHistory`) | topic (`topic`) | as it is |
 
 ## Actions
 
@@ -94,6 +97,8 @@ One row per action the agent may take. Anything else is refused.
 | **Look up the account**<br/>`findAccount` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the account must be the caller's own, or one they act for |
 | **Read the balance and due date**<br/>`readBalance` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. by role: a manager's request goes ahead; any other role, or none, is refused; a customer acting for themselves is not held to this rule<br/>3. the account must be the caller's own, or one they act for |
 | **Set up a payment arrangement**<br/>`setUpPlan` | 2 confirmed by code | 1. the caller must be at 'confirmed by code' or above<br/>2. by role: a manager's request goes to a person (role-person); any other role, or none, is refused; a customer acting for themselves is not held to this rule<br/>3. the account must be the caller's own, or one they act for<br/>4. the caller must confirm exactly these values at the read-back, and nothing else is sent: account, address, what they see, installments, first payment and total<br/>5. the total must be at least 0.01 and at most what `amountDue(accountId)` gives (a number outside it is refused; anything that is not a number is refused); `amountDue` reads the account the scope rule above holds to the caller's own records, or those they act for<br/>6. the first payment must be on or after today and no later than 30 days from today (a date out of bounds is refused; anything that is not a date is refused) |
+| **Answer a question from the knowledge base**<br/>`answerQuestion` | 0 anonymous | 1. any caller may ask, verified or not |
+| **Read the last outage on the account**<br/>`getOutageHistory` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the account must be the caller's own, or one they act for |
 
 ### Actions by level, with their rules and what each role gets
 
@@ -102,12 +107,14 @@ flowchart LR
   subgraph lv0["Level 0: anonymous"]
     a_verifyCustomer["Check the account number and date of birth<br/>attempts"]
     a_reportOutage["File an outage report<br/>identity · role · confirmed"]
+    a_answerQuestion["Answer a question from the knowledge base<br/>identity"]
   end
   subgraph lv1["Level 1: verified"]
     a_sendCode["Text a one-time code<br/>identity · scope"]
     a_verifyCode["Check the one-time code<br/>identity · attempts"]
     a_findAccount["Look up the account<br/>identity · scope"]
     a_readBalance["Read the balance and due date<br/>identity · role · scope"]
+    a_getOutageHistory["Read the last outage on the account<br/>identity · scope"]
   end
   subgraph lv2["Level 2: confirmed by code"]
     a_setUpPlan["Set up a payment arrangement<br/>identity · role · scope · confirmed · limit total · dateInRange firstDate"]

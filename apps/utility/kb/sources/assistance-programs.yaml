@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Seasonal assistance programs
+provenance:
+  file: docs-src/website/assistance-programs.html
+  retrieved: 2026-10-04
+sections:
+  intro:
+    text: Example Power & Light offers help with energy bills in the hottest and coldest months of the year.
+  winter-warmth-credit:
+    heading: Winter Warmth credit
+    text: For the 2026 to 2027 heating season, effective October 1, 2026, households with income at or below 200 percent of the federal poverty guidelines can receive a one-time bill credit of up to 300 dollars. Applications are accepted from October 1, 2026 through March 31, 2027.
+  summer-cooling-help:
+    heading: Summer Cooling help
+    text: From June 1 through September 30, customers aged 65 or older, or with a medical need for cooling, can set up a payment arrangement with no down payment.
+  how-to-apply:
+    heading: How to apply
+    text: Apply online at www.example.com/assistance or call 555-0100. You will need proof of household income for the last 30 days.

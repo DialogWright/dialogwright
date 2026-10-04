@@ -53,14 +53,14 @@ export { defineKnowledge, knowledgeProblems } from './define/defineKnowledge';
 export type { DefineKnowledgeOptions, KnowledgeProblemsOptions } from './define/defineKnowledge';
 export { loadKnowledgeFolder } from './define/load';
 export type { KnowledgeFolder } from './define/load';
-export { resolvePassage } from './kb/resolve';
+export { inForceOn, resolvePassage } from './kb/resolve';
 export type { ResolveInput } from './kb/resolve';
 export { approvalHashOf, collapseWhitespace, sourceHashOf } from './kb/hash';
 export type { ApprovedContent } from './kb/hash';
 // Authoring the knowledge base (pnpm kb:approve and kb:status, and the @dialogwright/kb-author tools that
 // draft, review and refresh it): approving one passage or draft as the command does, and what waits.
 export { APPROVALS_LOG, approveOne, excerptInSource, formatApproveResult, notAPerson, pendingDrafts, placeOf as kbPlaceOf, proposedTopics, readApprovalLog } from './kb/approval';
-export { approvalLogged, parseApprovalLog } from './kb/log';
+export { approvalLogged, logLineOf, parseApprovalLog } from './kb/log';
 // What a draft's excerpt must be (kb:approve, and kb:draft and kb:review hold a draft to the same rules).
 export { excerptProblems, MIN_EXCERPT_CHARS, MIN_EXCERPT_WORDS, NO_EXCERPT, numbersIn, numbersNotInExcerpt } from './kb/excerpt';
 export type { ApprovalLogLine, ApproveOptions, ApproveResult, KbPlace, PendingDraft, ProposedTopic } from './kb/approval';

@@ -6,13 +6,13 @@
 prompts:
   # The opening lines and the engine's own lines
   greeting:
-    text: Thanks for calling Example Power & Light. I can take an outage report, give you your balance, or set up a payment arrangement. How can I help?
+    text: Thanks for calling Example Power & Light. I can take an outage report, give you your balance, set up a payment arrangement, or answer questions about your service. How can I help?
     interruptible: true
   greeting_chat:
-    text: Hi, this is Example Power & Light. I can take an outage report, give you your balance, or set up a payment arrangement. What can I help with?
+    text: Hi, this is Example Power & Light. I can take an outage report, give you your balance, set up a payment arrangement, or answer questions about your service. What can I help with?
     interruptible: true
   greeting_chat_signed_in:
-    text: Hi {first}, this is Example Power & Light. I can take an outage report, give you your balance, or set up a payment arrangement. What can I help with?
+    text: Hi {first}, this is Example Power & Light. I can take an outage report, give you your balance, set up a payment arrangement, or answer questions about your service. What can I help with?
     interruptible: true
   greeting_chat_delegate:
     text: Hi {first}, this is Example Power & Light. I can check balances and take outage reports for the buildings you manage. What can I help with?
@@ -33,7 +33,7 @@ prompts:
     text: How can I help you today?
     interruptible: true
   nomatch_open:
-    text: Sorry, I didn't catch that. You can report an outage, check your balance, or set up a payment arrangement.
+    text: Sorry, I didn't catch that. You can report an outage, check your balance, set up a payment arrangement, or ask a question about your service.
     interruptible: true
   nomatch_dtmf_menu:
     text: Let's try the keypad. To report an outage press 1. For your balance press 2. For a payment arrangement press 3. For the outage map press 4. For our office hours press 5. To speak with someone press 0.
@@ -90,7 +90,7 @@ prompts:
     text: Thanks for chatting with Example Power & Light. Goodbye.
     interruptible: false
   screen_reprompt:
-    text: I can help you report an outage, check your balance, or set up a payment arrangement.
+    text: I can help you report an outage, check your balance, set up a payment arrangement, or answer a question about your service.
     interruptible: true
   screen_reprompt_form:
     text: Let's keep going.
@@ -237,10 +237,23 @@ prompts:
     text: The first payment has to be between today and thirty days from today, so I can't set that one up.
     interruptible: false
 
-  # The informational answers
-  outage_map:
-    text: You can see current outages and restoration times on our outage map, at example dot com slash outages.
+  # Answers from the knowledge base (kb/): a general question's topic, and the lines every answer is
+  # said through. kb_answer says the approved passage word for word (and, for outage credits, the
+  # line from the caller's own account after it); kb_unavailable is said when no passage may be
+  # said today, and a person is offered. The outage map and the office hours (keys 4 and 5) are
+  # passages too, said through the same two lines.
+  ask_subject:
+    text: What would you like to know?
     interruptible: true
-  office_hours:
-    text: Our customer office is open Monday through Friday, eight in the morning to five in the evening. You can report an outage any time, day or night.
+  ask_subject_retry:
+    text: Sorry, I can answer questions about outage credits, paying your bill, budget billing, help with bills, disconnection and reconnection, starting or stopping service, our rates, late charges, and disputing a bill. What would you like to know?
     interruptible: true
+  disambiguate_subject:
+    text: Is that about {a}, or {b}?
+    interruptible: true
+  kb_answer:
+    text: '{answer}'
+    interruptible: false
+  kb_unavailable:
+    text: I'm sorry, I don't have an answer to that I can give you right now.
+    interruptible: false

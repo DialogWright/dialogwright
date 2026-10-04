@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Outage credits
+provenance:
+  file: docs-src/website/outage-credits.html
+  retrieved: 2026-10-04
+sections:
+  intro:
+    text: Example Power & Light works to restore power as quickly as it safely can. When an outage lasts a long time, residential customers receive a credit on their bill.
+  who-receives-a-credit:
+    heading: Who receives a credit
+    text: Residential customers whose power is out for 24 hours or more in a row receive a credit of 25 dollars. The credit is applied automatically to the next bill. There is nothing to apply for.
+  longer-outages:
+    heading: Longer outages
+    text: For each further 12 hours without power, another 10 dollars is credited, up to 75 dollars for one outage.
+  when-no-credit-is-given:
+    heading: When no credit is given
+    text: No credit is given for planned maintenance outages announced at least 48 hours ahead, or for outages caused by damage to equipment the customer owns.
+  questions-about-a-credit:
+    heading: Questions about a credit
+    text: If a credit does not appear on your bill within two billing cycles, call Customer Service at 555-0100.

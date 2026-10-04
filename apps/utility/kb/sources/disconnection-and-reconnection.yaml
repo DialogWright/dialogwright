@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-source.schema.json
+
+document: Disconnection and reconnection
+provenance:
+  file: docs-src/website/disconnection-and-reconnection.html
+  retrieved: 2026-10-04
+sections:
+  before-a-disconnection:
+    heading: Before a disconnection
+    text: We never disconnect service for nonpayment without notice. We mail a written notice at least 10 days before the date service may be disconnected, and we call the phone on the account at least 2 days before that date.
+  when-we-do-not-disconnect:
+    heading: When we do not disconnect
+    text: We do not disconnect service for nonpayment on weekends, on public holidays, or on any day the forecast high is below 32 degrees or above 95 degrees.
+  reconnecting-service:
+    heading: Reconnecting service
+    text: Once the past-due amount is paid, or a payment arrangement is set up, service is reconnected within 24 hours. A reconnection fee of 30 dollars is added to the next bill. The fee is waived the first time in any 12 months.

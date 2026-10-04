@@ -1,6 +1,6 @@
 # Example Power & Light: notes for AI coding assistants
 
-Example Power & Light is a DialogWright app: a voice and chat agent whose dialog and policy are YAML and whose tools and form hooks are TypeScript. Read the repository's root `CLAUDE.md` first for the rules, and [docs/authoring-an-app.md](../../docs/authoring-an-app.md) before changing the folder. It takes outage reports (anyone), reads balances (verified customers, and property managers for their buildings) and sets up payment arrangements (customers with a one-time code; a property manager's request goes to a person). `DESIGN.md` is its design worksheet: read it before changing the app, and keep it current.
+Example Power & Light is a DialogWright app: a voice and chat agent whose dialog and policy are YAML and whose tools and form hooks are TypeScript. Read the repository's root `CLAUDE.md` first for the rules, and [docs/authoring-an-app.md](../../docs/authoring-an-app.md) before changing the folder. It takes outage reports (anyone), reads balances (verified customers, and property managers for their buildings), sets up payment arrangements (customers with a one-time code; a property manager's request goes to a person) and answers general questions from approved passages of its knowledge base (`kb/`). `DESIGN.md` is its design worksheet: read it before changing the app, and keep it current.
 
 ## The folder
 
@@ -8,7 +8,9 @@ Example Power & Light is a DialogWright app: a voice and chat agent whose dialog
 - `policy.yaml`: what the agent may do, action by action (the level and the rules the gate runs before each). Every tool in `src/app.ts` needs an action, and an action not listed is refused. `policy.matrix` and `POLICY.md` are the policy read back, and `APP-MAP.md` the app's structure; rewrite them (`pnpm policy:matrix apps/utility`, `pnpm policy:card apps/utility`, `pnpm app:diagram apps/utility`) only for a change you meant, and read the diff. The tests fail when they and the app disagree.
 - `identity.yaml`: how a caller proves who they are (the factors, the one-time code, the property manager delegates, the chat sign-in, the number of tries).
 - `src/app.ts`: the tools and the form hooks, joined to the folder by `defineApp`. `src/data.ts`: the fixture accounts and property managers behind the stub tools.
-- `fixtures/`: `corpus.jsonl` (labelled utterances, every intent has some), `scenarios/` (scripted calls) and `expected/` (the stub baseline).
+- `kb/`: the knowledge base. `kb.yaml` (the resolving action and retrieval), `topics.yaml` (after a change, `pnpm kb:index apps/utility`), `sources/` (read from `docs-src/` by `pnpm kb:ingest`), `pending/` (drafts, never said) and `passages/` with `approvals.jsonl` (written only by a person's approval: `pnpm kb:review apps/utility` or `pnpm kb:approve --by "<a person>"`). Never write a passage's `approval` by hand, and never approve as anything but the person who reviewed it.
+- `docs-src/`: the fictional documents the knowledge base is built from. A change there is a change to a source: run `pnpm kb:refresh apps/utility`, and the passages it withholds go back to review.
+- `fixtures/`: `corpus.jsonl` (labelled utterances, every intent has some), `scenarios/` (scripted calls), `expected/` (the stub baseline) and `kb/paraphrases.yaml` (what retrieval is measured on).
 
 ## Commands
 

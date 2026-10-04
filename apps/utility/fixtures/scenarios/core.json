@@ -854,6 +854,180 @@
     }
   },
   {
+    "id": "question-outage-credit",
+    "steps": [
+      {
+        "say": "how do outage credits work"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getOutageHistory:STEP_UP",
+      "text": "a credit of 25 dollars on your next bill"
+    }
+  },
+  {
+    "id": "question-outage-credit-verified",
+    "steps": [
+      {
+        "say": "what's my balance"
+      },
+      {
+        "say": "My account number is five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      },
+      {
+        "say": "how do outage credits work"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "getOutageHistory:ALLOW",
+      "text": "The last outage on record for your account was on Wednesday, September 2, and it lasted 26 hours."
+    }
+  },
+  {
+    "id": "question-outage-credit-chat",
+    "as": "web",
+    "steps": [
+      {
+        "signIn": "55501234"
+      },
+      {
+        "say": "how do outage credits work"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "getOutageHistory:ALLOW",
+      "text": "it lasted 26 hours"
+    }
+  },
+  {
+    "id": "question-by-a-manager",
+    "as": "riley",
+    "steps": [
+      {
+        "say": "do my tenants get a credit for the outage last week"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "a credit of 25 dollars on your next bill"
+    }
+  },
+  {
+    "id": "question-asked-for",
+    "steps": [
+      {
+        "say": "I have a question"
+      },
+      {
+        "say": "the outage credit"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getOutageHistory:STEP_UP",
+      "text": "There's nothing to apply for."
+    }
+  },
+  {
+    "id": "question-late-charge",
+    "steps": [
+      {
+        "say": "is there a fee if I pay late"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "answerQuestion:ALLOW",
+      "text": "1.5 percent of the unpaid balance"
+    }
+  },
+  {
+    "id": "question-rights-notice",
+    "steps": [
+      {
+        "say": "I think there's a mistake on my bill, what can I do"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "answerQuestion:ALLOW",
+      "text": "within 30 days of the bill date"
+    }
+  },
+  {
+    "id": "question-not-in-force",
+    "steps": [
+      {
+        "say": "is there any help paying my heating bill this winter"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "offer_transfer",
+      "gate": "answerQuestion:ALLOW",
+      "text": "I don't have an answer to that I can give you right now."
+    }
+  },
+  {
+    "id": "question-not-in-force-declined",
+    "steps": [
+      {
+        "say": "is there any help paying my heating bill this winter"
+      },
+      {
+        "say": "no thanks"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else"
+    }
+  },
+  {
+    "id": "question-not-in-force-accepted",
+    "steps": [
+      {
+        "say": "is there any help paying my heating bill this winter"
+      },
+      {
+        "say": "yes, put me through to someone"
+      }
+    ],
+    "expect": {
+      "decision": "handoff"
+    }
+  },
+  {
+    "id": "question-none",
+    "steps": [
+      {
+        "say": "do you install solar panels"
+      },
+      {
+        "say": "rebates for solar panels"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_subject_retry"
+    }
+  },
+  {
     "id": "keypad-menu-outage",
     "steps": [
       {
