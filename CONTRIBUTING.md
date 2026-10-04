@@ -4,7 +4,7 @@ Pull requests are welcome. Thank you for helping.
 
 ## Build and test
 
-Node 22.19 or later and pnpm are required.
+Node 22.19 or later and pnpm are required. Record cassettes under the major in `.nvmrc` (22): the Unicode tables behind the engine's text handling come with Node and can change between majors, which changes a recorded request's text (see the authoring guide's fixtures).
 
 ```sh
 pnpm install

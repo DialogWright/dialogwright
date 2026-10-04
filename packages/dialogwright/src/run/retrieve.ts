@@ -42,6 +42,11 @@ const LATE = Symbol('late');
  * that throws, rejects, returns something other than a list of nominations, or is not back within
  * the budget nominates nothing, and the record says which. An app with a knowledge base but no
  * retriever nominates nothing, and nothing is recorded (nothing ran).
+ *
+ * The budget bounds a retriever that returns a promise. One that answers synchronously runs to its
+ * end before the timer can fire (JavaScript cannot interrupt it), so its answer is taken however
+ * long it took: a retriever that may be slow must be asynchronous. The engine's own answer
+ * synchronously in well under a millisecond.
  */
 export async function retrieve(knowledge: AppKnowledge, input: NominateInput, budgetMs: number = RETRIEVE_BUDGET_MS): Promise<Retrieved> {
   const retriever = knowledge.retriever;

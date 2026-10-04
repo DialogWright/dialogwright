@@ -163,7 +163,8 @@ export interface NominateInput {
  * (SlotSpec.nominates) is listening; its nominations reach that turn's questions and fill
  * (SlotContext.nominated). It is given a budget (run/retrieve.ts RETRIEVE_BUDGET_MS): one that throws,
  * returns something that is not a list of nominations, or is not back in time nominates nothing, and
- * the turn goes on without it. It must be deterministic (the same words, locale and day, the same
+ * the turn goes on without it. Only a promise can be late: a synchronous nominate runs to its end
+ * whatever it takes, so one that may be slow must return a promise. It must be deterministic (the same words, locale and day, the same
  * nominations, in the same order): its nominations shape the model's request, which a cassette replays by.
  */
 export interface Retriever {

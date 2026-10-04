@@ -277,6 +277,7 @@ The corpus (`corpus.jsonl`, one labelled utterance per line), scripted calls, th
 {"id":"sn-01","text":"I'd like to make an appointment","intent":"schedule_new","context":"no_form"}
 ```
 
+Record a cassette under the Node major in `.nvmrc` (22). A recorded request is replayed by its exact text, and the engine reads text with Unicode properties (letters and digits, case folding, accents folded for retrieval) whose tables come with Node's ICU and can change between majors. CI replays on 22 and 24; a miss that only one major shows is such a table change, not a regression, and the fix is a deliberate re-record under `.nvmrc`'s major, never a recording made on another one.
 
 ### kb/ (optional)
 
@@ -1692,7 +1693,7 @@ Four steps, and only the second is a model's: nominate, select, resolve, speak.
 
 **When the topics are asked.** Only when retrieval nominated something. Nominating is the cheap, fast check that a knowledge question is plausible, so a call that never asks one never pays for the question. A turn on which nothing was nominated asks nothing, and the slot has no value.
 
-**The budget.** The caller waits on retrieval, so it has 150 milliseconds (`RETRIEVE_BUDGET_MS`, fixed: it is a latency budget, not a threshold you tune). It fails open. A retriever that throws, returns something that is not a list of topics, or is not back in time nominates nothing, the turn goes on without a knowledge question, and the trace says which it was (`failed: 'error' | 'invalid' | 'late'`). The engine's own retrievers answer in well under a millisecond, so the budget is there for a retriever of your own that calls out.
+**The budget.** The caller waits on retrieval, so it has 150 milliseconds (`RETRIEVE_BUDGET_MS`, fixed: it is a latency budget, not a threshold you tune). It fails open. A retriever that throws, returns something that is not a list of topics, or is not back in time nominates nothing, the turn goes on without a knowledge question, and the trace says which it was (`failed: 'error' | 'invalid' | 'late'`). The engine's own retrievers answer in well under a millisecond, so the budget is there for a retriever of your own that calls out. The budget bounds a retriever that returns a promise; one that answers synchronously runs to the end before the turn goes on (JavaScript cannot stop it), so a retriever of your own that may take long must be asynchronous.
 
 **Determinism.** The same words, language, day and knowledge base nominate the same topics in the same order with the same scores, on any machine. The nominations shape the model's request, so this is what lets a recorded call replay exactly.
 
