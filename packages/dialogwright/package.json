@@ -22,6 +22,7 @@
     "./testing": "./src/testing/index.ts",
     "./slot-kit": "./src/slots/kit.ts",
     "./policy": "./src/define/policyEntry.ts",
+    "./kb/onnx": "./src/kb/onnx.ts",
     "./*.js": "./src/*.js",
     "./*.json": "./src/*.json",
     "./*": "./src/*.ts",
@@ -52,6 +53,14 @@
     "ws": "^8.18.0",
     "yaml": "^2.9",
     "zod": "^4.6"
+  },
+  "peerDependencies": {
+    "@huggingface/transformers": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22",
