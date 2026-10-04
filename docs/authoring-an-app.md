@@ -318,6 +318,21 @@ drafted:
   excerpt: Junior cards are not charged late fees.
 ```
 
+### kb/ (optional): building a knowledge base from documents
+
+A passage is approved against a source section's text, so a knowledge base starts with its sources. You can write `kb/sources/<doc>.yaml` by hand, or read them from the documents the answers come from with `pnpm kb:ingest` (the `@dialogwright/kb-author` package, which an app never imports):
+
+```sh
+pnpm kb:ingest docs/ --dir apps/my-app                                   # a folder of PDF, DOCX, HTML, Markdown and text files
+pnpm kb:ingest https://example.org/help/ --dir apps/my-app --depth 2     # a website, to a link depth
+```
+
+- Each document becomes `kb/sources/<doc>.yaml`: its title, its provenance (its URL, or its file's path from the app folder, and the day it was read) and its text by section. Sections are cut at headings (h1 to h3, a DOCX's Heading 1 to 3, Markdown's `#` to `###`, a PDF's larger type) and named by the heading path (`late-fees`, `shifts/training`); a PDF's ids start with their page (`p2-late-fees`), and a PDF without headings is cut by page (`p1`, `p2`). Paragraphs are kept.
+- A website is crawled politely: the start page's host only (unless `--allow-host`), robots.txt followed, one request a second (`--rate`), at most 50 pages (`--max-pages`), no cookies or sign-ins, linked PDF and DOCX files read too; `--include '/help/**'` narrows what is fetched. It never runs in CI.
+- Re-ingesting is safe: the same documents give the same bytes, an unchanged document is not rewritten (its `retrieved` date stays), and a document keeps its id. Each run says, per document and per section, what was added (`+`), changed (`~`) and removed (`-`); a changed section's passages go stale under the approval rules above. `--dry-run` shows this without writing. A source written by hand is never overwritten.
+
+[The package's README](../packages/kb-author/README.md) has the extraction and crawling rules in full. Drafting passages from the sources, the review page and the refresh that re-reads them are the pipeline's next steps.
+
 ## 3. Policy and identity
 
 The gate decides whether an action may run, and it decides from two files that a person who does not write code can read: `policy.yaml` (what the agent may do, action by action) and `identity.yaml` (who the app serves and how a caller proves who they are). Policy is data, and never lives in a tool. A tool does its work; the gate decides whether it runs. This section is the whole of how to write, test and review those two files. [design.md](design.md#6-identity-and-policy) says why they are shaped this way.

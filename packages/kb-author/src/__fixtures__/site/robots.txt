@@ -1,0 +1,7 @@
+# Example Town Library: what crawlers may read.
+User-agent: *
+Disallow: /private/
+Allow: /private/open.html
+
+User-agent: archive-bot
+Disallow: /
