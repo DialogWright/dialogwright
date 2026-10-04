@@ -13,6 +13,7 @@ import { maskNumber, redactDeep } from './dashboard/events';
 import type { AuditSink } from '../run/turn';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
 import { isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly';
+import { formFields } from './voice/xml';
 
 export interface HttpDeps {
   config: ServerConfig;
@@ -62,10 +63,6 @@ function readBody(req: IncomingMessage, res: ServerResponse): Promise<string | n
       if (!tooLarge) reject(err);
     });
   });
-}
-
-function formParams(body: string): Record<string, string> {
-  return Object.fromEntries(new URLSearchParams(body));
 }
 
 function reply(res: ServerResponse, status: number, type: string, body: string): void {
@@ -244,7 +241,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       }
       const body = await readBody(req, res);
       if (body === null) return; // 413 already sent by readBody
-      const params = formParams(body);
+      const params = formFields(body);
       if (deps.config.signatureCheck) {
         const fullUrl = `https://${deps.config.publicHost}${req.url ?? path}`;
         const header = req.headers['x-twilio-signature'];
