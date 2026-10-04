@@ -1,7 +1,8 @@
 import type { SessionEvent } from '../channel/events';
 import type { Session } from '../core/session';
 import type { AuditEntry } from '../audit/types';
-import { runTurn, type AuditSink, type RunOptions } from '../run/turn';
+import { runTurn, type AuditSink, type RunOptions, type TurnRun } from '../run/turn';
+import type { Action } from '../channel/actions';
 import { appOf } from '../core/app/registry';
 import { spokenText } from '../prompts/render';
 import { resolveService, type ServiceUrls } from './services';
@@ -37,14 +38,36 @@ export interface ChatTurnDeps {
  * `handoffTo` is who the console says a handoff goes to (the app's chat names its own desk).
  */
 export async function runChatTurn(d: ChatTurnDeps, entry: ChatTurnEntry, event: SessionEvent, now: () => number, handoffTo: string): Promise<string[]> {
-  entry.lastActivityMs = now();
   const out: string[] = [];
+  // Each turn's words from its decision, the defined source of what was said (prompts/render.ts spokenText).
+  for (const r of await runChatTurnRuns(d, entry, event, now, handoffTo)) {
+    const text = spokenText(appOf(r.result.session), r.result.decision, r.result.session.locale);
+    if (text) out.push(text);
+  }
+  return out;
+}
+
+/**
+ * The same turn, and the turns a downstream service's answer ran after it, as the actions the core
+ * asked of the channel, in order: what a chat that speaks the channel model shows (the engine's chat
+ * endpoint, server/chat/socket.ts).
+ */
+export async function runChatTurnActions(d: ChatTurnDeps, entry: ChatTurnEntry, event: SessionEvent, now: () => number, handoffTo: string): Promise<Action[]> {
+  return (await runChatTurnRuns(d, entry, event, now, handoffTo)).flatMap((r) => r.result.actions);
+}
+
+/**
+ * The same turn, and the turns a downstream service's answer ran after it, each as the turn runner
+ * returned it (its decision, its actions, the session after it), in order. What runChatTurn and
+ * runChatTurnActions read, and what a chat reads that needs each turn's decision (to scrub its log).
+ */
+export async function runChatTurnRuns(d: ChatTurnDeps, entry: ChatTurnEntry, event: SessionEvent, now: () => number, handoffTo: string): Promise<TurnRun[]> {
+  entry.lastActivityMs = now();
   const r = await (d.runTurn ?? runTurn)(entry.session, event, entry.opts);
+  const out: TurnRun[] = [r];
   entry.session = r.result.session;
   // Kept on the session's own entry whether or not the console is on: the handoff summary reads it.
   entry.auditEntries.push(...r.audit);
-  const text = spokenText(appOf(entry.session), r.result.decision, entry.session.locale);
-  if (text) out.push(text);
   const decision = r.result.decision;
   if (decision.kind === 'handoff') {
     d.bus?.publish({ type: 'handoff', callSid: entry.id, at: now(), reason: decision.reason, number: handoffTo });
@@ -60,7 +83,7 @@ export async function runChatTurn(d: ChatTurnDeps, entry: ChatTurnEntry, event: 
   for (const effect of r.result.effects) {
     if (effect.kind !== 'service' || entry.session.ended) continue;
     const answer = await resolveService(appOf(entry.session), effect, d.serviceUrls);
-    out.push(...(await runChatTurn(d, entry, answer, now, handoffTo)));
+    out.push(...(await runChatTurnRuns(d, entry, answer, now, handoffTo)));
   }
   return out;
 }

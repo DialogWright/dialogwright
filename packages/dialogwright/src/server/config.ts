@@ -6,8 +6,23 @@ import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from './voice/registry';
 import { RECOGNIZER_NAME } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
+import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 
 export type ClientKind = 'stub' | 'heuristic' | 'jev';
+
+/**
+ * The engine's web chat endpoint (`/chat`, a WebSocket speaking src/channel/chat/protocol.ts), as
+ * CHAT=on configures it.
+ */
+export interface ChatSettings {
+  /** CHAT_ALLOWED_ORIGINS, required: the sites whose pages may open a chat (server/chat/origins.ts). */
+  origins: AllowedOrigins;
+  /** CHAT_IDLE_MS, default 1,800,000: how long a chat session nobody writes to lives (and can be resumed). */
+  idleMs: number;
+}
+
+/** A chat session nobody has written to for this long is ended (CHAT_IDLE_MS's default; server/chatHttp.ts's CHAT_IDLE_MS). */
+export const DEFAULT_CHAT_IDLE_MS = 1_800_000;
 
 /** Twilio ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider), for TTS_PROVIDER. */
 const TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
@@ -93,6 +108,11 @@ export interface ServerConfig {
    * The Twilio webhooks are unaffected (src/server/localOnly.ts).
    */
   consoleLocalOnly: boolean;
+  /**
+   * CHAT=on|off, default off: whether the engine serves its own web chat on `/chat`. Absent when off,
+   * so a deployment without chat has exactly the config it had before chat existed.
+   */
+  chat?: ChatSettings;
 }
 
 export type Env = Record<string, string | undefined>;
@@ -194,6 +214,7 @@ export function loadConfig(env: Env): ServerConfig {
   // flux is Deepgram's: another provider without a model of its own gets that provider's default.
   const twilioSpeechModel = recognizerName(env, 'TWILIO_SPEECH_MODEL', 'nova-3-general') ?? (twilioTranscriptionProvider === 'Deepgram' ? 'flux' : null);
   const telnyxTranscriptionProvider = recognizerName(env, 'TELNYX_TRANSCRIPTION_PROVIDER', 'deepgram');
+  const chat = chatOf(env, publicHost);
   return {
     port,
     publicHost,
@@ -226,7 +247,20 @@ export function loadConfig(env: Env): ServerConfig {
     anthropicApiKey,
     handoffSummary: handoffSummarySwitch === 'on',
     consoleLocalOnly: localOnlySwitch === 'on',
+    ...(chat ? { chat } : {}),
   };
+}
+
+/** CHAT and, when it is on, the chat's own variables; undefined when it is off (the others are then not read). */
+function chatOf(env: Env, publicHost: string): ChatSettings | undefined {
+  const sw = (env.CHAT ?? 'off').trim().toLowerCase();
+  if (sw !== 'on' && sw !== 'off') throw new Error(`CHAT must be on or off, got "${env.CHAT}"`);
+  if (sw === 'off') return undefined;
+  const origins = env.CHAT_ALLOWED_ORIGINS?.trim();
+  if (!origins) throw new Error('missing required environment variable CHAT_ALLOWED_ORIGINS (CHAT=on)');
+  const idleMs = integer(env, 'CHAT_IDLE_MS', DEFAULT_CHAT_IDLE_MS);
+  if (idleMs <= 0) throw new Error(`CHAT_IDLE_MS must be a positive number of milliseconds, got "${env.CHAT_IDLE_MS}"`);
+  return { origins: parseAllowedOrigins(origins, publicHost), idleMs };
 }
 
 /** A recognizer's provider or model name from `name`, or null when it is unset or empty; anything but a plain name is refused. */
@@ -313,5 +347,6 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx voice ${c.telnyxVoice ?? 'default'}`] : []),
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
+    ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)})`] : []),
   ].join('  ');
 }
