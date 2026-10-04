@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ import { upgradeTraceRecord } from '../../trace/read';
 import { defaultAppId, getApp } from '../../core/app/registry';
 import { spokenText } from '../../prompts/render';
 import { consoleMetaOf, renderConsolePage } from './meta';
+import type { ConsoleGate, ConsoleSession } from '../console/auth';
 
 /**
  * Changes every time the server process starts. The page keeps the first one it sees and reloads
@@ -24,7 +25,16 @@ export const BOOT_ID = randomUUID();
 // bus when the dashboard is on, and src/server/http.ts only reaches this module when that bus is
 // present); it is kept as its own field so routes.test.ts can exercise "disabled" against a real
 // bus without also having to fake a config.
-export interface DashboardDeps { bus: DashboardBus; traceDir: string; enabled: boolean }
+export interface DashboardDeps {
+  bus: DashboardBus;
+  traceDir: string;
+  enabled: boolean;
+  /**
+   * CONSOLE_AUTH=token's sign-in (server/console/auth.ts): every path needs a session, and the access
+   * log records the live feed and each replay. Absent (CONSOLE_AUTH=local), the routes are as they were.
+   */
+  auth?: ConsoleGate;
+}
 
 /** One trace record as `/dashboard/traces/<sid>` returns it: redacted, plus the line the caller heard. */
 export type ReplayRecord = TraceRecord & { spokenText: string };
@@ -99,12 +109,30 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
   const path = (req.url ?? '/').split('?')[0] ?? '/';
   if (!isConsolePath(path)) return false;
   if (!deps.enabled) return false;
+  const auth = deps.auth;
+  let session: ConsoleSession | null = null;
+  if (auth) {
+    auth.protect(res);
+    if (auth.handle(req, res, path)) return true;
+    session = auth.sessionOf(req);
+    if (session === null) { auth.refuse(req, res, path); return true; }
+  }
   const head = req.method === 'HEAD';
   if (req.method !== 'GET' && !head) { send(res, 405, 'text/plain', 'method not allowed'); return true; }
 
   // The page is the default app's console: its name, mark and words are put in as it is served.
   if (path === '/dashboard' || path === '/dashboard/') {
-    send(res, 200, 'text/html; charset=utf-8', renderConsolePage(readFileSync(join(HERE, 'page.html'), 'utf8'), consoleMetaOf(getApp(defaultAppId()))), head);
+    const template = readFileSync(join(HERE, 'page.html'), 'utf8');
+    const meta = consoleMetaOf(getApp(defaultAppId()));
+    if (!auth) {
+      send(res, 200, 'text/html; charset=utf-8', renderConsolePage(template, meta), head);
+      return true;
+    }
+    // Signed in: the page's own script and style run by this answer's nonce, and it can sign out.
+    const nonce = randomBytes(16).toString('base64');
+    auth.protect(res, nonce);
+    const withNonce = template.replace('<script type="module">', `<script type="module" nonce="${nonce}">`).replace('<style>', `<style nonce="${nonce}">`);
+    send(res, 200, 'text/html; charset=utf-8', renderConsolePage(withNonce, meta, { signOut: true }), head);
     return true;
   }
   if (path === '/dashboard/view.js') {
@@ -118,21 +146,35 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
     return true;
   }
   if (path === '/dashboard/events') {
+    // Recorded before a byte of the feed is sent: a watch the audit could not record is not served.
+    if (!head && auth && session) auth.noteLive(session);
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
     // A HEAD is a probe, not a viewer: answer the headers and subscribe nothing.
     if (head) { res.end(); return true; }
     res.write(': connected\n\n');
     res.write(`event: boot\ndata: ${JSON.stringify({ bootId: BOOT_ID })}\n\n`);
-    const off = deps.bus.subscribe((event) => {
+    let off: () => void = () => {};
+    let beat: ReturnType<typeof setInterval> | undefined;
+    const end = (): void => { off(); clearInterval(beat); };
+    // With a sign-in, the session is asked again before each write: a feed whose session has signed
+    // out or expired ends rather than send another event.
+    const stillSignedIn = (): boolean => {
+      if (!auth || auth.sessionOf(req) !== null) return true;
+      end();
+      res.end();
+      return false;
+    };
+    off = deps.bus.subscribe((event) => {
+      if (!stillSignedIn()) return;
       // A stalled viewer is dropped frames, not unbounded memory; the page notices the gap in
       // `seq` and shows a warning rather than reloading on its own (page.html's `es.onmessage`).
       if (res.writableLength > MAX_STREAM_BACKLOG) return;
       res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
     });
     // A comment line keeps a proxy (and ngrok) from closing an idle stream between calls.
-    const beat = setInterval(() => res.write(': hb\n\n'), HEARTBEAT_MS);
+    beat = setInterval(() => { if (stillSignedIn()) res.write(': hb\n\n'); }, HEARTBEAT_MS);
     beat.unref?.();
-    req.on('close', () => { off(); clearInterval(beat); });
+    req.on('close', end);
     return true;
   }
   if (path === '/dashboard/traces') {
@@ -183,7 +225,9 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
       send(res, 404, 'text/plain', 'not found', head);
       return true;
     }
-    send(res, 200, 'application/json', JSON.stringify(readTrace(deps.traceDir, sid)), head);
+    const replay = readTrace(deps.traceDir, sid);
+    if (!head && auth && session) auth.noteReplay(session, sid);
+    send(res, 200, 'application/json', JSON.stringify(replay), head);
     return true;
   }
   send(res, 404, 'text/plain', 'not found', head);
