@@ -29,7 +29,8 @@
     "kb:ingest": "tsx src/cli.ts kb:ingest",
     "kb:draft": "tsx src/cli.ts kb:draft",
     "kb:review": "tsx src/cli.ts kb:review",
-    "kb:refresh": "tsx src/cli.ts kb:refresh"
+    "kb:refresh": "tsx src/cli.ts kb:refresh",
+    "kb:gaps": "tsx src/cli.ts kb:gaps"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

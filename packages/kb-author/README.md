@@ -2,12 +2,13 @@
 
 Builds a DialogWright knowledge base from documents. This package is for authoring only: an app never imports it, and the runtime package (`dialogwright`) carries none of its dependencies.
 
-It is a pipeline of four commands:
+It is a pipeline of five commands:
 
 1. **`pnpm kb:ingest`** reads the sources: a folder of PDF, DOCX, HTML, Markdown and text files, or a website crawled politely to a link depth. Each document becomes `kb/sources/<doc>.yaml`, its text by section with where it came from, which is what a passage is approved against.
 2. **`pnpm kb:draft`** gives the sections to a drafter (Claude, with your own key; a fake in tests), checks every draft it proposes, and writes those that pass to `kb/pending`, which is never said.
 3. **`pnpm kb:review`** serves a review page on this machine, where a person approves, edits then approves, or rejects each draft, and accepts or merges each topic a draft proposes.
 4. **`pnpm kb:refresh`** reads every source again; a passage whose section changed is withheld until a person approves it again in the review page.
+5. **`pnpm kb:gaps`** reads the traces of real calls and ranks what callers asked that the knowledge base did not answer, with the fix for each, so the next round of drafting and review starts from what callers needed.
 
 ## Ingesting
 
@@ -101,7 +102,7 @@ A drafter is pluggable: `{ id, draft({ source, existingTopics, locale, maxAnswer
 ## Reviewing
 
 ```sh
-pnpm kb:review [app folder] [--port N]
+pnpm kb:review [app folder] [--port N] [--traces <path|glob>]...
 ```
 
 It starts a small server and prints its URL. The page lists the proposed topics, the drafts waiting and the passages withheld (their source changed, they were edited, or never approved). A draft is shown beside its source section with its excerpt marked; a passage withheld after its source changed, beside a word diff of the section as it was approved against the section now. The page asks once who is reviewing (a person's name, which kb:approve's own check holds to, and the team that owns the content), then offers:
@@ -110,6 +111,7 @@ It starts a small server and prints its URL. The page lists the proposed topics,
 - **Edit, then approve**: the answer, `applies`, the dates, and a draft's excerpt. The edit is checked as kb:draft checks a draft, and the excerpt must still be in the section word for word; a refused edit or approval leaves the file as it was.
 - **Reject** (a draft): it moves to `kb/rejected/<id>.yaml` with `rejected: { by, on, reason }`, a record kept in the repository; kb:draft passes over the sections a rejected draft cites.
 - **A proposed topic**: accept it into `topics.yaml` (renamed if you give another id; the drafts that name it follow) or merge it into a topic `topics.yaml` has (its drafts re-pointed). A draft of a proposed topic is approved after its topic. When `kb.yaml` names an embedder, run `pnpm kb:index` after accepting topics.
+- **The Gaps tab** (`/gaps`, linked in the header): the ranked list `kb:gaps` prints (below), read from the traces each time it is opened (`--traces` as for kb:gaps; by default `$TRACE_DIR`, else the app's `traces/`, else `./traces`). Each group links from its fixes to where they are done: a stale passage to its withheld page (while it is withheld), a topic to its page (the topic's keywords and asks, its passages with their state, and the drafts that answer it), and "draft from" to a page listing every sample of the callers' words and the sections nothing cites that read as relevant, with the `pnpm kb:draft` command to draft from them (the page runs nothing; drafting uses your key on your command line). It shows the callers' words as the traces recorded them, behind the same token.
 
 Its access, and why it is not in the operator console: the console has no access control until Phase 8, and its tunnel carries the public's requests, so the review page is a separate local server instead.
 
@@ -140,6 +142,52 @@ next: pnpm kb:review shows each withheld passage beside what changed in its sect
 
 A passage whose section changed is withheld by the engine itself (its approval's `sourceHash` no longer matches); one whose section is gone is withheld and listed apart, to point at the section that says it now or delete. A source written by hand, or whose file is gone, is left as it is. Exit codes: 0 done, 1 a source that could not be read again because of an error, 2 a command line not understood.
 
+## Finding gaps
+
+```sh
+pnpm kb:gaps [app folder] [--traces <path|glob>]... [--since YYYY-MM-DD] [--samples N] [--out <file>] [--json]
+```
+
+It reads the trace files of real calls and ranks what callers asked that the knowledge base did not answer. `--traces` names a trace file, a folder of them (its `.jsonl` files, not the `.frames.jsonl` logs beside them) or a glob (`traces/*.jsonl`, `runs/**` with `**` for any depth); repeat it for several. Without it, the folder a server (or the text harness) writes to: `$TRACE_DIR` when set, else the app folder's `traces/`, else `./traces`. `--since` keeps turns from that day on, `--samples` is how many of the callers' words each group shows (default 3), `--out` writes the report to a file, `--json` prints JSON for tools. Exit codes: 0 a report (gaps or none), 1 a problem (the knowledge base does not load, no trace files found), 2 a command line not understood.
+
+**What counts as a gap**, turn by turn (a turn is at most one; the collector is `src/gaps/collect.ts`):
+
+| Kind | Detected as | Fix |
+| --- | --- | --- |
+| answered none | The topic slot's question was asked (retrieval nominated topics) and the model answered `none`, or chose a topic that the slot did not fill (below its threshold: no slot holds it, no gated call or knowledge record names it, and it is not a disambiguation). Left out when the call went on to ask another slot's question. | Add the way callers put it to the nearest topic's `asks` and `keywords` when it has a passage; write a passage for it when it has none |
+| asked, nothing nominated | Retrieval ran (a topic slot was listening) and nominated nothing, on words that look like a question: they end in `?` (or start with `¿`), start with a question word (`what`, `how`, `can`, `qué`, `cuándo` and the like, `QUESTION_WORDS`), or the model's intent was `other` or an informational intent of the app's `intents.yaml`. Left out when the caller was answering a one-time code, a yes or no, or another slot's question. A retrieval that failed (`error`, `invalid`, `late`) nominated nothing for another reason: counted in the report, never a gap. | Draft from a source section that reads as relevant, or write a topic and passage; add keywords and asks to the keyword-nearest topic when there is one |
+| unavailable | The resolving tool answered `no passage (<reason>)` in a gate event, or the turn's knowledge record is not fresh, or the unavailable line was said: `stale` (its source section changed), `not-in-force` (no passage for these callers on the day), `no-translation` (the caller's language has none, `localeFallback: none`), `no-facts` (the system of record had none for the caller), and rarely `unknown-topic`, `ambiguous`, `no-answer`. The words are those that asked (an earlier turn's, when this one is a "yes" or the topic's name). | Re-approve the stale passage; write a passage in force for the topic; add a translation; check the system of record for `no-facts` |
+| close call | The slot asked the caller which of two topics they meant (a `disambiguate_<slot>` prompt on a turn that asked the topic question): the two topics are the question's two best answers. | Add keywords and asks to both topics that tell them apart |
+
+A quarantined turn (the injection screen) is never a gap and its words are never read. Words with a masked value are never shown: a turn on which an identity slot took a masked value (its last four, its year, its length: the marks the trace writer leaves), or whose gated call or decision carries one, is counted but its words are withheld (the report says how many). Every other turn's words are the trace's recorded text, as it is: the traces hold what callers said, so keep a gaps report as private as they are.
+
+**Grouping and ranking.** A gap falls in the group of its nearest topic: the topic retrieval nominated first; for an asked-with-nothing-nominated turn, the topic the keyword retriever (the engine's `KeywordRetriever`) scores best on the words, else "no near topic"; for an unavailable turn, the passage's own topic. Groups are ranked by how many gaps they hold, then how recently the latest happened, then the topic id, so the same traces give the same report. Each group shows how its gaps divide, up to N distinct samples of the callers' words (newest first), the fix for each kind it holds, and, where a passage would help, the source sections nothing cites that read as relevant: the keyword retriever scored over the sections' headings and text, held to sections that match at least a third of the meaningful words (four letters or more) of what callers said and the topic's title and keywords, so one shared word does not make a section relevant to a long question. A topic the knowledge base does not have is named as such.
+
+```
+# Knowledge gaps
+
+kb: 11 gaps in 4 groups, from 27 turns in 13 calls (13 trace files, 2026-10-01 to 2026-10-03).
+
+By kind: 3 answered none, 3 asked with no topic nominated, 4 unavailable, 1 close call.
+
+## 1. Late fees (late_fees): 6 gaps
+
+3 answered none, 2 unavailable (stale 1, no translation 1), 1 close call. Latest 2026-10-02.
+
+Callers said:
+- `what do I owe for an overdue book` (answered none, 2026-10-02)
+- `is there a fine for returning a book late` (answered none, 2026-10-02)
+- `cuánto cuesta una multa` (unavailable: no translation, 2026-10-02)
+
+Fix:
+- If topic "Late fees (late_fees)" should answer these, add the way callers put it to its asks and keywords in kb/topics.yaml; ... (3)
+- Tell "Late fees (late_fees)" and "Renewing a library card (card_renewal)" apart: add the words that set each one apart ...
+- Add a translation of topic "Late fees (late_fees)"'s passage for es (kb/locale/<tag>/passages, ...)
+- Re-approve passage "late-fees-adult": its source section changed, so callers are not given it (pnpm kb:review shows what changed).
+```
+
+The JSON (`--json`) is the same report as data: `{ kb, since, traces: { files, turns, calls, from, to, skipped, retrievalFailed }, gaps, byKind, groups: [{ key, topic, title, known, near, count, latest, kinds, reasons, withheld, samples, fixes, draftFrom }] }`, each fix `{ id, kind, text, count, passage?, topics?, locale? }` with `id` one of `add-keywords`, `write-passage`, `draft-from-section`, `re-approve`, `add-translation`, `check-facts`, `fix-topic`, `fix-overlap`, `check-tool`.
+
 ## Determinism and re-ingesting
 
 The same input gives the same bytes: sections in document order, keys in a fixed order, no line folding, nothing from the clock but the date. A document whose title, provenance and sections (ids, order, headings, and text hashes) are unchanged is not rewritten, so its file and its `retrieved` date stay as they were; a changed document is written with today's date. A document keeps its id from run to run by its provenance; a new one whose slug another document has takes the slug with its extension (`faq-md`), then a number. A source file with other provenance, or none (written by hand), is never overwritten. Sources from the same folder or host that a run did not read are listed as not read this time and left as they are.
@@ -156,8 +204,8 @@ The same input gives the same bytes: sections in document order, keys in a fixed
 
 Their own dependencies are MIT, ISC, BSD-2-Clause, BSD-3-Clause, `MIT AND Zlib` (pako) and `MIT OR GPL-3.0-or-later` (jszip, used under MIT).
 
-Drafting, reviewing and refreshing add none: the Claude drafter uses Node's fetch, and the review page Node's http and crypto.
+Drafting, reviewing, refreshing and finding gaps add none: the Claude drafter uses Node's fetch, and the review page Node's http and crypto.
 
 ## Tests
 
-`pnpm --filter @dialogwright/kb-author test`. The fixtures under `src/__fixtures__` are fictional: a folder (a three-page patron guide PDF with headings, a two-page notice PDF without, a volunteer handbook DOCX, HTML, Markdown and text) and a small website with a robots.txt, served by a local `node:http` server on 127.0.0.1. Nothing reaches the network: the crawler's fetch in the tests refuses any other host, and its clock is fake, so the rate limit is tested without waiting. The pipeline's test (`src/pipeline.test.ts`) runs it end to end on dialogwright's own library app with the fake drafter: a PDF ingested, drafted (good drafts written, a bad excerpt, an over-long answer, a variable and a repeat refused), reviewed over HTTP with the token (a name given, topics accepted and merged, a draft approved, one edited then approved, one rejected), and the approved passages said on a call by the app's knowledge completion; then a source changed, refreshed, its passage withheld, the diff shown, approved again and said. The Claude drafter's request is tested against a mocked fetch.
+`pnpm --filter @dialogwright/kb-author test`. The fixtures under `src/__fixtures__` are fictional: a folder (a three-page patron guide PDF with headings, a two-page notice PDF without, a volunteer handbook DOCX, HTML, Markdown and text) and a small website with a robots.txt, served by a local `node:http` server on 127.0.0.1. Nothing reaches the network: the crawler's fetch in the tests refuses any other host, and its clock is fake, so the rate limit is tested without waiting. The pipeline's test (`src/pipeline.test.ts`) runs it end to end on dialogwright's own library app with the fake drafter: a PDF ingested, drafted (good drafts written, a bad excerpt, an over-long answer, a variable and a repeat refused), reviewed over HTTP with the token (a name given, topics accepted and merged, a draft approved, one edited then approved, one rejected), and the approved passages said on a call by the app's knowledge completion; then a source changed, refreshed, its passage withheld, the diff shown, approved again and said. The Claude drafter's request is tested against a mocked fetch. The gaps tests (`src/gaps/gaps.test.ts`) run scripted calls to a scratch copy of dialogwright's library fixture app through `runTurn` with a scripted model client and the engine's own trace writer (`src/__fixtures__/gapCalls.ts`), so the trace records they read are real: each gap kind, the grouping and ranking, the masked words withheld, the Markdown and JSON reports, the command and the review page's Gaps tab (the token required).

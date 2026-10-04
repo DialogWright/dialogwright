@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { KbPlace } from 'dialogwright';
+import type { KbPlace, KnowledgeBase } from 'dialogwright';
 import type { CrawlOptions } from '../crawl/crawl';
 import { draftsIn } from '../draft/draft';
 import { ingest, type IngestReport } from '../ingest';
@@ -132,15 +132,22 @@ export async function refreshKb(options: RefreshOptions): Promise<RefreshReport>
     if (p.current.sourceHash === null) report.gone.push(row);
     else report.stale.push(row);
   }
+  report.uncited = uncitedSections(place, kb);
+  return report;
+}
+
+/** The sections no passage, pending draft or rejected draft cites, by source document (those with none left out). */
+export function uncitedSections(place: KbPlace, kb: KnowledgeBase): { document: string; sections: string[] }[] {
   const base = place.kbDir.split(/[\\/]/).pop()!;
   const cited = new Set<string>();
   for (const p of Object.values(kb.passages)) cited.add(`${p.source.document}\u0000${p.source.section}`);
   for (const d of [...draftsIn(place.kbDir, 'pending', base), ...draftsIn(place.kbDir, 'rejected', base)]) if (d.draft) cited.add(`${d.draft.source.document}\u0000${d.draft.source.section}`);
+  const out: { document: string; sections: string[] }[] = [];
   for (const doc of Object.values(kb.sources)) {
     const sections = Object.keys(doc.sections).filter((s) => !cited.has(`${doc.id}\u0000${s}`));
-    if (sections.length > 0) report.uncited.push({ document: doc.id, sections });
+    if (sections.length > 0) out.push({ document: doc.id, sections });
   }
-  return report;
+  return out;
 }
 
 /** The report as lines for a person. */

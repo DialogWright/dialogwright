@@ -1,9 +1,12 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { resolve } from 'node:path';
 import type { KbPlace } from 'dialogwright';
 import { acceptTopic, approve, approvedSectionText, draftReviewProblems, editAndApprove, mergeTopic, reject, reviewerProblem, reviewState, type ActionResult, type Edits, type Reviewer } from './actions';
-import { draftPage, indexPage, notFoundPage, passagePage, topicPage, type PageContext } from './pages';
+import { reportFromFiles, NO_NEAR_TOPIC } from '../gaps/report';
+import { gapGroupPage, gapsPage, kbTopicPage, type GapsView } from './gapPages';
+import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, type PageContext } from './pages';
 
 /**
  * kb:review's server: the review page, on this machine only, for the person who started it.
@@ -17,6 +20,8 @@ import { draftPage, indexPage, notFoundPage, passagePage, topicPage, type PageCo
  *   A POST must also come from the page itself when the browser says where it comes from (Origin).
  * - Its pages load nothing from anywhere else (a Content-Security-Policy says so), are not cached and
  *   send no Referer.
+ * - The Gaps tab (what callers asked that the knowledge base did not answer, from the traces) is read
+ *   through the same token, and shows the callers' words as the traces recorded them.
  * - The operator console is not where it lives: the console has no access control until Phase 8,
  *   and a page that approves what callers are told should not be reachable through the console's
  *   tunnel. It stops with Ctrl-C.
@@ -30,6 +35,13 @@ export interface ReviewServerOptions {
   port?: number;
   /** The token (a test's); default a new random one. */
   token?: string;
+  /**
+   * Where the Gaps tab reads traces from: trace files, folders of them or globs (kb:gaps' `--traces`),
+   * read again each time the tab is opened. Default: none (the tab says where to point it).
+   */
+  traces?: readonly string[];
+  /** Where relative `traces` are from. Default: the process's working directory. */
+  cwd?: string;
 }
 
 export interface ReviewServer {
@@ -194,6 +206,25 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
     if (parts.length === 2 && kind === 'topic' && state.kb) {
       const t = state.proposed.find((x) => x.id === id);
       if (t) return send(res, 200, topicPage(ctx(url.pathname), state.kb, t, state.drafts.filter((d) => d.draft?.topic === t.id)), undefined, nonce);
+      if (typeof id === 'string' && Object.hasOwn(state.kb.topics, id)) return send(res, 200, kbTopicPage(ctx(url.pathname), state.kb, id, state.withheld, state.drafts.filter((d) => d.draft?.topic === id)), undefined, nonce);
+    }
+    if (kind === 'gaps' && (parts.length === 1 || parts.length === 2)) {
+      const c = ctx(url.pathname);
+      if (!state.kb) return send(res, 200, page(c, 'Gaps', `<h1>Gaps</h1><section class="card" role="alert"><h2>The knowledge base does not load</h2><ul class="problems">${state.problems.map((p) => `<li class="mono">${esc(p)}</li>`).join('')}</ul></section>`), undefined, nonce);
+      const cwd = options.cwd ?? process.cwd();
+      const specs = options.traces ?? [];
+      const view = (samples: number): GapsView => ({
+        report: reportFromFiles({ kb: state.kb!, place, label: place.label, traces: specs, cwd, samples }).report,
+        kb: state.kb!,
+        withheld: new Set(state.withheld.map((w) => w.passage.id)),
+        proposed: new Set(state.proposed.map((t) => t.id)),
+        searched: specs.map((s) => resolve(cwd, s)),
+      });
+      if (parts.length === 1) return send(res, 200, gapsPage(c, view(3)), undefined, nonce);
+      const v = view(25);
+      const g = v.report.groups.find((x) => x.key === id);
+      if (g) return send(res, 200, gapGroupPage(c, v, g), undefined, nonce);
+      return send(res, 404, notFoundPage(c, id === NO_NEAR_TOPIC ? 'No gaps are near no topic now.' : `No gaps are listed for ${id ?? ''} now.`), undefined, nonce);
     }
     return send(res, 404, notFoundPage(ctx(url.pathname), `${url.pathname} is not waiting for review (it may have been approved or rejected already).`), undefined, nonce);
   };

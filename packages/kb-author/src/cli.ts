@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { CrawlError, DEFAULT_MAX_PAGES, DEFAULT_RATE_MS } from './crawl/crawl';
 import type { Drafter } from './draft/drafter';
 import { draftCommand } from './draft/command';
+import { gapsCommand } from './gaps/command';
 import { formatReport, ingest, IngestError, isUrl } from './ingest';
 import { todayUtc } from './args';
 import { refreshCommand } from './refresh/command';
@@ -12,7 +13,7 @@ import { reviewCommand } from './review/command';
 
 /**
  * The authoring commands (the `dialogwright-kb` bin; the workspace's `pnpm kb:ingest`, `kb:draft`,
- * `kb:review` and `kb:refresh`):
+ * `kb:review`, `kb:refresh` and `kb:gaps`):
  *
  *   kb:ingest <folder | file | url> [--dir <app folder>] [--depth N] [--include <glob>]...
  *             [--max-pages M] [--rate <ms>] [--allow-host <host>]... [--dry-run] [--json]
@@ -20,6 +21,7 @@ import { reviewCommand } from './review/command';
  *             (./draft/command.ts)
  *   kb:review [dir] [--port N]       (./review/command.ts)
  *   kb:refresh [dir] [--dry-run] [--json]   (./refresh/command.ts)
+ *   kb:gaps [dir] [--traces <path|glob>]... [--since YYYY-MM-DD] [--samples N] [--out <file>] [--json]   (./gaps/command.ts)
  *
  * It reads a folder (recursively), a file or a website into sections and writes each document to
  * the app's kb/sources/<doc>.yaml, saying what was added, changed and unchanged. `--dir` is the app
@@ -179,7 +181,8 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'kb:draft') return draftCommand(rest, io);
   if (command === 'kb:review') return reviewCommand(rest, io);
   if (command === 'kb:refresh') return refreshCommand(rest, io);
-  io.err(`unknown command ${command ?? '(none)'}: the commands are kb:ingest, kb:draft, kb:review and kb:refresh\n${USAGE}`);
+  if (command === 'kb:gaps') return gapsCommand(rest, io);
+  io.err(`unknown command ${command ?? '(none)'}: the commands are kb:ingest, kb:draft, kb:review, kb:refresh and kb:gaps\n${USAGE}`);
   return 2;
 }
 

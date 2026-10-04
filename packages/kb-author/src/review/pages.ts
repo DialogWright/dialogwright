@@ -99,7 +99,7 @@ const STYLE = `
 `;
 
 /** A link inside the review page, carrying the token. */
-const href = (ctx: PageContext, path: string): string => `${path}?token=${encodeURIComponent(ctx.token)}`;
+export const href = (ctx: PageContext, path: string): string => `${path}?token=${encodeURIComponent(ctx.token)}`;
 
 /** The token as a form's hidden field. */
 const tokenField = (ctx: PageContext): string => `<input type="hidden" name="token" value="${esc(ctx.token)}">`;
@@ -122,7 +122,7 @@ export function page(ctx: PageContext, title: string, body: string): string {
 <a class="skip" href="#main">Skip to the content</a>
 <header>
   <div class="brand"><span class="mark" aria-hidden="true">DW</span><span class="title">Knowledge base review <span>${esc(ctx.label)}</span></span></div>
-  <nav aria-label="Review"><a href="${href(ctx, '/')}">Everything waiting</a>${who}</nav>
+  <nav aria-label="Review"><a href="${href(ctx, '/')}">Everything waiting</a><a href="${href(ctx, '/gaps')}">Gaps</a>${who}</nav>
 </header>
 <main id="main">
 ${flashHtml(ctx)}${ctx.reviewer ? '' : reviewerForm(ctx)}${body}

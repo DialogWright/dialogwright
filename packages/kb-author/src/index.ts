@@ -3,7 +3,8 @@
  * folder of PDF, DOCX, HTML, Markdown and text files, or a website crawled politely to a link depth)
  * into `kb/sources/<doc>.yaml` with each document's sections and provenance; drafts passages from
  * them with a pluggable drafter into `kb/pending`; serves a local review page where a person approves,
- * edits or rejects each draft; and refreshes the sources, withholding a passage whose source changed.
+ * edits or rejects each draft; refreshes the sources, withholding a passage whose source changed; and
+ * ranks the gaps the traces of real calls show: what callers asked that the knowledge base did not answer.
  */
 
 export { ingest, formatReport, IngestError, isUrl, MAX_FILE_BYTES } from './ingest';
@@ -39,4 +40,11 @@ export { startReviewServer } from './review/server';
 export type { ReviewServer, ReviewServerOptions } from './review/server';
 export { refreshKb, formatRefreshReport } from './refresh/refresh';
 export type { RefreshOptions, RefreshReport } from './refresh/refresh';
+export { collectGaps, looksLikeQuestion, topicQuestionOf, GAP_KINDS, QUESTION_WORDS } from './gaps/collect';
+export type { CollectContext, CollectStats, Gap, GapKind, Near, Unavailable } from './gaps/collect';
+export { buildReport, reportFromFiles, formatJson, formatMarkdown, NO_NEAR_TOPIC } from './gaps/report';
+export type { BuildOptions, DraftFrom, Fix, FixId, GapGroup, GapReport, Sample } from './gaps/report';
+export { defaultTraceSpecs, readTurns, traceFilesOf } from './gaps/traces';
+export type { Turn } from './gaps/traces';
+export { gapsCommand } from './gaps/command';
 export { main, ingestCommand, USER_AGENT, VERSION } from './cli';
