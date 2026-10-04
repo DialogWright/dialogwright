@@ -81,9 +81,9 @@ What a call does with it: when the caller asks something (`ask_question`), retri
 
 What it demonstrates: documents in and passages out, with provenance down to the section and page; an approval that covers the source text, so a changed document withholds its answers (`pnpm kb:refresh`); retrieval chosen offline (`fixtures/kb/paraphrases.yaml`: recall at 8 of 97.3% with the hybrid retriever, against 83.8% for keywords alone, on paraphrases retrieval never saw); a gated line from the caller's own account after an approved answer, dropped for anyone the gate refuses; and the unavailable path, which the stub regression shows with an approved answer not yet in force on its day (the Winter Warmth credit, from October 1). DESIGN.md, "The knowledge base", has the details and every scripted call.
 
-## Approving the knowledge base
+## Reviewing the knowledge base
 
-The twelve answers are drafts until a person approves them, and only a person can (`kb:approve` refuses an approver who is not one). Until then the app does not build: its two informational intents name passages (`office-hours`, `outage-map`) that are still drafts, so `pnpm check` reports them and the topics with no passage in force, and this app's tests and regression fail. That is expected. To approve them:
+The twelve answers were drafted from the documents and approved by a person in `kb:review` on 2026-10-04; `kb/approvals.jsonl` has a line for each. Only a person approves (`kb:approve` refuses an approver who is not one), and a passage whose source or text changes is withheld until it is approved again (`pnpm kb:refresh apps/utility`). A draft is never said: an intent that names a passage still in `kb/pending` makes the app fail to build, and `pnpm check` lists it. To review drafts or withheld passages:
 
 1. At the repository root, with the dependencies installed (`pnpm install`) and the embedding model in the cache (`pnpm kb:model`, once), see what waits: `pnpm kb:status apps/utility` lists twelve drafts.
 2. Start the review page: `pnpm kb:review apps/utility`. It prints a URL on 127.0.0.1 with a one-time token; open it in a browser on this machine.

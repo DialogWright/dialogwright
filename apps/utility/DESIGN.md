@@ -87,7 +87,7 @@ The app's one list of confirmed fields: `accountId, place, symptom, count, first
 
 ## Informational answers
 
-Both are passages of the knowledge base (`passage:` in intents.yaml, said through `kb_answer`), approved like every other answer, with no retrieval and no gate. Until a person approves them they are drafts in `kb/pending`, and the app does not build (see "The knowledge base").
+Both are passages of the knowledge base (`passage:` in intents.yaml, said through `kb_answer`), approved like every other answer, with no retrieval and no gate. Before a person approved them they were drafts in `kb/pending`, and the app did not build (see "The knowledge base").
 
 | Intent | The passage | Its source |
 |---|---|---|
@@ -137,7 +137,7 @@ Both are passages of the knowledge base (`passage:` in intents.yaml, said throug
 | Informational intents on the keypad menu | when the app was built, `handleDtmf` in the engine ignored a menu key that was not a form or `agent` (the caller heard nothing) | first left the outage map and hours off the menu; the engine now plays the line, so they are back as 4 and 5 (after the trial), with scripted calls for each | a scenario and some reading of turn.ts; closed |
 | Nothing owed on the account | a bound refuses only when the write is tried, after the summary; `limit` cannot stop the form before its questions for a subject | the summary reads "$0.00 in three payments" and the gate then refuses with `plan_amount_outside` | a clumsy call for that one caller |
 | A delegate's answers inside a form | corpus lines inside a form cannot carry `as`, so they are seeded with a customer | the `account` answers run as a customer in the corpus; the manager's path is covered by scripted calls with `as` | none |
-| A form's `answers:` and an intent's `passage:` before approval | `defineApp` refuses an intent that names a passage not in `kb/passages`, and a draft in `kb/pending` is not one | the two intents name `office-hours` and `outage-map`, still drafts, so the app does not build until a person approves them: before approval `pnpm check` lists 14 problems (the two intents and the twelve topics), and the app's tests and regression cannot run | the branch is red until approval; no workaround in the app (a draft must never be said) |
+| A form's `answers:` and an intent's `passage:` before approval | `defineApp` refuses an intent that names a passage not in `kb/passages`, and a draft in `kb/pending` is not one | the two intents name `office-hours` and `outage-map`, still drafts, so the app does not build until a person approves them: before approval `pnpm check` lists 14 problems (the two intents and the twelve topics), and the app's tests and regression cannot run | resolved 2026-10-04: a person approved all twelve, and check, the tests and the regression pass; no workaround in the app (a draft must never be said) |
 | An accepted offer of a person after an unavailable answer | the engine records any accepted transfer offer as `frustrated` | left as it is: the caller hears `handoff_frustrated` ("Let me get you to someone who can help."), which reads fine, but the handoff's reason is not why the person was offered | a misleading reason in the trace and the console for these calls |
 | The app map's intents table | it called an informational intent that says a passage "a line that does not exist: dangling" | fixed in the engine (`testing/appMap.ts`): the row says the passage | small; closed |
 | A question the knowledge base does not cover | the topic question answers `none`, so the form asks its slot | the first ask is "What would you like to know?", which reads oddly right after the caller asked; the retry lists what it can answer | small; a `none` line of its own would help |
@@ -228,7 +228,7 @@ Twelve topics (`kb/topics.yaml`), each with one draft in `kb/pending`, written b
 | `late_fees` | Late payment charges | `late-fees` | rate-schedule, `late-payment-charge` (page 2) | 2026-01-01 |
 | `bill_dispute` | Disputing a bill | `bill-dispute` | customer-rights-notice, `disputing-a-bill` (page 1) | 2026-01-01 |
 
-**None of them is a passage yet.** Only a person approves a passage (`kb:approve` refuses any other `--by`), so this branch ends with the drafts waiting for review; README.md, "Approving the knowledge base", has the steps. The stub baseline is the approved state: it was checked against a scratch copy of the repository with every draft approved by a fictional reviewer (never committed), where check, the tests and the regression all pass.
+**All twelve are passages now**, approved by a person in `kb:review` on 2026-10-04 (README.md, "Reviewing the knowledge base"). Only a person approves a passage (`kb:approve` refuses any other `--by`), so the branch that added them ended with the drafts waiting for review. The stub baseline is the approved state: it was checked against a scratch copy of the repository with every draft approved by a fictional reviewer (never committed), where check, the tests and the regression all pass.
 
 ### The account line
 
@@ -280,7 +280,7 @@ The sweep: a floor of 0.35 cuts the topics offered on a line about nothing to 0.
 | corpus `ns-03` | `decidedGate`, `verdict` | `intent`, `intent_failed` -> `intelligible`, `nomatch` | First recording: "um" is the filler sound the `intelligible` question names, so the turn is a no-match before the intent is read (the same `nomatch_open`). Labelled `intelligible` 0.3 and tagged `unintelligible`, as the clinic's "um" is. |
 | corpus `ns-06` | `decision`, `promptId`, `decidedGate`, `verdict` | `prompt nomatch_open`, `intent`, `intent_failed` -> `ignore`, `null`, `addressedToSystem`, `ignore` | First recording: "hang on a second" may be said to the line or to someone in the room; the model reads it at 0.5, below the 0.65 gate, and the line waits for the caller instead of saying the no-match prompt over them. That is the better answer to "hang on", so the line is labelled `addressedToSystem` 0.5 (tagged `hold`). |
 
-Before approval the app does not build, so these entries cannot be checked on this branch until a person approves the drafts; after approval the regression must say `no changes`, as it did in the scratch copy.
+Before approval the app did not build, so these entries could not be checked until a person approved the drafts; after approval (2026-10-04) the regression says `no changes`, as it did in the scratch copy.
 
 Changes that needed no edit: the thirty-day bound moved from the custom rule `first-date-within-30-days` to `dateInRange` (`notAfter: today+30`). The rule that decides `plan-first-date-too-late` is now `dateInRange` (its line reads `firstDate after today+30 2026-10-18`), with the same verdict, reason (`date-range`) and line (`plan_date_outside`); the baseline records the outcome, not the deciding rule, so it did not change. `policy.matrix` was written again for it: the rule list of `setUpPlan` and the custom rules section changed, and no verdict did.
 
@@ -300,4 +300,4 @@ Changes that needed no edit: the thirty-day bound moved from the custom rule `fi
 - [x] `.github/workflows/ci.yml` runs this app's regression and replays its cassette (`--client recorded`: no misses, every difference a known gap); `pnpm-lock.yaml` is committed.
 - [x] `README.md` says what the app does and how it is built, and keeps the scaffold's recording steps; `CLAUDE.md` still matches the folder.
 - [x] The gaps above are written up.
-- [ ] The knowledge base's drafts are approved by a person in `pnpm kb:review apps/utility` (README.md, "Approving the knowledge base"); then `pnpm check`, this app's tests and its regression pass.
+- [x] The knowledge base's drafts are approved by a person in `pnpm kb:review apps/utility` (README.md, "Reviewing the knowledge base"); then `pnpm check`, this app's tests and its regression pass.
