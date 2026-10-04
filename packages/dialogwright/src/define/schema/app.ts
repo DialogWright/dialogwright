@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { checkAlways, identifier, localeTag, matching, name, text, textMap, unique } from './common';
+import { RECOGNIZER_NAME } from '../../channel/voiceProviders';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
@@ -159,6 +160,18 @@ const spokenDigitRule = z
   }))
   .describe('One rule for how identifier digits are spelled out for text-to-speech on the wire. Only what goes out is rewritten: the session text, the trace and the manifest keep the readable form.');
 
+/** A speech recognizer's provider or model, in the carrier's own names. */
+const recognizerName = () =>
+  matching(RECOGNIZER_NAME, 'is not a recognizer name: it must start with a letter or digit and use only letters, digits, dots, hyphens and underscores', 'write the name as the carrier\'s documentation spells it, for example "Deepgram" or "nova-3-general"');
+
+/** One carrier's speech recognizer for a locale (voice.locales.<tag>.recognition.<provider>). */
+const recognition = z
+  .strictObject({
+    provider: recognizerName().optional().describe('The speech recognition provider, as the carrier names it (Twilio: Deepgram or Google; Telnyx: deepgram, google or telnyx). Twilio\'s transcriptionProvider, Telnyx\'s transcriptionProvider.'),
+    model: recognizerName().optional().describe('The provider\'s speech model (Twilio\'s speechModel: nova-3-general, telephony; Telnyx takes one on <Language> only). Left out, the provider\'s default.'),
+  })
+  .describe('The speech recognizer on one carrier. A field left out is the carrier\'s default, never the deployment\'s; {} asks for the carrier\'s default recognizer.');
+
 /** One locale's speech settings on the phone (voice.locales.<tag>). */
 const voiceLocale = z
   .strictObject({
@@ -169,6 +182,13 @@ const voiceLocale = z
       .optional()
       .describe('The voice for this locale, by voice provider id (twilio, telnyx): each carrier names its voices its own way. It wins over the deployment\'s voice for that carrier (TTS_VOICE, TELNYX_VOICE). Default: the deployment\'s voice for the default locale, else the carrier\'s default voice.'),
     hints: z.array(text()).optional().describe('Words the speech recognizer should expect in this locale, in place of voice.hints.'),
+    recognition: z
+      .record(identifier(), recognition)
+      .optional()
+      .describe(
+        'The speech recognizer for this locale, by voice provider id (twilio, telnyx). It wins over the deployment\'s (TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER). ' +
+          'Default: the deployment\'s for the default locale, else the carrier\'s default, since a deployment\'s model may hear one language only (Twilio\'s default, Deepgram flux, is for English).',
+      ),
   })
   .describe('How the phone speaks and hears one locale.');
 

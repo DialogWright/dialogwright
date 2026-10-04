@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig, describeConfig, consoleExposure } from './config';
+import { loadConfig, describeConfig, consoleExposure, recognitionFor } from './config';
 import { defaultTimeZone } from '../run/clock';
 
 /** A Telnyx public key as Telnyx shows it: 32 bytes, base64. Made up; nothing signs with it. */
@@ -262,6 +262,48 @@ describe('voice providers', () => {
     expect(text).toContain('tts Google en-US-Neural2-F');
     expect(text).toContain('telnyx voice Telnyx.Ultra.Callie');
     expect(describeConfig(loadConfig({ ...base, TELNYX_VOICE: 'Telnyx.Ultra.Callie' }))).not.toContain('telnyx voice');
+  });
+
+  it('defaults Twilio\'s recognizer to Deepgram flux, and Telnyx\'s to Telnyx\'s own', () => {
+    const c = loadConfig({ ...base, VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY });
+    expect(c).toMatchObject({ twilioTranscriptionProvider: 'Deepgram', twilioSpeechModel: 'flux', telnyxTranscriptionProvider: null });
+    expect(recognitionFor(c, 'twilio')).toEqual({ provider: 'Deepgram', model: 'flux' });
+    expect(recognitionFor(c, 'telnyx')).toEqual({});
+    // Empty is unset, as for every other optional variable.
+    expect(loadConfig({ ...base, TWILIO_TRANSCRIPTION_PROVIDER: ' ', TWILIO_SPEECH_MODEL: '' })).toMatchObject({ twilioTranscriptionProvider: 'Deepgram', twilioSpeechModel: 'flux' });
+  });
+
+  it('takes each carrier\'s recognizer from its own variables, and never gives Twilio\'s to Telnyx', () => {
+    const c = loadConfig({
+      ...base, VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY,
+      TWILIO_TRANSCRIPTION_PROVIDER: ' Google ', TWILIO_SPEECH_MODEL: 'telephony', TELNYX_TRANSCRIPTION_PROVIDER: 'deepgram',
+    });
+    expect(recognitionFor(c, 'twilio')).toEqual({ provider: 'Google', model: 'telephony' });
+    expect(recognitionFor(c, 'telnyx')).toEqual({ provider: 'deepgram' });
+    expect(recognitionFor(loadConfig({ ...base, TWILIO_SPEECH_MODEL: 'nova-3-general' }), 'twilio')).toEqual({ provider: 'Deepgram', model: 'nova-3-general' });
+  });
+
+  it('drops the flux default when Twilio\'s recognizer is another provider: flux is Deepgram\'s', () => {
+    const c = loadConfig({ ...base, TWILIO_TRANSCRIPTION_PROVIDER: 'Google' });
+    expect(c.twilioSpeechModel).toBeNull();
+    expect(recognitionFor(c, 'twilio')).toEqual({ provider: 'Google' });
+  });
+
+  it('refuses a recognizer setting that is not a plain name', () => {
+    expect(() => loadConfig({ ...base, TWILIO_TRANSCRIPTION_PROVIDER: 'Deep gram' })).toThrow(
+      'TWILIO_TRANSCRIPTION_PROVIDER must be a name of letters, digits, dots, hyphens and underscores, like Deepgram, got "Deep gram"',
+    );
+    expect(() => loadConfig({ ...base, TWILIO_SPEECH_MODEL: 'flux"/>' })).toThrow(/TWILIO_SPEECH_MODEL must be a name of letters.*like nova-3-general, got "flux"\/>"/);
+    expect(() => loadConfig({ ...base, TELNYX_TRANSCRIPTION_PROVIDER: '-x' })).toThrow(/TELNYX_TRANSCRIPTION_PROVIDER must be a name/);
+  });
+
+  it('describes each enabled carrier\'s recognizer', () => {
+    expect(describeConfig(loadConfig(base))).toContain('twilio recognition Deepgram flux');
+    expect(describeConfig(loadConfig({ ...base, TWILIO_TRANSCRIPTION_PROVIDER: 'Google' }))).toContain('twilio recognition Google (its default model)');
+    const telnyx = { ...base, VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY };
+    expect(describeConfig(loadConfig(telnyx))).toContain('telnyx recognition default');
+    expect(describeConfig(loadConfig(telnyx))).not.toContain('twilio recognition');
+    expect(describeConfig(loadConfig({ ...telnyx, TELNYX_TRANSCRIPTION_PROVIDER: 'google' }))).toContain('telnyx recognition google');
   });
 
   it('refuses a Telnyx key that is not a base64 Ed25519 public key', () => {

@@ -1,7 +1,7 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { voiceFor, type ServerConfig } from './config';
+import { recognitionFor, voiceFor, type ServerConfig } from './config';
 import { connectRelayTwiml } from './twiml';
 import type { SessionStore } from './sessions';
 import type { CallTokens } from './tokens';
@@ -12,7 +12,7 @@ import { maskNumber, redactDeep } from './dashboard/events';
 import type { AuditSink } from '../run/turn';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
 import { isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly';
-import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './voice/provider';
+import type { CallbackParams, RelayLanguage, StartDocumentOptions, VoiceProvider, WebhookRequest } from './voice/provider';
 import { providerForPath, voiceProviders } from './voice/registry';
 import { twilioCallbackParams, twilioProvider } from './voice/twilio';
 import { formFields } from './voice/xml';
@@ -169,24 +169,35 @@ export function startLocale(app: App, to: string | undefined): string | undefine
 
 /**
  * The start document's options shared by the initial /voice answer and a reconnect, with the carrier's
- * own voice. For an app that names its languages (namesLanguages), the call's language (`locale`: the
- * number's on a new call, the session's own on a reconnect) and every language it may switch to, each
- * with its voice on this carrier: the app's (voice.locales.<tag>.voices.<provider>), else, for the
- * default locale only, the deployment's (config.ts voiceFor), else the carrier's default for it.
+ * own voice and recognizer. For an app that names its languages (namesLanguages), the call's language
+ * (`locale`: the number's on a new call, the session's own on a reconnect) and every language it may
+ * switch to, each with its own settings on this carrier:
+ * - its voice: the app's (voice.locales.<tag>.voices.<provider>), else, for the default locale only,
+ *   the deployment's (config.ts voiceFor), else none (the carrier's default for it);
+ * - its recognizer: the app's (voice.locales.<tag>.recognition.<provider>), whole, a field it leaves
+ *   out being the carrier's default; else, for the default locale only, the deployment's (config.ts
+ *   recognitionFor); else none (the carrier's default). The deployment's stops at the default locale
+ *   because it is chosen for one language (Twilio's default, Deepgram flux, is for English), and a
+ *   recognizer that does not hear a language is worse than the carrier's default for it.
+ * The provider writes each where no other language inherits it (voice/xml.ts placeLanguages).
  */
 function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string): StartDocumentOptions {
   const deployment = voiceFor(deps.config, provider.id);
-  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: deps.hints, ...deployment };
+  const deploymentRecognition = recognitionFor(deps.config, provider.id);
+  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: deps.hints, ...deployment, recognition: deploymentRecognition };
   const app = deps.app;
   if (!app?.locales || !namesLanguages(app) || locale === undefined) return base;
   const defaultLocale = app.locales.default;
-  const language = (tag: string) => {
+  const language = (tag: string): RelayLanguage => {
     const own = app.voice?.locales && Object.hasOwn(app.voice.locales, tag) ? app.voice.locales[tag] : undefined;
     const appVoice = own?.voices && Object.hasOwn(own.voices, provider.id) ? own.voices[provider.id] : undefined;
     const voice = appVoice ?? (tag === defaultLocale ? deployment.voice : undefined);
+    const appRecognition = own?.recognition && Object.hasOwn(own.recognition, provider.id) ? own.recognition[provider.id] : undefined;
+    const recognition = appRecognition ?? (tag === defaultLocale ? deploymentRecognition : undefined);
     return {
       ...speechLanguagesOf(app, tag),
       ...(voice !== undefined ? { voice, ...(deployment.ttsProvider !== undefined ? { ttsProvider: deployment.ttsProvider } : {}) } : {}),
+      ...(recognition !== undefined && (recognition.provider !== undefined || recognition.model !== undefined) ? { recognition } : {}),
     };
   };
   const hints = app.voice?.locales && Object.hasOwn(app.voice.locales, locale) ? app.voice.locales[locale]?.hints : undefined;

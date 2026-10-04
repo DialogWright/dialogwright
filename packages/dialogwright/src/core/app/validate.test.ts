@@ -172,6 +172,9 @@ describe('validateApp', () => {
     expect(() => validateApp({ ...copy(), voice: { locales: { es: {} } } })).toThrow(/voice\.locales.*"es"/);
     expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { voices: { acme: 'x' } } } } })).toThrow(/unknown voice provider "acme"/);
     expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { voices: { twilio: 'x' } } } } })).not.toThrow();
+    expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { recognition: { acme: {} } } } } })).toThrow(/recognition names the unknown voice provider "acme"/);
+    expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { recognition: { twilio: { model: 'flux"/>' } } } } } })).toThrow(/recognition\.twilio\.model "flux"\/>" is not a recognizer name/);
+    expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { recognition: { twilio: { provider: 'Google', model: 'telephony' } } } } } })).not.toThrow();
   });
 
   it.each(['agent', 'repeat_prompt'])('requires the control intent %s', (id) => {

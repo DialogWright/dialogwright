@@ -33,30 +33,65 @@ describe('the Twilio voice provider', () => {
     );
   });
 
-  it('names a two-locale call\'s languages: where it starts, each it may switch to with its voice, and the locale parameter', () => {
+  it('takes the deployment\'s recognizer in the place Deepgram flux has always had, and names it escaped', () => {
+    expect(twilioProvider.startDocument({ ...START, recognition: { provider: 'Deepgram', model: 'flux' } })).toBe(twilioProvider.startDocument(START));
+    expect(twilioProvider.startDocument({ ...START, recognition: { provider: 'Google', model: 'telephony' } })).toContain(
+      `token=${'a'.repeat(32)}" transcriptionProvider="Google" speechModel="telephony" partialPrompts="true"`,
+    );
+    const providerOnly = twilioProvider.startDocument({ ...START, recognition: { provider: 'Google' } });
+    expect(providerOnly).toContain('transcriptionProvider="Google" partialPrompts="true"');
+    expect(providerOnly).not.toContain('speechModel=');
+    expect(twilioProvider.startDocument({ ...START, recognition: {} })).not.toContain('transcriptionProvider=');
+    expect(twilioProvider.startDocument({ ...START, recognition: { provider: 'a"<b' } })).toContain('transcriptionProvider="a&quot;&lt;b"');
+  });
+
+  it('names a two-locale call\'s languages: where it starts, each it may switch to with its own voice and recognizer, and the locale parameter', () => {
     const doc = twilioProvider.startDocument({
       ...START,
       ttsProvider: 'Google',
       voice: 'en-US-Neural2-F',
-      language: { tts: 'es-US', transcription: 'es-MX', voice: 'es-US-Journey-F', ttsProvider: 'Google' },
+      recognition: { provider: 'Deepgram', model: 'flux' },
+      language: { tts: 'es-US', transcription: 'es-MX', voice: 'es-US-Journey-F', ttsProvider: 'Google', recognition: { provider: 'Google', model: 'telephony' } },
       languages: [
-        { tts: 'en-US', transcription: 'en-US', voice: 'en-US-Neural2-F', ttsProvider: 'Google' },
-        { tts: 'es-US', transcription: 'es-MX', voice: 'es-US-Journey-F', ttsProvider: 'Google' },
+        { tts: 'en-US', transcription: 'en-US', voice: 'en-US-Neural2-F', ttsProvider: 'Google', recognition: { provider: 'Deepgram', model: 'flux' } },
+        { tts: 'es-US', transcription: 'es-MX', voice: 'es-US-Journey-F', ttsProvider: 'Google', recognition: { provider: 'Google', model: 'telephony' } },
       ],
       parameters: { locale: 'es' },
     });
+    // The languages differ, so each is on its own <Language>: the relay element names neither, so
+    // neither language inherits the other's (a <Language> inherits what it leaves out).
     expect(doc).toBe(
       `${HEAD}<Response><Connect action="https://voice.example.com/cr-action/twilio">` +
-        `<ConversationRelay url="wss://voice.example.com/conversation/twilio?token=${'a'.repeat(32)}" ${RELAY_ATTRS} ` +
-        'ttsLanguage="es-US" transcriptionLanguage="es-MX" ttsProvider="Google" voice="es-US-Journey-F">' +
-        '<Language code="en-US" ttsProvider="Google" voice="en-US-Neural2-F"/>' +
-        '<Language code="es-US" ttsProvider="Google" voice="es-US-Journey-F"/>' +
+        `<ConversationRelay url="wss://voice.example.com/conversation/twilio?token=${'a'.repeat(32)}" ${RELAY_ATTRS.replace('transcriptionProvider="Deepgram" speechModel="flux" ', '')} ` +
+        'ttsLanguage="es-US" transcriptionLanguage="es-MX">' +
+        '<Language code="en-US" ttsProvider="Google" voice="en-US-Neural2-F" transcriptionProvider="Deepgram" speechModel="flux"/>' +
+        '<Language code="es-US" ttsProvider="Google" voice="es-US-Journey-F" transcriptionProvider="Google" speechModel="telephony"/>' +
         '<Parameter name="locale" value="es"/>' +
         '</ConversationRelay></Connect></Response>',
     );
   });
 
-  it('gives a language with no voice of its own the carrier\'s default voice, and the legacy paths the same languages', () => {
+  it('names a setting every language shares once, on the relay element, and none on the <Language> children', () => {
+    const same = { voice: 'en-US-Journey-O', ttsProvider: 'Google', recognition: { provider: 'Deepgram', model: 'nova-3-general' } };
+    const doc = twilioProvider.startDocument({
+      ...START,
+      language: { tts: 'en-US', transcription: 'en-US', ...same },
+      languages: [{ tts: 'en-US', transcription: 'en-US', ...same }, { tts: 'en-GB', transcription: 'en-GB', ...same }],
+      parameters: { locale: 'en-US' },
+    });
+    expect(doc).toContain(`token=${'a'.repeat(32)}" transcriptionProvider="Deepgram" speechModel="nova-3-general" partialPrompts="true"`);
+    expect(doc).toContain('ttsLanguage="en-US" transcriptionLanguage="en-US" ttsProvider="Google" voice="en-US-Journey-O"><Language code="en-US"/><Language code="en-GB"/>');
+    // The voice shared and the recognizer not: each placed on its own terms.
+    const mixed = twilioProvider.startDocument({
+      ...START,
+      language: { tts: 'en-US', transcription: 'en-US', ...same },
+      languages: [{ tts: 'en-US', transcription: 'en-US', ...same }, { tts: 'es-US', transcription: 'es-US', voice: same.voice, ttsProvider: 'Google' }],
+    });
+    expect(mixed).not.toContain('transcriptionProvider="Deepgram" partialPrompts');
+    expect(mixed).toContain('ttsProvider="Google" voice="en-US-Journey-O"><Language code="en-US" transcriptionProvider="Deepgram" speechModel="nova-3-general"/><Language code="es-US"/>');
+  });
+
+  it('gives a language with no voice or recognizer of its own the carrier\'s defaults, and the legacy paths the same languages', () => {
     const o = {
       ...START,
       ttsProvider: 'Google',
@@ -66,10 +101,25 @@ describe('the Twilio voice provider', () => {
       parameters: { locale: 'es-US' },
     };
     const doc = twilioProvider.startDocument(o);
-    // The deployment's voice is the default locale's, never said in another language.
+    // The deployment's voice and recognizer are the default locale's, never said or heard in another language.
     expect(doc).not.toContain('voice=');
+    expect(doc).not.toContain('transcriptionProvider=');
     expect(doc).toContain('hints="one,two" ttsLanguage="es-US" transcriptionLanguage="es-US"><Language code="en-US"/><Language code="es-US"/><Parameter name="locale" value="es-US"/></ConversationRelay>');
     expect(connectRelayTwiml(o)).toBe(doc.replace('/cr-action/twilio', '/cr-action').replace('/conversation/twilio', '/conversation'));
+  });
+
+  it('when the call starts in a language with a voice and another has none, names the voice on its <Language> only', () => {
+    const doc = twilioProvider.startDocument({
+      ...START,
+      language: { tts: 'en-US', transcription: 'en-US', voice: 'en-US-Neural2-F', ttsProvider: 'Google', recognition: { provider: 'Deepgram', model: 'flux' } },
+      languages: [
+        { tts: 'en-US', transcription: 'en-US', voice: 'en-US-Neural2-F', ttsProvider: 'Google', recognition: { provider: 'Deepgram', model: 'flux' } },
+        { tts: 'es-US', transcription: 'es-US' },
+      ],
+    });
+    // Were they on the relay element, the Spanish <Language> would inherit an English voice and flux.
+    expect(doc).toContain('ttsLanguage="en-US" transcriptionLanguage="en-US"><Language code="en-US" ttsProvider="Google" voice="en-US-Neural2-F" transcriptionProvider="Deepgram" speechModel="flux"/><Language code="es-US"/>');
+    expect(doc).not.toContain('transcriptionProvider="Deepgram" partialPrompts');
   });
 
   it('verifies the signature over the full URL and the sorted form fields', () => {

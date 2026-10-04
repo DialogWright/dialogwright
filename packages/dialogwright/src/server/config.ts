@@ -4,6 +4,8 @@ import { resolveJevProvider, type JevProvider } from '../jev/provider';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from './voice/registry';
+import { RECOGNIZER_NAME } from '../channel/voiceProviders';
+import type { Recognition } from '../core/app/types';
 
 export type ClientKind = 'stub' | 'heuristic' | 'jev';
 
@@ -50,6 +52,15 @@ export interface ServerConfig {
    * engine (`Telnyx.Ultra.Callie`, say). Unset, Telnyx speaks with its default voice.
    */
   telnyxVoice: string | null;
+  /**
+   * TWILIO_TRANSCRIPTION_PROVIDER, default Deepgram, and TWILIO_SPEECH_MODEL, default flux when the
+   * provider is Deepgram (flux is Deepgram's model) and none otherwise: Twilio's recognizer for the
+   * app's default locale (recognitionFor). An app's voice.locales.<tag>.recognition.twilio wins.
+   */
+  twilioTranscriptionProvider: string;
+  twilioSpeechModel: string | null;
+  /** TELNYX_TRANSCRIPTION_PROVIDER, optional: Telnyx's recognizer for the default locale; unset, Telnyx's own default. */
+  telnyxTranscriptionProvider: string | null;
   /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
   noInputMs: number;
   /**
@@ -179,6 +190,10 @@ export function loadConfig(env: Env): ServerConfig {
   if (telnyxVoice && !/^[A-Za-z]+(\.[A-Za-z0-9_-]+)+$/.test(telnyxVoice)) {
     throw new Error(`TELNYX_VOICE must be a Telnyx voice name like Telnyx.Ultra.Callie, got "${telnyxVoice}"`);
   }
+  const twilioTranscriptionProvider = recognizerName(env, 'TWILIO_TRANSCRIPTION_PROVIDER', 'Deepgram') ?? 'Deepgram';
+  // flux is Deepgram's: another provider without a model of its own gets that provider's default.
+  const twilioSpeechModel = recognizerName(env, 'TWILIO_SPEECH_MODEL', 'nova-3-general') ?? (twilioTranscriptionProvider === 'Deepgram' ? 'flux' : null);
+  const telnyxTranscriptionProvider = recognizerName(env, 'TELNYX_TRANSCRIPTION_PROVIDER', 'deepgram');
   return {
     port,
     publicHost,
@@ -200,6 +215,9 @@ export function loadConfig(env: Env): ServerConfig {
     ttsProvider,
     ttsVoice,
     telnyxVoice,
+    twilioTranscriptionProvider,
+    twilioSpeechModel,
+    telnyxTranscriptionProvider,
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     jevTimeoutMs: jevTimeout(env),
     screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
@@ -209,6 +227,13 @@ export function loadConfig(env: Env): ServerConfig {
     handoffSummary: handoffSummarySwitch === 'on',
     consoleLocalOnly: localOnlySwitch === 'on',
   };
+}
+
+/** A recognizer's provider or model name from `name`, or null when it is unset or empty; anything but a plain name is refused. */
+function recognizerName(env: Env, name: string, example: string): string | null {
+  const v = env[name]?.trim() || null;
+  if (v !== null && !RECOGNIZER_NAME.test(v)) throw new Error(`${name} must be a name of letters, digits, dots, hyphens and underscores, like ${example}, got "${v}"`);
+  return v;
 }
 
 function jevTimeout(env: Env): number {
@@ -226,6 +251,19 @@ function jevTimeout(env: Env): number {
 export function voiceFor(c: ServerConfig, providerId: string): { ttsProvider?: string; voice?: string } {
   if (providerId === 'twilio') return c.ttsProvider && c.ttsVoice ? { ttsProvider: c.ttsProvider, voice: c.ttsVoice } : {};
   if (providerId === 'telnyx') return c.telnyxVoice ? { voice: c.telnyxVoice } : {};
+  return {};
+}
+
+/**
+ * The deployment's recognizer on one carrier: Twilio's from TWILIO_TRANSCRIPTION_PROVIDER and
+ * TWILIO_SPEECH_MODEL (Deepgram flux unless set), Telnyx's from TELNYX_TRANSCRIPTION_PROVIDER (empty
+ * unless set: Telnyx's own default). Like voiceFor, one carrier's never reaches another. It is the
+ * default locale's; an app's voice.locales.<tag>.recognition.<provider> wins over it, and another
+ * locale does not get it (server/http.ts connectOptions).
+ */
+export function recognitionFor(c: ServerConfig, providerId: string): Recognition {
+  if (providerId === 'twilio') return c.twilioSpeechModel === null ? { provider: c.twilioTranscriptionProvider } : { provider: c.twilioTranscriptionProvider, model: c.twilioSpeechModel };
+  if (providerId === 'telnyx') return c.telnyxTranscriptionProvider === null ? {} : { provider: c.telnyxTranscriptionProvider };
   return {};
 }
 
@@ -273,5 +311,7 @@ export function describeConfig(c: ServerConfig): string {
     c.handoffSummary ? `handoff note on${c.anthropicApiKey ? '' : ' (no key: none generated)'}` : 'handoff note OFF',
     c.ttsProvider && c.ttsVoice ? `tts ${c.ttsProvider} ${c.ttsVoice}` : 'tts default',
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx voice ${c.telnyxVoice ?? 'default'}`] : []),
+    ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
+    ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
   ].join('  ');
 }

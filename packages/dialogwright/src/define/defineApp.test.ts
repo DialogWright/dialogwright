@@ -431,6 +431,36 @@ describe('defineApp: the voice on the phone, by locale and by number called (voi
     ]);
   });
 
+  it('loads a locale\'s recognizer per carrier, a field it leaves out being the carrier\'s default', () => {
+    const dir = withVoice(
+      '  locales:',
+      '    es:',
+      '      recognition:',
+      '        twilio: { provider: Google, model: telephony }',
+      '        telnyx: { provider: google }',
+      '    en-US:',
+      '      recognition: { twilio: {} }',
+    );
+    const app = defineApp(dir, libraryCode);
+    expect(app.voice?.locales).toEqual({
+      es: { recognition: { twilio: { provider: 'Google', model: 'telephony' }, telnyx: { provider: 'google' } } },
+      'en-US': { recognition: { twilio: {} } },
+    });
+  });
+
+  it('voice: a recognizer for a provider the engine does not know', () => {
+    expect(problems(libraryCode, withVoice('  locales:', '    es:', '      recognition:', '        twilo: { model: telephony }'))).toEqual([
+      'app.yaml:26:9  voice.locales.es.recognition.twilo  unknown voice provider "twilo"  ->  rename it to "twilio", or use twilio or telnyx',
+    ]);
+  });
+
+  it('voice: a recognizer\'s provider and model are plain names, and it has no other key', () => {
+    expect(loadProblems(withVoice('  locales:', '    es:', '      recognition:', '        twilio: { provider: "Deep gram", speechModel: flux }'))).toEqual([
+      expect.stringMatching(/^app\.yaml:26:29 {2}voice\.locales\.es\.recognition\.twilio\.provider {2}"Deep gram" is not a recognizer name/),
+      expect.stringMatching(/^app\.yaml:26:42 {2}voice\.locales\.es\.recognition\.twilio\.speechModel {2}/),
+    ]);
+  });
+
   it('voice: tts and transcription must be language tags', () => {
     expect(loadProblems(withVoice('  locales:', '    es:', '      tts: Spanish', '      transcription: es_MX'))).toEqual([
       expect.stringMatching(/^app\.yaml:25:12 {2}voice\.locales\.es\.tts {2}"Spanish" is not a language tag like "en-US" or "fr" {2}-> {2}write a language tag/),

@@ -25,19 +25,29 @@ describe('the Telnyx voice provider', () => {
     expect(telnyxProvider.startDocument({ ...START, voice: 'a "q" & b' })).toContain('voice="a &quot;q&quot; &amp; b"');
   });
 
-  it('names a two-locale call\'s language (one for speech and recognition alike), the languages it may switch to, and the locale parameter', () => {
+  it('names the deployment\'s recognizer provider, and never a model, on the relay element', () => {
+    expect(telnyxProvider.startDocument({ ...START, recognition: {} })).toBe(telnyxProvider.startDocument(START));
+    const doc = telnyxProvider.startDocument({ ...START, recognition: { provider: 'deepgram', model: 'nova-2' } });
+    expect(doc).toContain('hints="one,two" transcriptionProvider="deepgram"/>');
+    expect(doc).not.toContain('speechModel=');
+  });
+
+  it('names a two-locale call\'s language (one for speech and recognition alike), the languages it may switch to with their own voices and recognizers, and the locale parameter', () => {
     const doc = telnyxProvider.startDocument({
       ...START,
       voice: 'Telnyx.Ultra.Callie',
-      language: { tts: 'es-US', transcription: 'es-US', voice: 'Telnyx.Ultra.Asher' },
-      languages: [{ tts: 'en-US', transcription: 'en-US', voice: 'Telnyx.Ultra.Callie' }, { tts: 'es-US', transcription: 'es-US', voice: 'Telnyx.Ultra.Asher' }],
+      language: { tts: 'es-US', transcription: 'es-US', voice: 'Telnyx.Ultra.Asher', recognition: { provider: 'google' } },
+      languages: [
+        { tts: 'en-US', transcription: 'en-US', voice: 'Telnyx.Ultra.Callie', recognition: { provider: 'deepgram', model: 'nova-2' } },
+        { tts: 'es-US', transcription: 'es-US', voice: 'Telnyx.Ultra.Asher', recognition: { provider: 'google' } },
+      ],
       parameters: { locale: 'es-US' },
     });
     expect(doc).toBe(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Connect action="https://voice.example.com/cr-action/telnyx">' +
         `<ConversationRelay url="wss://voice.example.com/conversation/telnyx?token=${'b'.repeat(32)}" dtmfDetection="true" interruptible="any" hints="one,two" ` +
-        'language="es-US" voice="Telnyx.Ultra.Asher">' +
-        '<Language code="en-US" voice="Telnyx.Ultra.Callie"/><Language code="es-US" voice="Telnyx.Ultra.Asher"/>' +
+        'language="es-US">' +
+        '<Language code="en-US" voice="Telnyx.Ultra.Callie" transcriptionProvider="deepgram" speechModel="nova-2"/><Language code="es-US" voice="Telnyx.Ultra.Asher" transcriptionProvider="google"/>' +
         '<Parameter name="locale" value="es-US"/>' +
         '</ConversationRelay></Connect></Response>',
     );
@@ -45,6 +55,15 @@ describe('the Telnyx voice provider', () => {
     const plain = telnyxProvider.startDocument({ ...START, voice: 'Telnyx.Ultra.Callie', language: { tts: 'es-US', transcription: 'es-US' } });
     expect(plain).toContain('hints="one,two" language="es-US"/>');
     expect(plain).not.toContain('voice=');
+  });
+
+  it('names what every language shares on the relay element, except a model, which only <Language> takes', () => {
+    const same = { voice: 'Telnyx.Ultra.Callie', recognition: { provider: 'deepgram' } };
+    const shared = telnyxProvider.startDocument({ ...START, language: { tts: 'en-US', transcription: 'en-US', ...same }, languages: [{ tts: 'en-US', transcription: 'en-US', ...same }] });
+    expect(shared).toContain('hints="one,two" transcriptionProvider="deepgram" language="en-US" voice="Telnyx.Ultra.Callie"><Language code="en-US"/></ConversationRelay>');
+    const model = { recognition: { provider: 'deepgram', model: 'nova-2' } };
+    const withModel = telnyxProvider.startDocument({ ...START, language: { tts: 'en-US', transcription: 'en-US', ...model }, languages: [{ tts: 'en-US', transcription: 'en-US', ...model }] });
+    expect(withModel).toContain('hints="one,two" language="en-US"><Language code="en-US" transcriptionProvider="deepgram" speechModel="nova-2"/></ConversationRelay>');
   });
 
   it('reads a form-encoded TeXML callback and a JSON one alike', () => {

@@ -644,6 +644,20 @@ export interface VoiceLocale {
   readonly voices?: Readonly<Record<string, string>>;
   /** Words the recognizer should expect in this locale, in place of VoiceConfig.hints. */
   readonly hints?: readonly string[];
+  /**
+   * The speech recognizer, by voice provider id (twilio, telnyx), each in the carrier's own names.
+   * It wins over the deployment's recognizer for that carrier (TWILIO_TRANSCRIPTION_PROVIDER and
+   * TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER); a field it leaves out is the carrier's
+   * default, never the deployment's. Without it, the default locale has the deployment's recognizer
+   * and any other the carrier's default, since a deployment's model may hear one language only.
+   */
+  readonly recognition?: Readonly<Record<string, Recognition>>;
+}
+
+/** A speech recognizer on one carrier: its provider and its model, in the carrier's own names; a field left out is the carrier's default. */
+export interface Recognition {
+  readonly provider?: string;
+  readonly model?: string;
 }
 
 /**

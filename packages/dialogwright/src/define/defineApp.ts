@@ -1,6 +1,6 @@
 import type {
   App, AppBrand, AppLocales, ConsoleConfig, FormDef, FormId, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
-  PromptManifestEntry, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale,
+  PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale,
 } from '../core/app/types';
 import { SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
@@ -592,9 +592,11 @@ export function crossLink(
   for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) localeNamed('app.yaml', ['voice', 'numbers', number], tag);
   for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {
     localeNamed('app.yaml', ['voice', 'locales', tag], tag, true);
-    for (const provider of Object.keys(settings.voices ?? {})) {
-      if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) {
-        yaml('app.yaml', ['voice', 'locales', tag, 'voices', provider], `unknown voice provider "${provider}"`, `${renameHint(provider, VOICE_PROVIDER_IDS)}use ${orList(VOICE_PROVIDER_IDS)}`, true);
+    for (const key of ['voices', 'recognition'] as const) {
+      for (const provider of Object.keys(settings[key] ?? {})) {
+        if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) {
+          yaml('app.yaml', ['voice', 'locales', tag, key, provider], `unknown voice provider "${provider}"`, `${renameHint(provider, VOICE_PROVIDER_IDS)}use ${orList(VOICE_PROVIDER_IDS)}`, true);
+        }
       }
     }
   }
@@ -769,6 +771,12 @@ function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {
     put(one, 'transcription', l.transcription);
     put(one, 'voices', l.voices);
     put(one, 'hints', l.hints);
+    put(one, 'recognition', l.recognition === undefined ? undefined : Object.fromEntries(Object.entries(l.recognition).map(([provider, r]) => {
+      const each: { -readonly [K in keyof Recognition]: Recognition[K] } = {};
+      put(each, 'provider', r.provider);
+      put(each, 'model', r.model);
+      return [provider, each];
+    })));
     return [tag, one];
   })));
   return config;

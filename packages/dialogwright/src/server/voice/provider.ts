@@ -7,6 +7,8 @@
  * (src/testing/voiceConformance.ts); nothing in the core changes.
  */
 
+import type { Recognition } from '../../core/app/types';
+
 /** A webhook as it arrived: its path with query, headers lower-cased, and the raw body. */
 export interface WebhookRequest {
   readonly url: string;
@@ -44,11 +46,17 @@ export interface StartDocumentOptions {
   readonly ttsProvider?: string;
   readonly voice?: string;
   /**
+   * The carrier's own speech recognizer (config.ts recognitionFor), for a document that names no
+   * language. Absent, Twilio's is Deepgram flux, as it was before the recognizer could be set, and
+   * Telnyx's is its own default.
+   */
+  readonly recognition?: Recognition;
+  /**
    * The language the call starts in, for an app that names its languages (server/http.ts
    * connectOptions); absent, the document names none and the carrier speaks its default (en-US), as
-   * before languages. When present, its voice is the start's, in place of `voice` and `ttsProvider`
-   * above: those are the default locale's, and a language with no voice of its own gets the
-   * carrier's default voice for it.
+   * before languages. When present, `voice`, `ttsProvider` and `recognition` above are not used:
+   * each language carries its own (xml.ts placeLanguages says where they are written), and a
+   * language with none of its own gets the carrier's default, never another language's.
    */
   readonly language?: RelayLanguage;
   /** Every language the call may switch to (set_language), each with its voice; absent or empty, none named. */
@@ -67,6 +75,8 @@ export interface RelayLanguage {
   readonly voice?: string;
   /** The voice's TTS provider, for a carrier that names it apart from the voice (Twilio's TTS_PROVIDER). */
   readonly ttsProvider?: string;
+  /** The speech recognizer for this language; absent or empty, the carrier's default for it. */
+  readonly recognition?: Recognition;
 }
 
 export interface VoiceProvider {

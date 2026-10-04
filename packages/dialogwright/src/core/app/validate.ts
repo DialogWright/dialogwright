@@ -12,7 +12,7 @@ import type { App, ConfigHashes } from './types';
 import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
 import { SLOT_LISTEN_VALUES } from '../slots/types';
-import { VOICE_PROVIDER_IDS } from '../../channel/voiceProviders';
+import { RECOGNIZER_NAME, VOICE_PROVIDER_IDS } from '../../channel/voiceProviders';
 
 /** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
 const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
@@ -159,6 +159,14 @@ export function validateApp(app: App): void {
   for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {
     if (!speaks.includes(tag)) fail(`voice.locales names the locale "${tag}", which the app does not speak`);
     for (const provider of Object.keys(settings.voices ?? {})) if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) fail(`voice.locales.${tag}.voices names the unknown voice provider "${provider}"`);
+    for (const [provider, r] of Object.entries(settings.recognition ?? {})) {
+      if (!(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) fail(`voice.locales.${tag}.recognition names the unknown voice provider "${provider}"`);
+      // The names go into a carrier's start document: a plain name only, as app.yaml's schema requires.
+      for (const field of ['provider', 'model'] as const) {
+        const v = r[field];
+        if (v !== undefined && !RECOGNIZER_NAME.test(v)) fail(`voice.locales.${tag}.recognition.${provider}.${field} "${v}" is not a recognizer name (letters, digits, dots, hyphens and underscores)`);
+      }
+    }
   }
   for (const [id, def] of Object.entries(app.intents)) {
     if (def.kind === 'form' && !Object.hasOwn(app.forms, id)) fail(`form intent "${id}" has no form`);

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
-import { attr, escapeXml, formFields, relayChildren, relayElement, xmlResponse } from './xml';
+import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, relayElement, xmlResponse } from './xml';
+import type { Recognition } from '../../core/app/types';
 
 /**
  * Twilio request signature: HMAC-SHA1 over the full URL followed by every POST
@@ -35,21 +36,29 @@ export interface RelayPaths {
 /** The provider's own paths; the legacy unprefixed ones are server/twiml.ts connectRelayTwiml's. */
 export const TWILIO_PATHS: RelayPaths = { socket: '/conversation/twilio', action: '/cr-action/twilio' };
 
+/** Twilio's recognizer when a caller of the document names none: Deepgram flux, as the document always had. */
+const TWILIO_DEFAULT_RECOGNITION: Recognition = { provider: 'Deepgram', model: 'flux' };
+
 /**
  * The ConversationRelay connect document. Attributes follow Twilio's ConversationRelay TwiML reference.
- * For an app that names its languages, the call's start language (`ttsLanguage`,
- * `transcriptionLanguage` and its voice), one `<Language>` child per language it may switch to,
- * and `<Parameter>` children (the `locale` the engine reads back from the setup frame).
+ * The recognizer (`transcriptionProvider`, `speechModel`) is the deployment's (TWILIO_TRANSCRIPTION_PROVIDER,
+ * TWILIO_SPEECH_MODEL). For an app that names its languages, the call's start language (`ttsLanguage`,
+ * `transcriptionLanguage`), one `<Language>` child per language it may switch to with its own voice
+ * and recognizer (xml.ts placeLanguages), and `<Parameter>` children (the `locale` the engine reads
+ * back from the setup frame).
  *
  * `partialPrompts="true"` is on for the no-input wait, not for scoring: the adapter still runs a
  * turn only on a final prompt, but a partial tells it the caller has started speaking, so the
  * wait is cancelled at the first syllable rather than after the whole utterance is transcribed.
  */
 export function twilioConnectDocument(o: StartDocumentOptions, paths: RelayPaths): string {
+  const placed = placeLanguages(o, { ttsProvider: true, relayModel: true });
+  // Without languages, the deployment's recognizer (Deepgram flux unless TWILIO_* says otherwise), in
+  // the place it has always had: a one-locale en-US app's document is byte for byte as before.
+  const recognition = o.language ? placed.recognition : (o.recognition ?? TWILIO_DEFAULT_RECOGNITION);
   const attrs = [
     `url="wss://${escapeXml(o.publicHost)}${paths.socket}?token=${escapeXml(o.token)}"`,
-    'transcriptionProvider="Deepgram"',
-    'speechModel="flux"',
+    ...recognitionAttrs(recognition),
     'partialPrompts="true"',
     'dtmfDetection="true"',
     // On speakerphone, room noise was interrupting prompt playback and leaving the caller in
@@ -62,16 +71,16 @@ export function twilioConnectDocument(o: StartDocumentOptions, paths: RelayPaths
     `hints="${escapeXml(o.hints)}"`,
   ];
   if (o.language) {
-    // A call in a named language: its voice is the language's own, or Twilio's default for it.
+    // A call in a named language: its voice here only when every language has it (placeLanguages).
     attrs.push(attr('ttsLanguage', o.language.tts), attr('transcriptionLanguage', o.language.transcription));
-    if (o.language.voice) {
-      if (o.language.ttsProvider) attrs.push(attr('ttsProvider', o.language.ttsProvider));
-      attrs.push(attr('voice', o.language.voice));
+    if (placed.voice.voice !== undefined) {
+      if (placed.voice.ttsProvider !== undefined) attrs.push(attr('ttsProvider', placed.voice.ttsProvider));
+      attrs.push(attr('voice', placed.voice.voice));
     }
   } else if (o.ttsProvider && o.voice) {
     attrs.push(`ttsProvider="${escapeXml(o.ttsProvider)}"`, `voice="${escapeXml(o.voice)}"`);
   }
-  const relay = relayElement(attrs, relayChildren(o, true));
+  const relay = relayElement(attrs, placed.children);
   return xmlResponse(`<Connect action="https://${escapeXml(o.publicHost)}${paths.action}">${relay}</Connect>`);
 }
 

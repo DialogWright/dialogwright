@@ -485,6 +485,31 @@
                   "type": "string",
                   "minLength": 1
                 }
+              },
+              "recognition": {
+                "description": "The speech recognizer for this locale, by voice provider id (twilio, telnyx). It wins over the deployment's (TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL, TELNYX_TRANSCRIPTION_PROVIDER). Default: the deployment's for the default locale, else the carrier's default, since a deployment's model may hear one language only (Twilio's default, Deepgram flux, is for English).",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "description": "The speech recognition provider, as the carrier names it (Twilio: Deepgram or Google; Telnyx: deepgram, google or telnyx). Twilio's transcriptionProvider, Telnyx's transcriptionProvider.",
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                    },
+                    "model": {
+                      "description": "The provider's speech model (Twilio's speechModel: nova-3-general, telephony; Telnyx takes one on <Language> only). Left out, the provider's default.",
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "The speech recognizer on one carrier. A field left out is the carrier's default, never the deployment's; {} asks for the carrier's default recognizer."
+                }
               }
             },
             "additionalProperties": false,
