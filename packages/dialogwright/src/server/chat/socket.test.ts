@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { generateKeyPairSync, sign as cryptoSign, type KeyObject } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
@@ -25,7 +25,7 @@ import { startEvent, textEvent, type SessionEvent } from '../../channel/events';
 import { actionsToChatMessages, type ServerMessage } from '../../channel/chat/protocol';
 import { runChatTurnActions, type ChatTurnEntry } from '../chatTurn';
 import type { JevClient } from '../../jev/types';
-import { CHAT_MAX_WAITING } from './socket';
+import { CHAT_MAX_WAITING, CHAT_TURN_ERROR } from './socket';
 import { replayEvents } from '../dashboard/view.js';
 import { readFrameLog } from '../frameLog';
 import type { DashboardEvent } from '../dashboard/events';
@@ -348,7 +348,7 @@ describe('the chat endpoint', () => {
     clock += 60_000;
     running!.sweep();
     expect(running!.chat!.liveCount()).toBe(0);
-    expect(logs.some((l) => l.includes('close handler failed'))).toBe(true);
+    expect(logs.some((l) => l.includes('could not write a frame log'))).toBe(true);
     // The server still serves.
     const d = await ChatClient.connect(url);
     d.send({ type: 'ping' });
@@ -401,6 +401,45 @@ describe('the chat endpoint', () => {
     const m = c.received.length;
     c.send({ type: 'ping' });
     await c.until((r) => r.slice(m).some((x) => x.type === 'pong'));
+  });
+
+  it('sends ready on a resume ahead of a reply still in flight, so the client has its session first', async () => {
+    const slow: JevClient = { ask: async (req) => { await new Promise((resolve) => setTimeout(resolve, 150)); return stub.ask(req); } };
+    const { url } = await start({}, { client: slow });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'), 8000);
+    const ready = c.received[0] as Extract<Msg, { type: 'ready' }>;
+    c.send({ type: 'text', text: OPENER });
+    c.close();
+    await c.closed;
+    const d = await ChatClient.connect(url);
+    d.send({ type: 'start', v: 1, resume: ready.resume });
+    await d.until((r) => r.some((m) => m.type === 'say'), 8000);
+    expect(d.received[0]).toMatchObject({ type: 'ready', session: ready.session });
+    expect(d.received.slice(1).every((m) => m.type === 'say')).toBe(true);
+  });
+
+  it('answers server_error when a turn cannot be run or logged, and goes on serving', async () => {
+    const { url, config, logs } = await start();
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const session = (c.received[0] as Extract<Msg, { type: 'ready' }>).session;
+    // The trace cannot be written: the turn fails, and the client is asked to send it again.
+    rmSync(join(config.traceDir, `${session}.jsonl`));
+    mkdirSync(join(config.traceDir, `${session}.jsonl`));
+    let n = c.received.length;
+    c.send({ type: 'text', text: OPENER });
+    await c.until((r) => r.length > n);
+    expect(c.received[n]).toEqual({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
+    // Nothing can be written at all: still answered, never silence.
+    rmSync(config.traceDir, { recursive: true, force: true });
+    n = c.received.length;
+    c.send({ type: 'text', text: OPENER });
+    await c.until((r) => r.length > n);
+    expect(c.received[n]).toEqual({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
+    expect(logs.some((l) => l.includes('could not write a frame log'))).toBe(true);
   });
 
   it('writes the frame log without the resume token', async () => {
@@ -580,6 +619,28 @@ describe('a delegate signing in to the chat (principals.fromClaims)', () => {
     c.send({ type: 'sign_in', token: 'mock:taylor' });
     await c.until((r) => r.length > n);
     expect(c.received[n]).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (a delegate signs in as the chat starts)' });
+  });
+});
+
+describe('an app whose fromClaims throws', () => {
+  beforeAll(() => {
+    resetAppsForTest();
+    registerApp({ ...testkitApp, principals: { ...testkitApp.principals!, fromClaims: () => { throw new Error('no tenant'); } } });
+  });
+  afterAll(() => {
+    useTestkit();
+  });
+
+  it('refuses a token the app\'s fromClaims throws on, and the chat still opens', async () => {
+    const { url, logs } = await start({ CHAT_SIGNIN: 'mock' });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, token: `mock:${CUSTOMER}` });
+    await c.until((r) => r.some((m) => m.type === 'error'));
+    expect(c.received[0]).toMatchObject({ type: 'ready' });
+    expect(c.received[1]).toMatchObject({ type: 'say' });
+    expect(c.received.find((m) => m.type === 'error')).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (the app could not read the token)' });
+    const session = (c.received[0] as Extract<Msg, { type: 'ready' }>).session;
+    expect(logs).toContain(`chat ${session}: sign-in failed in the app's code: Error: no tenant`);
   });
 });
 

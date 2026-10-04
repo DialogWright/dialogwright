@@ -153,20 +153,36 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   const resumeIds = new Map<string, string>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: CHAT_MAX_PAYLOAD });
 
+  const unwritable = new WeakSet<FrameLog>();
+  /**
+   * One frame log line, where what the client is sent and the session's work must go on whether or
+   * not it can be written (a full disk, a removed trace directory): a failure is logged, not thrown.
+   */
+  const record = (frames: FrameLog | null, dir: 'in' | 'out' | 'log', msg: unknown): void => {
+    if (frames === null) return;
+    try {
+      frames.write(dir, msg);
+    } catch (err) {
+      // Said once per frame log, not on every line it cannot take.
+      if (!unwritable.has(frames)) log(`chat: could not write a frame log: ${describeError(err)}`);
+      unwritable.add(frames);
+    }
+  };
+
   /** Send one message on `ws`, and log it to the session's frame log when there is one. */
   const send = (ws: WebSocket | null, frames: FrameLog | null, m: ServerMessage, scrub: Scrub | null = null): void => {
     const logged = loggedOut(m, scrub);
     if (ws === null || ws.readyState !== WebSocket.OPEN) {
-      frames?.write('log', { dropped: logged });
+      record(frames, 'log', { dropped: logged });
       return;
     }
     if (ws.bufferedAmount > MAX_BUFFERED) {
-      frames?.write('log', { dropped: logged, stalled: true });
+      record(frames, 'log', { dropped: logged, stalled: true });
       ws.close(1008, 'not reading');
       return;
     }
     ws.send(serializeServerMessage(m));
-    frames?.write('out', logged);
+    record(frames, 'out', logged);
   };
   const sendTo = (e: ChatEntry, m: ServerMessage, scrub: Scrub | null = null): void => send(e.socket, e.frames, m, scrub);
 
@@ -185,11 +201,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       })
       .catch((err: unknown) => {
         log(`chat ${e.id}: ${describeError(err)}`);
-        try {
-          e.frames.write('log', { error: describeError(err) });
-        } catch {
-          // Nothing more to do: the queue must go on.
-        }
+        record(e.frames, 'log', { error: describeError(err) });
       })
       .finally(() => {
         e.waiting -= 1;
@@ -204,11 +216,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     sessions.delete(e.id);
     fullLogged = false;
     resumeIds.delete(e.resume);
-    try {
-      e.frames.write('log', { ended: reason });
-    } catch (err) {
-      log(`chat ${e.id}: could not log the end: ${describeError(err)}`);
-    }
+    record(e.frames, 'log', { ended: reason });
     e.socket?.close(1000, 'chat ended');
   };
 
@@ -223,9 +231,10 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       runs = await runChatTurnRuns(deps, e, event, now, HANDOFF_TO);
     } catch (err) {
       log(`chat ${e.id}: turn failed: ${describeError(err)}`);
-      e.frames.write('log', { turnFailed: describeError(err) });
+      // The client is told first, whatever the log can take.
       for (const m of before(e)) sendTo(e, m);
       sendTo(e, { type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
+      record(e.frames, 'log', { turnFailed: describeError(err) });
       return;
     }
     for (const m of before(e)) sendTo(e, m);
@@ -249,10 +258,17 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   /** A token checked against the deployment's method and the app's rule; a refusal logged by its reason, never the token. */
   const verify = async (e: ChatEntry, token: string): Promise<Verified> => {
     if (signIn.method === 'none') return { ok: false, error: { type: 'error', code: 'not_allowed', message: 'sign-in is off for this chat' } };
-    const r = await principalForToken(appOf(e.session), signIn, token, Math.floor(now() / 1000));
+    let r: Awaited<ReturnType<typeof principalForToken>>;
+    try {
+      r = await principalForToken(appOf(e.session), signIn, token, Math.floor(now() / 1000));
+    } catch (err) {
+      // The app's own code (principals.fromClaims, subjectPrincipal) threw: a refusal, not a chat that never opens.
+      log(`chat ${e.id}: sign-in failed in the app's code: ${describeError(err)}`);
+      r = { ok: false, reason: 'the app could not read the token' };
+    }
     if (!r.ok) {
       log(`chat ${e.id}: sign-in refused (${r.reason})`);
-      e.frames.write('log', { signInRefused: r.reason });
+      record(e.frames, 'log', { signInRefused: r.reason });
       return { ok: false, error: refusal(r.reason) };
     }
     return { ok: true, principal: r.principal };
@@ -267,7 +283,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     await turn(e, signedInEvent(p), (s) => {
       if (!signedInAs(s, p)) return [refusal('the chat could not take this sign-in')];
       log(`chat ${s.id}: signed in (${p.kind}, level ${p.level})`);
-      s.frames.write('log', { signedIn: p.level, kind: p.kind });
+      record(s.frames, 'log', { signedIn: p.level, kind: p.kind });
       return [{ type: 'signed_in', level: p.level }];
     });
   };
@@ -305,7 +321,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     sessions.set(id, e);
     resumeIds.set(e.resume, id);
     conn.id = id;
-    frames.write('in', loggedIn(m));
+    record(e.frames, 'in', loggedIn(m));
     // Ahead of the opening turn, and it is what resets the console's history: the page follows this chat now.
     deps.bus?.publish({ type: 'call_started', callSid: id, at: now(), from: 'web chat', todayIso: opts.todayIso, thresholds: opts.thresholds, channel: 'chat', caller: null });
     void enqueue(e, async (s) => {
@@ -323,7 +339,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       if (delegate !== null) {
         s.session = newSession(s.id, s.session.startedAtMs, WEB_CHAT, delegate);
         log(`chat ${s.id}: signed in (${delegate.kind}, level ${delegate.level})`);
-        s.frames.write('log', { signedIn: delegate.level, kind: delegate.kind });
+        record(s.frames, 'log', { signedIn: delegate.level, kind: delegate.kind });
       }
       const signedIn: ServerMessage[] = delegate === null ? [] : [{ type: 'signed_in', level: delegate.level }];
       // The client asks for a language; the core matches it to one of the app's (core/locale.ts matchLocale),
@@ -350,11 +366,10 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         e.socket = conn.ws;
         e.lastActivityMs = now();
         conn.id = e.id;
-        e.frames.write('in', loggedIn(m));
-        // After whatever is still queued, so a reply in flight is not overtaken; nothing is resent.
-        void enqueue(e, async (s) => {
-          for (const r of ready(s)) sendTo(s, r);
-        });
+        record(e.frames, 'in', loggedIn(m));
+        // At once, ahead of a reply still in flight (which goes to this socket when it is done), so the
+        // client has its session and new resume token before any line; nothing is resent.
+        for (const r of ready(e)) sendTo(e, r);
         const token = m.token;
         if (token !== undefined) void enqueue(e, (s) => laterSignIn(s, token));
         return;
@@ -369,11 +384,11 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     const parsed = isBinary ? { ok: false as const, code: 'bad_message' as const, message: 'a message is one JSON object, as text' } : parseClientMessage(data.toString());
     if (!parsed.ok) {
       if (parsed.code === 'bad_message') conn.malformed += 1;
-      entry?.frames.write('in', { refused: parsed.code });
+      record(entry?.frames ?? null, 'in', { refused: parsed.code });
       send(conn.ws, entry?.frames ?? null, { type: 'error', code: parsed.code, message: parsed.message });
       if (conn.malformed >= CHAT_MALFORMED_LIMIT) {
         if (conn.malformed === CHAT_MALFORMED_LIMIT) log(`chat ${conn.id ?? 'unstarted'}: closing after ${conn.malformed} malformed messages`);
-        entry?.frames.write('log', { malformedLimit: conn.malformed });
+        record(entry?.frames ?? null, 'log', { malformedLimit: conn.malformed });
         conn.ws.close(1007, 'malformed messages');
       }
       return;
@@ -408,19 +423,19 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     }
     // A client that does not wait for its replies: told to, rather than queueing turn after turn.
     if (entry.waiting >= CHAT_MAX_WAITING) {
-      entry.frames.write('in', { refused: 'busy' });
+      record(entry.frames, 'in', { refused: 'busy' });
       send(conn.ws, entry.frames, { type: 'error', code: 'busy', message: 'wait for the reply to what was sent' });
       return;
     }
     if (m.type === 'text') {
       // A one-time code typed at the code prompt is masked before the frame log sees it, as a spoken one is (adapter.ts maskCodeFrame).
       const masked = entry.session.promptedFor === 'otp' ? maskSpokenCode(m.text, spokenCodeMinDigits(codeLengthOf(appOf(entry.session)))).text : m.text;
-      entry.frames.write('in', loggedIn(m, masked));
+      record(entry.frames, 'in', loggedIn(m, masked));
       void enqueue(entry, (s) => turn(s, textEvent(m.text)));
       return;
     }
     // sign_in: in the session's queue, so it is taken in order with what was typed around it.
-    entry.frames.write('in', loggedIn(m));
+    record(entry.frames, 'in', loggedIn(m));
     const token = m.token;
     void enqueue(entry, (s) => laterSignIn(s, token));
   };
@@ -440,6 +455,12 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         onMessage(conn, data, isBinary);
       } catch (err) {
         log(`chat ${conn.id ?? 'unstarted'}: message handler failed: ${describeError(err)}`);
+        // Answered, never silence: the client may send it again.
+        try {
+          send(ws, null, { type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
+        } catch {
+          // The socket itself is gone; its close handler does the rest.
+        }
       }
     });
     ws.on('close', () => {
@@ -449,11 +470,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       if (e !== undefined && e.socket === ws) {
         e.socket = null;
         // An event handler must never throw (a full disk, a removed trace directory): it would take the server down.
-        try {
-          e.frames.write('log', { socketClosed: true });
-        } catch (err) {
-          log(`chat ${e.id}: close handler failed: ${describeError(err)}`);
-        }
+        record(e.frames, 'log', { socketClosed: true });
       }
     });
     ws.on('error', (err) => log(`chat ${conn.id ?? 'unstarted'}: socket error ${err.message}`));
