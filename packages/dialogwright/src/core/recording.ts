@@ -209,3 +209,49 @@ export function scrubbedDrafts(drafts: readonly AuditDraft[], scrub: Scrub | nul
     return { ...d, detail };
   });
 }
+
+/** What may stand between two digits of a number said or shown in groups: spaces, a comma, a dot, a hyphen or a slash, a few at most. */
+const DIGIT_GAP = '[\\s,.\\-/]{0,3}';
+
+/**
+ * The scrub of values a line says aloud (what a trace's or a frame log's spoken text may repeat of a
+ * redacted slot): each raw value as scrubberOfValues finds it (whole tokens, any case,
+ * SCRUB_MIN_LENGTH characters or more), its last-four form where `lastFour` (a value recorded hidden,
+ * by length or never, would otherwise say four of its characters), and its digits as one run however
+ * the line spaces or groups them ("5555 1234", "5 5 5 5, 1 2 3 4" as a voice line spells it out,
+ * "5555-1234"; not inside a longer run of digits), each replaced by its shown form. With `cutOff`,
+ * for a line cut off as it was said, a last run of digits that begins one of the values (at least
+ * SCRUB_MIN_LENGTH of them) is replaced too. Null when there is nothing to look for.
+ */
+export function spokenValuesScrubber(values: Iterable<{ readonly raw: string; readonly shown: string; readonly lastFour?: boolean }>, options: { readonly cutOff?: boolean } = {}): Scrub | null {
+  const pairs: [string, string][] = [];
+  const lastFour: [string, string][] = [];
+  const runs = new Map<string, string>();
+  for (const { raw, shown, lastFour: hidden } of values) {
+    if (raw === shown) continue;
+    pairs.push([raw, shown]);
+    if (hidden && raw.length >= SCRUB_MIN_LENGTH) lastFour.push([maskId(raw), shown]);
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= SCRUB_MIN_LENGTH && !runs.has(digits)) runs.set(digits, shown);
+  }
+  let runScrub: Scrub | null = null;
+  if (runs.size > 0) {
+    const alternatives = [...runs.keys()].sort((a, b) => b.length - a.length).map((d) => [...d].join(DIGIT_GAP)).join('|');
+    const pattern = new RegExp(`(?<!\\p{N})(?:${alternatives})(?!\\p{N})`, 'gu');
+    runScrub = (text) => text.replace(pattern, (m) => runs.get(m.replace(/\D/g, '')) ?? '•');
+    if (options.cutOff) {
+      // A line cut off as it was said (an interruption): its last run of digits may be the start of a value.
+      const whole = runScrub;
+      const tail = new RegExp(`(?<!\\p{N})\\p{N}(?:${DIGIT_GAP}\\p{N})*$`, 'u');
+      runScrub = (text) => {
+        const done = whole(text);
+        const m = tail.exec(done);
+        const digits = m?.[0].replace(/\D/g, '') ?? '';
+        if (m === null || digits.length < SCRUB_MIN_LENGTH) return done;
+        const of = [...runs.keys()].find((d) => d.length > digits.length && d.startsWith(digits));
+        return of === undefined ? done : done.slice(0, m.index) + runs.get(of)!;
+      };
+    }
+  }
+  return bothScrubs(bothScrubs(scrubberOfValues(pairs), lastFour.length === 0 ? null : maskedIdScrub(lastFour)), runScrub);
+}

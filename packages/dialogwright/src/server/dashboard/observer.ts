@@ -4,7 +4,7 @@ import type { Session } from '../../core/session';
 import type { TurnObserver } from '../../run/turn';
 import { appOf } from '../../core/app/registry';
 import { spokenText } from '../../prompts/render';
-import { redactTurnState } from '../../trace/redact';
+import { recordScrubber, redactTurnState } from '../../trace/redact';
 
 /**
  * Where the observer finds a live call's session: the voice line's SessionStore, or an app chat's
@@ -35,7 +35,15 @@ export function makeObserver(bus: DashboardBus, store: ObservedCalls, callSid: s
     // The published record is redacted: the dashboard route is unauthenticated, and a setup
     // record carries the caller's whole number. The trace file on disk (written by opts.trace)
     // keeps the caller's number, with the identity slots masked by the writer.
-    turn: (record, at) => bus.publish({ type: 'turn', callSid, at, record: redactRecord(record), spoken: spokenText(appOf(store.get(callSid)?.session ?? {}), record.decision, record.locale) }),
+    // The line the caller heard is rendered from the redacted record and scrubbed as its say actions
+    // are (trace/redact.ts recordScrubber): a readback of a redacted slot shows its masked form.
+    turn: (record, at) => {
+      const app = appOf(store.get(callSid)?.session ?? {});
+      const redacted = redactRecord(record);
+      const scrub = recordScrubber(record, 'keep', app);
+      const spoken = spokenText(app, redacted.decision, record.locale);
+      bus.publish({ type: 'turn', callSid, at, record: redacted, spoken: scrub === null ? spoken : scrub(spoken) });
+    },
     // Entries are built free of PHI in the core, so they are published as chained. The call's own
     // entry keeps them too, but that is the run path's job (adapter.ts, chatTurn.ts), so the handoff
     // summary has them with the console off.

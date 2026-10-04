@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { redactRecord, redactFrameLine } from './events';
+import { redactRecord, redactFrameLine, type DashboardEvent } from './events';
+import { DashboardBus } from './bus';
+import { makeObserver } from './observer';
+import { consoleKbSource, redactRecordSlots } from '../../trace/redact';
+import { sayAction } from '../../channel/actions';
+import { emptySlot } from '../../core/session';
 import { setupFrame } from '../../testing/relayFrames';
 import { speechEvent } from '../../channel/events';
 import { frameToEvent } from '../../channel/relay/map';
@@ -195,5 +200,37 @@ describe('redactFrameLine', () => {
     }
     // A log line carries no identity at all and comes back exactly as written.
     expect(redacted[2]).toEqual(logLine);
+  });
+});
+
+describe('the console\'s view of a turn: what was said, and whom a passage answered', () => {
+  it('publishes the line the caller heard with a redacted slot read back masked, from the redacted record', () => {
+    const bus = new DashboardBus();
+    const events: DashboardEvent[] = [];
+    bus.subscribe((e) => events.push(e));
+    const store = { get: () => undefined };
+    bus.publish({ type: 'call_started', callSid: 'CA1', at: 0 } as DashboardEvent);
+    const observer = makeObserver(bus, store, 'CA1');
+    const record: TraceRecord = {
+      ...baseRecord(speechEvent('yes')),
+      slots: { accountId: { ...emptySlot(), value: '55501234', display: '5550 1234' } } as unknown as TraceRecord['slots'],
+      // A line whose variable is not named for the slot: the value is found by what it is.
+      decision: { kind: 'prompt', promptId: 'signin_thanks', vars: { first: '5550 1234' }, acks: [], target: 'intent', options: [] } as unknown as TraceRecord['decision'],
+      actions: [sayAction([{ text: 'Thanks, 5550 1234. You\'re signed in.' }], true)],
+    };
+    observer.turn(record, 0);
+    const turn = events.find((e) => e.type === 'turn') as Extract<DashboardEvent, { type: 'turn' }>;
+    expect(JSON.stringify(turn)).not.toContain('5550 1234');
+    expect(JSON.stringify(turn)).not.toContain('55501234');
+    expect(turn.spoken).toBe('Thanks, ...1234. You\'re signed in.');
+    expect((turn.record.actions[0] as { parts: { text: string }[] }).parts[0]!.text).toBe('Thanks, ...1234. You\'re signed in.');
+  });
+
+  it('shows a passage\'s applies only as policy.yaml\'s audit: declares each fact, and leaves an undeclared one out', () => {
+    const kb = { passageId: 'p', topic: 't', version: '1', applies: { expectedDate: '2026-09-15', plan: 'gold' }, document: 'd', section: 's', effectiveFrom: '2026-01-01', fresh: true };
+    expect(consoleKbSource(kb)).toEqual({ ...kb, applies: { expectedDate: '2026-09-15' } });
+    expect(redactRecord({ ...baseRecord(speechEvent('x')), kb }).kb).toEqual({ ...kb, applies: { expectedDate: '2026-09-15' } });
+    // The trace file keeps them: it is the record of the call, apart from the console.
+    expect(redactRecordSlots({ ...baseRecord(speechEvent('x')), kb }, 'length').kb).toEqual(kb);
   });
 });
