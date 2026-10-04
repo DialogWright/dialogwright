@@ -113,6 +113,15 @@ The stub answers from the corpus labels. A cassette holds the real decision mode
 
 A change to the words in the YAML (criteria, labels, prompts, the questions a slot sends) changes what the model is sent, so the replay reports each changed request as a cassette miss until the cassette is recorded again. So does a new corpus line or a new spoken step: its words were never recorded. A corpus label, by contrast, is read only by the stub, so correcting one leaves the cassette as it is.
 
+### Picking the address out of the words (not turned on)
+
+`place` is a `text` slot, so an address said with the request is read back whole: "at this address: the power is out at 22 Alder Street and nothing works". The `text` type's `pick` option picks out the part that is the address instead ([docs/slots/text.md](../../docs/slots/text.md), "Picking the value out of the words"): code splits the words into candidate parts, a second question (`placePick`) asks which part is the street address, and the value is that part, as said. It is the example to turn on, and it is off here because it changes what the model is sent, so the cassette must be recorded again. To turn it on:
+
+1. In `slots.yaml`, add to `place`: `pick: { what: the street address }`.
+2. Label the part picked on each corpus line that says more than the address, with the question's id and the part's words: `ro-05` gets `"placePick": "22 Alder Street"`; a line whose whole words are the address, or that offers one part, needs none. The stub answers the label with that part's letter.
+3. Run `pnpm --filter @dialogwright/example-utility regress` and read each difference: the `place` values and read-backs that change from the whole sentence to the address. Edit those baseline entries by hand to the stub's new outcome, log them under "Baseline edits" in [DESIGN.md](DESIGN.md), and run it again until it prints `no changes`.
+4. The maintainer records the cassette again (the steps under "Recording against the real model"): every request that holds `placePick` is new, so the replay reports cassette misses until then.
+
 ### Known gaps
 
 See [docs/known-gaps.md](../../docs/known-gaps.md) for each gap's caller impact and candidate fix, and [DESIGN.md](DESIGN.md) ("Baseline edits", "Gaps") for the triage of the first recording.
