@@ -2,7 +2,7 @@ import { dirname } from 'node:path';
 import type { ToolName } from '../core/app/types';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 import type { KbKnowledge, Retriever } from '../kb/types';
-import { KeywordRetriever } from '../kb/keyword';
+import { defaultRetriever } from '../kb/hybrid';
 import { AppDefinitionError, codePath } from './defineApp';
 import { loadConfigFile, loadKnowledgeFolder, DEFAULT_LOCALE } from './load';
 import { declaredFields } from './policyFile';
@@ -31,7 +31,7 @@ export interface DefineKnowledgeOptions {
   tools?: Readonly<Record<ToolName, unknown>>;
   /** policy.yaml, its path or its content: the action and each account line's tool must have an action there. */
   policy?: string | Record<string, unknown>;
-  /** A retriever of the app's own (App.knowledge.retriever). Default: the engine's, keyword retrieval over its topics (../kb/keyword.ts). */
+  /** A retriever of the app's own (App.knowledge.retriever). Default: the engine's (../kb/hybrid.ts defaultRetriever): hybrid when kb.yaml names an embedder whose index and weights are there, else keywords alone. */
   retriever?: Retriever;
 }
 
@@ -71,7 +71,7 @@ function load(dir: string, options: KnowledgeProblemsOptions, state: boolean): {
   // Files are named from the folder's parent; problems name them from where the caller is.
   const parent = dirname(dir);
   const shown = parent === '.' ? problems : problems.map((p) => (p.file.startsWith(`${folder.base}/`) || p.file === folder.base ? { ...p, file: `${parent}/${p.file}` } : p));
-  const knowledge = kb && shown.length === 0 ? { kb, retriever: options.retriever ?? new KeywordRetriever(kb, { cap: kb.settings.retrieval.cap }) } : null;
+  const knowledge = kb && shown.length === 0 ? { kb, retriever: options.retriever ?? defaultRetriever(kb).retriever } : null;
   return { knowledge, problems: shown };
 }
 

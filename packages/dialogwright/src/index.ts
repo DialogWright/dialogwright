@@ -76,6 +76,9 @@ export type { RetrievalRecord } from './trace/types';
 // The engine's retrievers (the default for an app with a kb/ whose code gives none): keyword, BM25 with phrases.
 export { KeywordRetriever } from './kb/keyword';
 export type { KeywordRetrieverOptions } from './kb/keyword';
+// Dense retrieval over a vector index, and hybrid (keyword and dense, fused): the default for an app whose kb.yaml names an embedder.
+export { DenseRetriever, HybridRetriever, RRF_K, defaultRetriever, fuse } from './kb/hybrid';
+export type { DefaultRetrieverKind, DefaultRetrieverOptions, DenseOptions, HybridOptions } from './kb/hybrid';
 // The static embedder, its pinned model, an in-memory vector index, and the index file (kb/.index/<embedder>.json).
 export { StaticEmbedder } from './kb/embed/static';
 export type { StaticModelParts } from './kb/embed/static';

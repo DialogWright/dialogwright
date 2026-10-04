@@ -812,7 +812,7 @@ export interface App {
   fixtures?: AppFixtures;
   /**
    * The app's knowledge base (an app folder's kb/, which defineApp loads; ../../kb/types.ts), and its
-   * retriever (its code's, or the engine's default, kb/keyword.ts): short approved passages, resolved for the caller and the day
+   * retriever (its code's, or the engine's default, kb/hybrid.ts): short approved passages, resolved for the caller and the day
    * (kb/resolve.ts resolvePassage) and said word for word. Without it the app answers no general
    * questions from passages, and every turn is exactly as it was before knowledge bases.
    */

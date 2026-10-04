@@ -81,5 +81,221 @@
     "What's the weather like?": [],
     "Can I print something there?": [],
     "My name is Ann Lee.": []
+  },
+  "hybridSynthetic": {
+    "What time do you close tonight?": [
+      "opening_hours 0.032787 keyword"
+    ],
+    "Is the library open on Saturday mornings?": [
+      "opening_hours 0.032787 keyword",
+      "card_renewal 0.016129 keyword"
+    ],
+    "When do you guys open in the morning?": [
+      "opening_hours 0.032787 keyword"
+    ],
+    "What are your hours this week?": [
+      "opening_hours 0.032787 keyword"
+    ],
+    "Are you closed on public holidays?": [
+      "opening_hours 0.032787 keyword",
+      "late_fees 0.016129 dense"
+    ],
+    "How late can I come in today?": [
+      "late_fees 0.032787 keyword",
+      "opening_hours 0.016129 dense"
+    ],
+    "Is the branch open right now?": [
+      "opening_hours 0.032787 keyword"
+    ],
+    "What time does the building shut on Fridays?": [
+      "opening_hours 0.016393 dense",
+      "late_fees 0.016129 dense"
+    ],
+    "My library card ran out, can I get it extended?": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "How do I renew my card?": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "My card isn't valid anymore.": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "Can I extend my card for another year?": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "The card stopped working because it is out of date.": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "How do I get my card renewed online?": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "I need a new expiry date on my card.": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "My card expired last month.": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "I returned a book late, what do I owe?": [
+      "late_fees 0.032787 keyword"
+    ],
+    "How much do you charge for overdue DVDs?": [
+      "late_fees 0.032787 keyword"
+    ],
+    "Do I have any fines on my account?": [
+      "late_fees 0.032787 keyword",
+      "card_renewal 0.016129 dense"
+    ],
+    "What is the penalty if I keep a book too long?": [
+      "late_fees 0.032787 keyword",
+      "card_renewal 0.016129 dense"
+    ],
+    "Is there a charge for returning things after the due date?": [
+      "late_fees 0.016393 dense",
+      "card_renewal 0.016129 dense"
+    ],
+    "How much are the late charges?": [
+      "late_fees 0.032787 keyword"
+    ],
+    "I brought the books back a week late.": [
+      "late_fees 0.032787 keyword",
+      "opening_hours 0.016129 dense"
+    ],
+    "Why do I have to pay for a late return?": [
+      "late_fees 0.032787 keyword"
+    ],
+    "I want to talk to a person.": [
+      "late_fees 0.016393 dense",
+      "card_renewal 0.016129 dense",
+      "opening_hours 0.015873 dense"
+    ],
+    "Can you book a meeting room for me?": [
+      "late_fees 0.032787 keyword",
+      "card_renewal 0.016129 dense",
+      "opening_hours 0.015873 dense"
+    ],
+    "Where do I park?": [
+      "late_fees 0.016393 dense",
+      "card_renewal 0.016129 dense",
+      "opening_hours 0.015873 dense"
+    ],
+    "Do you have the new mystery novel?": [
+      "card_renewal 0.016393 dense",
+      "late_fees 0.016129 dense",
+      "opening_hours 0.015873 dense"
+    ],
+    "I'd like to donate some books.": [
+      "late_fees 0.032787 keyword",
+      "card_renewal 0.016129 dense"
+    ],
+    "What's the weather like?": [
+      "late_fees 0.016393 dense",
+      "card_renewal 0.016129 dense",
+      "opening_hours 0.015873 dense"
+    ],
+    "Can I print something there?": [
+      "late_fees 0.016393 dense",
+      "card_renewal 0.016129 dense",
+      "opening_hours 0.015873 dense"
+    ],
+    "My name is Ann Lee.": [
+      "card_renewal 0.016393 dense",
+      "late_fees 0.016129 dense",
+      "opening_hours 0.015873 dense"
+    ]
+  },
+  "hybridPotion": {
+    "What time do you close tonight?": [
+      "opening_hours 0.032787 keyword"
+    ],
+    "Is the library open on Saturday mornings?": [
+      "opening_hours 0.032787 keyword",
+      "card_renewal 0.032258 keyword"
+    ],
+    "When do you guys open in the morning?": [
+      "opening_hours 0.032787 keyword"
+    ],
+    "What are your hours this week?": [
+      "opening_hours 0.032787 keyword"
+    ],
+    "Are you closed on public holidays?": [
+      "opening_hours 0.032787 keyword"
+    ],
+    "How late can I come in today?": [
+      "late_fees 0.032522 keyword",
+      "opening_hours 0.016393 dense"
+    ],
+    "Is the branch open right now?": [
+      "opening_hours 0.032787 keyword"
+    ],
+    "What time does the building shut on Fridays?": [
+      "opening_hours 0.016393 dense"
+    ],
+    "My library card ran out, can I get it extended?": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "How do I renew my card?": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "My card isn't valid anymore.": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "Can I extend my card for another year?": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "The card stopped working because it is out of date.": [
+      "card_renewal 0.032787 keyword",
+      "opening_hours 0.016129 dense"
+    ],
+    "How do I get my card renewed online?": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "I need a new expiry date on my card.": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "My card expired last month.": [
+      "card_renewal 0.032787 keyword"
+    ],
+    "I returned a book late, what do I owe?": [
+      "late_fees 0.032787 keyword",
+      "card_renewal 0.016129 dense"
+    ],
+    "How much do you charge for overdue DVDs?": [
+      "late_fees 0.032787 keyword",
+      "card_renewal 0.016129 dense"
+    ],
+    "Do I have any fines on my account?": [
+      "late_fees 0.032787 keyword",
+      "card_renewal 0.016129 dense"
+    ],
+    "What is the penalty if I keep a book too long?": [
+      "late_fees 0.032787 keyword"
+    ],
+    "Is there a charge for returning things after the due date?": [
+      "card_renewal 0.016393 dense",
+      "late_fees 0.016129 dense"
+    ],
+    "How much are the late charges?": [
+      "late_fees 0.032787 keyword",
+      "opening_hours 0.016129 dense"
+    ],
+    "I brought the books back a week late.": [
+      "late_fees 0.032787 keyword"
+    ],
+    "Why do I have to pay for a late return?": [
+      "late_fees 0.032787 keyword",
+      "card_renewal 0.016129 dense"
+    ],
+    "I want to talk to a person.": [],
+    "Can you book a meeting room for me?": [
+      "late_fees 0.032787 keyword"
+    ],
+    "Where do I park?": [],
+    "Do you have the new mystery novel?": [],
+    "I'd like to donate some books.": [
+      "late_fees 0.016393 keyword"
+    ],
+    "What's the weather like?": [],
+    "Can I print something there?": [],
+    "My name is Ann Lee.": []
   }
 }

@@ -16,8 +16,9 @@ import { approvalHashOf, sourceHashOf } from './hash';
 import { resolvePassage } from './resolve';
 import { KeywordRetriever } from './keyword';
 import { createHash } from 'node:crypto';
+import { defaultRetriever } from './hybrid';
 import { buildIndex } from './vectorIndex';
-import { POTION_BASE_8M } from './embed/model';
+import { MODEL_DIR_ENV, POTION_BASE_8M } from './embed/model';
 import type { Embedder } from './embed/types';
 import type { KnowledgeBase, Retriever } from './types';
 import { probeContexts } from '../core/app/probeQuestions';
@@ -130,7 +131,7 @@ describe('the knowledge base folder: a valid one', () => {
     expect(await check(dir)).toEqual([]);
     const app = defineApp(dir, CODE);
     expect(Object.keys(app.knowledge!.kb!.passages)).toHaveLength(7);
-    // No retriever in the code: the engine's default, keywords alone.
+    // No retriever in the code, and no embedder in kb.yaml: the engine's default, keywords alone.
     expect(app.knowledge!.retriever).toBeInstanceOf(KeywordRetriever);
     expect(app.knowledge!.retriever!.id).toBe('keyword');
     expect(() => validateApp(app)).not.toThrow();
@@ -748,6 +749,21 @@ describe('check: the vector index of the embedder kb.yaml names (kb/.index/<embe
     expect(await kbLines(edits)).toEqual([
       'kb/kb.yaml:12:13  retrieval.embedder  kb.yaml names the embedder "potion-base-8m", which the engine does not have (it has potion-base-8M)  ->  rename it to "potion-base-8M", or leave it out, for keyword retrieval alone',
     ]);
+  });
+
+  it('defineApp gives the app the default retriever: hybrid only with the index and the weights, keywords alone otherwise', async () => {
+    const dir = await indexedFolder();
+    const kb = loadAppFolder(dir).config!.knowledge!;
+    expect('data' in kb.index! && kb.index.data.entries.length).toBe(25);
+    const hybrid = defaultRetriever(kb, { embedder: pinnedLookalike });
+    expect(hybrid.kind).toBe('hybrid');
+    expect(hybrid.retriever.id).toBe('hybrid:potion-base-8M');
+    expect(hybrid.retriever.indexHash).toBe(createHash('sha256').update(readFileSync(join(dir, 'kb', '.index', 'potion-base-8M.json'))).digest('hex'));
+    const noWeights = { [MODEL_DIR_ENV]: temp() };
+    expect(defaultRetriever(kb, { env: noWeights }).kind).toBe('keyword: no weights');
+    expect(defaultRetriever(loadAppFolder(appFolder({ 'kb/kb.yaml': withEmbedder })).config!.knowledge!, { env: noWeights }).kind).toBe('keyword: no index');
+    expect(defaultRetriever(fixtureKb()).kind).toBe('keyword: no embedder');
+    expect(defaultRetriever(kb, { embedder: { ...pinnedLookalike, sha256: '0'.repeat(64) } }).kind).toBe('keyword: index of another embedder');
   });
 });
 

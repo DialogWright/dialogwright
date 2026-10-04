@@ -25,7 +25,7 @@ describe('the package entry', () => {
       // the knowledge base
       'defineKnowledge', 'knowledgeProblems', 'loadKnowledgeFolder', 'resolvePassage', 'approvalHashOf', 'sourceHashOf', 'kbSourceOf', 'kbAuditRow', 'shortHash', 'KB_SHORT_HASH',
       'isTopicSlot', 'RETRIEVE_BUDGET_MS',
-      'KeywordRetriever', 'StaticEmbedder', 'MemoryVectorIndex', 'POTION_BASE_8M', 'loadPinnedModel', 'buildIndex',
+      'KeywordRetriever', 'DenseRetriever', 'HybridRetriever', 'defaultRetriever', 'StaticEmbedder', 'MemoryVectorIndex', 'POTION_BASE_8M', 'loadPinnedModel', 'buildIndex',
       'kbCompletion', 'kbAnswerTool', 'readKbAnswer', 'KB_ANSWER_PROMPT', 'KB_UNAVAILABLE_PROMPT', 'KB_ANSWER_VAR', 'KB_TOPIC_PARAM',
       // an app's own tests and testing hooks
       'choice', 'noul', 'score', 'testSlotContext', 'newSession', 'resolveTurn', 'slotContext', 'mockCodeVerifier', 'spokenText',

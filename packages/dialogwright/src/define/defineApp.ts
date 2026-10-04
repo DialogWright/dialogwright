@@ -23,7 +23,7 @@ import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } fro
 import { kbLinkProblems } from '../kb/rules';
 import type { Retriever } from '../kb/types';
 import { kbCatalog } from '../kb/catalog';
-import { KeywordRetriever } from '../kb/keyword';
+import { defaultRetriever } from '../kb/hybrid';
 import { KB_ANSWER_PROMPT, KB_UNAVAILABLE_PROMPT, kbCompletion } from '../kb/answer';
 import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
 
@@ -92,7 +92,7 @@ export interface AppCode {
   testing?: App['testing'];
   /** identity.yaml's code: the one-time code call's params (IdentityConfig.sendCodeParams). Only with an identity.yaml. */
   identity?: { sendCodeParams?: IdentityConfig['sendCodeParams'] };
-  /** The knowledge base's code: a retriever of the app's own (App.knowledge.retriever), in place of the engine's default (keyword retrieval, kb/keyword.ts). Only with a kb/ folder. */
+  /** The knowledge base's code: a retriever of the app's own (App.knowledge.retriever), in place of the engine's default (kb/hybrid.ts defaultRetriever). Only with a kb/ folder. */
   knowledge?: { retriever?: Retriever };
 }
 
@@ -475,7 +475,7 @@ export function crossLink(
   // forms.yaml's answers and intents.yaml's passages: what they name in the knowledge base, the policy and the code.
   problems.push(...knowledgeUseProblems(config, locate, { tools, inCode }));
   // A slot that reads nominated topics (a `topic` slot) needs something to nominate them: a kb/, whose
-  // retriever is the code's or the engine's default (keyword retrieval, kb/keyword.ts). Without a kb/ it
+  // retriever is the code's or the engine's default (kb/hybrid.ts defaultRetriever). Without a kb/ it
   // would never ask, so check refuses it rather than let it sit silent.
   for (const [id, spec] of Object.entries(linked.slots)) {
     // core/knowledge.ts isTopicSlot, read here directly: that module reads the session's app.
@@ -668,8 +668,8 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'testing', code.testing);
   put(app, 'fixtures', a.fixtures);
   // The knowledge base, with the code's retriever when it gives one, else the engine's default:
-  // keyword retrieval over its topics (kb/keyword.ts).
-  if (config.knowledge) app.knowledge = { kb: config.knowledge, retriever: code.knowledge?.retriever ?? new KeywordRetriever(config.knowledge, { cap: config.knowledge.settings.retrieval.cap }) };
+  // hybrid when kb.yaml names an embedder whose index and weights are there, else keywords alone.
+  if (config.knowledge) app.knowledge = { kb: config.knowledge, retriever: code.knowledge?.retriever ?? defaultRetriever(config.knowledge).retriever };
   // The folder's content hashes: what the engine records on each call (call_started, the trace).
   app.configHashes = config.hashes;
   return app as App;

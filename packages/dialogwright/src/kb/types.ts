@@ -112,7 +112,8 @@ export interface KnowledgeBase {
   readonly sources: Readonly<Record<string, KbSourceDocument>>;
   /**
    * The vector index of the embedder kb.yaml names (kb/.index/<embedder>.json, ./vectorIndex.ts), as
-   * read: present only when kb.yaml names an embedder. `pnpm check` holds it to the topics' texts.
+   * read: present only when kb.yaml names an embedder. `pnpm check` holds it to the topics' texts;
+   * the default retriever reads its vectors (./hybrid.ts defaultRetriever).
    */
   readonly index?: KbIndexRead;
 }
@@ -138,7 +139,7 @@ export interface NominateInput {
 /**
  * Nominates topics for what a caller said. An app may give its own (App.knowledge.retriever, from
  * its code's `knowledge.retriever`); an app with a kb/ folder that gives none gets the engine's
- * (./keyword.ts KeywordRetriever). runTurn calls it once per turn, before the turn is planned, only
+ * (./hybrid.ts defaultRetriever: hybrid, or keywords alone). runTurn calls it once per turn, before the turn is planned, only
  * when the app has a knowledge base, the turn has words, and a slot that reads nominations
  * (SlotSpec.nominates) is listening; its nominations reach that turn's questions and fill
  * (SlotContext.nominated). It is given a budget (run/retrieve.ts RETRIEVE_BUDGET_MS): one that throws,
@@ -187,7 +188,7 @@ export interface TopicCatalog {
 /**
  * An app's knowledge (App.knowledge), in one of two shapes:
  * - a knowledge base (an app folder's kb/, which defineApp loads, or defineKnowledge), and its
- *   retriever: the code's, or the engine's default (./keyword.ts KeywordRetriever), which defineApp
+ *   retriever: the code's, or the engine's default (./hybrid.ts defaultRetriever), which defineApp
  *   and defineKnowledge set. An App written by hand without one nominates nothing. Its topics are
  *   kb/topics.yaml's.
  * - for an app that resolves its answers in its own code (no kb/): the topics its retriever can
