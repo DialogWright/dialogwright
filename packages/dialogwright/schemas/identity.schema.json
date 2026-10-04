@@ -160,6 +160,11 @@
             2
           ],
           "description": "The level a sign-in proves. It must be the top level of the ladder."
+        },
+        "claim": {
+          "description": "The token claim that carries the subject's id, for a channel that signs in with a token (web chat). Default sub. An app that maps claims some other way (a delegate, a tenant) sets principals.fromClaims in code.",
+          "type": "string",
+          "pattern": "^[!-~]{1,200}$"
         }
       },
       "required": [

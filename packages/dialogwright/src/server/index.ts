@@ -69,6 +69,8 @@ export interface ServerOverrides {
   routes?: AppRoutesFactory;
   /** Tests replace the Claude Haiku call, for the phone line and the chat alike. */
   summarizeHandoff?: AdapterDeps['summarizeHandoff'];
+  /** How the engine's web chat fetches the identity provider's published keys (CHAT_SIGNIN=jwt); tests serve their own. */
+  chatFetch?: typeof fetch;
 }
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -181,7 +183,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     ? chatEndpoint({
       settings: chatSettings, now, log, audit, bus, serviceUrls,
       anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
-      startTimeoutMs: overrides.setupTimeoutMs,
+      startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch,
       resources: (id, sessions) => {
         const file = safeFileStem(id);
         const trace = new TraceWriter(join(config.traceDir, `${file}.jsonl`));
@@ -194,7 +196,13 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       },
     })
     : undefined;
-  if (chatSettings) log(`chat: ${CHAT_PATH} for ${chatSettings.origins.any ? 'any origin (laptop)' : [...chatSettings.origins.set].join(', ')}`);
+  if (chatSettings) {
+    log(`chat: ${CHAT_PATH} for ${chatSettings.origins.any ? 'any origin (laptop)' : [...chatSettings.origins.set].join(', ')}, sign-in ${chatSettings.signIn.method}`);
+    // A sign-in method with nothing to sign in as: every token would be refused.
+    if (chatSettings.signIn.method !== 'none' && app.identity?.signInLevel === undefined && app.principals?.fromClaims === undefined) {
+      log(`WARNING: CHAT_SIGNIN=${chatSettings.signIn.method}, but app "${app.id}" takes no sign-in (identity.yaml has no signIn, and principals has no fromClaims): every token will be refused`);
+    }
+  }
   const wss = attachWebSocketServer(
     server,
     {

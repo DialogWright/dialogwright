@@ -3,7 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import { WEB_CHAT } from '../../channel/caps';
-import { startEvent, textEvent, type SessionEvent } from '../../channel/events';
+import { signedInEvent, startEvent, textEvent, type SessionEvent } from '../../channel/events';
 import { actionsToChatMessages, parseClientMessage, serializeServerMessage, type ClientMessage, type ServerMessage } from '../../channel/chat/protocol';
 import { appOf } from '../../core/app/registry';
 import { codeLengthOf } from '../../core/app/lookup';
@@ -11,6 +11,7 @@ import { defaultLocaleOf, localeOf } from '../../core/locale';
 import type { Scrub } from '../../core/recording';
 import { newSession } from '../../core/session';
 import { maskSpokenCode, spokenCodeMinDigits } from '../../core/spokenCode';
+import { isAnonymous, type Party } from '../../gate/types';
 import type { RunOptions, TurnRun } from '../../run/turn';
 import { turnScrubber } from '../../trace/redact';
 import { runChatTurnRuns, type ChatTurnDeps, type ChatTurnEntry } from '../chatTurn';
@@ -18,6 +19,8 @@ import type { ChatSettings } from '../config';
 import type { ObservedCalls } from '../dashboard/observer';
 import type { FrameLog } from '../frameLog';
 import { originAllowed } from './origins';
+import { jwksKeys } from './jwks';
+import { isDelegate, principalForToken, type ChatSignIn } from './signin';
 
 /**
  * The engine's web chat endpoint: `/chat`, a WebSocket speaking the chat wire
@@ -56,6 +59,8 @@ export interface ChatDeps extends ChatTurnDeps {
   resources(id: string, sessions: ObservedCalls): ChatResources;
   /** Tests use a short deadline so a connection that never starts does not hold the suite open. */
   startTimeoutMs?: number;
+  /** How the identity provider's published keys are fetched (CHAT_SIGNIN=jwt); tests serve their own. */
+  fetch?: typeof fetch;
 }
 
 /** One chat session, whichever socket it is on now. */
@@ -117,8 +122,23 @@ function loggedOut(m: ServerMessage, scrub: Scrub | null): Record<string, unknow
   return m;
 }
 
+/** A token checked: the principal it names, or the error the client is sent (with a reason that never carries the token). */
+type Verified = { ok: true; principal: Party } | { ok: false; error: ServerMessage };
+
+const refusal = (reason: string): ServerMessage => ({ type: 'error', code: 'sign_in_failed', message: `the sign-in was refused (${reason})` });
+
+/** Whether the session is now signed in as `p`: the core took the sign-in (core/turn.ts auth.signed_in). */
+function signedInAs(e: { session: { principal: unknown } }, p: Party): boolean {
+  const q = e.session.principal as Partial<Party>;
+  return q.kind === p.kind && q.id === p.id && q.level === p.level;
+}
+
 export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   const { log, now } = deps;
+  const how = deps.settings.signIn;
+  const signIn: ChatSignIn = how.method === 'jwt'
+    ? { method: 'jwt', keyFor: jwksKeys({ url: how.jwksUrl, fetch: deps.fetch, nowMs: now, log }), issuer: how.issuer, audience: how.audience }
+    : how;
   const sessions = new Map<string, ChatEntry>();
   const resumeIds = new Map<string, string>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: CHAT_MAX_PAYLOAD });
@@ -207,6 +227,46 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     }
   };
 
+  /** A token checked against the deployment's method and the app's rule; a refusal logged by its reason, never the token. */
+  const verify = async (e: ChatEntry, token: string): Promise<Verified> => {
+    if (signIn.method === 'none') return { ok: false, error: { type: 'error', code: 'not_allowed', message: 'sign-in is off for this chat' } };
+    const r = await principalForToken(appOf(e.session), signIn, token, Math.floor(now() / 1000));
+    if (!r.ok) {
+      log(`chat ${e.id}: sign-in refused (${r.reason})`);
+      e.frames.write('log', { signInRefused: r.reason });
+      return { ok: false, error: refusal(r.reason) };
+    }
+    return { ok: true, principal: r.principal };
+  };
+
+  /** A subject signs in: the core's auth.signed_in turn, and signed_in ahead of its lines only if the core took it. */
+  const signInTurn = async (e: ChatEntry, p: Party): Promise<void> => {
+    if (!isAnonymous(e.session.principal)) {
+      sendTo(e, refusal('the chat is already signed in'));
+      return;
+    }
+    await turn(e, signedInEvent(p), (s) => {
+      if (!signedInAs(s, p)) return [refusal('the chat could not take this sign-in')];
+      log(`chat ${s.id}: signed in (${p.kind}, level ${p.level})`);
+      s.frames.write('log', { signedIn: p.level, kind: p.kind });
+      return [{ type: 'signed_in', level: p.level }];
+    });
+  };
+
+  /** A sign-in after the start (a sign_in message, or a resume's token): a subject only, since a delegate's chat begins as theirs. */
+  const laterSignIn = async (e: ChatEntry, token: string): Promise<void> => {
+    const r = await verify(e, token);
+    if (!r.ok) {
+      sendTo(e, r.error);
+      return;
+    }
+    if (isDelegate(appOf(e.session), r.principal)) {
+      sendTo(e, refusal('a delegate signs in as the chat starts'));
+      return;
+    }
+    await signInTurn(e, r.principal);
+  };
+
   /** A new session for a start, its opening turn queued: ready, then the opening lines. */
   const open = (conn: ChatConnection, m: Extract<ClientMessage, { type: 'start' }>): void => {
     const id = fresh();
@@ -221,9 +281,30 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     frames.write('in', loggedIn(m));
     // Ahead of the opening turn, and it is what resets the console's history: the page follows this chat now.
     deps.bus?.publish({ type: 'call_started', callSid: id, at: now(), from: 'web chat', todayIso: opts.todayIso, thresholds: opts.thresholds, channel: 'chat', caller: null });
-    // The client asks for a language; the core matches it to one of the app's (core/locale.ts matchLocale),
-    // and ready names the one the session speaks.
-    void enqueue(e, (s) => turn(s, startEvent({ channel: 'chat' }, m.locale), ready));
+    void enqueue(e, async (s) => {
+      // A token on start: a delegate's chat begins as theirs (as the harness's `as` does); a subject signs
+      // in through the core once the chat has opened, as a later sign-in does.
+      let refused: ServerMessage | null = null;
+      let subject: Party | null = null;
+      let delegate: Party | null = null;
+      if (m.token !== undefined) {
+        const r = await verify(s, m.token);
+        if (!r.ok) refused = r.error;
+        else if (isDelegate(appOf(s.session), r.principal)) delegate = r.principal;
+        else subject = r.principal;
+      }
+      if (delegate !== null) {
+        s.session = newSession(s.id, s.session.startedAtMs, WEB_CHAT, delegate);
+        log(`chat ${s.id}: signed in (${delegate.kind}, level ${delegate.level})`);
+        s.frames.write('log', { signedIn: delegate.level, kind: delegate.kind });
+      }
+      const signedIn: ServerMessage[] = delegate === null ? [] : [{ type: 'signed_in', level: delegate.level }];
+      // The client asks for a language; the core matches it to one of the app's (core/locale.ts matchLocale),
+      // and ready names the one the session speaks.
+      await turn(s, startEvent({ channel: 'chat' }, m.locale), (x) => [...ready(x), ...signedIn]);
+      if (refused !== null) sendTo(s, refused);
+      if (subject !== null && !s.ended) await signInTurn(s, subject);
+    });
   };
 
   const ready = (e: ChatEntry): ServerMessage[] => [{ type: 'ready', session: e.id, resume: e.resume, locale: localeOf(e.session) }];
@@ -247,6 +328,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         void enqueue(e, async (s) => {
           for (const r of ready(s)) sendTo(s, r);
         });
+        const token = m.token;
+        if (token !== undefined) void enqueue(e, (s) => laterSignIn(s, token));
         return;
       }
       send(conn.ws, null, { type: 'error', code: 'session_unknown', message: 'that chat has ended; a new one starts' });
@@ -298,9 +381,10 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       void enqueue(entry, (s) => turn(s, textEvent(m.text)));
       return;
     }
-    // sign_in
+    // sign_in: in the session's queue, so it is taken in order with what was typed around it.
     entry.frames.write('in', loggedIn(m));
-    send(conn.ws, entry.frames, { type: 'error', code: 'not_allowed', message: 'sign-in is off for this chat' });
+    const token = m.token;
+    void enqueue(entry, (s) => laterSignIn(s, token));
   };
 
   const onConnection = (ws: WebSocket): void => {

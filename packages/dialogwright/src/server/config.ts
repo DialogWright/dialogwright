@@ -7,6 +7,7 @@ import { checkSecretOf, KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from
 import { RECOGNIZER_NAME } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
+import { checkJwksUrl } from './chat/jwks';
 
 export type ClientKind = 'stub' | 'heuristic' | 'jev';
 
@@ -19,7 +20,21 @@ export interface ChatSettings {
   origins: AllowedOrigins;
   /** CHAT_IDLE_MS, default 1,800,000: how long a chat session nobody writes to lives (and can be resumed). */
   idleMs: number;
+  /** CHAT_SIGNIN, default none: how a chat user signs in (server/chat/signin.ts). */
+  signIn: ChatSignInSettings;
 }
+
+/**
+ * CHAT_SIGNIN=none|jwt|mock. jwt: a token from the site's identity provider, verified against the keys
+ * at CHAT_JWKS_URL (https), with iss CHAT_ISSUER and aud CHAT_AUDIENCE. mock: `mock:<id>`, unsigned,
+ * for a laptop only (PUBLIC_HOST=localhost).
+ */
+export type ChatSignInSettings =
+  | { method: 'none' }
+  | { method: 'mock' }
+  | { method: 'jwt'; jwksUrl: string; issuer: string; audience: string };
+
+const CHAT_SIGNIN_METHODS = ['none', 'jwt', 'mock'] as const;
 
 /** A chat session nobody has written to for this long is ended (CHAT_IDLE_MS's default; server/chatHttp.ts's CHAT_IDLE_MS). */
 export const DEFAULT_CHAT_IDLE_MS = 1_800_000;
@@ -260,7 +275,30 @@ function chatOf(env: Env, publicHost: string): ChatSettings | undefined {
   if (!origins) throw new Error('missing required environment variable CHAT_ALLOWED_ORIGINS (CHAT=on)');
   const idleMs = integer(env, 'CHAT_IDLE_MS', DEFAULT_CHAT_IDLE_MS);
   if (idleMs <= 0) throw new Error(`CHAT_IDLE_MS must be a positive number of milliseconds, got "${env.CHAT_IDLE_MS}"`);
-  return { origins: parseAllowedOrigins(origins, publicHost), idleMs };
+  return { origins: parseAllowedOrigins(origins, publicHost), idleMs, signIn: chatSignInOf(env, publicHost) };
+}
+
+function chatSignInOf(env: Env, publicHost: string): ChatSignInSettings {
+  const method = (env.CHAT_SIGNIN?.trim() || 'none').toLowerCase();
+  if (!(CHAT_SIGNIN_METHODS as readonly string[]).includes(method)) throw new Error(`CHAT_SIGNIN must be one of ${CHAT_SIGNIN_METHODS.join(', ')}, got "${env.CHAT_SIGNIN}"`);
+  if (method === 'none') return { method: 'none' };
+  if (method === 'mock') {
+    // Anyone could sign in as anyone with a mock token: never on a host the internet reaches.
+    if (publicHost !== 'localhost') throw new Error('CHAT_SIGNIN=mock is for a laptop: PUBLIC_HOST must be localhost');
+    return { method: 'mock' };
+  }
+  const need = (name: string): string => {
+    const v = env[name]?.trim();
+    if (!v) throw new Error(`missing required environment variable ${name} (CHAT_SIGNIN=jwt)`);
+    return v;
+  };
+  const jwksUrl = need('CHAT_JWKS_URL');
+  checkJwksUrl(jwksUrl);
+  return { method: 'jwt', jwksUrl, issuer: need('CHAT_ISSUER'), audience: need('CHAT_AUDIENCE') };
+}
+
+function describeChatSignIn(s: ChatSignInSettings): string {
+  return s.method === 'jwt' ? `chat sign-in jwt (${s.issuer})` : s.method === 'mock' ? 'chat sign-in MOCK (laptop only)' : 'chat sign-in none';
 }
 
 /** A recognizer's provider or model name from `name`, or null when it is unset or empty; anything but a plain name is refused. */
@@ -347,6 +385,6 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx voice ${c.telnyxVoice ?? 'default'}`] : []),
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
-    ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)})`] : []),
+    ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)})`, describeChatSignIn(c.chat.signIn)] : []),
   ].join('  ');
 }

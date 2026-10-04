@@ -69,6 +69,12 @@ export const DEFAULT_CODE_LENGTH = 6;
 /** The lengths a one-time code may have: long enough not to be guessed in a few tries, short enough to key. */
 export const CODE_LENGTHS = { min: 4, max: 8 } as const;
 
+/**
+ * A token claim's name, as identity.yaml's `signIn.claim` and IdentityConfig.signInClaim give it:
+ * printable characters without spaces (`sub`, `account_id`, a namespaced `https://example.com/claims/account`).
+ */
+export const SIGN_IN_CLAIM = /^[!-~]{1,200}$/;
+
 /** How many digits the app's one-time code has: its identity's codeLength, or 6. */
 export function codeLengthOf(app: App): number {
   return identityOf(app).codeLength ?? DEFAULT_CODE_LENGTH;

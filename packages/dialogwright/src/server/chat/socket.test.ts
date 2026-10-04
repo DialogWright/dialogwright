@@ -1,4 +1,6 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { generateKeyPairSync, sign as cryptoSign, type KeyObject } from 'node:crypto';
+import { createServer } from 'node:http';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +8,8 @@ import WebSocket from 'ws';
 import { startServer, type RunningServer, type ServerOverrides } from '../index';
 import { loadConfig } from '../config';
 import { useTestkit } from '../../testing/apps';
+import { testkitApp } from '../../testing/testkit/index';
+import { registerApp, resetAppsForTest } from '../../core/app/registry';
 import { loadScenarios, runScenario } from '../../harness-text/runner';
 import { scenariosDir, defaultCorpusFile } from '../../run/fixtures';
 import { loadCorpus } from '../../jev/corpus';
@@ -306,5 +310,166 @@ describe('the chat endpoint', () => {
     const { url } = await start({ CHAT: 'off' });
     expect(running!.chat).toBeUndefined();
     await expect(ChatClient.connect(url)).rejects.toThrow('HTTP 404');
+  });
+});
+
+/** Keys are made here, for this run, and never stored; the identity provider's keys are served by a local server. */
+const b64url = (b: Buffer | string) => Buffer.from(b).toString('base64url');
+const idpKey = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+const ISSUER = 'https://id.example.com';
+const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
+const CUSTOMER = '55501234';
+function idToken(claims: Record<string, unknown>, key: KeyObject = idpKey.privateKey): string {
+  const head = b64url(JSON.stringify({ alg: 'ES256', kid: 'site-1', typ: 'JWT' }));
+  const now = Math.floor(Date.now() / 1000);
+  const body = b64url(JSON.stringify({ iss: ISSUER, aud: 'chat-widget', iat: now, exp: now + 300, ...claims }));
+  const sig = cryptoSign('sha256', Buffer.from(`${head}.${body}`), { key, dsaEncoding: 'ieee-p1363' });
+  return `${head}.${body}.${b64url(sig)}`;
+}
+
+/** The identity provider's key set on a local server, and a fetch that sends the https URL there (the config takes https only). */
+async function identityProvider(): Promise<{ fetch: typeof fetch; fetched: () => number; close: () => Promise<void> }> {
+  let count = 0;
+  const server = createServer((req, res) => {
+    count += 1;
+    if (req.url !== '/.well-known/jwks.json') {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'max-age=300' });
+    res.end(JSON.stringify({ keys: [{ ...idpKey.publicKey.export({ format: 'jwk' }), kid: 'site-1', use: 'sig', alg: 'ES256' }] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as { port: number }).port;
+  const local = ((url: string | URL, init?: RequestInit) => fetch(String(url).replace(ISSUER, `http://127.0.0.1:${port}`), init)) as typeof fetch;
+  return { fetch: local, fetched: () => count, close: () => new Promise((resolve) => server.close(() => resolve())) };
+}
+
+const JWT_ENV = { CHAT_SIGNIN: 'jwt', CHAT_JWKS_URL: JWKS_URL, CHAT_ISSUER: ISSUER, CHAT_AUDIENCE: 'chat-widget' };
+
+describe('signing in to the chat', () => {
+  let idp: Awaited<ReturnType<typeof identityProvider>>;
+  beforeAll(async () => {
+    idp = await identityProvider();
+  });
+  afterAll(async () => {
+    await idp.close();
+  });
+
+  it('a token from the site signs in a subject mid-chat, and the next line treats them as verified', async () => {
+    const { url } = await start(JWT_ENV, { chatFetch: idp.fetch });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    c.send({ type: 'text', text: OPENER });
+    const n = (await c.until((r) => r.filter((m) => m.type === 'say').length >= 2)).length;
+    c.send({ type: 'sign_in', token: idToken({ sub: CUSTOMER }) });
+    // What the testkit's web chat scenario expects once the customer signs in (web.json).
+    await c.until((r) => says(r.slice(n)).join(' ').includes('was delivered Wednesday, September 16'));
+    expect(c.received[n]).toEqual({ type: 'signed_in', level: 2 });
+    expect(idp.fetched()).toBe(1);
+  });
+
+  it('a token on start signs in at once: ready and the greeting, then signed_in and its line', async () => {
+    const { url } = await start(JWT_ENV, { chatFetch: idp.fetch });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, token: idToken({ sub: CUSTOMER }) });
+    await c.until((r) => r.some((m) => m.type === 'signed_in') && r.at(-1)?.type === 'say');
+    const types = c.received.map((m) => m.type);
+    expect(types[0]).toBe('ready');
+    expect(types.indexOf('signed_in')).toBeGreaterThan(1);
+    expect(types.slice(1, types.indexOf('signed_in')).every((t) => t === 'say')).toBe(true);
+  });
+
+  it('refuses a token that does not verify, saying why, and never writes the token anywhere', async () => {
+    const { url, logs, config } = await start(JWT_ENV, { chatFetch: idp.fetch });
+    const forged = idToken({ sub: CUSTOMER }, generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey);
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const n = c.received.length;
+    c.send({ type: 'sign_in', token: forged });
+    await c.until((r) => r.length > n);
+    expect(c.received[n]).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (signature)' });
+    const session = (c.received[0] as Extract<Msg, { type: 'ready' }>).session;
+    expect(logs).toContain(`chat ${session}: sign-in refused (signature)`);
+    // The token, and its signature alone, appear in no log line and no file the server wrote.
+    const sig = forged.split('.')[2]!;
+    expect(logs.join('\n')).not.toContain(sig);
+    for (const f of readdirSync(config.traceDir)) if (f.endsWith('.jsonl')) expect(readFileSync(join(config.traceDir, f), 'utf8'), f).not.toContain(sig);
+    // The chat goes on, anonymous.
+    c.send({ type: 'text', text: OPENER });
+    await c.until((r) => r.slice(n + 1).some((m) => m.type === 'say'));
+  });
+
+  it('mock: mock:<id> signs in on a laptop', async () => {
+    const { url } = await start({ CHAT_SIGNIN: 'mock' });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const n = c.received.length;
+    c.send({ type: 'sign_in', token: `mock:${CUSTOMER}` });
+    expect((await c.through('say', n))[0]).toEqual({ type: 'signed_in', level: 2 });
+  });
+
+  it('none: a token is not allowed, on start or later, and the chat goes on', async () => {
+    const { url } = await start();
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, token: `mock:${CUSTOMER}` });
+    await c.until((r) => r.some((m) => m.type === 'say') && r.some((m) => m.type === 'error'));
+    expect(c.received[0]).toMatchObject({ type: 'ready' });
+    expect(c.received.find((m) => m.type === 'error')).toEqual({ type: 'error', code: 'not_allowed', message: 'sign-in is off for this chat' });
+    const n = c.received.length;
+    c.send({ type: 'sign_in', token: `mock:${CUSTOMER}` });
+    await c.until((r) => r.length > n);
+    expect(c.received[n]).toEqual({ type: 'error', code: 'not_allowed', message: 'sign-in is off for this chat' });
+  });
+
+  it('a second sign-in the core does not take is refused, not reported as signed in', async () => {
+    const { url } = await start({ CHAT_SIGNIN: 'mock' });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, token: `mock:${CUSTOMER}` });
+    await c.until((r) => r.some((m) => m.type === 'signed_in'));
+    await c.until((r) => r.at(-1)?.type === 'say');
+    const n = c.received.length;
+    c.send({ type: 'sign_in', token: 'mock:55505678' });
+    await c.until((r) => r.length > n);
+    expect(c.received[n]).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (the chat is already signed in)' });
+  });
+});
+
+describe('a delegate signing in to the chat (principals.fromClaims)', () => {
+  beforeAll(() => {
+    // The testkit, with a fromClaims that names depot staff by the token's sub.
+    resetAppsForTest();
+    registerApp({
+      ...testkitApp,
+      principals: { ...testkitApp.principals!, fromClaims: (c) => (c.sub === 'taylor' ? testkitApp.principals!.delegatePrincipal!('taylor') : null) },
+    });
+  });
+  afterAll(() => {
+    useTestkit();
+  });
+
+  it('starts the chat as the delegate when the start carries their token', async () => {
+    const { url, config } = await start({ CHAT_SIGNIN: 'mock' });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, token: 'mock:taylor' });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    expect(c.received.slice(0, 2).map((m) => m.type)).toEqual(['ready', 'signed_in']);
+    const session = (c.received[0] as Extract<Msg, { type: 'ready' }>).session;
+    // The audit's call_started names the delegate: the session began signed in as them.
+    expect(auditEntries(config).find((e) => e.callId === session && e.type === 'call_started')).toMatchObject({ channel: 'chat', detail: { principal: 'agent', level: 2 } });
+  });
+
+  it('refuses a delegate signing in mid-chat: a delegate signs in as the chat starts', async () => {
+    const { url } = await start({ CHAT_SIGNIN: 'mock' });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const n = c.received.length;
+    c.send({ type: 'sign_in', token: 'mock:taylor' });
+    await c.until((r) => r.length > n);
+    expect(c.received[n]).toEqual({ type: 'error', code: 'sign_in_failed', message: 'the sign-in was refused (a delegate signs in as the chat starts)' });
   });
 });
