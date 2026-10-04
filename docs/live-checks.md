@@ -1,0 +1,136 @@
+# Live checks
+
+Some of what DialogWright does can only be confirmed with real accounts: a carrier's webhooks and relay as they behave on a real call, a model reached through a gateway, a sign-in token from a real identity provider. The tests run everything against the carriers' documented examples and against fakes; this page is what is left, written for the person who holds the accounts. Together the checks cost a few cents of call minutes and model requests.
+
+Each check says what to set, what to do, what to look for, and where to record the result. Write the outcome in the [results log](#results-log) at the end of this page, whatever it is, and make the change it asks for when a check finds something the code assumed differently. Keep every number, name and capture fictional or redacted before it is committed: the frame log already masks callers' numbers, but read a capture before you copy it.
+
+## Before you start
+
+- **A public address.** The carriers post webhooks to `https://<PUBLIC_HOST>`. On a laptop, run a tunnel (ngrok, say) to the server's port and set `PUBLIC_HOST` to the tunnel's host name (no scheme, no path).
+- **An app to run.** The checks use the utility example (`apps/utility`), whose launcher is `pnpm --filter @dialogwright/example-utility serve`, unless a check says otherwise. Copy `apps/utility/.env.example` to `apps/utility/.env`, fill it in, and load it into the shell (`set -a && source apps/utility/.env && set +a`); the launcher does not read the file itself.
+- **Where to look.** The server's console prints one line per webhook (`/voice/telnyx <call id> from ...0110`, `/cr-action/telnyx <call id> <status> -> <decision>`), and the startup line says what is in force (carriers, voices, recognizers, chat, sign-in). Each call writes two files under `TRACE_DIR` (default `traces/`): `<call>.jsonl`, the turns, and `<call>.frames.jsonl`, the wire: every frame in and out (`"dir": "in"` and `"out"`), the action callback's fields (`"dir": "http"`) and the server's notes (`"dir": "log"`). The operator console is at `http://localhost:<PORT>/dashboard` on the same machine.
+- **Fakes stay off.** Keep `SIGNATURE_CHECK=on` (the default) for every carrier check: a signature that fails is one of the things to find.
+
+## 1. Twilio, unchanged
+
+**Why.** Carriers became plug-ins in this phase; a Twilio number set up before must behave exactly as it did.
+
+**Set.** `VOICE_PROVIDERS=twilio` (or leave it unset), `TWILIO_AUTH_TOKEN`, `HANDOFF_NUMBER`, `PUBLIC_HOST`.
+
+**Do.**
+1. Point a Twilio number's voice webhook at `https://<PUBLIC_HOST>/voice/twilio` and call it. Ask about a balance, verify as a fictional customer, and end the call ("no, that's all").
+2. Point it back at `https://<PUBLIC_HOST>/voice` (the path from before carriers) and call again.
+
+**Look for.** Both calls greet, run and end the same way. The console shows `/voice/twilio CA... from ...` and then `/voice CA...`, and at each end `/cr-action... -> completed`. No `signature rejected` line. The dashboard names the carrier `twilio` on both. Leave the number on either path: both are supported.
+
+**Record.** Pass or fail in the results log; on a failure, the console lines and the frame log of the call.
+
+## 2. Telnyx
+
+**Why.** Telnyx's TeXML `<ConversationRelay>` is documented, but some of what the engine needs is not; `server/voice/telnyx.ts` lists five assumptions, and `server/voice/__fixtures__/telnyx/webhooks.json` marks the webhooks it could not copy from the docs `ASSUMED`. This check settles them.
+
+**Set.** `VOICE_PROVIDERS=telnyx` (or `twilio,telnyx`), `TELNYX_PUBLIC_KEY` (the account's public key, base64, as the Telnyx portal shows it), `HANDOFF_NUMBER`, `PUBLIC_HOST`. Optionally `TELNYX_VOICE=Telnyx.Ultra.Callie` to hear a voice the deployment chose.
+
+**Do.** Create a TeXML application whose voice URL is `https://<PUBLIC_HOST>/voice/telnyx` (method POST), give a Telnyx number to it, and call the number. Run the same short call as in check 1 and end it normally.
+
+**Look for, and record each:**
+
+1. **The signature.** No `signature rejected` in the console. If there is one, check `TELNYX_PUBLIC_KEY` and the server's clock (a timestamp more than five minutes off is refused) before anything else.
+2. **The voice webhook's encoding and call id.** The console shows `/voice/telnyx v2:... from ...` when the call was accepted. If it shows `/voice/telnyx: missing CallSid` and the call fails, the body was not what the parser reads. Either way, open the request in the Telnyx portal's webhook debugging and note: the content type (form-encoded or JSON), which field carries the call id (`CallSid`, `call_control_id`, `CallControlId`), and whether a JSON body nests it (a Call Control style `data.payload.call_control_id`: the parser reads top-level fields only, so a nested body needs a parser change).
+   **Record:** replace the `voice` entry of `__fixtures__/telnyx/webhooks.json` with the captured shape (numbers made fictional), its `source` set to `captured <date>`, and update assumption 1 in `telnyx.ts`. Run `pnpm --filter dialogwright test server/voice` after.
+3. **The action callback and the handoff field.** At the end of the call, the console shows `/cr-action/telnyx v2:... -> completed` and Telnyx hangs up. The call's frame log has an `"dir": "http"` line with the callback's fields: note whether the end frame's data came back as `HandoffData`, `handoffData` or another name.
+   **Record:** the `action` entry of `webhooks.json` (as above) and assumption 2 in `telnyx.ts`. If the field has another name, the parser must take it: a code change with a test.
+4. **`hints`.** `hints` is not a documented TeXML attribute; the engine sends it anyway. Look for any warning or error about it in the Telnyx portal's call debugging, and whether the call ran at all.
+   **Record:** "accepted", "ignored" or "refused" for assumption 3 in `telnyx.ts`; if refused, Telnyx's start document must stop sending it (a code change with a test).
+5. **Frames for the kit.** From the frame log, copy the `setup` frame, a `prompt` frame (and one with `"last": false` if there is any) and, if you interrupted the agent mid-line, an `interrupt` frame. Redact them (numbers fictional, no names), and add them to `__fixtures__/telnyx/frames.jsonl`, each with `"source": "captured <date>"`.
+   **Record:** run `pnpm --filter dialogwright test server/voice/conformance` and note that the kit still passes with the captured frames.
+6. **The keypad and barge-in.** Press a menu key when the menu is offered, and talk over a long line. The key should act, and the line should stop where you spoke (an `interrupt` frame in the frame log). These are documented (`dtmfDetection`, `interruptible`) and should behave as on Twilio.
+
+## 3. Reconnect after the relay socket fails
+
+**Why.** When the relay's socket drops mid-call, the carrier is expected to post the `<Connect action>` callback, and the engine answers with a new start document so the call resumes. On Twilio this is documented; on Telnyx it is not, and reconnect depends on it.
+
+**Set.** As in check 2 (and once with check 1's settings for Twilio, as a baseline).
+
+**Do.** Call, get past the greeting, and while the call is live stop the server (Ctrl-C) and start it again at once. The session was in the stopped server's memory, so the engine will hang up rather than resume; what this check is after is whether the callback arrives.
+
+**Look for.** Within a few seconds of the restart, a `/cr-action/telnyx v2:... in-progress -> hangup` line (or `/cr-action/twilio CA... -> hangup` on Twilio). Note the `SessionStatus` and `CallStatus` the frame log's `http` line shows, if the call's frame log survived.
+
+**Record.** Whether Telnyx posted the callback, and its statuses. If it did not, a dropped Telnyx call cannot reconnect: say so in `telnyx.ts` and in the guide's [13.2](authoring-an-app.md#132-serving-voice-twilio-telnyx-or-both).
+
+## 4. Languages on the phone
+
+**Why.** A call in another language depends on how the carriers read the start document's `<Language>` and `<Parameter>` children, the text frames' `lang` and the `language` frame (`set_language`). Twilio documents the shape; Telnyx's is assumed to be the same. Two more things are read from the docs and need hearing: whether a `<Language>` child's voice and recognizer apply to the call's first language (not only after a switch), and whether a recognizer other than Deepgram flux still sends the partial prompts the no-input wait relies on.
+
+**Set.** None of the example apps has a second locale, so make a scratch one for the check and do not commit it: `pnpm create-app lang-check`, then add `apps/lang-check/locale/es/prompts.yaml` with every line in Spanish (the library fixture's `packages/dialogwright/src/define/fixture/locale/es/prompts.yaml` shows the shape; `pnpm check` lists any line missing), a switch intent (the guide's [13.3](authoring-an-app.md#133-languages-on-the-phone) has one, with its prompt in both locales and examples in the corpus), and in its app.yaml two voices that sound clearly different, with nothing shared on the relay element:
+
+```yaml
+voice:
+  numbers:
+    "+15555550142": es        # the real number you will call for Spanish, in place of this one
+  locales:
+    en-US:
+      voices: { twilio: { voice: en-US-Neural2-F, provider: Google }, telnyx: Telnyx.Ultra.Callie }
+    es:
+      tts: es-US
+      transcription: es-US
+      voices: { twilio: { voice: es-US-Neural2-B, provider: Google }, telnyx: Telnyx.Ultra.Asher }
+      recognition:
+        twilio: { provider: Deepgram, model: nova-3-general }
+```
+
+Run it with the carrier's settings from check 1 or 2 (`pnpm --filter @dialogwright/example-lang-check serve`). Two numbers: one listed under `voice.numbers` for `es`, one not. Delete `apps/lang-check` when the check is done.
+
+**Do, on Twilio and then on Telnyx:**
+1. Call the Spanish number. Listen to the greeting.
+2. Call the other number, and say the switch intent's words ("can we continue in Spanish"). Then answer the next question in Spanish.
+3. On the Spanish call, after a question, start a long answer slowly, with a pause in the middle.
+
+**Look for.**
+1. The Spanish call's greeting is in Spanish **in the Spanish voice** (es-US-Neural2-B, or Asher). If it is in Spanish but in the carrier's default voice, the `<Language>` child's settings did not apply to the call's first language: the start document must then put the first language's voice on the relay element (a code change in `server/voice/xml.ts placeLanguages`, with a test). The frame log's `setup` frame should carry `customParameters.locale: "es"`.
+2. After the switch, the next line is in Spanish in the Spanish voice, the frame log shows an outgoing `language` frame before it, and your Spanish answer is heard as Spanish (the `prompt` frame's text). On Telnyx, note also whether its `prompt` frames' `lang` changes.
+3. The frame log shows `prompt` frames with `"last": false` while you were speaking (partial prompts), not only the final one, and the question was not asked again while you spoke. If there are none, the no-input wait cannot be cancelled early on that recognizer.
+
+**Record.** For each carrier: the first-language voice (applied or not), the switch (voice, recognition, the `language` frame taken or refused), partial prompts on nova-3-general (sent or not), and for Telnyx whether the `<Parameter>` reached the setup frame. Update the known limits in the guide's [13.3](authoring-an-app.md#133-languages-on-the-phone) and §11.1 of [design.md](design.md) with what you found, and assumption 4 and 5 in `telnyx.ts`.
+
+## 5. The decision model through OpenRouter and the Vercel AI Gateway
+
+**Why.** The model can be reached through TypeSafe, OpenRouter, the Vercel AI Gateway or a compatible endpoint (`JEV_PROVIDER`). TypeSafe's has been used for every recording; the two gateways have not been called from here, and OpenRouter's base URL is inferred from its documented endpoint.
+
+**Set.** For OpenRouter: `JEV_PROVIDER=openrouter` and `OPENROUTER_API_KEY`. For Vercel: `JEV_PROVIDER=vercel` and `AI_GATEWAY_API_KEY`. Nothing else.
+
+**Do.** For each, run the clinic's text console against the live model and type one sentence:
+
+```sh
+pnpm --filter @dialogwright/example-clinic cli --client jev
+```
+
+Say `I need to move my appointment to next week`, then quit.
+
+**Look for.** The first lines name the provider and the model (`typesafe/jev-1.13` on OpenRouter, `typesafe-ai/jev` on Vercel) with no warning about a compatible model, and the reply starts the reschedule form, as a call through TypeSafe does. An HTTP error, a 404 (a wrong base URL) or a refusal of the key is a failure.
+
+**Record.** Pass or fail for each, with the error if any. A wrong base URL is fixed in `src/jev/provider.ts` (with its test).
+
+## 6. Web chat with a real identity provider
+
+**Why.** The chat's `jwt` sign-in is tested against keys made in the test. A real provider's published keys, issuer, audience and token claims must be shown to work end to end.
+
+**Set.**
+1. A test tenant of any OpenID Connect provider, with an application whose ID tokens the page can get, and a test user. Add a custom token claim, `account_id`, carrying one of the utility's fictional accounts (`55501234`, say), since the provider's own `sub` is not an account the utility knows.
+2. In `apps/utility/identity.yaml`, set `signIn.claim` to `account_id` for the check (do not commit it).
+3. The server: `CHAT=on`, `CHAT_ALLOWED_ORIGINS=<the origin of the page below>`, `CHAT_SIGNIN=jwt`, `CHAT_JWKS_URL=<the tenant's JWKS URL, https>`, `CHAT_ISSUER=<the tenant's issuer, exactly as its tokens say>`, `CHAT_AUDIENCE=<the application's client id>`, `PUBLIC_HOST=<the tunnel's host>`, and `WIDGET=on` after `pnpm --filter @dialogwright/widget build`.
+4. A page, served from the allowed origin, that signs the user in with the provider's own script and mounts the widget with `endpoint: 'wss://<PUBLIC_HOST>/chat'`, the script from `https://<PUBLIC_HOST>/widget.js`, and `getToken` returning the ID token.
+
+**Do.** Open the page, sign in with the test user, open the chat, choose sign-in in the panel, and ask for the balance.
+
+**Look for.** The panel says you are signed in; the console shows the signed-in identity line for the session (the subject the token named, at the sign-in level); the balance is answered without the account number and date of birth being asked. The startup line shows `chat sign-in jwt (<issuer>)`. Then sign in with a token for the wrong audience (another application of the tenant) and see `sign_in_failed` in the panel. No token appears in the console or in any file under `TRACE_DIR`.
+
+**Record.** Pass or fail, the provider's kind (not the tenant's name), and anything about its tokens the guide's [13.5](authoring-an-app.md#135-sign-in-on-the-web-chat) should say (a key algorithm it uses that the engine refuses, a namespaced token claim). Put `apps/utility/identity.yaml` back.
+
+## Results log
+
+One row per check run. Keep earlier rows.
+
+| Date | Check | Carrier or provider | Result | What changed because of it |
+|---|---|---|---|---|
+| | | | | |

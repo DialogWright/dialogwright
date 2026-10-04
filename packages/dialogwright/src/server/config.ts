@@ -4,7 +4,7 @@ import { resolveJevProvider, type JevProvider } from '../jev/provider';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from './voice/registry';
-import { RECOGNIZER_NAME } from '../channel/voiceProviders';
+import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 import { checkJwksUrl } from './chat/jwks';
@@ -49,9 +49,6 @@ const CHAT_SIGNIN_METHODS = ['none', 'jwt', 'mock'] as const;
 export const DEFAULT_CHAT_IDLE_MS = 1_800_000;
 /** The most chat sessions live at once, unless CHAT_MAX_SESSIONS says otherwise. */
 export const DEFAULT_CHAT_MAX_SESSIONS = 1000;
-
-/** Twilio ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider), for TTS_PROVIDER. */
-const TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
 
 export interface ServerConfig {
   port: number;

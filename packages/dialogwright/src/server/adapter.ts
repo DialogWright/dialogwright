@@ -517,7 +517,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   }
 
   if (parsed.type === 'setup') {
-    if (!ctx.token || !deps.tokens.verify(ctx.token, parsed.callSid)) {
+    if (!ctx.token || !deps.tokens.verify(ctx.token, parsed.callSid, ctx.provider)) {
       deps.log(`${parsed.callSid}: setup refused, bad token`);
       await sendOne(socket, endFrame('unauthorized'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
       socket.close(1008, 'unauthorized');

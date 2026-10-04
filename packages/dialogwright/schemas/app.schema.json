@@ -467,15 +467,44 @@
                 "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
               },
               "voices": {
-                "description": "The voice for this locale, by voice provider id (twilio, telnyx): each carrier names its voices its own way. It wins over the deployment's voice for that carrier (TTS_VOICE, TELNYX_VOICE). Default: the deployment's voice for the default locale, else the carrier's default voice.",
+                "description": "The voice for this locale, by voice provider id (twilio, telnyx): each carrier names its voices its own way. It wins over the deployment's voice for that carrier (TTS_VOICE, TELNYX_VOICE). Default: the deployment's voice for the default locale, else the carrier's default voice. A voice is a name; a Twilio voice may also be { voice, provider }, so it does not depend on the deployment's TTS_PROVIDER.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string",
                   "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                 },
                 "additionalProperties": {
-                  "type": "string",
-                  "minLength": 1
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "voice": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "The voice, as Twilio names it for that provider (Google: es-US-Neural2-A; Amazon: Lupe-Neural)."
+                        },
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "Google",
+                            "Amazon",
+                            "ElevenLabs"
+                          ],
+                          "description": "Twilio's TTS provider for the voice (its ttsProvider): Google, Amazon or ElevenLabs."
+                        }
+                      },
+                      "required": [
+                        "voice",
+                        "provider"
+                      ],
+                      "additionalProperties": false,
+                      "description": "A Twilio voice that names its TTS provider. A voice written as a name alone takes the deployment's TTS_PROVIDER, or Twilio's default provider when that is unset."
+                    }
+                  ]
                 }
               },
               "hints": {

@@ -599,6 +599,11 @@ export function crossLink(
         }
       }
     }
+    // Only Twilio names a voice's TTS provider apart from the voice: another carrier's voice name carries it.
+    for (const [provider, v] of Object.entries(settings.voices ?? {})) {
+      if (typeof v === 'string' || provider === 'twilio' || !(VOICE_PROVIDER_IDS as readonly string[]).includes(provider)) continue;
+      yaml('app.yaml', ['voice', 'locales', tag, 'voices', provider], `a ${provider} voice names its provider in its own name; only a Twilio voice takes { voice, provider }`, `write the voice name alone, like ${provider}: ${v.voice}`, true);
+    }
   }
 
   // The code alone
@@ -769,7 +774,7 @@ function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {
     const one: { -readonly [K in keyof VoiceLocale]: VoiceLocale[K] } = {};
     put(one, 'tts', l.tts);
     put(one, 'transcription', l.transcription);
-    put(one, 'voices', l.voices);
+    put(one, 'voices', l.voices === undefined ? undefined : Object.fromEntries(Object.entries(l.voices).map(([provider, v]) => [provider, typeof v === 'string' ? v : { voice: v.voice, provider: v.provider }])));
     put(one, 'hints', l.hints);
     put(one, 'recognition', l.recognition === undefined ? undefined : Object.fromEntries(Object.entries(l.recognition).map(([provider, r]) => {
       const each: { -readonly [K in keyof Recognition]: Recognition[K] } = {};

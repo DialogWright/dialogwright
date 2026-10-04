@@ -49,7 +49,9 @@ function deps(overrides: Record<string, string> = {}, audioDir?: string): HttpDe
 
 async function listen(d: HttpDeps): Promise<string> {
   server = createServer(createRequestHandler(d));
-  await new Promise<void>((r) => server!.listen(0, r));
+  // On 127.0.0.1, the address the tests dial: on every address the operating system may hand out a port
+  // another process holds on 127.0.0.1 alone, and the request would reach that process (index.ts ServerOverrides.host).
+  await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
   const port = (server.address() as { port: number }).port;
   return `http://127.0.0.1:${port}`;
 }
@@ -94,7 +96,7 @@ describe('http routes', () => {
     expect(r.status).toBe(200);
     const token = /token=([0-9a-f]{32})/.exec(r.text)?.[1];
     expect(token).toBeDefined();
-    expect(d.tokens.verify(token!, 'CA1')).toBe(true);
+    expect(d.tokens.verify(token!, 'CA1', 'twilio')).toBe(true);
     expect(r.text).toContain('hints="depot, parcel"');
   });
 
@@ -207,7 +209,7 @@ describe('routes by voice provider', () => {
     expect(a.text).toContain('url="wss://demo.ngrok.app/conversation/twilio?token=');
     expect(a.text).toContain('<Connect action="https://demo.ngrok.app/cr-action/twilio">');
     const token = /token=([0-9a-f]{32})/.exec(a.text)![1]!;
-    expect(d.tokens.verify(token, 'CA1')).toBe(true);
+    expect(d.tokens.verify(token, 'CA1', 'twilio')).toBe(true);
     const b = await post(base, '/voice', { CallSid: 'CA2', From: '+15555550100' });
     expect(b.text).toContain('url="wss://demo.ngrok.app/conversation?token=');
     expect(b.text).toContain('<Connect action="https://demo.ngrok.app/cr-action">');
@@ -381,6 +383,30 @@ describe('a call\'s languages (voice.numbers, voice.locales)', () => {
     expect(withApp).toContain('" transcriptionProvider="Google" speechModel="telephony" partialPrompts="true"');
   });
 
+  it('writes a Twilio voice that names its provider with that provider, whatever the deployment\'s TTS_PROVIDER', async () => {
+    const app: App = {
+      ...libraryApp,
+      voice: {
+        ...libraryApp.voice,
+        locales: {
+          'en-US': { voices: { twilio: 'en-US-Journey-O' } },
+          es: { tts: 'es-US', voices: { twilio: { voice: 'es-US-Neural2-A', provider: 'Google' }, telnyx: 'Telnyx.Ultra.Asher' } },
+        },
+      },
+    };
+    // No TTS_PROVIDER: the name alone has no provider (Twilio's default), the named one has its own.
+    const plain = await listen({ ...deps(), app });
+    expect((await post(plain, '/voice/twilio', { CallSid: 'CA1' })).text).toContain(
+      '<Language code="en-US" voice="en-US-Journey-O" transcriptionProvider="Deepgram" speechModel="flux"/><Language code="es-US" ttsProvider="Google" voice="es-US-Neural2-A"/>',
+    );
+    await new Promise<void>((r) => server!.close(() => r()));
+    // TTS_PROVIDER=Amazon: the name alone takes the deployment's provider, as before; the named one keeps Google.
+    const amazon = await listen({ ...deps({ TTS_PROVIDER: 'Amazon', TTS_VOICE: 'Joanna-Neural' }), app });
+    expect((await post(amazon, '/voice/twilio', { CallSid: 'CA2' })).text).toContain(
+      '<Language code="en-US" ttsProvider="Amazon" voice="en-US-Journey-O" transcriptionProvider="Deepgram" speechModel="flux"/><Language code="es-US" ttsProvider="Google" voice="es-US-Neural2-A"/>',
+    );
+  });
+
   it('reconnects a call in the language it is in now, not the one it started in', async () => {
     const d = { ...deps(), app: bilingual };
     const base = await listen(d);
@@ -419,7 +445,7 @@ describe('Telnyx webhooks', () => {
     expect(r.text).toContain('url="wss://demo.ngrok.app/conversation/telnyx?token=');
     expect(r.text).toContain('<Connect action="https://demo.ngrok.app/cr-action/telnyx">');
     const token = /token=([0-9a-f]{32})/.exec(r.text)![1]!;
-    expect(d.tokens.verify(token, 'v2:abc')).toBe(true);
+    expect(d.tokens.verify(token, 'v2:abc', 'telnyx')).toBe(true);
   });
 
   it('reads a JSON webhook too', async () => {
@@ -427,7 +453,7 @@ describe('Telnyx webhooks', () => {
     const base = await listen(d);
     const r = await postTelnyx(base, '/voice/telnyx', JSON.stringify({ call_control_id: 'v2:json', from: '+15555550100' }), { type: 'application/json' });
     expect(r.status).toBe(200);
-    expect(d.tokens.verify(/token=([0-9a-f]{32})/.exec(r.text)![1]!, 'v2:json')).toBe(true);
+    expect(d.tokens.verify(/token=([0-9a-f]{32})/.exec(r.text)![1]!, 'v2:json', 'telnyx')).toBe(true);
   });
 
   it('refuses an unsigned, a stale and a Twilio-signed webhook', async () => {
@@ -685,7 +711,7 @@ describe('decideActionTwiml', () => {
     const d = deps();
     d.tokens.mint('CA1');
     expect(decideActionTwiml(d, { CallSid: 'CA1', HandoffData: '{"reasonCode":"completed"}' }).twiml).toContain('<Hangup/>');
-    expect(d.tokens.verify('x', 'CA1')).toBe(false);
+    expect(d.tokens.verify('x', 'CA1', 'twilio')).toBe(false);
     expect(decideActionTwiml(d, { CallSid: 'CA2', HandoffData: '{"reasonCode":"live-agent"}' }).twiml).toContain('<Dial>+15551234567</Dial>');
     expect(decideActionTwiml(d, { CallSid: 'CA3', HandoffData: 'not json' }).twiml).toContain('<Dial>');
   });
@@ -706,7 +732,7 @@ describe('decideActionTwiml', () => {
     const first = decideActionTwiml(d, { CallSid: 'CA1', CallStatus: 'in-progress', SessionStatus: 'failed' });
     expect(first.twiml).toContain('<ConversationRelay');
     const token = /token=([0-9a-f]{32})/.exec(first.twiml)![1]!;
-    expect(d.tokens.verify(token, 'CA1')).toBe(true);
+    expect(d.tokens.verify(token, 'CA1', 'twilio')).toBe(true);
     expect(d.store.get('CA1')?.reconnects).toBe(1);
     const second = decideActionTwiml(d, { CallSid: 'CA1', CallStatus: 'in-progress', SessionStatus: 'failed' });
     expect(second.twiml).toContain('<Say>');
@@ -729,7 +755,7 @@ describe('decideActionTwiml', () => {
     const result = decideActionTwiml(d, { CallSid: 'CA1', CallStatus: 'completed', SessionStatus: 'completed' });
     expect(result.twiml).toContain('<Hangup/>');
     expect(d.store.get('CA1')?.ended).toBe(true);
-    expect(d.tokens.verify(token, 'CA1')).toBe(false);
+    expect(d.tokens.verify(token, 'CA1', 'twilio')).toBe(false);
   });
 
   it('treats empty HandoffData as absent', () => {

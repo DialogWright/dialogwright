@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { checkAlways, identifier, localeTag, matching, name, text, textMap, unique } from './common';
-import { RECOGNIZER_NAME } from '../../channel/voiceProviders';
+import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS } from '../../channel/voiceProviders';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
@@ -172,15 +172,26 @@ const recognition = z
   })
   .describe('The speech recognizer on one carrier. A field left out is the carrier\'s default, never the deployment\'s; {} asks for the carrier\'s default recognizer.');
 
+/** A Twilio voice with its TTS provider (voice.locales.<tag>.voices.twilio), so it does not depend on the deployment's TTS_PROVIDER. */
+const twilioVoice = z
+  .strictObject({
+    voice: text().describe('The voice, as Twilio names it for that provider (Google: es-US-Neural2-A; Amazon: Lupe-Neural).'),
+    provider: z.enum(TWILIO_TTS_PROVIDERS).describe('Twilio\'s TTS provider for the voice (its ttsProvider): Google, Amazon or ElevenLabs.'),
+  })
+  .describe('A Twilio voice that names its TTS provider. A voice written as a name alone takes the deployment\'s TTS_PROVIDER, or Twilio\'s default provider when that is unset.');
+
 /** One locale's speech settings on the phone (voice.locales.<tag>). */
 const voiceLocale = z
   .strictObject({
     tts: localeTag().optional().describe('The language the voice speaks this locale in (a language tag). Default: the locale\'s tag.'),
     transcription: localeTag().optional().describe('The language speech is recognized in for this locale (a language tag). Default: the locale\'s tag.'),
     voices: z
-      .record(identifier(), text())
+      .record(identifier(), z.union([text(), twilioVoice]))
       .optional()
-      .describe('The voice for this locale, by voice provider id (twilio, telnyx): each carrier names its voices its own way. It wins over the deployment\'s voice for that carrier (TTS_VOICE, TELNYX_VOICE). Default: the deployment\'s voice for the default locale, else the carrier\'s default voice.'),
+      .describe(
+        'The voice for this locale, by voice provider id (twilio, telnyx): each carrier names its voices its own way. It wins over the deployment\'s voice for that carrier (TTS_VOICE, TELNYX_VOICE). Default: the deployment\'s voice for the default locale, else the carrier\'s default voice. ' +
+          'A voice is a name; a Twilio voice may also be { voice, provider }, so it does not depend on the deployment\'s TTS_PROVIDER.',
+      ),
     hints: z.array(text()).optional().describe('Words the speech recognizer should expect in this locale, in place of voice.hints.'),
     recognition: z
       .record(identifier(), recognition)

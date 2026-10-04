@@ -59,7 +59,7 @@ async function startTelnyx(): Promise<{ base: string; ws: string; traceDir: stri
     AUDIT_DIR: join(traceDir, 'audit'),
     AUDIO_DIR: audioDir,
   });
-  running = await startServer(config, { client: client!, log: () => {} });
+  running = await startServer(config, { host: '127.0.0.1', client: client!, log: () => {} });
   return { base: `http://127.0.0.1:${running.port}`, ws: `ws://127.0.0.1:${running.port}`, traceDir };
 }
 

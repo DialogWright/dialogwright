@@ -197,7 +197,9 @@ export function startLocale(app: App, to: string | undefined): string | undefine
  * (`locale`: the number's on a new call, the session's own on a reconnect) and every language it may
  * switch to, each with its own settings on this carrier:
  * - its voice: the app's (voice.locales.<tag>.voices.<provider>), else, for the default locale only,
- *   the deployment's (config.ts voiceFor), else none (the carrier's default for it);
+ *   the deployment's (config.ts voiceFor), else none (the carrier's default for it); an app's Twilio
+ *   voice written as { voice, provider } is spoken with its own provider, a name alone with the
+ *   deployment's TTS_PROVIDER (or Twilio's default when that is unset);
  * - its recognizer: the app's (voice.locales.<tag>.recognition.<provider>), whole, a field it leaves
  *   out being the carrier's default; else, for the default locale only, the deployment's (config.ts
  *   recognitionFor); else none (the carrier's default). The deployment's stops at the default locale
@@ -215,12 +217,16 @@ function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, 
   const language = (tag: string): RelayLanguage => {
     const own = app.voice?.locales && Object.hasOwn(app.voice.locales, tag) ? app.voice.locales[tag] : undefined;
     const appVoice = own?.voices && Object.hasOwn(own.voices, provider.id) ? own.voices[provider.id] : undefined;
-    const voice = appVoice ?? (tag === defaultLocale ? deployment.voice : undefined);
+    // A voice that names its TTS provider (a Twilio { voice, provider }) is spoken with it; a name alone
+    // with the deployment's (TTS_PROVIDER), as it always was.
+    const named = typeof appVoice === 'object' ? appVoice : undefined;
+    const voice = (typeof appVoice === 'string' ? appVoice : named?.voice) ?? (tag === defaultLocale ? deployment.voice : undefined);
+    const ttsProvider = named ? named.provider : deployment.ttsProvider;
     const appRecognition = own?.recognition && Object.hasOwn(own.recognition, provider.id) ? own.recognition[provider.id] : undefined;
     const recognition = appRecognition ?? (tag === defaultLocale ? deploymentRecognition : undefined);
     return {
       ...speechLanguagesOf(app, tag),
-      ...(voice !== undefined ? { voice, ...(deployment.ttsProvider !== undefined ? { ttsProvider: deployment.ttsProvider } : {}) } : {}),
+      ...(voice !== undefined ? { voice, ...(ttsProvider !== undefined ? { ttsProvider } : {}) } : {}),
       ...(recognition !== undefined && (recognition.provider !== undefined || recognition.model !== undefined) ? { recognition } : {}),
     };
   };
@@ -300,7 +306,7 @@ export function decideAction(
     if (entry.reconnects < deps.config.reconnectLimit) {
       deps.store.detach(callSid);
       entry.reconnects += 1;
-      const token = deps.tokens.mint(callSid);
+      const token = deps.tokens.mint(callSid, provider.id);
       // The call goes on in the language it is in now, which a switch may have changed since it started.
       const locale = deps.app?.locales ? (entry.session.locale ?? deps.app.locales.default) : undefined;
       return { document: start(connectOptions(deps, provider, token, locale)), note: `reconnect:${entry.reconnects}` };
@@ -379,7 +385,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           reply(res, 400, 'text/plain', 'missing CallSid');
           return;
         }
-        const token = deps.tokens.mint(params.callId);
+        const token = deps.tokens.mint(params.callId, provider.id);
         // The caller's number is theirs, not the console's: the last four tell calls apart.
         deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}`);
         const options = connectOptions(deps, provider, token, deps.app ? startLocale(deps.app, params.to) : undefined);

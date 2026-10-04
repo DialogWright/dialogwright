@@ -27,7 +27,7 @@ Or from code, for the options only code can give (a sign-in token, what a transf
 
 The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`.
 
-**Where the script comes from.** A production site loads the bundle (`dist/dialogwright-widget.js`, or `dist/dialogwright-widget.mjs` for its own bundler; `pnpm --filter @dialogwright/widget build`) from its own CDN, versioned and cached as it caches its other scripts. `WIDGET=on` makes the engine serve it on `/widget.js` (uncached, `nosniff`); that is for a laptop or a simple deployment. It is a public script by design, served through a tunnel too, since a site's pages load it.
+**Where the script comes from.** A production site loads the bundle (`dist/dialogwright-widget.js`, or `dist/dialogwright-widget.mjs` for its own bundler; `pnpm --filter @dialogwright/widget build`) from its own CDN, versioned and cached as it caches its other scripts; from a host it does not control, with a Subresource Integrity hash (`integrity` and `crossorigin` on the tag). The package is not on npm yet (it is published with the engine), so a deployment builds the file from this repository. The bundle is about 14 KB minified and 5.6 KB gzipped; a test builds it and holds it under 15 KB gzipped, and holds it to the browser's code alone (no server, test or Node code). `WIDGET=on` makes the engine serve it on `/widget.js` (uncached, `nosniff`); that is for a laptop or a simple deployment. It is a public script by design, served through a tunnel too, since a site's pages load it.
 
 | Option | `data-` attribute | Default | What it does |
 |---|---|---|---|
