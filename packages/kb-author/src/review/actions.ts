@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import {
   APPROVALS_LOG,
   approveOne,
@@ -35,6 +35,48 @@ import { loadKb, readForEdit } from '../kbPlace';
  *   one, the drafts that name it following), or merged into a topic topics.yaml has (its drafts
  *   re-pointed, the proposal dropped).
  */
+
+/**
+ * A draft's or a passage's id, as the knowledge base names its files (dialogwright's KB_FILE_ID): a
+ * letter or digit first, then letters, digits, underscores, hyphens and dots. No slash, so an id from
+ * the review page's URL never names a file outside the folder it is looked for in.
+ */
+export const KB_FILE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+
+/** Why `id` cannot name a draft or a passage (null when it can). */
+export function idProblem(id: string): string | null {
+  return KB_FILE_ID.test(id) ? null : `"${id}" is not a draft or passage id (letters, digits, underscores, hyphens and dots, starting with a letter or digit)`;
+}
+
+/** Why `id` cannot name a topic (null when it can). */
+function topicIdProblem(id: string): string | null {
+  return TOPIC_ID.test(id) ? null : `"${id}" is not a topic id: letters, digits and underscores, starting with a letter`;
+}
+
+/** A path made real (its links followed) as far as it exists; the rest as it is written. */
+function realOf(path: string): string {
+  const abs = resolve(path);
+  try {
+    return realpathSync(abs);
+  } catch {
+    const parent = dirname(abs);
+    return parent === abs ? abs : join(realOf(parent), abs.slice(parent.length + 1));
+  }
+}
+
+/**
+ * Whether `path` is a file of the knowledge base's `where`: kb/pending/<id>.yaml, kb/rejected/<id>.yaml,
+ * or a passage (kb/passages/<id>.yaml, kb/locale/<tag>/passages/<id>.yaml). Checked on the path as
+ * written and as it really is (a link followed), so neither `..` nor a link leads out of the folder.
+ */
+export function inKbFolder(place: KbPlace, path: string, where: 'pending' | 'rejected' | 'passage'): boolean {
+  const shapes = { pending: [/^pending\/[^/]+\.yaml$/], rejected: [/^rejected\/[^/]+\.yaml$/], passage: [/^passages\/[^/]+\.yaml$/, /^locale\/[^/]+\/passages\/[^/]+\.yaml$/] }[where];
+  const fits = (kbDir: string, p: string): boolean => {
+    const posix = relative(kbDir, p).split(sep).join('/');
+    return shapes.some((s) => s.test(posix)) && !posix.split('/').some((seg) => seg === '..' || seg === '.');
+  };
+  return fits(resolve(place.kbDir), resolve(path)) && fits(realOf(place.kbDir), realOf(path));
+}
 
 /** Who is reviewing: a person's name, and the team that owns the content. */
 export interface Reviewer {
@@ -153,6 +195,8 @@ export function draftReviewProblems(place: KbPlace, state: ReviewState, d: Draft
 
 /** Approves a draft or a passage as it is, through kb:approve's own function. */
 export function approve(place: KbPlace, id: string, reviewer: Reviewer | null, today: string): ActionResult {
+  const bad = idProblem(id);
+  if (bad !== null) return refused(bad);
   const who = reviewerProblem(reviewer);
   if (who !== null) return refused(who);
   const state = reviewState(place);
@@ -191,6 +235,8 @@ function applyEdits(doc: Document, edits: Edits, draft: boolean): void {
 
 /** Edits a draft or a withheld passage, checks the edit as a draft is checked, and approves it; undone if refused. */
 export function editAndApprove(place: KbPlace, id: string, edits: Edits, reviewer: Reviewer | null, today: string): ActionResult {
+  const bad = idProblem(id);
+  if (bad !== null) return refused(bad);
   const who = reviewerProblem(reviewer);
   if (who !== null) return refused(who);
   const state = reviewState(place);
@@ -200,6 +246,7 @@ export function editAndApprove(place: KbPlace, id: string, edits: Edits, reviewe
   const passage = Object.hasOwn(state.kb.passages, id) ? state.kb.passages[id]! : undefined;
   if (!draft && !passage) return refused(`there is no draft or passage "${id}"`);
   const path = draft ? join(place.kbDir, 'pending', `${id}.yaml`) : join(dirname(place.kbDir), passage!.file);
+  if (!inKbFolder(place, path, draft ? 'pending' : 'passage')) return refused(`${id}'s file is not in ${base}/${draft ? 'pending' : 'passages'}`);
   const before = readFileSync(path, 'utf8');
   const doc = readForEdit(path)!;
   if (draft && !draft.draft) return refused(`${draft.file} does not read as a draft`);
@@ -231,19 +278,22 @@ export function editAndApprove(place: KbPlace, id: string, edits: Edits, reviewe
 
 /** Moves a draft to kb/rejected/<id>.yaml with who rejected it, when and why. */
 export function reject(place: KbPlace, id: string, reason: string, reviewer: Reviewer | null, today: string): ActionResult {
+  const bad = idProblem(id);
+  if (bad !== null) return refused(bad);
   const who = reviewerProblem(reviewer);
   if (who !== null) return refused(who);
   const why = collapseWhitespace(reason);
   if (why === '') return refused('say why the draft is rejected: the reason is kept with it');
   const base = baseOf(place);
   const from = join(place.kbDir, 'pending', `${id}.yaml`);
-  if (`${id}.yaml` === PENDING_TOPICS_FILE || !existsSync(from)) return refused(`there is no draft "${id}" in ${base}/pending`);
+  if (`${id}.yaml` === PENDING_TOPICS_FILE || !inKbFolder(place, from, 'pending') || !existsSync(from)) return refused(`there is no draft "${id}" in ${base}/pending`);
   const doc = readForEdit(from)!;
   doc.set('rejected', doc.createNode({ by: reviewer!.by.trim(), on: today, reason: why }));
   const dir = join(place.kbDir, 'rejected');
   mkdirSync(dir, { recursive: true });
   let name = id;
   for (let n = 2; existsSync(join(dir, `${name}.yaml`)); n += 1) name = `${id}-${n}`;
+  if (!inKbFolder(place, join(dir, `${name}.yaml`), 'rejected')) return refused(`${base}/rejected is not a folder of the knowledge base`);
   writeFileSync(join(dir, `${name}.yaml`), doc.toString({ lineWidth: 0 }));
   unlinkSync(from);
   return { ok: true, message: `${id}: rejected by ${reviewer!.by.trim()} (${why}); moved to ${base}/rejected/${name}.yaml` };
@@ -301,6 +351,8 @@ function settle(place: KbPlace, files: readonly { path: string; before: string |
 
 /** Accepts a proposed topic into topics.yaml, under its own id or `as` (the drafts that name it following). */
 export function acceptTopic(place: KbPlace, id: string, reviewer: Reviewer | null, as?: string): ActionResult {
+  const bad = topicIdProblem(id);
+  if (bad !== null) return refused(bad);
   const who = reviewerProblem(reviewer);
   if (who !== null) return refused(who);
   const base = baseOf(place);
@@ -334,6 +386,8 @@ export function acceptTopic(place: KbPlace, id: string, reviewer: Reviewer | nul
 
 /** Merges a proposed topic into one topics.yaml has: its drafts re-pointed, the proposal dropped. */
 export function mergeTopic(place: KbPlace, id: string, into: string, reviewer: Reviewer | null): ActionResult {
+  const bad = topicIdProblem(id) ?? topicIdProblem(into);
+  if (bad !== null) return refused(bad);
   const who = reviewerProblem(reviewer);
   if (who !== null) return refused(who);
   const base = baseOf(place);

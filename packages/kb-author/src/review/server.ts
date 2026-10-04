@@ -3,7 +3,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import type { KbPlace } from 'dialogwright';
-import { acceptTopic, approve, approvedSectionText, draftReviewProblems, editAndApprove, mergeTopic, reject, reviewerProblem, reviewState, type ActionResult, type Edits, type Reviewer } from './actions';
+import { acceptTopic, approve, approvedSectionText, draftReviewProblems, editAndApprove, KB_FILE_ID, mergeTopic, reject, reviewerProblem, reviewState, type ActionResult, type Edits, type Reviewer } from './actions';
+import { TOPIC_ID } from '../draft/validate';
 import { reportFromFiles, NO_NEAR_TOPIC } from '../gaps/report';
 import { gapGroupPage, gapsPage, kbTopicPage, type GapsView } from './gapPages';
 import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, type PageContext } from './pages';
@@ -96,6 +97,15 @@ function editsOf(form: URLSearchParams, facts: readonly string[]): Edits {
   };
 }
 
+/**
+ * Where the reviewer form comes back to: a path of this page's own, else the list. It starts with one
+ * slash and has only path characters after it: no second slash or backslash at its start (which a
+ * browser reads as another host), no backslash anywhere, no query and no scheme.
+ */
+export function backTo(back: string | null): string {
+  return back !== null && /^\/(?![/\\])[A-Za-z0-9_.~%/-]*$/.test(back) ? back : '/';
+}
+
 export async function startReviewServer(options: ReviewServerOptions): Promise<ReviewServer> {
   const { place } = options;
   const token = options.token ?? randomBytes(32).toString('base64url');
@@ -146,7 +156,17 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
       flash = null;
       return c;
     };
-    const parts = url.pathname.split('/').filter((p) => p !== '').map(decodeURIComponent);
+    let parts: string[];
+    try {
+      parts = url.pathname.split('/').filter((p) => p !== '').map(decodeURIComponent);
+    } catch {
+      return refuse(res, 404, 'no such page');
+    }
+    // An id from the URL names a draft, a passage or a topic, never a path: one that is not an id is not there.
+    const [kindOf, idOf] = parts;
+    if (idOf !== undefined && (((kindOf === 'draft' || kindOf === 'passage') && !KB_FILE_ID.test(idOf)) || (kindOf === 'topic' && !TOPIC_ID.test(idOf)))) {
+      return method === 'POST' ? refuse(res, 404, 'no such action') : send(res, 404, notFoundPage(ctx(url.pathname), `${url.pathname} is not waiting for review.`), undefined, nonce);
+    }
     const today = options.today();
 
     if (method === 'POST' && form) {
@@ -159,8 +179,7 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
         const candidate = { by: (form.get('by') ?? '').trim(), owner: (form.get('owner') ?? '').trim() };
         const problem = reviewerProblem(candidate);
         if (problem === null) reviewer = candidate;
-        const back = form.get('back') ?? '/';
-        return done(problem === null ? { ok: true, message: `reviewing as ${candidate.by} for ${candidate.owner}` } : { ok: false, message: problem, problems: [] }, back.startsWith('/') && !back.startsWith('//') ? back : '/');
+        return done(problem === null ? { ok: true, message: `reviewing as ${candidate.by} for ${candidate.owner}` } : { ok: false, message: problem, problems: [] }, backTo(form.get('back')));
       }
       if (id === undefined || action === undefined || parts.length !== 3) return refuse(res, 404, 'no such action');
       const facts = Object.keys(reviewState(place).kb?.settings.applies ?? {});
