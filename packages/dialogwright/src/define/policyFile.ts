@@ -327,6 +327,7 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
   if (two) identity.codeLength = two.factors[0]?.otp.length ?? DEFAULT_CODE_LENGTH;
   identity.levelNames = Object.freeze(two ? { 1: one.name, 2: two.name } : { 1: one.name });
   if (file.signIn) identity.signInLevel = file.signIn.level;
+  if (file.signIn?.claim !== undefined) identity.signInClaim = file.signIn.claim;
   const roles = delegates[0]?.[1].roles;
   if (delegates.length === 1) identity.delegateRoles = Object.freeze([...(roles ?? [])]);
   identity.maxAttempts = file.attempts;

@@ -1,4 +1,5 @@
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { handleSocketClose, handleSocketMessage, newConnectionContext, type AdapterDeps } from './adapter';
 import type { SocketLike } from './sessions';
@@ -25,6 +26,13 @@ export function socketProvider(pathname: string, enabled: readonly string[]): st
   return providerIdForPath(enabled, pathname, '/conversation');
 }
 
+/** The web chat endpoint's side of an upgrade (server/chat/socket.ts ChatEndpoint), when CHAT=on. */
+export interface ChatUpgrades {
+  /** The path the chat is served on (`/chat`). */
+  readonly path: string;
+  handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void;
+}
+
 /**
  * Accept relay upgrades on `/conversation/<id>` for each enabled voice provider (`voiceProviders`,
  * default Twilio alone) and on the legacy `/conversation` (Twilio's); the token from the query is checked at setup.
@@ -34,6 +42,7 @@ export function attachWebSocketServer(
   deps: AdapterDeps,
   setupTimeoutMs: number = SETUP_TIMEOUT_MS,
   voiceProviders: readonly string[] = [LEGACY_PROVIDER],
+  chat: ChatUpgrades | null = null,
 ): WebSocketServer {
   // 64 KiB is far above any ConversationRelay message; larger payloads are closed with 1009 by ws.
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
@@ -68,6 +77,11 @@ export function attachWebSocketServer(
 
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
+    // The web chat, when it is on: checked for its origin there, and never for a call token.
+    if (chat !== null && url.pathname === chat.path) {
+      chat.handleUpgrade(req, socket, head);
+      return;
+    }
     const provider = socketProvider(url.pathname, voiceProviders);
     if (provider === null) {
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');

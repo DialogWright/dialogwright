@@ -179,9 +179,11 @@ describe('createApp', () => {
     // One industry's words, written in pieces so that this file keeps to the rule it checks.
     const words = ['cla' + 'ims?', 'cover' + 'age', 'insur' + 'ance', 'insur' + 'er', 'bro' + 'ker', 'mem' + 'ber', 'policy' + 'holder', 'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent', 'gene' + 'sys'];
     const banned = new RegExp(`\\b(${words.join('|')})\\b`, 'i');
+    // The sign-in token's own term, as the repository's wording rule admits it (src/wording.test.ts SENSES): blanked, so any other use is still caught.
+    const tokenSense = new RegExp(['\\bsignIn\\.' + 'cla' + 'im\\b', '\\bfromCla' + 'ims\\b', '\\btoken cla' + 'ims?\\b', '\\bcla' + 'ims? of (?:the|a) token\\b'].join('|'), 'gi');
     for (const identity of [false, true]) {
       for (const [file, text] of templateFiles(identity)) {
-        expect(text, file).not.toMatch(banned);
+        expect(text.replace(tokenSense, (m) => ' '.repeat(m.length)), file).not.toMatch(banned);
         expect(text, file).not.toContain('—');
       }
     }

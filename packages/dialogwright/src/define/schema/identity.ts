@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { identifier, matching, name, text, unique } from './common';
+import { SIGN_IN_CLAIM } from '../../core/app/lookup';
 
 /**
  * identity.yaml: who the app serves and how a caller proves who they are. It compiles to
@@ -99,6 +100,9 @@ export const identitySchema = z
     signIn: z
       .strictObject({
         level: z.literal([1, 2]).describe('The level a sign-in proves. It must be the top level of the ladder.'),
+        claim: matching(SIGN_IN_CLAIM, 'is not a token claim name: it must be printable characters without spaces, at most 200', 'write the token claim\'s name as the token carries it, for example "sub" or "account_id"')
+          .optional()
+          .describe('The token claim that carries the subject\'s id, for a channel that signs in with a token (web chat). Default sub. An app that maps token claims some other way (a delegate, a tenant) sets principals.fromClaims in code.'),
       })
       .optional()
       .describe('What a sign-in proves, for a channel that can sign a caller in (a web portal): the core checks the capability, never the channel\'s name.'),

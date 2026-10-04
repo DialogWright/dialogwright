@@ -927,9 +927,10 @@ export function replayEvents(records, frames, opts) {
   if (!records || !records.length) return events;
   const first = records[0];
   const callSid = first.sessionId;
-  // A trace does not record its channel, but an app's chat names its session by a prefix of its
-  // own (ConsoleMeta.chatPrefixes) and hex. A call is named by Twilio.
-  const chat = META.chatPrefixes.some((p) => String(callSid).startsWith(p) && /^[0-9a-f]+$/.test(String(callSid).slice(p.length)));
+  // The session's channel, as its call_started audit draft names it on the first record (the
+  // engine's own chat says `chat`), or an app's chat that names its session by a prefix of its own
+  // (ConsoleMeta.chatPrefixes) and hex. A call is named by its carrier.
+  const chat = recordedChannel(first) === 'chat' || META.chatPrefixes.some((p) => String(callSid).startsWith(p) && /^[0-9a-f]+$/.test(String(callSid).slice(p.length)));
   events.push({
     type: 'call_started', callSid, at: Date.parse(first.ts),
     from: opts?.from ?? 'replay', todayIso: String(first.ts).slice(0, 10), thresholds: opts?.thresholds ?? {},
@@ -941,10 +942,13 @@ export function replayEvents(records, frames, opts) {
   const hasEnd = lines.some((f) => f && f.dir === 'out' && (f.msg ?? {}).type === 'end');
   // The frame log records each resumed socket, not a counter; the attempt is its position.
   let resumed = 0;
+  // The engine's own web chat logs its own wire (server/chat/socket.ts), opened by a `start`.
+  const chatWire = lines.some((f) => f && f.dir === 'in' && (f.msg ?? {}).type === 'start' && typeof (f.msg ?? {}).v === 'number');
   // A frame log line's `line` is its line number in the file, for a skip report; not shown here.
   const frameEvents = lines.flatMap((f) => {
     const at = Date.parse(f.ts);
     const m = f.msg ?? {};
+    if (chatWire) return chatFrameEvents(f.dir, m, callSid, at, opts, () => ++resumed);
     if (f.dir === 'in' && m.type === 'silence') return [{ type: 'silence', callSid, at, promptId: null }];
     if (f.dir === 'in' && m.type === 'dtmf') return [{ type: 'dtmf', callSid, at, digit: m.digit }];
     if (f.dir === 'in' && m.type === 'interrupt') return [{ type: 'interrupt', callSid, at, utteranceUntilInterrupt: m.utteranceUntilInterrupt ?? null }];
@@ -977,6 +981,29 @@ export function replayEvents(records, frames, opts) {
   const rank = (e) => REPLAY_RANK[e.type] ?? 1;
   const all = frameEvents.concat(turnEvents).sort((a, b) => a.at - b.at || rank(a) - rank(b));
   return events.concat(all);
+}
+
+/** The channel a trace's session was on, as its call_started audit draft names it (core/audit.ts); null in a trace without one. */
+function recordedChannel(record) {
+  const started = Array.isArray(record?.audit) ? record.audit.find((a) => a && a.type === 'call_started') : undefined;
+  const channel = started?.detail?.channel;
+  return typeof channel === 'string' ? channel : null;
+}
+
+/** How the engine's chat logs a session's end (its `ended` log line), as the console says it. */
+const CHAT_ENDED = { complete: 'completed', handoff: 'handoff', idle: 'abandoned' };
+
+/**
+ * The events one line of the engine chat's frame log stands for: a `start` that resumes is a
+ * reconnect, a `transfer` names why the chat was handed over, and the `ended` log line says how it
+ * ended. A dropped socket is not the end of a chat (the session waits for a resume), and its `end`
+ * message carries no reason, so neither says anything here.
+ */
+function chatFrameEvents(dir, m, callSid, at, opts, attempt) {
+  if (dir === 'in' && m.type === 'start' && m.resume) return [{ type: 'reconnect', callSid, at, attempt: attempt() }];
+  if (dir === 'out' && m.type === 'transfer') return [{ type: 'handoff', callSid, at, reason: String(m.reason ?? 'unknown'), number: opts?.handoffNumber ?? '…' }];
+  if (dir === 'log' && typeof m.ended === 'string') return [{ type: 'ended', callSid, at, reason: Object.hasOwn(CHAT_ENDED, m.ended) ? CHAT_ENDED[m.ended] : 'completed' }];
+  return [];
 }
 
 /** The longest run name kept: enough to be descriptive, short enough for the picker. */

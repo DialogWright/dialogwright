@@ -27,6 +27,7 @@ import type { ServiceUrls } from './services';
 import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoutes';
 import { localOnlyPaths } from './localOnly';
 import { VOICE_RELAY } from '../channel/caps';
+import { CHAT_PATH, chatEndpoint, type ChatEndpoint } from './chat/socket';
 
 export interface RunningServer {
   server: Server;
@@ -37,6 +38,8 @@ export interface RunningServer {
   bus?: DashboardBus;
   /** The app's own pages its launcher mounted (ServerOverrides.routes), in the order they are asked. */
   routes: readonly AppRoute[];
+  /** The engine's web chat (CHAT=on), or undefined when it is off. */
+  chat?: ChatEndpoint;
   /** One pass of the idle sweep the evictor runs on its interval; exposed for tests. */
   sweep(): void;
   close(): Promise<void>;
@@ -66,6 +69,8 @@ export interface ServerOverrides {
   routes?: AppRoutesFactory;
   /** Tests replace the Claude Haiku call, for the phone line and the chat alike. */
   summarizeHandoff?: AdapterDeps['summarizeHandoff'];
+  /** How the engine's web chat fetches the identity provider's published keys (CHAT_SIGNIN=jwt); tests serve their own. */
+  chatFetch?: typeof fetch;
 }
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -172,6 +177,32 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const deps = { config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app };
 
   const server = createServer(createRequestHandler(deps));
+  // The engine's own web chat, when CHAT=on: each session with the phone line's client, tools, audit chain and console.
+  const chatSettings = config.chat;
+  const chat = chatSettings
+    ? chatEndpoint({
+      settings: chatSettings, now, log, audit, bus, serviceUrls,
+      anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
+      startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch,
+      resources: (id, sessions) => {
+        const file = safeFileStem(id);
+        const trace = new TraceWriter(join(config.traceDir, `${file}.jsonl`));
+        const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
+        // No render context: a chat shows a line's words, never a recorded clip.
+        return {
+          opts: { client, thresholds, todayIso: todayIso(), trace, now, render: null, observe, tools, audit, screen: config.screen },
+          frames: new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now),
+        };
+      },
+    })
+    : undefined;
+  if (chatSettings) {
+    log(`chat: ${CHAT_PATH} for ${chatSettings.origins.any ? 'any origin (laptop)' : [...chatSettings.origins.set].join(', ')}, sign-in ${chatSettings.signIn.method}`);
+    // A sign-in method with nothing to sign in as: every token would be refused.
+    if (chatSettings.signIn.method !== 'none' && app.identity?.signInLevel === undefined && app.principals?.fromClaims === undefined) {
+      log(`WARNING: CHAT_SIGNIN=${chatSettings.signIn.method}, but app "${app.id}" takes no sign-in (identity.yaml has no signIn, and principals has no fromClaims): every token will be refused`);
+    }
+  }
   const wss = attachWebSocketServer(
     server,
     {
@@ -181,6 +212,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     },
     overrides.setupTimeoutMs,
     config.voiceProviders,
+    chat ? { path: CHAT_PATH, handleUpgrade: (req, socket, head) => chat.handleUpgrade(req, socket, head) } : null,
   );
   /**
    * One pass of the idle sweep. Named and returned rather than inlined into the interval so a
@@ -209,6 +241,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       bus?.publish({ type: 'ended', callSid: live, at: now(), reason: 'error' });
     }
     for (const r of routes) r.sweep?.();
+    chat?.sweep();
     const swept = tokens.evictExpired();
     if (swept) log(`swept ${swept} expired call tokens`);
   };
@@ -239,11 +272,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     tokens,
     bus,
     routes,
+    ...(chat ? { chat } : {}),
     sweep,
     close: async () => {
       clearInterval(evictor);
       // Let turns that are already running finish (and flush their frames) before the sockets go away.
-      const tails = [...store.tails(), ...routes.flatMap((r) => r.tails?.() ?? [])];
+      const tails = [...store.tails(), ...routes.flatMap((r) => r.tails?.() ?? []), ...(chat?.tails() ?? [])];
       if (tails.length) {
         let timer: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([
@@ -255,6 +289,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         if (timer) clearTimeout(timer);
       }
       for (const c of wss.clients) c.terminate();
+      chat?.close();
       // `server.close` only stops new connections and then waits for the idle ones; an open SSE
       // stream is never idle, so a connected dashboard page would hold shutdown open forever.
       server.closeAllConnections();

@@ -6,8 +6,46 @@ import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from './voice/registry';
 import { RECOGNIZER_NAME } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
+import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
+import { checkJwksUrl } from './chat/jwks';
 
 export type ClientKind = 'stub' | 'heuristic' | 'jev';
+
+/**
+ * The engine's web chat endpoint (`/chat`, a WebSocket speaking src/channel/chat/protocol.ts), as
+ * CHAT=on configures it.
+ */
+export interface ChatSettings {
+  /** CHAT_ALLOWED_ORIGINS, required: the sites whose pages may open a chat (server/chat/origins.ts). */
+  origins: AllowedOrigins;
+  /** CHAT_IDLE_MS, default 1,800,000: how long a chat session nobody writes to lives (and can be resumed). */
+  idleMs: number;
+  /**
+   * CHAT_MAX_SESSIONS, default 1000: the most chat sessions live at once (a dropped one waiting for
+   * its resume included). Over it a new chat is refused `busy`; a resume never is. A limit per
+   * visitor's address is the reverse proxy's to keep: behind one, every chat comes from its address.
+   */
+  maxSessions: number;
+  /** CHAT_SIGNIN, default none: how a chat user signs in (server/chat/signin.ts). */
+  signIn: ChatSignInSettings;
+}
+
+/**
+ * CHAT_SIGNIN=none|jwt|mock. jwt: a token from the site's identity provider, verified against the keys
+ * at CHAT_JWKS_URL (https), with iss CHAT_ISSUER and aud CHAT_AUDIENCE. mock: `mock:<id>`, unsigned,
+ * for a laptop only (PUBLIC_HOST=localhost).
+ */
+export type ChatSignInSettings =
+  | { method: 'none' }
+  | { method: 'mock' }
+  | { method: 'jwt'; jwksUrl: string; issuer: string; audience: string };
+
+const CHAT_SIGNIN_METHODS = ['none', 'jwt', 'mock'] as const;
+
+/** A chat session nobody has written to for this long is ended (CHAT_IDLE_MS's default; server/chatHttp.ts's CHAT_IDLE_MS). */
+export const DEFAULT_CHAT_IDLE_MS = 1_800_000;
+/** The most chat sessions live at once, unless CHAT_MAX_SESSIONS says otherwise. */
+export const DEFAULT_CHAT_MAX_SESSIONS = 1000;
 
 /** Twilio ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider), for TTS_PROVIDER. */
 const TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
@@ -93,6 +131,11 @@ export interface ServerConfig {
    * The Twilio webhooks are unaffected (src/server/localOnly.ts).
    */
   consoleLocalOnly: boolean;
+  /**
+   * CHAT=on|off, default off: whether the engine serves its own web chat on `/chat`. Absent when off,
+   * so a deployment without chat has exactly the config it had before chat existed.
+   */
+  chat?: ChatSettings;
 }
 
 export type Env = Record<string, string | undefined>;
@@ -194,6 +237,7 @@ export function loadConfig(env: Env): ServerConfig {
   // flux is Deepgram's: another provider without a model of its own gets that provider's default.
   const twilioSpeechModel = recognizerName(env, 'TWILIO_SPEECH_MODEL', 'nova-3-general') ?? (twilioTranscriptionProvider === 'Deepgram' ? 'flux' : null);
   const telnyxTranscriptionProvider = recognizerName(env, 'TELNYX_TRANSCRIPTION_PROVIDER', 'deepgram');
+  const chat = chatOf(env, publicHost);
   return {
     port,
     publicHost,
@@ -226,7 +270,45 @@ export function loadConfig(env: Env): ServerConfig {
     anthropicApiKey,
     handoffSummary: handoffSummarySwitch === 'on',
     consoleLocalOnly: localOnlySwitch === 'on',
+    ...(chat ? { chat } : {}),
   };
+}
+
+/** CHAT and, when it is on, the chat's own variables; undefined when it is off (the others are then not read). */
+function chatOf(env: Env, publicHost: string): ChatSettings | undefined {
+  const sw = (env.CHAT ?? 'off').trim().toLowerCase();
+  if (sw !== 'on' && sw !== 'off') throw new Error(`CHAT must be on or off, got "${env.CHAT}"`);
+  if (sw === 'off') return undefined;
+  const origins = env.CHAT_ALLOWED_ORIGINS?.trim();
+  if (!origins) throw new Error('missing required environment variable CHAT_ALLOWED_ORIGINS (CHAT=on)');
+  const idleMs = integer(env, 'CHAT_IDLE_MS', DEFAULT_CHAT_IDLE_MS);
+  if (idleMs <= 0) throw new Error(`CHAT_IDLE_MS must be a positive number of milliseconds, got "${env.CHAT_IDLE_MS}"`);
+  const maxSessions = integer(env, 'CHAT_MAX_SESSIONS', DEFAULT_CHAT_MAX_SESSIONS);
+  if (maxSessions <= 0) throw new Error(`CHAT_MAX_SESSIONS must be a positive integer, got "${env.CHAT_MAX_SESSIONS}"`);
+  return { origins: parseAllowedOrigins(origins, publicHost), idleMs, maxSessions, signIn: chatSignInOf(env, publicHost) };
+}
+
+function chatSignInOf(env: Env, publicHost: string): ChatSignInSettings {
+  const method = (env.CHAT_SIGNIN?.trim() || 'none').toLowerCase();
+  if (!(CHAT_SIGNIN_METHODS as readonly string[]).includes(method)) throw new Error(`CHAT_SIGNIN must be one of ${CHAT_SIGNIN_METHODS.join(', ')}, got "${env.CHAT_SIGNIN}"`);
+  if (method === 'none') return { method: 'none' };
+  if (method === 'mock') {
+    // Anyone could sign in as anyone with a mock token: never on a host the internet reaches.
+    if (publicHost !== 'localhost') throw new Error('CHAT_SIGNIN=mock is for a laptop: PUBLIC_HOST must be localhost');
+    return { method: 'mock' };
+  }
+  const need = (name: string): string => {
+    const v = env[name]?.trim();
+    if (!v) throw new Error(`missing required environment variable ${name} (CHAT_SIGNIN=jwt)`);
+    return v;
+  };
+  const jwksUrl = need('CHAT_JWKS_URL');
+  checkJwksUrl(jwksUrl);
+  return { method: 'jwt', jwksUrl, issuer: need('CHAT_ISSUER'), audience: need('CHAT_AUDIENCE') };
+}
+
+function describeChatSignIn(s: ChatSignInSettings): string {
+  return s.method === 'jwt' ? `chat sign-in jwt (${s.issuer})` : s.method === 'mock' ? 'chat sign-in MOCK (laptop only)' : 'chat sign-in none';
 }
 
 /** A recognizer's provider or model name from `name`, or null when it is unset or empty; anything but a plain name is refused. */
@@ -313,5 +395,6 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx voice ${c.telnyxVoice ?? 'default'}`] : []),
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
+    ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)}) up to ${c.chat.maxSessions} sessions`, describeChatSignIn(c.chat.signIn)] : []),
   ].join('  ');
 }

@@ -259,6 +259,11 @@ describe('reduce, call-level moments', () => {
     expect(reduce([started, { type: 'ended', callSid: CALL, at: 1, reason: 'error' }]).status).toBe('ended · error');
   });
 
+  it('ends a chat nobody wrote to as abandoned', () => {
+    const idle: DashboardEvent = { type: 'ended', callSid: CALL, at: 1, reason: 'abandoned' };
+    expect(reduce([started, idle]).status).toBe('ended · abandoned');
+  });
+
   it('un-ends the call when a reconnect or another turn follows the hangup the action webhook published', () => {
     const ended: DashboardEvent = { type: 'ended', callSid: CALL, at: 1, reason: 'hangup' };
     const reconnect: DashboardEvent = { type: 'reconnect', callSid: CALL, at: 2, attempt: 1 };
@@ -445,6 +450,20 @@ describe('stages, gate, source, audit and handoff', () => {
     expect(replayEvents(other, [])[0]).toMatchObject({ type: 'call_started', channel: 'voice' });
   });
 
+  it('replays the engine\'s own chat as a chat: the trace\'s call_started names the channel, whatever the session id', async () => {
+    const { records } = await scripted([OPENER]);
+    const sid = 'a'.repeat(32);
+    // As the engine's chat writes one (server/chat/socket.ts): a hex id of no app's prefix, and the session's channel in its first record's audit.
+    const chat = replayRecords(records).map((r, i) => ({
+      ...r, sessionId: sid,
+      audit: i === 0 ? (r.audit ?? []).map((a) => (a.type === 'call_started' ? { ...a, detail: { ...a.detail, channel: 'chat' } } : a)) : r.audit,
+    }));
+    expect(chat[0]!.audit?.some((a) => a.type === 'call_started')).toBe(true);
+    expect(replayEvents(chat, [])[0]).toMatchObject({ type: 'call_started', callSid: sid, channel: 'chat' });
+    // The same trace as a call's names voice, and is a call.
+    expect(replayEvents(replayRecords(records).map((r) => ({ ...r, sessionId: sid })), [])[0]).toMatchObject({ channel: 'voice' });
+  });
+
   // Replay never sees the audit log itself (it is not written to the trace), so a replayed call's
   // tail is empty by default; see the comment on the 'audit' case, and on `reduce`, in view.js.
   it('leaves the audit tail empty in replay by default', async () => {
@@ -570,6 +589,35 @@ describe('replayEvents', () => {
     const both = [frameLine('out', { type: 'end', handoffData: '{"reasonCode":"completed"}' }, 19_000), frameLine('log', { socketClosed: true, ended: true }, 20_000)];
     const reasons = replayEvents(replayRecords(records), both, {}).filter((e) => e.type === 'ended').map((e) => (e as { reason: string }).reason);
     expect(reasons).toEqual(['completed']);
+  });
+
+  it('reads the engine chat\'s own wire: a transfer, how it ended, a resume, and a drop that is not the end', async () => {
+    const { records } = await scripted([OPENER]);
+    const chatLog = (...tail: FrameLogLine[]): FrameLogLine[] => [frameLine('in', { type: 'start', v: 1 }, 0), ...tail];
+    const ended = (frames: FrameLogLine[]) => replayEvents(replayRecords(records), frames, {}).filter((e) => e.type === 'ended' || e.type === 'handoff');
+
+    // A transfer: the reason the chat was handed over, then its end.
+    const handedOver = chatLog(
+      frameLine('out', { type: 'transfer', reason: 'live-agent' }, 20_000),
+      frameLine('out', { type: 'end' }, 20_000),
+      frameLine('log', { ended: 'handoff' }, 20_000),
+    );
+    expect(ended(handedOver)).toEqual([
+      { type: 'handoff', callSid: CALL, at: 20_000, reason: 'live-agent', number: '…' },
+      { type: 'ended', callSid: CALL, at: 20_000, reason: 'handoff' },
+    ]);
+    // Completed, and ended for want of a reply (idle): no transfer, each said as it was.
+    const done = chatLog(frameLine('out', { type: 'end' }, 20_000), frameLine('log', { ended: 'complete' }, 20_000));
+    expect(reduce(replayEvents(replayRecords(records), done, {})).status).toBe('ended · completed');
+    const idle = chatLog(frameLine('out', { type: 'end' }, 20_000), frameLine('log', { ended: 'idle' }, 20_000));
+    expect(ended(idle)).toEqual([{ type: 'ended', callSid: CALL, at: 20_000, reason: 'abandoned' }]);
+    expect(reduce(replayEvents(replayRecords(records), idle, {})).status).toBe('ended · abandoned');
+
+    // A dropped socket is not the end of a chat, and the start that resumes it is a reconnect.
+    const resumed = chatLog(frameLine('log', { socketClosed: true }, 10_000), frameLine('in', { type: 'start', v: 1, resume: true }, 12_000));
+    const v = reduce(replayEvents(replayRecords(records), resumed, {}));
+    expect(v.status.startsWith('ended')).toBe(false);
+    expect(v.lines.filter((l) => l.kind === 'marker').map((l) => l.text)).toEqual(['reconnected (1)']);
   });
 
   it('numbers reconnect attempts by the resumed sockets the log holds', async () => {
