@@ -76,6 +76,15 @@ export type { RetrievalRecord } from './trace/types';
 // The engine's retrievers (the default for an app with a kb/ whose code gives none): keyword, BM25 with phrases.
 export { KeywordRetriever } from './kb/keyword';
 export type { KeywordRetrieverOptions } from './kb/keyword';
+// The static embedder, its pinned model, an in-memory vector index, and the index file (kb/.index/<embedder>.json).
+export { StaticEmbedder } from './kb/embed/static';
+export type { StaticModelParts } from './kb/embed/static';
+export { MemoryVectorIndex } from './kb/embed/memory';
+export type { Embedder, EmbedderInfo, TopicField, VectorEntry, VectorHit, VectorIndex } from './kb/embed/types';
+export { DEFAULT_EMBEDDER, POTION_BASE_8M, STATIC_MODELS, MODEL_DIR_ENV, ModelError, downloadModel, loadPinnedModel, modelDir, modelPresent } from './kb/embed/model';
+export type { PinnedModel } from './kb/embed/model';
+export { buildIndex, parseIndex, serializeIndex, indexHashOf } from './kb/vectorIndex';
+export type { BuiltIndex, KbIndexData, KbIndexRead } from './kb/vectorIndex';
 
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
 // What the author of a slot type uses is in 'dialogwright/slot-kit'; the conformance kit is in

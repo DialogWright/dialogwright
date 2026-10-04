@@ -1,4 +1,5 @@
 import type { KbSource } from '../core/lifecycle';
+import type { KbIndexRead } from './vectorIndex';
 
 /**
  * An app's knowledge base, as the loader builds it from the `kb/` folder (./folder.ts): short,
@@ -109,6 +110,11 @@ export interface KnowledgeBase {
   readonly passages: Readonly<Record<string, KbPassage>>;
   /** The source documents, by file id, sorted by id. */
   readonly sources: Readonly<Record<string, KbSourceDocument>>;
+  /**
+   * The vector index of the embedder kb.yaml names (kb/.index/<embedder>.json, ./vectorIndex.ts), as
+   * read: present only when kb.yaml names an embedder. `pnpm check` holds it to the topics' texts.
+   */
+  readonly index?: KbIndexRead;
 }
 
 /** Where a nomination came from: keyword retrieval, dense (embedding) retrieval, or an app's own retriever. */

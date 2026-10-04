@@ -13,7 +13,7 @@ import { formatProblem, type Problem } from './problems';
 
 /**
  * The `dialogwright` command (the package's bin; run through tsx, which is how the repo runs its
- * TypeScript). Six commands:
+ * TypeScript). Eight commands:
  *
  *   dialogwright check [--json] [dir...]
  *   dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install]
@@ -21,6 +21,7 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright policy:matrix [dir...]   (./matrixCommand.ts: writes each app's policy.matrix)
  *   dialogwright policy:card [dir...]     (./pageCommand.ts: writes each app's POLICY.md, the policy card)
  *   dialogwright app:diagram [dir...]     (./pageCommand.ts: writes each app's APP-MAP.md, the app map)
+ *   dialogwright kb:model | kb:index      (../kb/commands.ts: the knowledge base's retrieval)
  *
  * `check` checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
  * per problem, then a summary line per folder (`N problems in <dir>`, or `<dir>: ok`). Exit code 1
@@ -56,6 +57,10 @@ export const USAGE = [
   '  dir: the same; writes POLICY.md, the policy in plain English with its diagrams; with none, every folder with a POLICY.md',
   '       dialogwright app:diagram [dir...]',
   '  dir: the same; writes APP-MAP.md, the app\'s intents, forms, slots, actions and rules as diagrams; with none, every folder with an APP-MAP.md',
+  '       dialogwright kb:model [id...]',
+  '  downloads the pinned embedding models (potion-base-8M) into the cache, ~/.cache/dialogwright/models (or $DIALOGWRIGHT_MODEL_DIR), checking each file\'s SHA-256',
+  '       dialogwright kb:index [dir...] [--locale tag]',
+  '  dir: an app folder with a kb/, or a kb folder; writes kb/.index/<embedder>.json, re-embedding only changed texts; with none, every app folder with a kb/',
 ].join('\n');
 
 export interface Io {
@@ -126,6 +131,13 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'policy:matrix') return matrixCommand(rest, io);
   if (command === 'policy:card') return pageCommand(POLICY_CARD, rest, io);
   if (command === 'app:diagram') return pageCommand(APP_DIAGRAM, rest, io);
+  if (command === 'kb:model' || command === 'kb:index') {
+    // Loaded only when one runs: the other commands do not need the retrieval code.
+    const kb = await import('../kb/commands');
+    const kbIo = { out: io.out, err: io.err, cwd: io.invokedFrom ?? io.cwd };
+    if (command === 'kb:model') return kb.kbModelCommand(rest, kbIo);
+    return kb.kbIndexCommand(rest, kbIo, () => findAppFolders(io.invokedFrom ?? io.cwd).dirs);
+  }
   if (command !== 'check') {
     io.err(command === undefined ? USAGE : `dialogwright: "${command}" is not a command\n${USAGE}`);
     return 2;

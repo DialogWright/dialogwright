@@ -2,6 +2,8 @@ import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from '..
 import { VAR } from '../prompts/segments';
 import { inForceOn, answers } from './resolve';
 import type { KbPassage, KnowledgeBase } from './types';
+import { MODEL_COMMAND, STATIC_MODELS } from './embed/model';
+import { INDEX_COMMAND, indexDrift, indexFileOf, sameEmbedder } from './vectorIndex';
 
 /**
  * The rules across a knowledge base's files, as problems in the loader's form
@@ -12,7 +14,7 @@ import type { KbPassage, KnowledgeBase } from './types';
  *    domain; its answer is fixed text (no `{variable}`, no braces at all) within kb.yaml's
  *    maxAnswerChars; its effective range ends after it starts; a translation translates a
  *    default-locale passage of the same topic; no two passages of a topic and locale are in force
- *    for the same caller on the same day. The loader runs these: a knowledge base that breaks one
+ *    for the same caller on the same day; kb.yaml's embedder, if any, is one the engine has. The loader runs these: a knowledge base that breaks one
  *    does not load, so defineApp refuses it as it does a bad YAML file.
  *  - links (kbLinkProblems): what it names in the app. kb.yaml's action is a tool with an action in
  *    policy.yaml; each account line's tool is too, and every variable the line uses is a field the
@@ -20,7 +22,9 @@ import type { KbPassage, KnowledgeBase } from './types';
  *    runs these with the code (crossLink), `check` with the code or, without it, with policy.yaml.
  *  - state (kbStateProblems): what changes with time and review. Every passage is approved with
  *    both hashes matching what is there now; every topic has a passage in force today, in the
- *    default locale, for every combination of the applies domain. Only `check` runs these (a stale
+ *    default locale, for every combination of the applies domain; and when kb.yaml names an
+ *    embedder, its index (kb/.index/<embedder>.json) has a vector for every text of every topic
+ *    (kbIndexProblems). Only `check` runs these (a stale
  *    passage fails `pnpm check`); at run time a passage that is not fresh is withheld (./resolve.ts).
  */
 
@@ -84,6 +88,12 @@ export function kbContentProblems(kb: KnowledgeBase, locate: Locate, base = 'kb'
   const combinations = Object.values(domain).reduce((n, values) => n * values.length, 1);
   if (combinations > MAX_APPLIES_COMBINATIONS) {
     at(settingsFile, ['applies'], `the applies domain has ${combinations} combinations, over the ${MAX_APPLIES_COMBINATIONS} a knowledge base may have: every topic needs a passage in force for each`, 'keep to the facts that change an answer, and to the values that do');
+  }
+
+  const embedder = kb.settings.retrieval.embedder;
+  if (embedder !== undefined && !Object.hasOwn(STATIC_MODELS, embedder)) {
+    const known = Object.keys(STATIC_MODELS);
+    at(settingsFile, ['retrieval', 'embedder'], `kb.yaml names the embedder "${embedder}", which the engine does not have (it has ${known.join(', ')})`, `${rename(embedder, known)}leave it out, for keyword retrieval alone`);
   }
 
   for (const p of Object.values(kb.passages)) {
@@ -235,6 +245,7 @@ export function kbStateProblems(kb: KnowledgeBase, todayIso: string, locate: Loc
       at(p.file, ['approval', 'hash'], `passage "${p.id}" was edited after approval (its answer, applies, dates, topic or account line), so it is withheld`, `review the edit, then ${approve}`);
     }
   }
+  problems.push(...kbIndexProblems(kb, locate, base));
   const combos = appliesCombinations(kb.settings.applies);
   for (const topic of Object.values(kb.topics)) {
     for (const facts of combos) {
@@ -249,6 +260,53 @@ export function kbStateProblems(kb: KnowledgeBase, todayIso: string, locate: Loc
         `add a passage to ${base}/passages (topic: ${topic.id}${applies}, in force on ${todayIso}), then review and approve it`,
       );
     }
+  }
+  return problems;
+}
+
+/** How many of a topic's missing or stale index entries a problem lists by name before it counts the rest. */
+const LISTED = 3;
+
+/**
+ * The vector index of the embedder kb.yaml names (kb/.index/<id>.json): that it is there, is an
+ * index, was written by the pinned model, and has a vector for every text of every topic and none
+ * for a text no topic has any more (../kb/vectorIndex.ts indexDrift). One problem per topic that
+ * differs. The weights need not be in the cache: the check reads only the hashes.
+ */
+export function kbIndexProblems(kb: KnowledgeBase, locate: Locate, base = 'kb'): Problem[] {
+  const problems: Problem[] = [];
+  const id = kb.settings.retrieval.embedder;
+  if (id === undefined || !Object.hasOwn(STATIC_MODELS, id)) return problems;
+  const model = STATIC_MODELS[id]!;
+  const file = indexFileOf(base, id);
+  const at = (path: DataPath, where: string, message: string): void => problemAt(problems, locate, where, path, message, `run ${INDEX_COMMAND} (it reads the model from the cache; ${MODEL_COMMAND} downloads it), and commit ${file}`);
+  const index = kb.index;
+  if (!index || 'missing' in index) {
+    at([], file, `${file} is missing: kb.yaml names the embedder ${id}, whose vectors of the topics' texts retrieval reads from there`);
+    return problems;
+  }
+  if ('invalid' in index) {
+    at([], file, `${file} is not a vector index: ${index.invalid}`);
+    return problems;
+  }
+  const pinned = { id: model.id, revision: model.revision, sha256: model.sha256, dim: model.dim };
+  if (!sameEmbedder(index.data.embedder, pinned)) {
+    at([], file, `${file} was written by ${index.data.embedder.id} at ${index.data.embedder.revision.slice(0, 12)} (${index.data.embedder.sha256.slice(0, 12)}), not the pinned ${model.id} at ${model.revision.slice(0, 12)} (${model.sha256.slice(0, 12)})`);
+    return problems;
+  }
+  const { missing, stale } = indexDrift(kb, index.data);
+  const byTopic = new Map<string, { missing: string[]; stale: string[] }>();
+  const of = (topic: string) => byTopic.get(topic) ?? (byTopic.set(topic, { missing: [], stale: [] }).get(topic)!);
+  for (const t of missing) of(t.topic).missing.push(`${t.field} "${t.text}" (${t.locale})`);
+  for (const e of stale) of(e.topic).stale.push(`${e.field} ${e.contentHash.slice(0, 12)} (${e.locale})`);
+  const list = (items: string[]): string => `${items.slice(0, LISTED).join(', ')}${items.length > LISTED ? ` and ${items.length - LISTED} more` : ''}`;
+  for (const [topic, d] of [...byTopic.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const parts = [
+      ...(d.missing.length > 0 ? [`no vector for ${list(d.missing)}`] : []),
+      ...(d.stale.length > 0 ? [`a vector for text it no longer has: ${list(d.stale)}`] : []),
+    ];
+    const path: DataPath = Object.hasOwn(kb.topics, topic) ? [topic] : [];
+    at(path, Object.hasOwn(kb.topics, topic) ? `${base}/topics.yaml` : file, `the index ${file} is stale for the topic "${topic}": ${parts.join('; ')}`);
   }
   return problems;
 }

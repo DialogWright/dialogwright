@@ -42,7 +42,9 @@
     "create-app": "tsx src/define/cli.ts create-app",
     "policy:matrix": "tsx src/define/cli.ts policy:matrix",
     "policy:card": "tsx src/define/cli.ts policy:card",
-    "app:diagram": "tsx src/define/cli.ts app:diagram"
+    "app:diagram": "tsx src/define/cli.ts app:diagram",
+    "kb:model": "tsx src/define/cli.ts kb:model",
+    "kb:index": "tsx src/define/cli.ts kb:index"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

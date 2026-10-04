@@ -23,8 +23,18 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The static embedding model's pinned weights (30 MB), downloaded once and checked against
+      # their SHA-256 by pnpm kb:model; the key is the pinned revision, so a new pin downloads anew.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/dialogwright/models
+          key: dialogwright-models-potion-base-8M-bf8b056651a2c21b8d2565580b8569da283cab23
+      - run: pnpm kb:model
       - run: pnpm -r typecheck
       - run: pnpm -r test
+        env:
+          # The tests that read the real model run, and fail if it is missing, rather than skip.
+          DIALOGWRIGHT_REQUIRE_MODEL: '1'
       - run: pnpm check
       - run: pnpm --filter dialogwright regress:testkit
       - run: pnpm --filter @dialogwright/example-clinic regress

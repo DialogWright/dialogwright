@@ -15,6 +15,10 @@ import { formatProblem } from '../define/problems';
 import { approvalHashOf, sourceHashOf } from './hash';
 import { resolvePassage } from './resolve';
 import { KeywordRetriever } from './keyword';
+import { createHash } from 'node:crypto';
+import { buildIndex } from './vectorIndex';
+import { POTION_BASE_8M } from './embed/model';
+import type { Embedder } from './embed/types';
 import type { KnowledgeBase, Retriever } from './types';
 import { probeContexts } from '../core/app/probeQuestions';
 
@@ -680,6 +684,69 @@ describe('defineKnowledge: the knowledge base of an app that is not a folder', (
     expect(resolvePassage(knowledge.kb, { topic: 'late_fees', facts: { card: 'junior' }, todayIso: TODAY })).toMatchObject({ unavailable: 'stale' });
     expect(knowledgeProblems(join(dir, 'kb'), { todayIso: TODAY }).map((p) => p.message)).toEqual([
       'passage "late-fees-junior" is stale: its source changed since approval (kb/sources/patron-guide.yaml, section "3.2"), so it is withheld',
+    ]);
+  });
+});
+
+/** An embedder that says it is the pinned potion-base-8M (so check takes its index as that model's), with vectors from each text's hash: the index's shape, without the weights. */
+const pinnedLookalike: Embedder = {
+  id: POTION_BASE_8M.id,
+  revision: POTION_BASE_8M.revision,
+  sha256: POTION_BASE_8M.sha256,
+  dim: POTION_BASE_8M.dim,
+  embed: (texts) => texts.map((t) => Float64Array.from({ length: POTION_BASE_8M.dim }, (_, i) => createHash('sha256').update(`${i}:${t}`).digest()[0]! / 255 - 0.5)),
+};
+
+/** kb.yaml naming the static embedder. */
+const withEmbedder = (text: string): string => text.replace('  cap: 8', '  cap: 8\n  embedder: potion-base-8M');
+
+/** An app folder whose kb.yaml names the embedder, with its index written (by the lookalike), and `edits` after. */
+async function indexedFolder(edits: Record<string, Edit> = {}): Promise<string> {
+  const dir = appFolder({ 'kb/kb.yaml': withEmbedder });
+  const built = await buildIndex(loadAppFolder(dir).config!.knowledge!, pinnedLookalike);
+  mkdirSync(join(dir, 'kb', '.index'), { recursive: true });
+  writeFileSync(join(dir, 'kb', '.index', 'potion-base-8M.json'), built.text);
+  for (const [file, edit] of Object.entries(edits)) {
+    const path = join(dir, file);
+    if (edit === null) rmSync(path, { force: true });
+    else writeFileSync(path, typeof edit === 'string' ? edit : edit(readFileSync(path, 'utf8')));
+  }
+  return dir;
+}
+
+describe('check: the vector index of the embedder kb.yaml names (kb/.index/<embedder>.json)', () => {
+  const FIX = 'run pnpm kb:index (it reads the model from the cache; pnpm kb:model downloads it), and commit kb/.index/potion-base-8M.json';
+
+  it('a kb.yaml without an embedder needs no index, and one with an index of every topic text passes', async () => {
+    expect(await kbLines({})).toEqual([]);
+    expect(await check(await indexedFolder())).toEqual([]);
+  });
+
+  it('reports a missing index, one that is not an index, and one another model wrote', async () => {
+    expect(await kbLines({ 'kb/kb.yaml': withEmbedder })).toEqual([
+      `kb/.index/potion-base-8M.json:1:1  (file)  kb/.index/potion-base-8M.json is missing: kb.yaml names the embedder potion-base-8M, whose vectors of the topics' texts retrieval reads from there  ->  ${FIX}`,
+    ]);
+    expect(await check(await indexedFolder({ 'kb/.index/potion-base-8M.json': '{"embedder": {"id": 1}}' }))).toEqual([
+      `kb/.index/potion-base-8M.json:1:1  (file)  kb/.index/potion-base-8M.json is not a vector index: its "embedder" is not { id, revision, sha256, dim }  ->  ${FIX}`,
+    ]);
+    const other = await check(await indexedFolder({ 'kb/.index/potion-base-8M.json': (t) => t.replace(POTION_BASE_8M.revision, 'b'.repeat(40)) }));
+    expect(other).toHaveLength(1);
+    expect(other[0]).toContain(`was written by potion-base-8M at bbbbbbbbbbbb (${POTION_BASE_8M.sha256.slice(0, 12)}), not the pinned potion-base-8M at ${POTION_BASE_8M.revision.slice(0, 12)}`);
+  });
+
+  it('reports each topic whose texts changed since the index was written, at the topic', async () => {
+    const lines = await check(await indexedFolder({ 'kb/topics.yaml': (t) => t.replace('keywords: [late fee, overdue, fine]', 'keywords: [late fee, overdue, fines]') }));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^kb\/topics\.yaml:\d+:1 {2}late_fees {2}the index kb\/\.index\/potion-base-8M\.json is stale for the topic "late_fees": no vector for keyword "fines" \(en-US\); a vector for text it no longer has: keyword [0-9a-f]{12} \(en-US\) {2}-> {2}run pnpm kb:index/);
+    const es = await check(await indexedFolder({ 'kb/locale/es/topics.yaml': (t) => t.replace('keywords: [multa, retraso]', 'keywords: [multa, retraso, recargo]') }));
+    expect(es).toEqual([expect.stringContaining('no vector for keyword "recargo" (es)')]);
+  });
+
+  it('refuses an embedder the engine does not have, as content: defineApp refuses it too', async () => {
+    const edits = { 'kb/kb.yaml': (t: string) => t.replace('  cap: 8', '  cap: 8\n  embedder: potion-base-8m') };
+    expect(() => defineApp(appFolder(edits), CODE)).toThrow('does not have (it has potion-base-8M)');
+    expect(await kbLines(edits)).toEqual([
+      'kb/kb.yaml:12:13  retrieval.embedder  kb.yaml names the embedder "potion-base-8m", which the engine does not have (it has potion-base-8M)  ->  rename it to "potion-base-8M", or leave it out, for keyword retrieval alone',
     ]);
   });
 });

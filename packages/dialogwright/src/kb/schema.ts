@@ -73,8 +73,8 @@ export const kbSettingsSchema = z
     retrieval: z
       .strictObject({
         cap: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).max(32, { error: 'must be at most 32' }).default(DEFAULT_RETRIEVAL_CAP).describe(`How many topics retrieval nominates at most. Default ${DEFAULT_RETRIEVAL_CAP}.`),
-        floor: z.number({ error: 'must be a number' }).min(0, { error: 'must be between 0 and 1' }).max(1, { error: 'must be between 0 and 1' }).optional().describe('The similarity below which a topic is not nominated. Default: the retriever\'s own.'),
-        embedder: z.string().min(1, { error: 'must not be empty' }).optional().describe('The id of the embedding model retrieval uses. Default: the engine\'s.'),
+        floor: z.number({ error: 'must be a number' }).min(0, { error: 'must be between 0 and 1' }).max(1, { error: 'must be between 0 and 1' }).optional().describe('The cosine similarity below which a topic found by its meaning (dense retrieval) is not nominated; a keyword match always counts. Default: the embedder\'s own (pnpm kb:bakeoff sweeps it).'),
+        embedder: z.string().min(1, { error: 'must not be empty' }).optional().describe('The embedding model that finds topics by meaning beside their keywords (hybrid retrieval): potion-base-8M. pnpm kb:index writes its vectors of the topics\' titles, keywords and example questions to kb/.index/<embedder>.json, and pnpm check holds that file to them. Default: none, so topics are nominated by their keywords alone.'),
       })
       .default({ cap: DEFAULT_RETRIEVAL_CAP })
       .describe('How topics are nominated for a caller\'s words: settings only, read by the retriever.'),

@@ -55,13 +55,13 @@
           "maximum": 32
         },
         "floor": {
-          "description": "The similarity below which a topic is not nominated. Default: the retriever's own.",
+          "description": "The cosine similarity below which a topic found by its meaning (dense retrieval) is not nominated; a keyword match always counts. Default: the embedder's own (pnpm kb:bakeoff sweeps it).",
           "type": "number",
           "minimum": 0,
           "maximum": 1
         },
         "embedder": {
-          "description": "The id of the embedding model retrieval uses. Default: the engine's.",
+          "description": "The embedding model that finds topics by meaning beside their keywords (hybrid retrieval): potion-base-8M. pnpm kb:index writes its vectors of the topics' titles, keywords and example questions to kb/.index/<embedder>.json, and pnpm check holds that file to them. Default: none, so topics are nominated by their keywords alone.",
           "type": "string",
           "minLength": 1
         }

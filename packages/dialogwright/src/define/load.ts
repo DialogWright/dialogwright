@@ -283,6 +283,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
 function kbIo(root: string, problems: Problem[], documents: Map<string, { doc: Document; lines: LineCounter }>, contents: Record<string, unknown>): KbFolderIo & { locate: (file: string, path: DataPath) => { line: number; column: number } | null } {
   return {
     read: (file) => readFile(root, file),
+    readData: (file, maxBytes) => readFile(root, file, maxBytes),
     parse: (file, kind, text) => checkFile(file, kind, text, problems, documents, contents),
     list: (dir) => listDir(root, dir),
     locate: (file, path) => {
@@ -362,7 +363,7 @@ type ReadResult = { kind: 'ok'; text: string } | { kind: 'missing' } | { kind: '
  * place inside the folder: a link to anywhere else is refused, as are directories, huge files and
  * text that is not UTF-8.
  */
-function readFile(root: string, file: string): ReadResult {
+function readFile(root: string, file: string, maxBytes: number = MAX_FILE_BYTES): ReadResult {
   const abs = join(root, ...file.split('/'));
   try {
     if (!existsNoFollow(abs)) return { kind: 'missing' };
@@ -380,8 +381,8 @@ function readFile(root: string, file: string): ReadResult {
     }
     const stat = statSync(real);
     if (!stat.isFile()) return { kind: 'problem', problem: problemAt(file, WHOLE_FILE, `${file} is not a regular file`, `make ${file} a file of YAML text, not a directory or device`) };
-    if (stat.size > MAX_FILE_BYTES) {
-      return { kind: 'problem', problem: problemAt(file, WHOLE_FILE, `${file} is ${stat.size} bytes, over the ${MAX_FILE_BYTES} byte limit`, 'split the content, or remove what does not belong in a configuration file') };
+    if (stat.size > maxBytes) {
+      return { kind: 'problem', problem: problemAt(file, WHOLE_FILE, `${file} is ${stat.size} bytes, over the ${maxBytes} byte limit`, 'split the content, or remove what does not belong in a configuration file') };
     }
     const bytes = readFileSync(real);
     try {

@@ -2,6 +2,8 @@ import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from '..
 import { approvalHashOf, canonicalApplies, collapseWhitespace, sourceHashOf } from './hash';
 import type { KbKind, KbLocaleTopicsYaml, KbPassageYaml, KbSettingsYaml, KbSourceYaml, KbTopicsYaml } from './schema';
 import type { KbFreshness, KbPassage, KbSourceDocument, KbTopic, KbTopicWording, KnowledgeBase } from './types';
+import { STATIC_MODELS } from './embed/model';
+import { indexFileOf, indexHashOf, MAX_INDEX_BYTES, parseIndex, type KbIndexRead } from './vectorIndex';
 
 /**
  * Reads an app's `kb/` folder into a KnowledgeBase (./types.ts). The files and what each holds are
@@ -36,6 +38,11 @@ export interface KbFolderIo {
   list(dir: string): KbEntry[] | 'missing' | 'not-a-directory' | 'outside';
   /** Where a data path is in a file that was read. */
   locate(file: string, path: DataPath): { line: number; column: number } | null;
+  /**
+   * Reads a file that is data, not configuration (the vector index), with its own size limit: not
+   * parsed as YAML, not hashed into the configuration. Without it, no index is read.
+   */
+  readData?(file: string, maxBytes: number): { kind: 'ok'; text: string } | { kind: 'missing' } | { kind: 'problem'; problem: Problem };
 }
 
 /** How many entries one folder of the knowledge base may have: reading is bounded. */
@@ -221,13 +228,31 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
     built[yaml.id] = passageOf(yaml, locale, file, topics, sources, defaultLocale);
   }
   const sortedSources = Object.fromEntries(Object.keys(sources).sort().map((id) => [id, sources[id]!]));
+  const index = readIndex(base, settings.retrieval.embedder, io);
   return {
     settings: { action: settings.action, applies: settings.applies, localeFallback: settings.localeFallback, maxAnswerChars: settings.maxAnswerChars, retrieval: settings.retrieval },
     defaultLocale,
     topics,
     passages: built,
     sources: sortedSources,
+    ...(index ? { index } : {}),
   };
+}
+
+/**
+ * The vector index of the embedder kb.yaml names (kb/.index/<id>.json, ./vectorIndex.ts), read when
+ * the embedder is one the engine has (an unknown one is a content problem, ./rules.ts) and the io
+ * reads data. Its problems are not the loader's: `check` reports a missing or broken index
+ * (./rules.ts kbStateProblems), and the default retriever does without one.
+ */
+function readIndex(base: string, embedder: string | undefined, io: KbFolderIo): KbIndexRead | undefined {
+  if (embedder === undefined || !Object.hasOwn(STATIC_MODELS, embedder) || !io.readData) return undefined;
+  const file = indexFileOf(base, embedder);
+  const read = io.readData(file, MAX_INDEX_BYTES);
+  if (read.kind === 'missing') return { file, missing: true };
+  if (read.kind === 'problem') return { file, invalid: read.problem.message };
+  const data = parseIndex(read.text);
+  return typeof data === 'string' ? { file, invalid: data } : { file, hash: indexHashOf(read.text), data };
 }
 
 /** The text of a passage's source section, or null when the document or section is not there. */
