@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SIGNAL_REPEAT_MS } from './index';
+import { CRASH_CLOSE_MS, describeCrash, SIGNAL_REPEAT_MS } from './index';
 
 /**
  * The process entry point (index.ts main), in a child process running a tiny launcher
@@ -131,12 +131,28 @@ describe('the settings file', () => {
 });
 
 describe('a crash', () => {
-  it('logs an uncaught exception with its stack and exits 1, so a supervisor restarts the process', async () => {
+  it('logs an uncaught exception with its stack and its cause, closes, and exits 1, so a supervisor restarts the process', async () => {
     const dir = tempDir();
     const l = launch({ ...baseEnv(dir), LAUNCHER_MODE: 'throw' });
     const { code } = await l.exited;
     expect(code).toBe(1);
-    expect(l.output()).toMatch(/fatal: uncaught exception: Error: launcher boom\n\s+at /);
+    const out = l.output();
+    expect(out).toMatch(/fatal: uncaught exception: Error: launcher boom\n\s+at /);
+    expect(out).toMatch(/caused by: Error: the cause of it\n\s+at /);
+    expect(out).toContain('closing (up to 3 s');
+    // The best-effort close ran before the exit.
+    expect(out).toContain('[launcher] sidecars closed');
+  }, 30_000);
+
+  it('exits 1 within its deadline even when the close does not finish', async () => {
+    const dir = tempDir();
+    const l = launch({ ...baseEnv(dir), LAUNCHER_MODE: 'throw-hold' });
+    await l.waitFor(/fatal: uncaught exception/);
+    const t0 = Date.now();
+    const { code } = await l.exited;
+    expect(code).toBe(1);
+    expect(Date.now() - t0).toBeLessThan(CRASH_CLOSE_MS + 2_000);
+    expect(l.output()).not.toContain('[launcher] sidecars closed');
   }, 30_000);
 
   it('does the same for an unhandled rejection', async () => {
@@ -145,7 +161,14 @@ describe('a crash', () => {
     const { code } = await l.exited;
     expect(code).toBe(1);
     expect(l.output()).toContain('fatal: unhandled rejection: Error: launcher rejection');
+    expect(l.output()).toContain('[launcher] sidecars closed');
   }, 30_000);
+
+  it('describes a value that is not an Error by its kind, never its contents', () => {
+    expect(describeCrash({ authorization: 'Bearer not-a-real-key' })).toBe('an Object, not an Error');
+    expect(describeCrash('gone')).toBe('gone (a string, not an Error)');
+    expect(describeCrash(null)).toBe('null (not an Error)');
+  });
 });
 
 describe('the stop signals', () => {

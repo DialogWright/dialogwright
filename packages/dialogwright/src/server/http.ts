@@ -45,6 +45,11 @@ export interface HttpDeps {
    * goes to the handoff number. Absent, never: the server is ready whenever it answers.
    */
   draining?: () => boolean;
+  /**
+   * Whether the drain's wait is over and the server is about to close (index.ts): a live call's reconnect
+   * is put through to the handoff number rather than back to a server that will not be there. Absent, never.
+   */
+  closing?: () => boolean;
   /** Live web chats, for `/health`'s `chat`; absent when the engine's chat is off, and `/health` then has no `chat`. */
   chatLive?: () => number;
   /** The trace and audit folders' sizes, for `/health`'s `disk`; absent when no retention is set, and `/health` then has no `disk`. */
@@ -337,6 +342,13 @@ export function decideAction(
   // if we're under the limit, otherwise hand off to a human.
   const entry = deps.store.get(callSid);
   if (entry && !entry.ended) {
+    if (deps.closing?.()) {
+      // The drain has closed this call's socket and the server is about to go: a reconnect would reach
+      // nothing, so the caller is put through to a person.
+      deps.store.end(callSid);
+      deps.tokens.revoke(callSid);
+      return { document: provider.apologizeAndDialDocument(deps.config.handoffNumber), note: 'dial:closing' };
+    }
     if (entry.reconnects < deps.config.reconnectLimit) {
       deps.store.detach(callSid);
       entry.reconnects += 1;

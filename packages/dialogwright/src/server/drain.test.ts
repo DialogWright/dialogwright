@@ -63,6 +63,10 @@ const form = (params: Record<string, string>) => ({
 const hangup = (base: string, callSid: string) =>
   fetch(`${base}/cr-action`, form({ CallSid: callSid, CallStatus: 'completed', SessionStatus: 'completed' }));
 
+/** The carrier's action callback for a call whose relay socket has closed while the call is still up. */
+const callback = (base: string, callSid: string) =>
+  fetch(`${base}/cr-action`, form({ CallSid: callSid, CallStatus: 'in-progress', SessionStatus: 'failed' })).then((r) => r.text());
+
 /** How long a promise takes to settle, or null if it has not within `ms`. */
 async function settlesWithin(p: Promise<unknown>, ms: number): Promise<number | null> {
   const t0 = Date.now();
@@ -132,28 +136,49 @@ describe('the drain', () => {
     relay.close();
   });
 
-  it('closes at once with DRAIN_MS=0', async () => {
-    await start({ DRAIN_MS: '0' });
+  it('closes at once with DRAIN_MS=0, and puts the caller through to a person when the carrier calls back', async () => {
+    const { base, logs } = await start({ DRAIN_MS: '0' });
     const relay = await call(`ws://127.0.0.1:${running!.port}`);
-    expect(await settlesWithin(running!.drain(), 200)).not.toBeNull();
+    const drained = running!.drain();
     expect((await relay.closed).code).toBe(1001);
+    const doc = await callback(base, 'CA1');
+    expect(doc).toContain('<Dial>+15551234567</Dial>');
+    expect(doc).not.toContain('ConversationRelay');
+    expect(await settlesWithin(drained, 500)).not.toBeNull();
+    expect(logs).not.toContain('drain: no callback for 1 call; closing');
   });
 
-  it('closes what is still live with 1001 when DRAIN_MS has passed, so the carrier calls back', async () => {
-    const { logs } = await start({ DRAIN_MS: '300' });
+  it('closes what is still live with 1001 when DRAIN_MS has passed, so the carrier calls back, and hands that callback to a person', async () => {
+    const { base, logs } = await start({ DRAIN_MS: '300' });
     const relay = await call(`ws://127.0.0.1:${running!.port}`);
-    const took = await settlesWithin(running!.drain(), 3000);
-    expect(took).not.toBeNull();
-    expect(took!).toBeGreaterThanOrEqual(250);
+    const t0 = Date.now();
+    const drained = running!.drain();
     expect((await relay.closed).code).toBe(1001);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(250);
     expect(logs.some((l) => l.startsWith('drain: 300 ms passed with 1 call and 0 chats live'))).toBe(true);
+    // Not a reconnect: this server is about to close, so a reconnect would reach nothing.
+    const doc = await callback(base, 'CA1');
+    expect(doc).toContain('<Dial>+15551234567</Dial>');
+    expect(doc).not.toContain('<ConversationRelay');
+    expect(await settlesWithin(drained, 1000)).not.toBeNull();
   });
+
+  it('closes anyway when the carrier does not call back within a few seconds', async () => {
+    const { logs } = await start({ DRAIN_MS: '0' });
+    await call(`ws://127.0.0.1:${running!.port}`);
+    const took = await settlesWithin(running!.drain(), 6000);
+    expect(took).not.toBeNull();
+    expect(took!).toBeGreaterThanOrEqual(2500);
+    expect(logs).toContain('drain: no callback for 1 call; closing');
+  }, 10_000);
 
   it('takes a waiting time of its own over DRAIN_MS', async () => {
-    await start({ DRAIN_MS: '30000' });
+    const { base } = await start({ DRAIN_MS: '30000' });
     const relay = await call(`ws://127.0.0.1:${running!.port}`);
-    expect(await settlesWithin(running!.drain(50), 2000)).not.toBeNull();
-    relay.close();
+    const drained = running!.drain(50);
+    expect((await relay.closed).code).toBe(1001);
+    await callback(base, 'CA1');
+    expect(await settlesWithin(drained, 2000)).not.toBeNull();
   });
 
   it('refuses a new chat as busy, and still takes a resume', async () => {

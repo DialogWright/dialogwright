@@ -52,7 +52,8 @@ export interface RunningServer {
    * `/ready` answers 503, a new call is put through to the handoff number, and a new chat is refused
    * `busy`; a live call's turns and its reconnects, and a chat's resume, go on. It resolves once no call
    * is live and no one is in a chat, or after `ms` (default DRAIN_MS; 0 at once), when it closes the
-   * calls still live with 1001 (going away), so the carrier calls back for them. close() follows it.
+   * calls still live with 1001 (going away), so the carrier calls back for them, and answers each of those
+   * callbacks with the handoff number (a few seconds at most). close() follows it.
    */
   drain(ms?: number): Promise<void>;
   /**
@@ -107,8 +108,11 @@ const RETENTION_EVERY_MS = 60 * 60 * 1000;
 const DRAIN_TIMEOUT_MS = 2_000;
 /** How often a drain looks for the last call to have ended. */
 const DRAIN_POLL_MS = 100;
-/** How long the drain's 1001 closes are given before close() terminates what is left. */
-const GOING_AWAY_MS = 1_000;
+/**
+ * After the drain closes the calls still live with 1001, how long it waits for their sockets to close
+ * and for the carrier's callback for each (answered with the handoff number) before close() goes on.
+ */
+const GOING_AWAY_MS = 3_000;
 
 /**
  * Call SIDs come from Twilio (CA + 32 hex), but they arrive over the socket, so never let one shape a path.
@@ -207,6 +211,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   for (const warning of mounted.warnings ?? []) log(`WARNING: ${warning}`);
   const app = getApp(defaultAppId());
   let draining = false;
+  /** Set once the drain's wait is over (or close() has begun): a live call's reconnect goes to the handoff number. */
+  let closing = false;
   // The engine's own web chat, when CHAT=on: each session with the phone line's client, tools, audit chain and console.
   const chatSettings = config.chat;
   const chat = chatSettings
@@ -249,6 +255,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const deps: HttpDeps = {
     config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
     draining: () => draining,
+    closing: () => closing,
     ...(chat ? { chatLive: () => chat.liveCount() } : {}),
     ...(retaining ? { disk: diskUsageCache(config.traceDir, config.auditDir, now) } : {}),
   };
@@ -366,23 +373,38 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         return;
       }
       log(`drain: ${ms} ms passed with ${plural(calls(), 'call')} and ${plural(chats(), 'chat')} live; closing them`);
-      // Going away, not an error: the carrier posts its action callback for each, which a server that
-      // keeps its sessions (or the handoff, for one that does not) answers once this one has restarted.
+      // Going away, not an error: the carrier posts its action callback for each, and this server, about
+      // to close, answers it with the handoff number (http.ts decideAction), so the caller reaches a person.
+      closing = true;
       const open = [...wss.clients];
       for (const c of open) c.close(1001, 'server restarting');
       if (open.length) {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        await Promise.race([
-          Promise.allSettled(open.map((c) => new Promise<void>((resolve) => (c.readyState === c.CLOSED ? resolve() : c.once('close', () => resolve()))))),
-          new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, GOING_AWAY_MS);
-          }),
-        ]);
-        if (timer) clearTimeout(timer);
+        const socketsClosed = Promise.allSettled(open.map((c) => new Promise<void>((resolve) => (c.readyState === c.CLOSED ? resolve() : c.once('close', () => resolve())))));
+        // Each callback ends its call, so the wait is over once every socket has closed and no call is live.
+        await new Promise<void>((resolve) => {
+          let socketsDone = false;
+          const finish = (): void => {
+            clearInterval(poll);
+            clearTimeout(timer);
+            resolve();
+          };
+          const check = (): void => {
+            if (socketsDone && calls() === 0) finish();
+          };
+          const poll = setInterval(check, DRAIN_POLL_MS);
+          const timer = setTimeout(finish, GOING_AWAY_MS);
+          void socketsClosed.then(() => {
+            socketsDone = true;
+            check();
+          });
+        });
+        const left = calls();
+        if (left > 0) log(`drain: no callback for ${plural(left, 'call')}; closing`);
       }
     },
     close: async () => {
       draining = true;
+      closing = true;
       clearInterval(evictor);
       // Let turns that are already running finish (and flush their frames) before the sockets go away.
       const tails = [...store.tails(), ...routes.flatMap((r) => r.tails?.() ?? []), ...(chat?.tails() ?? [])];
@@ -419,9 +441,21 @@ export { SIGNAL_REPEAT_MS } from './signals';
 /** How long a crash waits for the server to close before the process exits anyway. */
 export const CRASH_CLOSE_MS = 3_000;
 
-/** An error as the log takes it: its stack (which names no setting), or what it is. */
-function described(err: unknown): string {
-  return err instanceof Error ? (err.stack ?? `${err.name}: ${err.message}`) : String(err);
+/**
+ * An error as the log takes it: its stack (which names no setting), and its causes' (a failed request
+ * says why in its cause), or for a value that is not an Error, what kind of value it is. Never an
+ * object's contents, which could hold anything (a request's headers, say).
+ */
+export function describeCrash(err: unknown, depth = 0): string {
+  if (!(err instanceof Error)) {
+    if (err === null || err === undefined) return `${String(err)} (not an Error)`;
+    if (typeof err !== 'object') return `${String(err)} (a ${typeof err}, not an Error)`;
+    const kind = (err as { constructor?: { name?: string } }).constructor?.name || 'object';
+    return `${/^[aeiou]/i.test(kind) ? 'an' : 'a'} ${kind}, not an Error`;
+  }
+  const own = err.stack ?? `${err.name}: ${err.message}`;
+  const cause = (err as { cause?: unknown }).cause;
+  return cause === undefined || depth >= 3 ? own : `${own}\n  caused by: ${describeCrash(cause, depth + 1)}`;
 }
 
 /**
@@ -430,8 +464,10 @@ function described(err: unknown): string {
  *
  * It reads a settings file first when ENV_FILE or `--env-file <path>` names one (envFile.ts; a
  * variable already in the environment wins). A crash (an uncaught exception or an unhandled
- * rejection) is logged with its stack and exits 1 after a short best-effort close, so the service
- * manager restarts the process. The first SIGINT or SIGTERM stops the server; a second one exits at
+ * rejection) is logged with its stack and exits 1 after a short best-effort close (CRASH_CLOSE_MS),
+ * so the service manager restarts the process. That is Node's own rule for an unhandled rejection,
+ * kept on purpose and not an option: a server in a state nothing planned for should start again
+ * rather than go on answering calls. Code that means to carry on after a rejection catches it. The first SIGINT or SIGTERM stops the server; a second one exits at
  * once, 130 for SIGINT and 143 for SIGTERM.
  */
 export async function main(start?: (config: ServerConfig) => Promise<Sidecars>): Promise<void> {
@@ -439,11 +475,12 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
   let closeOnCrash: (() => Promise<unknown>) | null = null;
   let crashed = false;
   const crash = (kind: string) => (err: unknown): void => {
-    console.error(`[server] fatal: ${kind}: ${described(err)}`);
+    console.error(`[server] fatal: ${kind}: ${describeCrash(err)}`);
     if (crashed) return;
     crashed = true;
     // Set first: the deadline timer does not hold the process open, so it may end on its own before process.exit.
     process.exitCode = 1;
+    if (closeOnCrash !== null) console.error(`[server] closing (up to ${CRASH_CLOSE_MS / 1000} s: turns under way finish, a new call goes to the handoff number), then exit 1`);
     const deadline = new Promise<void>((resolve) => setTimeout(resolve, CRASH_CLOSE_MS).unref());
     void Promise.race([Promise.resolve().then(() => closeOnCrash?.()), deadline]).catch(() => {}).finally(() => process.exit(1));
   };
