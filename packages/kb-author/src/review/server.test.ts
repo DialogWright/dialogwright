@@ -4,6 +4,7 @@ import { request } from 'node:http';
 import { join, relative } from 'node:path';
 import { cleanScratch, folder, TODAY } from 'dialogwright/kb/__fixtures__/libraryKbApp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import { main, type Io } from '../cli';
 import { findKb, type KbPlace } from '../kbPlace';
 import { loadKb } from '../kbPlace';
@@ -164,11 +165,13 @@ describe('ids from the review page\'s URL', () => {
         ['/topic/..%2Ftopics/accept', { as: 'x' }],
         ['/topic/..%2Ftopics/merge', { into: 'opening_hours' }],
         ['/draft/%E0%A4%A/reject', { reason: 'probe' }],
+        ['/rejected/..%2Fpassages%2Fopening-hours/return', {}],
+        ['/rejected/..%2Fpending%2Fsunday-hours/return', {}],
       ] as const) {
         const r = await web.post(path, fields);
         expect([path, r.status, r.body]).toEqual([path, 404, r.body.startsWith('no such') ? r.body : 'no such action\n']);
       }
-      for (const path of ['/draft/..%2Fpassages%2Fopening-hours', '/passage/..%2F..%2Fapp', '/topic/..%2Fx']) expect([path, (await web.get(path)).status]).toEqual([path, 404]);
+      for (const path of ['/draft/..%2Fpassages%2Fopening-hours', '/passage/..%2F..%2Fapp', '/topic/..%2Fx', '/rejected/..%2Fpassages%2Fopening-hours']) expect([path, (await web.get(path)).status]).toEqual([path, 404]);
       expect(filesOf(dir)).toEqual(before);
     } finally {
       await server.close();
@@ -405,6 +408,155 @@ describe('the section as it was approved', () => {
     expect(approvedSectionText(place, passage)).toBeNull();
     writeFileSync(join(dir, 'kb', 'approvals.jsonl'), `not json\n${line(text)}`);
     expect(approvedSectionText(place, passage)).toBe(text);
+  });
+});
+
+describe('what the knowledge base holds', () => {
+  const DRAFT = [
+    'id: sunday-hours',
+    'topic: opening_hours',
+    'version: "2026.1"',
+    'effective: { from: 2026-01-01 }',
+    'source: { document: patron-guide, section: "1.1" }',
+    'answer: Every branch is closed on Sunday.',
+    `drafted: { by: fake-drafter, on: ${TODAY}, excerpt: "All branches are closed on Sunday." }`,
+    '',
+  ].join('\n');
+
+  it('says when nothing waits, and links to the knowledge base tab', async () => {
+    const found = findKb(folder('kb-author-review-kb-empty'), 'app');
+    if (typeof found === 'string') throw new Error(found);
+    const server = await startReviewServer({ place: found, today: () => TODAY });
+    try {
+      const home = (await browser(server).get('/')).body;
+      expect(home).toContain('<h1>Nothing waits for review</h1>');
+      expect(home).toContain(`<a href="/kb?token=${server.token}">See what the knowledge base holds.</a>`);
+      // The tab is in the header of every page.
+      expect(home).toContain(`<a href="/gaps?token=${server.token}">Gaps</a><a href="/kb?token=${server.token}">Knowledge base</a>`);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('lists every topic and its passages, with their state and who approved them, and the rejected drafts with why', async () => {
+    const dir = folder('kb-author-review-kb-browse');
+    // card-renewal-junior's line is not in the log: approved outside kb:approve.
+    const log = join(dir, 'kb', 'approvals.jsonl');
+    const lines = readFileSync(log, 'utf8').split('\n').filter((l) => l.trim() !== '');
+    writeFileSync(log, `${lines.filter((l) => (JSON.parse(l) as { id: string }).id !== 'card-renewal-junior').join('\n')}\n`);
+    writeFileSync(join(dir, 'kb', 'pending', 'sunday-hours.yaml'), DRAFT);
+    const found = findKb(dir, 'app');
+    if (typeof found === 'string') throw new Error(found);
+    const server = await startReviewServer({ place: found, today: () => TODAY });
+    try {
+      const web = browser(server);
+      await web.post('/reviewer', { by: 'Dana Ortiz', owner: 'Patron Services', back: '/' });
+      await web.post('/draft/sunday-hours/reject', { reason: 'The guide says this already.', seen: seenIn((await web.get('/draft/sunday-hours')).body, '/draft/sunday-hours/reject') });
+      const res = await web.get('/kb');
+      expect(res.status).toBe(200);
+      const body = res.body;
+      const row = (id: string): string => {
+        const m = new RegExp(`<tr><td class="mono"><a href="/passage/${id}\\?token=[^"]*">${id}</a>[\\s\\S]*?</tr>`).exec(body);
+        if (!m) throw new Error(`no row for ${id}`);
+        return m[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').replace(/&#39;/g, "'").trim();
+      };
+      // Every topic, by its title and its id.
+      for (const [id, title] of [['opening_hours', 'Opening hours'], ['card_renewal', 'Renewing a library card'], ['late_fees', 'Late fees']]) {
+        expect(body).toContain(`${title} <span class="mono muted">${id}</span>`);
+      }
+      expect(row('opening-hours')).toBe("opening-hours 2026.1 every caller from 2026-01-01, open-ended We're open Monday to Friday from 9 in the morning to 8 at night, and Saturday from 10 to 4. We're closed on Sunday. in force Branch Manager (Patron Services) on 2025-12-10");
+      expect(row('opening-hours-es')).toMatch(/^opening-hours-es es 2026\.1 every caller from 2026-01-01, open-ended Abrimos .* in force Branch Manager \(Patron Services\) on 2025-12-10$/);
+      expect(row('late-fees-adult-2025')).toMatch(/^late-fees-adult-2025 2025\.1 card: adult from 2025-01-01 to 2025-12-31 Late books .* expired Branch Manager \(Patron Services\) on 2025-12-10$/);
+      expect(row('card-renewal-junior')).toMatch(/ approved outside kb:approve not in the log: its approval names Branch Manager \(Patron Services\) on 2025-12-10$/);
+      // The rejected draft: who rejected it, when and why.
+      expect(body).toContain('Rejected drafts (1)');
+      const rejected = /<tr><td class="mono"><a href="\/rejected\/sunday-hours\?token=[^"]*">sunday-hours<\/a>[\s\S]*?<\/tr>/.exec(body)?.[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      expect(rejected).toBe(`sunday-hours opening_hours Dana Ortiz ${TODAY} The guide says this already.`);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('serves a page for a passage that is approved and fresh, with its approval record, and offers only an edit that is approved again', async () => {
+    const found = findKb(folder('kb-author-review-kb-passage'), 'app');
+    if (typeof found === 'string') throw new Error(found);
+    const server = await startReviewServer({ place: found, today: () => TODAY });
+    try {
+      const web = browser(server);
+      const res = await web.get('/passage/late-fees-adult');
+      expect(res.status).toBe(200);
+      const text = res.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').replace(/&#39;/g, "'");
+      expect(text).toContain('Late books on an adult card cost 25 cents a day, up to 5 dollars a book.');
+      expect(text).toContain('Account line Your card has {balance} in late fees right now. (read through getFees)');
+      expect(text).toContain('An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.');
+      expect(text).toContain('Approved by Branch Manager Team Patron Services On 2025-12-10 Version 2026.1 Recorded as a passage in kb/passages, approved with kb:approve');
+      expect(res.body).toContain('action="/passage/late-fees-adult/edit"');
+      expect(res.body).not.toContain('/passage/late-fees-adult/approve');
+      expect(res.body).not.toContain('/reject');
+
+      // The edit is checked and approved again, under the reviewer's name.
+      await web.post('/reviewer', { by: 'Dana Ortiz', owner: 'Patron Services', back: '/' });
+      const opened = (await web.get('/passage/opening-hours')).body;
+      const answer = "We're open Monday to Friday from 9 in the morning to 8 at night, and Saturday from 10 to 4. We're closed on Sunday.";
+      await web.post('/passage/opening-hours/edit', { answer, from: '2026-01-01', to: '2027-12-31', seen: seenIn(opened, '/passage/opening-hours/edit') });
+      expect(flashIn((await web.get('/')).body)).toMatch(/^edited, then opening-hours: approved \(version 2026\.1\) by Dana Ortiz/);
+      expect(readFileSync(join(found.kbDir, 'passages', 'opening-hours.yaml'), 'utf8')).toContain('effective:\n  from: 2026-01-01\n  to: 2027-12-31\n');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('returns a rejected draft to the drafts as it was, refused without a reviewer or when it changed since it was opened', async () => {
+    const dir = folder('kb-author-review-kb-return');
+    writeFileSync(join(dir, 'kb', 'pending', 'sunday-hours.yaml'), DRAFT);
+    const found = findKb(dir, 'app');
+    if (typeof found === 'string') throw new Error(found);
+    const server = await startReviewServer({ place: found, today: () => TODAY });
+    const pending = join(dir, 'kb', 'pending', 'sunday-hours.yaml');
+    const rejectedFile = join(dir, 'kb', 'rejected', 'sunday-hours.yaml');
+    try {
+      const web = browser(server);
+      await web.post('/reviewer', { by: 'Dana Ortiz', owner: 'Patron Services', back: '/' });
+      await web.post('/draft/sunday-hours/reject', { reason: 'Not needed.', seen: seenIn((await web.get('/draft/sunday-hours')).body, '/draft/sunday-hours/reject') });
+      expect([existsSync(pending), existsSync(rejectedFile)]).toEqual([false, true]);
+
+      const opened = await web.get('/rejected/sunday-hours');
+      expect(opened.status).toBe(200);
+      const text = opened.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      expect(text).toContain('Every branch is closed on Sunday.');
+      expect(text).toContain(`Rejected by Dana Ortiz on ${TODAY}: Not needed.`);
+      const seen = seenIn(opened.body, '/rejected/sunday-hours/return');
+
+      // Without a reviewer: refused, nothing moved.
+      const other = browser(server);
+      const otherSeen = seenIn((await other.get('/rejected/sunday-hours')).body, '/rejected/sunday-hours/return');
+      await other.post('/rejected/sunday-hours/return', { seen: otherSeen });
+      expect(flashIn((await other.get('/')).body)).toBe('Not done: say who is reviewing first: your name and your team');
+      expect([existsSync(pending), existsSync(rejectedFile)]).toEqual([false, true]);
+
+      // Changed on disk since it was opened: refused, nothing moved.
+      const before = readFileSync(rejectedFile, 'utf8');
+      const changed = before.replace('Not needed.', 'Not needed at all.');
+      writeFileSync(rejectedFile, changed);
+      await web.post('/rejected/sunday-hours/return', { seen });
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: sunday-hours changed since you opened it: reload the page and review it again');
+      await web.post('/rejected/sunday-hours/return', {});
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: sunday-hours changed since you opened it: reload the page and review it again');
+      expect([existsSync(pending), readFileSync(rejectedFile, 'utf8')]).toEqual([false, changed]);
+
+      // Reopened, it goes back to the drafts as it was drafted, without its rejection, and waits for review.
+      await web.post('/rejected/sunday-hours/return', { seen: seenIn((await web.get('/rejected/sunday-hours')).body, '/rejected/sunday-hours/return') });
+      expect(flashIn((await web.get('/')).body)).toBe('sunday-hours: returned to the drafts by Dana Ortiz (it was rejected by Dana Ortiz on 2026-10-03: Not needed at all.); moved to kb/pending/sunday-hours.yaml');
+      expect(existsSync(rejectedFile)).toBe(false);
+      expect(readFileSync(pending, 'utf8')).toBe(DRAFT);
+      expect(Object.keys(parse(readFileSync(pending, 'utf8')) as object)).not.toContain('rejected');
+      const home = (await web.get('/')).body;
+      expect(home).toContain('Drafts waiting (1)');
+      expect(home).toContain(`<a href="/draft/sunday-hours?token=${server.token}">sunday-hours</a>`);
+      expect((await web.get('/kb')).body).toContain('Rejected drafts (0)');
+    } finally {
+      await server.close();
+    }
   });
 });
 

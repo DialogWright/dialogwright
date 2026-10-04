@@ -453,7 +453,7 @@ describe('the review page\'s Gaps tab', () => {
     expect((await get('/topic/not_a_topic')).status).toBe(404);
   });
 
-  it('links a stale passage only while it is withheld: once approved again its page is gone, and so is the link', async () => {
+  it('links a stale passage only while it is withheld: once approved again the link is gone, and its page offers only an edit', async () => {
     // Its own copy of the app: approving here changes nothing the other tests read, whatever order they run in.
     const own = join(scratchDir(), 'app');
     cpSync(dir, own, { recursive: true });
@@ -471,7 +471,10 @@ describe('the review page\'s Gaps tab', () => {
       // The traces still record the withheld passage, so the fix is listed, now with nothing to open.
       expect(text).toContain('Re-approve passage &quot;late-fees-adult&quot;');
       expect(text).not.toContain('href="/passage/late-fees-adult');
-      expect((await at('/passage/late-fees-adult')).status).toBe(404);
+      const held = await at('/passage/late-fees-adult');
+      expect(held.status).toBe(200);
+      expect(held.text).toContain('action="/passage/late-fees-adult/edit"');
+      expect(held.text).not.toContain('/passage/late-fees-adult/approve');
     } finally {
       await ownServer.close();
     }

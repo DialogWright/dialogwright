@@ -6,11 +6,14 @@ import {
   approveOne,
   collapseWhitespace,
   formatApproveResult,
+  inForceOn,
+  logLineOf,
   notAPerson,
   parseKbFile,
   PENDING_TOPICS_FILE,
   readApprovalLog,
   sourceHashOf,
+  type ApprovalLogLine,
   type KbPassage,
   type KbPendingYaml,
   type KbPlace,
@@ -33,6 +36,8 @@ import { loadKb, readForEdit } from '../kbPlace';
  * - Edit then approve: the answer, applies and dates (and a draft's excerpt), checked, then approved.
  * - Reject: a draft moves to kb/rejected/<id>.yaml with `rejected: { by, on, reason }`, a record kept
  *   in the repository (kb:draft passes over the sections a rejected draft cites).
+ * - Return to the drafts: a rejected draft moves back to kb/pending/<id>.yaml without its `rejected:`,
+ *   to be reviewed again.
  * - A proposed topic (kb/pending/topics.yaml): accepted into topics.yaml (under its own id, or a new
  *   one, the drafts that name it following), or merged into a topic topics.yaml has (its drafts
  *   re-pointed, the proposal dropped).
@@ -198,17 +203,76 @@ export function draftReviewProblems(place: KbPlace, state: ReviewState, d: Draft
 }
 
 // ---------------------------------------------------------------------------------------------
-// What the reviewer saw
+// What the knowledge base holds
 // ---------------------------------------------------------------------------------------------
 
 /**
- * A hash of what the review page shows of a draft, a passage or a proposed topic: the draft's or the
- * passage's file as it is on disk with its source section's text now, or the proposed topic as
- * kb/pending/topics.yaml has it. Every form that changes one carries the hash of what the reviewer
+ * Where a passage stands today: withheld from callers (why, as the list of what waits says), or
+ * approved, fresh and logged, and then in force today, not yet in force, or expired (dialogwright's
+ * inForceOn, the day as the call resolves it).
+ */
+export type Standing = Withheld['why'] | 'in-force' | 'not-yet' | 'expired';
+
+export function standingOf(state: ReviewState, passage: KbPassage, today: string): Standing {
+  const w = state.withheld.find((x) => x.passage.id === passage.id);
+  if (w) return w.why;
+  if (inForceOn(passage, today)) return 'in-force';
+  return today < passage.effective.from ? 'not-yet' : 'expired';
+}
+
+/**
+ * The line of kb/approvals.jsonl that records a passage's approval: the last with its id and its
+ * approval's hash, as dialogwright reads the log (readApprovalLog); null when it has no approval or no
+ * line records it. `log` is the log read once, for a list of passages.
+ */
+export function approvalLineOf(place: KbPlace, passage: KbPassage, log: readonly ApprovalLogLine[] = readApprovalLog(place.kbDir)): ApprovalLogLine | null {
+  return logLineOf(log, passage.id, passage.approval?.hash);
+}
+
+/** A passage as the Knowledge base tab shows it: where it stands today, and the log's line of its approval. */
+export interface HeldPassage {
+  passage: KbPassage;
+  standing: Standing;
+  line: ApprovalLogLine | null;
+}
+
+/** Every passage of the knowledge base (by id), with where it stands today and its approval's line; the log read once. */
+export function heldPassages(place: KbPlace, state: ReviewState, today: string): HeldPassage[] {
+  const log = readApprovalLog(place.kbDir);
+  return Object.values(state.kb?.passages ?? {}).map((passage) => ({ passage, standing: standingOf(state, passage, today), line: approvalLineOf(place, passage, log) }));
+}
+
+/** A rejected draft: kb/rejected/<id>.yaml read as a draft, and who rejected it, when and why (null when its `rejected:` does not read). */
+export interface RejectedDraft extends DraftOnDisk {
+  rejected: { by: string; on: string; reason: string } | null;
+}
+
+/** The drafts in kb/rejected, oldest name first, each with its rejection. */
+export function rejectedDrafts(place: KbPlace): RejectedDraft[] {
+  return draftsIn(place.kbDir, 'rejected', baseOf(place)).map((d) => {
+    const path = join(place.kbDir, 'rejected', `${d.id}.yaml`);
+    const block = (inKbFolder(place, path, 'rejected') ? readForEdit(path)?.toJS() : null) as { rejected?: Record<string, unknown> } | null;
+    const r = block?.rejected;
+    const text = (v: unknown): string => (typeof v === 'string' ? v : v instanceof Date ? v.toISOString().slice(0, 10) : '');
+    return { ...d, rejected: r && typeof r === 'object' ? { by: text(r.by), on: text(r.on), reason: text(r.reason) } : null };
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// What the reviewer saw
+// ---------------------------------------------------------------------------------------------
+
+/** What a form changes: a draft, a passage, a proposed topic, or a rejected draft. */
+export type SeenKind = 'draft' | 'passage' | 'topic' | 'rejected';
+
+/**
+ * A hash of what the review page shows of a draft, a passage, a proposed topic or a rejected draft: the
+ * draft's, the passage's or the rejected draft's file as it is on disk with its source section's text
+ * now, or the proposed topic as kb/pending/topics.yaml has it. Every form that changes one carries the hash of what the reviewer
  * opened, and the change is refused when it no longer matches: what they saw is what they approve.
  * Null when there is no such draft, passage or topic.
  */
-export function seenOf(place: KbPlace, state: ReviewState, kind: 'draft' | 'passage' | 'topic', id: string): string | null {
+export function seenOf(place: KbPlace, state: ReviewState, kind: SeenKind, id: string): string | null {
   const hash = (...parts: (string | Buffer)[]): string => {
     const h = createHash('sha256').update(kind);
     for (const part of parts) h.update('\u0000').update(part);
@@ -231,12 +295,18 @@ export function seenOf(place: KbPlace, state: ReviewState, kind: 'draft' | 'pass
     if (!inKbFolder(place, path, 'passage') || !existsSync(path)) return null;
     return hash(readFileSync(path), sectionText(p.source.document, p.source.section));
   }
+  if (kind === 'rejected') {
+    const path = join(place.kbDir, 'rejected', `${id}.yaml`);
+    if (idProblem(id) !== null || !inKbFolder(place, path, 'rejected') || !existsSync(path)) return null;
+    const r = rejectedDrafts(place).find((x) => x.id === id);
+    return hash(readFileSync(path), r?.draft ? sectionText(r.draft.source.document, r.draft.source.section) : '');
+  }
   const t = state.proposed.find((x) => x.id === id);
   return t ? hash(JSON.stringify([t.id, topicYamlOf(t)])) : null;
 }
 
 /** Why a change cannot be made to what the reviewer opened (null when it is as they saw it). */
-function changedSince(place: KbPlace, state: ReviewState, kind: 'draft' | 'passage' | 'topic', id: string, seen: string | undefined): string | null {
+function changedSince(place: KbPlace, state: ReviewState, kind: SeenKind, id: string, seen: string | undefined): string | null {
   if (seen === undefined) return null;
   const now = seenOf(place, state, kind, id);
   return now !== null && now === seen ? null : `${id} changed since you opened it: reload the page and review it again`;
@@ -361,6 +431,40 @@ export function reject(place: KbPlace, id: string, reason: string, reviewer: Rev
   writeFileSync(join(dir, `${name}.yaml`), doc.toString({ lineWidth: 0 }));
   unlinkSync(from);
   return { ok: true, message: `${id}: rejected by ${reviewer!.by.trim()} (${why}); moved to ${base}/rejected/${name}.yaml` };
+}
+
+/**
+ * Moves a rejected draft back to kb/pending/<id>.yaml without its `rejected:`, the rest of its file as
+ * it is, to be reviewed again (refused when it changed since `seen`, or a draft of that id waits).
+ * A draft's id is its file name: one renamed when it was rejected (a second rejection of the same id)
+ * takes its file's name.
+ */
+export function returnToDrafts(place: KbPlace, id: string, reviewer: Reviewer | null, seen?: string): ActionResult {
+  const bad = idProblem(id);
+  if (bad !== null) return refused(bad);
+  const who = reviewerProblem(reviewer);
+  if (who !== null) return refused(who);
+  const base = baseOf(place);
+  const from = join(place.kbDir, 'rejected', `${id}.yaml`);
+  if (!inKbFolder(place, from, 'rejected') || !existsSync(from)) return refused(`there is no rejected draft "${id}" in ${base}/rejected`);
+  if (seen !== undefined) {
+    const stale = changedSince(place, reviewState(place), 'rejected', id, seen);
+    if (stale !== null) return refused(stale);
+  }
+  const dir = join(place.kbDir, 'pending');
+  const to = join(dir, `${id}.yaml`);
+  if (`${id}.yaml` === PENDING_TOPICS_FILE || !inKbFolder(place, to, 'pending')) return refused(`${base}/pending/${id}.yaml is not a draft's place in the knowledge base`);
+  if (existsSync(to)) return refused(`a draft "${id}" already waits in ${base}/pending: approve or reject it first`);
+  const doc = readForEdit(from)!;
+  const was = rejectedDrafts(place).find((r) => r.id === id)?.rejected;
+  doc.delete('rejected');
+  const renamed = doc.get('id') !== id;
+  if (renamed) doc.set('id', id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(to, doc.toString({ lineWidth: 0 }));
+  unlinkSync(from);
+  const why = was ? ` (it was rejected by ${was.by} on ${was.on}: ${was.reason})` : '';
+  return { ok: true, message: `${id}: returned to the drafts by ${reviewer!.by.trim()}${why}; moved to ${base}/pending/${id}.yaml${renamed ? ', its id set to its file name' : ''}` };
 }
 
 // ---------------------------------------------------------------------------------------------

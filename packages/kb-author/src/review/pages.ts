@@ -65,7 +65,7 @@ const STYLE = `
   th { color:var(--muted); font-weight:500; font-size:.9em; }
   .mono { font-family:var(--mono); font-size:.92em; }
   .muted { color:var(--muted); }
-  .chip { display:inline-block; padding:1px 9px; border-radius:999px; font-size:.82em; border:1px solid var(--border-2); background:var(--idle-bg); color:var(--muted); }
+  .chip { display:inline-block; white-space:nowrap; padding:1px 9px; border-radius:999px; font-size:.82em; border:1px solid var(--border-2); background:var(--idle-bg); color:var(--muted); }
   .chip.warn { background:var(--warn-bg); color:var(--warn); border-color:rgba(242,181,74,.4); }
   .chip.fail { background:var(--fail-bg); color:var(--fail); border-color:rgba(242,100,112,.4); }
   .chip.pass { background:var(--pass-bg); color:var(--pass); border-color:rgba(62,207,142,.4); }
@@ -104,7 +104,7 @@ const STYLE = `
 export const href = (ctx: PageContext, path: string): string => `${path}?token=${encodeURIComponent(ctx.token)}`;
 
 /** The token as a form's hidden field, and what the page shows (seen) when it shows a draft, a passage or a topic. */
-const tokenField = (ctx: PageContext): string => `<input type="hidden" name="token" value="${esc(ctx.token)}">${ctx.seen !== undefined ? `<input type="hidden" name="seen" value="${esc(ctx.seen)}">` : ''}`;
+export const tokenField = (ctx: PageContext): string => `<input type="hidden" name="token" value="${esc(ctx.token)}">${ctx.seen !== undefined ? `<input type="hidden" name="seen" value="${esc(ctx.seen)}">` : ''}`;
 
 /** A whole page. */
 export function page(ctx: PageContext, title: string, body: string): string {
@@ -124,7 +124,7 @@ export function page(ctx: PageContext, title: string, body: string): string {
 <a class="skip" href="#main">Skip to the content</a>
 <header>
   <div class="brand"><span class="mark" aria-hidden="true">DW</span><span class="title">Knowledge base review <span>${esc(ctx.label)}</span></span></div>
-  <nav aria-label="Review"><a href="${href(ctx, '/')}">Everything waiting</a><a href="${href(ctx, '/gaps')}">Gaps</a>${who}</nav>
+  <nav aria-label="Review"><a href="${href(ctx, '/')}">Everything waiting</a><a href="${href(ctx, '/gaps')}">Gaps</a><a href="${href(ctx, '/kb')}">Knowledge base</a>${who}</nav>
 </header>
 <main id="main">
 ${flashHtml(ctx)}${ctx.reviewer ? '' : reviewerForm(ctx)}${body}
@@ -166,7 +166,7 @@ function reviewerForm(ctx: PageContext): string {
 // The list
 // ---------------------------------------------------------------------------------------------
 
-const WHY: Record<Withheld['why'], { chip: string; text: string }> = {
+export const WHY: Record<Withheld['why'], { chip: string; text: string }> = {
   'source-changed': { chip: 'warn', text: 'its source section changed' },
   'source-gone': { chip: 'fail', text: 'its source section is gone' },
   edited: { chip: 'warn', text: 'edited since it was approved' },
@@ -178,6 +178,7 @@ export function indexPage(ctx: PageContext, state: ReviewState, draftProblems: (
   const parts: string[] = [];
   const total = state.drafts.length + state.withheld.length + state.proposed.length;
   parts.push(`<h1>${total === 0 ? 'Nothing waits for review' : `${total} waiting for review`}</h1>`);
+  if (total === 0 && state.kb) parts.push(`<p>No draft, passage or topic waits. <a href="${href(ctx, '/kb')}">See what the knowledge base holds.</a></p>`);
   if (!state.kb) {
     parts.push(`<section class="card" role="alert"><h2>The knowledge base does not load</h2><p>Nothing can be approved until it does. Fix these first (pnpm check lists them too):</p><ul class="problems">${state.problems.map((p) => `<li class="mono">${esc(p)}</li>`).join('')}</ul></section>`);
   }
@@ -237,7 +238,7 @@ export function indexPage(ctx: PageContext, state: ReviewState, draftProblems: (
 // ---------------------------------------------------------------------------------------------
 
 /** A source section, its excerpt marked. */
-function sectionHtml(source: KbSourceDocument | undefined, sectionId: string, excerpt: string | null): string {
+export function sectionHtml(source: KbSourceDocument | undefined, sectionId: string, excerpt: string | null): string {
   if (!source) return '<p role="alert">The source document is not in kb/sources.</p>';
   const section = Object.hasOwn(source.sections, sectionId) ? source.sections[sectionId]! : undefined;
   const where = source.provenance?.url ?? source.provenance?.file;
@@ -250,7 +251,7 @@ function sectionHtml(source: KbSourceDocument | undefined, sectionId: string, ex
 }
 
 /** The fields of an edit form: the answer, who it is for, and when (and a draft's excerpt). */
-function editFields(kb: KnowledgeBase, values: { answer: string; applies: Readonly<Record<string, readonly string[]>>; effective: { from: string; to?: string }; excerpt?: string }, prefix: string): string {
+export function editFields(kb: KnowledgeBase, values: { answer: string; applies: Readonly<Record<string, readonly string[]>>; effective: { from: string; to?: string }; excerpt?: string }, prefix: string): string {
   const facts = Object.entries(kb.settings.applies)
     .map(
       ([fact, options]) =>
@@ -273,7 +274,7 @@ function editFields(kb: KnowledgeBase, values: { answer: string; applies: Readon
 const listOf = (applies: Readonly<Record<string, string | readonly string[]>> | undefined): Record<string, readonly string[]> =>
   Object.fromEntries(Object.entries(applies ?? {}).map(([k, v]) => [k, typeof v === 'string' ? [v] : v]));
 
-const appliesText = (applies: Readonly<Record<string, readonly string[]>>): string => {
+export const appliesText = (applies: Readonly<Record<string, readonly string[]>>): string => {
   const entries = Object.entries(applies);
   return entries.length === 0 ? 'every caller' : entries.map(([k, v]) => `${k}: ${v.join(', ')}`).join('; ');
 };
@@ -411,5 +412,5 @@ export function topicPage(ctx: PageContext, kb: KnowledgeBase, t: ProposedTopic,
 }
 
 export function notFoundPage(ctx: PageContext, what: string): string {
-  return page(ctx, 'Not found', `<h1>Not found</h1><section class="card"><p>${esc(what)}</p><p><a href="${href(ctx, '/')}">Everything waiting</a></p></section>`);
+  return page(ctx, 'Not found', `<h1>Not found</h1><section class="card"><p>${esc(what)}</p><p><a href="${href(ctx, '/')}">Everything waiting</a> &middot; <a href="${href(ctx, '/kb')}">Knowledge base</a></p></section>`);
 }
