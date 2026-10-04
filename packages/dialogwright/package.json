@@ -45,7 +45,8 @@
     "policy:card": "tsx src/define/cli.ts policy:card",
     "app:diagram": "tsx src/define/cli.ts app:diagram",
     "kb:model": "tsx src/define/cli.ts kb:model",
-    "kb:index": "tsx src/define/cli.ts kb:index"
+    "kb:index": "tsx src/define/cli.ts kb:index",
+    "kb:bakeoff": "tsx src/define/cli.ts kb:bakeoff"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

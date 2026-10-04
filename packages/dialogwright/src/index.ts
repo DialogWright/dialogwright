@@ -88,6 +88,9 @@ export { DEFAULT_EMBEDDER, POTION_BASE_8M, STATIC_MODELS, MODEL_DIR_ENV, ModelEr
 export type { PinnedModel } from './kb/embed/model';
 export { buildIndex, parseIndex, serializeIndex, indexHashOf } from './kb/vectorIndex';
 export type { BuiltIndex, KbIndexData, KbIndexRead } from './kb/vectorIndex';
+// The retrieval bake-off (pnpm kb:bakeoff): recall at the cap and candidates on a paraphrase file.
+export { bakeoff, parseParaphrases } from './kb/bakeoff';
+export type { BakeoffResult, Paraphrases } from './kb/bakeoff';
 
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
 // What the author of a slot type uses is in 'dialogwright/slot-kit'; the conformance kit is in

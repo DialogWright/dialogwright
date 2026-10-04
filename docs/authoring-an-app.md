@@ -276,6 +276,24 @@ The corpus (`corpus.jsonl`, one labelled utterance per line), scripted calls, th
 {"id":"sn-01","text":"I'd like to make an appointment","intent":"schedule_new","context":"no_form"}
 ```
 
+### kb/ (optional): retrieval settings and commands
+
+An app with a knowledge base (`kb/`) nominates topics for what a caller says before each turn a `topic` slot listens on. Unless its code gives a retriever of its own (`code.knowledge.retriever`), the engine's is used, set in `kb/kb.yaml`:
+
+```yaml
+retrieval:
+  cap: 8                    # the most topics a turn offers (default 8)
+  embedder: potion-base-8M  # optional: also find topics by meaning, not only by their words
+  floor: 0.3                # optional: the similarity below which a topic found by meaning is not offered
+```
+
+- **Without `embedder`**, topics are found by their words alone: BM25 over each topic's title, keywords and example questions (`asks`), with a boost for a keyword said whole. Accents and common endings are folded, and greetings and question words are ignored. A topic is read in the caller's locale when `kb/locale/<tag>/topics.yaml` words it.
+- **With `embedder`**, the same keyword search runs beside a dense one, and the two rankings are merged by reciprocal rank fusion. A topic found by meaning counts only at `floor` or above (default: the model's own, 0.3); a keyword match always counts. The model is potion-base-8M, a static model run in TypeScript: about a hundredth of a millisecond per question, and the same numbers on every machine, so a recorded call replays exactly.
+- Every topic's vectors are in `kb/.index/<embedder>.json`, which you commit. Write it with `pnpm kb:index [app folder]` after any change to `topics.yaml` or a locale's wording; it embeds only the texts that changed, and gives the same bytes for the same topics. `pnpm check` reports a topic whose texts the index no longer matches, with the fix `run pnpm kb:index`.
+- The model's weights are not in the repository: `pnpm kb:model` downloads them once, at a pinned revision, checks each file's SHA-256, and keeps them in `~/.cache/dialogwright/models` (or `$DIALOGWRIGHT_MODEL_DIR`). `kb:index` downloads them when they are missing. A call never downloads anything: an app whose weights are not in the cache retrieves by keywords alone, and the trace's `retrieverId` says so (`keyword` rather than `hybrid:potion-base-8M`).
+- Choose `cap` and `floor` offline, never by re-recording calls: write `fixtures/kb/paraphrases.yaml` (each topic id with things callers say about it in other words, and `none:` with things no topic answers) and run `pnpm kb:bakeoff <app folder> --paraphrases fixtures/kb/paraphrases.yaml --sweep`. It reports each retriever's recall at the cap, how many topics it offers per question (and per question about nothing), and its speed, then recall against candidates for every floor and cap.
+- An ONNX model (bge-small, through the optional `@huggingface/transformers`) is available to code as `OnnxEmbedder` from `dialogwright/kb/onnx`, used with `HybridRetriever`; the bake-off includes it when the package is installed. It is not the default: it is a large native install, and its numbers can differ in the last bits between machines.
+
 ## 3. Policy and identity
 
 The gate decides whether an action may run, and it decides from two files that a person who does not write code can read: `policy.yaml` (what the agent may do, action by action) and `identity.yaml` (who the app serves and how a caller proves who they are). Policy is data, and never lives in a tool. A tool does its work; the gate decides whether it runs. This section is the whole of how to write, test and review those two files. [design.md](design.md#6-identity-and-policy) says why they are shaped this way.

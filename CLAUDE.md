@@ -43,6 +43,9 @@ pnpm policy:card [dir...]     # write POLICY.md, the policy in plain English wit
 pnpm app:diagram [dir...]     # write APP-MAP.md, the app's intents, forms, slots, actions and rules as Mermaid diagrams (the same)
 pnpm --filter dialogwright exec tsx src/define/cli.ts policy:convert <absolute folder>   # policy.yaml and identity.yaml from the old table shape to the current one (also: --from-tables <module>, --dry-run; it writes `signIn: { level: 2 }` where the old identity has a code, as the old engine took a sign-in, unless --no-sign-in)
 pnpm --filter dialogwright slot-docs   # regenerate docs/slots/*.md after a slot type's options, README or examples change
+pnpm kb:model                 # download the pinned embedding model (potion-base-8M) into ~/.cache/dialogwright/models, checking its SHA-256
+pnpm kb:index [dir...]        # write a knowledge base's vector index (kb/.index/<embedder>.json) after its topics change; commit it
+pnpm kb:bakeoff <dir> --paraphrases <file> [--sweep]   # compare the retrievers on paraphrases offline; pick kb.yaml's floor and cap here
 pnpm --filter dialogwright test slots/<type>   # a slot type's tests, including the conformance kit
 ```
 
