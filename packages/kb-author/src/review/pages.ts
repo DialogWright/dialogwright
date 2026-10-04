@@ -176,9 +176,9 @@ export const WHY: Record<Withheld['why'], { chip: string; text: string }> = {
 
 export function indexPage(ctx: PageContext, state: ReviewState, draftProblems: (d: DraftOnDisk) => string[]): string {
   const parts: string[] = [];
-  const total = state.drafts.length + state.withheld.length + state.proposed.length;
+  const total = state.drafts.length + state.withheld.length + state.toConfirm.length + state.proposed.length;
   parts.push(`<h1>${total === 0 ? 'Nothing waits for review' : `${total} waiting for review`}</h1>`);
-  if (total === 0 && state.kb) parts.push(`<p>No draft, passage or topic waits. <a href="${href(ctx, '/kb')}">See what the knowledge base holds.</a></p>`);
+  if (total === 0 && state.kb) parts.push(`<p>No draft, passage, approval or topic waits. <a href="${href(ctx, '/kb')}">See what the knowledge base holds.</a></p>`);
   if (!state.kb) {
     parts.push(`<section class="card" role="alert"><h2>The knowledge base does not load</h2><p>Nothing can be approved until it does. Fix these first (pnpm check lists them too):</p><ul class="problems">${state.problems.map((p) => `<li class="mono">${esc(p)}</li>`).join('')}</ul></section>`);
   }
@@ -228,6 +228,13 @@ export function indexPage(ctx: PageContext, state: ReviewState, draftProblems: (
     parts.push(`<section class="card" aria-labelledby="unlogged-h"><h2 id="unlogged-h">Passages approved outside kb:approve (${unlogged.length})</h2>`);
     parts.push('<p class="hint">Their approvals have no line in the log of approvals, so no one is on record for them and pnpm check refuses them. Review each against its source and approve it here.</p>');
     parts.push(passageRows(unlogged));
+    parts.push('</section>');
+  }
+  if (state.toConfirm.length > 0) {
+    parts.push(`<section class="card" aria-labelledby="confirm-h"><h2 id="confirm-h">Approvals to confirm (${state.toConfirm.length})</h2>`);
+    parts.push('<p class="hint">A migration carried these approvals over from an earlier format. Callers are given these answers; read each against its source and confirm its approval under your name.</p>');
+    const rows = state.toConfirm.map((p) => `<tr><td class="mono"><a href="${href(ctx, `/passage/${encodeURIComponent(p.id)}`)}">${esc(p.id)}</a></td><td class="mono">${esc(p.topic)}</td><td>${esc(p.answer)}</td></tr>`);
+    parts.push(`<table><thead><tr><th scope="col">Passage</th><th scope="col">Topic</th><th scope="col">Answer</th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
     parts.push('</section>');
   }
   return page(ctx, 'Everything waiting', parts.join('\n'));

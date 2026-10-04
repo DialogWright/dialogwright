@@ -26,11 +26,13 @@ export interface ApprovalLogLine {
   hash: string;
   /**
    * What was approved: a draft from kb/pending, or a passage already in kb/passages (both written by
-   * kb:approve); or `migration`: an approval carried over from the app's earlier format of the same
+   * kb:approve; a passage's too when a person confirms in kb:review an approval a migration carried
+   * over); or `migration`: an approval carried over from the app's earlier format of the same
    * content by the app's own script, never by kb:approve. A migration line keeps the original
    * approver, owner and day (`approvedBy`, `owner`, `on`), records the hashes taken under this
    * format, and says why in `note`; the people who own the content confirm it in review (it is in
-   * the log, and kb:status marks the passages it approved). The log is appended to, never
+   * the log, and kb:status marks the passages it approved): kb:review's "Confirm this approval"
+   * appends their line, `from: passage`, with the same hashes. The log is appended to, never
    * rewritten: a migration taken again under a later format is new lines, and the last line with a
    * passage's id and hash is the one that stands.
    */

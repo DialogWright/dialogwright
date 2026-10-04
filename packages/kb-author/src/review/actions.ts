@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import {
+  appendApprovalLog,
+  APPROVALS_LOG,
   approvalLogged,
   approveOne,
   collapseWhitespace,
@@ -38,6 +40,9 @@ import { loadKb, readForEdit } from '../kbPlace';
  *   in the repository (kb:draft passes over the sections a rejected draft cites).
  * - Return to the drafts: a rejected draft moves back to kb/pending/<id>.yaml without its `rejected:`,
  *   to be reviewed again.
+ * - Confirm an approval a migration carried over: a fresh passage whose approval stands on a
+ *   `from: migration` line of kb/approvals.jsonl gets a line of the reviewer's own (dialogwright's
+ *   appendApprovalLog, the same hashes); its file is not touched.
  * - A proposed topic (kb/pending/topics.yaml): accepted into topics.yaml (under its own id, or a new
  *   one, the drafts that name it following), or merged into a topic topics.yaml has (its drafts
  *   re-pointed, the proposal dropped).
@@ -130,6 +135,8 @@ export interface ReviewState {
   problems: string[];
   drafts: DraftOnDisk[];
   withheld: Withheld[];
+  /** Fresh passages whose approvals a migration carried over, for a person to confirm (awaitsConfirmation). */
+  toConfirm: KbPassage[];
   proposed: ProposedTopic[];
   /** Why kb/pending/topics.yaml does not read, when it does not. */
   proposedProblems: string[];
@@ -147,14 +154,27 @@ export function reviewState(place: KbPlace): ReviewState {
     proposedProblems = [error instanceof Error ? error.message : String(error), ...((error as { problems?: string[] }).problems ?? [])];
   }
   const withheld: Withheld[] = [];
+  const toConfirm: KbPassage[] = [];
+  const log = loaded.kb?.approvalLog;
+  const lines = log !== undefined && 'lines' in log ? log.lines : [];
   for (const p of Object.values(loaded.kb?.passages ?? {})) {
     if (p.freshness === 'fresh') {
       if (approvalLogged(loaded.kb!, p) === false) withheld.push({ passage: p, why: 'unlogged' });
+      else if (awaitsConfirmation(p, logLineOf(lines, p.id, p.approval?.hash))) toConfirm.push(p);
       continue;
     }
     withheld.push({ passage: p, why: p.freshness === 'source-changed' ? (p.current.sourceHash === null ? 'source-gone' : 'source-changed') : p.freshness });
   }
-  return { kb: loaded.kb, problems: loaded.problems, drafts, withheld, proposed, proposedProblems };
+  return { kb: loaded.kb, problems: loaded.problems, drafts, withheld, toConfirm, proposed, proposedProblems };
+}
+
+/**
+ * Whether a passage's approval was carried over by a migration and waits for a person to confirm it:
+ * the passage is fresh, and the line of kb/approvals.jsonl its approval stands on (the last with its id
+ * and hash, logLineOf) is a migration's.
+ */
+export function awaitsConfirmation(passage: KbPassage, line: { from: string } | null): boolean {
+  return passage.freshness === 'fresh' && line?.from === 'migration';
 }
 
 /**
@@ -400,6 +420,52 @@ export function editAndApprove(place: KbPlace, id: string, edits: Edits, reviewe
     return refused(`the edit to ${id} was not kept: ${result.message}`, result.problems);
   }
   return { ok: true, message: `edited, then ${result.message}` };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Confirming an approval a migration carried over
+// ---------------------------------------------------------------------------------------------
+
+/** Why a passage is withheld, as a refusal says it. */
+const WITHHELD_WHY: Record<Exclude<Withheld['why'], 'unlogged'>, string> = {
+  'source-changed': 'its source section changed since it was approved',
+  'source-gone': 'its source section is gone',
+  edited: 'edited since it was approved',
+  unapproved: 'never approved',
+};
+
+/**
+ * Confirms an approval a migration carried over (awaitsConfirmation): appends one line to
+ * kb/approvals.jsonl through dialogwright's own writer, recording the reviewer and their team, today,
+ * and the passage's version and approval hashes as they stand (`from: passage`, with the section's text,
+ * as kb:approve writes a passage's line). The passage's file is not touched: its approval already
+ * holds those hashes. Refused (nothing written) without a person reviewing, when it changed since
+ * `seen`, when it is withheld (stale: it is approved again instead), or when its approval does not
+ * stand on a migration's line.
+ */
+export function confirmApproval(place: KbPlace, id: string, reviewer: Reviewer | null, today: string, seen?: string): ActionResult {
+  const bad = idProblem(id);
+  if (bad !== null) return refused(bad);
+  const who = reviewerProblem(reviewer);
+  if (who !== null) return refused(who);
+  const state = reviewState(place);
+  if (!state.kb) return refused('the knowledge base does not load: fix it first', state.problems);
+  const passage = Object.hasOwn(state.kb.passages, id) ? state.kb.passages[id]! : undefined;
+  if (!passage) return refused(`there is no passage "${id}"`);
+  const stale = changedSince(place, state, 'passage', id, seen);
+  if (stale !== null) return refused(stale);
+  const withheld = state.withheld.find((w) => w.passage.id === id);
+  if (withheld && withheld.why !== 'unlogged') {
+    return refused(`${id} is withheld from callers (${WITHHELD_WHY[withheld.why]}): review it and approve it again; only an approval that stands as a migration carried it over is confirmed`);
+  }
+  const line = approvalLineOf(place, passage);
+  if (line === null) return refused(`${id}: no line of ${baseOf(place)}/${APPROVALS_LOG} records its approval, so there is nothing to confirm: review it and approve it`);
+  if (line.from !== 'migration') return refused(`${id}: its approval was not carried over by a migration: it is already confirmed by ${line.approvedBy} on ${line.on}`);
+  const sourceText = state.kb.sources[passage.source.document]?.sections[passage.source.section]?.text;
+  const by = reviewer!.by.trim();
+  const owner = reviewer!.owner.trim();
+  appendApprovalLog(place.kbDir, { id, version: passage.version, approvedBy: by, owner, on: today, sourceHash: passage.approval!.sourceHash, hash: passage.approval!.hash, from: 'passage', ...(sourceText !== undefined ? { sourceText } : {}) });
+  return { ok: true, message: `${id}: the approval a migration carried over is confirmed by ${by} for ${owner} on ${today}; logged in ${baseOf(place)}/${APPROVALS_LOG}` };
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import { parse } from 'yaml';
 import { main, type Io } from '../cli';
 import { findKb, type KbPlace } from '../kbPlace';
 import { loadKb } from '../kbPlace';
-import { acceptTopic, approve, approvedSectionText, editAndApprove, mergeTopic, reject, reviewState } from './actions';
+import { acceptTopic, approve, approvedSectionText, confirmApproval, editAndApprove, mergeTopic, reject, reviewState } from './actions';
 import { backTo, sameToken, startReviewServer, type ReviewServer } from './server';
 import { excerptRange, wordDiff } from './text';
 
@@ -385,6 +385,129 @@ describe('a passage approved outside kb:approve', () => {
     const last = JSON.parse(readFileSync(log, 'utf8').trim().split('\n').pop()!) as { id: string; approvedBy: string };
     expect([last.id, last.approvedBy]).toEqual(['opening-hours', 'Jane Smith']);
     expect(reviewState(place).withheld).toEqual([]);
+  });
+});
+
+describe('an approval a migration carried over', () => {
+  /** A copy of the fixture whose log says a migration carried over the approvals of `ids` (their lines rewritten as an app's migration script writes them). */
+  const migrated = (name: string, ids: readonly string[]): { dir: string; place: KbPlace; log: string } => {
+    const dir = folder(name);
+    const log = join(dir, 'kb', 'approvals.jsonl');
+    const lines = readFileSync(log, 'utf8').split('\n').filter((l) => l.trim() !== '');
+    const rewritten = lines.map((l) => {
+      const line = JSON.parse(l) as Record<string, unknown>;
+      if (!ids.includes(line.id as string)) return l;
+      const { sourceText: _sourceText, ...rest } = line;
+      return JSON.stringify({ ...rest, from: 'migration', note: 'content unchanged; migrated from the old format' });
+    });
+    writeFileSync(log, `${rewritten.join('\n')}\n`);
+    const place = findKb(dir, 'app');
+    if (typeof place === 'string') throw new Error(place);
+    return { dir, place, log };
+  };
+
+  it('is listed to confirm, and once a person confirms it the log records them, the passage file is as it was, and nothing is listed', async () => {
+    const { dir, place, log } = migrated('kb-author-review-migrated', ['late-fees-adult']);
+    const passageFile = join(dir, 'kb', 'passages', 'late-fees-adult.yaml');
+    const fileBefore = readFileSync(passageFile);
+    const logBefore = readFileSync(log, 'utf8');
+    const migratedLine = JSON.parse(logBefore.trim().split('\n').find((l) => l.includes('"late-fees-adult"'))!) as Record<string, string>;
+    const server = await startReviewServer({ place, today: () => TODAY });
+    try {
+      const web = browser(server);
+      const home = (await web.get('/')).body;
+      expect(home).toContain('<h2 id="confirm-h">Approvals to confirm (1)</h2>');
+      const row = /<tr><td class="mono"><a href="\/passage\/late-fees-adult\?token=[^"]*">late-fees-adult<\/a>[\s\S]*?<\/tr>/.exec(home)?.[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      expect(row).toBe('late-fees-adult late_fees Late books on an adult card cost 25 cents a day, up to 5 dollars a book.');
+      expect((await web.get('/kb')).body).toContain('1 approval carried over by a migration awaits confirmation');
+
+      const page = (await web.get('/passage/late-fees-adult')).body;
+      expect(page).toContain('<h3>Confirm this approval</h3>');
+      expect(page.indexOf('/passage/late-fees-adult/confirm')).toBeLessThan(page.indexOf('/passage/late-fees-adult/edit'));
+      expect(page.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).toContain('Confirming records that you read this answer against its source and answer for it');
+
+      await web.post('/reviewer', { by: 'Dana Ortiz', owner: 'Patron Services', back: '/' });
+      const back = await web.post('/passage/late-fees-adult/confirm', { seen: seenIn(page, '/passage/late-fees-adult/confirm') });
+      expect(back.headers.location).toBe(`/?token=${server.token}`);
+      expect(flashIn((await web.get('/')).body)).toBe(`late-fees-adult: the approval a migration carried over is confirmed by Dana Ortiz for Patron Services on ${TODAY}; logged in kb/approvals.jsonl`);
+
+      // Exactly one line appended, recording the reviewer, with the approval's hashes; the passage's file is as it was.
+      const after = readFileSync(log, 'utf8');
+      expect(after.startsWith(logBefore)).toBe(true);
+      const added = after.slice(logBefore.length).trim().split('\n');
+      expect(added).toHaveLength(1);
+      expect(JSON.parse(added[0]!)).toEqual({
+        id: 'late-fees-adult',
+        version: migratedLine.version,
+        approvedBy: 'Dana Ortiz',
+        owner: 'Patron Services',
+        on: TODAY,
+        sourceHash: migratedLine.sourceHash,
+        hash: migratedLine.hash,
+        from: 'passage',
+        sourceText: 'An adult card is charged 25 cents for each day an item is overdue, up to 5 dollars for each item.',
+      });
+      expect(readFileSync(passageFile).equals(fileBefore)).toBe(true);
+
+      // Nothing is listed to confirm, and the approval names the reviewer, no longer migrated.
+      expect((await web.get('/')).body).not.toContain('Approvals to confirm');
+      const kbTab = (await web.get('/kb')).body;
+      expect(kbTab).not.toContain('awaits confirmation');
+      const kbRow = /<tr><td class="mono"><a href="\/passage\/late-fees-adult\?token=[^"]*">late-fees-adult<\/a>[\s\S]*?<\/tr>/.exec(kbTab)![0];
+      expect(kbRow).toContain(`Dana Ortiz (Patron Services) on ${TODAY}`);
+      expect(kbRow).not.toContain('migrated');
+      const reopened = (await web.get('/passage/late-fees-adult')).body;
+      expect(reopened).not.toContain('/passage/late-fees-adult/confirm');
+      expect(reopened.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).toContain(`Approved by Dana Ortiz Team Patron Services On ${TODAY}`);
+      expect(reviewState(place).withheld).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('is refused without a reviewer, for an approval no migration carried over, for a stale passage, and when it changed since it was opened; nothing is written', async () => {
+    const { dir, place, log } = migrated('kb-author-review-migrated-refused', ['late-fees-adult', 'card-renewal-adult']);
+    // card-renewal-adult is edited since its approval: stale, withheld.
+    const card = join(dir, 'kb', 'passages', 'card-renewal-adult.yaml');
+    writeFileSync(card, readFileSync(card, 'utf8').replace("There's no charge.", 'It is free.'));
+    const server = await startReviewServer({ place, today: () => TODAY });
+    try {
+      const web = browser(server);
+      const files = filesOf(dir);
+      const page = (await web.get('/passage/late-fees-adult')).body;
+      const seen = seenIn(page, '/passage/late-fees-adult/confirm');
+
+      // No reviewer.
+      await web.post('/passage/late-fees-adult/confirm', { seen });
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: say who is reviewing first: your name and your team');
+      // A name that is not a person's, as approve and reject refuse it.
+      expect(confirmApproval(place, 'late-fees-adult', { by: 'Claude', owner: 'Patron Services' }, TODAY, seen)).toMatchObject({ ok: false, message: expect.stringMatching(/^the name "Claude" is not a person/) });
+      expect(filesOf(dir)).toEqual(files);
+
+      await web.post('/reviewer', { by: 'Dana Ortiz', owner: 'Patron Services', back: '/' });
+      // An approval a person made (kb:approve's line), not a migration.
+      const opening = seenIn((await web.get('/passage/opening-hours')).body, '/passage/opening-hours/edit');
+      await web.post('/passage/opening-hours/confirm', { seen: opening });
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: opening-hours: its approval was not carried over by a migration: it is already confirmed by Branch Manager on 2025-12-10');
+      // Stale: withheld, so it is approved again (or edited), not confirmed.
+      const stale = seenIn((await web.get('/passage/card-renewal-adult')).body, '/passage/card-renewal-adult/approve');
+      await web.post('/passage/card-renewal-adult/confirm', { seen: stale });
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: card-renewal-adult is withheld from callers (edited since it was approved): review it and approve it again; only an approval that stands as a migration carried it over is confirmed');
+      expect(filesOf(dir)).toEqual(files);
+
+      // Changed on disk since it was opened (a comment, so it is still fresh): refused, and refused without what was seen.
+      const lateFees = join(dir, 'kb', 'passages', 'late-fees-adult.yaml');
+      writeFileSync(lateFees, `${readFileSync(lateFees, 'utf8')}# reviewed with the branch\n`);
+      const changed = filesOf(dir);
+      await web.post('/passage/late-fees-adult/confirm', { seen });
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: late-fees-adult changed since you opened it: reload the page and review it again');
+      await web.post('/passage/late-fees-adult/confirm', {});
+      expect(flashIn((await web.get('/')).body)).toBe('Not done: late-fees-adult changed since you opened it: reload the page and review it again');
+      expect(filesOf(dir)).toEqual(changed);
+      expect(readFileSync(log, 'utf8').split('\n').filter((l) => l.includes('"Dana Ortiz"'))).toEqual([]);
+    } finally {
+      await server.close();
+    }
   });
 });
 
