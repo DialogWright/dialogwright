@@ -1,6 +1,6 @@
 # Authoring an app
 
-This guide is for a developer, or an AI coding assistant, who is building a DialogWright app or changing one. It says what an app is made of, what goes in each file, how policy and identity are written, tested and reviewed, what stays in TypeScript and why, how to write a slot, how `pnpm check` finds mistakes, how locales and configuration hashes work, and how an app answers general questions from a knowledge base of approved passages. Read [CLAUDE.md](../CLAUDE.md) first for the rules (the gate decides, a model never writes a regulated line, an app imports only from `'dialogwright'`).
+This guide is for a developer, or an AI coding assistant, who is building a DialogWright app or changing one. It says what an app is made of, what goes in each file, how policy and identity are written, tested and reviewed, what stays in TypeScript and why, how to write a slot, how `pnpm check` finds mistakes, how locales and configuration hashes work, how an app answers general questions from a knowledge base of approved passages, and how it is served on the phone and the web (carriers, languages, web chat, sign-in and the widget). Read [CLAUDE.md](../CLAUDE.md) first for the rules (the gate decides, a model never writes a regulated line, an app imports only from `'dialogwright'`).
 
 Two apps in this repository are the examples, and the snippets below are copied from them, except where a snippet says it is only an illustration:
 
@@ -21,6 +21,7 @@ Two apps in this repository are the examples, and the snippets below are copied 
 10. [Editor support](#10-editor-support)
 11. [Walkthroughs](#11-walkthroughs)
 12. [The knowledge base](#12-the-knowledge-base)
+13. [Channels](#13-channels)
 
 ## 1. The folder
 
@@ -89,32 +90,7 @@ prompts:
 
 - `id` names the app in the registry. `locale` is the language of `prompts.yaml` (default `en-US`).
 - `brand` and `console` are what the operator console shows: the app's name, form and slot labels, the badge for each identity level, and the facts a tool call leaves.
-- `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech. An app with more than one locale ([Locales](#8-locales)) can also say, per locale, how the phone speaks and hears it, and which number a call starts in which locale. Every key is optional:
-
-  ```yaml
-  voice:
-    hints: [renew, hold, branch, Riverside]
-    numbers:
-      "+15555550142": es        # a call to this number starts in Spanish
-    locales:
-      en-US:
-        voices: { twilio: en-US-Journey-O, telnyx: Telnyx.Ultra.Callie }
-      es:
-        tts: es-US              # the language the voice speaks; default: the locale's tag
-        transcription: es-US    # the language speech is heard in; default: the locale's tag
-        voices: { twilio: es-US-Journey-F, telnyx: Telnyx.Ultra.Asher }
-        hints: [renovar, reserva, sucursal]   # default: voice.hints
-        recognition:            # the speech recognizer, per carrier
-          twilio: { provider: Deepgram, model: nova-3-general }
-          telnyx: { provider: google }
-  ```
-
-  - `voice.numbers` maps a number called (E.164, in quotes: unquoted, YAML reads `+1555...` as a number) to the locale its calls start in. Any other number starts in the default locale.
-  - `voice.locales.<tag>` is keyed by the app's own locale tags. `tts` and `transcription` are language tags; the start document names the call's language by them, and a line's text frame says its `tts`. `voices` names a voice per carrier, in that carrier's own names. A Twilio voice written as a name alone is one of the deployment's `TTS_PROVIDER` (or of Twilio's default provider when that is unset); written as `{ voice: es-US-Neural2-A, provider: Google }` it names its own provider (`Google`, `Amazon` or `ElevenLabs`), so the app does not depend on how the deployment is set. A Telnyx voice's name carries its provider (`Telnyx.Ultra.Asher`), so it is always a name alone. An app's voice wins over the deployment's (`TTS_VOICE`, `TELNYX_VOICE`), which is used for the default locale only: another locale with no voice of its own gets the carrier's default voice for its language. `hints` replaces `voice.hints` for a call that starts in that locale.
-  - `recognition` names the speech recognizer per carrier: `provider` and `model`, in the carrier's own names. On Twilio they are `transcriptionProvider` and `speechModel`; on Telnyx `provider` is `transcriptionProvider`, and a `model` is written on the locale's `<Language>` only, the one place Telnyx documents a `speechModel`. The app's recognizer for a locale wins, as a whole: a field it leaves out is the carrier's default, and `{}` asks for the carrier's default outright. Without one, the default locale has the deployment's recognizer (`TWILIO_TRANSCRIPTION_PROVIDER`, default `Deepgram`, and `TWILIO_SPEECH_MODEL`, default `flux` with Deepgram; `TELNYX_TRANSCRIPTION_PROVIDER`, default Telnyx's own), and every other locale the carrier's default. The deployment's stops at the default locale on purpose: it is chosen for one language (Deepgram's flux is for English), and a recognizer that does not hear a language is worse than the carrier's default for it. A deployment whose app's default locale is not English should set `TWILIO_SPEECH_MODEL`, or the app should name the default locale's `recognition`.
-  - How the start document writes them: a `<Language>` child inherits whatever it leaves out from the relay element, so a voice or recognizer goes on the relay element only when every language has the same one, and otherwise on each language's own `<Language>`. A language with none of its own then gets the carrier's default, never another language's (an English voice reading Spanish, or flux hearing it).
-  - `pnpm check` refuses a locale the app does not have (`add locale/<tag>/ or use one of ...`), a number that is not E.164, a carrier the engine does not know under `voices` or `recognition` (`use twilio or telnyx`), a `tts` or `transcription` that is not a language tag, and a recognizer `provider` or `model` that is not a plain name (letters, digits, dots, hyphens and underscores).
-  - A one-locale en-US app with none of these writes the same start documents as an app without locales.
+- `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech. An app can also say, per locale, which voice and recognizer each carrier uses and which hints it hears, and which number a call starts in which locale (`voice.locales`, `voice.numbers`): see [13.3](#133-languages-on-the-phone).
 - `wording` is the engine's own questions to the decision model, in the app's words (whom the caller is addressing, what counts as a hedge). Every string is sent to the model as written.
 - `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again). It is shorthand for `listen: call` on each slot it names ([Where a slot listens](#where-a-slot-listens-listen)); a carried slot that says another `listen` is refused.
 - `unsureIntent` says what an intent the model is unsure of gets, for every intent that does not say: `confirm` (the default) or `no-match` ([When the model is unsure](#when-the-model-is-unsure-unsure), under intents.yaml).
@@ -158,18 +134,7 @@ menu:
 - When the model is unsure, see the next subsection: an app or an intent can say that such a reading is no match rather than confirmed.
 - Two control intents are required, because the engine reads them by name: `agent` and `repeat_prompt`. The snippet above shows both. The other control intents (`done`, `other`, `none`) are optional; the library has all three, and the clinic leaves out `done`, since its calls end when a task completes.
 - Keypad digits are quoted strings.
-- An informational intent may switch the call's language: `locale:` names one of the app's locales, with a `promptId` said in it, or alone (never with a `passage`). Choosing it, by words, by its menu key or after a confirmation, sets the session's locale; on a phone call the turn first asks the relay to speak and hear that locale (`set_language`, with its `tts` and `transcription` from app.yaml's `voice.locales`), so the line and the question the call resumes on are said, and the caller's next words heard, in it. Values already collected are said in the new language from then on (each slot's `display(value, locale)`), those heard in the same breath as the switch included. A chat switches its lines only. Choosing the locale the call is already in says the line and changes nothing else. `pnpm check` refuses a locale the app does not have, and `locale:` on a form or control intent. No intent switches unless the app writes one:
-
-  ```yaml
-  intents:
-    spanish:
-      kind: informational
-      label: continue in Spanish
-      criteria: The caller asks to continue in Spanish, or says they speak Spanish
-      locale: es
-      promptId: switched_to_spanish   # "Muy bien, seguimos en español." in locale/es/prompts.yaml
-  ```
-
+- An informational intent may switch the call's language: `locale:` names one of the app's locales, with a `promptId` said in it, or alone (never with a `passage`). No intent switches unless the app writes one; [13.3](#133-languages-on-the-phone) has the example and what a switch does on a call and in a chat.
 - A key on the menu starts a form, plays an informational intent's line, or (`agent`) goes to a person. A key for any other control intent does nothing on a call (the caller hears nothing), so `pnpm check` refuses one.
 - The menu listens only once it has been offered. On a call with a keypad (a phone call; a chat has none), the second missed answer to the intent question (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the keys of the next turn are menu keys; with `MAX_ATTEMPTS` at its default of 3, a third miss goes to a person. A key pressed before then, at the greeting for example, is ignored. After an informational key the menu is offered again, so it keeps listening. A scripted call that presses a menu key therefore misses twice first.
 
@@ -601,7 +566,7 @@ signIn: { level: 2 }
 - **The identity tools are for the subject.** The verify tool and the code's two tools prove a subject to themselves: the factors are a subject's, and the code goes to a subject's own phone. The gate refuses them to any party who is not one of the app's subjects (a party who acts for subjects, or any other kind) before their own rules run: BLOCK with reason `not-subject`, recorded as the `subject` line. A caller not yet verified (anonymous) and a subject are held to the actions' rules as written. No file writes this check and none can turn it off. A tool of the app's own that contacts a subject (sends them a link, say) is not an identity tool: if a party who acts for subjects may use it, its policy says so like any other action's.
 - **Attempts.** The failed tries allowed at each check, the factors' and the code's, before a person takes the call. It is the one number every `attempts` rule holds an action to.
 - **Sign-in.** `signIn: { level }` says a channel that can sign a caller in (a web portal) proves that level, always the top of the ladder, and a signed-in caller starts there; factors are never asked on such a channel. The engine checks the channel's capability, never its name. An app without `signIn` takes no sign-in: it ignores the sign-in event, and on a channel that can sign a caller in, a caller whose request needs identity goes to a person (there is nothing to wait for and no factor to ask).
-- **Which token claim names the subject.** A channel that signs in with a token (the engine's web chat, `CHAT_SIGNIN=jwt`) reads the subject's id from the token claim `sub` and asks `code.principals.subjectPrincipal(id, level)` for the principal, at the `signIn` level. `signIn.claim` names another token claim, as the token carries it (`account_id`, or a namespaced `https://example.com/account`); a whole number is read as its digits. For anything one token claim cannot say (a delegate signing in, a tenant to check, two token claims together), set `code.principals.fromClaims`: it is asked first, with the verified token claims, and returns the principal, or null to fall back to `signIn.claim`. What it returns is checked as any signed-in principal is (a subject at the sign-in level, or a delegate of a declared kind and role), and a delegate's token is taken only as the chat starts, which then begins as theirs.
+- **Which token claim names the subject.** A channel that signs in with a token (the engine's web chat, `CHAT_SIGNIN=jwt`) reads the subject's id from the token claim `sub`, or the one `signIn.claim` names; `code.principals.fromClaims` reads the token claims in code for anything one token claim cannot say (a delegate, a tenant). See [13.5](#135-sign-in-on-the-web-chat).
 - **Lines.** With an identity.yaml the engine also says the identity lines (`identity_verified`, `handoff_identity`, and with level 2 `ask_otp`, `otp_failed` and others), and `check` requires them in every locale.
 
 ### 3.7 How a form reaches an action: `calls`
@@ -1399,7 +1364,7 @@ prompts:
 - **What `check` requires.** In every locale: each prompt an intent, form, identity.yaml or app.yaml names, and each line the engine says (section 2, prompts.yaml). A line that only the app's code says (the library's `no_hold`) may be left out of a translation. A translated line may use only the variables of its prompts.yaml line, and a locale may not have a line prompts.yaml lacks.
 - **Folders.** `locale/` holds one folder per locale, named by its language tag. A file there is a problem, and so are two folders whose names differ only in letter case (`pt-BR` and `pt-br`), which would be one locale.
 - **Fallback.** A line missing from a locale is said from the default locale, one line at a time, so a half-translated app still works.
-- **Choosing the locale.** The session starts in the default locale. A channel can name another: the `session.start` event carries a `locale`, and the ConversationRelay adapter reads it from a custom parameter named `locale`, which the start document sets from app.yaml's `voice.numbers` for the number called (see [app.yaml](#appyaml)). It is matched against the app's locales: the same tag (letter case aside), else the app's locale that is the request's language alone (`es-US` finds `es`), else the app's first locale in that language (`es` finds `es-MX`), else the default. The request is untrusted: it is only compared, and what is used is always one of the app's own tags. An intent with `locale:` switches the call mid-way ([intents.yaml](#intentsyaml)).
+- **Choosing the locale.** The session starts in the default locale. A channel can name another: the `session.start` event carries a `locale`. On the phone the relay adapter reads it from a custom parameter named `locale`, which the start document sets from app.yaml's `voice.numbers` for the number called; a web chat asks for one as it starts (`start.locale`, the widget's `locale` option or the page's `<html lang>`). See [13.3](#133-languages-on-the-phone) and [13.4](#134-web-chat). It is matched against the app's locales: the same tag (letter case aside), else the app's locale that is the request's language alone (`es-US` finds `es`), else the app's first locale in that language (`es` finds `es-MX`), else the default. The request is untrusted: it is only compared, and what is used is always one of the app's own tags. An intent with `locale:` switches the call mid-way ([13.3](#133-languages-on-the-phone)).
 - **The knowledge base** has its own wording and passages per locale, with its own fallback rule (`localeFallback`): see [12.7](#127-locales-and-fallback).
 - **Spoken text.** A translated line is spoken by text to speech. Recorded clips are in the default language only.
 - **Slots hear and say the session's language.** A slot's context carries the session's locale (`ctx.locale`), and the library types read it. What changes for a Spanish session (`es`, or any `es-*` tag); every other locale, and an app without locales, reads and says values exactly as en-US always has:
@@ -1420,18 +1385,12 @@ prompts:
 
     `defineApp` builds each library slot it names again with its wording, whether the slot is in slots.yaml or built in code with `defineSlot`, and `check` reports, at the line: a slot the app does not have (with the closest name), a slot written by hand in code (it has no options to word; format its `display` by `locale` instead), a library slot changed in code after it was built (`{ ...slot, dtmf }`: built again it would lose the change), a type that takes no wording (`digits`, `date`, `birthdate`, `name` and `record` say their values by locale themselves), an option the slot does not have, and any key but `say`. The file is in the configuration hashes, by its path. An app that is not a folder (`defineSlots`) has no locale files.
   - **What stays in the default language, by design.** The questions: their instructions and criteria are what the model reads, and their labels are keys (`north`, `november`), so a Spanish caller is asked about in English, with the Spanish words among a span question's choices. A choice option's `means` and a record's `label` are criteria, so they are not worded per locale either.
-- **On the phone.** For an app that names its languages (more than one locale, `voice.locales` or `voice.numbers`, or a default other than en-US), the start document (Twilio's and Telnyx's, and the legacy `/voice`) names the call's language and voice, one `<Language>` per locale it may switch to, and the `locale` parameter; a reconnect starts in the language the call is in by then. Each text frame says its line's language (the locale's `tts`), and a switch sends the `language` frame (`set_language`). An app without locales, and a one-locale en-US app, sends exactly what it did before: no languages, and text frames in `en-US`.
-- **Known limits.**
-  - The chat channel has no way to ask for a locale, so every chat session speaks the default.
-  - `hints` are the call's starting locale's; a mid-call switch keeps them, since the carriers take hints on the relay element only.
-  - That a carrier applies a `<Language>` child's voice and recognizer to the call's first language as well as to a switch is read from Twilio's reference ("map a language code to a set of text-to-speech and speech-to-text settings"), and is still to be confirmed on a live call.
-  - Telnyx's reading of the `<Language>` and `<Parameter>` children, of a text frame's `lang` and of the `language` frame follows Twilio's documented shape and is still to be confirmed on a live Telnyx call (`server/voice/telnyx.ts`).
+- **On the phone and in a chat.** The call's language, its voice and recognizer per carrier, and a switch mid-call are [13.3](#133-languages-on-the-phone); a chat's request for a language is [13.4](#134-web-chat). An app without locales, and a one-locale en-US app, sends exactly what it did before: no languages, and text frames in `en-US`.
+- **Known limits.** The phone's own (hints after a switch, and what is still to be confirmed on a live call) are in [13.3](#133-languages-on-the-phone).
   - Intent labels (`label:` in intents.yaml) stay in the default language, so a Spanish line that says "Claro, puedo ayudarle a {intentLabel}" still ends with the English label.
   - A slot written by hand in code formats its own values: it says them in Spanish only if it reads `ctx.locale` and `display(value, locale)`.
   - Spanish is the one language besides English the slots read and say; another language's sessions read words as English and say values in English until its lexicon and formats are added.
   - Matching a requested locale looks at the language and the whole tag, not at a script subtag: a request for `zh-Hant` in an app with only `zh-Hans` finds `zh-Hans` by its language, `zh`.
-
-  A chat's request for a locale belongs to Phase 7 (Channels), with the web chat. See the roadmap in [design.md](design.md).
 - An app with neither `locale:` in app.yaml nor a `locale/` folder behaves exactly as before: its App has no locales, its sessions carry no locale, and nothing it writes changes. `locale:` alone (as the clinic has) gives the App its locales, the default's and no others.
 
 ## 9. Configuration hashes
@@ -2032,3 +1991,186 @@ An app that keeps a retriever of its own and later moves to the engine's hybrid 
 - **The knowledge record** is on the turn that answered (`kb` in the trace, `TurnOut.kb`) and on the console's source card: the passage, its version, the facts it answered for (`applies`, only those it depends on), its language, the source document and section, the days it is in force, who approved it and when, the first 12 hex characters of both hashes, and `fresh`. A passage that was withheld has its record with `fresh: false`. It is never part of what the model is asked.
 - **The audit** has a `kb_answer` row for each answer: the passage's id, its version, whether it was fresh, its language and the short hashes. It holds nothing of the caller's.
 - **The configuration hashes** include every file of `kb/` that is read (kb.yaml, topics, passages, sources and the locale files), so a call is tied to the exact knowledge it ran under. Drafts, rejected drafts, the approvals log and the index are not in them; the index's own hash is in the retrieval record.
+
+## 13. Channels
+
+The same app answers on the phone, through Twilio, Telnyx or both, and on the web, through the engine's own chat endpoint and the widget a site embeds. The engine knows no carrier and no site: a carrier is a voice provider behind one interface ([CONTRIBUTING.md, "Adding a voice provider"](../CONTRIBUTING.md#adding-a-voice-provider)), and the web chat is our own small protocol. Every choice below is an option with a default. A deployment sets its options in the environment (each app's `.env.example` lists them, commented, with their defaults); an app sets its own in app.yaml, intents.yaml and identity.yaml, and `pnpm check` holds them to the app. An app and a deployment that set none of them behave as they did before any of this existed: Twilio only, the app's default language, no web chat.
+
+### 13.1 The options
+
+| Choice | Where it is set | Default | When to choose otherwise |
+|---|---|---|---|
+| Which carriers answer | `VOICE_PROVIDERS` (env), a comma list of `twilio`, `telnyx` | `twilio` | Add `telnyx` to answer Telnyx numbers too, or name it alone. |
+| A carrier's secret | `TWILIO_AUTH_TOKEN`, `TELNYX_PUBLIC_KEY` (env) | none; required for a listed carrier only | Always, for each carrier listed. The Telnyx key is the account's base64 Ed25519 public key. |
+| Webhook signatures | `SIGNATURE_CHECK` (env), `on` or `off` | `on` | `off` only to post webhooks by hand on a laptop. |
+| Twilio's voice | `TTS_PROVIDER` and `TTS_VOICE` (env), set together | Twilio's default voice | To choose the voice of the app's default locale on Twilio (`Google`, `en-US-Neural2-F`). |
+| Telnyx's voice | `TELNYX_VOICE` (env), a Telnyx voice name | Telnyx's default voice | To choose the voice of the default locale on Telnyx (`Telnyx.Ultra.Callie`). |
+| Twilio's recognizer | `TWILIO_TRANSCRIPTION_PROVIDER`, `TWILIO_SPEECH_MODEL` (env) | `Deepgram`, and `flux` with Deepgram (no model with another provider) | When the app's default locale is not English (flux hears English), or to try another model. |
+| Telnyx's recognizer | `TELNYX_TRANSCRIPTION_PROVIDER` (env) | Telnyx's own default | To name `deepgram`, `google` or `telnyx`. |
+| Reconnects after a dropped relay | `RECONNECT_LIMIT` (env) | `2` | Fewer to hand a troubled call to a person sooner. |
+| The language a call starts in | `voice.numbers` (app.yaml): number called to locale | the app's default locale | A number per language. |
+| A locale's languages on the phone | `voice.locales.<tag>.tts`, `.transcription` (app.yaml) | the locale's tag | When the carrier needs a regional tag (`es` spoken as `es-US`, heard as `es-MX`). |
+| A locale's voice, per carrier | `voice.locales.<tag>.voices.<carrier>` (app.yaml): a name, or for Twilio `{ voice, provider }` | the deployment's voice for the default locale; the carrier's default for any other | For every locale besides the default, so it is not read by the carrier's default voice. |
+| A locale's recognizer, per carrier | `voice.locales.<tag>.recognition.<carrier>` (app.yaml): `{ provider, model }` | the deployment's for the default locale; the carrier's default for any other | When a language needs a recognizer the carrier does not default to. |
+| A locale's recognition hints | `voice.locales.<tag>.hints` (app.yaml) | `voice.hints` | Words of that language. |
+| Switching language mid-call | an informational intent with `locale:` (intents.yaml) | no switch | When callers may ask for another language. |
+| Whether web chat is served | `CHAT` (env), `on` or `off` | `off` | To serve `/chat`. |
+| Which sites may open a chat | `CHAT_ALLOWED_ORIGINS` (env): exact origins, comma-separated | none; required when `CHAT=on` | Always, with chat on: the sites whose pages carry the widget. `*` only on a laptop. |
+| How long a quiet chat lives | `CHAT_IDLE_MS` (env) | `1800000` (30 minutes) | Shorter for a busy server, longer for slow conversations. |
+| How many chats at once | `CHAT_MAX_SESSIONS` (env) | `1000` | To fit the server's size. A limit per visitor is the reverse proxy's. |
+| How a chat user signs in | `CHAT_SIGNIN` (env): `none`, `jwt` or `mock`; with `jwt`, `CHAT_JWKS_URL`, `CHAT_ISSUER`, `CHAT_AUDIENCE` | `none` | `jwt` when the site has an identity provider; `mock` on a laptop only. |
+| Which token claim names the subject | `signIn.claim` (identity.yaml); `principals.fromClaims` in code for anything else | `sub` | When the site's tokens carry the account id elsewhere, or a delegate signs in. |
+| Whether the server serves the widget's script | `WIDGET` (env), `on` or `off`; `WIDGET_FILE` | `off`; `node_modules/@dialogwright/widget/dist/dialogwright-widget.js` | On a laptop or a simple deployment. A production site loads the script from its own CDN. |
+| The widget's look, words and behaviour | `data-*` attributes or `DialogWright.mount({...})`; CSS custom properties | neutral theme following the visitor's colour scheme, English words | Always, to match the site: [13.7](#137-the-widget). |
+
+The startup line names what is in force (`voice providers`, each carrier's voice and recognizer, `chat on (...)`, the sign-in method, `widget on (...)`), never a secret's value: a secret is shown by its length.
+
+### 13.2 Serving voice: Twilio, Telnyx or both
+
+Each carrier listed in `VOICE_PROVIDERS` answers on three paths of its own: `POST /voice/<carrier>` (the number's voice webhook), `POST /cr-action/<carrier>` (the relay's end-of-session callback) and the WebSocket `/conversation/<carrier>`. The unprefixed `/voice`, `/cr-action` and `/conversation` stay Twilio's, so a Twilio number set up before carriers were plug-ins keeps working with no change in the Twilio console. A carrier not listed answers 404 on its paths, and an unknown name in `VOICE_PROVIDERS` is refused at startup.
+
+- **Twilio**: point the number's voice webhook at `https://<PUBLIC_HOST>/voice/twilio` (or `/voice`). Webhooks are signed with the account's auth token, `TWILIO_AUTH_TOKEN`.
+- **Telnyx**: create a TeXML application whose voice URL is `https://<PUBLIC_HOST>/voice/telnyx`, set `VOICE_PROVIDERS=telnyx` (or `twilio,telnyx`) and `TELNYX_PUBLIC_KEY`, the account's public key as Telnyx shows it (base64). Webhooks are signed with Ed25519 over the timestamp and the body; one more than five minutes away from the server's clock is refused. Some of what Telnyx does is not in its published pages yet, and is written down as assumptions in `server/voice/telnyx.ts` to confirm on a live call ([docs/live-checks.md](live-checks.md)).
+
+A webhook's answer starts the relay with a one-time token in the socket's URL. The token is tied to the call and to the carrier that answered it: a Telnyx call's token opens no Twilio socket, and a Twilio call's opens no Telnyx one. When the socket drops mid-call, the carrier posts the action callback and the call reconnects, up to `RECONNECT_LIMIT` times, then goes to a person with an apology; the call resumes where it was, in the language it is in by then.
+
+Each carrier names voices and recognizers its own way, so each has its own settings, and one carrier's never reaches another: `TTS_PROVIDER` and `TTS_VOICE` (both or neither) and `TWILIO_TRANSCRIPTION_PROVIDER` and `TWILIO_SPEECH_MODEL` are Twilio's; `TELNYX_VOICE` and `TELNYX_TRANSCRIPTION_PROVIDER` are Telnyx's. A Telnyx voice name carries its engine (`Telnyx.Ultra.Callie`, `AWS.Polly.Joanna-Neural`), so Telnyx has no provider variable; a Twilio-style name in `TELNYX_VOICE` is refused at startup. These settings are for the app's default locale; [13.3](#133-languages-on-the-phone) says how an app names them for each of its languages. The dashboard names the carrier of each call.
+
+### 13.3 Languages on the phone
+
+An app that speaks more than one language ([section 8](#8-locales)) says in app.yaml how the phone speaks and hears each, and which number a call starts in which language. Every key is optional. An illustration, on the library's languages (its own app.yaml sets only `hints`):
+
+```yaml
+# app.yaml
+voice:
+  hints: [renew, hold, branch, Riverside]
+  numbers:
+    "+15555550142": es        # a call to this number starts in Spanish
+  locales:
+    en-US:
+      voices: { twilio: en-US-Journey-O, telnyx: Telnyx.Ultra.Callie }
+    es:
+      tts: es-US              # the language the voice speaks; default: the locale's tag
+      transcription: es-US    # the language speech is heard in; default: the locale's tag
+      voices:
+        twilio: { voice: es-US-Neural2-A, provider: Google }   # a Twilio voice with its own provider
+        telnyx: Telnyx.Ultra.Asher
+      hints: [renovar, reserva, sucursal]   # default: voice.hints
+      recognition:            # the speech recognizer, per carrier
+        twilio: { provider: Deepgram, model: nova-3-general }
+        telnyx: { provider: google }
+```
+
+- `voice.numbers` maps a number called (E.164, in quotes: unquoted, YAML reads `+1555...` as a number) to the locale its calls start in. Any other number starts in the default locale.
+- `voice.locales.<tag>` is keyed by the app's own locale tags. `tts` and `transcription` are language tags; the start document names the call's language by them, and each line's text frame says its `tts`.
+- `voices` names a voice per carrier, in that carrier's own names. A Twilio voice written as a name alone is one of the deployment's `TTS_PROVIDER` (or of Twilio's default provider when that is unset); written as `{ voice, provider }` it names its own provider (`Google`, `Amazon` or `ElevenLabs`), so the app does not depend on how the deployment is set. A Telnyx voice is always a name alone, since its name carries its provider. An app's voice wins over the deployment's (`TTS_VOICE`, `TELNYX_VOICE`), which is used for the default locale only: another locale with no voice of its own gets the carrier's default voice for its language, never the default locale's voice reading another language.
+- `recognition` names the speech recognizer per carrier: `provider` and `model`, in the carrier's own names. On Twilio they are `transcriptionProvider` and `speechModel`; on Telnyx `provider` is `transcriptionProvider`, and a `model` is written on the locale's `<Language>` only, the one place Telnyx documents a `speechModel`. The app's recognizer for a locale wins, as a whole: a field it leaves out is the carrier's default, and `{}` asks for the carrier's default outright. Without one, the default locale has the deployment's recognizer and every other locale the carrier's default. The deployment's stops at the default locale on purpose: it is chosen for one language (Deepgram's flux is for English), and a recognizer that does not hear a language is worse than the carrier's default for it. A deployment whose app's default locale is not English should set `TWILIO_SPEECH_MODEL`, or the app should name the default locale's `recognition`.
+- `hints` replaces `voice.hints` for a call that starts in that locale.
+- **What the carrier is sent.** For an app that names its languages (more than one locale, `voice.locales` or `voice.numbers`, or a default other than en-US), the start document (Twilio's and Telnyx's, and the legacy `/voice`) names the call's language, one `<Language>` per locale the call may switch to, and a `locale` parameter the relay hands back when the call starts. A `<Language>` child inherits whatever it leaves out from the relay element, so a voice or recognizer goes on the relay element only when every language has the same one, and otherwise on each language's own `<Language>`; a language with none of its own then gets the carrier's default. Each text frame says its line's language, and a switch sends the `language` frame (`set_language`). A one-locale en-US app with none of these keys, and an app without locales, writes the same documents as before languages: no languages, and text frames in `en-US`.
+- **`pnpm check` refuses**, each in one line with its fix: a locale the app does not have (`add locale/<tag>/ or use one of ...`), a number that is not E.164, a carrier the engine does not know under `voices` or `recognition` (`use twilio or telnyx`), a `{ voice, provider }` for a carrier other than Twilio, a Twilio provider that is not one of its three, a `tts` or `transcription` that is not a language tag, and a recognizer `provider` or `model` that is not a plain name (letters, digits, dots, hyphens and underscores). `validateApp` checks the same for an app built in code.
+
+**Switching language mid-call.** An informational intent with `locale:` switches the call to one of the app's locales, with a `promptId` said in it, or alone (never with a `passage`). No intent switches unless the app writes one:
+
+```yaml
+# intents.yaml
+intents:
+  spanish:
+    kind: informational
+    label: continue in Spanish
+    criteria: The caller asks to continue in Spanish, or says they speak Spanish
+    locale: es
+    promptId: switched_to_spanish   # "Muy bien, seguimos en español." in locale/es/prompts.yaml
+```
+
+Choosing it, by words, by its menu key or on the yes to an unsure reading, sets the session's locale. On a phone call the turn first asks the relay to speak and hear that locale (`set_language`, with its `tts` and `transcription` from `voice.locales`), so the line and the question the call resumes on are said, and the caller's next words heard, in it. Values already collected are said in the new language from then on (each slot's `display(value, locale)`), those heard in the same breath as the switch included. A chat switches its lines only. Choosing the locale the call is already in says the line and changes nothing else. `pnpm check` refuses a locale the app does not have, `locale:` on a form or control intent, and `locale:` with a `passage`. The app map draws the switch as an intent of its own. A scripted call or chat can start in a locale (a scenario's optional `locale`), to test the language without a number.
+
+**Known limits.** These are still to be confirmed on live calls, or are the carriers' own; [docs/live-checks.md](live-checks.md) is the checklist.
+
+- A call's `hints` are its starting locale's: a mid-call switch keeps them, since the carriers take hints on the relay element only.
+- That a carrier applies a `<Language>` child's voice and recognizer to the call's first language as well as to a switch is read from Twilio's reference ("map a language code to a set of text-to-speech and speech-to-text settings"), and is to be confirmed on a live call, on Twilio and on Telnyx.
+- Telnyx's reading of the `<Language>` and `<Parameter>` children, of a text frame's `lang` and of the `language` frame follows Twilio's documented shape, and is to be confirmed on a live Telnyx call.
+- The no-input wait is cancelled at the caller's first syllable by the relay's partial prompts. That a locale moved off Deepgram flux keeps sending them is to be confirmed live.
+
+### 13.4 Web chat
+
+`CHAT=on` serves the engine's own web chat on the WebSocket `/chat`, to the pages of the sites in `CHAT_ALLOWED_ORIGINS`. Off (the default), `/chat` is a 404 like any unknown path, and nothing about the server changes. Each chat is a session on the `WEB_CHAT` channel, run through the same turn path as a call: the same app, policy, gate, trace, audit (`channel: chat`) and console, and the same handoff summary. A chat gets the app's lines as words, never recorded clips, and is never asked for a keypad key.
+
+- **Who may open one.** The page's `Origin` is checked against `CHAT_ALLOWED_ORIGINS` before the upgrade (403 otherwise, and a request with no `Origin` is refused). Origins are exact (scheme, host and any port, no path); `*` is allowed only with `PUBLIC_HOST=localhost`.
+- **The wire** is our own JSON, one message per WebSocket frame (`src/channel/chat/protocol.ts`, version 1). The client sends `start` (`v: 1`, and optionally `locale`, `token`, `resume`) within 10 seconds, then `text` (1 to 500 characters), `sign_in` (`token`) and `ping`. The server sends `ready` (`session`, `resume`, `locale`), `say` (`text`, `lang`), `transfer` (`reason`, never the values collected), `end`, `signed_in` (`level`), `pong` and `error` (`code`: `bad_message`, `too_long`, `not_allowed`, `sign_in_failed`, `session_unknown`, `busy`, `server_error`). A refusal names the field and the rule, never the value. A message is at most 16 KiB; ten malformed ones close the socket.
+- **A drop is not the end.** `start { resume }` reopens the chat with the resume token the last `ready` gave (a fresh one each time) until `CHAT_IDLE_MS` of quiet ends it (recorded as `abandoned`). A second resume takes the chat over and closes the socket it replaced. A resume of a chat that has ended starts a new one.
+- **Limits.** At most `CHAT_MAX_SESSIONS` chats are live at once, a dropped one waiting for its resume included: over it a new `start` is answered `busy` and closed, and a resume is never refused for it. A chat holds at most five messages waiting for their reply; past that a message is answered `busy`. A limit per visitor is the reverse proxy's to keep: behind one, every chat comes from its address.
+- **A transfer** sends the line, `transfer` and `end`, and closes; what happens next is the site's (the widget's `onTransfer`).
+- **The language.** `start.locale` asks for a language, matched to the app's locales as a call's is ([section 8](#8-locales)): `es-MX` finds `es`, and a language the app does not speak keeps the default. `ready.locale` names the one chosen, and each `say` carries its line's language.
+
+An app may still mount chat pages of its own (`AppRoute`, `chatTurn.ts`); the engine's endpoint does not change them.
+
+### 13.5 Sign-in on the web chat
+
+`CHAT_SIGNIN` says how a chat user proves who they are:
+
+- `none` (the default): no sign-in. A token on `start` or in `sign_in` is answered `not_allowed`, and the chat goes on as it was.
+- `jwt`: a signed token from the site's identity provider (an OpenID Connect ID token, say), passed by the page. It is verified against the provider's published keys at `CHAT_JWKS_URL` (https only), with `iss` equal to `CHAT_ISSUER`, `CHAT_AUDIENCE` among its `aud`, and its times checked with 60 seconds of skew. RS256 (2048-bit keys or more), ES256 (P-256) and EdDSA are taken; `none`, HMAC and a `crit` header are refused. The keys are fetched with a 5 second timeout and a 256 KiB cap, cached for the response's `max-age` (default 10 minutes, at most a day), and fetched again for a key id not seen, at most once every 30 seconds; when a fetch fails the cached keys are kept.
+- `mock`: `mock:<id>`, unsigned, for a laptop: refused at startup unless `PUBLIC_HOST=localhost`.
+
+A token never appears in a log line, an error or the frame log.
+
+**From a token to a principal.** The app decides who a verified token names, in identity.yaml's `signIn` and, when that is not enough, in code:
+
+- `signIn.level` is what a sign-in proves (the top of the ladder, [3.6](#36-the-identity-ladder)); an app without `signIn` takes no sign-in.
+- `signIn.claim` names the token claim that carries the subject's id, as the token carries it: `account_id` beside `level` under `signIn`, or a namespaced `https://example.com/account`; default `sub`. A whole number is read as its digits. The id is looked up with `code.principals.subjectPrincipal(id, level)`.
+- For anything one token claim cannot say (a delegate signing in, a tenant to check, two token claims together), set `code.principals.fromClaims`: it is asked first, with the verified token claims, and returns the principal, or null to fall back to `signIn.claim`. Code that throws is a failed sign-in (`sign_in_failed`), logged.
+- What comes back is checked as any signed-in principal is: a subject at the sign-in level, or a delegate of a declared kind and role.
+- A subject may sign in on `start` or later with `sign_in`; the chat is answered `signed_in` when the core takes it, and a second sign-in is refused. A delegate's token is taken only on `start`, and the chat then begins as theirs, as the harness's `as` does.
+
+### 13.6 Serving the widget, and where its script comes from
+
+The widget is its own package, `@dialogwright/widget` (`packages/widget`): a script with no runtime dependencies that carries no engine code and speaks only the chat wire. `pnpm --filter @dialogwright/widget build` writes `dist/dialogwright-widget.js` (a classic script: a `<script>` tag mounts it from its `data-*` attributes and it sets `window.DialogWright`) and `dist/dialogwright-widget.mjs` (an ES module for a site's own bundler), about 5.6 KB gzipped against a 15 KB budget a test enforces.
+
+- **In production**, the site loads the script from its own CDN, versioned and cached as it caches its other scripts; from a host it does not control, with a Subresource Integrity hash (`integrity` and `crossorigin` on the tag).
+- **On a laptop or a simple deployment**, `WIDGET=on` makes the engine serve `WIDGET_FILE` on `GET /widget.js` (uncached, `nosniff`, read on each request). The default file is `node_modules/@dialogwright/widget/dist/dialogwright-widget.js` from where the server runs, so an app that depends on the widget package (as the utility does) needs only the build; another names the built file. A file that does not exist is refused at startup. `/widget.js` is public by design, through a tunnel too, since a site's pages load it.
+
+The utility's `/chat-demo` page is the worked example: a fictional account page with the widget on it, mounted only in laptop mode ([its README](../apps/utility/README.md#try-the-web-chat-on-your-laptop)).
+
+### 13.7 The widget
+
+One script tag, its options as `data-*` attributes:
+
+```html
+<script src="https://cdn.example.com/dialogwright-widget.js"
+        data-endpoint="wss://chat.example.com/chat"
+        data-title="Help" data-position="bottom-left"></script>
+```
+
+Or from code, for the options only code can give (a sign-in token, what a transfer does):
+
+```html
+<script src="https://cdn.example.com/dialogwright-widget.js"></script>
+<script>
+  DialogWright.mount({
+    endpoint: 'wss://chat.example.com/chat',
+    getToken: async () => mySite.idToken(),
+    onTransfer: (reason) => mySite.openLiveChat(reason),
+  });
+</script>
+```
+
+The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`, and, for `getToken`, sign in with `CHAT_SIGNIN=jwt` against the same identity provider.
+
+| Option | `data-` attribute | Default | What it does |
+|---|---|---|---|
+| `endpoint` | `data-endpoint` | required | The chat endpoint, `wss://host/chat`; an `https:` or page-relative URL is given the socket scheme. |
+| `locale` | `data-locale` | the page's `<html lang>`, else none | The language asked for; the server answers in the app's closest one. |
+| `title` | `data-title` | "Chat with us" | The panel's heading. |
+| `strings` | `data-strings` (JSON) | English | Any of the widget's 21 words (`packages/widget/src/strings.ts`). |
+| `position` | `data-position` | `bottom-right` | `bottom-right`, `bottom-left`, or `inline` (inside `container`, always open). |
+| `container` | `data-container` (a CSS selector) | none | Where an `inline` widget goes. |
+| `startOpen` | `data-start-open` | `false` | Open, and connect, on load; otherwise it connects when first opened. |
+| `getToken` | code only | none | The site's sign-in token, or null; with it, the panel offers sign-in. |
+| `onTransfer` | code only | the panel says `transferred` | What a transfer does on the site. |
+| `onEvent` | code only | none | Every event the client reports, after the panel has shown it. |
+| `backoffMs` | code only | `[500, 1000, 2000, 5000]` | Delays between reconnect attempts, in ms, the last repeating. |
+| `maxReconnects` | code only | no limit | Reconnects in a row a dropped chat may try before the panel says `unavailable`. |
+
+**Theming.** The panel renders in a shadow root on a `dialogwright-chat` element, so a site's CSS cannot break it; it is themed with CSS custom properties on that element: `--dw-accent`, `--dw-accent-fg`, `--dw-bg`, `--dw-fg`, `--dw-user-bg`, `--dw-agent-bg`, `--dw-radius`, `--dw-font` and `--dw-z`. Colours a site leaves unset follow the visitor's light or dark scheme.
+
+**Behaviour.** A dropped chat reconnects after each step of `backoffMs` and resumes, for as long as the page is open unless `maxReconnects` says otherwise; what is typed meanwhile is sent once it is back. A chat that never starts (an origin the server refuses, an endpoint it cannot reach, a full server) is tried once per step of `backoffMs`, then the panel says `unavailable`, with no loop. A chat whose session has ended starts afresh (`restarted`), signed in again with the site's token if it was signed in. A site that wants its own interface uses the client alone, `createChatClient`. The package's [README](../packages/widget/README.md) has the events, the words and the accessibility notes.
