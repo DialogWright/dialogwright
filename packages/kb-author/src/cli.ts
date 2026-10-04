@@ -3,13 +3,18 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CrawlError, DEFAULT_MAX_PAGES, DEFAULT_RATE_MS } from './crawl/crawl';
+import type { Drafter } from './draft/drafter';
+import { draftCommand } from './draft/command';
 import { formatReport, ingest, IngestError, isUrl } from './ingest';
+import { todayUtc } from './args';
 
 /**
- * The authoring commands (the `dialogwright-kb` bin; the workspace's `pnpm kb:ingest`):
+ * The authoring commands (the `dialogwright-kb` bin; the workspace's `pnpm kb:ingest` and `kb:draft`):
  *
  *   kb:ingest <folder | file | url> [--dir <app folder>] [--depth N] [--include <glob>]...
  *             [--max-pages M] [--rate <ms>] [--allow-host <host>]... [--dry-run] [--json]
+ *   kb:draft [dir] [--source <doc>]... [--topic-hint <text>]... [--model <id>] [--all] [--dry-run] [--json]
+ *             (./draft/command.ts)
  *
  * It reads a folder (recursively), a file or a website into sections and writes each document to
  * the app's kb/sources/<doc>.yaml, saying what was added, changed and unchanged. `--dir` is the app
@@ -29,6 +34,10 @@ export interface Io {
   fetch?: typeof globalThis.fetch;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  /** kb:draft's drafter, in place of the Claude adapter (a test's fake). */
+  drafter?: (model: string | undefined) => Drafter;
+  /** The environment (kb:draft reads CI and, through the Claude adapter, ANTHROPIC_API_KEY). Default: process.env. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** The package's version, for the User-Agent. */
@@ -55,8 +64,6 @@ const stdio = (): Io => ({
   err: (line) => console.error(line),
   cwd: process.env.INIT_CWD ?? process.cwd(),
 });
-
-const todayUtc = (): string => new Date().toISOString().slice(0, 10);
 
 /** Where the sources go: the app folder and its kb folder, from --dir (or the working directory). */
 function placeOf(dir: string): { appDir: string; kbDir: string } | string {
@@ -162,7 +169,8 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
 export async function main(argv: readonly string[], io: Io = stdio()): Promise<number> {
   const [command, ...rest] = argv;
   if (command === 'kb:ingest') return ingestCommand(rest, io);
-  io.err(`unknown command ${command ?? '(none)'}\n${USAGE}`);
+  if (command === 'kb:draft') return draftCommand(rest, io);
+  io.err(`unknown command ${command ?? '(none)'}: the commands are kb:ingest and kb:draft\n${USAGE}`);
   return 2;
 }
 

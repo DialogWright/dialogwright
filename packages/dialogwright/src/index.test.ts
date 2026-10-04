@@ -23,7 +23,7 @@ describe('the package entry', () => {
       // the slot library
       'defineSlot', 'defineSlots', 'slotsJsonSchema', 'buildSlot', 'SlotConfigError', 'isSlotConfigError', 'BUILT_IN_SLOT_TYPES', 'registerSlotType',
       // the knowledge base
-      'defineKnowledge', 'knowledgeProblems', 'loadKnowledgeFolder', 'resolvePassage', 'approvalHashOf', 'sourceHashOf', 'kbSourceOf', 'kbAuditRow', 'shortHash', 'KB_SHORT_HASH',
+      'defineKnowledge', 'knowledgeProblems', 'loadKnowledgeFolder', 'resolvePassage', 'approvalHashOf', 'sourceHashOf', 'collapseWhitespace', 'approveOne', 'kbPlaceOf', 'pendingDrafts', 'proposedTopics', 'excerptInSource', 'notAPerson', 'APPROVALS_LOG', 'PENDING_TOPICS_FILE', 'parseKbFile', 'kbSourceOf', 'kbAuditRow', 'shortHash', 'KB_SHORT_HASH',
       'isTopicSlot', 'RETRIEVE_BUDGET_MS',
       'KeywordRetriever', 'DenseRetriever', 'HybridRetriever', 'defaultRetriever', 'StaticEmbedder', 'MemoryVectorIndex', 'POTION_BASE_8M', 'loadPinnedModel', 'buildIndex', 'bakeoff',
       'kbCompletion', 'kbAnswerTool', 'readKbAnswer', 'KB_ANSWER_PROMPT', 'KB_UNAVAILABLE_PROMPT', 'KB_ANSWER_VAR', 'KB_TOPIC_PARAM',

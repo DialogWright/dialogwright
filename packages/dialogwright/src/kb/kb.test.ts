@@ -573,7 +573,7 @@ describe('the kb/ folder: its layout, read as safely as the app folder', () => {
 
   it('anything else in kb/ is a problem, apart from hidden entries and notes that are not YAML', async () => {
     expect(await kbLines({ 'kb/topic.yaml': 'x: 1\n', 'kb/passage/x.yaml': 'x: 1\n', [P + 'notes.txt']: 'x', [P + 'old.yml']: 'x: 1\n', [P + 'archive/x.yaml']: 'x: 1\n', 'kb/README.md': 'notes', 'kb/.index/x.json': '{}' })).toEqual([
-      'kb/passage:1:1  (file)  kb/passage is not a folder the knowledge base has; its folders are passages, sources, locale and pending  ->  rename it to passages, or delete it, or move it out of kb',
+      'kb/passage:1:1  (file)  kb/passage is not a folder the knowledge base has; its folders are passages, sources, locale, pending and rejected  ->  rename it to passages, or delete it, or move it out of kb',
       'kb/passages/archive:1:1  (file)  kb/passages/archive is a folder; kb/passages holds one .yaml file per passage  ->  move its files into kb/passages, or out of the knowledge base',
       'kb/passages/notes.txt:1:1  (file)  kb/passages/notes.txt is not a .yaml file; kb/passages holds one .yaml file per passage  ->  delete it, or move it out of the knowledge base',
       'kb/passages/old.yml:1:1  (file)  kb/passages/old.yml ends in .yml; the knowledge base\'s files end in .yaml  ->  rename it to old.yaml',

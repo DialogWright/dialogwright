@@ -26,7 +26,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "kb:ingest": "tsx src/cli.ts kb:ingest"
+    "kb:ingest": "tsx src/cli.ts kb:ingest",
+    "kb:draft": "tsx src/cli.ts kb:draft"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

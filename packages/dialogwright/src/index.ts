@@ -55,8 +55,16 @@ export { loadKnowledgeFolder } from './define/load';
 export type { KnowledgeFolder } from './define/load';
 export { resolvePassage } from './kb/resolve';
 export type { ResolveInput } from './kb/resolve';
-export { approvalHashOf, sourceHashOf } from './kb/hash';
+export { approvalHashOf, collapseWhitespace, sourceHashOf } from './kb/hash';
 export type { ApprovedContent } from './kb/hash';
+// Authoring the knowledge base (pnpm kb:approve and kb:status, and the @dialogwright/kb-author tools that
+// draft, review and refresh it): approving one passage or draft as the command does, and what waits.
+export { APPROVALS_LOG, approveOne, excerptInSource, formatApproveResult, notAPerson, pendingDrafts, placeOf as kbPlaceOf, proposedTopics } from './kb/approval';
+export type { ApprovalLogLine, ApproveOptions, ApproveResult, KbPlace, PendingDraft, ProposedTopic } from './kb/approval';
+export { PENDING_TOPICS_FILE } from './kb/folder';
+export { parseKbFile } from './define/load';
+export { KB_KINDS } from './kb/schema';
+export type { KbKind, KbPassageYaml, KbPendingYaml, KbSourceYaml, KbTopicsYaml } from './kb/schema';
 // The knowledge record a turn reports (TurnOut.kb): written to the trace, given to a tool's audit hook, shown on the console.
 export { KB_SHORT_HASH, kbAuditRow, kbSourceOf, shortHash } from './kb/record';
 export type { KbSourceOptions } from './kb/record';

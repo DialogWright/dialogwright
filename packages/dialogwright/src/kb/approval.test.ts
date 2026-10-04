@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -319,6 +319,24 @@ describe('kb:status', () => {
         'pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved',
       ],
     });
+  });
+
+  it('lists the topics drafts propose (kb/pending/topics.yaml, never a draft), and passes over rejected drafts', async () => {
+    const kb = kbCopy();
+    writeFileSync(join(kb, 'pending/topics.yaml'), '# yaml-language-server: $schema=../../../../../schemas/kb-topics.schema.json\nmeeting_rooms:\n  title: Meeting rooms\n  keywords: [meeting room]\n');
+    mkdirSync(join(kb, 'rejected'));
+    writeFileSync(join(kb, 'rejected/late-fees-junior-2025.yaml'), `${DRAFT}rejected: { by: Jane Smith, on: ${TODAY}, reason: Says nothing new }\n`);
+    // A knowledge base with both loads as it did, and pnpm kb:approve takes neither for a draft.
+    expect(loadKnowledgeFolder(kb, 'en-US').problems).toEqual([]);
+    expect((await approve(kb, 'topics', '--by', 'Jane Smith', '--owner', 'Patron Services')).err[0]).toBe('topics: refused: there is no passage or draft "topics" (kb/passages, kb/locale/<tag>/passages, kb/pending)');
+    const run = await bin(['kb:status', kb], kb);
+    expect(run.out[0]).toBe(`${kb}: 7 passages (7 approved and fresh, 0 stale, 0 unapproved), 0 pending drafts`);
+    expect(run.out.slice(-4)).toEqual([
+      'proposed topics, not yet in topics.yaml (1):',
+      '  meeting_rooms  "Meeting rooms"',
+      '    -> accept, rename or merge each in pnpm kb:review (kb/pending/topics.yaml); a draft of a proposed topic is approved after its topic',
+      'pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved',
+    ]);
   });
 
   it('says when all is approved and fresh, from the app folder; and why a knowledge base does not load', async () => {

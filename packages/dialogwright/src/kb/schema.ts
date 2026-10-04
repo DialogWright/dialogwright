@@ -11,6 +11,8 @@ import { checkAlways, identifier, matching, text, unique } from '../define/schem
  *   kb/locale/<tag>/topics.yaml         a locale's titles, keywords and example questions
  *   kb/locale/<tag>/passages/<id>.yaml  a locale's passages (usually translations of the default's)
  *   kb/pending/<id>.yaml                drafts waiting for review: never loaded at run time (pnpm kb:approve moves one into passages/)
+ *   kb/pending/topics.yaml              topics the drafts propose, as topics.yaml has them: never loaded (pnpm kb:review accepts one into topics.yaml)
+ *   kb/rejected/<id>.yaml               drafts a reviewer rejected, with who, when and why: never loaded
  *   kb/approvals.jsonl                  every approval, one JSON line each, appended by pnpm kb:approve and never rewritten
  *
  * The zod schemas here are the source of truth; the JSON Schemas under packages/dialogwright/schemas

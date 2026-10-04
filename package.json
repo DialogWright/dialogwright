@@ -20,6 +20,7 @@
     "kb:bakeoff": "pnpm --filter dialogwright kb:bakeoff",
     "kb:approve": "pnpm --filter dialogwright kb:approve",
     "kb:status": "pnpm --filter dialogwright kb:status",
-    "kb:ingest": "pnpm --filter @dialogwright/kb-author kb:ingest"
+    "kb:ingest": "pnpm --filter @dialogwright/kb-author kb:ingest",
+    "kb:draft": "pnpm --filter @dialogwright/kb-author kb:draft"
   }
 }

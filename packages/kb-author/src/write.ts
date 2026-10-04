@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { sourceHashOf } from 'dialogwright';
 import { Document, parse } from 'yaml';
+import { schemaPathFrom } from './kbPlace';
 import { distinct, type ExtractedSection } from './sections';
 
 /**
@@ -98,12 +99,7 @@ export function existingSources(sourcesDir: string): Existing[] {
 
 /** The editor schema comment for a source file in `sourcesDir`: the path to dialogwright's kb-source schema, when it can be found above it. */
 export function schemaPathFor(sourcesDir: string): string | undefined {
-  for (let at = dirname(sourcesDir); ; at = dirname(at)) {
-    for (const candidate of [join(at, 'packages', 'dialogwright', 'schemas', 'kb-source.schema.json'), join(at, 'node_modules', 'dialogwright', 'schemas', 'kb-source.schema.json')]) {
-      if (existsSync(candidate)) return relative(sourcesDir, candidate).split(sep).join('/');
-    }
-    if (dirname(at) === at) return undefined;
-  }
+  return schemaPathFrom(sourcesDir, 'kb-source');
 }
 
 /** A source document as YAML. */

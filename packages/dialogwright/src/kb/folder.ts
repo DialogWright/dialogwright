@@ -15,7 +15,8 @@ import { indexFileOf, indexHashOf, MAX_INDEX_BYTES, parseIndex, type KbIndexRead
  * What this adds is the folder's layout: kb.yaml and topics.yaml are required; passages/ and
  * sources/ hold one .yaml file each, named by its id; locale/<tag>/ holds a locale's topics.yaml and
  * passages/; pending/ holds drafts, which are never read (only their names, so a draft cannot take
- * an approved passage's id); approvals.jsonl is the log of approvals, for people, never read;
+ * an approved passage's id), and pending/topics.yaml the topics drafts propose; rejected/ holds the
+ * drafts a reviewer rejected, never read; approvals.jsonl is the log of approvals, for people, never read;
  * hidden entries (.index/, .DS_Store) are skipped. Anything else is a problem. Every file read is hashed into the app's configuration hashes by `io.parse`.
  *
  * The rules across files (references, a passage for every caller, overlaps, approvals) are ./rules.ts's; the loader runs
@@ -45,6 +46,9 @@ export interface KbFolderIo {
   readData?(file: string, maxBytes: number): { kind: 'ok'; text: string } | { kind: 'missing' } | { kind: 'problem'; problem: Problem };
 }
 
+/** The file in pending/ that holds the topics drafts propose, waiting for review: never a draft, never read at run time. */
+export const PENDING_TOPICS_FILE = 'topics.yaml';
+
 /** How many entries one folder of the knowledge base may have: reading is bounded. */
 export const MAX_KB_ENTRIES = 5000;
 
@@ -59,6 +63,8 @@ const KB_ENTRIES: Readonly<Record<string, 'file' | 'dir'>> = {
   sources: 'dir',
   locale: 'dir',
   pending: 'dir',
+  // Drafts a reviewer rejected, each with why (pnpm kb:review): a record for people, never read here.
+  rejected: 'dir',
   // Every approval, appended by pnpm kb:approve: a record for people, never read here.
   'approvals.jsonl': 'file',
 };
@@ -94,7 +100,7 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
     const want = KB_ENTRIES[entry.name];
     const path = `${base}/${entry.name}`;
     if (want === undefined) {
-      if (entry.dir) whole(path, `${path} is not a folder the knowledge base has; its folders are passages, sources, locale and pending`, `${hint(entry.name, ['passages', 'sources', 'locale', 'pending'])}delete it, or move it out of ${base}`);
+      if (entry.dir) whole(path, `${path} is not a folder the knowledge base has; its folders are passages, sources, locale, pending and rejected`, `${hint(entry.name, ['passages', 'sources', 'locale', 'pending', 'rejected'])}delete it, or move it out of ${base}`);
       else if (/\.ya?ml$/.test(entry.name)) whole(path, `${path} is not a file the knowledge base reads; its files are kb.yaml and topics.yaml, and a folder for each kind of file`, `${hint(entry.name.replace(/\.yml$/, '.yaml'), ['kb.yaml', 'topics.yaml'])}delete it, or move it out of ${base}`);
       continue;
     }
@@ -190,9 +196,11 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
   }
 
   // Drafts are never read; one named like a passage would take its place when it is approved.
+  // pending/topics.yaml holds the topics drafts propose (pnpm kb:draft), not a draft.
   const pending = io.list(`${base}/pending`);
   if (Array.isArray(pending)) {
     for (const entry of visible(pending)) {
+      if (entry.name === PENDING_TOPICS_FILE) continue;
       const id = entry.name.replace(/\.ya?ml$/, '');
       const approved = seen.get(id);
       if (!entry.dir && id !== entry.name && approved !== undefined) {

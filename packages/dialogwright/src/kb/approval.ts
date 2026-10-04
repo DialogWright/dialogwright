@@ -4,7 +4,7 @@ import { isMap, LineCounter, parseDocument, type Document } from 'yaml';
 import { knowledgeUseProblems, knowledgeUseStateProblems } from '../define/knowledgeUse';
 import { DEFAULT_LOCALE, loadAppFolder, loadKnowledgeFolder, parseKbFile, type LoadedConfig } from '../define/load';
 import { closest, formatProblem, positionOf, type DataPath, type Problem } from '../define/problems';
-import { passageOf, sourceTextOf } from './folder';
+import { PENDING_TOPICS_FILE, passageOf, sourceTextOf } from './folder';
 import { collapseWhitespace } from './hash';
 import { approveCommandFor, kbContentProblems, kbLinkProblems, kbStateProblems, type Locate } from './rules';
 import { KB_FILE_ID, type KbPassageYaml, type KbPendingYaml } from './schema';
@@ -151,15 +151,15 @@ function setApproval(doc: Document, approval: NonNullable<KbPassage['approval']>
 /** The ids of the passages and drafts a knowledge base folder has on disk, for a near-miss hint. */
 function idsOnDisk(kbDir: string): string[] {
   const ids: string[] = [];
-  const yamlIn = (dir: string): void => {
+  const yamlIn = (dir: string, skip?: string): void => {
     try {
-      for (const name of readdirSync(dir)) if (name.endsWith('.yaml')) ids.push(name.slice(0, -'.yaml'.length));
+      for (const name of readdirSync(dir)) if (name.endsWith('.yaml') && name !== skip) ids.push(name.slice(0, -'.yaml'.length));
     } catch {
       // a folder that is not there has none
     }
   };
   yamlIn(join(kbDir, 'passages'));
-  yamlIn(join(kbDir, 'pending'));
+  yamlIn(join(kbDir, 'pending'), PENDING_TOPICS_FILE);
   for (const tag of localeDirs(kbDir)) yamlIn(join(kbDir, 'locale', tag, 'passages'));
   return ids;
 }
@@ -215,7 +215,8 @@ export function approveOne(place: KbPlace, id: string, options: ApproveOptions):
   const base = loaded.base;
   const passageFiles = [`${base}/passages/${id}.yaml`, ...localeDirs(place.kbDir).map((tag) => `${base}/locale/${tag}/passages/${id}.yaml`)].filter((f) => existsSync(join(root, f)));
   const pendingFile = `${base}/pending/${id}.yaml`;
-  const pending = existsSync(join(root, pendingFile));
+  // pending/topics.yaml holds proposed topics, never a draft.
+  const pending = `${id}.yaml` !== PENDING_TOPICS_FILE && existsSync(join(root, pendingFile));
   if (passageFiles.length > 0 && pending) {
     return { id, outcome: 'refused', reason: `both ${passageFiles[0]} and the draft ${pendingFile} have the id "${id}": approving the draft would replace the passage`, problems: ['rename the draft (its file and its id) to a new id, or delete it'] };
   }
@@ -357,7 +358,7 @@ export function pendingDrafts(place: KbPlace, kb: KnowledgeBase | null): Pending
   const base = basename(place.kbDir);
   let names: string[];
   try {
-    names = readdirSync(join(place.kbDir, 'pending')).filter((n) => n.endsWith('.yaml') && !n.startsWith('.')).sort();
+    names = readdirSync(join(place.kbDir, 'pending')).filter((n) => n.endsWith('.yaml') && !n.startsWith('.') && n !== PENDING_TOPICS_FILE).sort();
   } catch {
     return [];
   }
@@ -374,6 +375,25 @@ export function pendingDrafts(place: KbPlace, kb: KnowledgeBase | null): Pending
     if (draft.drafted.excerpt !== undefined && section !== null && !excerptInSource(draft.drafted.excerpt, section)) problems.push(`its excerpt is not in ${base}/sources/${draft.source.document}.yaml section "${draft.source.section}" word for word`);
     return { id, file, draft, problems };
   });
+}
+
+/** A topic proposed by a draft (kb/pending/topics.yaml), as kb:status lists it. */
+export interface ProposedTopic {
+  id: string;
+  /** Its title, or null when the file does not read as topics. */
+  title: string | null;
+  problems: string[];
+}
+
+/** The topics proposed in a kb folder's pending/topics.yaml (none when there is no such file). */
+export function proposedTopics(place: KbPlace): ProposedTopic[] {
+  const base = basename(place.kbDir);
+  const path = join(place.kbDir, 'pending', PENDING_TOPICS_FILE);
+  if (!existsSync(path)) return [];
+  const file = `${base}/pending/${PENDING_TOPICS_FILE}`;
+  const parsed = parseKbFile(file, 'kbTopics', readFileSync(path, 'utf8'));
+  if (parsed.problems.length > 0) return [{ id: file, title: null, problems: parsed.problems.map(formatProblem) }];
+  return Object.entries(parsed.data as Record<string, { title: string }>).map(([id, t]) => ({ id, title: t.title, problems: [] }));
 }
 
 /** kb:status's report of one knowledge base: the passages by state, the drafts, and the fix for each. */
@@ -428,7 +448,14 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
       lines.push(`    -> review it against its source, then ${approveCommandFor(d.id)} --owner "<team>"`);
     }
   }
-  if (changed.length + edited.length + unapproved.length + drafts.length === 0) lines.push('every passage is approved and fresh, and nothing waits for review');
+  const proposed = proposedTopics(place);
+  head('proposed topics, not yet in topics.yaml', proposed.length);
+  for (const t of proposed) {
+    lines.push(`  ${t.id}${t.title !== null ? `  "${t.title}"` : ''}`);
+    for (const p of t.problems) lines.push(`    ! ${p}`);
+  }
+  if (proposed.length > 0) lines.push(`    -> accept, rename or merge each in pnpm kb:review (${base}/pending/${PENDING_TOPICS_FILE}); a draft of a proposed topic is approved after its topic`);
+  if (changed.length + edited.length + unapproved.length + drafts.length + proposed.length === 0) lines.push('every passage is approved and fresh, and nothing waits for review');
   else lines.push('pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved');
   return { lines, ok: true };
 }
