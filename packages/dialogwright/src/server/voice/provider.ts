@@ -45,6 +45,8 @@ export interface CallbackParams {
 
 /** What the start document needs. */
 export interface StartDocumentOptions {
+  /** Optional event streams the carrier sends on the socket (Telnyx's `events` attribute); absent: none. */
+  readonly events?: string;
   readonly publicHost: string;
   readonly token: string;
   readonly hints: string;

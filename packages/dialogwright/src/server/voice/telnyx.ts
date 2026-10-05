@@ -121,6 +121,7 @@ function startDocument(o: StartDocumentOptions): string {
     `hints="${escapeXml(o.hints)}"`,
     // The relay element takes a recognizer's provider, not its model (a model goes on <Language>).
     ...recognitionAttrs(o.language ? placed.recognition : (o.recognition ?? {}), false),
+    ...(o.events ? [attr('events', o.events)] : []),
   ];
   if (o.language) {
     // One language for speech and recognition alike; its voice here only when every language has it (placeLanguages).

@@ -100,6 +100,11 @@ export interface ServerConfig {
   twilioSpeechModel: string | null;
   /** TELNYX_TRANSCRIPTION_PROVIDER, optional: Telnyx's recognizer for the default locale; unset, Telnyx's own default. */
   telnyxTranscriptionProvider: string | null;
+  /**
+   * TELNYX_EVENTS, optional: the event streams Telnyx sends on the socket (its relay's `events` attribute:
+   * speaker-events, tokens-played). The adapter writes each to the call's frame log; nothing acts on them.
+   */
+  telnyxEvents?: string | null;
   /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
   noInputMs: number;
   /**
@@ -308,6 +313,12 @@ export function loadConfig(env: Env): ServerConfig {
   // flux is Deepgram's: another provider without a model of its own gets that provider's default.
   const twilioSpeechModel = recognizerName(env, 'TWILIO_SPEECH_MODEL', 'nova-3-general') ?? (twilioTranscriptionProvider === 'Deepgram' ? 'flux' : null);
   const telnyxTranscriptionProvider = recognizerName(env, 'TELNYX_TRANSCRIPTION_PROVIDER', 'deepgram');
+  const telnyxEventsRaw = env.TELNYX_EVENTS?.trim() ?? '';
+  const telnyxEventTokens = telnyxEventsRaw.split(/\s+/).filter(Boolean);
+  for (const t of telnyxEventTokens) {
+    if (!['speaker-events', 'tokens-played'].includes(t.toLowerCase())) throw new Error(`TELNYX_EVENTS must name event streams from speaker-events, tokens-played, got "${t}"`);
+  }
+  const telnyxEvents = telnyxEventTokens.length > 0 ? telnyxEventTokens.join(' ') : null;
   const chat = chatOf(env, publicHost);
   const widget = widgetOf(env);
   const consoleAuth = consoleAuthOf(env, dash === 'on');
@@ -335,6 +346,7 @@ export function loadConfig(env: Env): ServerConfig {
     twilioTranscriptionProvider,
     twilioSpeechModel,
     telnyxTranscriptionProvider,
+    telnyxEvents,
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     jevTimeoutMs: jevTimeout(env),
     screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
@@ -548,6 +560,7 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx voice ${c.telnyxVoice ?? 'default'}`] : []),
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
+    ...(c.voiceProviders.includes('telnyx') && c.telnyxEvents ? [`telnyx events ${c.telnyxEvents}`] : []),
     ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)}) up to ${c.chat.maxSessions} sessions`, describeChatSignIn(c.chat.signIn)] : []),
     ...(c.widget ? [`widget on (${c.widget.file})`] : []),
   ].join('  ');

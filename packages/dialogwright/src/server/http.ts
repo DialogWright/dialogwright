@@ -250,7 +250,8 @@ export function startLocale(app: App, to: string | undefined): string | undefine
 function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string): StartDocumentOptions {
   const deployment = voiceFor(deps.config, provider.id);
   const deploymentRecognition = recognitionFor(deps.config, provider.id);
-  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: deps.hints, ...deployment, recognition: deploymentRecognition };
+  const events = provider.id === 'telnyx' && deps.config.telnyxEvents ? { events: deps.config.telnyxEvents } : {};
+  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: deps.hints, ...deployment, recognition: deploymentRecognition, ...events };
   const app = deps.app;
   if (!app?.locales || !namesLanguages(app) || locale === undefined) return base;
   const defaultLocale = app.locales.default;
