@@ -91,7 +91,7 @@ prompts:
 
 - `id` names the app in the registry. `locale` is the language of `prompts.yaml` (default `en-US`).
 - `brand` and `console` are what the operator console shows: the app's name, form and slot labels, the badge for each identity level, and the facts a tool call leaves.
-- `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech. An app can also say, per locale, which voice and recognizer each carrier uses and which hints it hears, and which number a call starts in which locale (`voice.locales`, `voice.numbers`): see [13.3](#133-languages-on-the-phone).
+- `voice` holds the phone line's speech settings: words the recognizer should expect, and how digits that are identifiers are spelled for text to speech. An app can also say, per locale, which voice and recognizer each carrier uses and which hints it hears, and which number a call starts in which locale (`voice.locales`, `voice.numbers`): see [13.3](#133-languages-on-the-phone). How long an interrupt may come after the agent starts a reply and still be the caller who had not finished (`voice.continueWithinMs`, default 300), and the words the voice says wrong with the respelling it is sent (`voice.pronounce`): see [13.8](#138-a-caller-who-had-not-finished-and-how-a-word-is-said).
 - `wording` is the engine's own questions to the decision model, in the app's words (whom the caller is addressing, what counts as a hedge). Every string is sent to the model as written.
 - `handoff` is the handoff: the note's words about the app's domain (who it is for, the identity line by level, refusals and reasons in words), and `data`, what a transfer hands the channel of the slots the call collected. On a phone call that is the relay's `end` frame, which the carrier (Twilio, Telnyx) holds and posts back on its action callback, so it leaves the engine; a chat's transfer sends its reason only, never a collected value. The default keeps verification factors off the carrier: an identity factor slot (identity.yaml) is left out, a slot with a `redact` setting goes masked as the trace masks it (`...1234`, `••/••/1980`, a statement's stand-in), and any other slot goes as it is. `data.slots` says which go (`all`, the default; `none`; or a list), and `data.send` says, by slot, how one goes in place of its default: `omit`, `masked` or `as-is`. An app whose human desk needs a value in the clear names it:
 
@@ -2027,6 +2027,8 @@ The same app answers on the phone, through Twilio, Telnyx or both, and on the we
 | A locale's recognizer, per carrier | `voice.locales.<tag>.recognition.<carrier>` (app.yaml): `{ provider, model }` | the deployment's for the default locale; the carrier's default for any other | When a language needs a recognizer the carrier does not default to. |
 | A locale's recognition hints | `voice.locales.<tag>.hints` (app.yaml) | `voice.hints` | Words of that language. |
 | Switching language mid-call | an informational intent with `locale:` (intents.yaml) | no switch | When callers may ask for another language. |
+| A caller who had not finished | `voice.continueWithinMs` (app.yaml), 0 to 2000 | `300`: a reply interrupted within 300 ms is the caller still talking, and the next prompt continues theirs | Higher for a recognizer that breaks prompts at longer pauses; `0` to take every final prompt alone ([13.8](#138-a-caller-who-had-not-finished-and-how-a-word-is-said)). |
+| Words the voice says wrong | `voice.pronounce` (app.yaml), word to respelling; a locale's own in `voice.locales.<tag>.pronounce` | none | When the voice misreads a name callers give or the lines say (a street, a town). |
 | Whether web chat is served | `CHAT` (env), `on` or `off` | `off` | To serve `/chat`. |
 | Which sites may open a chat | `CHAT_ALLOWED_ORIGINS` (env): exact origins, comma-separated | none; required when `CHAT=on` | Always, with chat on: the sites whose pages carry the widget. `*` only on a laptop. |
 | How long a quiet chat lives | `CHAT_IDLE_MS` (env) | `1800000` (30 minutes) | Shorter for a busy server, longer for slow conversations. |
@@ -2187,6 +2189,35 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`, and, for `getT
 **Theming.** The panel renders in a shadow root on a `dialogwright-chat` element, so a site's CSS cannot break it; it is themed with CSS custom properties on that element: `--dw-accent`, `--dw-accent-fg`, `--dw-bg`, `--dw-fg`, `--dw-user-bg`, `--dw-agent-bg`, `--dw-radius`, `--dw-font` and `--dw-z`. Colours a site leaves unset follow the visitor's light or dark scheme.
 
 **Behaviour.** A dropped chat reconnects after each step of `backoffMs` and resumes, for as long as the page is open unless `maxReconnects` says otherwise; what is typed meanwhile is sent once it is back. A chat that never starts (an origin the server refuses, an endpoint it cannot reach, a full server) is tried once per step of `backoffMs`, then the panel says `unavailable`, with no loop. A chat whose session has ended starts afresh (`restarted`), signed in again with the site's token if it was signed in. A site that wants its own interface uses the client alone, `createChatClient`. The package's [README](../packages/widget/README.md) has the events, the words and the accessibility notes.
+
+### 13.8 A caller who had not finished, and how a word is said
+
+Two settings in app.yaml for how the phone hears and speaks, each with a default:
+
+```yaml
+# app.yaml
+voice:
+  continueWithinMs: 300        # the default; 0 takes every final prompt alone
+  pronounce:
+    Alder: All-der             # matched whole, whatever its case
+    St. Ives: Saint Ives
+  locales:
+    es:
+      pronounce: { Alder: Al-dair }   # in place of voice.pronounce for lines said in Spanish
+```
+
+**A caller who had not finished (`continueWithinMs`).** A recognizer that ends a prompt at a short pause sends half an answer as a final prompt: asked where the problem is, a caller says "at", "22", "Alder Street." with two short breaths, and each comes as a final prompt. Taken alone, "at" gets a re-ask, and the caller, still talking, talks over it at once: the carrier sends an `interrupt` a hundred or so milliseconds into it. Then "22" gets another, and "Alder Street." is taken as the answer, without the house number. No one answers a line that fast, so an interrupt within `continueWithinMs` of the start of the reply to a final prompt means the caller had not finished: the next final prompt continues theirs. The engine joins the words (the fragments so far and the new prompt, with single spaces) and runs the turn as if "at 22 Alder Street." had been said at once, on the session as it was before the first fragment. The re-asks the caller talked over are undone (no retry is counted and no barge-in reported), none is said again, and the joined turn says what it decides.
+
+- Only a reply that did nothing but speak is undone. After a turn that went through the gate (a tool, an identity check), handed work to a service, switched the language, ended the call or was quarantined, the next prompt is a turn of its own, as before.
+- A key pressed, a no-input silence, or any other event between them ends joining, and so does an interrupt after `continueWithinMs`, which is an ordinary barge-in. At most three prompts are joined, and never past the wire's 4000 characters.
+- The trace keeps each fragment's own turn, and the joined turn's record says which prompts it joined (`joined: { fragments: [...] }`, with the joined words as its event's text). The frame log notes the window when the call starts (`{ continueWithinMs: 300 }`) and each joined turn (`{ joined: 3 }`); replaying the log joins where the call did, and a log with no window line (the option off, or one written before it) replays with none.
+- It is the engine's, on every carrier: it reads the core's interrupt and prompt events, and a chat, which has no interrupts, never joins. What it keeps of a call lives in memory, so a call resumed after a restart takes its next prompt alone.
+
+The default is 300 ms because an interrupt that early cannot be a reply to the agent's words: the caller has heard a syllable at most, and the recognizer itself takes time to notice speech. A recognizer that breaks prompts at longer pauses may want more (up to 2000); `0` takes every final prompt alone, as the engine did before the option.
+
+**How a word is said (`pronounce`).** The text-to-speech voice says some names wrong. `voice.pronounce` lists them, each with a respelling the voice says right. A listed word is matched whole and whatever its case ("Alder" and "ALDER", never "Alderman"), in every line the agent speaks, a value the caller gave and the agent reads back included, and only there: the text sent to the voice is respelled, while the session, the trace, the console's readable text and a chat keep the words as written (the frame log records the frames as they went out, respellings and all, as it does the spelled-out digits of `spokenDigits`). A locale's own list (`voice.locales.<tag>.pronounce`) replaces the app's for the lines said in that locale, since a respelling is written for one language's voice; `{}` there respells nothing in it.
+
+A respelling is plain letters, not a phonetic alphabet: Twilio passes SSML (a `<phoneme>` among it) through in a text frame, but Telnyx documents nothing of the kind for its relay, and markup a carrier does not read would be spoken aloud. `pnpm check` refuses, each with its fix: a word that is not a word or a few words (letters and digits, with spaces, apostrophes, hyphens or periods between them; at most 60 characters), a word listed twice but for case, and a respelling that is empty, longer than 120 characters, on more than one line, or has `<` or `>` in it. `validateApp` refuses the same for an app built in code, and a `continueWithinMs` that is not a whole number from 0 to 2000.
 
 ## 14. Running it
 
