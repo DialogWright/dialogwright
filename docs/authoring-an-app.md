@@ -2305,7 +2305,9 @@ The console's conversation (Turns and Script alike) shows a small muted note, la
 |---|---|---|
 | A line the carrier cut short, said again ([13.9](#139-a-line-the-carrier-cut-short)) | `{ resaid: { heardMs, expectedMs } }` | "cut off at 0.7 s of about 9.6 s, said again", the agent's line |
 | The same line cut short again | `{ cutAgain: { heardMs, expectedMs } }` | "cut short again at 0.5 s of about 9.6 s, not said a third time", the agent's line |
-| The carrier's interrupt | the `interrupt` frame's `durationUntilInterruptMs` | "caller talked over this, 0.7 s in"; on a carrier that reports its speakers (Telnyx with speaker-events) and heard no caller since the line began, "interrupted 1.7 s in, caller not heard speaking", the agent's line |
+| The carrier's interrupt | the `interrupt` frame's `durationUntilInterruptMs` | "caller talked over this, 0.7 s in", the agent's line |
+| An interrupt the caller did not make, said again ([13.9](#139-a-line-the-carrier-cut-short)) | `{ spuriousInterrupt: { afterMs, quietMs } }`, then `{ resaid: { reason: 'spurious-interrupt', afterMs, expectedMs } }` | "interrupted 1.7 s in with no caller speaking, said again" (without ", said again" when it could not be), in place of the interrupt's note: the adapter's decision, not a second note |
+| A reply held for a caller not finished ([13.8](#138-a-caller-who-had-not-finished-and-how-a-word-is-said)) | `{ replyHeld: { ms, outcome, utteranceComplete, turn } }` | `sent`: "reply held 1.0 s for the caller to finish, then said"; `joined`: the held turn's line struck through, "not said: the caller went on" (the console shows each turn's line as it runs, before a held reply goes) |
 | The caller's words joined to their last answer ([13.8](#138-a-caller-who-had-not-finished-and-how-a-word-is-said)) | `{ joined: n }`, after `{ callerResumed: { pauseMs, intoReplyMs } }` when the caller came back in | "joined with the previous answer (paused 1.2 s)", the joined words' caller line |
 | The end held until the lines played ([13.10](#1310-the-goodbye-before-the-hang-up)) | `{ endAfter, endHeldMs, expectedMs }` | "call end held 2.0 s until it played" (or "until the time limit"; "caller hung up 1.2 s into it"), the goodbye or transfer line |
 
@@ -2313,7 +2315,7 @@ A no-input silence is a turn of its own and shows as before: `silence · 12 s` u
 
 The adapter hands each note to the console as it writes the frame-log line (a `delivery` event on the live feed), and a replay of a past call reads the same facts back from the frame log (`/dashboard/traces/<call>` answers them as `deliveries`), so a reloaded call shows the notes the live one did; nothing is added to the trace. A note carries timings and short codes only, never the caller's words or ours.
 
-To note something new, add one line to `DELIVERY_NOTES` in `packages/dialogwright/src/server/dashboard/view.js` (its kind, the line it goes under, and its sentence from the fact's fields), and have the adapter write the frame-log line through its `logDelivery` helper instead of writing it directly. A kind's frame-log line is read as a fact by its key: `{ replyHeld: { ms, outcome } }` is the fact `{ kind: 'replyHeld', ms, outcome }`.
+To note something new, add one line to `DELIVERY_NOTES` in `packages/dialogwright/src/server/dashboard/view.js` (its kind, the line it goes under, and its sentence from the fact's fields; optionally the kinds of an earlier note it takes the place of, and whether the line was never said), and have the adapter write the frame-log line through its `logDelivery` helper instead of writing it directly. A kind's frame-log line is read as a fact by its key: `{ replyHeld: { ms, outcome } }` is the fact `{ kind: 'replyHeld', ms, outcome }`, and a fact that names a `turn` goes under that turn's line.
 
 ## 14. Running it
 

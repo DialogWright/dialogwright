@@ -79,11 +79,18 @@ function secs(ms) {
 /**
  * Delivery notes: what happened on the line to what the agent said, as a short sentence under the line
  * it concerns (the console otherwise shows none of it; the frame log has it). One entry per kind of fact
- * the server reports (a `delivery` event, server/dashboard/delivery.ts): `on` is the line the note goes
- * under (`agent`: the agent's latest line, the one it concerns; `caller`: the caller's latest line;
- * null: under none, held for the next turn's notes to read), and `text(fact, held)` says it from the
- * fact's fields, which are timings and short codes only, never anyone's words. `held` has the facts of
- * the `on: null` kinds that came within the last turn, by kind.
+ * the server reports (a `delivery` event, server/dashboard/delivery.ts):
+ *
+ * - `on`: the line the note goes under. `agent`: the agent's line the fact concerns (the line of the
+ *   fact's `turn` when it names one, else the latest); `caller`: the caller's latest line; null: under
+ *   none, held for the notes up to the end of the next turn to read.
+ * - `text(fact, held)`: the sentence, from the fact's fields, which are timings and short codes only,
+ *   never anyone's words. `held` has the facts of the `on: null` kinds that came within the last turn.
+ * - `replaces(fact)` (optional): the kinds of an earlier note on the same line that this one says better,
+ *   and takes the place of (the adapter's decision that an interrupt was not the caller's replaces the
+ *   interrupt's note, so the line reads one note, not two that disagree).
+ * - `unsaid(fact)` (optional): true when the line was never said (a reply held for a caller who went on):
+ *   the page shows it struck through.
  *
  * A fact is one of the adapter's frame-log lines under its kind's key, its fields flattened
  * (`{ resaid: { heardMs, expectedMs } }` is `{ kind: 'resaid', heardMs, expectedMs }`; a key's bare
@@ -91,16 +98,27 @@ function secs(ms) {
  * (`interrupt`). To show a new kind: one line here, and the adapter writes its frame-log line through
  * `logDelivery` (server/adapter.ts). Live and on reload alike, nothing else changes.
  */
+const SPURIOUS = 'spurious-interrupt';
 export const DELIVERY_NOTES = {
-  // A line the carrier cut short, said again (RESAY_CUT_LINES); `reason` names a cause other than the carrier's report of the line ending.
-  resaid: { on: 'agent', text: (f) => (f.reason === 'spurious-interrupt'
-    ? `stopped at ${secs(f.heardMs)} by an interrupt with no caller speaking, said again`
-    : `cut off at ${secs(f.heardMs)} of about ${secs(f.expectedMs)}, said again`) },
+  // A line the carrier cut short, said again (RESAY_CUT_LINES); or one an interrupt with no caller cut, said again.
+  resaid: {
+    on: 'agent',
+    text: (f) => (f.reason === SPURIOUS
+      ? `interrupted ${secs(f.afterMs)} in with no caller speaking, said again`
+      : `cut off at ${secs(f.heardMs)} of about ${secs(f.expectedMs)}, said again`),
+    replaces: (f) => (f.reason === SPURIOUS ? ['interrupt', 'spuriousInterrupt'] : []),
+  },
   cutAgain: { on: 'agent', text: (f) => `cut short again at ${secs(f.heardMs)} of about ${secs(f.expectedMs)}, not said a third time` },
-  // The carrier's interrupt of the line; `callerHeard` is null on a carrier that reports no caller speech.
-  interrupt: { on: 'agent', text: (f) => (f.callerHeard === false
-    ? `interrupted ${secs(f.afterMs)} in, caller not heard speaking`
-    : `caller talked over this, ${secs(f.afterMs)} in`) },
+  // The carrier's interrupt of the line: the caller's, unless the adapter finds otherwise (spuriousInterrupt).
+  interrupt: { on: 'agent', text: (f) => `caller talked over this, ${secs(f.afterMs)} in` },
+  // The adapter's decision that an interrupt was not the caller's (RESAY_SPURIOUS_INTERRUPTS): not passed to the core.
+  spuriousInterrupt: { on: 'agent', text: (f) => `interrupted ${secs(f.afterMs)} in with no caller speaking`, replaces: () => ['interrupt'] },
+  // A reply held for a caller not finished (INCOMPLETE_WAIT_MS): said after the wait, or never, the caller going on.
+  replyHeld: {
+    on: 'agent',
+    text: (f) => (f.outcome === 'joined' ? 'not said: the caller went on' : `reply held ${secs(f.ms)} for the caller to finish, then said`),
+    unsaid: (f) => f.outcome === 'joined',
+  },
   // A turn's `end` held until its lines played (END_AFTER_PLAYBACK); `value` is how it came to go.
   endAfter: { on: 'agent', text: (f) => ({
     played: `call end held ${secs(f.endHeldMs)} until it played`,
@@ -118,13 +136,18 @@ export const DELIVERY_NOTES = {
 
 /**
  * A delivery fact's note, or null for a kind the console does not show (not in DELIVERY_NOTES, or
- * `on: null`). `held` as DELIVERY_NOTES's `text` reads it.
+ * `on: null`). `held` as DELIVERY_NOTES's `text` reads it. `replaces` lists the kinds of an earlier note
+ * on the line it takes the place of, and `unsaid` says the line was never said.
  */
 export function deliveryNote(fact, held) {
   const kind = fact?.kind;
   const entry = typeof kind === 'string' && Object.hasOwn(DELIVERY_NOTES, kind) ? DELIVERY_NOTES[kind] : null;
   if (!entry || !entry.on) return null;
-  return { kind, on: entry.on, text: entry.text(fact, held ?? {}) };
+  return {
+    kind, on: entry.on, text: entry.text(fact, held ?? {}),
+    replaces: entry.replaces ? entry.replaces(fact) : [],
+    unsaid: entry.unsaid ? entry.unsaid(fact) === true : false,
+  };
 }
 
 /** The console metadata in force: neutral until the page (or a test) configures the app's. */
@@ -928,11 +951,13 @@ export function reduce(events, opts) {
 }
 
 /**
- * Puts a delivery fact's note (DELIVERY_NOTES) under the line it concerns: the latest agent line, or
- * the latest caller line, in `lines` as they stand. A fact arrives after the line it is about (a re-send
- * once the line was cut, the join once the joined turn ran), and before the next one is said: the
- * adapter writes it so (server/adapter.ts), and replay keeps that order (replayEvents). A kind shown
- * under no line is held, for the notes up to the end of the next turn to read.
+ * Puts a delivery fact's note (DELIVERY_NOTES) under the line it concerns: the agent line of the fact's
+ * `turn` when it names one, else the latest agent line, or the latest caller line, in `lines` as they
+ * stand. A fact arrives after the line it is about (a re-send once the line was cut, the join once the
+ * joined turn ran), and before the next one is said: the adapter writes it so (server/adapter.ts), and
+ * replay keeps that order (replayEvents). A note that replaces another kind takes its place on the line;
+ * one for a line never said marks it so. A kind shown under no line is held, for the notes up to the
+ * end of the next turn to read.
  */
 function addDeliveryNote(lines, fact, held, turnsSeen) {
   const kind = fact?.kind;
@@ -946,11 +971,16 @@ function addDeliveryNote(lines, fact, held, turnsSeen) {
   const note = deliveryNote(fact, recent);
   if (!note) return;
   const want = note.on === 'agent' ? 'system' : 'caller';
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i].kind !== want) continue;
-    lines[i] = { ...lines[i], notes: [...(lines[i].notes ?? []), { kind: note.kind, text: note.text }] };
-    return;
+  const turn = note.on === 'agent' && typeof fact.turn === 'number' ? fact.turn : null;
+  let at = -1;
+  for (let i = lines.length - 1; i >= 0 && at < 0; i--) {
+    if (lines[i].kind === want && (turn === null || lines[i].turn === turn)) at = i;
   }
+  if (at < 0 && turn !== null) for (let i = lines.length - 1; i >= 0 && at < 0; i--) if (lines[i].kind === want) at = i;
+  if (at < 0) return;
+  const line = lines[at];
+  const kept = (line.notes ?? []).filter((n) => !note.replaces.includes(n.kind));
+  lines[at] = { ...line, notes: [...kept, { kind: note.kind, text: note.text }], ...(note.unsaid ? { unsaid: true } : {}) };
 }
 
 /**
@@ -1228,7 +1258,7 @@ export function scriptOf(lines, turnsView) {
   const screened = new Set((turnsView ?? []).filter((t) => t.stages?.screen?.state === 'fail').map((t) => t.turnIndex));
   const out = [];
   for (const l of lines ?? []) {
-    const notes = l.notes?.length ? { notes: l.notes } : {};
+    const notes = { ...(l.notes?.length ? { notes: l.notes } : {}), ...(l.unsaid ? { unsaid: true } : {}) };
     if (l.kind === 'caller') out.push({ who: 'caller', text: l.text, screened: screened.has(l.turn), codeMasked: l.text.includes(CODE_MASK), ...notes });
     else if (l.kind === 'system') out.push({ who: 'agent', text: l.text, ...notes });
     else if (l.kind === 'handoff') out.push({ who: 'handoff', text: l.text });

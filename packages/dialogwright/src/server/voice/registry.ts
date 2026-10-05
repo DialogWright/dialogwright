@@ -119,15 +119,3 @@ export function readsPlaybackEvents(providerId: string | undefined): boolean {
 export function playbackEventOf(providerId: string | undefined, message: unknown): PlaybackEvent | null {
   return providerOf(providerId)?.readEvent?.(message) ?? null;
 }
-
-/**
- * A carrier's own socket message as a PlaybackEvent, by whichever known carrier reads it; null when none
- * does. For a frame log whose carrier is not recorded (the console's reload, dashboard/delivery.ts).
- */
-export function anyPlaybackEventOf(message: unknown): PlaybackEvent | null {
-  for (const k of Object.values(ALL)) {
-    const ev = k.provider.readEvent?.(message) ?? null;
-    if (ev) return ev;
-  }
-  return null;
-}

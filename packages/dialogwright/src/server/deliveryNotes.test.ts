@@ -19,7 +19,8 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { registerTestkit } from '../testing/testkit';
 import { ANONYMOUS } from '../gate/principal';
 import { PLACE_APP_ID, placeApp, placeClient } from '../testing/placeApp';
-import type { BargeIn } from '../channel/voiceProviders';
+import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, type BargeIn } from '../channel/voiceProviders';
+import { SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS } from './adapter';
 
 /**
  * The console's delivery notes, from the adapter's side: each fact it writes to the frame log goes to
@@ -30,6 +31,10 @@ import type { BargeIn } from '../channel/voiceProviders';
 
 const CALL = 'CA6';
 const REASK = 'Sorry, where is the problem?';
+/** The model hears a bare number as unfinished; anything else as finished (as bargeRecovery.test.ts). */
+const complete = (text: string): number => (/^(seventy six)$/i.test(text.trim()) ? 0.3 : 0.9);
+const SPURIOUS = { spuriousInterrupts: { windowMs: DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } } as const;
+const HOLD = { incompleteWait: { waitMs: DEFAULT_INCOMPLETE_WAIT_MS } } as const;
 
 beforeEach(() => {
   resetAppsForTest();
@@ -42,12 +47,12 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function liveCall(provider: string, bargeIn: BargeIn = 'any') {
+function liveCall(provider: string, bargeIn: BargeIn = 'any', more: Partial<AdapterDeps> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'delivery-notes-'));
   const bus = new DashboardBus();
   const events: DashboardEvent[] = [];
   bus.subscribe((e) => events.push(e));
-  const opts = { client: placeClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-09-18', now: () => Date.now() };
+  const opts = { client: placeClient({ utteranceComplete: complete }), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-09-18', now: () => Date.now() };
   const store: SessionStore = new SessionStore((callSid) => ({
     session: newSession(callSid, 0, VOICE_RELAY, ANONYMOUS, PLACE_APP_ID),
     opts: { ...opts, trace: new TraceWriter(join(dir, `${callSid}.jsonl`)), observe: makeObserver(bus, store, callSid) },
@@ -55,7 +60,7 @@ function liveCall(provider: string, bargeIn: BargeIn = 'any') {
     frames: new FrameLog(join(dir, `${callSid}.frames.jsonl`)),
   }), 60_000, () => 0);
   const tokens = new CallTokens(60_000, () => 0);
-  const deps: AdapterDeps = { store, tokens, log: () => {}, bargeIn, bus };
+  const deps: AdapterDeps = { store, tokens, log: () => {}, bargeIn, bus, resay: { minFraction: 0.35 }, ...more };
   const sent: Record<string, unknown>[] = [];
   const sock: SocketLike = { send: (d, cb) => { sent.push(JSON.parse(d) as Record<string, unknown>); cb?.(); }, close: () => {} };
   const ctx = newConnectionContext(tokens.mint(CALL, provider), sock, provider);
@@ -63,7 +68,7 @@ function liveCall(provider: string, bargeIn: BargeIn = 'any') {
   const info = (name: string, value: string) => send({ type: 'info', name, value });
   const caller = (on: boolean) => info('clientSpeaking', on ? 'on' : 'off');
   return {
-    sent, events, caller,
+    sent, events, caller, texts: () => sent.filter((f) => f.type === 'text').map((f) => f.token as string),
     start: () => send({ type: 'setup', sessionId: 'VX6', callSid: CALL, from: '+15555550100', to: '+15555550199', customParameters: {} }),
     say: (t: string) => send({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true }),
     cut: (heard: string, ms: number) => send({ type: 'interrupt', utteranceUntilInterrupt: heard, durationUntilInterruptMs: ms }),
@@ -111,34 +116,94 @@ describe('delivery notes, as the adapter publishes them', () => {
     ]);
   });
 
-  it('a carrier interrupt: talked over by a caller heard speaking, or not heard on a carrier that reports its speakers', async () => {
-    const call = liveCall('telnyx');
+  /** The agent lines with notes, as the console shows them: the line, whether it was said, and its notes. */
+  const noted = (events: DashboardEvent[]) => reduce(events).lines.filter((l) => l.notes)
+    .map((l) => [l.kind, l.text, l.unsaid === true ? 'not said' : 'said', l.notes!.map((n) => n.text)]);
+
+  it("an interrupt the adapter finds was not the caller's: one note, said again, live and on reload", async () => {
+    const call = liveCall('telnyx', 'speech', SPURIOUS);
     await call.start();
+    const greeting = call.texts()[0]!;
+    await vi.advanceTimersByTimeAsync(65);
     await call.agent(true);
-    // The greeting cut 1.7 s in with no caller voice reported at all (seen on Telnyx, 2026-10-05).
-    await vi.advanceTimersByTimeAsync(1_704);
-    await call.cut('Hello', 1_704);
-    await call.say('i want to report a problem');
-    await call.agent(true);
-    await vi.advanceTimersByTimeAsync(400);
-    await call.caller(true);
-    await vi.advanceTimersByTimeAsync(300);
-    await call.cut('Sorry', 700);
+    await vi.advanceTimersByTimeAsync(1_639);
+    const cut = call.cut(greeting, 1_704);
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS);
+    await cut;
+    expect(call.texts()).toEqual([greeting, greeting]);
     expect(call.published()).toEqual([
-      { kind: 'interrupt', afterMs: 1_704, callerHeard: false },
-      { kind: 'interrupt', afterMs: 700, callerHeard: true },
+      { kind: 'interrupt', afterMs: 1_704 },
+      { kind: 'spuriousInterrupt', afterMs: 1_704, quietMs: null },
+      { kind: 'resaid', reason: 'spurious-interrupt', afterMs: 1_704, expectedMs: expect.any(Number) },
     ]);
     expect(call.reloaded()).toEqual(call.published());
-    const notes = reduce(call.events).lines.filter((l) => l.notes).map((l) => l.notes!.map((n) => n.text));
-    expect(notes).toEqual([['interrupted 1.7 s in, caller not heard speaking'], ['caller talked over this, 0.7 s in']]);
+    expect(noted(call.events)).toEqual([['system', greeting, 'said', ['interrupted 1.7 s in with no caller speaking, said again']]]);
   });
 
-  it('on a carrier that reports no speakers, says the caller talked over the line, not that they went unheard', async () => {
-    const call = liveCall('twilio');
+  it("a real interrupt (the caller heard just before it) keeps the caller's note", async () => {
+    const call = liveCall('telnyx', 'speech', SPURIOUS);
+    await call.start();
+    await call.agent(true);
+    await vi.advanceTimersByTimeAsync(500);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(200);
+    await call.cut('Hello', 700);
+    expect(call.published()).toEqual([{ kind: 'interrupt', afterMs: 700 }]);
+    expect(call.reloaded()).toEqual(call.published());
+    expect(noted(call.events).map((n) => n[3])).toEqual([['caller talked over this, 0.7 s in']]);
+  });
+
+  it('on a carrier that reports no speakers, an interrupt is the caller talking over the line', async () => {
+    const call = liveCall('twilio', 'any', SPURIOUS);
     await call.start();
     await vi.advanceTimersByTimeAsync(300);
     await call.cut('Hello', 300);
-    expect(call.published()).toEqual([{ kind: 'interrupt', afterMs: 300, callerHeard: null }]);
+    expect(call.published()).toEqual([{ kind: 'interrupt', afterMs: 300 }]);
     expect(call.reloaded()).toEqual(call.published());
+  });
+
+  /** Up to "seventy six", whose reply is held: returns the held prompt, not awaited. */
+  async function toFragment(call: ReturnType<typeof liveCall>): Promise<{ held: Promise<void> }> {
+    await call.start();
+    await call.speak(900);
+    await vi.advanceTimersByTimeAsync(800);
+    await call.say('i want to report a problem');
+    await vi.advanceTimersByTimeAsync(3_000);
+    await call.speak(595);
+    await vi.advanceTimersByTimeAsync(712);
+    return { held: call.say('seventy six') };
+  }
+
+  it('a reply held and never said, the caller going on: struck out, and the join on the joined words', async () => {
+    const call = liveCall('telnyx', 'speech', HOLD);
+    const { held } = await toFragment(call);
+    await vi.advanceTimersByTimeAsync(680);
+    await call.caller(true);
+    await held;
+    await vi.advanceTimersByTimeAsync(800);
+    await call.speak(150, 400);
+    await vi.advanceTimersByTimeAsync(900);
+    await call.say('twenty five oak hollow lane');
+    expect(call.texts()).not.toContain(REASK);
+    expect(call.published()).toEqual([
+      { kind: 'replyHeld', ms: 680, outcome: 'joined', utteranceComplete: 0.3, turn: expect.any(Number) },
+      { kind: 'callerResumed', pauseMs: 1_392, intoReplyMs: 0 },
+      { kind: 'joined', value: 2 },
+    ]);
+    expect(call.reloaded()).toEqual(call.published());
+    expect(noted(call.events)).toEqual([
+      ['system', REASK, 'not said', ['not said: the caller went on']],
+      ['caller', 'seventy six twenty five oak hollow lane', 'said', ['joined with the previous answer (paused 1.4 s)']],
+    ]);
+  });
+
+  it('a reply held with no caller in the wait: said after it, and noted so', async () => {
+    const call = liveCall('telnyx', 'speech', HOLD);
+    const { held } = await toFragment(call);
+    await vi.advanceTimersByTimeAsync(DEFAULT_INCOMPLETE_WAIT_MS);
+    await held;
+    expect(call.texts().at(-1)).toBe(REASK);
+    expect(call.reloaded()).toEqual(call.published());
+    expect(noted(call.events)).toEqual([['system', REASK, 'said', ['reply held 1.0 s for the caller to finish, then said']]]);
   });
 });

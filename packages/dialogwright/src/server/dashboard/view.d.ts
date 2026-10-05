@@ -51,6 +51,8 @@ export interface Line {
   turn?: number;
   /** Delivery notes, oldest first: on an agent line, what became of it on the line; on a caller line, a join. */
   notes?: LineNote[];
+  /** An agent line the turn decided but that was never said (a reply held for a caller who went on). */
+  unsaid?: boolean;
 }
 
 export interface StageCell {
@@ -256,11 +258,15 @@ export interface TraceRow {
 export interface DeliveryNoteKind {
   on: 'agent' | 'caller' | null;
   text?: (fact: DeliveryFact, held: Readonly<Record<string, DeliveryFact>>) => string;
+  /** The kinds of an earlier note on the same line this one takes the place of. */
+  replaces?: (fact: DeliveryFact) => string[];
+  /** Whether the line was never said. */
+  unsaid?: (fact: DeliveryFact) => boolean;
 }
 /** Every delivery fact kind the console knows, by kind: the mapping from a fact to its sentence. */
 export const DELIVERY_NOTES: Readonly<Record<string, DeliveryNoteKind>>;
 /** A fact's note, or null for a kind not shown (unknown, or `on: null`). */
-export function deliveryNote(fact: DeliveryFact, held?: Readonly<Record<string, DeliveryFact>>): { kind: string; on: 'agent' | 'caller'; text: string } | null;
+export function deliveryNote(fact: DeliveryFact, held?: Readonly<Record<string, DeliveryFact>>): { kind: string; on: 'agent' | 'caller'; text: string; replaces: string[]; unsaid: boolean } | null;
 
 /** Takes the app's console metadata; until then the view is neutral, with no slots. */
 export function configure(meta: ConsoleMeta): void;
@@ -300,6 +306,8 @@ export interface ScriptLine {
   text: string;
   /** The line's delivery notes (Line.notes), when it has any. */
   notes?: LineNote[];
+  /** Never said (Line.unsaid). */
+  unsaid?: boolean;
   screened?: boolean;
   /** A caller line that held a one-time code said aloud, masked on arrival. */
   codeMasked?: boolean;

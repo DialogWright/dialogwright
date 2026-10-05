@@ -19,7 +19,7 @@ import type { CallEntry, SessionStore, SocketLike } from './sessions';
 import type { CallTokens } from './tokens';
 import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactDeep, type DashboardEvent } from './dashboard/events';
-import { callerHeardAt, deliveryFactOf, interruptFact, reportsSpeakers } from './dashboard/delivery';
+import { deliveryFactOf, interruptFact } from './dashboard/delivery';
 import { redactHandoffData, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
 import { codeLengthOf } from '../core/app/lookup';
@@ -241,7 +241,6 @@ export function forgetNoInput(callSid: string): void {
   continuations.delete(callSid);
   unwatch(callSid);
   callerSpeaking.delete(callSid);
-  speakersReported.delete(callSid);
   heldEnds.get(callSid)?.release('closed');
   reportsPlayback.delete(callSid);
   forgetResumed(callSid);
@@ -417,8 +416,6 @@ const watched = new Map<string, Watched>();
 
 /** Calls whose caller the carrier reports speaking now (a PlaybackEvent `caller speaking`). */
 const callerSpeaking = new Set<string>();
-/** Calls whose carrier has reported its speakers (dashboard/delivery.ts reportsSpeakers): a caller it never reported was not heard. */
-const speakersReported = new Set<string>();
 
 /**
  * A caller who came back in (App.voice.continueWithinMs, run/continuation.ts), on a carrier that reports
@@ -675,7 +672,7 @@ function interruptUnheard(deps: AdapterDeps, entry: CallEntry): { quietMs: numbe
 }
 
 /** Wait out the settle for an interrupt: true when no caller was heard in it (logged then), false when one was. */
-function settleInterrupt(entry: CallEntry, afterMs: number, quietMs: number | null): Promise<boolean> {
+function settleInterrupt(deps: AdapterDeps, entry: CallEntry, afterMs: number, quietMs: number | null): Promise<boolean> {
   const callSid = entry.callSid;
   settleHeard(callSid);
   return new Promise((resolve) => {
@@ -684,7 +681,7 @@ function settleInterrupt(entry: CallEntry, afterMs: number, quietMs: number | nu
         if (settling.get(callSid) !== s) return;
         settling.delete(callSid);
         // Written as it is decided, before any caller frame after it, where replay looks for it.
-        entry.frames.write('log', { spuriousInterrupt: { afterMs, quietMs } });
+        logDelivery(deps, entry, { spuriousInterrupt: { afterMs, quietMs } });
         resolve(true);
       }, quietMs === null ? SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS : SPURIOUS_INTERRUPT_SETTLE_MS),
       resolve,
@@ -718,7 +715,7 @@ async function recoverSpurious(deps: AdapterDeps, e: CallEntry, w: Watched | und
   }
   w.done = true;
   deps.log(`${callSid}: interrupted ${seconds(afterMs, 2)} into the lines with no caller heard, lines said again`);
-  e.frames.write('log', { resaid: { reason: 'spurious-interrupt', afterMs, expectedMs: w.expectedMs } });
+  logDelivery(deps, e, { resaid: { reason: 'spurious-interrupt', afterMs, expectedMs: w.expectedMs } });
   const sent = await sendFrames(deps, e, w.frames, w.decision);
   watchPlayback(deps, e, w.frames, w.decision, sent, true);
   // As the turn that said them armed it.
@@ -809,7 +806,7 @@ async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEven
     heldReplies.set(callSid, h);
   });
   const outcome = ended === 'sent' ? 'sent' : 'joined';
-  entry.frames.write('log', { replyHeld: { ms: Date.now() - heldAtMs, outcome, utteranceComplete: complete, turn: run.result.session.turnIndex } });
+  logDelivery(deps, entry, { replyHeld: { ms: Date.now() - heldAtMs, outcome, utteranceComplete: complete, turn: run.result.session.turnIndex } });
   if (outcome === 'joined') continuation.resumed();
   return ended;
 }
@@ -1554,7 +1551,6 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // Read for a held `end` too (END_AFTER_PLAYBACK), which waits for the report that its lines played.
     const ev = playbackEventOf(ctx.provider, message);
     if (ev) {
-      if (reportsSpeakers(ev)) speakersReported.add(entry.callSid);
       if (ev.kind === 'playback') reportsPlayback.add(entry.callSid);
       // The caller heard speaking holds the no-input wait, on any carrier whose provider reports it.
       else onCallerSpeech(deps, entry, ev.speaking);
@@ -1744,8 +1740,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // Our line as written, as the turn will record it (run/turn.ts): the carrier echoes the respellings it was sent.
     const heard = unpronounce(frame.utteranceUntilInterrupt, pronounceFor(appOf(entry.session).voice, localeOf(entry.session)));
     publish(deps, { type: 'interrupt', callSid: ctx.callSid, at: Date.now(), utteranceUntilInterrupt: heard });
-    const voice = { reported: speakersReported.has(ctx.callSid), speaking: callerSpeaking.has(ctx.callSid), lastStartMs: lastStart.get(ctx.callSid) ?? null };
-    publish(deps, { type: 'delivery', callSid: ctx.callSid, at: Date.now(), fact: interruptFact(frame.durationUntilInterruptMs, callerHeardAt(voice, Date.now(), frame.durationUntilInterruptMs)) });
+    // Whether it was the caller's is decided below (a spurious interrupt), and is a fact of its own.
+    publish(deps, { type: 'delivery', callSid: ctx.callSid, at: Date.now(), fact: interruptFact(frame.durationUntilInterruptMs) });
   }
   // The slots have fixed digit lengths, so the keypad terminators carry no meaning yet.
   if (frame.type === 'dtmf' && (frame.digit === '#' || frame.digit === '*')) {
@@ -1780,7 +1776,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // An interrupt with no caller heard around it settles before it is taken (a spurious interrupt), and the
   // lines it cut, as they are watched now, are said again when no caller is heard in that time either.
   const unheard = event.type === 'user.interrupt' ? interruptUnheard(deps, entry) : null;
-  const settled = event.type === 'user.interrupt' && unheard ? settleInterrupt(entry, event.afterMs, unheard.quietMs) : null;
+  const settled = event.type === 'user.interrupt' && unheard ? settleInterrupt(deps, entry, event.afterMs, unheard.quietMs) : null;
   const cutLines = settled ? watched.get(ctx.callSid) : undefined;
   const run = async (e: CallEntry): Promise<void> => {
     if (settled && event.type === 'user.interrupt' && (await settled)) {

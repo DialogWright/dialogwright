@@ -127,19 +127,23 @@ describe('dashboard routes', () => {
       { ts: at(5), dir: 'out', msg: { type: 'text', token: 'Hello.', last: true } },
       { ts: at(150), dir: 'in', msg: { carrierEvent: { type: 'info', name: 'agentSpeaking', value: 'on' } } },
       { ts: at(1854), dir: 'in', msg: { type: 'interrupt', utteranceUntilInterrupt: 'Hello', durationUntilInterruptMs: 1704 } },
-      { ts: at(3000), dir: 'log', msg: { resaid: { heardMs: 640, expectedMs: 9600 } } },
+      { ts: at(3854), dir: 'log', msg: { spuriousInterrupt: { afterMs: 1704, quietMs: null } } },
+      { ts: at(3855), dir: 'log', msg: { resaid: { reason: 'spurious-interrupt', afterMs: 1704, expectedMs: 9600 } } },
+      { ts: at(5000), dir: 'log', msg: { cutAgain: { heardMs: 640, expectedMs: 9600 } } },
     ];
     writeFileSync(join(dir, 'CA8.frames.jsonl'), frames.map((f) => JSON.stringify(f)).join('\n') + '\n');
     const s = await serve(new DashboardBus(), dir);
     const one = await (await fetch(`${s.base}/dashboard/traces/CA8`)).json() as { records: ReplayRecord[]; frames: FrameLogLine[]; deliveries: DashboardEvent[] };
     expect(one.deliveries.map((d) => (d.type === 'delivery' ? d.fact : null))).toEqual([
-      { kind: 'interrupt', afterMs: 1704, callerHeard: false },
-      { kind: 'resaid', heardMs: 640, expectedMs: 9600 },
+      { kind: 'interrupt', afterMs: 1704 },
+      { kind: 'spuriousInterrupt', afterMs: 1704, quietMs: null },
+      { kind: 'resaid', reason: 'spurious-interrupt', afterMs: 1704, expectedMs: 9600 },
+      { kind: 'cutAgain', heardMs: 640, expectedMs: 9600 },
     ]);
     // The page's reload: the same events the call published live, and the notes under the greeting.
     const v = reduce(replayEvents(one.records, one.frames, { deliveries: one.deliveries }), { fromTrace: true });
     const greeting = v.lines.find((l) => l.kind === 'system')!;
-    expect(greeting.notes?.map((n) => n.text)).toEqual(['interrupted 1.7 s in, caller not heard speaking', 'cut off at 0.6 s of about 9.6 s, said again']);
+    expect(greeting.notes?.map((n) => n.text)).toEqual(['interrupted 1.7 s in with no caller speaking, said again', 'cut short again at 0.6 s of about 9.6 s, not said a third time']);
     s.close();
     rmSync(dir, { recursive: true, force: true });
   });

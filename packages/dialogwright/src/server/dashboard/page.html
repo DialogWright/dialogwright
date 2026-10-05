@@ -135,6 +135,9 @@
   .dnote .lbl-d { font-size:.82em; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); font-weight:600; margin-right:.5em; }
   .dnote.k-resaid .lbl-d, .dnote.k-cutAgain .lbl-d { color:var(--warn); }
   .sline .dnote { grid-column:2; margin:0; }
+  /* An agent line the turn decided but never said (a reply held for a caller who went on): struck through, dimmed. */
+  .said.sys.unsaid { text-decoration:line-through; text-decoration-color:var(--faint); color:var(--muted); }
+  .dnote.k-replyHeld .lbl-d, .dnote.k-spuriousInterrupt .lbl-d { color:var(--warn); }
   .qtag { display:inline-block; margin:.35em 0 .1em; padding:.15em .6em; border-radius:6px; background:var(--fail-bg); color:#ffb3ba; font-size:.78em; font-weight:600; letter-spacing:.02em; }
 
   /* the five-stage strip under each caller turn */
@@ -535,7 +538,7 @@
       const delay = i === 0 && turnAge !== null ? ` style="animation-delay:-${Math.round(turnAge)}ms"` : '';
       const asked = b.prompt.map((l) => {
         const pid = l.promptId ? `<span class="pid">${esc(l.promptId)}</span>` : '';
-        return `<div class="who">${esc(APP.brand.name)}${pid}</div><div class="said sys">${esc(l.text)}</div>${notesHtml(l)}`;
+        return `<div class="who">${esc(APP.brand.name)}${pid}</div><div class="said sys${l.unsaid ? ' unsaid' : ''}">${esc(l.text)}</div>${notesHtml(l)}`;
       }).join('');
       // A downstream service's answer is a turn of its own with nothing said: name where it came from.
       // The service's answer, and what its client made of it: refused, or text it never read, in the warning color.
@@ -563,7 +566,7 @@
           + (l.codeMasked ? '<span class="stag ctag">code said aloud · masked</span>' : '');
         return `<p class="sline"><span class="swho">Caller</span><span class="said caller">${esc(l.text)}</span>${tag}${notesHtml(l)}</p>`;
       }
-      if (l.who === 'agent') return `<p class="sline"><span class="swho">${esc(APP.brand.name)}</span><span class="said sys">${esc(l.text)}</span>${notesHtml(l)}</p>`;
+      if (l.who === 'agent') return `<p class="sline"><span class="swho">${esc(APP.brand.name)}</span><span class="said sys${l.unsaid ? ' unsaid' : ''}">${esc(l.text)}</span>${notesHtml(l)}</p>`;
       if (l.who === 'keypad') return `<p class="sline"><span class="swho">Caller · keypad</span><span class="marker key">${esc(l.text)}</span></p>`;
       if (l.who === 'handoff') return `<p class="sline hand"><span class="swho">Handoff</span><span class="said">${esc(l.text)}</span></p>`;
       return `<p class="sline"><span class="swho"></span><span class="marker">${esc(l.text)}</span></p>`;

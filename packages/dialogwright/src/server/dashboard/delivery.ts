@@ -1,14 +1,13 @@
 import type { DashboardEvent, DeliveryFact } from './events';
 import type { FrameLogLine } from '../frameLog';
-import type { PlaybackEvent } from '../voice/provider';
-import { anyPlaybackEventOf } from '../voice/registry';
 import { DELIVERY_NOTES } from './view.js';
 
 /**
  * Delivery facts: what happened on the line to what the agent said (a line the carrier cut short and
- * said again, the carrier's interrupt, the caller's words joined to their last answer, a call's end held
- * until its goodbye played), for the console's delivery notes under each line (view.js DELIVERY_NOTES,
- * which says each kind in words and names the line it goes under).
+ * said again, the carrier's interrupt and whether it was the caller's, a reply held for a caller not
+ * finished, the caller's words joined to their last answer, a call's end held until its goodbye
+ * played), for the console's delivery notes under each line (view.js DELIVERY_NOTES, which says each
+ * kind in words and names the line it goes under).
  *
  * The frame log is where they are kept: each is a `log` line the adapter writes under its kind's key
  * (`{ resaid: { heardMs, expectedMs } }`), or the carrier's `interrupt` frame. The adapter publishes the
@@ -55,75 +54,34 @@ export function deliveryFactOf(msg: unknown): DeliveryFact | null {
   return fact;
 }
 
-/** What is known of the caller's voice on a call, at a carrier's interrupt (callerHeardAt). */
-export interface CallerVoice {
-  /** The carrier has reported its speakers on this call (reportsSpeakers). */
-  reported: boolean;
-  /** The carrier reports the caller speaking now. */
-  speaking: boolean;
-  /** When the carrier last reported the caller starting to speak, if it has. */
-  lastStartMs: number | null;
-}
-
 /**
- * Whether a carrier's report says who is speaking (Telnyx's speaker events: the playback starting or
- * stopping, or the caller's voice), so that a caller never reported speaking was not heard. A report of
- * a line played (Telnyx's tokens-played, a `finished` naming its line) alone says nothing of the caller.
+ * The fact of the carrier's interrupt of the line, `afterMs` into it. Whether it was the caller's is the
+ * adapter's decision, which comes after it as a fact of its own when it was not (`spuriousInterrupt`, then
+ * `resaid` with `reason: 'spurious-interrupt'` when the line is said again), and replaces its note.
  */
-export function reportsSpeakers(ev: PlaybackEvent): boolean {
-  return ev.kind === 'caller' || (ev.state === 'started' || ev.text === undefined);
-}
-
-/**
- * Whether the caller was heard speaking over a line the carrier interrupted `afterMs` into it, at
- * `atMs`: speaking now, or begun since the line started; not heard, on a carrier that reports its
- * speakers; null (not known) on one that does not.
- */
-export function callerHeardAt(voice: CallerVoice, atMs: number, afterMs: number): boolean | null {
-  if (voice.speaking) return true;
-  if (voice.lastStartMs !== null && voice.lastStartMs >= atMs - afterMs) return true;
-  return voice.reported ? false : null;
-}
-
-/** The fact of the carrier's interrupt of the line, `afterMs` into it. */
-export function interruptFact(afterMs: number, callerHeard: boolean | null): DeliveryFact {
-  return { kind: 'interrupt', afterMs, callerHeard };
+export function interruptFact(afterMs: number): DeliveryFact {
+  return { kind: 'interrupt', afterMs };
 }
 
 /**
  * The delivery facts of one call, read from its frame log in order, as the `delivery` events the adapter
- * published live: each `log` line that is one (deliveryFactOf), and each carrier `interrupt` with
- * whether the caller was heard, from the carrier's events logged before it (`{ carrierEvent }`), as the
- * adapter followed them (a reconnect or a socket close forgets the caller's speaking). Lines with no
- * readable time are passed over.
+ * published live: each `log` line that is one (deliveryFactOf), and each carrier `interrupt`. Lines with
+ * no readable time are passed over.
  */
 export function deliveriesOf(frames: readonly FrameLogLine[], callSid: string): DeliveryEvent[] {
   const out: DeliveryEvent[] = [];
-  const voice: CallerVoice = { reported: false, speaking: false, lastStartMs: null };
   for (const f of frames) {
     const at = Date.parse(f.ts);
     const msg = f.msg;
     if (!Number.isFinite(at) || !isRecord(msg)) continue;
-    if (f.dir === 'in' && 'carrierEvent' in msg) {
-      const ev = anyPlaybackEventOf(msg.carrierEvent);
-      if (!ev) continue;
-      if (reportsSpeakers(ev)) voice.reported = true;
-      if (ev.kind === 'caller') {
-        voice.speaking = ev.speaking;
-        if (ev.speaking) voice.lastStartMs = at;
-      }
-    } else if (f.dir === 'in' && msg.type === 'interrupt') {
+    let fact: DeliveryFact | null = null;
+    if (f.dir === 'in' && msg.type === 'interrupt') {
       const afterMs = msg.durationUntilInterruptMs;
-      if (typeof afterMs !== 'number' || !Number.isFinite(afterMs)) continue;
-      out.push({ type: 'delivery', callSid, at, fact: interruptFact(afterMs, callerHeardAt(voice, at, afterMs)) });
+      if (typeof afterMs === 'number' && Number.isFinite(afterMs)) fact = interruptFact(afterMs);
     } else if (f.dir === 'log') {
-      if (msg.resumed === true || msg.socketClosed === true) {
-        voice.speaking = false;
-        voice.lastStartMs = null;
-      }
-      const fact = deliveryFactOf(msg);
-      if (fact) out.push({ type: 'delivery', callSid, at, fact });
+      fact = deliveryFactOf(msg);
     }
+    if (fact) out.push({ type: 'delivery', callSid, at, fact });
   }
   return out;
 }

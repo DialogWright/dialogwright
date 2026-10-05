@@ -1151,9 +1151,37 @@ describe('delivery notes', () => {
     const greeting = turnEvent({ turnIndex: 1, event: { type: 'session.start' }, decision: { kind: 'prompt', promptId: 'greeting' } });
     const v = reduce([started, { ...greeting, spoken: 'Hello, how can I help?' } as DashboardEvent,
       { type: 'interrupt', callSid: CALL, at: 12, utteranceUntilInterrupt: 'Hello' },
-      delivery(12, { kind: 'interrupt', afterMs: 1704, callerHeard: false })]);
-    expect(notesOf(v)).toEqual([['system', 'Hello, how can I help?', ['interrupted 1.7 s in, caller not heard speaking']]]);
+      delivery(12, { kind: 'interrupt', afterMs: 700 })]);
+    expect(notesOf(v)).toEqual([['system', 'Hello, how can I help?', ['caller talked over this, 0.7 s in']]]);
     expect(v.lines.map((l) => l.text)).toContain('interrupted');
+  });
+
+  it("says an interrupt the adapter found was not the caller's in one note: the decision replaces the interrupt's", () => {
+    const greeting = { ...turnEvent({ turnIndex: 1, event: { type: 'session.start' }, decision: { kind: 'prompt', promptId: 'greeting' } }), spoken: 'Hello.' } as DashboardEvent;
+    const base = [started, greeting, delivery(12, { kind: 'interrupt', afterMs: 1704 })];
+    const decided = [...base, delivery(2012, { kind: 'spuriousInterrupt', afterMs: 1704, quietMs: null })];
+    expect(notesOf(reduce(decided))).toEqual([['system', 'Hello.', ['interrupted 1.7 s in with no caller speaking']]]);
+    const again = [...decided, delivery(2013, { kind: 'resaid', reason: 'spurious-interrupt', afterMs: 1704, expectedMs: 4000 })];
+    expect(notesOf(reduce(again))).toEqual([['system', 'Hello.', ['interrupted 1.7 s in with no caller speaking, said again']]]);
+    // A cut line said again is a note of its own beside an interrupt's.
+    const cut = [...base, delivery(3000, { kind: 'resaid', heardMs: 640, expectedMs: 9600 })];
+    expect(notesOf(reduce(cut))[0]![2]).toHaveLength(2);
+  });
+
+  it('marks a reply held and never said, on the line of the held turn, and notes one held then said', async () => {
+    const { events } = await scripted([OPENER, ACCOUNT_ID]);
+    const turns = turnIndexes(events);
+    const held = events[turns[1]!] as Extract<DashboardEvent, { type: 'turn' }>;
+    // The fact names the held turn: its line, even with a later line on screen.
+    const v = reduce([...events, delivery(20_000, { kind: 'replyHeld', ms: 600, outcome: 'joined', utteranceComplete: 0.3, turn: held.record.turnIndex })]);
+    const line = v.lines.find((l) => l.kind === 'system' && l.text === held.spoken)!;
+    expect(line.unsaid).toBe(true);
+    expect(line.notes?.map((n) => n.text)).toEqual(['not said: the caller went on']);
+    expect(v.lines.filter((l) => l.unsaid)).toHaveLength(1);
+    expect(scriptOf(v.lines, v.turnsView).find((l) => l.text === held.spoken)).toMatchObject({ who: 'agent', unsaid: true });
+    const sent = reduce(afterTurn(events, 1, delivery(7_000, { kind: 'replyHeld', ms: 1000, outcome: 'sent', utteranceComplete: 0.3, turn: held.record.turnIndex })));
+    expect(notesOf(sent)).toEqual([['system', held.spoken, ['reply held 1.0 s for the caller to finish, then said']]]);
+    expect(sent.lines.some((l) => l.unsaid)).toBe(false);
   });
 
   it("notes a join on the joined turn's caller line, with the pause the caller came back in after", async () => {
