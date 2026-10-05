@@ -24,6 +24,32 @@
     }
   },
   {
+    "id": "outage-then-done",
+    "steps": [
+      {
+        "say": "I want to report a power outage"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "no power at all"
+      },
+      {
+        "say": "yes, file it"
+      },
+      {
+        "say": "that's all"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye",
+      "principalLevel": 0,
+      "gate": "reportOutage:ALLOW"
+    }
+  },
+  {
     "id": "outage-up-front",
     "steps": [
       {
@@ -38,6 +64,24 @@
       "promptId": "anything_else",
       "principalLevel": 0,
       "gate": "reportOutage:ALLOW"
+    }
+  },
+  {
+    "id": "outage-address-picked",
+    "steps": [
+      {
+        "say": "the power is out at 22 Alder Street and nothing works"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_outage",
+      "form": "report_outage",
+      "slots": {
+        "place": "22 Alder Street",
+        "symptom": "no_power"
+      },
+      "text": "at this address: 22 Alder Street. Shall I file that?"
     }
   },
   {
@@ -669,7 +713,7 @@
     "id": "asks-for-a-person-in-outage",
     "steps": [
       {
-        "say": "I want to report a power outage"
+        "say": "my power is out"
       },
       {
         "say": "Can I speak to a representative"
@@ -721,7 +765,7 @@
     "id": "person-keypad-menu",
     "steps": [
       {
-        "say": "um"
+        "say": "okay"
       },
       {
         "say": "okay"
@@ -1031,7 +1075,7 @@
     "id": "keypad-menu-outage",
     "steps": [
       {
-        "say": "um"
+        "say": "okay"
       },
       {
         "say": "okay"
@@ -1059,7 +1103,7 @@
     "id": "keypad-menu-outage-map",
     "steps": [
       {
-        "say": "um"
+        "say": "okay"
       },
       {
         "say": "okay"
@@ -1078,7 +1122,7 @@
     "id": "keypad-menu-office-hours-then-balance",
     "steps": [
       {
-        "say": "um"
+        "say": "okay"
       },
       {
         "say": "okay"

@@ -16,8 +16,13 @@ describe('the app folder', () => {
   });
 
   it('has the example intent and the engine\'s control intents', () => {
-    expect(Object.keys(app.intents)).toEqual(['book_service', 'agent', 'repeat_prompt', 'other', 'none']);
+    expect(Object.keys(app.intents)).toEqual(['book_service', 'agent', 'repeat_prompt', 'done', 'other', 'none']);
     expect(app.intents.book_service!.kind).toBe('form');
+  });
+
+  it('understands a caller who is done: "done" ends the call with the goodbye (the scripted call done-after-a-request-it-cannot-handle)', () => {
+    expect(app.intents.done).toMatchObject({ kind: 'control', label: 'finish up' });
+    expect(app.prompts.manifest.goodbye).toBeDefined();
   });
 
   it('has an action in policy.yaml for every tool, and no other', () => {

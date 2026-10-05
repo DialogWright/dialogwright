@@ -11,6 +11,7 @@
 | `book_service` | form | book a service | opens the form, which asks for service |
 | `agent` | control | speak with someone | handled by the engine |
 | `repeat_prompt` | control | hear that again | handled by the engine |
+| `done` | control | finish up | handled by the engine |
 | `other` | control | something else | handled by the engine |
 | `none` | control | nothing | handled by the engine |
 

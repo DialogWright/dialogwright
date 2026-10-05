@@ -78,6 +78,6 @@ describe('a scaffolded app, end to end', () => {
     // `pnpm --filter ... regress`: the baseline that shipped, no changes.
     const regress = node(app, tool('tsx', 'dist', 'cli.mjs'), ['src/regress.ts']);
     expect(regress).toContain('no changes');
-    expect(regress).toMatch(/scenarios\s+3\/3 pass expectation,\s+3\/3 match expected/);
+    expect(regress).toMatch(/scenarios\s+4\/4 pass expectation,\s+4\/4 match expected/);
   }, 240_000);
 });

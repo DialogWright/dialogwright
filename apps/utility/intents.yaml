@@ -34,7 +34,8 @@ intents:
     kind: informational
     passage: office-hours
 
-  # The engine's own control intents. agent and repeat_prompt are required.
+  # The engine's own control intents. agent and repeat_prompt are required; done is how a caller
+  # who is finished is understood (pnpm check refuses an app that asks "anything else?" without it).
   agent:
     criteria: Asks to speak with a person, a representative, or an operator
     label: speak with someone
@@ -42,6 +43,12 @@ intents:
   repeat_prompt:
     criteria: Asks the system to repeat what it just said
     label: hear that again
+    kind: control
+  # The caller is finished: the call ends with the goodbye. It is the answer to "anything else?",
+  # which the line asks after an outage report, a balance, an arrangement or an answer.
+  done:
+    criteria: Says they are finished and need nothing more, as in no thanks, that's all, I'm all set, nothing else, I don't need anything else, or goodbye, including a bare no when just asked whether there is anything else
+    label: finish up
     kind: control
   other:
     criteria: A request this line does not handle

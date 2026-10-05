@@ -33,7 +33,7 @@ fixtures/       the corpus, the scripted calls, the baseline and the recorded ca
 Each YAML file starts with a `yaml-language-server` line that points at its schema in `packages/dialogwright/schemas/`, so an editor with the YAML extension completes and checks it as you type.
 
 - **app.yaml.** The app's id and its locale (`en-US`, the language of prompts.yaml); the brand and what the operator console shows (form and slot labels, the facts a tool call leaves, the level badge, which says "no verification" at every level); the phone line's speech settings (the recognizer's hints, including every provider's surname, and the rule that spells a member ID out in two groups of four); the handoff note's words; the engine's own model questions in the clinic's words (`wording`: whom the caller is addressing, what counts as a hedge or a no, and the question that asks which detail to change); the clinic's own thresholds; the slots carried from one task to the next; and where the fixtures are.
-- **intents.yaml.** The ten intents in the order the decision model is offered them, each with the criteria sent to the model and the label the line says ("I'd be happy to help you reschedule your appointment"). The five tasks are `form` intents, `capabilities` is `informational` (its line is said, and the caller goes back to where they were), and the rest are the engine's `control` intents. There is no `done`: a call ends at its completion. Then the keypad menu: 1 to 5 for the tasks, 0 for a person.
+- **intents.yaml.** The eleven intents in the order the decision model is offered them, each with the criteria sent to the model and the label the line says ("I'd be happy to help you reschedule your appointment"). The five tasks are `form` intents, `capabilities` is `informational` (its line is said, and the caller goes back to where they were), and the rest are the engine's `control` intents. `done` is how a caller who is finished is understood ("that's all", "I don't need anything else"): the call ends with the goodbye. A task ends the call on its own line, so the clinic hears it at the intent question (after the capabilities line, say); it is also the answer to "anything else?", which the engine asks when a form is done and the call goes on, and `pnpm check` refuses an app that has that line and no `done`. Then the keypad menu: 1 to 5 for the tasks, 0 for a person.
 - **forms.yaml.** Each form's slots in the order they are asked, the prompt that reads it back for a yes (`null` for billing, which has none), and the hooks it has. The hooks are functions in `src/domain/forms.ts` and `src/domain/scheduling.ts`; the list says which ones, and `defineApp` refuses a form whose code writes a hook the list leaves out, or leaves out one the list names.
 - **prompts.yaml.** All 68 lines, word for word, with whether a caller may talk over each. The agent says exactly these and never composes its own. Braces are filled in by the engine (`{intentLabel}`) or by the clinic's code (`{provider}`, `{when}`, `{existing}`).
 - **policy.yaml.** One action per tool, every one at level 0, since there is no `identity.yaml` (the clinic verifies no one, and `defineApp` refuses a higher level without one); the `identity` rule on every action and the `confirmed` rule on the three writes, with the fields it holds a confirmed write to, in the order the hash is taken over.
@@ -71,7 +71,7 @@ pnpm --filter @dialogwright/example-clinic cli --client heuristic --today 2026-0
 
 The `cli` is a text console: type what the caller says, and it prints each question the model was asked, what came back, the gate's rows and the line spoken. `--client heuristic` answers from keywords, and `--today` pins the date that "Tuesday" is read against.
 
-The regression run (`pnpm --filter @dialogwright/example-clinic regress`) replays the clinic's scripted calls and labelled corpus against a committed baseline of the stub's answers. Its fixtures live in `fixtures/`: `corpus.jsonl` (241 labelled utterances), `scenarios/core.json` (89 scripted calls, each with the outcome it expects) and `expected/` (the baseline). Every scripted call passes its own expectation, and the run reports `no changes`. A changed outcome is a finding to explain, never something to overwrite.
+The regression run (`pnpm --filter @dialogwright/example-clinic regress`) replays the clinic's scripted calls and labelled corpus against a committed baseline of the stub's answers. Its fixtures live in `fixtures/`: `corpus.jsonl` (249 labelled utterances), `scenarios/core.json` (90 scripted calls, each with the outcome it expects) and `expected/` (the baseline). Every scripted call passes its own expectation, and the run reports `no changes`. A changed outcome is a finding to explain, never something to overwrite. Each hand-made change to the baseline is logged under "Baseline edits" below.
 
 `serve` starts the phone line and the operator console. It needs `PUBLIC_HOST`, `TWILIO_AUTH_TOKEN` and `HANDOFF_NUMBER` (a 555 number is fine for local use), and runs on the stub client unless `JEV_CLIENT` says otherwise. For example:
 
@@ -81,6 +81,14 @@ PORT=3200 PUBLIC_HOST=clinic.example.test TWILIO_AUTH_TOKEN=x HANDOFF_NUMBER=+15
 ```
 
 The operator console is then at `http://localhost:3200/dashboard`, branded for the practice. The server also reads a settings file when `ENV_FILE=<path>` names one: `ENV_FILE=$PWD/apps/clinic/.env pnpm --filter @dialogwright/example-clinic serve`. A variable already in the environment wins over the file. `pnpm configure --app clinic` asks and writes that file (mode 600), and `pnpm start --app clinic` runs the server with it, through a quick tunnel when `PUBLIC_HOST` is unset.
+
+### Baseline edits
+
+The baseline (`fixtures/expected/`) is never regenerated. Each change to it is made by hand, from the stub's outcome read in the entry's transcript (`regress --corpus <id>`, `--scenario <id>`), and logged here.
+
+| Entry | Field | Before -> after | Why |
+|---|---|---|---|
+| corpus `dn-01` to `dn-08`; scenario `done-after-what-it-can-do` | (new entries) | none -> the stub's outcome | The `done` intent. Seven lines at "anything else?" (context `anything_else`, seeded by `testing.seed.anythingElse` as after a confirmed appointment) and one at the intent question, among them the two a caller used on a live call of another app ("that's all", "I don't need anything else"); the scripted call hears the capabilities line, then says "that's all I needed, thanks". Each is `complete goodbye` through the intent gate (`route`), at level 0, with no gate event. No existing entry changed. |
 
 ## Recording the cassette
 
@@ -104,16 +112,28 @@ Commit `apps/clinic/fixtures/recorded/jev-1.13.0.jsonl`. It holds only the clini
 
 The committed cassette is in the repository, and CI replays it offline with no secrets (`pnpm --filter @dialogwright/example-clinic regress --client recorded`, the last step of `.github/workflows/ci.yml`). The replay must exit 0: no cassette misses, every scripted call passing its expectation, and no difference from the baseline other than the allowed ones below.
 
+### Recording again: the `done` intent
+
+The `done` intent (a caller who is finished) changed what the model is sent: the intent question, which every turn asks, now lists it, so every request of the replay is new and the committed cassette misses all of them (417 cassette misses, every corpus line and every spoken turn of the scripted calls) until it is recorded again. The tests that replay it (`gate-event golden > recorded`, the session round trip, the shadow gate and the shadow harness on the recorded calls) fail on those misses too. To record it again, at the repository root, with the key from this folder's `.env` (`regress` does not read `ENV_FILE`; only the server does):
+
+```sh
+(set -a && . apps/clinic/.env && set +a && pnpm --filter @dialogwright/example-clinic regress --client record --threshold JEV_TIMEOUT_MS=15000)
+pnpm --filter @dialogwright/example-clinic regress --client recorded
+```
+
+The second line, with no key, must exit 0. The eight `done` lines (`dn-01` to `dn-08`) and the scripted call `done-after-what-it-can-do` are new; the stub reads them as `done` and ends the call with the goodbye. Where the model reads one differently, triage it as for any line (below), then run `pnpm --filter @dialogwright/example-clinic test`: the recorded gate-event golden already lists the new entries with no gate events, as a `done` read makes none.
+
 ### Known gaps
 
 See [docs/known-gaps.md](../../docs/known-gaps.md) for each gap's caller impact and candidate fix.
 
-Where the decision model reads a corpus line differently from its label, the corpus label stays the truth and the entry carries a `knownGap` in `fixtures/corpus.jsonl`: a one-line reason, and the outcome fields the model is known to produce instead, e.g. `"knownGap":{"reason":"...","outcome":{"decidedGate":"intent"}}`. A recorded or live run that shows exactly that outcome (the baseline's, with those fields overlaid) prints each difference as `(allowed: knownGap: <reason>)`, does not count it as a failure, and the summary says how many known gaps drifted. Any other difference on the entry fails, as on any entry. A stub run ignores `knownGap` and must still match the baseline exactly, so a tag never hides a change in the stub's outcomes. An entry that now matches is reported as `knownGap now matches: <id>`, a hint that the tag can go. Today six entries drift this way. Search the corpus for `knownGap` to see each reason and pin:
+Where the decision model reads a corpus line differently from its label, the corpus label stays the truth and the entry carries a `knownGap` in `fixtures/corpus.jsonl`: a one-line reason, and the outcome fields the model is known to produce instead, e.g. `"knownGap":{"reason":"...","outcome":{"decidedGate":"intent"}}`. A recorded or live run that shows exactly that outcome (the baseline's, with those fields overlaid) prints each difference as `(allowed: knownGap: <reason>)`, does not count it as a failure, and the summary says how many known gaps drifted. Any other difference on the entry fails, as on any entry. A stub run ignores `knownGap` and must still match the baseline exactly, so a tag never hides a change in the stub's outcomes. An entry that now matches is reported as `knownGap now matches: <id>`, a hint that the tag can go. Today eight entries carry a tag. Search the corpus for `knownGap` to see each reason and pin:
 
-- `ag-02`: the single word "Agent" leaves wantsHuman under its gate, so the intent gate routes the same handoff.
+- `ag-02`: the single word "Agent" reads on the addressed-to-system gate and under the wantsHuman gate; in today's recording it is ignored instead of handed off.
+- `lc-05`: the vague "Change it" reads on the injection screen's gate, so the screen re-asks what the caller wants.
 - `ns-06`: the unfinished "so my appointment" is routed as confirm_appointment instead of falling to nomatch_open.
 - `fc-13`, `fc-23`: a corrected name or birth date at the summary is decided by the changeSlot gate instead of a plain rejection (same prompt and slots).
-- `fc-17`: "Cheng, not Chen" is read as a name change, so the name is cleared and asked for.
+- `fc-08`, `fc-17`: "not Chen, Cheng" or "Cheng, not Chen" can be read as a name change, so the name is cleared and asked for (which of the two drifts moves between recordings).
 - `fc-19`: the lone surname "it's Cheng" is not read as a provider, so the short summary is read again.
 
 A scenario can be allowed the same way: `cosmeticDrift` (on `frustration-offer-yes`) lets a recorded run differ in which gate decided and its verdict. The transfer-offer lines ("yes, connect me", "transfer me") are labelled intent `agent`, as the model reads them, so they agree in both runs.

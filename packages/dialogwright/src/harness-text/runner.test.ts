@@ -261,6 +261,17 @@ describe('seedCorpusSession', () => {
     expect(s.slots.dob!.value).toBe('1985-04-12');
   });
 
+  it('seeds anything_else with no call when the seed names the form alone (a form answered by its own line)', () => {
+    const seed = testkitApp.testing!.seed!;
+    registerApp({ ...testkitApp, id: 'testkit-form-only', testing: { ...testkitApp.testing, seed: { ...seed, anythingElse: () => ({ form: 'delivery_window' }) } } });
+    const s = seedCorpusSession(newSession('ae2', 0, VOICE_RELAY, ANONYMOUS, 'testkit-form-only'), entries[2]!, seedOpts);
+    expect(s.form).toBeNull();
+    expect(s.completed).toEqual(['delivery_window']);
+    expect(s.lastPromptId).toBe('anything_else');
+    // No call was made, so the facts a call would have left are not there.
+    expect(s.facts).toEqual(newSession('fresh', 0, VOICE_RELAY).facts);
+  });
+
   it('leaves a no_form session untouched', () => {
     const untouched = newSession('c1', 0, VOICE_RELAY);
     expect(seedCorpusSession(untouched, entries[0]!, seedOpts)).toBe(untouched);

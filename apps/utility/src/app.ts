@@ -311,6 +311,9 @@ export const code: AppCode = {
         firstDate: { value: '2026-09-25', display: 'Friday, September 25th' },
         subject: { value: 'outage_credit', display: 'outage credits' },
       },
+      // A corpus line at "anything else?" (context anything_else) follows an outage report, as on
+      // the call that found the gap: the form just answered, by a write already made, so no call.
+      anythingElse: () => ({ form: 'report_outage' }),
     },
     // A corpus line answering the offer of a person (after an answer that could not be given) is seeded in the question form.
     offerTransferForm: 'ask_question',

@@ -5,7 +5,7 @@ import { withShortTmp } from '../testing/shortTmp';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { CODE_PROMPTS, DEFAULT_ROLE_PERSON_REASON, ENGINE_PROMPTS, IDENTITY_PROMPTS, MAX_CORPUS_BYTES, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts } from './check';
+import { CODE_PROMPTS, DEFAULT_ROLE_PERSON_REASON, DONE_INTENT_YAML, ENGINE_PROMPTS, IDENTITY_PROMPTS, MAX_CORPUS_BYTES, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts } from './check';
 import type { AppCode } from './defineApp';
 import { USAGE, findAppFolders, main, type Io } from './cli';
 import { libraryCode, LIBRARY_DIR } from './fixture/app';
@@ -288,6 +288,38 @@ describe('checkApp: every prompt is mode: fixed', () => {
       'prompts.yaml': (t) => t.replace('  hours:\n    text: Every branch is open from nine to six, Monday to Saturday.\n    interruptible: true', '  hours:\n    text: Every branch is open from nine to six, Monday to Saturday.\n    interruptible: true\n    mode: generated'),
     });
     expect(await lines(dir)).toEqual(['prompts.yaml:99:11  prompts.hours.mode  "mode" is "generated", but the only value allowed is "fixed"  ->  write "fixed"']);
+  });
+});
+
+describe('checkApp: a caller asked "anything else?" can say they are done', () => {
+  const DONE = '  done:\n    criteria: Says they are finished and need nothing else\n    label: finish\n    kind: control\n';
+  const withoutDone = (text: string): string => {
+    expect(text).toContain(DONE);
+    return text.replace(DONE, '');
+  };
+
+  it('an app that says anything_else and has no done intent is a problem at intents, with the intent to paste', async () => {
+    const dir = folder({ 'intents.yaml': withoutDone });
+    const problems = await checkApp(dir, { code: libraryCode });
+    expect(problems).toHaveLength(1);
+    expect(formatProblem(problems[0]!)).toBe(
+      `intents.yaml:2:1  intents  the app asks whether there is anything else (the line "anything_else", said when a form is done) but has no "done" intent, so a caller who answers "no, that's all" is not understood: they hear the no-match line instead of the goodbye, then the keypad menu or a person  ->  add under intents: ${DONE_INTENT_YAML}; then give it corpus lines, such as {"id":"dn-01","text":"no, that's all","intent":"done","context":"anything_else"} (the anything_else context needs testing.seed.anythingElse; "no_form" otherwise)`,
+    );
+  });
+
+  it('the intent in the fix, pasted under intents as it is, loads and passes', async () => {
+    const dir = folder({ 'intents.yaml': (t) => withoutDone(t).replace('intents:\n', `intents:\n  ${DONE_INTENT_YAML}\n`) });
+    expect(await lines(dir)).toEqual([]);
+    const loaded = loadAppFolder(dir);
+    expect(loaded.config?.intents.intents.done).toMatchObject({ label: 'finish up', kind: 'control' });
+    expect(loaded.config?.intents.intents.done?.criteria).toContain("that's all");
+  });
+
+  it('an app without the anything_else line is told the line is missing, and nothing about done until it has it', async () => {
+    const dir = folder({ 'intents.yaml': withoutDone, 'prompts.yaml': without('anything_else') });
+    const found = await lines(dir);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('prompt "anything_else" is missing from prompts.yaml');
   });
 });
 

@@ -3,8 +3,6 @@
 # the keypad menu. Each criteria line is sent to the model as it is written: a change re-keys the
 # recorded cassette (fixtures/recorded). Each label is said in acknowledgements and confirmations
 # ("I'd be happy to help you {label}").
-#
-# There is no `done`: a call ends when its task is done (a completion), handed off, or hung up.
 intents:
   # The five tasks, one form each (forms.yaml)
   schedule_new:
@@ -36,6 +34,13 @@ intents:
   repeat_prompt:
     criteria: Asks the system to repeat what it just said
     label: hear that again
+    kind: control
+  # The caller is finished: the call ends with the goodbye. A task ends the call on its own line, so
+  # this is heard at the intent question (after the capabilities line, say) and at "anything else?",
+  # which the engine asks when a form is done and the call goes on.
+  done:
+    criteria: Says they are finished and need nothing more, as in no thanks, that's all, I'm all set, nothing else, I don't need anything else, or goodbye, including a bare no when just asked whether there is anything else
+    label: finish up
     kind: control
 
   # Informational: its line is said, and the caller goes back to the question they were on

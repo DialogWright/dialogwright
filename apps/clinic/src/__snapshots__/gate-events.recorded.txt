@@ -60,6 +60,14 @@
 # corpus rp-02
 # corpus rp-03
 # corpus rp-04
+# corpus dn-01
+# corpus dn-02
+# corpus dn-03
+# corpus dn-04
+# corpus dn-05
+# corpus dn-06
+# corpus dn-07
+# corpus dn-08
 # corpus ot-01
 # corpus ot-02
 # corpus ot-03
@@ -256,10 +264,6 @@
 1 listOpenings ALLOW {"provider":"alvarez","date":"2026-09-24"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 # corpus fc-08
-1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"cheng"}
-    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
-1 listOpenings ALLOW {"provider":"cheng","date":"2026-09-22"}
-    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 # corpus fc-09
 # corpus fc-10
 # corpus fc-11
@@ -273,6 +277,10 @@
     confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
 # corpus fc-16
 # corpus fc-17
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"cheng"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"cheng","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 # corpus fc-18
 1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
@@ -681,6 +689,7 @@
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario done-after-what-it-can-do
 # scenario provider-no-name
 # scenario provider-has-name
 # scenario provider-no-twice

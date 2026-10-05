@@ -18,6 +18,13 @@ intents:
     criteria: Asks the system to repeat what it just said
     label: hear that again
     kind: control
+  # The caller is finished: the call ends with the goodbye. The line asks "anything else?" when a
+  # form is done (anything_else), and this is how "no, that's all" is understood; without it the
+  # caller hears the no-match line instead, and `pnpm check` says so.
+  done:
+    criteria: Says they are finished and need nothing more, as in no thanks, that's all, I'm all set, nothing else, I don't need anything else, or goodbye, including a bare no when just asked whether there is anything else
+    label: finish up
+    kind: control
   other:
     criteria: A request this line does not handle
     label: something else

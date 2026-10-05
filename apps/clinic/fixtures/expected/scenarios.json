@@ -1759,6 +1759,28 @@
     "pass": true,
     "mismatches": []
   },
+  "done-after-what-it-can-do": {
+    "id": "done-after-what-it-can-do",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
   "provider-no-name": {
     "id": "provider-no-name",
     "decision": "prompt",

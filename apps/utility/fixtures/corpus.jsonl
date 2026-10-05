@@ -1,16 +1,16 @@
-{"id": "ro-01", "text": "I want to report a power outage", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}}
+{"id": "ro-01", "text": "I want to report a power outage", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}, "knownGap": {"reason": "'I want to report a power outage': symptom no_power 0.49 to 0.55 against none, a coin flip, so the symptom may be left for the caller and asked", "outcome": {"slots": {"place": null, "symptom": null, "account": null, "count": null, "firstDate": null, "subject": null, "accountId": null, "dob": null}}}}
 {"id": "ro-02", "text": "outage", "intent": "report_outage", "context": "no_form"}
 {"id": "ro-03", "text": "no power", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}}
 {"id": "ro-04", "text": "my power is out", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}}
-{"id": "ro-05", "text": "the power is out at 22 Alder Street and nothing works", "intent": "report_outage", "context": "no_form", "labels": {"placeGiven": true, "symptom": "no_power"}}
+{"id": "ro-05", "text": "the power is out at 22 Alder Street and nothing works", "intent": "report_outage", "context": "no_form", "labels": {"placeGiven": true, "symptom": "no_power", "placePick": "22 Alder Street"}}
 {"id": "ro-06", "text": "the lights keep flickering at my house", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "flicker"}}
-{"id": "ro-07", "text": "there's a wire down on Maple Avenue", "intent": "report_outage", "context": "no_form", "labels": {"placeGiven": true, "symptom": "wire_down"}}
+{"id": "ro-07", "text": "there's a wire down on Maple Avenue", "intent": "report_outage", "context": "no_form", "labels": {"placeGiven": true, "symptom": "wire_down", "placePick": "Maple Avenue"}}
 {"id": "ro-08", "text": "I think the power might be off on our street, not sure", "intent": "report_outage", "context": "no_form", "tentative": true}
 {"id": "ro-09", "text": "report an outage at one of my buildings", "intent": "report_outage", "context": "no_form", "as": "riley"}
 {"id": "ro-10", "text": "half the apartment has no power", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "partial"}}
 {"id": "pl-01", "text": "It's 14 Birch Lane", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
 {"id": "pl-02", "text": "200 Heron Row", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
-{"id": "pl-03", "text": "the corner of Elm and Third, by the school", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
+{"id": "pl-03", "text": "the corner of Elm and Third, by the school", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true, "placePick": "the corner of Elm and Third"}, "knownGap": {"reason": "'the corner of Elm and Third, by the school': the address pick reads none 0.64 (candidate e 0.23), so the whole answer is kept as the place; the read-back adds ', by the school'", "outcome": {"slots": {"place": "the corner of Elm and Third, by the school", "symptom": null, "account": null, "count": null, "firstDate": null, "subject": null, "accountId": "55501234", "dob": "1980-04-12"}}}}
 {"id": "pl-04", "text": "I'm not sure of the number", "intent": "none", "context": "report_outage", "prompted": "place"}
 {"id": "pl-05", "text": "sorry, I meant 41 Birch Lane, not 14", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
 {"id": "pl-06", "text": "9 Fernhill Court", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
@@ -140,6 +140,14 @@
 {"id": "rp-06", "text": "could you say the options again", "intent": "repeat_prompt", "context": "no_form"}
 {"id": "rp-07", "text": "pardon", "intent": "repeat_prompt", "context": "check_balance", "knownGap": {"reason": "a bare 'pardon' in a form: repeat_prompt 0.44 against none 0.56 (confusedByPrompt 0.79), so the account question's retry is said instead of a replay; the caller still hears the question again", "outcome": {"decision": "prompt", "promptId": "ask_account_retry", "decidedGate": null, "verdict": "proceed"}}}
 {"id": "rp-08", "text": "come again", "intent": "repeat_prompt", "context": "no_form"}
+{"id": "dn-01", "text": "that's all", "intent": "done", "context": "anything_else"}
+{"id": "dn-02", "text": "I don't need anything else", "intent": "done", "context": "anything_else"}
+{"id": "dn-03", "text": "no thank you, I'm all set", "intent": "done", "context": "anything_else"}
+{"id": "dn-04", "text": "nothing else", "intent": "done", "context": "anything_else"}
+{"id": "dn-05", "text": "nope, that's it", "intent": "done", "context": "anything_else"}
+{"id": "dn-06", "text": "no, that's everything, bye", "intent": "done", "context": "anything_else"}
+{"id": "dn-07", "text": "I'm good, thanks", "intent": "done", "context": "anything_else"}
+{"id": "dn-08", "text": "that's all I needed", "intent": "done", "context": "no_form"}
 {"id": "ot-03", "text": "can I change my mailing address", "intent": "other", "context": "no_form"}
 {"id": "ot-05", "text": "what's the weather tomorrow", "intent": "other", "context": "no_form"}
 {"id": "ot-08", "text": "can you sign me up for paperless billing", "intent": "other", "context": "no_form"}
@@ -147,7 +155,7 @@
 {"id": "ot-10", "text": "I'd like to update the phone number on my account", "intent": "other", "context": "no_form"}
 {"id": "ns-01", "text": "Hello", "intent": "none", "context": "no_form"}
 {"id": "ns-02", "text": "Honey, where did you put the keys", "intent": "none", "context": "no_form", "answers": {"addressedToSystem": {"noul": 0.15}}, "tags": ["side_speech"]}
-{"id": "ns-03", "text": "um", "intent": "none", "context": "no_form", "answers": {"intelligible": {"noul": 0.3}}, "tags": ["unintelligible"]}
+{"id": "ns-03", "text": "um", "intent": "none", "context": "no_form", "answers": {"intelligible": {"noul": 0.3}}, "tags": ["unintelligible"], "knownGap": {"reason": "a bare 'um': addressedToSystem 0.64 to 0.65, on the 0.65 gate; at 0.64 it is ignored rather than counted as a miss (the no-input wait still re-asks)", "outcome": {"decision": "ignore", "promptId": null, "decidedGate": "addressedToSystem", "verdict": "ignore"}}}
 {"id": "ns-04", "text": "okay", "intent": "none", "context": "no_form"}
 {"id": "ns-05", "text": "hi there", "intent": "none", "context": "no_form"}
 {"id": "ns-06", "text": "hang on a second", "intent": "none", "context": "no_form", "answers": {"addressedToSystem": {"noul": 0.5}}, "tags": ["hold"]}
