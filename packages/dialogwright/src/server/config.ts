@@ -3,8 +3,11 @@ import { resolveJevProvider, type JevProvider } from '../jev/provider';
 
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
-import { checkSecretOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
-import { BARGE_IN_MODES, bargeInRefusal, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS, type BargeIn } from '../channel/voiceProviders';
+import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
+import {
+  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
+  type BargeIn, type EndAfterPlayback,
+} from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 import { checkJwksUrl } from './chat/jwks';
@@ -131,6 +134,20 @@ export interface ServerConfig {
    * (absent reads as any).
    */
   bargeIn?: BargeIn;
+  /**
+   * END_AFTER_PLAYBACK=auto|on|off, default auto: whether a turn that ends the call (a goodbye before the
+   * hang-up, a line before a transfer) holds its `end` frame until the lines before it have played. A
+   * carrier that acts on `end` at once drops what it has not yet said, and the caller hears no goodbye
+   * (Telnyx, seen on a live call). The `end` goes when the carrier reports the last line played
+   * (Telnyx with TELNYX_EVENTS), or by the estimate and a margin when no report comes; on a carrier that
+   * reports nothing, after the lines' estimated length. `auto` holds it on the carriers that need it
+   * (VoiceProvider.endDropsSpeech: Telnyx), `on` on every carrier, `off` on none (the lines and the
+   * `end` together, as before). Optional in the type only, for a config made by hand before it existed
+   * (absent reads as auto).
+   */
+  endAfterPlayback?: EndAfterPlayback;
+  /** END_PLAYBACK_MAX_MS, default 15000 (DEFAULT_END_PLAYBACK_MAX_MS): the longest an `end` is held. */
+  endPlaybackMaxMs?: number;
   /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
   noInputMs: number;
   /**
@@ -249,6 +266,17 @@ function bargeInOf(env: Env, voiceProviders: readonly string[]): BargeIn {
   const refusal = bargeInRefusal(mode, voiceProviders);
   if (refusal) throw new Error(refusal);
   return mode;
+}
+
+/** END_AFTER_PLAYBACK and END_PLAYBACK_MAX_MS, checked. */
+function endAfterPlaybackOf(env: Env): { endAfterPlayback: EndAfterPlayback; endPlaybackMaxMs: number } {
+  const mode = env.END_AFTER_PLAYBACK?.trim().toLowerCase() || 'auto';
+  if (!(END_AFTER_PLAYBACK_MODES as readonly string[]).includes(mode)) {
+    throw new Error(`END_AFTER_PLAYBACK must be auto, on or off, got "${env.END_AFTER_PLAYBACK}"`);
+  }
+  const maxMs = integer(env, 'END_PLAYBACK_MAX_MS', DEFAULT_END_PLAYBACK_MAX_MS);
+  if (maxMs <= 0) throw new Error(`END_PLAYBACK_MAX_MS must be a positive number of milliseconds, got "${env.END_PLAYBACK_MAX_MS}"`);
+  return { endAfterPlayback: mode as EndAfterPlayback, endPlaybackMaxMs: maxMs };
 }
 
 /** The pause a planned restart's handover asks of each carrier, unless RESTART_PAUSE_S says otherwise. */
@@ -402,6 +430,7 @@ export function loadConfig(env: Env): ServerConfig {
     telnyxEvents,
     ...resayOf(env),
     bargeIn: bargeInOf(env, voiceProviders),
+    ...endAfterPlaybackOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     jevTimeoutMs: jevTimeout(env),
     screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
@@ -590,6 +619,16 @@ function describeResay(c: ServerConfig): string {
   return `cut lines said again (under ${c.resayMinFraction ?? DEFAULT_RESAY_MIN_FRACTION} of the estimate${inactive})`;
 }
 
+/** END_AFTER_PLAYBACK as the startup line says it: which of the carriers listed have their `end` held. */
+function describeEndAfterPlayback(c: ServerConfig): string {
+  const mode = c.endAfterPlayback ?? 'auto';
+  if (mode === 'off') return 'end after playback off';
+  const upTo = `up to ${c.endPlaybackMaxMs ?? DEFAULT_END_PLAYBACK_MAX_MS} ms`;
+  if (mode === 'on') return `end after playback on (every carrier), ${upTo}`;
+  const held = c.voiceProviders.filter(endDropsSpeechOf);
+  return held.length === 0 ? 'end after playback auto (no carrier listed needs it)' : `end after playback auto (${held.join(', ')}), ${upTo}`;
+}
+
 export function describeConfig(c: ServerConfig): string {
   // A prefix of a secret is still a piece of the secret; the length alone is enough to tell
   // "the variable is set" from "the variable is the wrong value".
@@ -613,6 +652,7 @@ export function describeConfig(c: ServerConfig): string {
     `jev timeout ${c.jevTimeoutMs} ms`,
     `screen ${c.screen}`,
     `barge-in ${c.bargeIn ?? 'any'}`,
+    describeEndAfterPlayback(c),
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
     c.consoleAuth ? describeConsoleAuth(c.consoleAuth) : `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,

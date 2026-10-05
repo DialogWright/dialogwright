@@ -1,8 +1,8 @@
-import { playbackEventOf, readsPlaybackEvents, setupCallIdOf, textLastOf } from './voice/registry';
+import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCallIdOf, textLastOf } from './voice/registry';
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
-import type { BargeIn } from '../channel/voiceProviders';
+import { DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
@@ -199,6 +199,8 @@ export function forgetNoInput(callSid: string): void {
   continuations.delete(callSid);
   unwatch(callSid);
   callerSpeaking.delete(callSid);
+  heldEnds.get(callSid)?.release('closed');
+  reportsPlayback.delete(callSid);
 }
 
 /**
@@ -314,6 +316,146 @@ function watchPlayback(deps: AdapterDeps, entry: CallEntry, frames: readonly Out
 function callerHeard(callSid: string): void {
   const w = watched.get(callSid);
   if (w) w.heard = true;
+}
+
+/**
+ * How a held `end` (END_AFTER_PLAYBACK) came to go, as the frame log's `endAfter` says it: the carrier
+ * reported the lines played; their estimate passed on a call whose carrier reports nothing; the ceiling
+ * passed (the estimate and a margin with no report, or END_PLAYBACK_MAX_MS); or the socket closed first
+ * (the caller hung up), and no `end` was sent.
+ */
+type EndAfter = 'played' | 'estimate' | 'timeout' | 'closed';
+
+/** A turn's `end` frame held until the lines before it have played (holdEnd). */
+interface HeldEnd {
+  /** The last line as it went out, whitespace folded: a carrier's report of it playing names it. */
+  lastText: string | null;
+  /** The carrier has started playing since the lines went out: a stop after that is the end of them. */
+  started: boolean;
+  /** A stop with no line named, waiting out RESAY_SETTLE_MS in case more plays; null otherwise. */
+  settle: ReturnType<typeof setTimeout> | null;
+  ceiling: ReturnType<typeof setTimeout>;
+  release: (after: EndAfter) => void;
+}
+const heldEnds = new Map<string, HeldEnd>();
+
+/**
+ * Calls whose carrier has reported its playback (Telnyx with TELNYX_EVENTS reports the greeting's), so a
+ * held `end` waits for the report, up to the estimate and a margin; on any other call the estimate is all
+ * there is to go by.
+ */
+const reportsPlayback = new Set<string>();
+
+/** Whether a call's `end` is held until its lines have played: END_AFTER_PLAYBACK, auto by the carrier. */
+function holdsEnd(deps: AdapterDeps, provider: string | undefined): boolean {
+  const mode = deps.endAfterPlayback ?? 'auto';
+  return mode === 'on' || (mode === 'auto' && endDropsSpeechOf(provider));
+}
+
+/**
+ * Wait until the lines a turn that ends the call just sent (`sent`) have played: until the carrier reports
+ * the last of them played (or stopped, and stayed stopped for RESAY_SETTLE_MS, after it started), else
+ * until the ceiling. The ceiling is the lines' estimate (playbackEstimateMs, as for the no-input wait) and
+ * END_PLAYBACK_MARGIN_MS on a call whose carrier reports its playback, or the estimate and
+ * END_PLAYBACK_LEAD_MS on one that reports nothing; never more than END_PLAYBACK_MAX_MS. A socket close
+ * meanwhile ends the wait as `closed` (handleSocketClose).
+ */
+function holdEnd(deps: AdapterDeps, callSid: string, sent: readonly OutboundFrame[]): Promise<{ after: EndAfter; heldMs: number; expectedMs: number }> {
+  const said = sent.filter((f) => f.type === 'text' || f.type === 'play');
+  const expectedMs = playbackEstimateMs(said, deps.clipDurations ?? new Map());
+  const reported = reportsPlayback.has(callSid);
+  const wanted = expectedMs + (reported ? END_PLAYBACK_MARGIN_MS : END_PLAYBACK_LEAD_MS);
+  const waitMs = Math.min(deps.endPlaybackMaxMs ?? DEFAULT_END_PLAYBACK_MAX_MS, wanted);
+  const last = [...said].reverse().find((f) => f.type === 'text');
+  heldEnds.get(callSid)?.release('closed');
+  const heldAtMs = Date.now();
+  return new Promise((resolve) => {
+    const held: HeldEnd = {
+      lastText: last?.type === 'text' ? folded(last.token) : null,
+      started: false,
+      settle: null,
+      ceiling: setTimeout(() => held.release(reported || waitMs < wanted ? 'timeout' : 'estimate'), waitMs),
+      release: (after) => {
+        if (heldEnds.get(callSid) !== held) return;
+        heldEnds.delete(callSid);
+        clearTimeout(held.ceiling);
+        if (held.settle) clearTimeout(held.settle);
+        resolve({ after, heldMs: Date.now() - heldAtMs, expectedMs });
+      },
+    };
+    held.ceiling.unref?.();
+    heldEnds.set(callSid, held);
+  });
+}
+
+/** A carrier's report of its playback, for a call whose `end` is held (holdEnd). */
+function onHeldEndEvent(callSid: string, ev: PlaybackEvent): void {
+  const held = heldEnds.get(callSid);
+  if (!held || ev.kind !== 'playback') return;
+  if (ev.state === 'started') {
+    held.started = true;
+    if (held.settle) {
+      clearTimeout(held.settle);
+      held.settle = null;
+    }
+    return;
+  }
+  // The report of a line played: the end of the lines when it names the last one.
+  if (ev.text !== undefined) {
+    if (held.lastText !== null && folded(ev.text) === held.lastText) held.release('played');
+    return;
+  }
+  // A stop that names no line: only once the lines have started (a stop before is of what played before
+  // them), and only once it has stayed stopped (a carrier may stop between lines).
+  if (!held.started || held.settle) return;
+  held.settle = setTimeout(() => held.release('played'), RESAY_SETTLE_MS);
+  held.settle.unref?.();
+}
+
+/**
+ * Send a turn's `end` frame (`end`, with anything after it) once the lines before it have played
+ * (holdEnd), with the end-close grace after it as for any `end`. The call is ended first, in the store
+ * and for its token, so a socket that closes during the wait is a call that ended, never one to
+ * reconnect (http.ts decideAction), and a turn queued behind this one says nothing. Not awaited by the
+ * turn: the call's queue has nothing more to run, and a carrier's report must reach the wait meanwhile.
+ * Returns false, having sent nothing, when no line went out or the socket is gone: there is nothing to wait for.
+ */
+function sendEndAfterPlayback(deps: AdapterDeps, entry: CallEntry, end: OutboundFrame[], sent: readonly OutboundFrame[], decision: unknown): boolean {
+  if (entry.socket === null || !sent.some((f) => f.type === 'text' || f.type === 'play')) return false;
+  deps.store.end(entry.callSid);
+  deps.tokens.revoke(entry.callSid);
+  void holdEnd(deps, entry.callSid, sent)
+    .then(async ({ after, heldMs, expectedMs }) => {
+      entry.frames.write('log', { endAfter: after, endHeldMs: heldMs, expectedMs });
+      if (after === 'closed') return;
+      if (after === 'timeout' && reportsPlayback.has(entry.callSid)) {
+        deps.log(`${entry.callSid}: end sent after ${seconds(heldMs, 2)} with no report the lines finished (~${seconds(expectedMs, 1)} estimated)`);
+      }
+      await sendFrames(deps, entry, end, decision);
+      armEndGrace(deps, entry);
+    })
+    .catch((err: unknown) => deps.log(`${entry.callSid}: sending the held end failed: ${describe(err).message}`));
+  return true;
+}
+
+/**
+ * After `end`, Twilio plays the queued frames and closes the socket itself; closing it here would drop
+ * the completion (live call, error 64105). The backstop closes it after END_CLOSE_GRACE_MS if the
+ * carrier never does; the socket's close cancels it.
+ */
+function armEndGrace(deps: AdapterDeps, entry: CallEntry): void {
+  const socket = entry.socket;
+  if (!socket) return;
+  const graceMs = deps.endCloseGraceMs ?? END_CLOSE_GRACE_MS;
+  const timer = setTimeout(() => {
+    endGraceTimers.delete(entry.callSid);
+    if (entry.socket === socket) {
+      deps.log(`${entry.callSid}: Twilio did not close after end within ${graceMs} ms, closing`);
+      socket.close(1000, 'end grace elapsed');
+    }
+  }, graceMs);
+  timer.unref?.();
+  endGraceTimers.set(entry.callSid, timer);
 }
 
 /** Seconds for the log: `0.67 s`. */
@@ -462,6 +604,14 @@ export interface AdapterDeps {
    * not interruptible (channel/relay/frames.ts bargeInFrame). Absent: any, the lines' own flags.
    */
   bargeIn?: BargeIn;
+  /**
+   * END_AFTER_PLAYBACK: whether a turn that ends the call holds its `end` until the lines before it have
+   * played (sendEndAfterPlayback). Absent: auto, held on a carrier that drops unsaid lines at `end`
+   * (VoiceProvider.endDropsSpeech).
+   */
+  endAfterPlayback?: EndAfterPlayback;
+  /** END_PLAYBACK_MAX_MS: the longest an `end` is held. Absent: DEFAULT_END_PLAYBACK_MAX_MS. */
+  endPlaybackMaxMs?: number;
 }
 
 /** How the adapter says again a line the carrier cut short (RESAY_CUT_LINES, RESAY_MIN_FRACTION). */
@@ -682,6 +832,8 @@ function fireHandoffSummary(deps: AdapterDeps, entry: CallEntry): void {
 /** Run one turn and send what it decided. False when the turn threw (the apology was spoken instead). */
 async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, arrival?: Arrival): Promise<boolean> {
   let ending = false;
+  // The turn's `end` waits for its lines to play, and is sent (with the grace after it) by the wait.
+  let endHeld = false;
   try {
     // Through the call's Continuation: a final prompt that continues one whose reply the caller cut
     // off at once runs as the words joined, on the session from before the first of them.
@@ -709,7 +861,14 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // timer on its way in. Kept so a future path that arms and then ends cannot strand a timer.
     if (ending) clearNoInput(entry.callSid);
     const frames = actionsToFrames(run.result.actions);
-    const sent = await sendFrames(deps, entry, frames, run.result.decision);
+    // A carrier that acts on `end` at once drops the lines not yet said (END_AFTER_PLAYBACK): the
+    // goodbye or the transfer line goes now, and the `end` once it has played.
+    const at = ending && holdsEnd(deps, entry.provider) ? frames.findIndex((f) => f.type === 'end') : -1;
+    const sent = await sendFrames(deps, entry, at >= 0 ? frames.slice(0, at) : frames, run.result.decision);
+    if (at >= 0) {
+      endHeld = sendEndAfterPlayback(deps, entry, frames.slice(at), sent, run.result.decision);
+      if (!endHeld) sent.push(...(await sendFrames(deps, entry, frames.slice(at), run.result.decision)));
+    }
     // Lines a carrier that reports its playback may cut short, said again if it does (RESAY_CUT_LINES).
     watchPlayback(deps, entry, frames, run.result.decision, sent, false);
     // Work handed to a downstream service: its answer is the next turn, and it arms the wait itself.
@@ -748,20 +907,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
       deps.store.end(entry.callSid);
       deps.tokens.revoke(entry.callSid);
       // Twilio closes the socket after it has played the queued frames and processed `end`;
-      // closing here drops the completion (live call, error 64105).
-      const socket = entry.socket;
-      if (socket) {
-        const graceMs = deps.endCloseGraceMs ?? END_CLOSE_GRACE_MS;
-        const timer = setTimeout(() => {
-          endGraceTimers.delete(entry.callSid);
-          if (entry.socket === socket) {
-            deps.log(`${entry.callSid}: Twilio did not close after end within ${graceMs} ms, closing`);
-            socket.close(1000, 'end grace elapsed');
-          }
-        }, graceMs);
-        timer.unref?.();
-        endGraceTimers.set(entry.callSid, timer);
-      }
+      // closing here drops the completion (live call, error 64105). A held `end` arms it once sent.
+      if (!endHeld) armEndGrace(deps, entry);
     }
   }
 }
@@ -819,8 +966,13 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     }
     const message = JSON.parse(raw) as unknown;
     entry.frames.write('in', { carrierEvent: message });
-    const ev = deps.resay ? playbackEventOf(ctx.provider, message) : null;
-    if (ev && deps.resay) onPlaybackEvent(deps, entry, ev, deps.resay);
+    // Read for a held `end` too (END_AFTER_PLAYBACK), which waits for the report that its lines played.
+    const ev = playbackEventOf(ctx.provider, message);
+    if (ev) {
+      if (ev.kind === 'playback') reportsPlayback.add(entry.callSid);
+      onHeldEndEvent(entry.callSid, ev);
+      if (deps.resay) onPlaybackEvent(deps, entry, ev, deps.resay);
+    }
     return;
   }
   if (!parsed) {
@@ -1111,6 +1263,8 @@ export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContex
   clearNoInput(ctx.callSid);
   unwatch(ctx.callSid);
   callerSpeaking.delete(ctx.callSid);
+  // A held `end` has no one left to hear its lines: it is not sent (the call already ended for the store).
+  heldEnds.get(ctx.callSid)?.release('closed');
   entry.frames.write('log', { socketClosed: true, ended: entry.ended });
   deps.store.detach(ctx.callSid);
 }

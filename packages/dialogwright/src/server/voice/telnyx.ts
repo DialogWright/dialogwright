@@ -40,6 +40,13 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *   no-input wait asked again, 16.6 s after the line went out; then the same line played in full (tokensPlayed 9.6 s after
  *   agentSpeaking on). Earlier calls, before the events were on, had the same silence after a reply right
  *   after the caller spoke. The adapter says such a line again (RESAY_CUT_LINES, server/adapter.ts).
+ * - Telnyx acts on an `end` frame at once and drops the speech it has been sent and not yet played. A
+ *   turn that ended the call sent "Goodbye." (last: true) and `end` in the same millisecond; agentSpeaking
+ *   went on 0.13 s later and off 14 ms after that, Telnyx closed the socket 146 ms after the `end`, and the
+ *   caller heard no goodbye. Twilio, by contrast, plays what is queued before it acts on `end` while the
+ *   socket stays open. So Telnyx's provider says `endDropsSpeech`, and the adapter holds the `end` until
+ *   the lines before it have played (END_AFTER_PLAYBACK, server/adapter.ts): until tokensPlayed or
+ *   agentSpeaking off says so, or, without TELNYX_EVENTS, for the lines' estimated length.
  *
  * ASSUMPTIONS, not in Telnyx's published pages and not yet seen on a live call:
  * 1. The parser below also reads a JSON body, and takes `call_control_id` (or `CallControlId`) for the call
@@ -185,6 +192,8 @@ export const telnyxProvider: VoiceProvider = {
   setupCallId: (setup) => setup.callControlId ?? setup.callSid,
   // Seen on a live call (2026-10-05): after a text frame with last: true, Telnyx drops the turn's next one.
   textLast: 'final',
+  // Seen on a live call (2026-10-05): Telnyx acts on `end` at once and drops the speech it has not yet played.
+  endDropsSpeech: true,
   // Seen on a live call (2026-10-05): with TELNYX_EVENTS, the playback and the caller's voice, reported as info messages.
   readEvent,
   id: 'telnyx',

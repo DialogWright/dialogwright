@@ -47,6 +47,8 @@ Each check says what to set, what to do, what to look for, and where to record t
 6. **The keypad and barge-in.** Press a menu key when the menu is offered, and talk over a long line. The key should act, and the line should stop where you spoke (an `interrupt` frame in the frame log). These are documented (`dtmfDetection`, `interruptible`) and should behave as on Twilio.
 7. **A line cut short, said again.** With `TELNYX_EVENTS="speaker-events tokens-played"`, answer a question at once and listen to the reply. If Telnyx cuts it short (a few hundred milliseconds of it, then silence), the line should come again within a second: the console shows `playback cut short (... s of ~... s), lines said again`, and the frame log has `{ "resaid": ... }` before the line's frames, after the carrier's `agentSpeaking` and `tokensPlayed` events. A line you talk over must not come again.
    **Record:** the timings from the frame log, and whether the second playing was heard; a line said again that you had heard means `RESAY_MIN_FRACTION` is too high for this voice.
+8. **The goodbye before the hang-up.** Finish a call ("no, that's all") and, on another, ask for a person. The goodbye, and the line before the transfer, should play in full before Telnyx hangs up or transfers. The frame log has `{ "endAfter": "played", "endHeldMs": ... }` between the line's frame and the `end` (with `TELNYX_EVENTS`; `"estimate"` without). Once, hang up during the goodbye: the log has `"endAfter": "closed"`, no `end`, and the callback hangs up.
+   **Record:** `endHeldMs` against `expectedMs`, and whether any of the line was lost; a `"timeout"` means Telnyx sent no report of the line (keep the timings).
 
 ## 3. Reconnect after the relay socket fails, and a restart mid-call
 

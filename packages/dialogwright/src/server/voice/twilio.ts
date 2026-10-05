@@ -109,7 +109,14 @@ function parse(req: WebhookRequest): CallbackParams | null {
   return params.callId ? params : null;
 }
 
-/** Twilio's ConversationRelay: form-encoded webhooks signed with the account's auth token, and TwiML. */
+/**
+ * Twilio's ConversationRelay: form-encoded webhooks signed with the account's auth token, and TwiML.
+ *
+ * On an `end` frame Twilio plays the lines already queued before it ends the session, as long as the
+ * socket stays open (a server that closed it at once dropped the goodbye: the adapter keeps it open for
+ * END_CLOSE_GRACE_MS). So its provider has no `endDropsSpeech`, and the `end` goes with the lines
+ * unless END_AFTER_PLAYBACK=on.
+ */
 export const twilioProvider: VoiceProvider = {
   id: 'twilio',
   contentType: 'text/xml',

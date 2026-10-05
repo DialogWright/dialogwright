@@ -280,9 +280,11 @@ describe('a line the carrier cut short', () => {
     await ask(call, 'april twelfth nineteen eighty five');
     const bye = await ask(call, "no, that's all");
     expect(bye.lines.at(-1)).toBe(GOODBYE);
-    await call.relay.waitFor((m) => m.type === 'end');
+    // Telnyx drops what it has not said at `end`, so the end waits for the goodbye to play (END_AFTER_PLAYBACK).
+    expect(call.relay.received.some((m) => m.type === 'end')).toBe(false);
     const sentBefore = call.relay.texts().length;
     await playedFor(call, 300, GOODBYE);
+    await call.relay.waitFor((m) => m.type === 'end');
     await quiet();
     expect(call.relay.texts()).toHaveLength(sentBefore);
     expect(resaidLines(call)).toEqual([]);

@@ -326,6 +326,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
       summarizeHandoff: overrides.summarizeHandoff,
       bargeIn: config.bargeIn ?? 'any',
+      // END_AFTER_PLAYBACK: absent from a config made by hand before it existed reads as auto, as loadConfig's default.
+      endAfterPlayback: config.endAfterPlayback ?? 'auto',
+      ...(config.endPlaybackMaxMs !== undefined ? { endPlaybackMaxMs: config.endPlaybackMaxMs } : {}),
       // RESAY_CUT_LINES: absent from a config made by hand before it existed reads as on, as loadConfig's default.
       ...(config.resayCutLines === false ? {} : { resay: { minFraction: config.resayMinFraction ?? DEFAULT_RESAY_MIN_FRACTION } }),
     },

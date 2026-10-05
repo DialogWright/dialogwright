@@ -144,6 +144,14 @@ export interface VoiceProvider {
    */
   readonly textLast?: 'each' | 'final';
   /**
+   * Whether the carrier, on an `end` frame, drops the lines it has been sent and not yet said. True: a
+   * turn that ends the call holds its `end` until those lines have played (END_AFTER_PLAYBACK auto,
+   * server/adapter.ts), or the caller never hears the goodbye or the transfer line (Telnyx, seen on a live
+   * call). Absent: the carrier plays what is queued before it acts on `end`, as long as the socket stays
+   * open (Twilio; the adapter keeps it open for END_CLOSE_GRACE_MS after `end`), so `end` goes with the lines.
+   */
+  readonly endDropsSpeech?: boolean;
+  /**
    * A message of the carrier's own on the socket (one the relay wire does not know), as a PlaybackEvent,
    * or null when it is not one. Absent: the carrier reports no playback (Twilio), and a line it cuts
    * short cannot be found.

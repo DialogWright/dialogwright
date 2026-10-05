@@ -1008,6 +1008,10 @@ TIMEZONE=America/Chicago
 # TELNYX_EVENTS="speaker-events tokens-played"
 # RESAY_CUT_LINES=on
 # RESAY_MIN_FRACTION=0.35
+# A goodbye or a transfer's line plays before the call ends: auto (default) holds the end on a carrier
+# that drops unsaid lines at the end (Telnyx) until they have played, on for every carrier, off for none.
+# END_AFTER_PLAYBACK=auto
+# END_PLAYBACK_MAX_MS=15000
 # Who may talk over a line: any (default), speech, dtmf or none (the relay element's interruptible).
 # A carrier's barge-in can stop speech on noise or echo; dtmf or none also rules barge-in out when
 # callers report not hearing replies.
