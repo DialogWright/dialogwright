@@ -112,20 +112,20 @@ Commit `apps/clinic/fixtures/recorded/jev-1.13.0.jsonl`. It holds only the clini
 
 The committed cassette is in the repository, and CI replays it offline with no secrets (`pnpm --filter @dialogwright/example-clinic regress --client recorded`, the last step of `.github/workflows/ci.yml`). The replay must exit 0: no cassette misses, every scripted call passing its expectation, and no difference from the baseline other than the allowed ones below.
 
-### Recording again: the `done` intent
+### Recording again
 
-The `done` intent (a caller who is finished) changed what the model is sent: the intent question, which every turn asks, now lists it, so every request of the replay is new and the committed cassette misses all of them (417 cassette misses, every corpus line and every spoken turn of the scripted calls) until it is recorded again. The tests that replay it (`gate-event golden > recorded`, the session round trip, the shadow gate and the shadow harness on the recorded calls) fail on those misses too. To record it again, at the repository root, with the key from this folder's `.env` (`regress` does not read `ENV_FILE`; only the server does):
+A change to what the model is sent makes the requests it touches new, and the committed cassette misses each of them until it is recorded again: a question's wording or its labels (the `done` intent, listed in the intent question every turn asks, made every request of the replay new), or a verdict the turn history names (below). The tests that replay the cassette (`gate-event golden > recorded`, the session round trip, the shadow gate and the shadow harness on the recorded calls) fail on any miss too. To record again, at the repository root, with the key from this folder's `.env` (`regress` does not read `ENV_FILE`; only the server does):
 
 ```sh
 (set -a && . apps/clinic/.env && set +a && pnpm --filter @dialogwright/example-clinic regress --client record --threshold JEV_TIMEOUT_MS=15000)
 pnpm --filter @dialogwright/example-clinic regress --client recorded
 ```
 
-The second line, with no key, must exit 0. The eight `done` lines (`dn-01` to `dn-08`) and the scripted call `done-after-what-it-can-do` are new; the stub reads them as `done` and ends the call with the goodbye. Where the model reads one differently, triage it as for any line (below), then run `pnpm --filter @dialogwright/example-clinic test`: the recorded gate-event golden already lists the new entries with no gate events, as a `done` read makes none.
+The second line, with no key, must exit 0. Where the model reads a line differently from its label, triage it as for any line (below), then run `pnpm --filter @dialogwright/example-clinic test`, whose recorded gate-event golden must then match with no miss.
 
 ### Recording again: a detail named beside a new value
 
-At a summary, the change question's reading (which detail the caller names as wrong, without its new value) no longer decides a turn that gives one of the form's slots a new value (app.yaml `changeSlotWithValue`, default `set-aside`): "no, it's Morgan Elliot" is a rejection with the name corrected, not a change of the name. The outcome is the same, but each turn's request carries the recent turn history, which names the verdict, so the turn after such a correction is a new request. In the replay that is one request, the final yes of the scripted call `name-correction-at-summary`, a cassette miss until it is recorded again; the tests that replay the cassette (`gate-event golden > recorded`, the session round trip, the shadow gate and the shadow harness on the recorded calls) fail on that miss too. The recorded gate-event golden already lists the call's `moveAppointment` as it was. Record it again as for the `done` intent above, then check the replay with the key unset: it must exit 0.
+At a summary, the change question's reading (which detail the caller names as wrong, without its new value) no longer decides a turn that gives one of the form's slots a new value (app.yaml `changeSlotWithValue`, default `set-aside`): "no, it's Morgan Elliot" is a rejection with the name corrected, not a change of the name. The outcome is the same, but each turn's request carries the recent turn history, which names the verdict, so the turn after such a correction is a new request. In the replay that is one request, the final yes of the scripted call `name-correction-at-summary`, a cassette miss until it is recorded again; the tests that replay the cassette fail on that miss too, and on nothing else. The recorded gate-event golden already lists the call's `moveAppointment` as it was. Record it again as above, then check the replay with the key unset: it must exit 0.
 
 ### Known gaps
 
