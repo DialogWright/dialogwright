@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { safeFileStem, startServer, type RunningServer } from '../index';
@@ -111,9 +111,15 @@ describe('a Telnyx call end to end', () => {
     const texts = relay.received.filter((m) => m.type === 'text');
     expect(texts.slice(-3).map((m) => (m as { last?: boolean }).last)).toEqual([false, false, true]);
     relay.prompt("no, that's all", true, 'en');
+    await relay.waitForTexts(8);
+    expect(relay.texts().at(-1)).toBe(GOODBYE);
+    // Telnyx drops what it has not said at `end` (seen on a live call), so the end waits until the
+    // goodbye has played (END_AFTER_PLAYBACK): here, until Telnyx reports it played.
+    expect(relay.received.some((m) => m.type === 'end')).toBe(false);
+    relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+    relay.send({ type: 'info', name: 'tokensPlayed', value: GOODBYE });
     const end = await relay.waitFor((m) => m.type === 'end');
     expect(end.handoffData).toBe('{"reasonCode":"completed","completed":["delivery_window"]}');
-    expect(relay.texts().at(-1)).toBe(GOODBYE);
     relay.assertKnownTypes();
     relay.close();
     await relay.closed;
@@ -127,6 +133,71 @@ describe('a Telnyx call end to end', () => {
     expect(done.status).toBe(200);
     expect(done.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
     expect(running!.store.get(CALL_ID)?.ended).toBe(true);
+  });
+
+  it('a caller who hangs up while the goodbye plays: no end is sent, and the callback hangs up rather than reconnecting', async () => {
+    const { base, ws, traceDir } = await startTelnyx();
+    const answer = await postSigned(base, '/voice/telnyx', { CallSid: CALL_ID, From: '+15555550110', To: '+15555550111' });
+    const token = /token=([0-9a-f]{32})/.exec(answer.text)![1]!;
+    const relay = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`);
+    relay.send({ type: 'setup', callSid: '5e9fcc12-0000-4000-8000-000000000000', callControlId: CALL_ID, from: null, to: null, direction: null, callStatus: 'active', customParameters: {}, sessionId: '05ff737c-0000-4000-8000-000000000000' });
+    await relay.waitForTexts(1);
+    relay.prompt('can you deliver tomorrow morning', true, 'en');
+    await relay.waitForTexts(3);
+    relay.prompt('five five five zero one two three four', true, 'en');
+    await relay.waitForTexts(4);
+    relay.prompt('april twelfth nineteen eighty five', true, 'en');
+    await relay.waitForTexts(7);
+    relay.prompt("no, that's all", true, 'en');
+    await relay.waitForTexts(8);
+    expect(relay.texts().at(-1)).toBe(GOODBYE);
+    // The end is held for the goodbye; the caller hangs up first.
+    relay.close();
+    await relay.closed;
+    const frames = join(traceDir, `${safeFileStem(CALL_ID)}.frames.jsonl`);
+    const logged = () => readFileSync(frames, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { dir: string; msg: Record<string, unknown> });
+    for (let i = 0; i < 200 && !logged().some((l) => l.dir === 'log' && l.msg.endAfter !== undefined); i += 1) await new Promise((r) => setTimeout(r, 5));
+    expect(logged().find((l) => l.dir === 'log' && l.msg.socketClosed === true)?.msg).toEqual({ socketClosed: true, ended: true });
+    expect(logged().find((l) => l.dir === 'log' && l.msg.endAfter !== undefined)?.msg).toMatchObject({ endAfter: 'closed' });
+    expect(logged().some((l) => l.dir === 'out' && l.msg.type === 'end')).toBe(false);
+    expect(relay.received.some((m) => m.type === 'end')).toBe(false);
+    // Telnyx's callback for a relay that ended unexpectedly would reconnect a live call: this one ended.
+    const done = await postSigned(base, '/cr-action/telnyx', { CallSid: CALL_ID, CallStatus: 'in-progress', SessionStatus: 'failed', ErrorCode: '64105' });
+    expect(done.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
+    expect(running!.store.get(CALL_ID)?.ended).toBe(true);
+  });
+
+  it('a server stopping while the goodbye plays waits for its end before it closes the call', async () => {
+    const { base, ws } = await startTelnyx();
+    const answer = await postSigned(base, '/voice/telnyx', { CallSid: CALL_ID, From: '+15555550110', To: '+15555550111' });
+    const token = /token=([0-9a-f]{32})/.exec(answer.text)![1]!;
+    const relay = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`);
+    relay.send({ type: 'setup', callSid: '5e9fcc12-0000-4000-8000-000000000000', callControlId: CALL_ID, from: null, to: null, direction: null, callStatus: 'active', customParameters: {}, sessionId: '05ff737c-0000-4000-8000-000000000000' });
+    await relay.waitForTexts(1);
+    relay.prompt('can you deliver tomorrow morning', true, 'en');
+    await relay.waitForTexts(3);
+    relay.prompt('five five five zero one two three four', true, 'en');
+    await relay.waitForTexts(4);
+    relay.prompt('april twelfth nineteen eighty five', true, 'en');
+    await relay.waitForTexts(7);
+    relay.prompt("no, that's all", true, 'en');
+    await relay.waitForTexts(8);
+    // The call has ended for the store, but its goodbye is playing: the drain waits for the end.
+    expect(running!.store.liveCount()).toBe(0);
+    let drained = false;
+    const drain = running!.drain(10_000).then(() => {
+      drained = true;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(drained).toBe(false);
+    expect(relay.received.some((m) => m.type === 'end')).toBe(false);
+    relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+    relay.send({ type: 'info', name: 'tokensPlayed', value: GOODBYE });
+    await relay.waitFor((m) => m.type === 'end');
+    await drain;
+    expect(drained).toBe(true);
+    relay.close();
+    await relay.closed;
   });
 
   it('takes a setup shaped as a live Telnyx call sends it: numbers null, and the webhook id as callControlId', async () => {

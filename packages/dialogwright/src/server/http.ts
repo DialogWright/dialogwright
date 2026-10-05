@@ -411,6 +411,19 @@ export function decideAction(
     deps.tokens.revoke(callSid);
     return { document: provider.apologizeAndDialDocument(deps.config.handoffNumber), note: 'gave-up' };
   }
+  // A transfer whose `end` was held for its line to play (END_AFTER_PLAYBACK, server/adapter.ts) and never
+  // sent: the socket closed first with the caller still on the line. The call has ended, but the
+  // transfer it decided is still owed; a goodbye's held `end` hangs up, as any ended call.
+  const held = entry?.heldHandoffData;
+  if (entry && held && !isBlank(held)) {
+    const handoff = parseHandoff(held);
+    if (handoff.reasonCode !== 'completed') {
+      // Owed once: a second callback for the call hangs up.
+      entry.heldHandoffData = null;
+      deps.tokens.revoke(callSid);
+      return { document: provider.dialDocument(deps.config.handoffNumber), note: `dial:${handoff.reasonCode}` };
+    }
+  }
   return { document: provider.hangupDocument(), note: 'hangup' };
 }
 

@@ -99,6 +99,11 @@ export function textLastOf(providerId: string | undefined): 'each' | 'final' {
   return p?.provider.textLast ?? 'each';
 }
 
+/** Whether a carrier drops the lines it has not yet said when `end` comes (VoiceProvider.endDropsSpeech). */
+export function endDropsSpeechOf(providerId: string | undefined): boolean {
+  return providerOf(providerId)?.endDropsSpeech === true;
+}
+
 /** The provider by id, or undefined for one the engine does not know. */
 function providerOf(providerId: string | undefined): VoiceProvider | undefined {
   const id = providerId ?? LEGACY_PROVIDER;
