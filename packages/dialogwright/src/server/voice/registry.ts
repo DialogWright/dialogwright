@@ -91,3 +91,10 @@ export function setupCallIdOf(providerId: string, setup: SetupFrame): string {
   const p = Object.hasOwn(ALL, providerId) ? ALL[providerId as keyof typeof ALL] : undefined;
   return p?.provider.setupCallId?.(setup) ?? setup.callSid;
 }
+
+/** Which of a turn's text frames carry `last: true` on this carrier (VoiceProvider.textLast). */
+export function textLastOf(providerId: string | undefined): 'each' | 'final' {
+  const id = providerId ?? LEGACY_PROVIDER;
+  const p = Object.hasOwn(ALL, id) ? ALL[id as keyof typeof ALL] : undefined;
+  return p?.provider.textLast ?? 'each';
+}

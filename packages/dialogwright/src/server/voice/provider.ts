@@ -116,4 +116,10 @@ export interface VoiceProvider {
    * different id as `callSid`.
    */
   setupCallId?(setup: SetupFrame): string;
+  /**
+   * Which text frames of one turn carry `last: true`. `each` (absent): every one, as Twilio speaks them
+   * all. `final`: only the turn's last text frame, the others `last: false`; a carrier that ends the
+   * reply at the first `last: true` and drops what follows needs it (Telnyx, seen on a live call).
+   */
+  readonly textLast?: 'each' | 'final';
 }

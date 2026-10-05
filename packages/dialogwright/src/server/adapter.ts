@@ -1,4 +1,4 @@
-import { setupCallIdOf } from './voice/registry';
+import { setupCallIdOf, textLastOf } from './voice/registry';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
@@ -352,9 +352,13 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
   const sent: OutboundFrame[] = [];
   // Built from the session as it is now (its slots and readback) and the decision the frames say.
   const scrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session));
-  for (const original of frames) {
+  // A carrier that ends the reply at the first last: true gets it on the turn's final text frame only.
+  const lastText = textLastOf(entry.provider) === 'final' ? frames.map((f) => f.type).lastIndexOf('text') : -1;
+  for (const [i, original] of frames.entries()) {
     // The frame log records what actually went out, digit spacing and all.
-    const frame: OutboundFrame = original.type === 'text' ? { ...original, token: spokenDigits(original.token, appOf(entry.session).voice?.spokenDigits) } : original;
+    const frame: OutboundFrame = original.type === 'text'
+      ? { ...original, token: spokenDigits(original.token, appOf(entry.session).voice?.spokenDigits), ...(lastText >= 0 && i !== lastText ? { last: false } : {}) }
+      : original;
     const socket = entry.socket;
     if (!socket) {
       log(`${entry.callSid}: no socket, dropped ${frame.type}`);

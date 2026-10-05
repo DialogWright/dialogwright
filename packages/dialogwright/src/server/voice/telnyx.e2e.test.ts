@@ -107,6 +107,9 @@ describe('a Telnyx call end to end', () => {
     expect((await relay.waitForTexts(4)).at(-1)).toBe("And what's your date of birth?");
     relay.prompt('april twelfth nineteen eighty five', true, 'en');
     expect((await relay.waitForTexts(7)).slice(-3)).toEqual(['Thanks, Alex.', 'On Saturday, September 19, we can deliver in the morning.', ANYTHING_ELSE]);
+    // Telnyx drops a turn's text after the first last: true (seen on a live call), so only the turn's final line carries it.
+    const texts = relay.received.filter((m) => m.type === 'text');
+    expect(texts.slice(-3).map((m) => (m as { last?: boolean }).last)).toEqual([false, false, true]);
     relay.prompt("no, that's all", true, 'en');
     const end = await relay.waitFor((m) => m.type === 'end');
     expect(end.handoffData).toBe('{"reasonCode":"completed","completed":["delivery_window"]}');

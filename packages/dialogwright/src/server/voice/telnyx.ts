@@ -135,6 +135,8 @@ export const telnyxProvider: VoiceProvider = {
   // Seen on a live call (2026-10-05): the setup's callSid is a 36-character id, and the webhook's CallSid
   // (a v3: id) arrives as callControlId.
   setupCallId: (setup) => setup.callControlId ?? setup.callSid,
+  // Seen on a live call (2026-10-05): after a text frame with last: true, Telnyx drops the turn's next one.
+  textLast: 'final',
   id: 'telnyx',
   contentType: 'text/xml',
   verify: (req, secret) =>
