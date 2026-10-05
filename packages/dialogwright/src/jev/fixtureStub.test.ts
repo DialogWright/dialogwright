@@ -214,10 +214,13 @@ describe('a text slot\'s pick, answered from a corpus label naming the part', ()
   });
 
   it('throws, naming the entry, on a part the question does not offer', async () => {
-    await expect(ask({ placeGiven: true, placePick: 'Alder Street' })).rejects.toThrow(
-      'corpus pk: label "Alder Street" for placePick is not one the question offers (a, b, c, d, e, none), nor the words of one: '
+    await expect(ask({ placeGiven: true, placePick: '22 Alder' })).rejects.toThrow(
+      'corpus pk: label "22 Alder" for placePick is not one the question offers (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, none), nor the words of one: '
         + 'a "the power is out at 22 Alder Street", b "22 Alder Street", c "nothing works", d "the power is out at 22 Alder Street and nothing works", '
-        + 'e "22 Alder Street and nothing works", none "None of these is the street address"',
+        + 'e "22 Alder Street and nothing works", f "power is out at 22 Alder Street", g "is out at 22 Alder Street", h "out at 22 Alder Street", '
+        + 'i "at 22 Alder Street", j "Alder Street", k "power is out at 22 Alder Street and nothing works", l "is out at 22 Alder Street and nothing works", '
+        + 'm "out at 22 Alder Street and nothing works", n "at 22 Alder Street and nothing works", o "Alder Street and nothing works", '
+        + 'p "Street and nothing works", none "None of these is the street address"',
     );
   });
 

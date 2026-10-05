@@ -15,6 +15,7 @@
 {"id": "pl-04", "text": "I'm not sure of the number", "intent": "none", "context": "report_outage", "prompted": "place"}
 {"id": "pl-05", "text": "sorry, I meant 41 Birch Lane, not 14", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
 {"id": "pl-06", "text": "9 Fernhill Court", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
+{"id": "pl-07", "text": "yeah my address is twelve oak hollow road", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true, "placePick": "twelve oak hollow road"}}
 {"id": "sy-01", "text": "no power at all", "intent": "none", "context": "report_outage", "prompted": "symptom", "labels": {"symptom": "no_power"}}
 {"id": "sy-02", "text": "dark", "intent": "none", "context": "report_outage", "prompted": "symptom", "labels": {"symptom": "no_power"}}
 {"id": "sy-03", "text": "just the kitchen and one bedroom are out", "intent": "none", "context": "report_outage", "prompted": "symptom", "labels": {"symptom": "partial"}}

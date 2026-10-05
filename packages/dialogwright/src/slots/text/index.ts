@@ -8,7 +8,7 @@ import { givenIdOf, pickIdOf, textQuestions } from './questions';
 
 export { textOptions, textWording, TEXT_PARTS, TEXT_QUESTIONS, DEFAULT_MAX_LENGTH, DEFAULT_SAY } from './options';
 export type { TextOptions, TextWording } from './options';
-export { MAX_PICK_CANDIDATES, PICK_LABELS, PICK_WORDS, pickCandidates, pickWordsFor } from './pick';
+export { MAX_PICK_CANDIDATES, MAX_PICK_SPLITS, MIN_TAIL_WORDS, PICK_LABELS, PICK_WORDS, pickCandidates, pickWordsFor } from './pick';
 export type { PickWords, PickWordsByLocale } from './pick';
 
 const examples = examplesFrom(new URL('./examples.yaml', import.meta.url));

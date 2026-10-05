@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { localeTag } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
-import { MAX_PICK_CANDIDATES } from './pick';
+import { MAX_PICK_CANDIDATES, MAX_PICK_SPLITS, MIN_TAIL_WORDS } from './pick';
 
 /**
  * The text parts of a `text` slot, as templates over the options: its yes-or-no question, and with
@@ -15,7 +15,7 @@ export const TEXT_PARTS = textParts('text', {
     about: 'The yes-or-no question that asks whether the caller gives the text, word for word.',
   },
   pick: {
-    template: 'Read asr.text. Which of these parts of the caller\'s words is {what}, with nothing else in it?',
+    template: 'Read asr.text. Which of these parts of the caller\'s words is the whole of {what}, with nothing else in it?',
     vars: ['what'],
     about: 'With `pick`: the question that asks which of the candidate parts is the value; {what} is pick.what.',
   },
@@ -51,7 +51,7 @@ const pickOption = z
       .describe('The joining words and prepositions by language tag ("fr", or "fr-CA" for one region, whose missing list is the language\'s), for a language with no built-in list or to replace one. Built in: English ("and", "but", "so", "because"; "at", "on", "in", "near", "by", "for"), also read with no locale, and Spanish ("y", "e", "pero", "porque", "así que"; "en", "cerca de", "junto a"). A language with neither splits at punctuation only.'),
   })
   .describe(
-    `Pick the value out of the words. Code splits the caller's words into candidate parts (clauses, split at punctuation and at joining words, and each clause's tail after a preposition; then two clauses side by side joined as said, and that join's tails; each verbatim, at most ${MAX_PICK_CANDIDATES}), and a second question (\`ids.pick\`, default \`<slot>Pick\`) asks which of them is \`pick.what\`, by letter, or none of these. The value is the part chosen, as said; none, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. Default: off, the value is the whole words and only the one question is asked.`,
+    `Pick the value out of the words. Code splits the caller's words into candidate parts (clauses, split at punctuation and at joining words, and each clause's tail after a preposition; then two clauses side by side joined as said, and that join's tails; at most ${MAX_PICK_SPLITS} of these; then the tails from each word of a clause or a join to its end, of ${MIN_TAIL_WORDS} words or more, the shortest kept, so a value after any lead-in can be chosen; each verbatim, at most ${MAX_PICK_CANDIDATES} in all), and a second question (\`ids.pick\`, default \`<slot>Pick\`) asks which of them is \`pick.what\`, by letter, or none of these. The value is the part chosen, as said; none, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. Default: off, the value is the whole words and only the one question is asked.`,
   );
 
 /** The most of the caller's words a text slot keeps, unless maxLength says otherwise. */

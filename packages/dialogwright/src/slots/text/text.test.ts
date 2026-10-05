@@ -12,7 +12,7 @@ import { redactCall } from '../../core/recording';
 import { emptySlot } from '../../core/session';
 import { redactRecordSlots } from '../../trace/redact';
 import type { TraceRecord } from '../../trace/types';
-import { MAX_PICK_CANDIDATES, PICK_WORDS, pickCandidates, pickWordsFor, textType } from './index';
+import { MAX_PICK_CANDIDATES, MAX_PICK_SPLITS, MIN_TAIL_WORDS, PICK_WORDS, pickCandidates, pickWordsFor, textType } from './index';
 
 /** The `text` type: the conformance kit over its examples, then what the kit does not cover. */
 runSlotConformance(textType, { describe, it, locales: ['en-US', 'es'] });
@@ -217,12 +217,65 @@ describe('pick: the candidates code proposes', () => {
     expect(pickCandidates(ALDER, en).slice(0, 3)).toEqual(['the power is out at 22 Alder Street', '22 Alder Street', 'nothing works']);
   });
 
+  it('offers the tail from each word, so the value is offered whatever leads in to it, in any language', () => {
+    expect(pickCandidates('yeah my address is seventy six twenty five oak hollow lane', en)).toEqual([
+      'yeah my address is seventy six twenty five oak hollow lane',
+      'my address is seventy six twenty five oak hollow lane',
+      'address is seventy six twenty five oak hollow lane',
+      'is seventy six twenty five oak hollow lane',
+      'seventy six twenty five oak hollow lane',
+      'six twenty five oak hollow lane',
+      'twenty five oak hollow lane',
+      'five oak hollow lane',
+      'oak hollow lane',
+      'hollow lane',
+    ]);
+    expect(pickCandidates("it's 22 Alder Street", en)).toEqual(["it's 22 Alder Street", '22 Alder Street', 'Alder Street']);
+    expect(pickCandidates('the address would be 9 Quarry Hill Road', en)).toEqual([
+      'the address would be 9 Quarry Hill Road', 'address would be 9 Quarry Hill Road', 'would be 9 Quarry Hill Road', 'be 9 Quarry Hill Road',
+      '9 Quarry Hill Road', 'Quarry Hill Road', 'Hill Road',
+    ]);
+    // No word list at all: the tails need none.
+    expect(pickCandidates('oui alors c\'est le 22 rue Alder', pickWordsFor('fr'))).toContain('22 rue Alder');
+  });
+
+  it('offers the parts split there first, as before, then the tails, each clause\'s in the order said', () => {
+    expect(pickCandidates(ALDER, en)).toEqual([
+      'the power is out at 22 Alder Street', '22 Alder Street', 'nothing works', ALDER, '22 Alder Street and nothing works',
+      'power is out at 22 Alder Street', 'is out at 22 Alder Street', 'out at 22 Alder Street', 'at 22 Alder Street', 'Alder Street',
+      'power is out at 22 Alder Street and nothing works', 'is out at 22 Alder Street and nothing works', 'out at 22 Alder Street and nothing works',
+      'at 22 Alder Street and nothing works', 'Alder Street and nothing works', 'Street and nothing works',
+    ]);
+  });
+
+  it(`keeps the shortest tails under the cap of ${MAX_PICK_CANDIDATES}, so a long lead-in is what is dropped, never the value at the end`, () => {
+    const said = 'yeah hi um okay well listen the thing is that my home address right now is 4410 Oak Hollow Lane';
+    const got = pickCandidates(said, en);
+    expect(got).toHaveLength(MAX_PICK_CANDIDATES);
+    expect(got[0]).toBe(said);
+    expect(got).toContain('4410 Oak Hollow Lane');
+    expect(got[1]).toBe('well listen the thing is that my home address right now is 4410 Oak Hollow Lane');
+    expect(got.at(-1)).toBe('Hollow Lane');
+    for (const dropped of ['hi um okay well', 'um okay well', 'okay well']) expect(got).not.toContain(`${dropped} ${got[1]!.slice('well '.length)}`);
+  });
+
+  it('keeps a clause\'s tails before a join\'s, so a join never pushes the value out of the cap', () => {
+    const got = pickCandidates('yeah my address is seventy six twenty five oak hollow lane and the power is out and nothing works', en);
+    expect(got).toHaveLength(MAX_PICK_CANDIDATES);
+    expect(got).toContain('seventy six twenty five oak hollow lane');
+    expect(got.slice(MAX_PICK_SPLITS - 3)).toEqual([
+      'my address is seventy six twenty five oak hollow lane', 'address is seventy six twenty five oak hollow lane', 'is seventy six twenty five oak hollow lane',
+      'seventy six twenty five oak hollow lane', 'six twenty five oak hollow lane', 'twenty five oak hollow lane', 'five oak hollow lane', 'oak hollow lane', 'hollow lane',
+      'power is out', 'is out',
+    ]);
+  });
+
   it('offers the tail after "for": a report made for an address', () => {
-    expect(pickCandidates("yeah i'd like to report a outage for twelve oak hollow road", en)).toEqual([
+    expect(pickCandidates("yeah i'd like to report a outage for twelve oak hollow road", en).slice(0, 2)).toEqual([
       "yeah i'd like to report a outage for twelve oak hollow road",
       'twelve oak hollow road',
     ]);
-    expect(pickCandidates('a delivery for the house on Elm', en)).toEqual(['a delivery for the house on Elm', 'the house on Elm', 'Elm']);
+    expect(pickCandidates('a delivery for the house on Elm', en).slice(0, 3)).toEqual(['a delivery for the house on Elm', 'the house on Elm', 'Elm']);
   });
 
   it('a "for" tail comes in the order said, so it never moves a clause or an earlier tail out of the cap', () => {
@@ -234,18 +287,19 @@ describe('pick: the candidates code proposes', () => {
       'nothing works',
     ]);
     const got = pickCandidates('the light is out for the street, the heat is out for the lane, at 9 Quarry Hill', en);
-    expect(got).toEqual([
+    expect(got.slice(0, 6)).toEqual([
       'the light is out for the street', 'the street', 'the heat is out for the lane', 'the lane', 'at 9 Quarry Hill', '9 Quarry Hill',
     ]);
   });
 
   it('then offers the parts that span one joining word, and their tails, after every part split there', () => {
-    expect(pickCandidates(ALDER, en)).toEqual(['the power is out at 22 Alder Street', '22 Alder Street', 'nothing works', ALDER, '22 Alder Street and nothing works']);
-    expect(pickCandidates('meet me at the corner of Elm and Third, by the bank', en)).toEqual([
+    expect(pickCandidates(ALDER, en).slice(0, 5)).toEqual(['the power is out at 22 Alder Street', '22 Alder Street', 'nothing works', ALDER, '22 Alder Street and nothing works']);
+    expect(pickCandidates('meet me at the corner of Elm and Third, by the bank', en).slice(0, 7)).toEqual([
       'meet me at the corner of Elm', 'the corner of Elm', 'Third', 'by the bank', 'the bank',
       'meet me at the corner of Elm and Third', 'the corner of Elm and Third',
     ]);
-    expect(pickCandidates('Sandby Road and Anderson Lane', en)).toEqual(['Sandby Road', 'Anderson Lane', 'Sandby Road and Anderson Lane']);
+    // A one-word clause has no tail of two words; the join's tail from its second word is offered.
+    expect(pickCandidates('Sandby Road and Anderson Lane', en)).toEqual(['Sandby Road', 'Anderson Lane', 'Sandby Road and Anderson Lane', 'Road and Anderson Lane']);
   });
 
   it('joins two clauses side by side only, never across punctuation', () => {
@@ -255,12 +309,13 @@ describe('pick: the candidates code proposes', () => {
   });
 
   it('a part spanning a joining word never pushes out a part split there, and the cap keeps the parts said first', () => {
+    // The join past the splits' cap comes back among the tails (a join is its own tail from its first word).
     const split = 'one, two, three, four, five, six, seven and eight, nine';
-    expect(pickCandidates(split, en)).toEqual(['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']);
+    expect(pickCandidates(split, en)).toEqual(['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'seven and eight']);
     const near = 'it is out, the lights, the heat, at the corner of Elm and Third';
     const got = pickCandidates(near, en);
-    expect(got).toHaveLength(MAX_PICK_CANDIDATES);
-    expect(got.slice(-2)).toEqual(['at the corner of Elm and Third', 'the corner of Elm and Third']);
+    expect(got.slice(0, MAX_PICK_SPLITS).slice(-2)).toEqual(['at the corner of Elm and Third', 'the corner of Elm and Third']);
+    expect(got.slice(MAX_PICK_SPLITS)).toEqual(['is out', 'corner of Elm', 'of Elm', 'corner of Elm and Third', 'of Elm and Third', 'Elm and Third']);
   });
 
   it('every candidate is a slice of the words as said, offered once', () => {
@@ -277,12 +332,15 @@ describe('pick: the candidates code proposes', () => {
   });
 
   it('splits at punctuation, but not inside a number or a time', () => {
-    expect(pickCandidates('Yes. It is 14 Birch Lane, by the school!', en)).toEqual(['Yes', 'It is 14 Birch Lane', 'by the school', 'the school']);
-    expect(pickCandidates('1,200 Oak Road at 10:30', en)).toEqual(['1,200 Oak Road at 10:30', '10:30']);
+    expect(pickCandidates('Yes. It is 14 Birch Lane, by the school!', en)).toEqual(['Yes', 'It is 14 Birch Lane', 'by the school', 'the school', 'is 14 Birch Lane', '14 Birch Lane', 'Birch Lane']);
+    // A tail starts after a space only, so "1,200" and "10:30" are never cut inside.
+    expect(pickCandidates('1,200 Oak Road at 10:30', en)).toEqual(['1,200 Oak Road at 10:30', '10:30', 'Oak Road at 10:30', 'Road at 10:30', 'at 10:30']);
   });
 
-  it('offers one candidate for a single clause with no preposition: the words themselves', () => {
-    expect(pickCandidates('200 Heron Row', en)).toEqual(['200 Heron Row']);
+  it(`offers one candidate for a single clause of ${MIN_TAIL_WORDS} words or fewer with no preposition: the words themselves`, () => {
+    expect(MIN_TAIL_WORDS).toBe(2);
+    expect(pickCandidates('Heron Row', en)).toEqual(['Heron Row']);
+    expect(pickCandidates('200 Heron Row', en)).toEqual(['200 Heron Row', 'Heron Row']);
     expect(pickCandidates('   ', en)).toEqual([]);
   });
 
@@ -292,40 +350,53 @@ describe('pick: the candidates code proposes', () => {
     expect(pickCandidates(', , ,', en)).toEqual([]);
     expect(pickCandidates('at', en)).toEqual(['at']);
     expect(pickCandidates('  at  ', en)).toEqual(['at']);
-    expect(pickCandidates('  out at 22 Alder Street  ', en)).toEqual(['out at 22 Alder Street', '22 Alder Street']);
+    expect(pickCandidates('  out at 22 Alder Street  ', en)).toEqual(['out at 22 Alder Street', '22 Alder Street', 'at 22 Alder Street', 'Alder Street']);
   });
 
   it('keeps a word with an apostrophe or a hyphen whole, so a joining word inside one splits nothing', () => {
-    expect(pickCandidates("it's out at 4 O'Neil Street", en)).toEqual(["it's out at 4 O'Neil Street", "4 O'Neil Street"]);
-    expect(pickCandidates('it’s out at 4 O’Neil Street', en)).toEqual(['it’s out at 4 O’Neil Street', '4 O’Neil Street']);
-    expect(pickCandidates('the rock-and-roll club on Smith-and-Wesson Road', en)).toEqual(['the rock-and-roll club on Smith-and-Wesson Road', 'Smith-and-Wesson Road']);
-    expect(pickCandidates('out at 22-24 Alder Street', en)).toEqual(['out at 22-24 Alder Street', '22-24 Alder Street']);
+    expect(pickCandidates("it's out at 4 O'Neil Street", en)).toEqual(["it's out at 4 O'Neil Street", "4 O'Neil Street", "out at 4 O'Neil Street", "at 4 O'Neil Street", "O'Neil Street"]);
+    expect(pickCandidates('it’s out at 4 O’Neil Street', en)).toEqual(['it’s out at 4 O’Neil Street', '4 O’Neil Street', 'out at 4 O’Neil Street', 'at 4 O’Neil Street', 'O’Neil Street']);
+    expect(pickCandidates('the rock-and-roll club on Smith-and-Wesson Road', en)).toEqual([
+      'the rock-and-roll club on Smith-and-Wesson Road', 'Smith-and-Wesson Road', 'rock-and-roll club on Smith-and-Wesson Road', 'club on Smith-and-Wesson Road', 'on Smith-and-Wesson Road',
+    ]);
+    expect(pickCandidates('out at 22-24 Alder Street', en)).toEqual(['out at 22-24 Alder Street', '22-24 Alder Street', 'at 22-24 Alder Street', 'Alder Street']);
   });
 
   it('splits at any script\'s clause punctuation before a space, and at an ellipsis', () => {
-    expect(pickCandidates('the power is out… at 22 Alder Street', en)).toEqual(['the power is out', 'at 22 Alder Street', '22 Alder Street']);
-    expect(pickCandidates('انقطعت الكهرباء، في شارع ألدر', pickWordsFor('ar'))).toEqual(['انقطعت الكهرباء', 'في شارع ألدر']);
-    expect(pickCandidates('बिजली नहीं है। 22 एल्डर स्ट्रीट', pickWordsFor('hi'))).toEqual(['बिजली नहीं है', '22 एल्डर स्ट्रीट']);
-    expect(pickCandidates('3.5 miles at 1,200 Oak Road', en)).toEqual(['3.5 miles at 1,200 Oak Road', '1,200 Oak Road']);
+    expect(pickCandidates('the power is out… at 22 Alder Street', en)).toEqual(['the power is out', 'at 22 Alder Street', '22 Alder Street', 'power is out', 'is out', 'Alder Street']);
+    expect(pickCandidates('انقطعت الكهرباء، في شارع ألدر', pickWordsFor('ar'))).toEqual(['انقطعت الكهرباء', 'في شارع ألدر', 'شارع ألدر']);
+    expect(pickCandidates('बिजली नहीं है। 22 एल्डर स्ट्रीट', pickWordsFor('hi'))).toEqual(['बिजली नहीं है', '22 एल्डर स्ट्रीट', 'नहीं है', 'एल्डर स्ट्रीट']);
+    expect(pickCandidates('3.5 miles at 1,200 Oak Road', en)).toEqual(['3.5 miles at 1,200 Oak Road', '1,200 Oak Road', 'miles at 1,200 Oak Road', 'at 1,200 Oak Road', 'Oak Road']);
   });
 
   it('a very long utterance still gives at most the cap', () => {
     const long = 'the light is out at 22 Alder Street and '.repeat(20000) + 'it is 9 Quarry Hill';
-    expect(pickCandidates(long, en)).toEqual(['the light is out at 22 Alder Street', '22 Alder Street', 'it is 9 Quarry Hill', 'the light is out at 22 Alder Street and the light is out at 22 Alder Street', '22 Alder Street and the light is out at 22 Alder Street', 'the light is out at 22 Alder Street and it is 9 Quarry Hill', '22 Alder Street and it is 9 Quarry Hill']);
+    const got = pickCandidates(long, en);
+    expect(got.slice(0, 7)).toEqual(['the light is out at 22 Alder Street', '22 Alder Street', 'it is 9 Quarry Hill', 'the light is out at 22 Alder Street and the light is out at 22 Alder Street', '22 Alder Street and the light is out at 22 Alder Street', 'the light is out at 22 Alder Street and it is 9 Quarry Hill', '22 Alder Street and it is 9 Quarry Hill']);
+    // Then the shortest tails of the clauses, each once: nine are left under the cap.
+    expect(got.slice(7)).toEqual([
+      'light is out at 22 Alder Street', 'is out at 22 Alder Street', 'out at 22 Alder Street', 'at 22 Alder Street', 'Alder Street',
+      'is 9 Quarry Hill', '9 Quarry Hill', 'Quarry Hill',
+      'Street and it is 9 Quarry Hill',
+    ]);
+    expect(got).toHaveLength(MAX_PICK_CANDIDATES);
     const many = Array.from({ length: 5000 }, (_, i) => `part ${i}`).join(', ');
-    expect(pickCandidates(many, en)).toHaveLength(MAX_PICK_CANDIDATES);
+    expect(pickCandidates(many, en)).toEqual(Array.from({ length: MAX_PICK_CANDIDATES }, (_, i) => `part ${i}`));
   });
 
   it('matches whole words only, case aside, and drops a joining word at either end', () => {
-    expect(pickCandidates('AND it is out ON Pine Street', en)).toEqual(['it is out ON Pine Street', 'Pine Street']);
+    expect(pickCandidates('AND it is out ON Pine Street', en)).toEqual(['it is out ON Pine Street', 'Pine Street', 'is out ON Pine Street', 'out ON Pine Street', 'ON Pine Street']);
   });
 
   it('offers each tail of a clause, and each candidate once', () => {
-    expect(pickCandidates('the house on the corner near Elm Park', en)).toEqual(['the house on the corner near Elm Park', 'the corner near Elm Park', 'Elm Park']);
-    expect(pickCandidates('Elm Park and Elm Park', en)).toEqual(['Elm Park', 'Elm Park and Elm Park']);
+    expect(pickCandidates('the house on the corner near Elm Park', en)).toEqual([
+      'the house on the corner near Elm Park', 'the corner near Elm Park', 'Elm Park',
+      'house on the corner near Elm Park', 'on the corner near Elm Park', 'corner near Elm Park', 'near Elm Park',
+    ]);
+    expect(pickCandidates('Elm Park and Elm Park', en)).toEqual(['Elm Park', 'Elm Park and Elm Park', 'Park and Elm Park']);
   });
 
-  it(`offers at most ${MAX_PICK_CANDIDATES}, the first in the order said`, () => {
+  it(`offers at most ${MAX_PICK_SPLITS} parts split at punctuation, joining words and prepositions, the first in the order said`, () => {
     const many = 'one, two, three, four, five, six, seven, eight, nine, ten';
     expect(pickCandidates(many, en)).toEqual(['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']);
   });
@@ -333,14 +404,21 @@ describe('pick: the candidates code proposes', () => {
   it('reads Spanish words in Spanish, accents aside, keeping the words as said', () => {
     const es = pickWordsFor('es-MX');
     expect(pickCandidates('se fue la luz en la calle Alder 22 y nada funciona', es).slice(0, 3)).toEqual(['se fue la luz en la calle Alder 22', 'la calle Alder 22', 'nada funciona']);
-    expect(pickCandidates('no hay luz, asi que llamo; está cerca de la plaza Mayor', es)).toEqual(['no hay luz', 'llamo', 'está cerca de la plaza Mayor', 'la plaza Mayor']);
+    expect(pickCandidates('no hay luz, asi que llamo; está cerca de la plaza Mayor', es)).toEqual([
+      'no hay luz', 'llamo', 'está cerca de la plaza Mayor', 'la plaza Mayor', 'hay luz', 'cerca de la plaza Mayor', 'de la plaza Mayor', 'plaza Mayor',
+    ]);
   });
 
   it('English with no locale and in en-*; a language with no list splits at punctuation only, unless the slot gives its words', () => {
     expect(pickWordsFor(undefined)).toEqual(en);
     expect(pickWordsFor('en-GB')).toEqual(en);
     const fr = 'la panne est au 22 rue Alder et rien ne marche';
-    expect(pickCandidates(fr, pickWordsFor('fr'))).toEqual([fr]);
+    // Not split at "et": the words are one clause, and its tails run to the end of the words.
+    const whole = pickCandidates(fr, pickWordsFor('fr'));
+    expect(whole[0]).toBe(fr);
+    expect(whole).not.toContain('la panne est au 22 rue Alder');
+    expect(whole).not.toContain('22 rue Alder');
+    expect(whole).toContain('22 rue Alder et rien ne marche');
     const own = { fr: { joiners: ['et', 'parce que'], prepositions: ['au', 'près de'] } };
     expect(pickCandidates(fr, pickWordsFor('fr-CA', own)).slice(0, 3)).toEqual(['la panne est au 22 rue Alder', '22 rue Alder', 'rien ne marche']);
     expect(pickWordsFor('en-US', { en: { joiners: ['and'] } })).toEqual({ joiners: ['and'], prepositions: en.prepositions });
@@ -367,16 +445,20 @@ describe('pick: the question and the value', () => {
   it('asks which candidate is the value, by letter, with none of these', () => {
     expect(place.questions(testSlotContext(ALDER)).placePick).toEqual({
       type: 'choice',
-      instructions: 'Read asr.text. Which of these parts of the caller\'s words is the street address, with nothing else in it?',
+      instructions: 'Read asr.text. Which of these parts of the caller\'s words is the whole of the street address, with nothing else in it?',
       criteria: {
         a: 'the power is out at 22 Alder Street', b: '22 Alder Street', c: 'nothing works', d: ALDER, e: '22 Alder Street and nothing works',
+        f: 'power is out at 22 Alder Street', g: 'is out at 22 Alder Street', h: 'out at 22 Alder Street', i: 'at 22 Alder Street', j: 'Alder Street',
+        k: 'power is out at 22 Alder Street and nothing works', l: 'is out at 22 Alder Street and nothing works', m: 'out at 22 Alder Street and nothing works',
+        n: 'at 22 Alder Street and nothing works', o: 'Alder Street and nothing works', p: 'Street and nothing works',
         none: 'None of these is the street address',
       },
     });
   });
 
   it('asks only the given question for a single candidate, and none for a value it would keep', () => {
-    expect(Object.keys(place.questions(testSlotContext('200 Heron Row')))).toEqual(['placeGiven']);
+    expect(Object.keys(place.questions(testSlotContext('Heron Row')))).toEqual(['placeGiven']);
+    expect(Object.keys(place.questions(testSlotContext('200 Heron Row')))).toEqual(['placeGiven', 'placePick']);
     expect(Object.keys(place.questions(testSlotContext(ALDER, { current: '14 Birch Lane' })))).toEqual(['placeGiven']);
     expect(Object.keys(place.questions(testSlotContext(ALDER, { current: '14 Birch Lane', prompted: true })))).toEqual(['placeGiven', 'placePick']);
   });
@@ -388,10 +470,19 @@ describe('pick: the question and the value', () => {
 
   it('keeps the whole words on none, below SLOT_DETECT, a letter not offered, or no answer', () => {
     const t = DEFAULT_THRESHOLDS.SLOT_DETECT;
-    for (const pick of [choice({ none: 0.9, b: 0.1 }), choice({ b: t - 0.01, none: t - 0.02, a: 0.03 }), choice({ g: 0.9, none: 0.1 }), undefined]) {
+    for (const pick of [choice({ none: 0.9, b: 0.1 }), choice({ b: t - 0.01, none: t - 0.02, a: 0.03 }), choice({ q: 0.9, none: 0.1 }), undefined]) {
       expect(place.fill({ ...given(0.9), ...(pick ? { placePick: pick } : {}) }, testSlotContext(ALDER))).toMatchObject({ kind: 'filled', value: ALDER });
     }
+    const short = "it's 22 Alder Street";
+    expect(place.fill({ ...given(0.9), placePick: choice({ g: 0.9, none: 0.1 }) }, testSlotContext(short))).toMatchObject({ kind: 'filled', value: short });
     expect(place.fill({ ...given(0.9), placePick: choice({ b: t, none: 1 - t }) }, testSlotContext(ALDER))).toMatchObject({ value: '22 Alder Street' });
+  });
+
+  it('fills with a tail from a word: the address after a lead-in no word list names', () => {
+    const said = 'yeah my address is seventy six twenty five oak hollow lane';
+    const q = place.questions(testSlotContext(said)).placePick as { criteria: Record<string, string> };
+    expect(q.criteria.e).toBe('seventy six twenty five oak hollow lane');
+    expect(place.fill({ ...given(0.9), placePick: choice({ e: 0.86, h: 0.06, none: 0.08 }) }, testSlotContext(said))).toMatchObject({ value: 'seventy six twenty five oak hollow lane' });
   });
 
   it('fills with a part that spans a joining word, so "the corner of Elm and Third" is one value', () => {

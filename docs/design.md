@@ -500,6 +500,7 @@ Small things the four parts' reviews found and left, grouped, each to fix on its
 - **Picking the value out of the words.**
   - A pick's joining words and prepositions live in the slot's options (`pick.words`), not `locale/<tag>/slots.yaml`, since they decide what the model is asked; English and Spanish are built in.
   - Only two clauses are joined at a time ("Elm and Third and Main" offers "Elm and Third" and "Third and Main", never all three).
+  - The tails from each word (to the end of a clause or a join) are offered after the parts split at punctuation, joining words and prepositions, so a lead-in no word list names ("yeah my address is", any language) is cut off by selection, not by a list. Only tails: no heads or inner spans, so a value with an aside after it and nothing to cut at keeps the whole words. A tail is two spoken words or more. The split parts keep their eight letters; the tails fill up to sixteen, a clause's before a join's and the shortest first, so a long lead-in is what the cap drops.
 
 ## 13. Open source and licensing
 

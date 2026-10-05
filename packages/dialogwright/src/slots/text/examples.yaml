@@ -92,7 +92,7 @@
       expect: { kind: filled, value: blue heron on the lake, display: blue heron on the lake, displays: { es: "blue heron on the lake" } }
 
 - name: picking the value out of the words
-  about: "pick: code splits the words into candidate parts, a second question chooses which part is the street address, and the value is that part as said. Two clauses side by side are offered joined as said too, so the corner of Elm and Third can be picked whole. None of these, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. French is split with the slot's own words; in a Spanish session an English sentence is one clause, so it keeps the whole words."
+  about: "pick: code splits the words into candidate parts, a second question chooses which part is the street address, and the value is that part as said. Two clauses side by side are offered joined as said too, so the corner of Elm and Third can be picked whole; then each clause's tails from each word, so an address after any lead-in (\"yeah my address is\") can be picked, and one past the eighth clause too. None of these, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. French is split with the slot's own words."
   slot: place
   config:
     what: where the problem is
@@ -108,7 +108,12 @@
       answers:
         placeGiven: { noul: 0.92 }
         placePick: { choice: { a: 0.05, b: 0.9, c: 0.01, none: 0.04 } }
-      expect: { kind: filled, value: 22 Alder Street, display: 22 Alder Street, confirm: none, displays: { es: "the power is out at 22 Alder Street and nothing works" } }
+      expect: { kind: filled, value: 22 Alder Street, display: 22 Alder Street, confirm: none }
+    - text: yeah my address is twelve oak hollow road
+      answers:
+        placeGiven: { noul: 0.93 }
+        placePick: { choice: { a: 0.02, b: 0.01, c: 0.01, d: 0.02, e: 0.88, f: 0.04, g: 0.01, none: 0.01 } }
+      expect: { kind: filled, value: twelve oak hollow road, display: twelve oak hollow road }
     - text: my lights are out at home and next door too
       answers:
         placeGiven: { noul: 0.7 }
@@ -131,8 +136,8 @@
     - text: sorry, one moment, the kids, the dog, the noise, okay, right, well, it is 9 Quarry Hill
       answers:
         placeGiven: { noul: 0.9 }
-        placePick: { choice: { a: 0.02, h: 0.03, none: 0.95 } }
-      expect: { kind: filled, value: "sorry, one moment, the kids, the dog, the noise, okay, right, well, it is 9 Quarry Hill", display: "sorry, one moment, the kids, the dog, the noise, okay, right, well, it is 9 Quarry Hill" }
+        placePick: { choice: { a: 0.02, h: 0.01, i: 0.03, k: 0.9, none: 0.04 } }
+      expect: { kind: filled, value: 9 Quarry Hill, display: 9 Quarry Hill }
     - text: se fue la luz en la calle Alder 22 y nada funciona
       context: { locale: es }
       answers:

@@ -410,6 +410,29 @@
     "principalLevel": 2,
     "gate": null
   },
+  "pl-07": {
+    "id": "pl-07",
+    "decision": "prompt",
+    "promptId": "ask_symptom",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_outage",
+    "slots": {
+      "place": "twelve oak hollow road",
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
   "sy-01": {
     "id": "sy-01",
     "decision": "prompt",
