@@ -172,6 +172,54 @@ function sameDayAsPrompted(session: Session, results: { spec: SlotSpec; outcome:
   return dropped;
 }
 
+/**
+ * What each spec's fill reads from the turn, before any of it is applied: absent outcomes and the
+ * slots the same-day rule drops are left out. It changes nothing, so it can be read ahead of the
+ * fill itself (valuesGiven).
+ */
+function readSlots(session: Session, answers: AnswerMap, ctx: SlotContext, specs: SlotSpec[], opts: FillOptions): { spec: SlotSpec; outcome: SlotOutcome }[] {
+  // Read every spec before applying any of it: the same-day rule compares the slots against each
+  // other. Each spec sees only its own slot's pending partial, which no other spec's fill touches,
+  // so reading them all up front says exactly what reading them one at a time did.
+  const results = specs.map((spec) => ({ spec, outcome: spec.fill(answers, slotCtx(session, ctx, spec.id, opts)) }));
+  const dropped = sameDayAsPrompted(session, results);
+  return results.filter(({ spec, outcome }) => outcome.kind !== 'absent' && !dropped.has(spec.id));
+}
+
+/**
+ * Whether an outcome gives its slot something it does not already hold: a value other than the
+ * one on file (or one that settles a pending window), a window other than the one pending (where a
+ * window may land: an empty slot, or a correction), or two candidates to choose between. Exactly
+ * what fillSlots counts as progress for a slot, help aside, which is no value.
+ */
+function givesNew(session: Session, id: SlotId, outcome: SlotOutcome, opts: FillOptions): boolean {
+  const slot = session.slots[id]!;
+  switch (outcome.kind) {
+    case 'filled':
+      return !(slot.value === outcome.value && slot.window === null);
+    case 'window':
+      return (slot.value === null || opts.correcting === true) && windowKey(slot.window) !== windowKey(outcome.window);
+    case 'disambiguate':
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * The slots among `specs` this turn's words give something new (givesNew), read without filling
+ * anything. The gates read it at a form's summary, where a detail named as wrong in the same breath
+ * as a new value is not a detail named alone (App.changeSlotWithValue).
+ */
+export function valuesGiven(session: Session, answers: AnswerMap, ctx: SlotContext, specs: SlotSpec[], opts: FillOptions = {}): Set<SlotId> {
+  const given = new Set<SlotId>();
+  for (const { spec, outcome } of readSlots(session, answers, ctx, specs, opts)) {
+    if (outcome.kind === 'help') continue;
+    if (givesNew(session, spec.id, outcome, opts)) given.add(spec.id);
+  }
+  return given;
+}
+
 export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext, specs: SlotSpec[], opts: FillOptions = {}): FillResult {
   const events: FillEvent[] = [];
   const acks: Ack[] = [];
@@ -179,14 +227,7 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
   let progress = false;
   let help: FillResult['help'] = null;
 
-  // Read every spec before applying any of it: the same-day rule compares the slots against each
-  // other. Each spec sees only its own slot's pending partial, which no other spec's fill touches,
-  // so reading them all up front says exactly what reading them one at a time did.
-  const results = specs.map((spec) => ({ spec, outcome: spec.fill(answers, slotCtx(session, ctx, spec.id, opts)) }));
-  const dropped = sameDayAsPrompted(session, results);
-
-  for (const { spec, outcome } of results) {
-    if (outcome.kind === 'absent' || dropped.has(spec.id)) continue;
+  for (const { spec, outcome } of readSlots(session, answers, ctx, specs, opts)) {
     const slot = session.slots[spec.id]!;
     if (outcome.kind === 'help') {
       // Honoured only for the slot the caller was asked for, and once per prompt since the slot
@@ -202,6 +243,8 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
       continue;
     }
     events.push({ slot: spec.id, outcome });
+    // Read before the slot is written: what counts as new is judged against what it held.
+    const isNew = givesNew(session, spec.id, outcome, opts);
     switch (outcome.kind) {
       case 'filled': {
         // The slot's own policy, not the fill outcome, decides whether a spoken value is
@@ -215,14 +258,13 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         // the form holds, heard again in answer to another slot's question) answers nothing, and
         // counting it would hold the prompted slot's `attempts` and re-ask its question forever.
         const policy = spec.spokenConfirm;
-        const unchanged = slot.value === outcome.value && slot.window === null;
         const keepConfirmed = slot.confirmed && slot.value === outcome.value;
         slot.value = outcome.value;
         slot.display = outcome.display;
         slot.confirmed = keepConfirmed || (policy === 'by-confidence' && outcome.confirm === 'none');
         slot.window = null;
         if (policy === 'by-confidence' && outcome.confirm === 'implicit') acks.push({ promptId: `ack_${spec.id}`, vars: { [spec.id]: outcome.display } });
-        if (!unchanged) progress = true;
+        if (isNew) progress = true;
         break;
       }
       case 'window': {
@@ -234,12 +276,11 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
           // turns a turn without progress into failAttempt, so the ladder walks to the keypad
           // rung and then to an agent -- the same reading correctingFill/summaryState give an
           // unchanged fill on the summary's own ladder.
-          const changed = windowKey(slot.window) !== windowKey(outcome.window);
           slot.value = null;
           slot.display = null;
           slot.confirmed = false;
           slot.window = outcome.window;
-          if (changed) progress = true;
+          if (isNew) progress = true;
         }
         break;
       }

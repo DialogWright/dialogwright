@@ -648,8 +648,8 @@
     "promptId": "confirm_report_outage",
     "acks": [],
     "reason": null,
-    "decidedGate": "changeSlot",
-    "verdict": "change_slot",
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
     "form": "report_outage",
     "slots": {
       "place": "14 Birch Lane",

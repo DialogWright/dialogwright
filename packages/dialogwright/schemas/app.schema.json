@@ -872,6 +872,14 @@
         "no-match"
       ]
     },
+    "changeSlotWithValue": {
+      "description": "At a form's summary, what the change question's reading (wording.changeSlot: a detail named as wrong without its new value) does when the same turn gives one of the form's slots a value it does not already hold. \"set-aside\": the words contradict the reading, so it decides nothing and the turn goes as it would without it (a no with a correction: the value is applied and the summary read again). \"decides\": the reading decides as it would alone, reopening the detail named unless the turn gives that detail its new value. Default \"set-aside\".",
+      "type": "string",
+      "enum": [
+        "set-aside",
+        "decides"
+      ]
+    },
     "fixtures": {
       "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",
       "type": "object",

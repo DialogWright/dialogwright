@@ -1,4 +1,4 @@
-import type { App, FormDef, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
+import type { App, ChangeSlotWithValue, FormDef, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 
@@ -61,6 +61,11 @@ export function isCarried(app: App, id: SlotId): boolean {
 /** What an intent the model is unsure of gets: its own setting (IntentDef.unsure), else the app's (App.unsureIntent), else `confirm`. */
 export function unsureOf(app: App, intent: Intent): UnsureIntent {
   return app.intents[intent]?.unsure ?? app.unsureIntent ?? 'confirm';
+}
+
+/** What the change question's reading does beside a new value at a summary: the app's (App.changeSlotWithValue), else `set-aside`. */
+export function changeSlotWithValueOf(app: App): ChangeSlotWithValue {
+  return app.changeSlotWithValue ?? 'set-aside';
 }
 
 /** How many digits a one-time code has where the identity gives none (IdentityConfig.codeLength). */

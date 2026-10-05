@@ -1,6 +1,6 @@
 import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from '../jev/types';
 import { informationOf, isFormIntent, type Informs } from './app/intents';
-import { formOf, unsureOf } from './app/lookup';
+import { changeSlotWithValueOf, formOf, unsureOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
@@ -104,7 +104,14 @@ export interface GateResult {
   verdict: Verdict;
 }
 
-export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMap, t: Thresholds): GateResult {
+const NO_SLOTS: ReadonlySet<SlotId> = new Set();
+
+/**
+ * `given` is read only at a form's summary: the slots of that form this turn's words give a value
+ * they do not already hold (fia.ts valuesGiven, read by turn.ts before anything is filled). Empty
+ * where the caller says no new value, and wherever there is no summary pending.
+ */
+export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMap, t: Thresholds, given: ReadonlySet<SlotId> = NO_SLOTS): GateResult {
   const app = appOf(session);
   const rows: GateRow[] = [];
   let verdict: Verdict | null = null;
@@ -366,8 +373,19 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
       // names the date and asks to keep it): the slot is not reopened, and the answer goes on to the
       // form's summary hook as a no or an unanswered turn (FormDef.keepsSlot, onSummaryAnswer).
       const kept = asked !== null && formOf(app, pending.form).keepsSlot?.(answers, asked, t) === true;
-      const named = kept ? null : asked;
-      changeSlotRow = { gate: 'changeSlot', value: changeTop?.p ?? null, threshold: t.SLOT_CHANGE, passed: named !== null, outcome: named ? `change:${named}` : kept ? 'kept' : 'none', decided: false };
+      // The change question asks for a detail named WITHOUT its new value, and its `none` is a new
+      // value said instead. A turn that does give one of the form's slots a new value ("not Chen,
+      // Cheng", "no, born June 15th") therefore contradicts a reading that it only named a detail:
+      // the model has taken the value's own words for the naming, and on the threshold it does so
+      // turn to turn. So the reading is set aside and the turn goes as it would without it, a no
+      // with a correction (turn.ts fills the value on the rejected path), rather than reopening a
+      // slot the caller did not ask about (the caller's name, for a doctor's) or crediting the
+      // change gate with a plain correction. A value said again unchanged is no new value ("no,
+      // it's Patel" with Patel held), so the naming still decides there. An app that wants the
+      // reading to decide regardless says so (App.changeSlotWithValue `decides`).
+      const setAside = asked !== null && !kept && given.size > 0 && changeSlotWithValueOf(app) === 'set-aside';
+      const named = kept || setAside ? null : asked;
+      changeSlotRow = { gate: 'changeSlot', value: changeTop?.p ?? null, threshold: t.SLOT_CHANGE, passed: named !== null, outcome: named ? `change:${named}` : kept ? 'kept' : setAside ? `value_given:${asked}` : 'none', decided: false };
       rows.push(changeSlotRow);
       if (named) routeVerdict = withQueue({ kind: 'change_slot', slot: named });
       else if (formConfirm === 'rejected') routeVerdict = withQueue({ kind: 'rejected' });

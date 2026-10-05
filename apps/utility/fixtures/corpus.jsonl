@@ -25,7 +25,7 @@
 {"id": "co-02", "text": "that's right", "intent": "none", "context": "confirm_report_outage", "confirm": "yes"}
 {"id": "co-03", "text": "no", "intent": "none", "context": "confirm_report_outage", "confirm": "no"}
 {"id": "co-04", "text": "no, the address is wrong", "intent": "none", "context": "confirm_report_outage", "confirm": "no", "changeSlot": "place"}
-{"id": "co-05", "text": "not quite, it's flickering rather than out", "intent": "none", "context": "confirm_report_outage", "confirm": "no", "changeSlot": "symptom", "labels": {"symptom": "flicker"}}
+{"id": "co-05", "text": "not quite, it's flickering rather than out", "intent": "none", "context": "confirm_report_outage", "confirm": "no", "labels": {"symptom": "flicker"}}
 {"id": "cb-01", "text": "what's my balance", "intent": "check_balance", "context": "no_form"}
 {"id": "cb-02", "text": "balance", "intent": "check_balance", "context": "no_form"}
 {"id": "cb-03", "text": "how much do I owe", "intent": "check_balance", "context": "no_form"}

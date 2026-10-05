@@ -88,7 +88,10 @@ export interface CorpusEntry {
   change?: 'adding' | 'replacing';
   /** confirm_ and offer_transfer contexts only: how the utterance answers the question */
   confirm?: 'yes' | 'no' | 'unanswered';
-  /** confirm_ contexts only: the detail the caller names when asked what to change */
+  /**
+   * confirm_ contexts only: the detail the caller names when asked what to change, without its new
+   * value (the change question's own criteria); a line that gives the new value labels that instead
+   */
   changeSlot?: SlotId;
   /** no_form and anything_else only: a second task named alongside the main one */
   secondIntent?: FormId;

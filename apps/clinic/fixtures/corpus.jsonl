@@ -175,15 +175,15 @@
 {"id":"fc-03","text":"yep book it","intent":"none","context":"confirm_schedule_new","confirm":"yes"}
 {"id":"fc-06","text":"no, Thursday","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"date":{"mode":"weekday","weekday":"thursday"}}}
 {"id":"fc-07","text":"no, Thursday with Dr. Alvarez","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"alvarez","date":{"mode":"weekday","weekday":"thursday"}}}
-{"id":"fc-08","text":"not Chen, Cheng","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"},"knownGap":{"reason":"'not Chen, Cheng' at the summary: changeSlot name 0.57 to 0.62, on the 0.6 threshold, reads the doctor's surname as the caller's name, so the name is cleared and asked for (as fc-17)","outcome":{"promptId":"ask_name","decidedGate":"changeSlot","verdict":"change_slot","slots":{"name":null,"dob":"1975-06-14","memberId":null,"provider":"cheng","date":"2026-09-22"},"gate":null}}}
+{"id":"fc-08","text":"not Chen, Cheng","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"}}
 {"id":"fc-09","text":"no, next week","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"date":{"mode":"window","window":"next_week"}}}
 {"id":"fc-10","text":"the day","intent":"none","context":"confirm_reschedule","changeSlot":"date"}
 {"id":"fc-11","text":"the doctor","intent":"none","context":"confirm_cancel","changeSlot":"provider"}
 {"id":"fc-12","text":"my date of birth","intent":"none","context":"confirm_reschedule","changeSlot":"dob"}
-{"id":"fc-13","text":"no, it's Morgan Elliot","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"name":"Morgan Elliot"},"tags":["correction_changes_value"],"knownGap":{"reason":"corrected name at the summary: changeSlot name 0.60 is on the 0.6 threshold, so the changeSlot gate decides instead of a plain rejection; same prompt and slots","outcome":{"decidedGate":"changeSlot","verdict":"change_slot"}}}
+{"id":"fc-13","text":"no, it's Morgan Elliot","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"name":"Morgan Elliot"},"tags":["correction_changes_value"]}
 {"id":"fc-15","text":"yes, and can I also ask about my bill","intent":"billing","context":"confirm_reschedule","confirm":"yes","change":"adding"}
 {"id":"fc-16","text":"no, the doctor is wrong","intent":"none","context":"confirm_reschedule","confirm":"no","changeSlot":"provider"}
-{"id":"fc-17","text":"Cheng, not Chen","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"},"knownGap":{"reason":"'Cheng, not Chen': the model reads a name change (changeSlot name 0.60, on the 0.6 threshold) despite provider cheng 0.59, so the name is cleared and asked for instead of a rejection with the provider changed","outcome":{"promptId":"ask_name","decidedGate":"changeSlot","verdict":"change_slot","slots":{"name":null,"dob":"1975-06-14","memberId":null,"provider":"cheng","date":"2026-09-22"},"gate":null}}}
+{"id":"fc-17","text":"Cheng, not Chen","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"}}
 {"id":"fc-18","text":"Thursday, not Tuesday","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"date":{"mode":"weekday","weekday":"thursday"}}}
 {"id":"fc-19","text":"it's Cheng","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"},"knownGap":{"reason":"a lone surname: provider none 0.77 / cheng 0.23 and confirmsNo 0.45 (below 0.7), so the provider stays patel and the short summary is re-read instead of a rejection with cheng","outcome":{"promptId":"confirm_time","verdict":"confirm_unanswered","slots":{"name":"morgan ellis","dob":"1975-06-14","memberId":null,"provider":"patel","date":"2026-09-22"},"gate":"findAppointment:ALLOW"}}}
 {"id":"fc-20","text":"Dr. Cheng","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"}}
@@ -214,7 +214,7 @@
 {"id":"db-10","text":"my birthday is January 11th 2001","intent":"none","context":"confirm_appointment","prompted":"dob","slots":{"dob":{"month":"january","day":"11","year":"2001"}}}
 {"id":"fc-21","text":"no, it's Morgan Ellis","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"name":"Morgan Ellis"},"tags":["correction_same_value"]}
 {"id":"fc-22","text":"the name","intent":"none","context":"confirm_reschedule","changeSlot":"name"}
-{"id":"fc-23","text":"no, born June 15th 1975","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"dob":{"month":"june","day":"15","year":"1975"}},"knownGap":{"reason":"corrected birth date at the summary: changeSlot dob 0.92, so the changeSlot gate decides instead of a plain rejection; same prompt and slots","outcome":{"decidedGate":"changeSlot","verdict":"change_slot"}}}
+{"id":"fc-23","text":"no, born June 15th 1975","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"dob":{"month":"june","day":"15","year":"1975"}}}
 {"id":"fc-24","text":"the birthday","intent":"none","context":"confirm_cancel","changeSlot":"dob"}
 {"id":"db-11","text":"nineteen seventy five","intent":"none","context":"reschedule","prompted":"dob","slots":{"dob":{"year":"nineteen seventy five"}},"tags":["year_only_no_pending","dob_retry"]}
 {"id":"ft-01","text":"yes, connect me","intent":"agent","context":"offer_transfer","prompted":"provider","confirm":"yes","tags":["offer_transfer"]}

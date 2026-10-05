@@ -179,6 +179,22 @@ describe('defineApp: a call through resolve', () => {
   });
 });
 
+describe('defineApp: what the change question does beside a new value (app.yaml changeSlotWithValue)', () => {
+  const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
+  const withLine = (line: string): string => read('app.yaml').replace('carrySlots: [branch]', `carrySlots: [branch]\n${line}`);
+
+  it('leaves it off the App unless written, and puts it on as written', () => {
+    expect('changeSlotWithValue' in libraryApp).toBe(false);
+    expect(defineApp(folder({ 'app.yaml': withLine('changeSlotWithValue: decides') }), libraryCode).changeSlotWithValue).toBe('decides');
+  });
+
+  it('refuses a value it does not have, offering the near one', () => {
+    expect(problems(libraryCode, folder({ 'app.yaml': withLine('changeSlotWithValue: decide') }))).toEqual([
+      'app.yaml:28:22  changeSlotWithValue  "changeSlotWithValue" is "decide", which is not allowed here; it must be one of "set-aside", "decides"  ->  change it to "decides"',
+    ]);
+  });
+});
+
 describe('defineApp: what an unsure intent gets (app.yaml unsureIntent, intents.yaml unsure)', () => {
   const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
   const withIntent = (intent: string, line: string): string => read('intents.yaml').replace(`  ${intent}:\n`, `  ${intent}:\n    ${line}\n`);

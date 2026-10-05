@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, applyDtmf, slotCtx } from './fia';
+import { fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, applyDtmf, slotCtx, valuesGiven } from './fia';
 import { newSession, setForm, type Session } from './session';
 import { DEFAULT_THRESHOLDS, withOverrides } from './thresholds';
 import type { SlotContext, SlotSpec } from './slots/types';
@@ -119,6 +119,41 @@ describe('fillSlots', () => {
       containsAccountId: noul(0.9), accountIdSpan: choice({ '55505678': 0.9, none: 0.1 }), accountIdComplete: noul(0.9),
     }, ctx('55505678'), [SLOTS.accountId]);
     expect(r.session.slots.accountId).toMatchObject({ value: '55505678', confirmed: false });
+  });
+});
+
+/**
+ * What the gates read at a summary before anything is filled (the change question's reading is set
+ * aside beside a new value, App.changeSlotWithValue): exactly the slots fillSlots would count as
+ * progress, and the session left as it was.
+ */
+describe('valuesGiven', () => {
+  const ID = (digits: string) => ({ containsAccountId: noul(0.9), accountIdSpan: choice({ [digits]: 0.9, none: 0.1 }), accountIdComplete: noul(0.9) });
+  const held = (): Session => {
+    const s = setForm(newSession('s', 0, VOICE_RELAY), 'track_parcel');
+    s.slots.accountId!.value = '55501234';
+    s.slots.accountId!.display = '5550 1234';
+    s.slots.accountId!.confirmed = true;
+    return s;
+  };
+
+  it('names a slot given a value other than the one it holds, and fills nothing', () => {
+    const s = held();
+    const before = JSON.stringify(s.slots);
+    expect([...valuesGiven(s, ID('55505678'), ctx('55505678'), [SLOTS.accountId], { correcting: true })]).toEqual(['accountId']);
+    expect(JSON.stringify(s.slots)).toBe(before);
+  });
+
+  it('names no slot for the value it already holds, or for nothing said', () => {
+    expect(valuesGiven(held(), ID('55501234'), ctx('55501234'), [SLOTS.accountId], { correcting: true }).size).toBe(0);
+    expect(valuesGiven(verified('report_missing'), { expectedDateMode: choice({ none: 0.9 }), describesParcel: noul(0.1) }, ctx('um'), slotsFor('report_missing'), { correcting: true }).size).toBe(0);
+  });
+
+  it('names a slot with two candidates to choose between, and not one with an invalid value', () => {
+    const two = valuesGiven(verified('track_parcel'), { parcelChoice: choice({ parcel_7101: 0.48, parcel_7103: 0.42, none: 0.1 }) }, ctx('the books one or was it the lamp', PARCELS), slotsFor('track_parcel'));
+    expect([...two]).toEqual(['parcelSelect']);
+    const s = setForm(newSession('s', 0, VOICE_RELAY), 'track_parcel');
+    expect(valuesGiven(s, ID('five five five'), ctx('five five five'), [SLOTS.accountId]).size).toBe(0);
   });
 });
 

@@ -56,6 +56,13 @@ export interface IntentDef {
 /** What an intent the model is unsure of gets: a confirmation, or the no-match line (IntentDef.unsure, App.unsureIntent). */
 export type UnsureIntent = 'confirm' | 'no-match';
 
+/**
+ * What the change question's reading (ModelWording.changeSlot) does at a form's summary when the
+ * same turn gives one of the form's slots a new value (App.changeSlotWithValue): `set-aside`, the
+ * reading decides nothing, or `decides`, it decides as it would alone.
+ */
+export type ChangeSlotWithValue = 'set-aside' | 'decides';
+
 export interface FormDef {
   /** Business slots, in prompt priority order. */
   slots: readonly SlotId[];
@@ -836,6 +843,16 @@ export interface App {
    * Without it, `confirm`.
    */
   unsureIntent?: UnsureIntent;
+  /**
+   * At a form's summary, what the change question's reading (ModelWording.changeSlot: a detail
+   * named as wrong without its new value) does when the same turn gives one of the form's slots a
+   * value it does not already hold. `set-aside`: the words contradict the reading, so it decides
+   * nothing and the turn goes as it would without it (a no with a correction: the value is applied
+   * and the summary read again). `decides`: the reading decides as it would alone, reopening the
+   * detail named unless the turn gives that detail its new value. A value said again unchanged is
+   * not new and sets nothing aside. Without it, `set-aside`.
+   */
+  changeSlotWithValue?: ChangeSlotWithValue;
   /**
    * The app's own named thresholds and their defaults (e.g. how sure the model must be of a part
    * of the day before a hook keeps it), read where the engine's are: TurnContext.thresholds and

@@ -155,7 +155,12 @@ export interface SlotSpec {
   listen?: SlotListen;
   /** Questions this slot adds to the turn schema. */
   questions(ctx: SlotContext): QuestionMap;
-  /** Interpret the answers to those questions. */
+  /**
+   * Interpret the answers to those questions. It reads and returns an outcome, and changes nothing:
+   * the engine may call it more than once on a turn with the same answers and context (at a form's
+   * summary the gates read the turn's new values ahead of the fill, fia.ts valuesGiven), so it must
+   * give the same outcome each time and keep no count or cache of its own.
+   */
   fill(answers: AnswerMap, ctx: SlotContext): SlotOutcome;
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no
    * keypad rung; its retry ladder is retry, retry, agent. */
