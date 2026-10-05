@@ -13,7 +13,7 @@ useTestkit();
 
 /**
  * BARGE_IN over a real server and socket: the start document each carrier is given carries the mode as
- * the relay element's `interruptible`, and the lines sent on the socket do not claim to be interruptible
+ * the relay element's `interruptible`, and the lines sent on the socket are not marked interruptible
  * by speech when the mode does not let speech interrupt.
  */
 
@@ -90,7 +90,7 @@ describe.each(['twilio', 'telnyx'] as const)('BARGE_IN on %s', (provider) => {
     expect(texts.some((m) => m.interruptible === true)).toBe(true);
   });
 
-  it.each(['none', 'dtmf'] as const)('%s: the document says so, and no line claims to be interruptible', async (mode) => {
+  it.each(['none', 'dtmf'] as const)('%s: the document says so, and no line is marked interruptible', async (mode) => {
     const { document, texts } = await startCall(provider, { BARGE_IN: mode });
     expect(document).toContain(`interruptible="${mode}"`);
     expect(document).not.toContain('interruptible="any"');

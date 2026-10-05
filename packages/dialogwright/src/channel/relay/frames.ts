@@ -134,7 +134,7 @@ export function textFrame(token: string, interruptible: boolean, lang: string = 
  * word on whether a caller may talk over it. The carrier's per-line flag is a boolean, so it cannot say
  * "keypress only", and neither carrier's pages say how a `true` on a line meets the relay element's
  * mode (it may read as any interruption). With `none` or `dtmf`, speech must not cut the agent off, so
- * a line says `false` rather than claim what the setting forbids. With `any` or `speech` the line's own
+ * a line says `false` rather than allow what the setting forbids. With `any` or `speech` the line's own
  * flag stands. Frames that are not spoken, and lines already `false`, as they are.
  */
 export function bargeInFrame(frame: OutboundFrame, mode: BargeIn): OutboundFrame {

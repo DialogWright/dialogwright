@@ -69,7 +69,7 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  * 7. A text frame's own `interruptible` (the app's word on whether a caller may talk over that line) is
  *    not on Telnyx's text frame page (token and last only), and how it meets the relay element's
  *    `interruptible` is not documented. With BARGE_IN=none or dtmf the adapter sends it `false`
- *    (channel/relay/frames.ts bargeInFrame) so a line never claims what the element forbids.
+ *    (channel/relay/frames.ts bargeInFrame) so a line never allows what the element forbids.
  * The conformance fixtures (__fixtures__/telnyx) say which of their entries are documented and which assumed.
  */
 

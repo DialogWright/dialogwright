@@ -125,7 +125,7 @@ export interface ServerConfig {
    * always connected. Why it is a setting: a carrier's barge-in can stop the agent's speech on noise or
    * echo (a speakerphone, a noisy room), and turning it to `dtmf` or `none` is also the way to rule
    * barge-in in or out when callers report not hearing replies. With `none` or `dtmf` the lines the
-   * engine sends do not claim to be interruptible either (their per-line `interruptible` says false;
+   * engine sends are not marked interruptible either (their per-line `interruptible` says false;
    * channel/relay/frames.ts bargeInFrame). A mode an enabled voice provider does not take is refused
    * at startup, never ignored. Optional in the type only, for a config made by hand before it existed
    * (absent reads as any).
