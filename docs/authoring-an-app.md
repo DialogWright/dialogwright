@@ -2254,6 +2254,8 @@ With `END_AFTER_PLAYBACK` at `auto` (the default), a turn that ends the call on 
 - **When it reports nothing** (Telnyx without `TELNYX_EVENTS`, or any carrier with `on`), the `end` goes after the lines' estimate plus half a second for the carrier to begin speaking.
 - **Never longer than `END_PLAYBACK_MAX_MS`** (default 15000), whatever the estimate.
 - **The call has ended already.** It is ended in the session store and its token revoked before the wait, so a caller who hangs up meanwhile is a call that ended (the carrier's callback hangs up; it never reconnects), and nothing more is sent. Anything the caller says meanwhile is ignored, as after any end. The end-close grace runs from the `end` once it is sent.
+- **A transfer is still made.** Should the socket close during the wait with the caller still on the line (a relay session that failed), the carrier's callback puts the caller through to the handoff number, as the `end` would have.
+- **A stopping server waits for it.** The drain (`DRAIN_MS`) counts a call whose `end` is held as a live call, so a restart does not cut its line short.
 
 The frame log has one line for the wait, before the `end` it releases: `{ endAfter, endHeldMs, expectedMs }`, where `endAfter` is `played` (the carrier's report), `estimate` (no report expected), `timeout` (the ceiling passed) or `closed` (the socket closed first, and no `end` was sent). `on` holds the `end` on every carrier, should another one lose the goodbye; `off` sends it with the lines, as before. The startup line says which carriers have their `end` held.
 

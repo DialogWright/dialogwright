@@ -421,26 +421,53 @@ function onHeldEndEvent(callSid: string, ev: PlaybackEvent): void {
  * Send a turn's `end` frame (`end`, with anything after it) once the lines before it have played
  * (holdEnd), with the end-close grace after it as for any `end`. The call is ended first, in the store
  * and for its token, so a socket that closes during the wait is a call that ended, never one to
- * reconnect (http.ts decideAction), and a turn queued behind this one says nothing. Not awaited by the
+ * reconnect (http.ts decideAction), and a turn queued behind this one says nothing. A transfer's `end`
+ * keeps its handoff data on the call until it is sent (CallEntry.heldHandoffData): a socket that closes
+ * first with the caller still on the line is put through all the same. Not awaited by the
  * turn: the call's queue has nothing more to run, and a carrier's report must reach the wait meanwhile.
  * Returns false, having sent nothing, when no line went out or the socket is gone: there is nothing to wait for.
  */
 function sendEndAfterPlayback(deps: AdapterDeps, entry: CallEntry, end: OutboundFrame[], sent: readonly OutboundFrame[], decision: unknown): boolean {
   if (entry.socket === null || !sent.some((f) => f.type === 'text' || f.type === 'play')) return false;
-  deps.store.end(entry.callSid);
-  deps.tokens.revoke(entry.callSid);
-  void holdEnd(deps, entry.callSid, sent)
+  const callSid = entry.callSid;
+  deps.store.end(callSid);
+  deps.tokens.revoke(callSid);
+  // A transfer still owed should the socket close first with the caller on the line (http.ts decideAction).
+  const handoffData = end.find((f) => f.type === 'end')?.handoffData;
+  if (handoffData !== undefined) entry.heldHandoffData = handoffData;
+  const done: Promise<void> = holdEnd(deps, callSid, sent)
     .then(async ({ after, heldMs, expectedMs }) => {
       entry.frames.write('log', { endAfter: after, endHeldMs: heldMs, expectedMs });
       if (after === 'closed') return;
-      if (after === 'timeout' && reportsPlayback.has(entry.callSid)) {
-        deps.log(`${entry.callSid}: end sent after ${seconds(heldMs, 2)} with no report the lines finished (~${seconds(expectedMs, 1)} estimated)`);
+      if (after === 'timeout' && reportsPlayback.has(callSid)) {
+        deps.log(`${callSid}: end sent after ${seconds(heldMs, 2)} with no report the lines finished (~${seconds(expectedMs, 1)} estimated)`);
       }
-      await sendFrames(deps, entry, end, decision);
+      const out = await sendFrames(deps, entry, end, decision);
+      if (out.some((f) => f.type === 'end')) entry.heldHandoffData = null;
       armEndGrace(deps, entry);
     })
-    .catch((err: unknown) => deps.log(`${entry.callSid}: sending the held end failed: ${describe(err).message}`));
+    .catch((err: unknown) => deps.log(`${callSid}: sending the held end failed: ${describe(err).message}`))
+    .finally(() => {
+      if (endSends.get(callSid)?.done === done) endSends.delete(callSid);
+    });
+  endSends.set(callSid, { entry, done });
   return true;
+}
+
+/**
+ * Each held `end`'s whole send (the wait, then the frame), by call, with the call it is for: what a
+ * stopping server waits for (heldEndsOf).
+ */
+const endSends = new Map<string, { entry: CallEntry; done: Promise<void> }>();
+
+/**
+ * The held `end`s (END_AFTER_PLAYBACK) of the calls `store` holds, each settled once its `end` has gone or
+ * its socket closed first. Such a call has ended for the store, but its goodbye or transfer line is still
+ * playing: a stopping server waits for it as for a live call (index.ts drain and close), or its caller
+ * loses the line, and a transfer its `end`.
+ */
+export function heldEndsOf(store: { get(callSid: string): CallEntry | undefined }): Promise<void>[] {
+  return [...endSends].filter(([callSid, s]) => store.get(callSid) === s.entry).map(([, s]) => s.done);
 }
 
 /**

@@ -167,6 +167,39 @@ describe('a Telnyx call end to end', () => {
     expect(running!.store.get(CALL_ID)?.ended).toBe(true);
   });
 
+  it('a server stopping while the goodbye plays waits for its end before it closes the call', async () => {
+    const { base, ws } = await startTelnyx();
+    const answer = await postSigned(base, '/voice/telnyx', { CallSid: CALL_ID, From: '+15555550110', To: '+15555550111' });
+    const token = /token=([0-9a-f]{32})/.exec(answer.text)![1]!;
+    const relay = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`);
+    relay.send({ type: 'setup', callSid: '5e9fcc12-0000-4000-8000-000000000000', callControlId: CALL_ID, from: null, to: null, direction: null, callStatus: 'active', customParameters: {}, sessionId: '05ff737c-0000-4000-8000-000000000000' });
+    await relay.waitForTexts(1);
+    relay.prompt('can you deliver tomorrow morning', true, 'en');
+    await relay.waitForTexts(3);
+    relay.prompt('five five five zero one two three four', true, 'en');
+    await relay.waitForTexts(4);
+    relay.prompt('april twelfth nineteen eighty five', true, 'en');
+    await relay.waitForTexts(7);
+    relay.prompt("no, that's all", true, 'en');
+    await relay.waitForTexts(8);
+    // The call has ended for the store, but its goodbye is playing: the drain waits for the end.
+    expect(running!.store.liveCount()).toBe(0);
+    let drained = false;
+    const drain = running!.drain(10_000).then(() => {
+      drained = true;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(drained).toBe(false);
+    expect(relay.received.some((m) => m.type === 'end')).toBe(false);
+    relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+    relay.send({ type: 'info', name: 'tokensPlayed', value: GOODBYE });
+    await relay.waitFor((m) => m.type === 'end');
+    await drain;
+    expect(drained).toBe(true);
+    relay.close();
+    await relay.closed;
+  });
+
   it('takes a setup shaped as a live Telnyx call sends it: numbers null, and the webhook id as callControlId', async () => {
     // Captured from a live call on 2026-10-05 (shape only; ids and numbers here are made up): the webhook's
     // CallSid is a v3: id; the setup's callSid is another, 36-character id, the v3: id comes as callControlId,

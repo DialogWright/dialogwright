@@ -5,7 +5,7 @@ import { join, resolve as resolvePath } from 'node:path';
 import { consoleExposure, DEFAULT_DRAIN_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
 import { createRequestHandler, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
-import { forgetNoInput, type AdapterDeps } from './adapter';
+import { forgetNoInput, heldEndsOf, type AdapterDeps } from './adapter';
 import { SessionStore } from './sessions';
 import { CallTokens } from './tokens';
 import { openFileStores } from './stores/file';
@@ -421,7 +421,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     drain: async (ms = config.drainMs ?? DEFAULT_DRAIN_MS) => {
       draining = true;
       chat?.drain();
-      const calls = () => store.liveCount();
+      // A call whose goodbye or transfer line plays before its held `end` (END_AFTER_PLAYBACK) has ended
+      // for the store, but is waited for as a live call: closing its socket would cut the line short.
+      const calls = () => store.liveCount() + heldEndsOf(store).length;
       const chats = () => chat?.activeCount() ?? 0;
       const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
       if (calls() + chats() === 0) {
@@ -529,7 +531,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       // With the calls saved, a carrier's callback belongs to the restarted server: none is taken here.
       if (store.durable) void stopListening();
       // Let turns that are already running finish (and flush their frames) before the sockets go away.
-      const tails = [...store.tails(), ...routes.flatMap((r) => r.tails?.() ?? []), ...(chat?.tails() ?? [])];
+      // And the `end`s held for their lines to play (END_AFTER_PLAYBACK).
+      const tails = [...store.tails(), ...heldEndsOf(store), ...routes.flatMap((r) => r.tails?.() ?? []), ...(chat?.tails() ?? [])];
       if (tails.length) {
         let timer: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([

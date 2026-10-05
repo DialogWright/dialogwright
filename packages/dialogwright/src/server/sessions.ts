@@ -44,6 +44,13 @@ export interface CallEntry extends CallResources {
    * that loads the call after a restart sends it again with the same key.
    */
   pending?: PendingEffect | null;
+  /**
+   * The handoff data of the call's `end` while the adapter holds it for the lines before it to play
+   * (END_AFTER_PLAYBACK, server/adapter.ts), until it is sent. The call has ended by then; should its
+   * socket close first with the caller still on the line (a relay session that failed, a drain), the
+   * carrier's callback makes the transfer it carried (http.ts decideAction). Never saved.
+   */
+  heldHandoffData?: string | null;
 }
 
 export type CallFactory = (callSid: string) => CallResources;

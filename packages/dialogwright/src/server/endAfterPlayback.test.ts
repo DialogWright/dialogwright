@@ -253,6 +253,50 @@ describe('the end held until the lines play (END_AFTER_PLAYBACK)', () => {
     expect(endLogs(call.d.dir)[0]).toMatchObject({ endAfter: 'played', endHeldMs: 0 });
   });
 
+  it('a transfer whose socket closes during the hold, the caller still on the line: the callback puts them through', async () => {
+    const d = deps();
+    const sock = fakeSocket();
+    const ctx = newConnectionContext(d.tokens.mint(CALL, 'telnyx'), sock, 'telnyx');
+    await handleSocketMessage(d, sock, ctx, setupMsg);
+    await handleSocketMessage(d, sock, ctx, info('agentSpeaking', 'on'));
+    await handleSocketMessage(d, sock, ctx, info('agentSpeaking', 'off'));
+    await handleSocketMessage(d, sock, ctx, prompt('i want to talk to a person'));
+    expect(ends(sock)).toEqual([]);
+    // The relay session fails (or a drain closes it) before the transfer line has played.
+    await handleSocketClose(d, ctx);
+    expect(endLogs(d.dir)[0]).toMatchObject({ endAfter: 'closed' });
+    const action = decideActionTwiml(actionDeps(d), { CallSid: CALL, CallStatus: 'in-progress', SessionStatus: 'failed' });
+    expect(action.note).toBe('dial:live-agent');
+    expect(action.twiml).toContain('<Dial>+15555550123</Dial>');
+    // Owed once: a second callback hangs up.
+    expect(decideActionTwiml(actionDeps(d), { CallSid: CALL, CallStatus: 'in-progress', SessionStatus: 'failed' }).note).toBe('hangup');
+  });
+
+  it('a transfer whose caller hangs up during the hold: the callback hangs up', async () => {
+    const d = deps();
+    const sock = fakeSocket();
+    const ctx = newConnectionContext(d.tokens.mint(CALL, 'telnyx'), sock, 'telnyx');
+    await handleSocketMessage(d, sock, ctx, setupMsg);
+    await handleSocketMessage(d, sock, ctx, prompt('i want to talk to a person'));
+    await handleSocketClose(d, ctx);
+    const action = decideActionTwiml(actionDeps(d), { CallSid: CALL, CallStatus: 'completed' });
+    expect(action.note).toBe('hangup:completed');
+    expect(action.twiml).toContain('<Hangup/>');
+  });
+
+  it('a transfer whose held end was sent leaves nothing owed: the carrier\'s callback carries the handoff', async () => {
+    const d = deps();
+    const sock = fakeSocket();
+    const ctx = newConnectionContext(d.tokens.mint(CALL, 'telnyx'), sock, 'telnyx');
+    await handleSocketMessage(d, sock, ctx, setupMsg);
+    await handleSocketMessage(d, sock, ctx, prompt('i want to talk to a person'));
+    await vi.advanceTimersByTimeAsync(DEFAULT_END_PLAYBACK_MAX_MS);
+    expect(ends(sock)).toHaveLength(1);
+    expect(d.store.get(CALL)?.heldHandoffData).toBeNull();
+    await handleSocketClose(d, ctx);
+    expect(decideActionTwiml(actionDeps(d), { CallSid: CALL, CallStatus: 'in-progress', SessionStatus: 'failed' }).note).toBe('hangup');
+  });
+
   it('a caller who hangs up during the hold: nothing more is sent, no error, and the call reads as ended, not dropped', async () => {
     const call = await atAnythingElse('telnyx', deps({ endCloseGraceMs: 1000 }), true);
     await sayThatsAll(call);
