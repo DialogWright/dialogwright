@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks';
 import { wordsOf, type SessionEvent } from '../channel/events';
 import { plan, resolve, sensitiveDigit, type ArrivalDigit, type DigitArrivalContext, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
 import type { Session } from '../core/session';
-import { maskCodeEvent } from '../core/spokenCode';
+import { maskCodeEvent, maskSpokenCode, saidCode } from '../core/spokenCode';
 import { maskId } from '../gate/principal';
 import { isAnonymous } from '../gate/types';
 import { demoTools, type Tools } from '../core/tools';
@@ -164,6 +164,12 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // adapter applies to the wire frame (maskCodeFrame) before its frame log, so there it is already
   // masked and this is a no-op; this covers every other way in.
   const event = maskCodeEvent(session.promptedFor, heard, codeLengthOf(appOf(session)));
+  // The prompts a joined turn's words join, kept beside them in the trace: where the joined words
+  // held a code said aloud, every digit of each prompt is masked, as no one prompt held enough of it
+  // to be masked on its own (the code may have been said across them).
+  const fragments = joined && event !== heard && event.type === 'user.speech' && saidCode(event.text)
+    ? joined.map((f) => maskSpokenCode(f, 1).text)
+    : joined;
   const words = wordsOf(event);
   const now = nowOf(opts);
   const digit = arrivalContext(session, event, arrival);
@@ -264,7 +270,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - tr }
       : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - t0 },
     retrieval: retrieved?.record ?? null,
-    joined: joined ?? null,
+    joined: fragments ?? null,
     ts: new Date(now()).toISOString(),
     pricePerMtok: opts.thresholds.JEV_PRICE_PER_MTOK,
   });
