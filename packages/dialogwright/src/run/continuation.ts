@@ -24,8 +24,8 @@ import { runTurn, type Arrival, type RunOptions, type TurnRun } from './turn';
  * pressed, a no-input silence, or any other event in between ends joining, and so does an interrupt
  * after `withinMs`, which is an ordinary barge-in. With the relay's barge-in off no interrupt comes, so a
  * carrier that reports the caller speaking stands in for it: speech that starts within `withinMs` of the
- * reply going out, and goes on into the next final prompt, is told here as `resumed` (server/adapter.ts). At most CONTINUE_MAX_FRAGMENTS prompts are joined,
- * and never past the wire's text limit.
+ * reply going out, and goes on into the next final prompt, is told here as `resumed` (server/adapter.ts).
+ * At most CONTINUE_MAX_FRAGMENTS prompts are joined, and never past the wire's text limit.
  *
  * The engine's, not a carrier's: it reads the core's events, and the voice server and the frame-log
  * replay (harness-text/replay.ts) run every turn of a call through one Continuation, in the order the

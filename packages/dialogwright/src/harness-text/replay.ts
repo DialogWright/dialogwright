@@ -131,15 +131,6 @@ function aheadOutcomes(lines: readonly ReadFrameLogLine[]): (string | null)[] {
  * never joined (the option off, or a log from before it), and replays as that call ran: 0. Replay
  * follows the log rather than the app as it is now, so a call replays as it was taken.
  */
-/** The `afterMs` of a `{ callerResumed: { afterMs } }` log line (server/adapter.ts takeResumed), or null for any other line. */
-function callerResumedMs(line: ReadFrameLogLine): number | null {
-  if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return null;
-  const r = (line.msg as { callerResumed?: unknown }).callerResumed;
-  if (typeof r !== 'object' || r === null) return null;
-  const ms = (r as { afterMs?: unknown }).afterMs;
-  return typeof ms === 'number' && Number.isFinite(ms) && ms >= 0 ? ms : null;
-}
-
 function loggedContinueWithinMs(lines: readonly ReadFrameLogLine[]): number {
   for (const line of lines) {
     if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
@@ -147,6 +138,15 @@ function loggedContinueWithinMs(lines: readonly ReadFrameLogLine[]): number {
     if (typeof ms === 'number' && Number.isInteger(ms) && ms >= 0 && ms <= MAX_CONTINUE_WITHIN_MS) return ms;
   }
   return 0;
+}
+
+/** The `afterMs` of a `{ callerResumed: { afterMs } }` log line (server/adapter.ts takeResumed), or null for any other line. */
+function callerResumedMs(line: ReadFrameLogLine): number | null {
+  if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return null;
+  const r = (line.msg as { callerResumed?: unknown }).callerResumed;
+  if (typeof r !== 'object' || r === null) return null;
+  const ms = (r as { afterMs?: unknown }).afterMs;
+  return typeof ms === 'number' && Number.isFinite(ms) && ms >= 0 ? ms : null;
 }
 
 /** The adapter gave up on a downstream service's answer (server/adapter.ts queueService). */
