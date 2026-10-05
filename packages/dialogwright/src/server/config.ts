@@ -5,7 +5,7 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
-  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
+  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
   type BargeIn, type EndAfterPlayback,
 } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
@@ -159,6 +159,16 @@ export interface ServerConfig {
    */
   noInputAfterSpeechMs?: number;
   /**
+   * RESUME_AFTER_PAUSE_MS, 0 to 10000, default 2000 (DEFAULT_RESUME_AFTER_PAUSE_MS), and
+   * RESUME_INTO_REPLY_MS, 0 to 5000, default 1000 (DEFAULT_RESUME_INTO_REPLY_MS). On a carrier that reports
+   * the caller's voice, a caller who comes back in no later than RESUME_AFTER_PAUSE_MS after they stopped,
+   * and no later than RESUME_INTO_REPLY_MS after the reply to that prompt went out, had not finished: their
+   * next final prompt continues the one before it (App.voice.continueWithinMs, server/adapter.ts). Optional
+   * in the type only (absent reads as the defaults).
+   */
+  resumeAfterPauseMs?: number;
+  resumeIntoReplyMs?: number;
+  /**
    * How long one request to Jev may take before the turn gives up on it, plays the slow-turn
    * hint and keeps the prompt open. The SDK retries once inside this budget, so a caller waits up
    * to twice this on a turn the model never answers. A phone-turn budget, not a recording one.
@@ -285,6 +295,15 @@ function endAfterPlaybackOf(env: Env): { endAfterPlayback: EndAfterPlayback; end
   const maxMs = integer(env, 'END_PLAYBACK_MAX_MS', DEFAULT_END_PLAYBACK_MAX_MS);
   if (maxMs <= 0) throw new Error(`END_PLAYBACK_MAX_MS must be a positive number of milliseconds, got "${env.END_PLAYBACK_MAX_MS}"`);
   return { endAfterPlayback: mode as EndAfterPlayback, endPlaybackMaxMs: maxMs };
+}
+
+/** RESUME_AFTER_PAUSE_MS and RESUME_INTO_REPLY_MS, checked; read on every carrier, so a typo is caught before it matters. */
+function resumeOf(env: Env): { resumeAfterPauseMs: number; resumeIntoReplyMs: number } {
+  const pauseMs = integer(env, 'RESUME_AFTER_PAUSE_MS', DEFAULT_RESUME_AFTER_PAUSE_MS);
+  if (pauseMs > 10_000) throw new Error(`RESUME_AFTER_PAUSE_MS must be from 0 to 10000 milliseconds, got "${env.RESUME_AFTER_PAUSE_MS}"`);
+  const intoMs = integer(env, 'RESUME_INTO_REPLY_MS', DEFAULT_RESUME_INTO_REPLY_MS);
+  if (intoMs > 5_000) throw new Error(`RESUME_INTO_REPLY_MS must be from 0 to 5000 milliseconds, got "${env.RESUME_INTO_REPLY_MS}"`);
+  return { resumeAfterPauseMs: pauseMs, resumeIntoReplyMs: intoMs };
 }
 
 /** The pause a planned restart's handover asks of each carrier, unless RESTART_PAUSE_S says otherwise. */
@@ -441,6 +460,7 @@ export function loadConfig(env: Env): ServerConfig {
     ...endAfterPlaybackOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     noInputAfterSpeechMs: integer(env, 'NO_INPUT_AFTER_SPEECH_MS', DEFAULT_NO_INPUT_AFTER_SPEECH_MS),
+    ...resumeOf(env),
     jevTimeoutMs: jevTimeout(env),
     screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
     dashboard: dash === 'on',
@@ -661,6 +681,10 @@ export function describeConfig(c: ServerConfig): string {
     // Held while the caller is heard speaking only on a carrier that reports it (VoiceProvider.readEvent).
     ...(c.noInputMs > 0 && c.voiceProviders.some(readsPlaybackEvents)
       ? [`no-input after speech ${c.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS} ms`]
+      : []),
+    // A caller coming back in is heard only on a carrier that reports their voice (server/adapter.ts).
+    ...(c.voiceProviders.some(readsPlaybackEvents)
+      ? [`caller resumes within ${c.resumeAfterPauseMs ?? DEFAULT_RESUME_AFTER_PAUSE_MS} ms of a pause, ${c.resumeIntoReplyMs ?? DEFAULT_RESUME_INTO_REPLY_MS} ms into the reply`]
       : []),
     `jev timeout ${c.jevTimeoutMs} ms`,
     `screen ${c.screen}`,

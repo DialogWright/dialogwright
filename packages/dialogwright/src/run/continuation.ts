@@ -22,8 +22,10 @@ import { runTurn, type Arrival, type RunOptions, type TurnRun } from './turn';
  * gate, handed work to a service, switched the language, ended the call or was quarantined has done
  * something no session can take back, so the prompt after it is a turn of its own, as today. A key
  * pressed, a no-input silence, or any other event in between ends joining, and so does an interrupt
- * after `withinMs`, which is an ordinary barge-in. At most CONTINUE_MAX_FRAGMENTS prompts are joined,
- * and never past the wire's text limit.
+ * after `withinMs`, which is an ordinary barge-in. With the relay's barge-in off no interrupt comes, so a
+ * carrier that reports the caller speaking stands in for it: a caller who comes back in soon after their
+ * own pause and the reply going out (RESUME_AFTER_PAUSE_MS, RESUME_INTO_REPLY_MS), and goes on into the
+ * next final prompt, is told here as `resumed` (server/adapter.ts). At most CONTINUE_MAX_FRAGMENTS prompts are joined, and never past the wire's text limit.
  *
  * The engine's, not a carrier's: it reads the core's events, and the voice server and the frame-log
  * replay (harness-text/replay.ts) run every turn of a call through one Continuation, in the order the
@@ -76,6 +78,21 @@ export class Continuation {
 
   /** `withinMs`: voice.continueWithinMs, for the call's whole life; 0 never joins. */
   constructor(readonly withinMs: number) {}
+
+  /**
+   * The caller came back in over the reply to their last final prompt, and the prompt about to run is more
+   * of that speech (server/adapter.ts takeResumed, on a carrier that reports the caller speaking, which
+   * decides it by the caller's own pause and the reply's send, not by `withinMs`; replay reads it from the
+   * frame log's `callerResumed`): taken as an interrupt within the window is, so that prompt continues the
+   * one before it. Not a turn: no event reaches the core, and nothing changes unless the last turn was a
+   * reply to a final prompt that only spoke (so never with `withinMs` 0).
+   */
+  resumed(): void {
+    const state = this.state;
+    if (state.kind === 'replied' || state.kind === 'cut') {
+      this.state = { kind: 'cut', base: state.base, fragments: state.fragments };
+    }
+  }
 
   /** Forget any fragments: what a key the server drops, or a reconnect, calls (neither is a turn). */
   reset(): void {

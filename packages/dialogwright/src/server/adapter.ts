@@ -2,7 +2,7 @@ import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCallIdOf, 
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
-import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
+import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
@@ -242,6 +242,7 @@ export function forgetNoInput(callSid: string): void {
   callerSpeaking.delete(callSid);
   heldEnds.get(callSid)?.release('closed');
   reportsPlayback.delete(callSid);
+  forgetResumed(callSid);
 }
 
 /**
@@ -345,6 +346,8 @@ function resumeNoInput(deps: AdapterDeps, entry: CallEntry, after: 'speech' | 'h
  */
 function onCallerSpeech(deps: AdapterDeps, entry: CallEntry, speaking: boolean): void {
   const callSid = entry.callSid;
+  // Whether this is a caller coming back in over the reply to their last final prompt.
+  followResumed(deps, entry, speaking);
   if (speaking) {
     callerSpeaking.add(callSid);
     // Nor is a line the carrier stopped playing then one to say again (RESAY_CUT_LINES).
@@ -395,6 +398,149 @@ const watched = new Map<string, Watched>();
 
 /** Calls whose caller the carrier reports speaking now (a PlaybackEvent `caller speaking`). */
 const callerSpeaking = new Set<string>();
+
+/**
+ * A caller who came back in (App.voice.continueWithinMs, run/continuation.ts), on a carrier that reports
+ * the caller's voice (VoiceProvider.readEvent: Telnyx's clientSpeaking). A carrier's interrupt within the
+ * window of the reply to a final prompt says the caller had not finished; with the relay's barge-in off
+ * (BARGE_IN none or dtmf) no interrupt ever comes, and a recognizer that ends a prompt at a short pause
+ * splits what the caller says in two. Seen on Telnyx (2026-10-05): "...for one two" came as a final
+ * prompt 0.31 s after the caller stopped, the reply went out 0.21 s later, the caller was heard again
+ * 24 ms after it, and "three four" came as a prompt of its own. On another call the caller stopped, the
+ * prompt came 0.79 s later, the reply went out 0.19 s after that, and the caller came back in 0.70 s
+ * after the reply went out (1.68 s after they had stopped) with the rest of their address. An interrupt
+ * window from the reply's send alone would miss the second: the caller's own pause is what says it.
+ *
+ * - **Coming back in.** The caller starts speaking again no later than RESUME_AFTER_PAUSE_MS after the
+ *   speech that gave their last final prompt stopped, and no later than RESUME_INTO_REPLY_MS after the
+ *   reply to that prompt went out (or before it went out): an answer to the reply cannot start before
+ *   the caller has heard some of it. A caller speaking as the prompt comes is back in already.
+ * - **To the next final prompt.** From there their speech runs on across pauses no longer than
+ *   RESUME_AFTER_PAUSE_MS; a longer one ends it (an "mm", a listen, then an answer is a new utterance).
+ *   When the next final prompt comes with them speaking, or no later than NO_INPUT_AFTER_SPEECH_MS (the
+ *   carrier's transcript time) after they stopped, they had not finished: the Continuation is told
+ *   (Continuation.resumed), as an interrupt within the window would tell it, and the prompt continues the
+ *   one before it. Nothing is cut and no turn runs for it. The joined turn's reply goes out as any line
+ *   does; whether it stops the reply still playing is the carrier's (on Telnyx a new frame was not seen
+ *   to stop one, server/voice/telnyx.ts), so the caller may hear the rest of that first.
+ * - **For replay.** The frame log has `{ callerResumed: { pauseMs, intoReplyMs } }` just before the prompt
+ *   it joins, and replay tells its Continuation there (harness-text/replay.ts).
+ *
+ * A carrier's own interrupt joins as before, within continueWithinMs; an app whose continueWithinMs is 0
+ * joins nothing either way.
+ */
+interface AfterPrompt {
+  /** When the speech that gave the prompt stopped (for a caller speaking as it came with no stop since the prompt before: when they began). */
+  speechEndMs: number;
+  /** When the reply to it went out (its first line); null until it has. */
+  sentAtMs: number | null;
+  /** When the caller came back in; null until they have. */
+  resumedAtMs: number | null;
+}
+
+/** Each call's last final prompt, while a caller coming back in over the reply to it may still be continuing it. */
+const afterPrompts = new Map<string, AfterPrompt>();
+/** When the carrier last reported the caller starting, and stopping, to speak. */
+const lastStart = new Map<string, number>();
+const lastStop = new Map<string, number>();
+/** Calls whose caller has stopped speaking since their last final prompt came. */
+const stoppedSincePrompt = new Set<string>();
+
+/** RESUME_AFTER_PAUSE_MS: the longest pause that leaves a caller not finished. */
+function resumeAfterPauseOf(deps: AdapterDeps): number {
+  return deps.resumeAfterPauseMs ?? DEFAULT_RESUME_AFTER_PAUSE_MS;
+}
+
+/** Drop what is known of a caller coming back in (a reconnect, a close, a call gone). */
+function forgetResumed(callSid: string): void {
+  afterPrompts.delete(callSid);
+  lastStart.delete(callSid);
+  lastStop.delete(callSid);
+  stoppedSincePrompt.delete(callSid);
+}
+
+/** The caller started or stopped speaking: whether they are coming back in over the reply to their last final prompt. */
+function followResumed(deps: AdapterDeps, entry: CallEntry, speaking: boolean): void {
+  const callSid = entry.callSid;
+  const now = Date.now();
+  if (!speaking) {
+    lastStop.set(callSid, now);
+    stoppedSincePrompt.add(callSid);
+    return;
+  }
+  lastStart.set(callSid, now);
+  const r = afterPrompts.get(callSid);
+  if (!r) return;
+  const pauseMs = resumeAfterPauseOf(deps);
+  if (r.resumedAtMs === null) {
+    const soonAfterPause = now - r.speechEndMs <= pauseMs;
+    const soonIntoReply = r.sentAtMs === null || now - r.sentAtMs <= (deps.resumeIntoReplyMs ?? DEFAULT_RESUME_INTO_REPLY_MS);
+    if (soonAfterPause && soonIntoReply) r.resumedAtMs = now;
+    else afterPrompts.delete(callSid);
+    return;
+  }
+  // Back in already: a pause longer than the limit since then ends it, and what they say now is new.
+  const stop = lastStop.get(callSid);
+  if (stop !== undefined && stop >= r.resumedAtMs && now - stop > pauseMs) afterPrompts.delete(callSid);
+}
+
+/**
+ * A final prompt came (after takeResumed has read the one before): the speech that gave it, from which a
+ * caller coming back in is measured. A carrier that reported no stop of the caller since the prompt before,
+ * with the caller not speaking, reported nothing of this speech, and nothing is followed.
+ */
+function notePrompt(deps: AdapterDeps, entry: CallEntry): void {
+  const callSid = entry.callSid;
+  const now = Date.now();
+  const stopped = stoppedSincePrompt.has(callSid) ? lastStop.get(callSid) : undefined;
+  stoppedSincePrompt.delete(callSid);
+  afterPrompts.delete(callSid);
+  if (callerSpeaking.has(callSid)) {
+    // Speaking as it came: back in already, from when they began again (after the stop, if any).
+    const began = lastStart.get(callSid) ?? now;
+    if (stopped === undefined || began - stopped <= resumeAfterPauseOf(deps)) {
+      afterPrompts.set(callSid, { speechEndMs: stopped ?? began, sentAtMs: null, resumedAtMs: began });
+    }
+    return;
+  }
+  if (stopped !== undefined) afterPrompts.set(callSid, { speechEndMs: stopped, sentAtMs: null, resumedAtMs: null });
+}
+
+/**
+ * A turn's lines went out (`sentAtMs`, the first of them): a reply to a final prompt is the one a caller
+ * may come back in over; any other turn's lines end what was followed of the last prompt.
+ */
+function noteReply(entry: CallEntry, event: SessionEvent, sentAtMs: number): void {
+  const r = afterPrompts.get(entry.callSid);
+  if (!r) return;
+  if (event.type !== 'user.speech' || !event.final) {
+    afterPrompts.delete(entry.callSid);
+    return;
+  }
+  r.sentAtMs = sentAtMs;
+}
+
+/**
+ * A final prompt arrived: when the caller came back in over the reply to the last one and is still
+ * speaking, or stopped no longer than NO_INPUT_AFTER_SPEECH_MS ago, it continues the prompt before it
+ * (Continuation.resumed, through the call's queue ahead of the prompt's turn). Logged for replay before
+ * the prompt's own line.
+ */
+function takeResumed(deps: AdapterDeps, entry: CallEntry): void {
+  const callSid = entry.callSid;
+  const r = afterPrompts.get(callSid);
+  afterPrompts.delete(callSid);
+  if (!r || r.resumedAtMs === null || continuationOf(entry).withinMs === 0) return;
+  if (!callerSpeaking.has(callSid)) {
+    const stop = lastStop.get(callSid);
+    const settle = deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS;
+    if (stop === undefined || Date.now() - stop > settle) return;
+  }
+  const pauseMs = r.resumedAtMs - r.speechEndMs;
+  const intoReplyMs = r.sentAtMs === null ? 0 : Math.max(0, r.resumedAtMs - r.sentAtMs);
+  entry.frames.write('log', { callerResumed: { pauseMs, intoReplyMs } });
+  void deps.store.enqueue(callSid, async () => continuationOf(entry).resumed());
+}
 
 /** Words compared as a carrier reports them back: whitespace folded. */
 function folded(text: string): string {
@@ -724,6 +870,13 @@ export interface AdapterDeps {
    * DEFAULT_NO_INPUT_AFTER_SPEECH_MS.
    */
   noInputAfterSpeechMs?: number;
+  /**
+   * RESUME_AFTER_PAUSE_MS and RESUME_INTO_REPLY_MS: on a carrier that reports the caller's voice, how soon
+   * after their own pause, and after the reply going out, a caller coming back in had not finished
+   * (followResumed). Absent: DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS.
+   */
+  resumeAfterPauseMs?: number;
+  resumeIntoReplyMs?: number;
   /** wav filename -> ms, from clipDurations(audioDir); how long a `play` frame is assumed to take. */
   clipDurations?: ReadonlyMap<string, number>;
   /** The dashboard's event bus; absent when the dashboard is off. */
@@ -1013,7 +1166,10 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // A carrier that acts on `end` at once drops the lines not yet said (END_AFTER_PLAYBACK): the
     // goodbye or the transfer line goes now, and the `end` once it has played.
     const at = ending && holdsEnd(deps, entry.provider) ? frames.findIndex((f) => f.type === 'end') : -1;
+    const sentAtMs = Date.now();
     const sent = await sendFrames(deps, entry, at >= 0 ? frames.slice(0, at) : frames, run.result.decision);
+    // A caller may come back in over the reply to a final prompt (a caller who had not finished).
+    if (sent.some((f) => f.type === 'text' || f.type === 'play')) noteReply(entry, event, sentAtMs);
     if (at >= 0) {
       endHeld = sendEndAfterPlayback(deps, entry, frames.slice(at), sent, run.result.decision);
       if (!endHeld) sent.push(...(await sendFrames(deps, entry, frames.slice(at), run.result.decision)));
@@ -1178,6 +1334,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       // Nor do the lines it was playing, or what it heard of the caller.
       unwatch(callId);
       callerSpeaking.delete(callId);
+      forgetResumed(callId);
       const previous = existing.socket;
       if (previous && previous !== socket) {
         // Twilio reconnected before the old socket's close reached us; retire it explicitly so
@@ -1277,6 +1434,12 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     ...(event.type === 'user.key' ? { promptedFor: entry.session.promptedFor, epoch: promptEpoch(entry.session) } : {}),
   };
   const logged: InboundFrame = frame.type === 'dtmf' && arrival.sensitive !== null ? { type: 'dtmf', digit: CODE_DIGIT } : frame;
+  // A final prompt from a caller who came back in over the last reply continues the one before it;
+  // logged ahead of the prompt's own line, where replay reads it. Then this prompt's speech is the one followed.
+  if (frame.type === 'prompt' && frame.last && !entry.ended) {
+    takeResumed(deps, entry);
+    notePrompt(deps, entry);
+  }
   entry.frames.write('in', logged);
   if (entry.ended) {
     deps.log(`${ctx.callSid}: ${frame.type} after end, ignored`);
@@ -1414,6 +1577,7 @@ export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContex
   clearNoInput(ctx.callSid);
   unwatch(ctx.callSid);
   callerSpeaking.delete(ctx.callSid);
+  forgetResumed(ctx.callSid);
   // A held `end` has no one left to hear its lines: it is not sent (the call already ended for the store).
   heldEnds.get(ctx.callSid)?.release('closed');
   entry.frames.write('log', { socketClosed: true, ended: entry.ended });

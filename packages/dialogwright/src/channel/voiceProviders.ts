@@ -87,3 +87,22 @@ export const END_PLAYBACK_LEAD_MS = 500;
  * (2026-10-05); 2.5 s covers that with room, and is short enough after a cough with no transcript.
  */
 export const DEFAULT_NO_INPUT_AFTER_SPEECH_MS = 2_500;
+
+/**
+ * RESUME_AFTER_PAUSE_MS unless set: on a carrier that reports the caller's voice, the longest pause in a
+ * caller's speech that still leaves them not finished (server/adapter.ts, a caller who came back in). A
+ * recognizer ends a prompt at a short pause (Telnyx's about 0.8 s after the caller stops), and a caller
+ * pausing for a second or two in the middle of an address or a number is normal: on a live call
+ * (2026-10-05) the caller came back in 1.68 s after they stopped, and their address was split in two. A
+ * pause this long or shorter, before they come back in or while they go on, keeps it one utterance.
+ */
+export const DEFAULT_RESUME_AFTER_PAUSE_MS = 2_000;
+
+/**
+ * RESUME_INTO_REPLY_MS unless set: on a carrier that reports the caller's voice, the latest after the reply
+ * to their last prompt went out that a caller coming back in is still taken as not finished. An answer to
+ * the reply cannot start before the caller has heard some of it (Telnyx begins playing a line about 65 ms
+ * after it is sent, and a question takes seconds); on live calls (2026-10-05) callers came back in 24 ms
+ * and 696 ms after the reply went out.
+ */
+export const DEFAULT_RESUME_INTO_REPLY_MS = 1_000;
