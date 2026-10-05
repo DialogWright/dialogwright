@@ -237,6 +237,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   }
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
+  problems.push(...checkDone(config, locate));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
   if (config.knowledge) {
     if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));
@@ -342,6 +343,40 @@ function checkMenu(config: LoadedConfig, locate: LoadResult['locate']): Problem[
     });
   });
   return problems;
+}
+
+// ---------------------------------------------------------------------------------------------
+// "Anything else?": a caller who is done is understood
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The `done` intent, as a line to paste under `intents:` in intents.yaml: the criteria name the
+ * ways a caller says they are finished, a bare no to "anything else?" among them.
+ */
+export const DONE_INTENT_YAML =
+  'done: { criteria: "Says they are finished and need nothing more, as in no thanks, that\'s all, I\'m all set, nothing else, I don\'t need anything else, or goodbye, including a bare no when just asked whether there is anything else", label: finish up, kind: control }';
+
+/**
+ * An app that asks "anything else?" (the engine's `anything_else` line, said when a form is done:
+ * core/turn.ts finishForm) understands the caller who answers that they are done only through the
+ * `done` control intent: `done` ends the call with the goodbye (core/turn.ts, the route verdict and
+ * the confirmed intent). Without it, "no, that's all" is no intent the app knows, so the caller hears
+ * the no-match line and then the keypad menu. The engine treats `done` as optional, so an app without
+ * it still loads; this is a problem for `check`, so CI fails until the intent is there.
+ */
+function checkDone(config: LoadedConfig, locate: LoadResult['locate']): Problem[] {
+  const prompts = config.prompts[config.defaultLocale] ?? {};
+  if (!has(prompts, 'anything_else') || has(config.intents.intents, 'done')) return [];
+  const at = locate('intents.yaml', ['intents']) ?? { line: 1, column: 1 };
+  const corpus = config.app.fixtures ? ` in ${config.app.fixtures.dir.replace(/\/+$/, '')}/corpus.jsonl` : '';
+  return [{
+    file: 'intents.yaml',
+    line: at.line,
+    column: at.column,
+    path: formatPath(['intents']),
+    message: 'the app asks whether there is anything else (the line "anything_else", said when a form is done) but has no "done" intent, so a caller who answers "no, that\'s all" is not understood: they hear the no-match line instead of the goodbye, then the keypad menu or a person',
+    fix: `add under intents: ${DONE_INTENT_YAML}; then give it corpus lines${corpus}, such as {"id":"dn-01","text":"no, that's all","intent":"done","context":"anything_else"} (the anything_else context needs testing.seed.anythingElse; "no_form" otherwise)`,
+  }];
 }
 
 // ---------------------------------------------------------------------------------------------
