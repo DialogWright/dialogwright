@@ -2,7 +2,7 @@ import { setupCallIdOf, textLastOf } from './voice/registry';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
-import { actionsToFrames, frameToEvent } from '../channel/relay/map';
+import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
 import { playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
@@ -591,6 +591,19 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
   }
 }
 
+/** The type of a JSON message the relay wire does not know (a carrier's event), or null. */
+export function carrierEventName(raw: string): string | null {
+  try {
+    const m: unknown = JSON.parse(raw);
+    if (typeof m !== 'object' || m === null || Array.isArray(m)) return null;
+    const t = (m as { type?: unknown }).type;
+    if (typeof t !== 'string' || !/^[A-Za-z_.-]{1,40}$/.test(t)) return null;
+    return isInboundFrameType(t) ? null : t;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A refused message's shape for the log: its field names and the kind of each value, with only the
  * `type` value itself (a carrier's own word, never a caller's), so a carrier whose messages differ from
@@ -619,6 +632,15 @@ export function messageShape(raw: string): string {
 /** Handle one raw socket message for a connection. Safe to call concurrently; turns are serialized per call by the store. */
 export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, raw: string): Promise<void> {
   const parsed = parseInbound(raw);
+  if (!parsed && carrierEventName(raw) !== null) {
+    // A message of a type the relay wire does not know, from a carrier's optional event streams (Telnyx's
+    // speaker-events, tokens-played): written to the call's frame log as it came, never acted on or counted
+    // as malformed. Before a setup there is no call to write it to.
+    const entry = ctx.callSid ? deps.store.get(ctx.callSid) : undefined;
+    if (entry) entry.frames.write('in', { carrierEvent: JSON.parse(raw) as unknown });
+    else deps.log(`unknown: carrier event before setup: ${messageShape(raw)}`);
+    return;
+  }
   if (!parsed) {
     ctx.malformed += 1;
     deps.log(`${ctx.callSid ?? 'unknown'}: malformed inbound message (${ctx.malformed}): ${messageShape(raw)}`);

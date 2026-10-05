@@ -139,4 +139,9 @@ describe('the Telnyx voice provider', () => {
     expect(doc).toBe(telnyxProvider.startDocument(START).replace('<Response><Connect', '<Response><Pause length="5"/><Connect'));
     expect(telnyxProvider.startDocument({ ...START, pauseS: 0 })).toBe(telnyxProvider.startDocument(START));
   });
+
+  it('asks for the event streams it is given', () => {
+    expect(telnyxProvider.startDocument({ publicHost: 'voice.example.com', token: 'b'.repeat(32), hints: '', events: 'speaker-events tokens-played' })).toContain('events="speaker-events tokens-played"');
+    expect(telnyxProvider.startDocument({ publicHost: 'voice.example.com', token: 'b'.repeat(32), hints: '' })).not.toContain('events=');
+  });
 });
