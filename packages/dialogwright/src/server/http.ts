@@ -251,7 +251,8 @@ function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, 
   const deployment = voiceFor(deps.config, provider.id);
   const deploymentRecognition = recognitionFor(deps.config, provider.id);
   const events = provider.id === 'telnyx' && deps.config.telnyxEvents ? { events: deps.config.telnyxEvents } : {};
-  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: deps.hints, ...deployment, recognition: deploymentRecognition, ...events };
+  const bargeIn = deps.config.bargeIn ? { bargeIn: deps.config.bargeIn } : {};
+  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: deps.hints, ...deployment, recognition: deploymentRecognition, ...events, ...bargeIn };
   const app = deps.app;
   if (!app?.locales || !namesLanguages(app) || locale === undefined) return base;
   const defaultLocale = app.locales.default;

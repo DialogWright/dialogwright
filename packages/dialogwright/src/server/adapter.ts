@@ -1,7 +1,8 @@
 import { playbackEventOf, readsPlaybackEvents, setupCallIdOf, textLastOf } from './voice/registry';
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
-import { serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
+import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
+import type { BargeIn } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
@@ -456,6 +457,11 @@ export interface AdapterDeps {
    * off. Active only on a carrier that reports its playback (VoiceProvider.readEvent).
    */
   resay?: ResaySettings;
+  /**
+   * BARGE_IN: who may talk over a line. With none or dtmf the text and clip frames sent say they are
+   * not interruptible (channel/relay/frames.ts bargeInFrame). Absent: any, the lines' own flags.
+   */
+  bargeIn?: BargeIn;
 }
 
 /** How the adapter says again a line the carrier cut short (RESAY_CUT_LINES, RESAY_MIN_FRACTION). */
@@ -557,8 +563,8 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
     const spoken: OutboundFrame = original.type === 'text'
       ? { ...original, token: spokenDigits(original.token, voice?.spokenDigits), ...(lastText >= 0 && i !== lastText ? { last: false } : {}) }
       : original;
-    const frame = respelled(spoken, respell);
-    const logged = respelled(loggedFrame(spoken, scrub), respell);
+    const frame = bargeInFrame(respelled(spoken, respell), deps.bargeIn ?? 'any');
+    const logged = bargeInFrame(respelled(loggedFrame(spoken, scrub), respell), deps.bargeIn ?? 'any');
     const socket = entry.socket;
     if (!socket) {
       log(`${entry.callSid}: no socket, dropped ${frame.type}`);

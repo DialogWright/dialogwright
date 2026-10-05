@@ -9,7 +9,8 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *
  * Documented by Telnyx (developers.telnyx.com, "Conversation Relay" and the TeXML
  * `<ConversationRelay>` reference): the `<Connect><ConversationRelay>` document and its attributes
- * (url, voice, language, transcriptionProvider, dtmfDetection, interruptible); its two children,
+ * (url, voice, language, transcriptionProvider, dtmfDetection, interruptible: none, any, speech or
+ * dtmf, BARGE_IN); its two children,
  * `<Language code>` with optional per-language `voice`, `ttsProvider`, `transcriptionProvider` and
  * `speechModel`, and `<Parameter name value>`, whose pairs come back in the setup frame's
  * `customParameters`; the socket frames, the `language` frame among them (`ttsLanguage`,
@@ -65,6 +66,10 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *    live. A callback with no status at all says nothing, and the engine then reconnects only when
  *    its `SessionStatus` is `failed` and it still holds the call live (server/http.ts decideAction);
  *    anything else hangs up. A live capture of a relay failure should confirm the fields and words.
+ * 7. A text frame's own `interruptible` (the app's word on whether a caller may talk over that line) is
+ *    not on Telnyx's text frame page (token and last only), and how it meets the relay element's
+ *    `interruptible` is not documented. With BARGE_IN=none or dtmf the adapter sends it `false`
+ *    (channel/relay/frames.ts bargeInFrame) so a line never claims what the element forbids.
  * The conformance fixtures (__fixtures__/telnyx) say which of their entries are documented and which assumed.
  */
 
@@ -128,7 +133,7 @@ function startDocument(o: StartDocumentOptions): string {
   const attrs = [
     `url="wss://${escapeXml(o.publicHost)}/conversation/telnyx?token=${escapeXml(o.token)}"`,
     'dtmfDetection="true"',
-    'interruptible="any"',
+    `interruptible="${o.bargeIn ?? 'any'}"`,
     `hints="${escapeXml(o.hints)}"`,
     // The relay element takes a recognizer's provider, not its model (a model goes on <Language>).
     ...recognitionAttrs(o.language ? placed.recognition : (o.recognition ?? {}), false),

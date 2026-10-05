@@ -1,4 +1,5 @@
 import type { SetupFrame } from '../../channel/relay/frames';
+import type { BargeIn } from '../../channel/voiceProviders';
 /**
  * A phone carrier that runs a text relay (ConversationRelay or a compatible one) in front of the
  * engine. Everything carrier-specific is here: proving a webhook came from the carrier, the document
@@ -47,6 +48,11 @@ export interface CallbackParams {
 export interface StartDocumentOptions {
   /** Optional event streams the carrier sends on the socket (Telnyx's `events` attribute); absent: none. */
   readonly events?: string;
+  /**
+   * Who may talk over a line the agent is saying (BARGE_IN), written as the relay element's
+   * `interruptible`; absent, `any`, as it always was.
+   */
+  readonly bargeIn?: BargeIn;
   readonly publicHost: string;
   readonly token: string;
   readonly hints: string;

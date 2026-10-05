@@ -16,6 +16,16 @@ describe('the Twilio voice provider', () => {
     );
   });
 
+  it('says who may interrupt a line (BARGE_IN) on the relay element: any unless told, else speech, dtmf or none, and the legacy document with it', () => {
+    expect(twilioProvider.startDocument({ ...START, bargeIn: 'any' })).toBe(twilioProvider.startDocument(START));
+    for (const mode of ['speech', 'dtmf', 'none'] as const) {
+      const doc = twilioProvider.startDocument({ ...START, bargeIn: mode });
+      expect(doc).toContain(`dtmfDetection="true" interruptible="${mode}" interruptSensitivity="low"`);
+      expect(doc).not.toContain('interruptible="any"');
+      expect(connectRelayTwiml({ ...START, bargeIn: mode })).toContain(`interruptible="${mode}"`);
+    }
+  });
+
   it('keeps the legacy document byte for byte, at the unprefixed paths', () => {
     expect(connectRelayTwiml(START)).toBe(
       `${HEAD}<Response><Connect action="https://voice.example.com/cr-action">` +

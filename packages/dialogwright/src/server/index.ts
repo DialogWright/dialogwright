@@ -325,6 +325,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       store, tokens, log, endCloseGraceMs: overrides.endCloseGraceMs, noInputMs, clipDurations: durations, bus,
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
       summarizeHandoff: overrides.summarizeHandoff,
+      bargeIn: config.bargeIn ?? 'any',
       // RESAY_CUT_LINES: absent from a config made by hand before it existed reads as on, as loadConfig's default.
       ...(config.resayCutLines === false ? {} : { resay: { minFraction: config.resayMinFraction ?? DEFAULT_RESAY_MIN_FRACTION } }),
     },

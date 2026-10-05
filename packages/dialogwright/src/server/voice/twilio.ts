@@ -61,9 +61,10 @@ export function twilioConnectDocument(o: StartDocumentOptions, paths: RelayPaths
     ...recognitionAttrs(recognition),
     'partialPrompts="true"',
     'dtmfDetection="true"',
+    // BARGE_IN says who may interrupt (any, speech, dtmf or none; any by default, as the document always had).
     // On speakerphone, room noise was interrupting prompt playback and leaving the caller in
     // silence until the no-input timer fired: low needs confident, longer speech to interrupt, and backchannels ("uh-huh") never do.
-    'interruptible="any"',
+    `interruptible="${o.bargeIn ?? 'any'}"`,
     'interruptSensitivity="low"',
     'ignoreBackchannel="true"',
     'reportInputDuringAgentSpeech="any"',

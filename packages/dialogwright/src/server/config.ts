@@ -4,7 +4,7 @@ import { resolveJevProvider, type JevProvider } from '../jev/provider';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
-import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS } from '../channel/voiceProviders';
+import { BARGE_IN_MODES, bargeInRefusal, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS, type BargeIn } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 import { checkJwksUrl } from './chat/jwks';
@@ -117,6 +117,20 @@ export interface ServerConfig {
   resayCutLines?: boolean;
   /** RESAY_MIN_FRACTION, 0.05 to 0.95, default 0.35 (DEFAULT_RESAY_MIN_FRACTION): under it, a playback was cut short. */
   resayMinFraction?: number;
+  /**
+   * BARGE_IN, default any: who may talk over a line the agent is saying. It is the relay element's
+   * `interruptible` in the document each voice provider gives its carrier (Twilio's ConversationRelay
+   * and Telnyx's both take any, speech, dtmf and none): `any` lets speech or a keypress cut a line
+   * off, `speech` speech only, `dtmf` a keypress only, `none` neither. `any` is how the engine has
+   * always connected. Why it is a setting: a carrier's barge-in can stop the agent's speech on noise or
+   * echo (a speakerphone, a noisy room), and turning it to `dtmf` or `none` is also the way to rule
+   * barge-in in or out when callers report not hearing replies. With `none` or `dtmf` the lines the
+   * engine sends do not claim to be interruptible either (their per-line `interruptible` says false;
+   * channel/relay/frames.ts bargeInFrame). A mode an enabled voice provider does not take is refused
+   * at startup, never ignored. Optional in the type only, for a config made by hand before it existed
+   * (absent reads as any).
+   */
+  bargeIn?: BargeIn;
   /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
   noInputMs: number;
   /**
@@ -223,6 +237,18 @@ function resayOf(env: Env): { resayCutLines: boolean; resayMinFraction: number }
     throw new Error(`RESAY_MIN_FRACTION must be a fraction from 0.05 to 0.95, got "${env.RESAY_MIN_FRACTION}"`);
   }
   return { resayCutLines: sw === 'on', resayMinFraction: fraction };
+}
+
+/** BARGE_IN, any unless set; a value an enabled voice provider does not take is refused with the provider named. */
+function bargeInOf(env: Env, voiceProviders: readonly string[]): BargeIn {
+  const raw = env.BARGE_IN?.trim().toLowerCase() || 'any';
+  if (!(BARGE_IN_MODES as readonly string[]).includes(raw)) {
+    throw new Error(`BARGE_IN must be ${BARGE_IN_MODES.slice(0, -1).join(', ')} or ${BARGE_IN_MODES.at(-1)}, got "${env.BARGE_IN}"`);
+  }
+  const mode = raw as BargeIn;
+  const refusal = bargeInRefusal(mode, voiceProviders);
+  if (refusal) throw new Error(refusal);
+  return mode;
 }
 
 /** The pause a planned restart's handover asks of each carrier, unless RESTART_PAUSE_S says otherwise. */
@@ -375,6 +401,7 @@ export function loadConfig(env: Env): ServerConfig {
     telnyxTranscriptionProvider,
     telnyxEvents,
     ...resayOf(env),
+    bargeIn: bargeInOf(env, voiceProviders),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     jevTimeoutMs: jevTimeout(env),
     screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
@@ -585,6 +612,7 @@ export function describeConfig(c: ServerConfig): string {
     c.noInputMs > 0 ? `no-input ${c.noInputMs} ms` : 'no-input off',
     `jev timeout ${c.jevTimeoutMs} ms`,
     `screen ${c.screen}`,
+    `barge-in ${c.bargeIn ?? 'any'}`,
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
     c.consoleAuth ? describeConsoleAuth(c.consoleAuth) : `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,

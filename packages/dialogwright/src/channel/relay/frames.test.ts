@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { endFrame, silenceFrame, type OutboundFrame } from './frames';
+import { bargeInFrame, endFrame, silenceFrame, textFrame, type OutboundFrame } from './frames';
 import { dtmfFrames, promptFrame } from '../../testing/relayFrames';
 
 describe('frame constructors', () => {
@@ -36,5 +36,25 @@ describe('frame constructors', () => {
     expect(endFrame('billing', ['reschedule'], [], { accountId: '5550 1234' }).handoffData)
       .toBe('{"reasonCode":"billing","completed":["reschedule"],"slots":{"accountId":"5550 1234"}}');
     expect(endFrame('live-agent', [], [], {}).handoffData).toBe('{"reasonCode":"live-agent"}');
+  });
+});
+
+describe('barge-in on outbound frames (BARGE_IN)', () => {
+  const play: OutboundFrame = { type: 'play', source: 'https://h/a.wav', loop: 1, preemptible: false, interruptible: true };
+  const frames: OutboundFrame[] = [textFrame('Hello', true), textFrame('Your code is 1234', false), play, endFrame('done')];
+
+  it('leaves every frame as it is for any and speech: the line\'s own flag says whether speech may cut it', () => {
+    for (const mode of ['any', 'speech'] as const) expect(frames.map((f) => bargeInFrame(f, mode))).toEqual(frames);
+  });
+
+  it('claims no interruption on any spoken line or clip for none and dtmf, and leaves the other frames alone', () => {
+    for (const mode of ['none', 'dtmf'] as const) {
+      expect(frames.map((f) => bargeInFrame(f, mode))).toEqual([
+        textFrame('Hello', false),
+        textFrame('Your code is 1234', false),
+        { ...play, interruptible: false },
+        endFrame('done'),
+      ]);
+    }
   });
 });

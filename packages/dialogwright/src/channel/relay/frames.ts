@@ -3,6 +3,7 @@
 
 import type { Principal } from '../../gate/types';
 import { DEFAULT_LANG } from '../events';
+import type { BargeIn } from '../voiceProviders';
 
 export interface SetupFrame {
   type: 'setup';
@@ -126,6 +127,19 @@ export function serviceResultFrame(service: string, result: unknown, note?: unkn
 /** A line's words for the relay's voice, in `lang` (the line's own, Say.lang), en-US when it has none. */
 export function textFrame(token: string, interruptible: boolean, lang: string = DEFAULT_LANG): TextFrame {
   return { type: 'text', token, last: true, lang, interruptible, preemptible: false };
+}
+
+/**
+ * An outbound frame under BARGE_IN. A spoken line or clip carries its own `interruptible`: the app's
+ * word on whether a caller may talk over it. The carrier's per-line flag is a boolean, so it cannot say
+ * "keypress only", and neither carrier's pages say how a `true` on a line meets the relay element's
+ * mode (it may read as any interruption). With `none` or `dtmf`, speech must not cut the agent off, so
+ * a line says `false` rather than claim what the setting forbids. With `any` or `speech` the line's own
+ * flag stands. Frames that are not spoken, and lines already `false`, as they are.
+ */
+export function bargeInFrame(frame: OutboundFrame, mode: BargeIn): OutboundFrame {
+  if (mode !== 'none' && mode !== 'dtmf') return frame;
+  return (frame.type === 'text' || frame.type === 'play') && frame.interruptible ? { ...frame, interruptible: false } : frame;
 }
 
 export function endFrame(
