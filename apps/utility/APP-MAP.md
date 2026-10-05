@@ -16,6 +16,7 @@
 | `office_hours` | informational | hear the office hours | says the passage office-hours from the knowledge base and goes back to the question |
 | `agent` | control | speak with someone | handled by the engine |
 | `repeat_prompt` | control | hear that again | handled by the engine |
+| `done` | control | finish up | handled by the engine |
 | `other` | control | something else | handled by the engine |
 | `none` | control | nothing | handled by the engine |
 

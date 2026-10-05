@@ -140,6 +140,14 @@
 {"id": "rp-06", "text": "could you say the options again", "intent": "repeat_prompt", "context": "no_form"}
 {"id": "rp-07", "text": "pardon", "intent": "repeat_prompt", "context": "check_balance", "knownGap": {"reason": "a bare 'pardon' in a form: repeat_prompt 0.44 against none 0.56 (confusedByPrompt 0.79), so the account question's retry is said instead of a replay; the caller still hears the question again", "outcome": {"decision": "prompt", "promptId": "ask_account_retry", "decidedGate": null, "verdict": "proceed"}}}
 {"id": "rp-08", "text": "come again", "intent": "repeat_prompt", "context": "no_form"}
+{"id": "dn-01", "text": "that's all", "intent": "done", "context": "anything_else"}
+{"id": "dn-02", "text": "I don't need anything else", "intent": "done", "context": "anything_else"}
+{"id": "dn-03", "text": "no thank you, I'm all set", "intent": "done", "context": "anything_else"}
+{"id": "dn-04", "text": "nothing else", "intent": "done", "context": "anything_else"}
+{"id": "dn-05", "text": "nope, that's it", "intent": "done", "context": "anything_else"}
+{"id": "dn-06", "text": "no, that's everything, bye", "intent": "done", "context": "anything_else"}
+{"id": "dn-07", "text": "I'm good, thanks", "intent": "done", "context": "anything_else"}
+{"id": "dn-08", "text": "that's all I needed", "intent": "done", "context": "no_form"}
 {"id": "ot-03", "text": "can I change my mailing address", "intent": "other", "context": "no_form"}
 {"id": "ot-05", "text": "what's the weather tomorrow", "intent": "other", "context": "no_form"}
 {"id": "ot-08", "text": "can you sign me up for paperless billing", "intent": "other", "context": "no_form"}

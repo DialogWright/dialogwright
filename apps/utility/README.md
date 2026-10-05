@@ -113,6 +113,19 @@ The stub answers from the corpus labels. A cassette holds the real decision mode
 
 A change to the words in the YAML (criteria, labels, prompts, the questions a slot sends) changes what the model is sent, so the replay reports each changed request as a cassette miss until the cassette is recorded again. So does a new corpus line or a new spoken step: its words were never recorded. A corpus label, by contrast, is read only by the stub, so correcting one leaves the cassette as it is.
 
+### Recording again: what changed since the committed cassette
+
+- **The `done` intent** (a caller who is finished, "that's all" at "anything else?"). The intent question, which every turn asks, now lists it, so every request of the replay is new: the committed cassette misses all of them (254 cassette misses) until it is recorded again, and so does the test that replays it (`src/sessionRoundTrip.test.ts`, "as the recorded cassette replays them"). New lines: corpus `dn-01` to `dn-08`, scripted call `outage-then-done`.
+
+To record it again, at the repository root, with the key from this folder's `.env` (`regress` does not read `ENV_FILE`; only the server does, so the line loads the file into a subshell):
+
+```sh
+(set -a && . apps/utility/.env && set +a && pnpm --filter @dialogwright/example-utility regress --client record --threshold JEV_TIMEOUT_MS=15000)
+pnpm --filter @dialogwright/example-utility regress --client recorded
+```
+
+The second line, with no key, must exit 0; triage any difference as in step 3 above, and commit the cassette.
+
 ### Picking the address out of the words (not turned on)
 
 `place` is a `text` slot, so an address said with the request is read back whole: "at this address: the power is out at 22 Alder Street and nothing works". The `text` type's `pick` option picks out the part that is the address instead ([docs/slots/text.md](../../docs/slots/text.md), "Picking the value out of the words"): code splits the words into candidate parts, a second question (`placePick`) asks which part is the street address, and the value is that part, as said. It is the example to turn on, and it is off here because it changes what the model is sent, so the cassette must be recorded again. To turn it on:

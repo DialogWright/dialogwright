@@ -24,6 +24,29 @@
     }
   },
   {
+    "id": "outage-then-done",
+    "steps": [
+      {
+        "say": "I want to report a power outage"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "yes, file it"
+      },
+      {
+        "say": "that's all"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye",
+      "principalLevel": 0,
+      "gate": "reportOutage:ALLOW"
+    }
+  },
+  {
     "id": "outage-up-front",
     "steps": [
       {

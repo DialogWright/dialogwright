@@ -18,8 +18,10 @@ describe('the app folder', () => {
 
   it('has the three tasks, the question form, the two answers and the engine\'s control intents', () => {
     expect(Object.keys(app.intents)).toEqual([
-      'report_outage', 'check_balance', 'set_up_plan', 'ask_question', 'outage_map', 'office_hours', 'agent', 'repeat_prompt', 'other', 'none',
+      'report_outage', 'check_balance', 'set_up_plan', 'ask_question', 'outage_map', 'office_hours', 'agent', 'repeat_prompt', 'done', 'other', 'none',
     ]);
+    // "That's all" at "anything else?" ends the call with the goodbye (the scripted call outage-then-done).
+    expect(app.intents.done).toMatchObject({ kind: 'control', label: 'finish up' });
     // The two answers are passages of the knowledge base, approved like any other.
     expect(app.intents.outage_map).toMatchObject({ kind: 'informational', passage: 'outage-map' });
     expect(app.intents.office_hours).toMatchObject({ kind: 'informational', passage: 'office-hours' });
