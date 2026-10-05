@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULT_NO_INPUT_AFTER_SPEECH_MS, forgetNoInput, handleSocketMessage, newConnectionContext, type AdapterDeps, type ServerBargeInSettings } from './adapter';
+import { DEFAULT_NO_INPUT_AFTER_SPEECH_MS, forgetNoInput, handleSocketMessage, newConnectionContext, REPLACED_STOP_MS, RESAY_SETTLE_MS, type AdapterDeps, type ServerBargeInSettings } from './adapter';
 import { SessionStore, type SocketLike } from './sessions';
 import { CallTokens } from './tokens';
 import { FrameLog } from './frameLog';
@@ -20,7 +20,7 @@ import { testkitApp } from '../testing/testkit';
 import { useTestkit } from '../testing/apps';
 import { defaultCorpusFile } from '../run/fixtures';
 import { VOICE_RELAY } from '../channel/caps';
-import { DEFAULT_BARGE_IN_MIN_SPEECH_MS, DEFAULT_SPEECH_GAP_MS, type BargeIn } from '../channel/voiceProviders';
+import { DEFAULT_BARGE_IN_MIN_SPEECH_MS, DEFAULT_SPEECH_GAP_MS, END_PLAYBACK_MARGIN_MS, type BargeIn } from '../channel/voiceProviders';
 
 useTestkit();
 
@@ -165,39 +165,83 @@ describe('BARGE_IN=server', () => {
     expect(logged(d.dir, 'bargeIn')).toEqual([{ speechMs: 400, line: 0, lines: 1 }]);
   });
 
-  it('nothing is stopped when the agent is not speaking', async () => {
+  it('nothing is stopped once the lines have finished', async () => {
     const d = deps();
     const call = await greeted(d);
-    // The carrier has not said the agent is speaking: the caller talking is an answer, not a barge-in.
+    // The carrier said the greeting played and stopped: the caller talking now is an answer, not a barge-in.
+    await call.agent(true);
+    await vi.advanceTimersByTimeAsync(REPLACED_STOP_MS + 1);
+    await call.agent(false);
     await call.caller(true);
     await vi.advanceTimersByTimeAsync(2_000);
     await call.caller(false);
-    // Nor once it has said the lines finished.
+    expect(plays(call.sock)).toEqual([]);
+    // Nor once the carrier has reported the line played.
+    await call.send(prompt('my parcel never arrived'));
     await call.agent(true);
-    await call.agent(false);
+    await call.played(`${REPORT_ACK} ${ASK_ACCOUNT_ID}`);
     await vi.advanceTimersByTimeAsync(DEFAULT_SPEECH_GAP_MS + 1);
     await call.caller(true);
     await vi.advanceTimersByTimeAsync(2_000);
     expect(plays(call.sock)).toEqual([]);
-    // Nor once the carrier has reported the line played.
-    await call.agent(true);
-    await call.played(GREETING);
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(plays(call.sock)).toEqual([]);
   });
 
-  it('counts speech that began before the lines from when they began', async () => {
+  it('counts speech that began before the lines went out from when they did', async () => {
     const d = deps();
     const call = await greeted(d);
+    await call.agent(true);
+    await vi.advanceTimersByTimeAsync(REPLACED_STOP_MS + 1);
+    await call.agent(false);
+    // The caller is still talking when the transcript of their first words comes, and its reply goes out.
     await call.caller(true);
     await vi.advanceTimersByTimeAsync(1_000);
-    await call.agent(true);
+    await call.send(prompt('my parcel never arrived'));
     await vi.advanceTimersByTimeAsync(DEFAULT_BARGE_IN_MIN_SPEECH_MS - 1);
     expect(plays(call.sock)).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(plays(call.sock)).toHaveLength(1);
-    // The caller was already speaking when the line began: it was cut at its start (a caller who had not finished).
+    // The caller was already speaking when the lines went out: cut at their start (a caller who had not finished).
     expect(d.store.get('CA1')!.session.lastInterrupt).toEqual({ heard: '', afterMs: 0 });
+  });
+
+  it('the lines are playing from the send: a reply that replaced the playback can be stopped before the carrier says it started', async () => {
+    const d = deps();
+    const call = await greeted(d);
+    await call.agent(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    // A reply replaces the greeting. As on Telnyx: the greeting's stop comes 70 ms after the send, and the reply's start is lost.
+    await call.send(prompt('my parcel never arrived'));
+    await vi.advanceTimersByTimeAsync(70);
+    await call.agent(false);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(DEFAULT_BARGE_IN_MIN_SPEECH_MS);
+    expect(plays(call.sock)).toHaveLength(1);
+    expect(logged(d.dir, 'bargeIn')).toEqual([{ speechMs: DEFAULT_BARGE_IN_MIN_SPEECH_MS, line: 0, lines: 2 }]);
+  });
+
+  it('a stop the carrier reports later, with no start, is the lines\' own: nothing is stopped after it', async () => {
+    const d = deps();
+    const call = await greeted(d);
+    await call.agent(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.send(prompt('my parcel never arrived'));
+    await vi.advanceTimersByTimeAsync(REPLACED_STOP_MS + 1);
+    await call.agent(false);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(plays(call.sock)).toEqual([]);
+  });
+
+  it('lines the carrier never reports are taken as done once their estimate and a margin have passed', async () => {
+    const d = deps();
+    const call = await greeted(d);
+    // No report of the greeting at all: it can be stopped while it would still be playing ...
+    await vi.advanceTimersByTimeAsync(textEstimateMs(GREETING) + END_PLAYBACK_MARGIN_MS + 1);
+    // ... but not after.
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(plays(call.sock)).toEqual([]);
+    expect(logged(d.dir, 'bargeIn')).toEqual([]);
   });
 
   it('a line the carrier reports played is what the caller heard, and the line spoken over is the next', async () => {
@@ -291,6 +335,74 @@ describe('BARGE_IN=server', () => {
     expect(logged(d.dir, 'after').at(-1)).toBe('speech');
     await vi.advanceTimersByTimeAsync(DEFAULT_NO_INPUT_AFTER_SPEECH_MS);
     expect(texts(call.sock)).toEqual([GREETING, NO_INPUT, ASK_INTENT]);
+  });
+
+  it('a line stopped by the server is not said again as one the carrier cut short (RESAY_CUT_LINES)', async () => {
+    const d = deps({ resay: { minFraction: 0.35 } });
+    const call = await greeted(d);
+    await call.agent(true);
+    await vi.advanceTimersByTimeAsync(REPLACED_STOP_MS + 1);
+    await call.agent(false);
+    // Speaking before the reply goes out, so the reply is watched with the caller not yet heard over it.
+    await call.caller(true);
+    await call.send(prompt('my parcel never arrived'));
+    await vi.advanceTimersByTimeAsync(DEFAULT_BARGE_IN_MIN_SPEECH_MS);
+    expect(plays(call.sock)).toHaveLength(1);
+    // The carrier then reports the reply stopped almost at once: a cut, but the server's own.
+    await call.caller(false);
+    await call.agent(true);
+    await vi.advanceTimersByTimeAsync(50);
+    await call.agent(false);
+    await vi.advanceTimersByTimeAsync(RESAY_SETTLE_MS + 100);
+    expect(logged(d.dir, 'resaid')).toEqual([]);
+    expect(texts(call.sock).filter((t) => t === ASK_ACCOUNT_ID)).toHaveLength(1);
+  });
+
+  describe('a keypress', () => {
+    const dtmf = (digit: string) => JSON.stringify({ type: 'dtmf', digit });
+
+    it('over a line the caller may talk over stops it, and the digit is taken as it is with the carrier\'s barge-in off', async () => {
+      const keyed = async (mode: BargeIn) => {
+        const d = deps({ bargeIn: mode });
+        const call = await greeted(d);
+        await call.agent(true);
+        await vi.advanceTimersByTimeAsync(500);
+        await call.send(dtmf('1'));
+        await call.send(dtmf('#'));
+        await vi.advanceTimersByTimeAsync(100);
+        const out = { plays: plays(call.sock), texts: texts(call.sock), keyStops: logged(d.dir, 'keyStop'), lastInterrupt: d.store.get('CA1')!.session.lastInterrupt };
+        forgetNoInput('CA1');
+        return out;
+      };
+      const server = await keyed('server');
+      const none = await keyed('none');
+      expect(server.plays).toEqual([{ type: 'play', source: STOP, loop: 1, preemptible: true, interruptible: false }]);
+      // Once: the second key finds nothing playing.
+      expect(server.keyStops).toEqual([{ line: 0, lines: 1 }]);
+      // No interrupt for the core: the key is the turn.
+      expect(server.lastInterrupt).toBeNull();
+      expect(server.texts).toEqual(none.texts);
+      expect(none.plays).toEqual([]);
+    });
+
+    it('stops nothing with no line playing', async () => {
+      const d = deps();
+      const call = await greeted(d);
+      await call.agent(true);
+      await vi.advanceTimersByTimeAsync(REPLACED_STOP_MS + 1);
+      await call.agent(false);
+      await call.send(dtmf('#'));
+      expect(plays(call.sock)).toEqual([]);
+      expect(logged(d.dir, 'keyStop')).toEqual([]);
+    });
+
+    it('never writes the digit to the stop\'s log line', async () => {
+      const d = deps();
+      const call = await greeted(d);
+      await call.send(dtmf('7'));
+      expect(d.lines).toContain('CA1: a key was pressed over line 1 of 1, playback stopped');
+      expect(JSON.stringify(logged(d.dir, 'keyStop'))).not.toContain('7');
+    });
   });
 
   it('the call replays from its frame log to the same turns, the interrupt among them', async () => {

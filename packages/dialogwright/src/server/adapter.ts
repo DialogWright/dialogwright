@@ -687,18 +687,25 @@ function resay(deps: AdapterDeps, callSid: string, w: Watched): void {
  *
  * - **What is playing.** Each batch of lines sendFrames puts on the wire replaces the last (a carrier that
  *   replaces its playback with each new frame does the same), each line with the app's own `interruptible`
- *   from its prompt, the flag before bargeInFrame sends it `false`. The carrier's report of the agent
- *   speaking says the lines are playing; its report of a line played (Telnyx's tokensPlayed) marks it and
- *   every line before it played.
+ *   from its prompt, the flag before bargeInFrame sends it `false`. The lines are taken as playing from
+ *   when they go out, not only once the carrier says the agent is speaking: a carrier that replaces a
+ *   playback reports the old one's stop and the new one's start (Telnyx: off, then on 30 to 70 ms later),
+ *   and a lost or never sent start must not leave a reply that cannot be stopped. So a stop the carrier
+ *   reports before any start, within REPLACED_STOP_MS of the send and with the agent speaking as the lines
+ *   went out, is the old playback's and is passed over; any other stop ends them. Lines the carrier never
+ *   reports starting are taken as done once their estimate and END_PLAYBACK_MARGIN_MS have passed. Its
+ *   report of a line played (Telnyx's tokensPlayed) marks it and every line before it played.
  * - **Which lines may be cut.** Only while every line not yet reported played is one the app lets the
  *   caller talk over: stopping the playback drops what is queued behind the line playing, so a line the
  *   app marked not interruptible (a confirmation, a closing or transfer line, a legal line) is never lost to
  *   a barge-in, before it or while it plays.
- * - **How much speech.** Only the caller's speech while the agent is speaking counts (speech that began
- *   before the lines did is counted from when they began), summed across the carrier's on and off reports
- *   while each pause is no longer than SPEECH_GAP_MS: Telnyx reports one sentence as a dozen short
- *   bursts. A longer pause starts a new stretch, counted from nothing. When the stretch reaches
- *   BARGE_IN_MIN_SPEECH_MS, the playback is stopped (bargeIn): once per stretch, however long it goes on.
+ * - **How much speech.** Only the caller's speech while the lines play counts (speech that began before
+ *   they went out is counted from when they did), summed across the carrier's on and off reports while
+ *   each pause is no longer than SPEECH_GAP_MS: Telnyx reports one sentence as a dozen short bursts. A
+ *   longer pause starts a new stretch, counted from nothing. When the stretch reaches
+ *   BARGE_IN_MIN_SPEECH_MS, the playback is stopped (bargeIn): once per stretch, however long it goes on,
+ *   so a noise the carrier hears as endless speech stops one line, not every line after it.
+ * - **A key.** A keypress over such lines stops them at once (keyStop); the digit is then taken as always.
  */
 interface PlayingLine {
   /** The line as it went out, whitespace folded (what a carrier's report of it names); null for a clip. */
@@ -707,6 +714,8 @@ interface PlayingLine {
   interruptible: boolean;
   /** The carrier reported it played. */
   played: boolean;
+  /** How long it was estimated to take (playbackEstimateMs, as for the no-input wait). */
+  estimateMs: number;
 }
 
 /** The lines a call's carrier is playing (or about to), for BARGE_IN=server. */
@@ -715,10 +724,22 @@ interface Playing {
   sentAtMs: number;
   /** When the carrier first reported the agent speaking since they went out; null until it has. */
   startedAtMs: number | null;
-  /** The carrier reports the agent speaking now. */
+  /** The lines are playing as far as the server knows: from the send, until the carrier reports them stopped. */
   agentOn: boolean;
+  /** The carrier reported the agent speaking as they went out: a stop it reports at once is of that playback. */
+  replacing: boolean;
 }
 const playing = new Map<string, Playing>();
+
+/**
+ * How soon after a batch of lines goes out a stop the carrier reports, before it reports them starting,
+ * is taken as the stop of the playback they replaced (Telnyx sent it 30 to 70 ms after the new text, on a
+ * live call, 2026-10-05) rather than theirs.
+ */
+export const REPLACED_STOP_MS = 300;
+
+/** Calls whose carrier last reported the agent speaking (on, with no stop since), for BARGE_IN=server. */
+const agentSpeaking = new Set<string>();
 
 /** A stretch of the caller's speech, measured over the lines playing (BARGE_IN=server). */
 interface Stretch {
@@ -753,6 +774,7 @@ function forgetBargeIn(callSid: string): void {
   if (s?.timer) clearTimeout(s.timer);
   stretches.delete(callSid);
   playing.delete(callSid);
+  agentSpeaking.delete(callSid);
   replies.delete(callSid);
   resumed.delete(callSid);
 }
@@ -765,25 +787,40 @@ function pauseCount(s: Stretch, nowMs: number): void {
   s.timer = null;
 }
 
-/** Whether the lines playing may be cut now: the carrier says the agent is speaking, and every line still to play may be talked over. */
-function cuttable(p: Playing): boolean {
+/**
+ * Whether the lines playing may be cut at `nowMs`: they are playing (from the send until the carrier
+ * reports them stopped; lines it never reports starting, until their estimate and a margin have passed),
+ * and every line still to play may be talked over.
+ */
+function cuttable(p: Playing, nowMs: number): boolean {
   const unplayed = p.lines.filter((l) => !l.played);
-  return p.agentOn && unplayed.length > 0 && unplayed.every((l) => l.interruptible);
+  if (!p.agentOn || unplayed.length === 0 || !unplayed.every((l) => l.interruptible)) return false;
+  if (p.startedAtMs !== null) return true;
+  const estimateMs = p.lines.reduce((sum, l) => sum + l.estimateMs, 0);
+  return nowMs <= p.sentAtMs + estimateMs + END_PLAYBACK_MARGIN_MS;
+}
+
+/** Whether a call is past stopping: ended, with no `end` held for its lines (END_AFTER_PLAYBACK). */
+function pastStopping(entry: CallEntry): boolean {
+  return entry.ended && !heldEnds.has(entry.callSid);
 }
 
 /**
  * A batch of lines is going out (sendFrames, at its first line; `lines` grows as the rest go): they replace
- * what was playing, and the stretch counts afresh over them.
+ * what was playing, are playing from now, and the stretch counts afresh over them (a caller already
+ * speaking, from now).
  */
 function notePlaying(deps: AdapterDeps, entry: CallEntry, lines: PlayingLine[]): void {
   const settings = serverBargeInFor(deps, entry.provider);
   if (!settings) return;
-  playing.set(entry.callSid, { lines, sentAtMs: Date.now(), startedAtMs: null, agentOn: false });
+  const now = Date.now();
+  playing.set(entry.callSid, { lines, sentAtMs: now, startedAtMs: null, agentOn: true, replacing: agentSpeaking.has(entry.callSid) });
   const s = stretches.get(entry.callSid);
   if (s) {
-    pauseCount(s, Date.now());
+    pauseCount(s, now);
     s.countedMs = 0;
   }
+  recount(deps, entry, settings, now);
 }
 
 /** Mark the lines a carrier's report of a line played names: the last line it names, and every line before it. */
@@ -815,15 +852,20 @@ function onBargeInEvent(deps: AdapterDeps, entry: CallEntry, ev: PlaybackEvent, 
     }
   } else {
     const p = playing.get(callSid);
-    if (p) {
-      if (ev.state === 'started') {
+    if (ev.state === 'started') {
+      agentSpeaking.add(callSid);
+      if (p) {
         p.agentOn = true;
         p.startedAtMs ??= now;
-      } else if (ev.text !== undefined) {
-        markPlayed(p, ev.text);
-      } else {
-        p.agentOn = false;
       }
+    } else if (ev.text !== undefined) {
+      if (p) markPlayed(p, ev.text);
+    } else {
+      agentSpeaking.delete(callSid);
+      // Before these lines started, and at once: the stop of the playback they replaced, not theirs.
+      const replaced = p !== undefined && p.replacing && p.startedAtMs === null && now - p.sentAtMs <= REPLACED_STOP_MS;
+      if (p && replaced) p.replacing = false;
+      else if (p) p.agentOn = false;
     }
   }
   recount(deps, entry, settings, now);
@@ -836,8 +878,7 @@ function recount(deps: AdapterDeps, entry: CallEntry, settings: ServerBargeInSet
   if (!s) return;
   const p = playing.get(callSid);
   // A call already ended is cut only while its `end` is held for its lines (END_AFTER_PLAYBACK).
-  const over = entry.ended && !heldEnds.has(callSid);
-  const counting = !s.fired && !over && callerSpeaking.has(callSid) && p !== undefined && cuttable(p);
+  const counting = !s.fired && !pastStopping(entry) && callerSpeaking.has(callSid) && p !== undefined && cuttable(p, now);
   if (!counting) {
     pauseCount(s, now);
     return;
@@ -847,9 +888,14 @@ function recount(deps: AdapterDeps, entry: CallEntry, settings: ServerBargeInSet
   s.timer = setTimeout(() => {
     s.timer = null;
     const at = Date.now();
-    const speechMs = s.countedMs + (s.sinceMs === null ? 0 : at - s.sinceMs);
     const lines = playing.get(callSid);
-    if (stretches.get(callSid) !== s || s.sinceMs === null || lines === undefined || !cuttable(lines) || !callerSpeaking.has(callSid)) return;
+    if (stretches.get(callSid) !== s || s.sinceMs === null) return;
+    // What changed with no report to recount on: the rest of the lines went out, the held `end` went, the estimate passed.
+    if (lines === undefined || !cuttable(lines, at) || !callerSpeaking.has(callSid) || pastStopping(entry)) {
+      pauseCount(s, at);
+      return;
+    }
+    const speechMs = s.countedMs + (at - s.sinceMs);
     if (speechMs < settings.minSpeechMs) return;
     bargeIn(deps, entry, settings, lines, s, speechMs, at);
   }, Math.max(0, settings.minSpeechMs - s.countedMs));
@@ -858,42 +904,76 @@ function recount(deps: AdapterDeps, entry: CallEntry, settings: ServerBargeInSet
 
 /**
  * Stop the playback the caller spoke over, and take it as the carrier's own interrupt would be taken: a
- * `play` frame of the silent clip (VoiceProvider.stopPlayback `silent-clip`), which replaces what is
- * playing, then an `interrupt` for the core, as a carrier's barge-in sends it. Its `utteranceUntilInterrupt`
- * is the lines the carrier reported played before the stop (empty when it reported none), and its
- * `durationUntilInterruptMs` how far into the lines the caller came in. The interrupt is written to the
- * frame log as an inbound frame, so replay runs it where it came, and goes through the call's queue as one
- * from the wire does: the no-input wait, the lines watched for a cut (RESAY_CUT_LINES), the console and the
- * next turn all see an interrupt. A call already ended (a goodbye held for its `end`) has no turn to run.
+ * `play` frame of the silent clip (sendStop), which replaces what is playing, then an `interrupt` for the
+ * core, as a carrier's barge-in sends it. Its `utteranceUntilInterrupt` is the lines the carrier reported
+ * played before the stop (empty when it reported none), and its `durationUntilInterruptMs` how far into
+ * the lines the caller came in. The interrupt is written to the frame log as an inbound frame, so replay
+ * runs it where it came, and goes through the call's queue as one from the wire does: the no-input wait,
+ * the lines watched for a cut (RESAY_CUT_LINES), the console and the next turn all see an interrupt. A
+ * call already ended (a goodbye held for its `end`) has no turn to run.
  */
 function bargeIn(deps: AdapterDeps, entry: CallEntry, settings: ServerBargeInSettings, p: Playing, s: Stretch, speechMs: number, now: number): void {
   const callSid = entry.callSid;
   s.fired = true;
   pauseCount(s, now);
   playing.delete(callSid);
+  // Spoken over: never a line to say again as one the carrier cut short (RESAY_CUT_LINES), whatever it reports next.
+  callerHeard(callSid);
   const line = p.lines.findIndex((l) => !l.played);
   const heard = p.lines.filter((l) => l.played && l.text !== null).map((l) => l.text).join(' ');
   // From when the stretch began: speech that began before the lines did came in at their start.
   const afterMs = Math.max(0, s.startedAtMs - (p.startedAtMs ?? p.sentAtMs));
   entry.frames.write('log', { bargeIn: { speechMs, line, lines: p.lines.length } });
   deps.log(`${callSid}: the caller spoke over line ${line + 1} of ${p.lines.length} for ${speechMs} ms, playback stopped`);
-  // What plays now is the silent clip: a wait armed from here measures from its end, not the lines'.
+  void sendStop(deps, entry, settings, now).then(() => {
+    if (entry.ended) return;
+    const frame: InterruptFrame = { type: 'interrupt', utteranceUntilInterrupt: heard, durationUntilInterruptMs: afterMs };
+    takeInterrupt(deps, entry, frame);
+  });
+}
+
+/**
+ * A keypress over lines the caller may talk over (BARGE_IN=server): they stop at once, with the silent
+ * clip, as a carrier's own barge-in on a key would stop them; the digit itself is then taken as always.
+ * Nothing reaches the core for the stop (a key is a turn of its own already), so replay is unchanged. The
+ * frame log has `{ keyStop: { line, lines } }` before the `play` frame; never the digit, which may be
+ * one to keep out of it.
+ */
+function keyStop(deps: AdapterDeps, entry: CallEntry): void {
+  const settings = serverBargeInFor(deps, entry.provider);
+  const p = playing.get(entry.callSid);
+  const now = Date.now();
+  if (!settings || !p || pastStopping(entry) || !cuttable(p, now)) return;
+  playing.delete(entry.callSid);
+  const s = stretches.get(entry.callSid);
+  if (s) pauseCount(s, now);
+  const line = p.lines.findIndex((l) => !l.played);
+  entry.frames.write('log', { keyStop: { line, lines: p.lines.length } });
+  deps.log(`${entry.callSid}: a key was pressed over line ${line + 1} of ${p.lines.length}, playback stopped`);
+  void sendStop(deps, entry, settings, now);
+}
+
+/**
+ * Stop what the carrier is playing (VoiceProvider.stopPlayback `silent-clip`): a `play` frame of the
+ * silent clip the server serves, which replaces it. A wait armed from here measures from the clip's end,
+ * not the stopped lines'. A failed send drops the socket, as in sendFrames.
+ */
+function sendStop(deps: AdapterDeps, entry: CallEntry, settings: ServerBargeInSettings, now: number): Promise<void> {
+  const callSid = entry.callSid;
   lastPlayback.set(callSid, { sentAtMs: now, estimateMs: SILENCE_MS });
   const stop: PlayFrame = { type: 'play', source: settings.stopSource, loop: 1, preemptible: true, interruptible: false };
   const socket = entry.socket;
-  const sending = socket
-    ? sendOne(socket, stop, deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).then(() => entry.frames.write('out', stop))
-    : Promise.resolve(entry.frames.write('log', { dropped: stop }));
-  void sending
+  if (!socket) {
+    entry.frames.write('log', { dropped: stop });
+    return Promise.resolve();
+  }
+  return sendOne(socket, stop, deps.sendTimeoutMs ?? SEND_TIMEOUT_MS)
+    .then(() => entry.frames.write('out', stop))
     .catch((err: unknown) => {
       const info = describe(err);
-      deps.log(`${callSid}: send failed for the barge-in's play: ${info.name}: ${info.message}`);
+      deps.log(`${callSid}: send failed for the stop's play: ${info.name}: ${info.message}`);
       entry.frames.write('log', { sendFailed: 'play', error: info });
-    })
-    .then(() => {
-      if (entry.ended) return;
-      const frame: InterruptFrame = { type: 'interrupt', utteranceUntilInterrupt: heard, durationUntilInterruptMs: afterMs };
-      takeInterrupt(deps, entry, frame);
+      if (entry.socket === socket) entry.socket = null;
     });
 }
 
@@ -1227,7 +1307,12 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
       entry.frames.write('out', logged);
       sent.push(frame);
       if (frame.type === 'text' || frame.type === 'play') {
-        lines.push({ text: frame.type === 'text' ? folded(frame.token) : null, interruptible: original.type === 'text' || original.type === 'play' ? original.interruptible : false, played: false });
+        lines.push({
+          text: frame.type === 'text' ? folded(frame.token) : null,
+          interruptible: original.type === 'text' || original.type === 'play' ? original.interruptible : false,
+          played: false,
+          estimateMs: playbackEstimateMs([frame], deps.clipDurations ?? new Map()),
+        });
         // As soon as the first is on the wire (the carrier may report it playing before the last is sent); the rest join it.
         if (lines.length === 1) notePlaying(deps, entry, lines);
       }
@@ -1656,6 +1741,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // Nor is a line the carrier stopped playing then one to say again.
     callerHeard(ctx.callSid);
   }
+  // BARGE_IN=server: a key pressed over lines the caller may talk over stops them, before the digit is taken.
+  if (frame.type === 'dtmf') keyStop(deps, entry);
   // Before the ignore/turn split below: a digit the adapter drops is still a digit the caller pressed.
   if (logged.type === 'dtmf') publish(deps, { type: 'dtmf', callSid: ctx.callSid, at: Date.now(), digit: logged.digit });
   if (frame.type === 'interrupt') {

@@ -1016,7 +1016,8 @@ TIMEZONE=America/Chicago
 # server. A carrier's barge-in can stop speech on noise or echo; dtmf or none also rules barge-in out when
 # callers report not hearing replies. server (Telnyx, with speaker-events above): the relay says none,
 # and the server stops a line once the caller has spoken over it for BARGE_IN_MIN_SPEECH_MS (default
-# 400), summed across pauses up to SPEECH_GAP_MS (default 300), so a cough or an echo does not.
+# 400), summed across pauses up to SPEECH_GAP_MS (default 300), so a cough or an echo does not;
+# a keypress stops it at once.
 # BARGE_IN=any
 # BARGE_IN_MIN_SPEECH_MS=400
 # SPEECH_GAP_MS=300
