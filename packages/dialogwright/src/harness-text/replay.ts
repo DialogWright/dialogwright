@@ -2,12 +2,13 @@ import { readFrameLog, type ReadFrameLogLine } from '../server/frameLog';
 import { promptEpoch, sensitiveDigitAt } from '../core/turn';
 import { parseInbound } from '../channel/relay/wire';
 import { newSession, type Session } from '../core/session';
-import { CODE_DIGIT, runTurn, type Arrival, type RunOptions, type TurnRun } from '../run/turn';
+import { CODE_DIGIT, type Arrival, type RunOptions, type TurnRun } from '../run/turn';
 import type { TraceRecord } from '../trace/types';
 import { frameToEvent } from '../channel/relay/map';
 import { serviceResultEvent, keyEvents, silenceEvent, type ServiceResult, type SessionEvent } from '../channel/events';
 import { VOICE_RELAY } from '../channel/caps';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
+import { Continuation, MAX_CONTINUE_WITHIN_MS } from '../run/continuation';
 
 export interface ReplayResult {
   runs: TurnRun[];
@@ -115,6 +116,21 @@ function aheadOutcomes(lines: readonly ReadFrameLogLine[]): (string | null)[] {
   return out;
 }
 
+/**
+ * The live call's window for a caller who had not finished (voice.continueWithinMs), as the adapter
+ * logged it when the call started: `{ continueWithinMs: 300 }`. A log without one is of a call that
+ * never joined (the option off, or a log from before it), and replays as that call ran: 0. Replay
+ * follows the log rather than the app as it is now, so a call replays as it was taken.
+ */
+function loggedContinueWithinMs(lines: readonly ReadFrameLogLine[]): number {
+  for (const line of lines) {
+    if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
+    const ms = (line.msg as { continueWithinMs?: unknown }).continueWithinMs;
+    if (typeof ms === 'number' && Number.isInteger(ms) && ms >= 0 && ms <= MAX_CONTINUE_WITHIN_MS) return ms;
+  }
+  return 0;
+}
+
 /** The adapter gave up on a downstream service's answer (server/adapter.ts queueService). */
 function isServiceWaitAbandoned(line: ReadFrameLogLine): boolean {
   if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return false;
@@ -138,7 +154,9 @@ interface Pending {
  * after the call ends is skipped and reported rather than fed to a dead session. A line with a
  * missing or unparsable `ts` is skipped and reported rather than throwing or driving the clock
  * with `NaN`. The arrival decisions the adapter logged (arrivalFlags) are honored, and a frame that
- * arrived during the service wait runs after the service's answer, as it did live.
+ * arrived during the service wait runs after the service's answer, as it did live. Every turn runs
+ * through one Continuation with the window the log names (loggedContinueWithinMs), as the adapter ran
+ * the live call's, so the final prompts of a caller who had not finished are joined where they were.
  *
  * Each turn runs with the clock and default date the recording actually happened under: `now`
  * returns the frame line's own timestamp, and `todayIso` is the setup line's date unless the
@@ -160,10 +178,12 @@ export async function replayFrameLog(
   let ended = false;
   /** Frames that arrived during the service wait, run once the service's answer has (see below). */
   const deferred: Pending[] = [];
+  // Every turn through one Continuation, as the adapter runs the live call's (run/continuation.ts).
+  const continuation = new Continuation(loggedContinueWithinMs(lines));
   const run = async (p: Pending): Promise<void> => {
     const turnOpts: RunOptions = { ...opts, now: () => p.lineMs, todayIso: options?.todayIsoOverride ?? setupDate! };
     try {
-      const r = await runTurn(session!, p.event, turnOpts, p.arrival);
+      const r = await continuation.run(session!, p.event, turnOpts, p.arrival);
       session = r.result.session;
       runs.push(r);
       onRun?.(r);
@@ -215,6 +235,8 @@ export async function replayFrameLog(
     if (frame?.type === 'setup') {
       if (session) {
         skipped.push(`line ${lineNumber}: setup for ${frame.callSid} after the session started`);
+        // A reconnect: the adapter asks the question again, and continues nothing said before the drop.
+        continuation.reset();
         continue;
       }
       setupDate = line.ts.slice(0, 10);
@@ -226,7 +248,11 @@ export async function replayFrameLog(
     }
     // The adapter logs every inbound frame before deciding to ignore it; `#`/`*` digits are
     // dropped there without ever reaching runTurn, so replay must drop them too.
-    if (event.type === 'user.key' && (event.digit === '#' || event.digit === '*')) continue;
+    // It ends a caller's unfinished words there too (the adapter resets its Continuation behind the turns before it).
+    if (event.type === 'user.key' && (event.digit === '#' || event.digit === '*')) {
+      continuation.reset();
+      continue;
+    }
     // The adapter logs a non-final prompt and waits for the final one rather than running a turn
     // on half an utterance; replaying it would invent a turn the call never had.
     if (event.type === 'user.speech' && !event.final) {

@@ -382,6 +382,8 @@ The core speaks its own channel event model. Every provider is an adapter that m
 
 Server-made events never come off a wire.
 
+A caller who had not finished is the engine's, not a carrier's (`run/continuation.ts`, app.yaml's `voice.continueWithinMs`, default 300 ms): when the reply to a final `user.speech` is cut off by a `user.interrupt` within that window, the next final prompt continues it, and the turn runs on the words joined, on the session as it was before the first fragment. Only a turn that did nothing but speak is undone; the voice server and the frame-log replay run every turn through it, so a replayed call joins where the live one did.
+
 **Actions out of the core** (`Action`):
 
 | Action | Carries |
@@ -391,6 +393,8 @@ Server-made events never come off a wire.
 | `transfer` | `reason`, `completed`, `queued`, and the collected `slots`, for the person taking over, as app.yaml's `handoff.data` lets them leave the engine: by default no identity factor, and a redacted slot only masked. On a phone call they are the relay's `end` frame's `handoffData`, which the carrier holds and posts back; a chat's transfer sends none |
 | `send_digits` | Key tones to play on the line |
 | `set_language` | Speech and recognition languages |
+
+A `say` action's text is the readable line. What a voice is sent differs only at the voice wire: identifier digits spelled out (`voice.spokenDigits`) and the words the voice says wrong respelled (`voice.pronounce`, plain letters, since only one of the two carriers documents SSML in its relay's text); the trace, the console and a chat keep the line as written.
 
 Planned additions: a `ui` action for buttons and quick replies (such as "Sign in to continue"), and confidence and alternative transcripts on speech.
 

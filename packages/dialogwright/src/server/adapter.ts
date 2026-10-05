@@ -5,7 +5,10 @@ import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
 import { playbackEstimateMs } from '../channel/relay/playback';
-import { arrivalContext, CODE_DIGIT, runTurn, type Arrival } from '../run/turn';
+import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
+import { Continuation, continueWithinMsOf } from '../run/continuation';
+import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
+import { localeOf } from '../core/locale';
 import { digitAtRun, promptEpoch, sensitiveDigit, type ArrivalDigit } from '../core/turn';
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
@@ -136,6 +139,24 @@ function enqueueUnsettled(deps: AdapterDeps, callSid: string, fn: (entry: CallEn
   return enqueueTurn(deps, callSid, fn, true);
 }
 
+/**
+ * Each call's Continuation (run/continuation.ts): the fragments of a caller who had not finished, the
+ * session before the first, and whether the reply to the last was cut off. Every turn of the call runs
+ * through it (turn, below), in the order the store runs them. Kept here, like the no-input timers,
+ * and never saved: a server restarted mid-answer runs the next prompt alone.
+ */
+const continuations = new Map<string, Continuation>();
+
+/** The call's Continuation: made as the call starts, or, for a call loaded after a restart, on its first turn here. */
+function continuationOf(entry: CallEntry): Continuation {
+  let c = continuations.get(entry.callSid);
+  if (c === undefined) {
+    c = new Continuation(continueWithinMsOf(appOf(entry.session)));
+    continuations.set(entry.callSid, c);
+  }
+  return c;
+}
+
 /** Consecutive turns that threw, per call, reset by any turn that produces a decision. */
 const turnFailures = new Map<string, number>();
 
@@ -173,6 +194,7 @@ export function forgetNoInput(callSid: string): void {
   noInputGeneration.delete(callSid);
   lastPlayback.delete(callSid);
   turnFailures.delete(callSid);
+  continuations.delete(callSid);
 }
 
 /**
@@ -346,6 +368,11 @@ export function loggedFrame(frame: OutboundFrame, scrub: Scrub | null): Outbound
   return frame;
 }
 
+/** A text frame with the words the voice says another way respelled (channel/pronounce.ts); any other frame as it is. */
+function respelled(frame: OutboundFrame, list: PronounceList | undefined): OutboundFrame {
+  return frame.type === 'text' && list ? { ...frame, token: pronounce(frame.token, list) } : frame;
+}
+
 async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundFrame[], decision: unknown = null): Promise<OutboundFrame[]> {
   const log = deps.log;
   const timeoutMs = deps.sendTimeoutMs ?? SEND_TIMEOUT_MS;
@@ -354,20 +381,28 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
   const scrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session));
   // A carrier that ends the reply at the first last: true gets it on the turn's final text frame only.
   const lastText = textLastOf(entry.provider) === 'final' ? frames.map((f) => f.type).lastIndexOf('text') : -1;
+  const voice = appOf(entry.session).voice;
+  // The words the voice says another way, for the language the lines are in (channel/pronounce.ts).
+  const respell = pronounceFor(voice, localeOf(entry.session));
   for (const [i, original] of frames.entries()) {
-    // The frame log records what actually went out, digit spacing and all.
-    const frame: OutboundFrame = original.type === 'text'
-      ? { ...original, token: spokenDigits(original.token, appOf(entry.session).voice?.spokenDigits), ...(lastText >= 0 && i !== lastText ? { last: false } : {}) }
+    // Digits spelled out first, by rules written against the lines as written (a respelled lead word
+    // still leads its digits), then the respellings. The frame log records what actually went out,
+    // digit spacing and respellings and all, but with a redacted value masked before it is
+    // respelled: masking finds the value as written, never a respelling of it.
+    const spoken: OutboundFrame = original.type === 'text'
+      ? { ...original, token: spokenDigits(original.token, voice?.spokenDigits), ...(lastText >= 0 && i !== lastText ? { last: false } : {}) }
       : original;
+    const frame = respelled(spoken, respell);
+    const logged = respelled(loggedFrame(spoken, scrub), respell);
     const socket = entry.socket;
     if (!socket) {
       log(`${entry.callSid}: no socket, dropped ${frame.type}`);
-      entry.frames.write('log', { dropped: loggedFrame(frame, scrub) });
+      entry.frames.write('log', { dropped: logged });
       continue;
     }
     try {
       await sendOne(socket, frame, timeoutMs);
-      entry.frames.write('out', loggedFrame(frame, scrub));
+      entry.frames.write('out', logged);
       sent.push(frame);
     } catch (err) {
       const info = describe(err);
@@ -477,7 +512,10 @@ function fireHandoffSummary(deps: AdapterDeps, entry: CallEntry): void {
 async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, arrival?: Arrival): Promise<boolean> {
   let ending = false;
   try {
-    const run = await runTurn(entry.session, event, entry.opts, arrival);
+    // Through the call's Continuation: a final prompt that continues one whose reply the caller cut
+    // off at once runs as the words joined, on the session from before the first of them.
+    const run = await continuationOf(entry).run(entry.session, event, entry.opts, arrival);
+    if (run.joined) entry.frames.write('log', { joined: run.joined.length });
     turnFailures.delete(entry.callSid);
     entry.session = run.result.session;
     // Kept on the call's own entry whether or not the console is on: the handoff summary reads it.
@@ -668,6 +706,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       if (restarted) deps.log(`${callId}: resumed after a restart`);
       publish(deps, { type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects });
       await deps.store.enqueue(callId, async (e) => {
+        // The caller hears the question again, so nothing said before the drop is continued (replay
+        // resets at the repeated setup too). In the queue, after the turns before it.
+        continuations.get(callId)?.reset();
         const again = restarted ? [resumedLine(e.session), e.session.lastPromptText].filter(Boolean).join(' ') : e.session.lastPromptText;
         if (!again) return;
         // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
@@ -689,6 +730,11 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     }
     const entry = deps.store.create(callId, socket, ctx.provider);
     entry.frames.write('in', redactDeep(parsed));
+    // The call's window for a caller who had not finished, once, for replay (harness-text/replay.ts),
+    // which joins where this call does by it; a log without the line is one that never joined.
+    const within = continueWithinMsOf(appOf(entry.session));
+    continuations.set(callId, new Continuation(within));
+    if (within > 0) entry.frames.write('log', { continueWithinMs: within });
     // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
     publish(deps, {
       type: 'call_started', callSid: callId, at: Date.now(),
@@ -754,11 +800,15 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // Before the ignore/turn split below: a digit the adapter drops is still a digit the caller pressed.
   if (logged.type === 'dtmf') publish(deps, { type: 'dtmf', callSid: ctx.callSid, at: Date.now(), digit: logged.digit });
   if (frame.type === 'interrupt') {
-    publish(deps, { type: 'interrupt', callSid: ctx.callSid, at: Date.now(), utteranceUntilInterrupt: frame.utteranceUntilInterrupt ?? null });
+    // Our line as written, as the turn will record it (run/turn.ts): the carrier echoes the respellings it was sent.
+    const heard = unpronounce(frame.utteranceUntilInterrupt, pronounceFor(appOf(entry.session).voice, localeOf(entry.session)));
+    publish(deps, { type: 'interrupt', callSid: ctx.callSid, at: Date.now(), utteranceUntilInterrupt: heard });
   }
   // The slots have fixed digit lengths, so the keypad terminators carry no meaning yet.
   if (frame.type === 'dtmf' && (frame.digit === '#' || frame.digit === '*')) {
     entry.frames.write('log', { ignoredDigit: frame.digit });
+    // A key pressed ends a caller's unfinished words: through the queue, after the turns before it.
+    void deps.store.enqueue(ctx.callSid, async () => continuations.get(ctx.callSid!)?.reset());
     // No turn runs, so nothing downstream would restart the wait the digit just cancelled -- unless
     // a downstream service's answer is awaited, whose own turn arms it.
     if (entry.session.pendingService === null) armNoInput(deps, entry, []);
