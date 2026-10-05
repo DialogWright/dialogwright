@@ -43,5 +43,16 @@
       "decision": "handoff",
       "reason": "live-agent"
     }
+  },
+  {
+    "id": "done-after-a-request-it-cannot-handle",
+    "steps": [
+      { "say": "Do you sell gift cards" },
+      { "say": "Never mind, that's all" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye"
+    }
   }
 ]

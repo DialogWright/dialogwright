@@ -58,5 +58,25 @@
     "gate": null,
     "pass": true,
     "mismatches": []
+  },
+  "done-after-a-request-it-cannot-handle": {
+    "id": "done-after-a-request-it-cannot-handle",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "service": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
   }
 }

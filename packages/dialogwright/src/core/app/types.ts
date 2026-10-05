@@ -1099,10 +1099,11 @@ export interface TestingHooks {
     placeholders: Readonly<Record<SlotId, SlotCandidate>>;
     /**
      * For the anything_else context: the form just answered before "anything else?", and the call
-     * that answered it, made through the gate as the seed's own (e.g. getAccount, listParcels).
-     * Without it, a corpus entry in that context throws.
+     * that answered it, made through the gate as the seed's own (e.g. getAccount, listParcels); no
+     * call for a form whose answer is its own line (a write already made, a line said). Without it,
+     * a corpus entry in that context throws.
      */
-    anythingElse?(): { form: FormId; call: ToolCall };
+    anythingElse?(): { form: FormId; call?: ToolCall };
   };
   /** The heuristic stub's domain answers (src/jev/heuristicStub.ts; the building blocks are src/jev/heuristicKit.ts). */
   heuristics?: {

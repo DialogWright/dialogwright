@@ -79,7 +79,7 @@ It writes `apps/<name>` (a one-form example: book a service, with an account num
 Replace the example one piece at a time, running `pnpm check` after each change:
 
 1. `app.yaml`: the brand, `console.formLabels` and `slotLabels`, `voice.hints`, `wording.addressee`.
-2. `intents.yaml`: your intents (form, informational); keep `agent` and `repeat_prompt` (required) and the other control intents; the keypad menu.
+2. `intents.yaml`: your intents (form, informational); keep `agent` and `repeat_prompt` (required) and the other control intents, `done` among them: it is how "no, that's all" at "anything else?" ends the call with the goodbye, and `pnpm check` refuses an app that says `anything_else` without it; the keypad menu.
 3. `slots.yaml`: your slots, from the mapping. Keep `accountId` and `dob` if your factors are an account number and a date of birth.
 4. `forms.yaml`: your forms, their slots, their summary prompts, their hooks and the actions they call (`calls`).
 5. `policy.yaml` (with its `audit:`) and `identity.yaml`: from the mapping.
@@ -117,6 +117,7 @@ Scripted calls in `fixtures/scenarios/*.json`, each with the outcome it expects.
 - each handoff: on request from every place a caller can be (at the start, on the keypad menu with its key for a person, inside a form, while verifying, at the code prompt, at each summary), by role, by a rule;
 - keypad entry for each slot with a keypad, and for the one-time code;
 - each informational answer, spoken and, if it is on the keypad menu, by its key (the key plays the line and offers the menu again, so the call ends at `nomatch_dtmf_menu` with the line in its words).
+- a caller who is done: a form that ends at "anything else?" (a `said` completion), then "no, that's all" (`done`), ending at `"decision": "complete", "promptId": "goodbye"`. Where every form ends the call on its own line, the caller says it at the next question instead (after an informational answer or a request the line does not handle).
 
 ## Step 6: Iterate until green, then make the baseline once
 

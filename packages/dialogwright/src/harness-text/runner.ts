@@ -124,12 +124,15 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   if (entry.context === 'anything_else') {
     // The form just answered, whose facts stay on the call. Read through the gate like every other
     // call: the seed reaches no tool the gate did not allow. What the result leaves on the session
-    // is the form's own (FormDef.onEntry), as after its entry call.
+    // is the form's own (FormDef.onEntry), as after its entry call. A form answered by its own line
+    // has no call to make again.
     if (!seed.anythingElse) throw new Error(`corpus ${entry.id}: app "${app.id}" seeds no anything_else context (App.testing.seed.anythingElse)`);
     const answered = seed.anythingElse();
     session.completed = [answered.form];
-    const { value } = callTool(session, answered.call, tc, newTurnOut());
-    formOf(app, answered.form).onEntry?.(session, value);
+    if (answered.call) {
+      const { value } = callTool(session, answered.call, tc, newTurnOut());
+      formOf(app, answered.form).onEntry?.(session, value);
+    }
     session.promptedFor = 'intent';
     session.lastPromptId = 'anything_else';
     session.lastPromptText = promptText(app, 'anything_else', {}, session.locale);

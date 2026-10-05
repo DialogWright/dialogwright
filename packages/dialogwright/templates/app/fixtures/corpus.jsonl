@@ -9,6 +9,12 @@
 {"id":"ag-03","text":"Can I speak to a representative","intent":"agent","context":"book_service"}
 {"id":"rp-01","text":"Can you repeat that","intent":"repeat_prompt","context":"no_form"}
 {"id":"rp-02","text":"Say that again","intent":"repeat_prompt","context":"book_service"}
+{"id":"dn-01","text":"No, that's all","intent":"done","context":"anything_else"}
+{"id":"dn-02","text":"No thanks","intent":"done","context":"anything_else"}
+{"id":"dn-03","text":"I'm all set","intent":"done","context":"anything_else"}
+{"id":"dn-04","text":"Nothing else","intent":"done","context":"anything_else"}
+{"id":"dn-05","text":"That's it, bye","intent":"done","context":"anything_else"}
+{"id":"dn-06","text":"Never mind, that's all","intent":"done","context":"no_form"}
 {"id":"ot-01","text":"What are your opening hours","intent":"other","context":"no_form"}
 {"id":"ot-02","text":"Do you sell gift cards","intent":"other","context":"no_form"}
 {"id":"ns-01","text":"Hello","intent":"none","context":"no_form"}

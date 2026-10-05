@@ -88,7 +88,7 @@ A line whose context is a form (or a summary) is run in a session seeded as thou
 
 - `seed.caller` is the verified caller every seeded session has. Make it a subject at the highest level any form needs (level 2 if any action needs the code): a lower one hears `ask_otp` or steps up on every line in a level 2 form.
 - `seed.placeholders` gives a stand-in value for every slot (factors included), used for the slots the form has already collected. Give one for every slot you add, in the slot's own value format (an ISO date for a date, an option key for a choice).
-- A line at `anything_else` needs `seed.anythingElse`; a line at `offer_transfer` needs `testing.offerTransferForm`. Leave those contexts out unless you add them.
+- A line at `anything_else` needs `seed.anythingElse`: the form just answered, and the call that answered it through the gate (`{ form, call }`), or the form alone (`{ form }`) when its answer was its own line or a write already made. The `done` lines belong there ("no, that's all", "I'm all set", "nothing else", "I don't need anything else", a bare "no" if no other line has it), with one or two at `no_form` too. A line at `offer_transfer` needs `testing.offerTransferForm`. Leave that context out unless you add it.
 
 ## Scripted calls
 

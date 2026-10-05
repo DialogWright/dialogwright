@@ -138,6 +138,9 @@ export const code: AppCode = {
         dob: { value: ACCOUNTS[0]!.dob, display: 'April 12th, 1980' },
         service: { value: 'repair', display: 'a repair' },
       },
+      // A corpus line at "anything else?" (context anything_else) follows a booking: the form just
+      // answered. The booking is a write already made, so there is no call to make again.
+      anythingElse: () => ({ form: 'book_service' }),
     },
     // The callers and accounts the gate grid crosses with every action, for the policy read back:
     // `pnpm policy:matrix` writes policy.matrix from them, `pnpm policy:card` POLICY.md and

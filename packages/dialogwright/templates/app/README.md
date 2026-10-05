@@ -45,6 +45,7 @@ Nothing here needs an API key. The engine's stub clients stand in for the decisi
 
 - `fixtures/corpus.jsonl`: one labelled utterance per line. Every intent needs examples (`pnpm check` says which are missing), including terse ones, and each line says what the stub model should answer for it.
   The side-speech line (`ns-02`) carries `"answers":{"addressedToSystem":{"noul":0.15}}`: it sets the stub's answer to one of the engine's own yes-or-no questions, whether the words were meant for the agent, and `noul` is the probability of yes (the engine's name for a yes-or-no answer, not a typo). At 0.15 the turn is ignored as speech to someone else. The field is described in the create-app skill's `corpus.md`.
+  The `done` lines (`dn-01` to `dn-05`) are said at "anything else?" (context `anything_else`, seeded by `testing.seed.anythingElse` in `src/app.ts`): that is where a caller says they are finished, and `done` ends the call with the goodbye. Keep `done` and its lines when you replace the example: `pnpm check` refuses an app that asks "anything else?" without it.
 - `fixtures/scenarios/core.json`: scripted calls, each with the outcome it expects. Every spoken step of a scripted call must also be in the corpus, so the stub can answer it: the regression refuses to run one that is not, and names it.
 - `fixtures/expected/`: the baseline, the stub's outcome for every corpus line and scripted call. The regression run compares against it and prints `no changes`.
 
