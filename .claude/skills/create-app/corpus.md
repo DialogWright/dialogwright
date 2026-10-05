@@ -19,7 +19,7 @@ One JSON object per line:
 | `prompted` | Inside a form: the slot the caller was just asked for (a form slot, or an identity factor during a step-up). Default: the form's first empty slot. |
 | `labels` | The answer to each question the words bear on, by question id (below). A question with no label gets the quiet answer: `none` for a choice, no for a yes-or-no. |
 | `confirm` | At a summary (`confirm_<form>`) or the transfer offer: `yes`, `no` or `unanswered`. |
-| `changeSlot` | At a summary, with `confirm: "no"`: the slot the caller says is wrong. |
+| `changeSlot` | At a summary, with `confirm: "no"`: the slot the caller says is wrong without saying its new value ("no, the address is wrong"). A no that gives the new value ("no, it's flickering") has no `changeSlot`: label the value instead, since the change question answers `none` to a new value said. |
 | `change` | Inside a form, for a new request: `adding` (as well) or `replacing` (instead). |
 | `secondIntent` | At `no_form`: a second task said in the same breath ("check my balance and then report a fault"). |
 | `as` | At `no_form` only: a delegate id; the line is typed in that delegate's signed-in chat. |
