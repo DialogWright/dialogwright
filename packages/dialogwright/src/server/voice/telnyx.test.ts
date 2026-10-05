@@ -18,6 +18,15 @@ describe('the Telnyx voice provider', () => {
     expect(telnyxProvider.contentType).toBe('text/xml');
   });
 
+  it('says who may interrupt a line (BARGE_IN) on the relay element: any unless told, else speech, dtmf or none', () => {
+    expect(telnyxProvider.startDocument({ ...START, bargeIn: 'any' })).toBe(telnyxProvider.startDocument(START));
+    for (const mode of ['speech', 'dtmf', 'none'] as const) {
+      const doc = telnyxProvider.startDocument({ ...START, bargeIn: mode });
+      expect(doc).toContain(`dtmfDetection="true" interruptible="${mode}" hints="one,two"`);
+      expect(doc).not.toContain('interruptible="any"');
+    }
+  });
+
   it('names its voice whole, with no separate TTS provider (Telnyx voice names carry it)', () => {
     const doc = telnyxProvider.startDocument({ ...START, ttsProvider: 'Google', voice: 'Telnyx.NaturalHD.astra' });
     expect(doc).toContain('hints="one,two" voice="Telnyx.NaturalHD.astra"/>');
