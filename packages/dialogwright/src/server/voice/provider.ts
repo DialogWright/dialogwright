@@ -1,3 +1,4 @@
+import type { SetupFrame } from '../../channel/relay/frames';
 /**
  * A phone carrier that runs a text relay (ConversationRelay or a compatible one) in front of the
  * engine. Everything carrier-specific is here: proving a webhook came from the carrier, the document
@@ -109,4 +110,16 @@ export interface VoiceProvider {
   apologizeAndDialDocument(number: string): string;
   /** The response content type of every document. */
   readonly contentType: string;
+  /**
+   * The call's id in a setup frame, the same id its webhooks carry (what the relay token is minted for).
+   * Absent: the setup's `callSid`. Telnyx's setup carries the webhook's `CallSid` as `callControlId`, and a
+   * different id as `callSid`.
+   */
+  setupCallId?(setup: SetupFrame): string;
+  /**
+   * Which text frames of one turn carry `last: true`. `each` (absent): every one, as Twilio speaks them
+   * all. `final`: only the turn's last text frame, the others `last: false`; a carrier that ends the
+   * reply at the first `last: true` and drops what follows needs it (Telnyx, seen on a live call).
+   */
+  readonly textLast?: 'each' | 'final';
 }

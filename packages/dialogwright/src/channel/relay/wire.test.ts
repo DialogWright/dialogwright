@@ -21,6 +21,12 @@ describe('parseInbound', () => {
     expect(f).not.toHaveProperty('callLegNumber');
   });
 
+  it('takes null numbers in a setup as absent, as Telnyx sends them', () => {
+    const f = parseInbound(JSON.stringify({ type: 'setup', sessionId: 's', callSid: 'c', from: null, to: null, direction: null }));
+    expect(f).toMatchObject({ type: 'setup', callSid: 'c', from: '', to: '' });
+    expect(parseInbound(JSON.stringify({ type: 'setup', sessionId: 's', callSid: 'c', from: 5 }))).toBeNull();
+  });
+
   it('defaults prompt lang and last', () => {
     expect(parseInbound('{"type":"prompt","voicePrompt":"hi"}')).toEqual({ type: 'prompt', voicePrompt: 'hi', lang: 'en-US', last: true });
     expect(parseInbound('{"type":"prompt","voicePrompt":"hi","lang":"en-GB","last":false}')).toEqual({ type: 'prompt', voicePrompt: 'hi', lang: 'en-GB', last: false });

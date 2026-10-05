@@ -107,6 +107,9 @@ describe('a Telnyx call end to end', () => {
     expect((await relay.waitForTexts(4)).at(-1)).toBe("And what's your date of birth?");
     relay.prompt('april twelfth nineteen eighty five', true, 'en');
     expect((await relay.waitForTexts(7)).slice(-3)).toEqual(['Thanks, Alex.', 'On Saturday, September 19, we can deliver in the morning.', ANYTHING_ELSE]);
+    // Telnyx drops a turn's text after the first last: true (seen on a live call), so only the turn's final line carries it.
+    const texts = relay.received.filter((m) => m.type === 'text');
+    expect(texts.slice(-3).map((m) => (m as { last?: boolean }).last)).toEqual([false, false, true]);
     relay.prompt("no, that's all", true, 'en');
     const end = await relay.waitFor((m) => m.type === 'end');
     expect(end.handoffData).toBe('{"reasonCode":"completed","completed":["delivery_window"]}');
@@ -124,6 +127,27 @@ describe('a Telnyx call end to end', () => {
     expect(done.status).toBe(200);
     expect(done.text).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
     expect(running!.store.get(CALL_ID)?.ended).toBe(true);
+  });
+
+  it('takes a setup shaped as a live Telnyx call sends it: numbers null, and the webhook id as callControlId', async () => {
+    // Captured from a live call on 2026-10-05 (shape only; ids and numbers here are made up): the webhook's
+    // CallSid is a v3: id; the setup's callSid is another, 36-character id, the v3: id comes as callControlId,
+    // and from, to and direction are null, with the numbers in customParameters instead.
+    const { base, ws } = await startTelnyx();
+    const webhookId = 'v3:A2zgVYbjyExampleOnlyIdForTheTestsXyz0123456789abcdEF';
+    const answer = await postSigned(base, '/voice/telnyx', { CallSid: webhookId, From: '+15555550110', To: '+15555550111' });
+    expect(answer.status).toBe(200);
+    const token = /token=([0-9a-f]{32})/.exec(answer.text)![1]!;
+    const relay = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`);
+    relay.send({
+      type: 'setup', from: null, to: null, direction: null, accountSid: '1f1a8b6f-1234-4abc-9def-1234567890ab',
+      callControlId: webhookId, callLegId: '428c31b6-7af4-4b6f-92e7-7a7e6a4f1d44', callSessionId: 'ff55a038-6f5d-11ef-9692-02420aeffb1f',
+      callSid: '5e9fcc12-0000-4000-8000-000000000000', callStatus: 'active', callerName: 'EXAMPLE CALLR',
+      customParameters: { telnyx_call_from: '+15555550110', telnyx_call_to: '+15555550111', telnyx_conversation_channel: 'phone_call' },
+      sessionId: '05ff737c-0000-4000-8000-000000000000',
+    });
+    expect(await relay.waitForTexts(1)).toEqual([GREETING_TEXT]);
+    relay.close();
   });
 
   it('refuses an unsigned webhook, and answers no Twilio path when Twilio is not enabled', async () => {
