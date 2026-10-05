@@ -23,12 +23,12 @@ import { providerSlot } from './testing/oracles/provider';
 const FORM_INTENTS = ['schedule_new', 'reschedule', 'cancel', 'confirm_appointment', 'billing'];
 
 describe('the clinic folder: intents.yaml', () => {
-  it('has the ten intents in the order the model is offered them, and no done: a call ends at its completion', () => {
-    expect(Object.keys(clinicApp.intents)).toEqual([...FORM_INTENTS, 'agent', 'repeat_prompt', 'capabilities', 'other', 'none']);
-    expect(clinicApp.intents).not.toHaveProperty('done');
+  it('has the eleven intents in the order the model is offered them, done among them: a caller who is finished hears the goodbye', () => {
+    expect(Object.keys(clinicApp.intents)).toEqual([...FORM_INTENTS, 'agent', 'repeat_prompt', 'done', 'capabilities', 'other', 'none']);
+    expect(clinicApp.intents.done).toEqual({ criteria: expect.stringContaining("I don't need anything else"), label: 'finish up', kind: 'control' });
     expect(clinicApp.intents.capabilities).toEqual({ criteria: expect.any(String), label: 'hear what I can do', kind: 'informational', promptId: 'capabilities' });
     for (const i of FORM_INTENTS) expect(clinicApp.intents[i]!.kind, i).toBe('form');
-    for (const i of ['agent', 'repeat_prompt', 'other', 'none']) expect(clinicApp.intents[i]!.kind, i).toBe('control');
+    for (const i of ['agent', 'repeat_prompt', 'done', 'other', 'none']) expect(clinicApp.intents[i]!.kind, i).toBe('control');
     // The billing intent is the one that names a bill or the caller's cover.
     expect(clinicApp.intents.billing!.criteria).toBe('Asks about a bill, charge, payment, or insurance coverage');
   });

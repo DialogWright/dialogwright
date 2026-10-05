@@ -279,6 +279,9 @@ export const CLINIC_TESTING: TestingHooks = {
       provider: { value: 'patel', display: 'Dr. Patel' },
       date: { value: '2026-09-22', display: 'Tuesday, September 22' },
     },
+    // A corpus line at "anything else?" (context anything_else) follows a confirmed appointment: the
+    // form just answered, by its own line, so there is no call to make again.
+    anythingElse: () => ({ form: 'confirm_appointment' }),
   },
   heuristics: HEURISTICS,
   labeled: LABELED,

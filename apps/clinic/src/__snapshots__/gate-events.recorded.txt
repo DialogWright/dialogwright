@@ -60,6 +60,14 @@
 # corpus rp-02
 # corpus rp-03
 # corpus rp-04
+# corpus dn-01
+# corpus dn-02
+# corpus dn-03
+# corpus dn-04
+# corpus dn-05
+# corpus dn-06
+# corpus dn-07
+# corpus dn-08
 # corpus ot-01
 # corpus ot-02
 # corpus ot-03
@@ -681,6 +689,7 @@
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario done-after-what-it-can-do
 # scenario provider-no-name
 # scenario provider-has-name
 # scenario provider-no-twice

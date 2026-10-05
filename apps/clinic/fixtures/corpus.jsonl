@@ -58,6 +58,14 @@
 {"id":"rp-02","text":"Say that again","intent":"repeat_prompt","context":"no_form"}
 {"id":"rp-03","text":"What were the options","intent":"capabilities","context":"no_form","tags":["capabilities"]}
 {"id":"rp-04","text":"Sorry, I didn't hear that","intent":"repeat_prompt","context":"no_form"}
+{"id":"dn-01","text":"that's all","intent":"done","context":"anything_else"}
+{"id":"dn-02","text":"I don't need anything else","intent":"done","context":"anything_else"}
+{"id":"dn-03","text":"no thank you, I'm all set","intent":"done","context":"anything_else"}
+{"id":"dn-04","text":"nothing else","intent":"done","context":"anything_else"}
+{"id":"dn-05","text":"no, that's it, bye","intent":"done","context":"anything_else"}
+{"id":"dn-06","text":"I'm good, thanks","intent":"done","context":"anything_else"}
+{"id":"dn-07","text":"that's everything","intent":"done","context":"anything_else"}
+{"id":"dn-08","text":"that's all I needed, thanks","intent":"done","context":"no_form"}
 {"id":"ot-01","text":"What are your hours","intent":"other","context":"no_form"}
 {"id":"ot-02","text":"Do you have parking","intent":"other","context":"no_form"}
 {"id":"ot-03","text":"I need a prescription refill","intent":"other","context":"no_form"}

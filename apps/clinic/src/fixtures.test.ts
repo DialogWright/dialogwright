@@ -15,8 +15,8 @@ describe('the clinic fixtures', () => {
   const scenarios = loadScenarios(scenariosDir());
 
   it('has the clinic\'s corpus and scripted calls, every label one the clinic\'s questions can pick', () => {
-    expect(corpus).toHaveLength(241);
-    expect(scenarios).toHaveLength(89);
+    expect(corpus).toHaveLength(249);
+    expect(scenarios).toHaveLength(90);
     // loadCorpus has checked each entry's slot labels (App.testing.checkCorpusSlots) and question labels.
     for (const slot of Object.keys(clinicApp.slots)) expect(corpus.some((e) => Object.hasOwn((e.slots ?? {}) as ClinicCorpusSlots, slot)), slot).toBe(true);
     for (const id of ['timeOfDay', 'timePreference', 'providerUnsure', 'providerNameStatus']) expect(corpus.some((e) => e.labels && Object.hasOwn(e.labels, id)), id).toBe(true);
