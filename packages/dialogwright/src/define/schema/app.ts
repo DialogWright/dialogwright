@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { checkAlways, identifier, localeTag, matching, name, text, textMap, unique } from './common';
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS } from '../../channel/voiceProviders';
+import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
@@ -207,6 +208,15 @@ const voice = z
   .strictObject({
     hints: z.array(text()).optional().describe('Words the speech recognizer should expect (ConversationRelay hints), before the engine\'s number words.'),
     spokenDigits: z.array(spokenDigitRule).optional().describe('How digits that are identifiers are spelled out for text-to-speech, tried in order.'),
+    continueWithinMs: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_CONTINUE_WITHIN_MS)
+      .optional()
+      .describe(
+        `A caller who had not finished: when the agent's reply to a final prompt is interrupted within this many milliseconds of starting, the next final prompt continues the one before it, and the turn runs on the words joined, as if they had been said at once, with the cut-off reply undone. 0 turns it off. Default ${DEFAULT_CONTINUE_WITHIN_MS}.`,
+      ),
     numbers: z
       .record(matching(/^\+\d{8,15}$/, 'must be an E.164 number like +15555550142', 'write the number with + and the country code, in quotes ("+15555550142")'), localeTag())
       .optional()

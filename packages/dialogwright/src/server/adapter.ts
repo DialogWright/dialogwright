@@ -5,7 +5,8 @@ import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent } from '../channel/relay/map';
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
 import { playbackEstimateMs } from '../channel/relay/playback';
-import { arrivalContext, CODE_DIGIT, runTurn, type Arrival } from '../run/turn';
+import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
+import { Continuation, continueWithinMsOf } from '../run/continuation';
 import { digitAtRun, promptEpoch, sensitiveDigit, type ArrivalDigit } from '../core/turn';
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
@@ -136,6 +137,24 @@ function enqueueUnsettled(deps: AdapterDeps, callSid: string, fn: (entry: CallEn
   return enqueueTurn(deps, callSid, fn, true);
 }
 
+/**
+ * Each call's Continuation (run/continuation.ts): the fragments of a caller who had not finished, the
+ * session before the first, and whether the reply to the last was cut off. Every turn of the call runs
+ * through it (turn, below), in the order the store runs them. Kept here, like the no-input timers,
+ * and never saved: a server restarted mid-answer runs the next prompt alone.
+ */
+const continuations = new Map<string, Continuation>();
+
+/** The call's Continuation: made as the call starts, or, for a call loaded after a restart, on its first turn here. */
+function continuationOf(entry: CallEntry): Continuation {
+  let c = continuations.get(entry.callSid);
+  if (c === undefined) {
+    c = new Continuation(continueWithinMsOf(appOf(entry.session)));
+    continuations.set(entry.callSid, c);
+  }
+  return c;
+}
+
 /** Consecutive turns that threw, per call, reset by any turn that produces a decision. */
 const turnFailures = new Map<string, number>();
 
@@ -173,6 +192,7 @@ export function forgetNoInput(callSid: string): void {
   noInputGeneration.delete(callSid);
   lastPlayback.delete(callSid);
   turnFailures.delete(callSid);
+  continuations.delete(callSid);
 }
 
 /**
@@ -477,7 +497,10 @@ function fireHandoffSummary(deps: AdapterDeps, entry: CallEntry): void {
 async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, arrival?: Arrival): Promise<boolean> {
   let ending = false;
   try {
-    const run = await runTurn(entry.session, event, entry.opts, arrival);
+    // Through the call's Continuation: a final prompt that continues one whose reply the caller cut
+    // off at once runs as the words joined, on the session from before the first of them.
+    const run = await continuationOf(entry).run(entry.session, event, entry.opts, arrival);
+    if (run.joined) entry.frames.write('log', { joined: run.joined.length });
     turnFailures.delete(entry.callSid);
     entry.session = run.result.session;
     // Kept on the call's own entry whether or not the console is on: the handoff summary reads it.
@@ -630,6 +653,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       // The wait the old connection was counting down no longer means anything. The replay below
       // starts a fresh one; this clear is what covers a reconnect with no prompt to replay yet.
       clearNoInput(callId);
+      // The caller hears the question again, so nothing said before the drop is continued.
+      continuations.get(callId)?.reset();
       const previous = existing.socket;
       if (previous && previous !== socket) {
         // Twilio reconnected before the old socket's close reached us; retire it explicitly so
@@ -667,6 +692,11 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     }
     const entry = deps.store.create(callId, socket, ctx.provider);
     entry.frames.write('in', redactDeep(parsed));
+    // The call's window for a caller who had not finished, once, for replay (harness-text/replay.ts),
+    // which joins where this call does by it; a log without the line is one that never joined.
+    const within = continueWithinMsOf(appOf(entry.session));
+    continuations.set(callId, new Continuation(within));
+    if (within > 0) entry.frames.write('log', { continueWithinMs: within });
     // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
     publish(deps, {
       type: 'call_started', callSid: callId, at: Date.now(),
@@ -737,6 +767,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // The slots have fixed digit lengths, so the keypad terminators carry no meaning yet.
   if (frame.type === 'dtmf' && (frame.digit === '#' || frame.digit === '*')) {
     entry.frames.write('log', { ignoredDigit: frame.digit });
+    // A key pressed ends a caller's unfinished words: through the queue, after the turns before it.
+    void deps.store.enqueue(ctx.callSid, async () => continuations.get(ctx.callSid!)?.reset());
     // No turn runs, so nothing downstream would restart the wait the digit just cancelled -- unless
     // a downstream service's answer is awaited, whose own turn arms it.
     if (entry.session.pendingService === null) armNoInput(deps, entry, []);

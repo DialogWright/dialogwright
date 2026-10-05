@@ -113,6 +113,12 @@ export interface TraceRecord {
    * other turn and for every other app.
    */
   retrieval?: RetrievalRecord;
+  /**
+   * Only on a turn that joined the final prompts of a caller who had not finished (run/continuation.ts,
+   * voice.continueWithinMs): the prompts, in order, as each was heard. The event's words are them
+   * joined; each fragment's own turn is an earlier record. Absent on every other turn.
+   */
+  joined?: { fragments: string[] };
   effects?: Effect[];
   /**
    * This turn's audit drafts, in the order they were chained -- before chaining: no `seq` or

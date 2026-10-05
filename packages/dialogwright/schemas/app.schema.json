@@ -434,6 +434,12 @@
             "description": "One rule for how identifier digits are spelled out for text-to-speech on the wire. Only what goes out is rewritten: the session text, the trace and the manifest keep the readable form."
           }
         },
+        "continueWithinMs": {
+          "description": "A caller who had not finished: when the agent's reply to a final prompt is interrupted within this many milliseconds of starting, the next final prompt continues the one before it, and the turn runs on the words joined, as if they had been said at once, with the cut-off reply undone. 0 turns it off. Default 300.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000
+        },
         "numbers": {
           "description": "The locale a call starts in, by the number called (E.164, in quotes). A number not listed starts in the app's default locale. Each locale must be one of the app's.",
           "type": "object",

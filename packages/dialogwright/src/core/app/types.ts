@@ -650,6 +650,12 @@ export interface VoiceConfig {
   readonly numbers?: Readonly<Record<string, string>>;
   /** Per-locale speech settings on the phone, by the app's locale tags: languages, a voice per carrier, hints. */
   readonly locales?: Readonly<Record<string, VoiceLocale>>;
+  /**
+   * A caller who had not finished (run/continuation.ts): when the reply to a final prompt is
+   * interrupted within this many milliseconds of starting, the next final prompt continues it, and
+   * the turn runs on the words joined. 0 turns it off; 0 to 2000. Absent: 300.
+   */
+  readonly continueWithinMs?: number;
 }
 
 /** How the phone speaks and hears one of the app's locales (VoiceConfig.locales). Each field is optional. */

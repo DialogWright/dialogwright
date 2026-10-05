@@ -520,6 +520,19 @@ describe('defineApp: the voice on the phone, by locale and by number called (voi
     ]);
   });
 
+  it('loads the window for a caller who had not finished', () => {
+    const app = defineApp(withVoice('  continueWithinMs: 400'), libraryCode);
+    expect(app.voice?.continueWithinMs).toBe(400);
+    expect(undefinedKeys(app.voice)).toEqual([]);
+  });
+
+  it('voice.continueWithinMs: a whole number from 0 to 2000', () => {
+    expect(loadProblems(withVoice('  continueWithinMs: 2500'))).toEqual([expect.stringMatching(/^app\.yaml:23:21 {2}voice\.continueWithinMs {2}.*2000/)]);
+    expect(loadProblems(withVoice('  continueWithinMs: -1'))).toEqual([expect.stringMatching(/^app\.yaml:23:21 {2}voice\.continueWithinMs {2}.*0/)]);
+    expect(loadProblems(withVoice('  continueWithinMs: 12.5'))).toEqual([expect.stringMatching(/^app\.yaml:23:21 {2}voice\.continueWithinMs {2}/)]);
+    expect(loadProblems(withVoice('  continueWithinMs: 0'))).toEqual([]);
+  });
+
   it('voice: tts and transcription must be language tags', () => {
     expect(loadProblems(withVoice('  locales:', '    es:', '      tts: Spanish', '      transcription: es_MX'))).toEqual([
       expect.stringMatching(/^app\.yaml:25:12 {2}voice\.locales\.es\.tts {2}"Spanish" is not a language tag like "en-US" or "fr" {2}-> {2}write a language tag/),
