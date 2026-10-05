@@ -5,7 +5,7 @@ import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
 import { informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
-import { formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
+import { anythingElseSilenceOf, formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, Completion, FormId, SlotId, SummaryMove } from './app/types';
 import { candidateSpans, candidateWordSpans } from './spans';
@@ -477,8 +477,10 @@ function codeReask(s: Session, io: TurnIO, acks: Ack[], promptId: 'ask_otp' | 'a
  * `plain` is true only for a silence turn's first rung: the caller never heard anything to be
  * unintelligible about, so the re-ask is the plain question, not the "Sorry, ..." retry text
  * (`nomatch_open`/`ask_<slot>_retry`), which stays reserved for an answer that missed.
+ * `intentQuestion` is that plain question for the intent: the opening one (`ask_intent`), or the one
+ * the caller was asked instead (`anything_else`, App.anythingElseSilence).
  */
-function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, io: TurnIO, acks: Ack[] = [], plain = false, retryPromptId: string | null = null): Decision {
+function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, io: TurnIO, acks: Ack[] = [], plain = false, retryPromptId: string | null = null, intentQuestion = 'ask_intent'): Decision {
   const t = io.tc.thresholds;
   // A guard, not a path anything takes today: `nomatch` re-asks a pending confirmation before it
   // gets here and `proceed` maps a confirm target to a slot. Should a confirm turn reach it, the
@@ -497,7 +499,7 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   if (step === 'agent') return handoff(s, 'max-attempts', acks);
   if (target === 'intent') {
     if (step === 'dtmf') return { ...prompt('nomatch_dtmf_menu', 'intent', {}, acks, io.app.menu.map((m) => m.digit)), menu: true };
-    if (plain) return prompt('ask_intent', 'intent', {}, acks);
+    if (plain) return prompt(intentQuestion, 'intent', {}, acks);
     return prompt('nomatch_open', 'intent', {}, acks);
   }
   // A slot narrowed to a window re-asks the window question, not the generic retry:
@@ -732,11 +734,20 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
 
 const NO_INPUT_ACK: Ack = { promptId: 'no_input', vars: {} };
 
-/** Silence is an unanswered turn on whatever was prompted; no model is asked. */
+/**
+ * Silence is an unanswered turn on whatever was prompted; no model is asked. Right after "anything
+ * else?" (the `anything_else` line), the app says what the caller hears (App.anythingElseSilence):
+ * that question again, by default, rather than the opening question; or the goodbye.
+ */
 function handleSilence(s: Session, io: TurnIO): Decision {
   if (s.promptedFor === null) return { kind: 'ignore' };
   s.dtmfBuffer = '';
   if (s.pendingConfirmation) return reaskConfirmation(s, io, [NO_INPUT_ACK]);
+  if (s.promptedFor === 'intent' && s.lastPromptId === 'anything_else') {
+    const after = anythingElseSilenceOf(io.app);
+    if (after === 'goodbye') return goodbye(s, [NO_INPUT_ACK]);
+    if (after === 'repeat') return failAttempt(s, 'intent', io, [NO_INPUT_ACK], true, null, 'anything_else');
+  }
   // `promptedFor === 'confirm'` without a pending confirmation cannot happen; the fallback is defensive.
   return failAttempt(s, s.promptedFor === 'confirm' ? 'intent' : s.promptedFor, io, [NO_INPUT_ACK], true);
 }

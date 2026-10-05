@@ -58,6 +58,11 @@ describe('validateApp', () => {
       for (const value of ['set-aside', 'decides'] as const) expect(() => validateApp({ ...copy(), changeSlotWithValue: value })).not.toThrow();
       expect(() => validateApp({ ...copy(), changeSlotWithValue: 'always' as never })).toThrow('changeSlotWithValue "always" is not "set-aside" or "decides"');
     });
+
+    it('refuses an anythingElseSilence it does not have', () => {
+      for (const value of ['repeat', 'opener', 'goodbye'] as const) expect(() => validateApp({ ...copy(), anythingElseSilence: value })).not.toThrow();
+      expect(() => validateApp({ ...copy(), anythingElseSilence: 'hangup' as never })).toThrow('anythingElseSilence "hangup" is not "repeat", "opener" or "goodbye"');
+    });
   });
 
   it('names an identity factor slot that is not a slot', () => {

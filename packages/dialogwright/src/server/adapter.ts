@@ -2,7 +2,7 @@ import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCallIdOf, 
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
-import { DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
+import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
@@ -80,8 +80,38 @@ const endGraceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 interface NoInput {
   timer: ReturnType<typeof setTimeout>;
   generation: number;
+  /** When it fires: what a hold keeps, so the caller heard speaking neither shortens nor lengthens the wait. */
+  dueAtMs: number;
 }
 const noInputTimers = new Map<string, NoInput>();
+
+export { DEFAULT_NO_INPUT_AFTER_SPEECH_MS };
+
+/**
+ * The longest a no-input wait is held for a caller the carrier reports speaking with no report that they
+ * stopped. A stop that never comes (a lost event) must not leave the call with no wait at all: past this,
+ * the stop is taken as given and the wait resumes as it would after one.
+ */
+export const NO_INPUT_HOLD_MAX_MS = 30_000;
+
+/**
+ * A no-input wait held while the carrier reports the caller speaking (Telnyx's clientSpeaking): no
+ * silence turn runs over a caller who is talking. `dueAtMs` is when the wait would have run out; the
+ * stop resumes it (resumeNoInput). `limit` is the NO_INPUT_HOLD_MAX_MS backstop.
+ */
+interface HeldNoInput {
+  dueAtMs: number;
+  limit: ReturnType<typeof setTimeout>;
+}
+const noInputHeld = new Map<string, HeldNoInput>();
+
+/** Release a call's held wait, if any, without resuming it. */
+function releaseHeld(callSid: string): void {
+  const held = noInputHeld.get(callSid);
+  if (!held) return;
+  clearTimeout(held.limit);
+  noInputHeld.delete(callSid);
+}
 /**
  * Bumped every time a call's no-input timer is cleared or re-armed. A fired timer's queued
  * closure carries the generation it was armed with, so a turn that got in first (the caller
@@ -91,6 +121,13 @@ const noInputTimers = new Map<string, NoInput>();
  * generation it would match again. Only `forgetNoInput` drops it, once the call itself is gone.
  */
 const noInputGeneration = new Map<string, number>();
+
+/**
+ * A call whose no-input timer has fired and whose silence turn waits in the call's queue behind another,
+ * by the generation it carries. A report of the caller speaking before it runs holds it as it would an
+ * armed wait (onCallerSpeech); any clear drops it, since the generation it carries no longer matches.
+ */
+const silenceQueued = new Map<string, number>();
 
 /** When a call's last frames went out and how long they were estimated to take to play. */
 interface Playback {
@@ -169,13 +206,15 @@ const turnFailures = new Map<string, number>();
  */
 export const TURN_FAILURE_LIMIT = 3;
 
-/** Cancel any armed no-input timer for a call and invalidate whatever it already queued. */
+/** Cancel any armed or held no-input wait for a call and invalidate whatever it already queued. */
 function clearNoInput(callSid: string): void {
   const armed = noInputTimers.get(callSid);
   if (armed) {
     clearTimeout(armed.timer);
     noInputTimers.delete(callSid);
   }
+  releaseHeld(callSid);
+  silenceQueued.delete(callSid);
   noInputGeneration.set(callSid, (noInputGeneration.get(callSid) ?? 0) + 1);
 }
 
@@ -193,6 +232,8 @@ export function forgetNoInput(callSid: string): void {
   const armed = noInputTimers.get(callSid);
   if (armed) clearTimeout(armed.timer);
   noInputTimers.delete(callSid);
+  releaseHeld(callSid);
+  silenceQueued.delete(callSid);
   noInputGeneration.delete(callSid);
   lastPlayback.delete(callSid);
   turnFailures.delete(callSid);
@@ -211,12 +252,14 @@ export function forgetNoInput(callSid: string): void {
  * `frames` is what actually went out. An empty list means the caller was heard from but nothing
  * was said back (a barge-in, a keypad terminator, a partial), so the wait is measured from the
  * end of whatever is still playing rather than from now.
+ *
+ * Armed while the carrier reports the caller speaking (a reply to the words so far, as they go on), the
+ * wait is held from the start, and their stop resumes it (onCallerSpeech).
  */
 function armNoInput(deps: AdapterDeps, entry: CallEntry, frames: readonly OutboundFrame[]): void {
   const wait = deps.noInputMs ?? 0;
   if (wait <= 0) return;
   clearNoInput(entry.callSid);
-  const generation = noInputGeneration.get(entry.callSid) ?? 0;
   const nowMs = Date.now();
   let remainingMs: number;
   if (frames.length > 0) {
@@ -228,9 +271,24 @@ function armNoInput(deps: AdapterDeps, entry: CallEntry, frames: readonly Outbou
     remainingMs = last ? Math.max(0, last.sentAtMs + last.estimateMs - nowMs) : 0;
   }
   const delay = wait + remainingMs;
+  if (callerSpeaking.has(entry.callSid)) {
+    holdNoInput(deps, entry, nowMs + delay);
+    return;
+  }
+  scheduleNoInput(deps, entry, delay);
+  // Only for a re-arm that had something to say. Partials arrive several times a second while the
+  // caller speaks, and a line each would drown the frame log in bookkeeping.
+  if (frames.length > 0) entry.frames.write('log', { noInputArmedMs: delay });
+}
+
+/** Start the no-input timer: a silence turn `delay` ms from now, unless a turn or a clear gets in first. */
+function scheduleNoInput(deps: AdapterDeps, entry: CallEntry, delay: number): void {
+  const generation = noInputGeneration.get(entry.callSid) ?? 0;
   const timer = setTimeout(() => {
     noInputTimers.delete(entry.callSid);
+    silenceQueued.set(entry.callSid, generation);
     void enqueueUnsettled(deps, entry.callSid, async (e) => {
+      if (silenceQueued.get(e.callSid) === generation) silenceQueued.delete(e.callSid);
       // A real turn ran between the arm and now (it bumped the generation), or the call is
       // over: either way the caller is not silent and this turn has nothing to say.
       if (e.ended || (noInputGeneration.get(e.callSid) ?? 0) !== generation) return;
@@ -241,10 +299,68 @@ function armNoInput(deps: AdapterDeps, entry: CallEntry, frames: readonly Outbou
     }).catch((err: unknown) => deps.log(`${entry.callSid}: silence turn failed: ${describe(err).message}`));
   }, delay);
   timer.unref?.();
-  noInputTimers.set(entry.callSid, { timer, generation });
-  // Only for a re-arm that had something to say. Partials arrive several times a second while the
-  // caller speaks, and a line each would drown the frame log in bookkeeping.
-  if (frames.length > 0) entry.frames.write('log', { noInputArmedMs: delay });
+  noInputTimers.set(entry.callSid, { timer, generation, dueAtMs: Date.now() + delay });
+}
+
+/** Hold a call's no-input wait, due at `dueAtMs`, while the caller is heard speaking. Nothing is armed meanwhile. */
+function holdNoInput(deps: AdapterDeps, entry: CallEntry, dueAtMs: number): void {
+  const callSid = entry.callSid;
+  releaseHeld(callSid);
+  const limit = setTimeout(() => {
+    // No stop came: taken as given, so the caller is no longer counted as speaking anywhere.
+    callerSpeaking.delete(callSid);
+    const e = deps.store.get(callSid);
+    if (e && !e.ended) resumeNoInput(deps, e, 'holdLimit');
+    else releaseHeld(callSid);
+  }, NO_INPUT_HOLD_MAX_MS);
+  limit.unref?.();
+  noInputHeld.set(callSid, { dueAtMs, limit });
+  entry.frames.write('log', { noInputHeld: 'speaking' });
+}
+
+/**
+ * Resume a held wait: the silence turn comes when the wait would have run out, but never sooner than
+ * NO_INPUT_AFTER_SPEECH_MS after the caller stopped, so the carrier's transcript of what they said gets
+ * in first. A cough with the wait half run leaves the caller's wait as it was; speech that ran past the
+ * deadline is followed by the settle, not by a whole new NO_INPUT_MS, and a transcript in that time
+ * clears it as any prompt does. `after` says, in the frame log, why it resumed.
+ */
+function resumeNoInput(deps: AdapterDeps, entry: CallEntry, after: 'speech' | 'holdLimit'): void {
+  const held = noInputHeld.get(entry.callSid);
+  if (!held) return;
+  clearNoInput(entry.callSid);
+  const settle = deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS;
+  const delay = Math.max(held.dueAtMs - Date.now(), settle);
+  scheduleNoInput(deps, entry, delay);
+  entry.frames.write('log', { noInputArmedMs: delay, after });
+}
+
+/**
+ * The carrier heard the caller start or stop speaking (a PlaybackEvent `caller speaking`, read by the
+ * carrier's provider: Telnyx's clientSpeaking; Twilio reports none, and sends partial prompts instead).
+ * The caller is not silent while they speak, so an armed no-input wait is held; their stop resumes it
+ * (resumeNoInput). Seen on a live Telnyx call (2026-10-05): with no partials, the wait ran out while the
+ * caller was finishing a long sentence, and "I didn't hear anything." went out just before Telnyx's
+ * transcript of it.
+ */
+function onCallerSpeech(deps: AdapterDeps, entry: CallEntry, speaking: boolean): void {
+  const callSid = entry.callSid;
+  if (speaking) {
+    callerSpeaking.add(callSid);
+    // Nor is a line the carrier stopped playing then one to say again (RESAY_CUT_LINES).
+    callerHeard(callSid);
+    if (noInputHeld.has(callSid)) return;
+    // An armed wait keeps its deadline. A silence turn already queued behind a busy one (its timer fired)
+    // has a deadline just passed: it is held too, rather than said over the caller once the queue frees.
+    const armed = noInputTimers.get(callSid);
+    const dueAtMs = armed ? armed.dueAtMs : silenceQueued.has(callSid) ? Date.now() : null;
+    if (dueAtMs === null) return;
+    clearNoInput(callSid);
+    holdNoInput(deps, entry, dueAtMs);
+    return;
+  }
+  callerSpeaking.delete(callSid);
+  resumeNoInput(deps, entry, 'speech');
 }
 
 /**
@@ -504,13 +620,8 @@ function seconds(ms: number, digits: number): string {
  */
 function onPlaybackEvent(deps: AdapterDeps, entry: CallEntry, ev: PlaybackEvent, settings: ResaySettings): void {
   const callSid = entry.callSid;
-  if (ev.kind === 'caller') {
-    if (ev.speaking) {
-      callerSpeaking.add(callSid);
-      callerHeard(callSid);
-    } else callerSpeaking.delete(callSid);
-    return;
-  }
+  // The caller's voice is read for every carrier that reports it, resay or not (onCallerSpeech).
+  if (ev.kind === 'caller') return;
   const w = watched.get(callSid);
   if (!w || w.done) return;
   const now = Date.now();
@@ -607,6 +718,12 @@ export interface AdapterDeps {
   endCloseGraceMs?: number;
   /** Silence after a prompt's estimated playback before a silence turn runs; 0 (the default) disables. */
   noInputMs?: number;
+  /**
+   * NO_INPUT_AFTER_SPEECH_MS: on a carrier that reports the caller's voice, the least a held no-input wait
+   * runs after the caller stops speaking, for the transcript to arrive (resumeNoInput). Absent:
+   * DEFAULT_NO_INPUT_AFTER_SPEECH_MS.
+   */
+  noInputAfterSpeechMs?: number;
   /** wav filename -> ms, from clipDurations(audioDir); how long a `play` frame is assumed to take. */
   clipDurations?: ReadonlyMap<string, number>;
   /** The dashboard's event bus; absent when the dashboard is off. */
@@ -1002,6 +1119,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     const ev = playbackEventOf(ctx.provider, message);
     if (ev) {
       if (ev.kind === 'playback') reportsPlayback.add(entry.callSid);
+      // The caller heard speaking holds the no-input wait, on any carrier whose provider reports it.
+      else onCallerSpeech(deps, entry, ev.speaking);
       onHeldEndEvent(entry.callSid, ev);
       if (deps.resay) onPlaybackEvent(deps, entry, ev, deps.resay);
     }

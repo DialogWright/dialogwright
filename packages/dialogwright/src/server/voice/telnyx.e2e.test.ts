@@ -1,15 +1,18 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { safeFileStem, startServer, type RunningServer } from '../index';
 import { loadConfig } from '../config';
+import { readFrameLog } from '../frameLog';
 import { FakeRelay } from '../../testing/fakeRelay';
 import type { JevClient } from '../../jev/types';
 import type { DashboardEvent } from '../dashboard/events';
 import { useTestkit } from '../../testing/apps';
 import { defaultCorpusFile } from '../../run/fixtures';
+import { promptText } from '../../prompts/render';
+import { testkitApp } from '../../testing/testkit';
 
 useTestkit();
 
@@ -31,6 +34,7 @@ const GOODBYE = 'Thanks for calling Example Parcels. Goodbye.';
 let running: RunningServer | null = null;
 const dirs: string[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
   await running?.close();
   running = null;
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -44,7 +48,7 @@ beforeAll(async () => {
   client = new FixtureStubClient(loadCorpus(defaultCorpusFile()), { sharpness: 0.9, fallback: new HeuristicStubClient() });
 }, 60_000);
 
-async function startTelnyx(): Promise<{ base: string; ws: string; traceDir: string }> {
+async function startTelnyx(env: Record<string, string> = {}): Promise<{ base: string; ws: string; traceDir: string }> {
   const traceDir = mkdtempSync(join(tmpdir(), 'telnyx-'));
   const audioDir = mkdtempSync(join(tmpdir(), 'audio-'));
   dirs.push(traceDir, audioDir);
@@ -58,6 +62,7 @@ async function startTelnyx(): Promise<{ base: string; ws: string; traceDir: stri
     TRACE_DIR: traceDir,
     AUDIT_DIR: join(traceDir, 'audit'),
     AUDIO_DIR: audioDir,
+    ...env,
   });
   running = await startServer(config, { host: '127.0.0.1', client: client!, log: () => {} });
   return { base: `http://127.0.0.1:${running.port}`, ws: `ws://127.0.0.1:${running.port}`, traceDir };
@@ -218,6 +223,48 @@ describe('a Telnyx call end to end', () => {
       sessionId: '05ff737c-0000-4000-8000-000000000000',
     });
     expect(await relay.waitForTexts(1)).toEqual([GREETING_TEXT]);
+    relay.close();
+  });
+
+  it('holds the no-input wait while Telnyx hears the caller speaking, and settles before the silence turn', async () => {
+    // Seen on a live call (2026-10-05): the caller spoke one long sentence, the wait ran out 0.7 s after
+    // Telnyx's last clientSpeaking off, and "I didn't hear anything." went out 0.3 s before the transcript.
+    const { base, ws, traceDir } = await startTelnyx({ TELNYX_EVENTS: 'speaker-events tokens-played', NO_INPUT_AFTER_SPEECH_MS: '300' });
+    const answer = await postSigned(base, '/voice/telnyx', { CallSid: CALL_ID, From: '+15555550110', To: '+15555550111' });
+    const token = /token=([0-9a-f]{32})/.exec(answer.text)![1]!;
+    const relay = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`);
+    relay.send({ type: 'setup', callSid: '5e9fcc12-0000-4000-8000-000000000000', callControlId: CALL_ID, from: null, to: null, direction: null, callStatus: 'active', customParameters: {}, sessionId: '05ff737c-0000-4000-8000-000000000000' });
+    await relay.waitForTexts(1);
+    const logLines = () => readFrameLog(join(traceDir, `${safeFileStem(CALL_ID)}.frames.jsonl`)).filter((l) => l.dir === 'log').map((l) => l.msg as Record<string, unknown>);
+    const until = async (seen: () => boolean): Promise<void> => {
+      for (let i = 0; i < 400 && !seen(); i += 1) await new Promise((r) => setTimeout(r, 5));
+      expect(seen()).toBe(true);
+    };
+    const speaking = (value: 'on' | 'off') => relay.send({ type: 'info', name: 'clientSpeaking', value });
+    const NO_INPUT = promptText(testkitApp, 'no_input', {});
+
+    // The clock stands still but for the jumps below; the server's timers run in real time.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    speaking('on');
+    await until(() => logLines().some((m) => m.noInputHeld === 'speaking'));
+    // The caller talks on past where the wait would have run out (the greeting's length and NO_INPUT_MS).
+    vi.setSystemTime(Date.now() + 60_000);
+    speaking('off');
+    await until(() => logLines().some((m) => m.after === 'speech'));
+    expect(logLines().find((m) => m.after === 'speech')).toEqual({ noInputArmedMs: 300, after: 'speech' });
+    // Telnyx's transcript comes within the settle: it is answered, and no silence turn ran.
+    relay.prompt('can you deliver tomorrow morning', true, 'en');
+    expect((await relay.waitForTexts(3)).at(-1)).toBe(ASK_ACCOUNT_ID);
+    await new Promise((r) => setTimeout(r, 400));
+    expect(relay.texts()).not.toContain(NO_INPUT);
+
+    // A cough past the next deadline, with no transcript: the silence turn comes the settle after it.
+    speaking('on');
+    await until(() => logLines().filter((m) => m.noInputHeld === 'speaking').length === 2);
+    vi.setSystemTime(Date.now() + 60_000);
+    speaking('off');
+    expect((await relay.waitForTexts(5)).slice(-2)).toEqual([NO_INPUT, ASK_ACCOUNT_ID]);
+    relay.assertKnownTypes();
     relay.close();
   });
 

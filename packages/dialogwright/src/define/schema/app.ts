@@ -6,7 +6,7 @@ import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/co
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, fixtures, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, fixtures, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -371,6 +371,14 @@ export const appSchema = z
       .describe(
         'At a form\'s summary, what the change question\'s reading (wording.changeSlot: a detail named as wrong without its new value) does when the same turn gives one of the form\'s slots a value it does not already hold. ' +
           '"set-aside": the words contradict the reading, so it decides nothing and the turn goes as it would without it (a no with a correction: the value is applied and the summary read again). "decides": the reading decides as it would alone, reopening the detail named unless the turn gives that detail its new value. Default "set-aside".',
+      ),
+    anythingElseSilence: z
+      .enum(['repeat', 'opener', 'goodbye'])
+      .optional()
+      .describe(
+        'What a caller who says nothing after "anything else?" (the anything_else line, said when a form is done) hears when the no-input wait runs out. ' +
+          '"repeat": the no_input line and "anything else?" again. "opener": the no_input line and the opening question (ask_intent). "goodbye": the no_input line and the goodbye, ending the call as done does. ' +
+          'With repeat and opener a further silence walks the intent ladder as at the opening (the keypad menu, then a person). Default "repeat".',
       ),
     fixtures: z
       .strictObject({

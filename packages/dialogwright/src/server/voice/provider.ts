@@ -106,7 +106,10 @@ export interface RelayLanguage {
 /**
  * What a carrier reports of its own playback and of the caller's voice, in the engine's terms, from
  * the optional events it sends on the socket (Telnyx's speaker-events and tokens-played). The adapter
- * reads them to find a line the carrier cut short (server/adapter.ts, RESAY_CUT_LINES).
+ * reads them to find a line the carrier cut short (server/adapter.ts, RESAY_CUT_LINES), to hold a turn's
+ * `end` until its lines have played (END_AFTER_PLAYBACK), and the caller's speaking to hold the no-input
+ * wait while they talk (NO_INPUT_AFTER_SPEECH_MS): a carrier with no partial transcripts is otherwise
+ * told "I didn't hear anything." over a caller still finishing a sentence.
  * - `playback started`: the carrier began speaking the agent's lines.
  * - `playback finished`: it stopped; with `text`, the line it says it played (the line as it was sent).
  * - `caller speaking`: the carrier heard the caller start (`true`) or stop (`false`) speaking.
@@ -153,8 +156,8 @@ export interface VoiceProvider {
   readonly endDropsSpeech?: boolean;
   /**
    * A message of the carrier's own on the socket (one the relay wire does not know), as a PlaybackEvent,
-   * or null when it is not one. Absent: the carrier reports no playback (Twilio), and a line it cuts
-   * short cannot be found.
+   * or null when it is not one. Absent: the carrier reports no playback and no caller speaking (Twilio),
+   * a line it cuts short cannot be found, and only transcripts (partial ones included) end the no-input wait.
    */
   readEvent?(message: unknown): PlaybackEvent | null;
 }

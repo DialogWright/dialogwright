@@ -156,6 +156,19 @@ describe('loadConfig', () => {
     expect(describeConfig(loadConfig({ ...base, NO_INPUT_MS: '0' }))).toContain('no-input off');
   });
 
+  it('reads NO_INPUT_AFTER_SPEECH_MS, 2500 unless set, and says it where a carrier reports the caller speaking', () => {
+    expect(loadConfig(base).noInputAfterSpeechMs).toBe(2500);
+    expect(loadConfig({ ...base, NO_INPUT_AFTER_SPEECH_MS: '1200' }).noInputAfterSpeechMs).toBe(1200);
+    expect(loadConfig({ ...base, NO_INPUT_AFTER_SPEECH_MS: '0' }).noInputAfterSpeechMs).toBe(0);
+    expect(() => loadConfig({ ...base, NO_INPUT_AFTER_SPEECH_MS: '-1' })).toThrow('NO_INPUT_AFTER_SPEECH_MS must be a non-negative integer, got "-1"');
+    expect(() => loadConfig({ ...base, NO_INPUT_AFTER_SPEECH_MS: 'soon' })).toThrow('NO_INPUT_AFTER_SPEECH_MS');
+    // Twilio reports no caller speaking (its partial prompts end the wait instead): nothing to say there.
+    expect(describeConfig(loadConfig(base))).not.toContain('no-input after speech');
+    const telnyx = { ...base, VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: 'MCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=' };
+    expect(describeConfig(loadConfig(telnyx))).toContain('no-input after speech 2500 ms');
+    expect(describeConfig(loadConfig({ ...telnyx, NO_INPUT_MS: '0' }))).not.toContain('no-input after speech');
+  });
+
   it('takes the dashboard switch, defaults it on, and rejects anything else', () => {
     expect(loadConfig(base).dashboard).toBe(true);
     expect(loadConfig({ ...base, DASHBOARD: 'on' }).dashboard).toBe(true);
