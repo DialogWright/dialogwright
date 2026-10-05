@@ -1,10 +1,11 @@
-import { setupCallIdOf, textLastOf } from './voice/registry';
+import { playbackEventOf, readsPlaybackEvents, setupCallIdOf, textLastOf } from './voice/registry';
+import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
-import { playbackEstimateMs } from '../channel/relay/playback';
+import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
 import { Continuation, continueWithinMsOf } from '../run/continuation';
 import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
@@ -195,6 +196,8 @@ export function forgetNoInput(callSid: string): void {
   lastPlayback.delete(callSid);
   turnFailures.delete(callSid);
   continuations.delete(callSid);
+  unwatch(callSid);
+  callerSpeaking.delete(callSid);
 }
 
 /**
@@ -239,6 +242,150 @@ function armNoInput(deps: AdapterDeps, entry: CallEntry, frames: readonly Outbou
   // Only for a re-arm that had something to say. Partials arrive several times a second while the
   // caller speaks, and a line each would drown the frame log in bookkeeping.
   if (frames.length > 0) entry.frames.write('log', { noInputArmedMs: delay });
+}
+
+/**
+ * A turn's lines the carrier is playing, watched for a playback it cuts short (RESAY_CUT_LINES). Seen on
+ * Telnyx (server/voice/telnyx.ts): a reply right after the caller spoke was reported played in full 0.67 s
+ * into a 9.6 s line, with no interrupt and no caller heard, and the caller heard nothing of it. What a
+ * carrier reports is read into the engine's terms by its provider (VoiceProvider.readEvent); a carrier
+ * that reports nothing is never watched.
+ */
+interface Watched {
+  /** The lines as the turn decided them (text and clips), before the wire's rewriting, which sendFrames does again. */
+  frames: OutboundFrame[];
+  /** The decision they say, for the frame log's masking (sendFrames). */
+  decision: unknown;
+  /** The turn's last text as it went out, whitespace folded: what a report of the whole turn played names. */
+  lastText: string | null;
+  /** How long the lines were estimated to take (playbackEstimateMs, as for the no-input wait). */
+  expectedMs: number;
+  sentAtMs: number;
+  /** When the carrier said it started playing them; null until it does (then the time is from the send). */
+  startedAtMs: number | null;
+  /** These lines are already a re-send: never said a third time. */
+  resent: boolean;
+  /** The caller was heard after the lines went out (an interrupt, speech, a digit, a prompt). */
+  heard: boolean;
+  /** A finish that looked cut short, waiting out the settle; null while the lines play. */
+  finished: { heardMs: number; timer: ReturnType<typeof setTimeout> } | null;
+  /** Decided: finished in time, heard over, said again, or given up. */
+  done: boolean;
+}
+const watched = new Map<string, Watched>();
+
+/** Calls whose caller the carrier reports speaking now (a PlaybackEvent `caller speaking`). */
+const callerSpeaking = new Set<string>();
+
+/** Words compared as a carrier reports them back: whitespace folded. */
+function folded(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Stop watching a call's lines, with any re-send still waiting out its settle. */
+function unwatch(callSid: string): void {
+  const w = watched.get(callSid);
+  if (w?.finished) clearTimeout(w.finished.timer);
+  watched.delete(callSid);
+}
+
+/**
+ * Watch the lines a turn just sent (or a re-send of them), in place of whatever was watched before.
+ * Only on a carrier that reports its playback, with RESAY_CUT_LINES on; never a turn that ends the call
+ * or sends digits, and never one whose lines did not all reach the wire.
+ */
+function watchPlayback(deps: AdapterDeps, entry: CallEntry, frames: readonly OutboundFrame[], decision: unknown, sent: readonly OutboundFrame[], resent: boolean): void {
+  unwatch(entry.callSid);
+  if (!deps.resay || !readsPlaybackEvents(entry.provider)) return;
+  if (frames.some((f) => f.type === 'end' || f.type === 'sendDigits')) return;
+  const said = frames.filter((f) => f.type === 'text' || f.type === 'play');
+  const out = sent.filter((f) => f.type === 'text' || f.type === 'play');
+  if (said.length === 0 || out.length !== said.length) return;
+  const last = [...out].reverse().find((f) => f.type === 'text');
+  watched.set(entry.callSid, {
+    frames: said, decision, lastText: last?.type === 'text' ? folded(last.token) : null,
+    expectedMs: playbackEstimateMs(out, deps.clipDurations ?? new Map()), sentAtMs: Date.now(), startedAtMs: null,
+    resent, heard: false, finished: null, done: false,
+  });
+}
+
+/** The caller was heard: the lines watched are not said again, whatever the carrier reports of them. */
+function callerHeard(callSid: string): void {
+  const w = watched.get(callSid);
+  if (w) w.heard = true;
+}
+
+/** Seconds for the log: `0.67 s`. */
+function seconds(ms: number, digits: number): string {
+  return `${(ms / 1000).toFixed(digits)} s`;
+}
+
+/**
+ * A carrier's report of its playback or of the caller's voice (PlaybackEvent). The watched lines are
+ * finished when the carrier says it stopped playing, or that it played the turn's last line; a finish
+ * under RESAY_MIN_FRACTION of their estimate, with the caller not heard since they went out, is a cut,
+ * and the lines go again once the settle has passed with nothing more played (resay). A re-send cut as
+ * well is logged and left: the no-input wait asks again, as before.
+ */
+function onPlaybackEvent(deps: AdapterDeps, entry: CallEntry, ev: PlaybackEvent, settings: ResaySettings): void {
+  const callSid = entry.callSid;
+  if (ev.kind === 'caller') {
+    if (ev.speaking) {
+      callerSpeaking.add(callSid);
+      callerHeard(callSid);
+    } else callerSpeaking.delete(callSid);
+    return;
+  }
+  const w = watched.get(callSid);
+  if (!w || w.done) return;
+  const now = Date.now();
+  if (ev.state === 'started') {
+    // More of the turn plays after a stop: the stop was between its lines, not the end of them.
+    if (w.finished) {
+      clearTimeout(w.finished.timer);
+      w.finished = null;
+    }
+    if (w.startedAtMs === null) w.startedAtMs = now;
+    return;
+  }
+  // Already finished (the stop after the report of the last line), or the report of an earlier line.
+  if (w.finished) return;
+  if (ev.text !== undefined && (w.lastText === null || folded(ev.text) !== w.lastText)) return;
+  const heardMs = now - (w.startedAtMs ?? w.sentAtMs);
+  if (w.heard || !cutShort(heardMs, w.expectedMs, settings.minFraction)) {
+    w.done = true;
+    return;
+  }
+  if (w.resent) {
+    w.done = true;
+    deps.log(`${callSid}: playback cut short again (${seconds(heardMs, 2)} of ~${seconds(w.expectedMs, 1)}), not said a third time`);
+    entry.frames.write('log', { cutAgain: { heardMs, expectedMs: w.expectedMs } });
+    return;
+  }
+  const timer = setTimeout(() => resay(deps, callSid, w), RESAY_SETTLE_MS);
+  timer.unref?.();
+  w.finished = { heardMs, timer };
+}
+
+/**
+ * Say a cut turn's lines again, once: the same frames, through sendFrames (so `last` is the carrier's,
+ * textLast), in the call's queue so no turn runs between. Not a turn: nothing reaches the core, the
+ * trace or replay, which reads only what came in. The frame log has `{ resaid: { heardMs, expectedMs } }`
+ * before the frames, and the no-input wait, if one is armed, is armed again from the new playback.
+ * Nothing goes when a turn ran since, the caller was heard or is speaking, or the call is over.
+ */
+function resay(deps: AdapterDeps, callSid: string, w: Watched): void {
+  void deps.store.enqueue(callSid, async (e) => {
+    if (watched.get(callSid) !== w || w.done || w.heard || w.finished === null) return;
+    w.done = true;
+    if (e.ended || !e.socket || callerSpeaking.has(callSid)) return;
+    const { heardMs } = w.finished;
+    deps.log(`${callSid}: playback cut short (${seconds(heardMs, 2)} of ~${seconds(w.expectedMs, 1)}), lines said again`);
+    e.frames.write('log', { resaid: { heardMs, expectedMs: w.expectedMs } });
+    const sent = await sendFrames(deps, e, w.frames, w.decision);
+    watchPlayback(deps, e, w.frames, w.decision, sent, true);
+    if (noInputTimers.has(callSid)) armNoInput(deps, e, sent);
+  }).catch((err: unknown) => deps.log(`${callSid}: saying the cut lines again failed: ${describe(err).message}`));
 }
 
 /**
@@ -304,7 +451,25 @@ export interface AdapterDeps {
   handoffSummaryOn?: boolean;
   /** Overridable so a test can inject a fake without reaching the real Anthropic endpoint. */
   summarizeHandoff?: (entries: readonly AuditEntry[], o: SummaryOptions, wording?: HandoffWording) => Promise<string | null>;
+  /**
+   * RESAY_CUT_LINES: a turn's lines the carrier cut short are said again (watchPlayback, below). Absent:
+   * off. Active only on a carrier that reports its playback (VoiceProvider.readEvent).
+   */
+  resay?: ResaySettings;
 }
+
+/** How the adapter says again a line the carrier cut short (RESAY_CUT_LINES, RESAY_MIN_FRACTION). */
+export interface ResaySettings {
+  /** Under this fraction of the lines' estimated length (playbackEstimateMs), a finished playback was cut short. */
+  minFraction: number;
+}
+
+/**
+ * How long a playback that looks cut short must stay finished, with nothing more played and the caller
+ * not heard, before its lines are said again: a carrier that reports a turn's lines one by one, stopping
+ * between them, starts playing again within it, and a caller who answers at once is heard within it.
+ */
+export const RESAY_SETTLE_MS = 250;
 
 /**
  * Hand one call moment to the dashboard. A missing bus (the dashboard is off) makes every
@@ -537,7 +702,10 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // Defensive: nothing can be armed here today, because whatever drove this turn cleared the
     // timer on its way in. Kept so a future path that arms and then ends cannot strand a timer.
     if (ending) clearNoInput(entry.callSid);
-    const sent = await sendFrames(deps, entry, actionsToFrames(run.result.actions), run.result.decision);
+    const frames = actionsToFrames(run.result.actions);
+    const sent = await sendFrames(deps, entry, frames, run.result.decision);
+    // Lines a carrier that reports its playback may cut short, said again if it does (RESAY_CUT_LINES).
+    watchPlayback(deps, entry, frames, run.result.decision, sent, false);
     // Work handed to a downstream service: its answer is the next turn, and it arms the wait itself.
     if (service && pending) queueService(deps, entry, service, pending);
     // A prompt restarts the wait - including the silence turn's own re-ask, which is how the
@@ -552,6 +720,7 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     entry.frames.write('log', { turnFailed: info });
     const failures = (turnFailures.get(entry.callSid) ?? 0) + 1;
     turnFailures.set(entry.callSid, failures);
+    unwatch(entry.callSid);
     const sent = await sendFrames(deps, entry, [textFrame(TURN_ERROR_TEXT, true)]);
     // "Please say that again" is a question like any other: a caller who then says nothing must
     // not be left listening to an open line. But the wait asking it again is what turns a client
@@ -636,9 +805,16 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // A message of a type the relay wire does not know, from a carrier's optional event streams (Telnyx's
     // speaker-events, tokens-played): written to the call's frame log as it came, never acted on or counted
     // as malformed. Before a setup there is no call to write it to.
+    // A carrier that reports its playback has it read into the engine's terms, for a line it cut short.
     const entry = ctx.callSid ? deps.store.get(ctx.callSid) : undefined;
-    if (entry) entry.frames.write('in', { carrierEvent: JSON.parse(raw) as unknown });
-    else deps.log(`unknown: carrier event before setup: ${messageShape(raw)}`);
+    if (!entry) {
+      deps.log(`unknown: carrier event before setup: ${messageShape(raw)}`);
+      return;
+    }
+    const message = JSON.parse(raw) as unknown;
+    entry.frames.write('in', { carrierEvent: message });
+    const ev = deps.resay ? playbackEventOf(ctx.provider, message) : null;
+    if (ev && deps.resay) onPlaybackEvent(deps, entry, ev, deps.resay);
     return;
   }
   if (!parsed) {
@@ -690,6 +866,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       // The wait the old connection was counting down no longer means anything. The replay below
       // starts a fresh one; this clear is what covers a reconnect with no prompt to replay yet.
       clearNoInput(callId);
+      // Nor do the lines it was playing, or what it heard of the caller.
+      unwatch(callId);
+      callerSpeaking.delete(callId);
       const previous = existing.socket;
       if (previous && previous !== socket) {
         // Twilio reconnected before the old socket's close reached us; retire it explicitly so
@@ -796,7 +975,11 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   }
   // The caller is audibly there, so the no-input wait is over - before any of the early returns
   // below, because a partial prompt or a bare `#` is still a caller who is not silent.
-  if (frame.type === 'prompt' || frame.type === 'dtmf' || frame.type === 'interrupt') clearNoInput(ctx.callSid);
+  if (frame.type === 'prompt' || frame.type === 'dtmf' || frame.type === 'interrupt') {
+    clearNoInput(ctx.callSid);
+    // Nor is a line the carrier stopped playing then one to say again.
+    callerHeard(ctx.callSid);
+  }
   // Before the ignore/turn split below: a digit the adapter drops is still a digit the caller pressed.
   if (logged.type === 'dtmf') publish(deps, { type: 'dtmf', callSid: ctx.callSid, at: Date.now(), digit: logged.digit });
   if (frame.type === 'interrupt') {
@@ -920,6 +1103,8 @@ export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContex
   // webhook can, so the `ended{hangup}` event is published there (`decideActionTwiml` in http.ts).
   // Nobody is listening on the other end; a re-ask would be played to a closed socket.
   clearNoInput(ctx.callSid);
+  unwatch(ctx.callSid);
+  callerSpeaking.delete(ctx.callSid);
   entry.frames.write('log', { socketClosed: true, ended: entry.ended });
   deps.store.detach(ctx.callSid);
 }

@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { applyEnvFile, envFilePathOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { join, resolve as resolvePath } from 'node:path';
-import { consoleExposure, DEFAULT_DRAIN_MS, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
+import { consoleExposure, DEFAULT_DRAIN_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
 import { createRequestHandler, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, type AdapterDeps } from './adapter';
@@ -324,6 +324,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       store, tokens, log, endCloseGraceMs: overrides.endCloseGraceMs, noInputMs, clipDurations: durations, bus,
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
       summarizeHandoff: overrides.summarizeHandoff,
+      // RESAY_CUT_LINES: absent from a config made by hand before it existed reads as on, as loadConfig's default.
+      ...(config.resayCutLines === false ? {} : { resay: { minFraction: config.resayMinFraction ?? DEFAULT_RESAY_MIN_FRACTION } }),
     },
     overrides.setupTimeoutMs,
     config.voiceProviders,
