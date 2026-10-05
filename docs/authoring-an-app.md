@@ -106,6 +106,11 @@ prompts:
   `pnpm check` refuses a slot that is not one, a slot listed twice, a listed identity factor with no `send` (it would still be left out), a `send` for a slot that is never sent, and `masked` for a slot with no `redact` (or `handoff: last4` or `verified`), which would send it as it is; `validateApp` refuses the same for an app built in code.
 - `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again). It is shorthand for `listen: call` on each slot it names ([Where a slot listens](#where-a-slot-listens-listen)); a carried slot that says another `listen` is refused.
 - `unsureIntent` says what an intent the model is unsure of gets, for every intent that does not say: `confirm` (the default) or `no-match` ([When the model is unsure](#when-the-model-is-unsure-unsure), under intents.yaml).
+- `changeSlotWithValue` says what the change question does at a form's summary when the same turn also gives one of the form's slots a new value. The change question (`wording.changeSlot`) asks which detail the caller names as wrong without saying its new value, and a reading at `SLOT_CHANGE` (0.6) or more reopens that detail and asks for it again. A turn that gives a slot a value it does not already hold contradicts that reading: in "not Chen, Cheng" the model can take the doctor's surname for the caller's name. `set-aside`, the default, lets such a reading decide nothing, so the turn goes as it would without it: a no with a correction, the value applied and the summary read again (the debug table's changeSlot row says `value_given:<slot>`). A value said again unchanged ("no, it's Patel" with Patel held) is not new, so "the doctor, it's Patel" still reopens the doctor. `decides` lets the reading decide as it would alone: the detail named is reopened unless the same turn gives it its new value, and a value given for another slot is filled on the way.
+
+  ```yaml
+  changeSlotWithValue: decides   # "the description, and make it Sunday" asks for the description again
+  ```
 - `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. The folder is relative to the app's package root, which is the folder its commands run in: the engine reads it from the working directory, and an app's `regress`, `cli` and `serve` scripts run in its package. It must stay inside the package, so an absolute path or one with `..` is refused. `check` then requires every intent to have examples there.
 - `prompts` holds what is said about prompts besides their text: which opening lines to use, which variables are always spoken by text to speech, the clips' vocabulary.
 
@@ -1314,7 +1319,7 @@ When a schema problem is found, the cross-checks against the code do not run unt
 These are real messages. The folder was a copy of the library fixture, with these edits: an unknown key `colour: blue` in app.yaml, `level: three` for `renewLoan` in policy.yaml. The first run:
 
 ```
-app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, fixtures, prompts
+app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, fixtures, prompts
 policy.yaml:4:12  actions.renewLoan.level  "level" is "three", which is not allowed here; it must be one of 0, 1, 2  ->  use one of 0, 1, 2
 2 problems in broken-library
 ```

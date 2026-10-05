@@ -786,16 +786,36 @@ describe('final confirm', () => {
     expect(r.session.queued).toEqual(['track_parcel']);
   });
 
-  it('reopens the named detail when the value in the same breath belongs to another one', () => {
+  it('takes a new value said with a named detail as the correction, not the naming (changeSlotWithValue, by default)', () => {
+    // The change question asks for a detail named without its new value, so a new value in the
+    // same breath contradicts the naming: the value is filled and the summary read again.
     const r = afterTurns([...HAPPY, 'the description, and make it Sunday']);
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_report' });
+    expect(r.rows.find((x) => x.gate === 'changeSlot')).toMatchObject({ outcome: 'value_given:missingNote', decided: false });
+    expect(r.session.slots.missingNote!.value).toBe(STATEMENT);
+    expect(r.session.slots.expectedDate!.display).toBe(SUNDAY);
+    expect(r.session.pendingConfirmation).toEqual({ target: 'form', form: 'report_missing', attempts: 0 });
+    // A new value for the detail named itself is the same correction.
+    const both = afterTurns([...HAPPY, 'the description, it was a green bag left at the porch']);
+    expect(both.decision).toMatchObject({ promptId: 'confirm_report' });
+    expect(both.session.slots.missingNote!.value).toBe('the description, it was a green bag left at the porch');
+  });
+
+  /** The testkit with the change question's naming deciding even beside a new value. */
+  const DECIDES_APP = 'testkit-change-decides';
+  registerApp({ ...testkitApp, id: DECIDES_APP, changeSlotWithValue: 'decides' });
+
+  it('reopens the named detail when the value in the same breath belongs to another one, where the app says decides', () => {
+    const r = afterTurns([...HAPPY, 'the description, and make it Sunday'], DECIDES_APP);
     expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_missingNote', target: 'missingNote' });
+    expect(r.rows.find((x) => x.gate === 'changeSlot')).toMatchObject({ outcome: 'change:missingNote', decided: true });
     expect(r.session.slots.missingNote).toMatchObject({ value: null, display: null });
     expect(r.session.slots.expectedDate!.display).toBe(SUNDAY);
     expect(r.session.pendingConfirmation).toBeNull();
     // A confidently heard date needs no ack of its own; the next summary reads it back.
     expect(spokenText(testkitApp, r.decision)).toBe('In a sentence or two, describe the parcel and where it should have been left.');
     // And a new value for the detail they named answers it outright.
-    const both = afterTurns([...HAPPY, 'the description, it was a green bag left at the porch']);
+    const both = afterTurns([...HAPPY, 'the description, it was a green bag left at the porch'], DECIDES_APP);
     expect(both.decision).toMatchObject({ promptId: 'confirm_report' });
     expect(both.session.slots.missingNote!.value).toBe('the description, it was a green bag left at the porch');
   });

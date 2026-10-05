@@ -724,6 +724,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'wording', a.wording as ModelWording | undefined);
   put(app, 'carrySlots', a.carrySlots);
   put(app, 'unsureIntent', a.unsureIntent);
+  put(app, 'changeSlotWithValue', a.changeSlotWithValue);
   put(app, 'thresholds', a.thresholds);
   put(app, 'callerState', code.callerState);
   put(app, 'questions', code.questions);

@@ -30,9 +30,9 @@ function baseAnswers(over: AnswerMap = {}): AnswerMap {
   };
 }
 
-function run(session: Session, answers: AnswerMap, isFinal = true) {
+function run(session: Session, answers: AnswerMap, isFinal = true, given?: ReadonlySet<string>) {
   const ts = buildTurnState(session, { text: 'x', isFinal, dtmf: null }, 0);
-  return evaluateGates(session, ts, answers, T);
+  return evaluateGates(session, ts, answers, T, given);
 }
 
 /** Mid-form, with the transfer offer waiting for an answer. */
@@ -394,6 +394,72 @@ describe('evaluateGates', () => {
       expect(run(pending(), baseAnswers({ changeSlot: choice({ parcelSelect: 0.9, none: 0.1 }) })).verdict).toEqual({ kind: 'confirm_unanswered' });
       // Nor an identity factor: no form lists one, so the summary cannot reopen it.
       expect(run(pending(), baseAnswers({ changeSlot: choice({ accountId: 0.9, none: 0.1 }) })).verdict).toEqual({ kind: 'confirm_unanswered' });
+    });
+
+    describe('a detail named in the same breath as a new value (App.changeSlotWithValue)', () => {
+      const changeRow = (r: ReturnType<typeof run>) => r.rows.find((x) => x.gate === 'changeSlot');
+      const decidedGate = (r: ReturnType<typeof run>): string | undefined => r.rows.find((x) => x.decided)?.gate;
+      const named = (over: AnswerMap = {}) => baseAnswers({ confirmsNo: noul(0.9), changeSlot: choice({ missingNote: 0.62, none: 0.38 }), ...over });
+      const appWith = (value: NonNullable<App['changeSlotWithValue']>): string => {
+        const id = `testkit-change-${value}`;
+        registerApp({ ...testkitApp, id, changeSlotWithValue: value });
+        return id;
+      };
+      const SET_ASIDE = appWith('set-aside');
+      const DECIDES = appWith('decides');
+      const withOption = (value: 'set-aside' | 'decides' | undefined): Session => {
+        if (value === undefined) return pending();
+        const s = setForm(newSession('s', 0, VOICE_RELAY, undefined, value === 'set-aside' ? SET_ASIDE : DECIDES), 'report_missing');
+        s.pendingConfirmation = { target: 'form', form: 'report_missing', attempts: 0 };
+        s.promptedFor = 'confirm';
+        return s;
+      };
+
+      it('sets the naming aside when the turn gives another slot a new value: a no with a correction', () => {
+        const r = run(withOption(undefined), named(), true, new Set(['expectedDate']));
+        expect(r.verdict).toEqual({ kind: 'rejected' });
+        expect(changeRow(r)).toMatchObject({ outcome: 'value_given:missingNote', passed: false, decided: false });
+        expect(decidedGate(r)).toBe('confirmation');
+      });
+
+      it('sets it aside when the new value is for the slot named itself', () => {
+        expect(run(withOption(undefined), named(), true, new Set(['missingNote'])).verdict).toEqual({ kind: 'rejected' });
+      });
+
+      it('leaves an unanswered summary unanswered, with the value for turn.ts to fill', () => {
+        const r = run(withOption(undefined), baseAnswers({ changeSlot: choice({ expectedDate: 0.9, none: 0.1 }) }), true, new Set(['expectedDate']));
+        expect(r.verdict).toEqual({ kind: 'confirm_unanswered' });
+        expect(changeRow(r)).toMatchObject({ outcome: 'value_given:expectedDate' });
+      });
+
+      it('carries an added intent onto the rejection', () => {
+        const r = run(withOption(undefined), named({ intent: choice({ delivery_window: 0.9, none: 0.1 }), intentChange: choice({ adding: 0.9, answering: 0.05, replacing: 0.05 }) }), true, new Set(['expectedDate']));
+        expect(r.verdict).toEqual({ kind: 'rejected', queue: 'delivery_window' });
+      });
+
+      it('still reopens the detail named when the turn gives no new value (a value said again unchanged is none)', () => {
+        // turn.ts passes no slot for a value equal to the one held ("no, it's Patel" with Patel held).
+        const r = run(withOption(undefined), named(), true, new Set());
+        expect(r.verdict).toEqual({ kind: 'change_slot', slot: 'missingNote' });
+        expect(changeRow(r)).toMatchObject({ outcome: 'change:missingNote', decided: true });
+      });
+
+      it('says set-aside by default and when the app says it', () => {
+        expect(run(withOption('set-aside'), named(), true, new Set(['expectedDate'])).verdict).toEqual({ kind: 'rejected' });
+      });
+
+      it('lets the naming decide as before when the app says decides', () => {
+        const r = run(withOption('decides'), named(), true, new Set(['expectedDate']));
+        expect(r.verdict).toEqual({ kind: 'change_slot', slot: 'missingNote' });
+        expect(changeRow(r)).toMatchObject({ outcome: 'change:missingNote', decided: true });
+        expect(run(withOption('decides'), named(), true, new Set(['missingNote'])).verdict).toEqual({ kind: 'change_slot', slot: 'missingNote' });
+      });
+
+      it('ignores a value given when the naming is below SLOT_CHANGE, as a plain no ever was', () => {
+        const r = run(withOption(undefined), baseAnswers({ confirmsNo: noul(0.9), changeSlot: choice({ missingNote: 0.5, none: 0.5 }) }), true, new Set(['expectedDate']));
+        expect(r.verdict).toEqual({ kind: 'rejected' });
+        expect(changeRow(r)).toMatchObject({ outcome: 'none' });
+      });
     });
 
     it('carries an added intent onto a change_slot verdict', () => {

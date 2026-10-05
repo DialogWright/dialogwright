@@ -20,6 +20,9 @@ import { handoffDataProblems } from '../../handoff/data';
 /** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
 const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
 
+/** What the change question's reading may do beside a new value at a summary (App.changeSlotWithValue). */
+const CHANGE_SLOT_WITH_VALUE: readonly string[] = ['set-aside', 'decides'];
+
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
 const RESERVED_KINDS: readonly string[] = ['anonymous', 'channel', 'principal', 'level', 'factor', 'pass', 'config', 'configFiles'];
 
@@ -75,6 +78,7 @@ export function validateApp(app: App): void {
     if (listen !== 'call' && app.carrySlots?.includes(id)) fail(`slot "${id}" is carried (carrySlots), which is listen: call, but says listen: ${listen}`);
   }
   if (app.unsureIntent !== undefined && !UNSURE_VALUES.includes(app.unsureIntent)) fail(`unsureIntent "${app.unsureIntent}" is not "confirm" or "no-match"`);
+  if (app.changeSlotWithValue !== undefined && !CHANGE_SLOT_WITH_VALUE.includes(app.changeSlotWithValue)) fail(`changeSlotWithValue "${app.changeSlotWithValue}" is not "set-aside" or "decides"`);
   for (const [id, def] of Object.entries(app.intents)) {
     if (def.unsure !== undefined && !UNSURE_VALUES.includes(def.unsure)) fail(`intent "${id}" has unsure "${def.unsure}", which is not "confirm" or "no-match"`);
   }

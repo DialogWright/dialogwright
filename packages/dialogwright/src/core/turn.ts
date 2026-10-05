@@ -13,7 +13,7 @@ import { closeForm, cloneSession, emptySlot, missingSlots, setForm, type Pending
 import { buildTurnState, type TurnState } from './state';
 import { buildQuestions } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
-import { applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
+import { applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCode, awaitingSignIn, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type TurnOut } from './lifecycle';
 import type { Tools } from './tools';
@@ -307,6 +307,18 @@ function correctingFill(s: Session, answers: AnswerMap, ctx: SlotContext, form: 
   // A disambiguation changes no slot yet and still has to be asked, so it is progress either way.
   if (!fill.progress || fill.disambiguate || summaryState(s) !== before) return fill;
   return { ...fill, progress: false };
+}
+
+/**
+ * The slots of a form read back to the caller that this turn's words would give a new value, read
+ * as correctingFill would fill them but without filling anything: the gates read it before the
+ * verdict is settled (evaluateGates `given`). Empty unless a summary is pending.
+ */
+function summaryValuesGiven(s: Session, answers: AnswerMap, ctx: SlotContext): ReadonlySet<SlotId> {
+  const pc = s.pendingConfirmation;
+  if (pc?.target !== 'form') return new Set();
+  const app = appOf(s);
+  return valuesGiven(s, answers, ctx, formOf(app, pc.form).slots.map((id) => slotSpecOf(app, id)), { correcting: true });
 }
 
 /**
@@ -967,6 +979,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       const acks = enqueue(s, verdict.queue);
       const form = s.pendingConfirmation?.target === 'form' ? s.pendingConfirmation.form : s.form;
       s.pendingConfirmation = null;
+      // By default a turn that gives any new value never gets here: the gates set the naming aside
+      // and the turn is a no with a correction (App.changeSlotWithValue). An app that lets the
+      // naming decide regardless (`decides`) comes here with the value as well.
       // "The date's wrong, it was Friday" names a detail and replaces it in one breath: the value
       // it carries is worth more than the question we would otherwise ask. Only
       // a new value for the slot they named answers it, though: "wrong parcel, it was
@@ -1293,7 +1308,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       }
       s.consecutiveFailures = 0;
       const ctx = slotContext(s, event.text, tc);
-      const { rows, verdict } = evaluateGates(s, turnState, answers, tc.thresholds);
+      const { rows, verdict } = evaluateGates(s, turnState, answers, tc.thresholds, summaryValuesGiven(s, answers, ctx));
       // The gate worked the rung out from the count but left the count alone; the turn owns the
       // bookkeeping, and only a verdict that carries a rung is a frustrated turn to count.
       const rung = frustrationOf(verdict);

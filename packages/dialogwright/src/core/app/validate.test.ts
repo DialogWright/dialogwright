@@ -53,6 +53,11 @@ describe('validateApp', () => {
       const intents = { ...testkitApp.intents, report_missing: { ...testkitApp.intents.report_missing!, unsure: 'maybe' as never } };
       expect(() => validateApp({ ...copy(), intents })).toThrow('intent "report_missing" has unsure "maybe", which is not "confirm" or "no-match"');
     });
+
+    it('refuses a changeSlotWithValue it does not have', () => {
+      for (const value of ['set-aside', 'decides'] as const) expect(() => validateApp({ ...copy(), changeSlotWithValue: value })).not.toThrow();
+      expect(() => validateApp({ ...copy(), changeSlotWithValue: 'always' as never })).toThrow('changeSlotWithValue "always" is not "set-aside" or "decides"');
+    });
   });
 
   it('names an identity factor slot that is not a slot', () => {
