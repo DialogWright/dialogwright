@@ -106,7 +106,10 @@ describe('the correct toy, and the built-in types', () => {
     expect(failing(nameType, { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(recordType, { locales: ['en-US', 'es'] })).toEqual([]);
     expect(failing(topicType, { locales: ['en-US', 'es'] })).toEqual([]);
-  });
+    // Nine types, each run through every conformance check in two locales: about a second alone, and
+    // five with the whole suite running beside it, so the limit is sized to that work and not left at
+    // vitest's 5 s default.
+  }, 30_000);
 
   it('gives a slot the topics nominated for each utterance\'s words, as its context says', () => {
     const nominated = [{ topic: 'parking', title: 'Parking', score: 1, via: 'keyword' as const }];

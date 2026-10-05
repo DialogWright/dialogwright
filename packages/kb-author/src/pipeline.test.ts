@@ -23,6 +23,15 @@ import { startReviewServer, type ReviewServer } from './review/server';
 
 afterAll(cleanScratch);
 
+/**
+ * These tests do a lot of real work in one go: the whole pipeline (a PDF ingested, drafts checked,
+ * about fifty requests to a review server, each of which reads the knowledge base's files from disk
+ * and parses their YAML, then apps defined and called). That is about half a second on a laptop, but
+ * a shared CI runner with two cores, running the other test files beside it, has taken ten times as
+ * long, past vitest's 5 s default. The limit here is sized to that work, not a hang detector.
+ */
+const PIPELINE_TIMEOUT_MS = 30_000;
+
 /** The library app with its knowledge base, and the authoring fixture's documents in docs/. */
 function scratchApp(id: string): { dir: string; place: KbPlace } {
   const dir = folder(id);
@@ -245,7 +254,7 @@ describe('the pipeline: ingest, draft, review, speak', () => {
     const renewing = call(app);
     ask(renewing, 'item_renewals');
     expect(heard(renewing)).toContain('You can renew most items twice, online or at any branch desk, unless someone has placed a hold on them.');
-  });
+  }, PIPELINE_TIMEOUT_MS);
 });
 
 describe('refreshing the sources', () => {
@@ -325,5 +334,5 @@ describe('refreshing the sources', () => {
     const after = call(app3);
     ask(after, 'lost_cards');
     expect(heard(after)).toContain('Report a lost card at any branch desk. A replacement costs 1 dollar.');
-  });
+  }, PIPELINE_TIMEOUT_MS);
 });

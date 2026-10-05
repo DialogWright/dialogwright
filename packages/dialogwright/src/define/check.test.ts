@@ -710,5 +710,7 @@ describe('dialogwright check', () => {
     const manifest = JSON.parse(readFileSync(join(PACKAGE_DIR, 'package.json'), 'utf8')) as { bin: Record<string, string> };
     expect(manifest.bin).toEqual({ dialogwright: './src/define/cli.ts' });
     expect(readFileSync(join(PACKAGE_DIR, manifest.bin.dialogwright!), 'utf8').startsWith('#!/usr/bin/env tsx\n')).toBe(true);
-  });
+    // Two real tsx processes, each compiling the CLI as it starts: a second or so alone, several with
+    // the whole suite running beside it, so the limit is sized to that work, not vitest's 5 s default.
+  }, 60_000);
 });

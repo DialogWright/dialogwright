@@ -23,7 +23,16 @@ import { CODE_TTL_MS, CONSOLE_COOKIE, ConsoleAuth } from './auth';
 useTestkit();
 
 const TUNNEL = { host: 'demo.example.net', 'x-forwarded-for': '203.0.113.9', 'x-forwarded-proto': 'https', 'cf-connecting-ip': '203.0.113.9' };
-const TRACE = { v: 1, sessionId: 'CA9', turnIndex: 0, ts: '2026-09-21T00:00:00.000Z', event: { type: 'setup', from: '+15555550199', to: '+15550000002' }, decision: { kind: 'prompt', promptId: 'greeting', vars: {}, acks: [] }, slots: {}, form: null, gates: [], frames: [], timing: {}, usage: {} };
+/**
+ * What no page without a session may show: the trace's session id and its caller's number. Each is
+ * checked with `not.toContain` against pages that carry random text (the sign-in code is 64 hex
+ * characters, the page's script nonce is base64), so neither may be a string those alphabets can
+ * make by chance: a short fragment like "CA9" or "0199" turns up in one of them now and then. The
+ * id has an underscore, which neither alphabet has, and the number is shown whole.
+ */
+const SID = 'CA9_probe';
+const CALLER = '+15555550199';
+const TRACE = { v: 1, sessionId: SID, turnIndex: 0, ts: '2026-09-21T00:00:00.000Z', event: { type: 'setup', from: CALLER, to: '+15550000002' }, decision: { kind: 'prompt', promptId: 'greeting', vars: {}, acks: [] }, slots: {}, form: null, gates: [], frames: [], timing: {}, usage: {} };
 
 let server: Server | null = null;
 afterEach(() => new Promise<void>((r) => (server ? server.close(() => r()) : r())));
@@ -68,7 +77,7 @@ async function rig(env: Record<string, string> = {}, routes: AppRoute[] = []): P
   await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
   const port = (server.address() as { port: number }).port;
   auth.start(port);
-  writeFileSync(join(dir, 'CA9.jsonl'), JSON.stringify(TRACE) + '\n');
+  writeFileSync(join(dir, `${SID}.jsonl`), JSON.stringify(TRACE) + '\n');
   return { base: `http://127.0.0.1:${port}`, port, auth, audit, clock, dir, linkFile, bus };
 }
 
@@ -130,7 +139,7 @@ describe('CONSOLE_AUTH=token: no session', () => {
       const res = await raw(r.base, 'GET', '/dashboard', headers);
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('/dashboard/login');
-      expect(res.body).not.toContain('CA9');
+      expect(res.body).not.toContain(SID);
       const slash = await raw(r.base, 'GET', '/dashboard/', headers);
       expect(slash.status).toBe(302);
     }
@@ -138,11 +147,11 @@ describe('CONSOLE_AUTH=token: no session', () => {
 
   it('answers 401 to the live feed, the trace list, a replay, the boot id and the view module', async () => {
     const r = await rig();
-    for (const path of ['/dashboard/events', '/dashboard/traces', '/dashboard/traces/CA9', '/dashboard/boot', '/dashboard/view.js']) {
+    for (const path of ['/dashboard/events', '/dashboard/traces', `/dashboard/traces/${SID}`, '/dashboard/boot', '/dashboard/view.js']) {
       const res = await raw(r.base, 'GET', path, TUNNEL);
       expect(res.status, path).toBe(401);
-      expect(res.body, path).not.toContain('CA9');
-      expect(res.body, path).not.toContain('0199');
+      expect(res.body, path).not.toContain(SID);
+      expect(res.body, path).not.toContain(CALLER);
     }
     expect(r.audit.filter((e) => e.detail.event === 'replay')).toEqual([]);
   });
@@ -155,7 +164,7 @@ describe('CONSOLE_AUTH=token: no session', () => {
     expect(res.headers['content-type']).toMatch(/text\/html/);
     expect(res.body).toContain('<form method="post" action="/dashboard/login">');
     expect(res.body).toContain(`value="${codeOf(url)}"`);
-    for (const absent of ['CA9', '0199', 'formSlots', 'EventSource', '/dashboard/traces', '/dashboard/events']) expect(res.body, absent).not.toContain(absent);
+    for (const absent of [SID, CALLER, 'formSlots', 'EventSource', '/dashboard/traces', '/dashboard/events']) expect(res.body, absent).not.toContain(absent);
     // Opening the link signs nothing in: a link preview fetches it too. Only the form's POST does.
     expect(res.headers['set-cookie']).toBeUndefined();
     const plain = await raw(r.base, 'GET', '/dashboard/login', TUNNEL);
@@ -181,7 +190,7 @@ describe('CONSOLE_AUTH=token: signing in', () => {
     expect(page.body).toContain('<script type="module" nonce=');
     const traces = await raw(r.base, 'GET', '/dashboard/traces', { ...TUNNEL, cookie });
     expect(traces.status).toBe(200);
-    expect(traces.body).toContain('CA9');
+    expect(traces.body).toContain(SID);
   });
 
   it('refuses a code used once already, one expired, one a newer link replaced, and one never made, alike', async () => {
@@ -365,7 +374,7 @@ describe('CONSOLE_AUTH=token: the headers', () => {
       await raw(r.base, 'GET', '/dashboard/nothing-here', { ...TUNNEL, cookie }),
       await raw(r.base, 'GET', '/dashboard', { ...TUNNEL, cookie }),
       await raw(r.base, 'GET', '/dashboard/view.js', { ...TUNNEL, cookie }),
-      await raw(r.base, 'GET', '/dashboard/traces/CA9', { ...TUNNEL, cookie }),
+      await raw(r.base, 'GET', `/dashboard/traces/${SID}`, { ...TUNNEL, cookie }),
       await raw(r.base, 'POST', '/dashboard/link', TUNNEL),
       await peek(r.base, '/dashboard/events', { ...TUNNEL, cookie }),
     ];
@@ -395,17 +404,17 @@ describe('CONSOLE_AUTH=token: the access log', () => {
     const cookie = cookieOf(signed);
     await peek(r.base, '/dashboard/events', { ...TUNNEL, cookie });
     await peek(r.base, '/dashboard/events', { ...TUNNEL, cookie });
-    await raw(r.base, 'GET', '/dashboard/traces/CA9', { ...TUNNEL, cookie });
-    await raw(r.base, 'GET', '/dashboard/traces/CA9', { ...TUNNEL, cookie });
+    await raw(r.base, 'GET', `/dashboard/traces/${SID}`, { ...TUNNEL, cookie });
+    await raw(r.base, 'GET', `/dashboard/traces/${SID}`, { ...TUNNEL, cookie });
     // A HEAD reads nothing, and a missing trace is no replay.
-    await raw(r.base, 'HEAD', '/dashboard/traces/CA9', { ...TUNNEL, cookie });
+    await raw(r.base, 'HEAD', `/dashboard/traces/${SID}`, { ...TUNNEL, cookie });
     await raw(r.base, 'GET', '/dashboard/traces/CA404', { ...TUNNEL, cookie });
     const access = r.audit.filter((e) => e.type === 'console_access' && e.detail.event !== 'link_made');
     expect(access.map((e) => [e.callId, e.detail.event])).toEqual([
       ['console', 'sign_in'],
       ['console', 'live'],
-      ['CA9', 'replay'],
-      ['CA9', 'replay'],
+      [SID, 'replay'],
+      [SID, 'replay'],
     ]);
     const session = access[0]!.detail.session as string;
     expect(session).toMatch(/^[0-9a-f]{16}$/);

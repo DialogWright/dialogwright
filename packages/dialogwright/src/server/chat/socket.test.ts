@@ -48,6 +48,27 @@ afterEach(async () => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * Waits until every turn queued for a chat has finished. A client has its reply (a `say`) before the
+ * turn that made it is over: the turn still writes its trace and audit, and the idle sweep skips a
+ * chat with a turn in flight. A test that sweeps right after a reply would end the chat or not
+ * depending on how fast that last write was, so it settles first.
+ */
+async function settled(): Promise<void> {
+  await Promise.all(running!.chat!.tails());
+}
+
+/**
+ * Runs the idle sweep once the chats have nothing in flight and have been idle past CHAT_IDLE_MS=1
+ * (the sweep ends a chat idle for that long, by the real clock). The sleep only has to pass the
+ * millisecond; that nothing is in flight is what `settled` waits for, not a guess at how long it takes.
+ */
+async function sweepIdle(): Promise<void> {
+  await settled();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  running!.sweep();
+}
+
 let stub: JevClient;
 beforeAll(() => {
   stub = new FixtureStubClient(loadCorpus(defaultCorpusFile()), { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: '2026-09-18' }) });
@@ -319,6 +340,7 @@ describe('the chat endpoint', () => {
     const c = await ChatClient.connect(url);
     c.send({ type: 'start', v: 1 });
     await c.until((r) => r.some((m) => m.type === 'say'));
+    await settled();
     clock += 30_000;
     running!.sweep();
     expect(running!.chat!.liveCount()).toBe(1);
@@ -345,6 +367,7 @@ describe('the chat endpoint', () => {
     c.close();
     await c.closed;
     await new Promise((resolve) => setTimeout(resolve, 20));
+    await settled();
     clock += 60_000;
     running!.sweep();
     expect(running!.chat!.liveCount()).toBe(0);
@@ -608,8 +631,7 @@ describe('signing in to the chat', () => {
     // The chat has ended (idle): the same start begins a new one, signed in with the token.
     d.close();
     await d.closed;
-    await new Promise((r) => setTimeout(r, 5));
-    running!.sweep();
+    await sweepIdle();
     const e = await ChatClient.connect(url);
     e.send({ type: 'start', v: 1, resume: back.resume, token });
     await e.until((r) => r.some((m) => m.type === 'signed_in'));
@@ -673,8 +695,7 @@ describe('a delegate signing in to the chat (principals.fromClaims)', () => {
     const back = d.received[0] as Extract<Msg, { type: 'ready' }>;
     d.close();
     await d.closed;
-    await new Promise((r) => setTimeout(r, 5));
-    running!.sweep();
+    await sweepIdle();
     const e = await ChatClient.connect(url);
     e.send({ type: 'start', v: 1, resume: back.resume, token: 'mock:taylor' });
     await e.until((r) => r.some((m) => m.type === 'say'));
