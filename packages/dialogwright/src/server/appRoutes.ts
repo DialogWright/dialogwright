@@ -28,8 +28,8 @@ export interface AppRoute {
   tails?(): Promise<void>[];
 }
 
-/** Paths the engine serves itself (the console, clips, health, the Twilio webhooks, the relay socket, the relay's silent clip): no app route may sit on or under one. */
-const ENGINE_PATHS: readonly string[] = ['/dashboard', '/audio', '/health', '/voice', '/cr-action', '/conversation', '/relay'];
+/** Paths the engine serves itself (the console, clips, health, the Twilio webhooks, the relay socket): no app route may sit on or under one. */
+const ENGINE_PATHS: readonly string[] = ['/dashboard', '/audio', '/health', '/voice', '/cr-action', '/conversation'];
 
 const ROUTE_PATH = /^\/[a-z0-9-]+(\/[a-z0-9-]+)*$/;
 

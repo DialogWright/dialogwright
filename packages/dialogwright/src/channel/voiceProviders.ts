@@ -8,75 +8,38 @@ export const VOICE_PROVIDER_IDS = ['twilio', 'telnyx'] as const;
 export type VoiceProviderId = (typeof VOICE_PROVIDER_IDS)[number];
 
 /**
- * Who may talk over a line the agent is saying, as the relay element's `interruptible` takes it: `any`
- * (speech or a keypress), `speech` only, `dtmf` (a keypress) only, or `none`.
+ * Who may talk over a line the agent is saying (BARGE_IN), as the relay element's `interruptible`
+ * takes it: `any` (speech or a keypress), `speech` only, `dtmf` (a keypress) only, or `none`.
  */
-export const RELAY_BARGE_IN_MODES = ['any', 'speech', 'dtmf', 'none'] as const;
-
-export type RelayBargeIn = (typeof RELAY_BARGE_IN_MODES)[number];
-
-/**
- * BARGE_IN: one of the relay element's own modes (RELAY_BARGE_IN_MODES), or `server`: the relay element
- * says `none`, and the server does the barge-in itself, from the carrier's reports of the caller speaking,
- * stopping the playback when the caller has spoken over a line for BARGE_IN_MIN_SPEECH_MS (server/adapter.ts).
- * It needs a carrier that reports the caller and the agent speaking and can have its playback stopped
- * (VoiceProvider.reportsSpeaking, stopPlayback); config.ts refuses it for any other.
- */
-export const BARGE_IN_MODES = [...RELAY_BARGE_IN_MODES, 'server'] as const;
+export const BARGE_IN_MODES = ['any', 'speech', 'dtmf', 'none'] as const;
 
 export type BargeIn = (typeof BARGE_IN_MODES)[number];
 
-/** The relay element's `interruptible` for a BARGE_IN: its own, or `none` for `server`, whose barge-in is the server's. */
-export function relayBargeIn(mode: BargeIn): RelayBargeIn {
-  return mode === 'server' ? 'none' : mode;
-}
-
 /**
- * The relay element's barge-in values each carrier takes. Twilio's ConversationRelay `interruptible`
+ * The barge-in values each carrier's relay element takes. Twilio's ConversationRelay `interruptible`
  * takes none, dtmf, speech and any (true and false are older aliases of any and none); Telnyx's
  * `<ConversationRelay>` takes the same four (its reference lists none, any, speech, dtmf, with true
  * and false as aliases). A carrier added later that takes fewer lists only those, and a BARGE_IN it
  * does not take is refused at startup (bargeInRefusal) instead of being ignored.
  */
-export const BARGE_IN_SUPPORT: Readonly<Record<VoiceProviderId, readonly RelayBargeIn[]>> = {
-  twilio: RELAY_BARGE_IN_MODES,
-  telnyx: RELAY_BARGE_IN_MODES,
+export const BARGE_IN_SUPPORT: Readonly<Record<VoiceProviderId, readonly BargeIn[]>> = {
+  twilio: BARGE_IN_MODES,
+  telnyx: BARGE_IN_MODES,
 };
 
 /**
- * The message for the first enabled carrier whose relay element does not take `mode` (for `server`, the
- * `none` it is sent); null when every one does. `support` is the table to read, BARGE_IN_SUPPORT unless a
- * test gives another. What `server` needs besides is the carriers' own (server/voice/registry.ts
- * serverBargeInRefusal).
+ * The message for the first enabled carrier that does not take `mode`; null when every one does.
+ * `support` is the table to read, BARGE_IN_SUPPORT unless a test gives another.
  */
-export function bargeInRefusal(mode: BargeIn, ids: readonly string[], support: Readonly<Record<string, readonly RelayBargeIn[]>> = BARGE_IN_SUPPORT): string | null {
-  const relay = relayBargeIn(mode);
+export function bargeInRefusal(mode: BargeIn, ids: readonly string[], support: Readonly<Record<string, readonly BargeIn[]>> = BARGE_IN_SUPPORT): string | null {
   for (const id of ids) {
-    const takes = Object.hasOwn(support, id) ? support[id]! : RELAY_BARGE_IN_MODES;
-    if (!takes.includes(relay)) {
-      const sent = relay === mode ? '' : ` (its relay element is sent interruptible="${relay}")`;
-      return `BARGE_IN=${mode}${sent} is not supported by the voice provider ${id} (it takes ${takes.join(', ')}); use one of those, or take ${id} out of VOICE_PROVIDERS`;
+    const takes = Object.hasOwn(support, id) ? support[id]! : BARGE_IN_MODES;
+    if (!takes.includes(mode)) {
+      return `BARGE_IN=${mode} is not supported by the voice provider ${id} (it takes ${takes.join(', ')}); use one of those, or take ${id} out of VOICE_PROVIDERS`;
     }
   }
   return null;
 }
-
-/**
- * BARGE_IN_MIN_SPEECH_MS unless set: with BARGE_IN=server, how long the caller must be heard speaking over
- * a line before its playback is stopped. Telnyx reported blips of 0.12 to 0.24 s with no transcript after
- * them (noise the recognizer dropped) on a live call (2026-10-05); 0.4 s is past those and past a cough or
- * an "mm", and stops a caller who talks over a line within about half a second.
- */
-export const DEFAULT_BARGE_IN_MIN_SPEECH_MS = 400;
-
-/**
- * SPEECH_GAP_MS unless set: on a carrier that reports the caller speaking, the longest pause in their speech
- * that still counts as the same stretch of it. A carrier reports a sentence as many short bursts (Telnyx sent
- * clientSpeaking on and off twelve times over one 5.5 s sentence, with pauses of about 0.15 s), so a stretch
- * runs across pauses this short; a longer pause ends it. BARGE_IN=server sums the caller's speech over a line
- * across them, and a caller who came back in at once after a reply (continueWithinMs) is followed across them.
- */
-export const DEFAULT_SPEECH_GAP_MS = 300;
 
 /**
  * Twilio ConversationRelay's documented TTS providers (Twilio docs, <ConversationRelay> ttsProvider):
@@ -124,3 +87,22 @@ export const END_PLAYBACK_LEAD_MS = 500;
  * (2026-10-05); 2.5 s covers that with room, and is short enough after a cough with no transcript.
  */
 export const DEFAULT_NO_INPUT_AFTER_SPEECH_MS = 2_500;
+
+/**
+ * RESUME_AFTER_PAUSE_MS unless set: on a carrier that reports the caller's voice, the longest pause in a
+ * caller's speech that still leaves them not finished (server/adapter.ts, a caller who came back in). A
+ * recognizer ends a prompt at a short pause (Telnyx's about 0.8 s after the caller stops), and a caller
+ * pausing for a second or two in the middle of an address or a number is normal: on a live call
+ * (2026-10-05) the caller came back in 1.68 s after they stopped, and their address was split in two. A
+ * pause this long or shorter, before they come back in or while they go on, keeps it one utterance.
+ */
+export const DEFAULT_RESUME_AFTER_PAUSE_MS = 2_000;
+
+/**
+ * RESUME_INTO_REPLY_MS unless set: on a carrier that reports the caller's voice, the latest after the reply
+ * to their last prompt went out that a caller coming back in is still taken as not finished. An answer to
+ * the reply cannot start before the caller has heard some of it (Telnyx begins playing a line about 65 ms
+ * after it is sent, and a question takes seconds); on live calls (2026-10-05) callers came back in 24 ms
+ * and 696 ms after the reply went out.
+ */
+export const DEFAULT_RESUME_INTO_REPLY_MS = 1_000;

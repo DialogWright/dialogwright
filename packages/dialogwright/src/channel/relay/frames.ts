@@ -134,13 +134,11 @@ export function textFrame(token: string, interruptible: boolean, lang: string = 
  * word on whether a caller may talk over it. The carrier's per-line flag is a boolean, so it cannot say
  * "keypress only", and neither carrier's pages say how a `true` on a line meets the relay element's
  * mode (it may read as any interruption). With `none` or `dtmf`, speech must not cut the agent off, so
- * a line says `false` rather than allow what the setting forbids. With `server` the relay element says
- * `none` and the server does the barge-in (server/adapter.ts), reading each line's own flag where it
- * keeps the lines it sent, so the carrier is sent `false` as for `none`. With `any` or `speech` the
- * line's own flag stands. Frames that are not spoken, and lines already `false`, as they are.
+ * a line says `false` rather than allow what the setting forbids. With `any` or `speech` the line's own
+ * flag stands. Frames that are not spoken, and lines already `false`, as they are.
  */
 export function bargeInFrame(frame: OutboundFrame, mode: BargeIn): OutboundFrame {
-  if (mode !== 'none' && mode !== 'dtmf' && mode !== 'server') return frame;
+  if (mode !== 'none' && mode !== 'dtmf') return frame;
   return (frame.type === 'text' || frame.type === 'play') && frame.interruptible ? { ...frame, interruptible: false } : frame;
 }
 

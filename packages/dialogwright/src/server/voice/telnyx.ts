@@ -54,21 +54,28 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *   socket stays open. So Telnyx's provider says `endDropsSpeech`, and the adapter holds the `end` until
  *   the lines before it have played (END_AFTER_PLAYBACK, server/adapter.ts): until tokensPlayed or
  *   agentSpeaking off says so, or, without TELNYX_EVENTS, for the lines' estimated length.
- * - A new frame replaces the current playback, even with the relay's interruptible none and the line's
- *   preemptible false. With interruptible="none", the engine sent a new text while the agent was speaking:
- *   agentSpeaking went off about 70 ms later, and on again for the new text. Telnyx documents no frame
- *   that stops playback (the frames a server may send are text, play, sendDigits, language and end), so
- *   BARGE_IN=server stops it this way: a `play` frame of a short silent clip the server hosts
- *   (stopPlayback below, server/voice/silence.ts).
+ * - agentSpeaking and tokensPlayed follow Telnyx's TTS pipeline, not the audio the caller hears (Telnyx
+ *   support: tokensPlayed reports the text handed to TTS). With interruptible="none", a `play` frame sent
+ *   while a text played gave agentSpeaking off and, about 230 ms later, on again, but the caller heard the
+ *   text on to its end: a frame sent mid-line did not stop the line's audio. So an earlier reading, that a
+ *   new frame replaces what is playing, does not hold, and the engine has no way to stop a playback on
+ *   Telnyx (its documented server frames are text, play, sendDigits, language and end). The reply after
+ *   that play frame had its tokensPlayed 0.72 s after its agentSpeaking on, and the cut-line check
+ *   (RESAY_CUT_LINES) said it again.
+ * - No clientSpeaking comes while the call's first text (the greeting) plays: across about 13 calls, one
+ *   had any. A caller speaking over the greeting is never reported.
  * - The silent reply (the cut line above) looks like Telnyx's own barge-in: with BARGE_IN=none
- *   (interruptible="none"), three calls in a row played the reply right after a long answer in full. Telnyx
- *   has no barge-in sensitivity setting, so BARGE_IN=server does the barge-in in the engine, from
- *   clientSpeaking, with a minimum length of speech (BARGE_IN_MIN_SPEECH_MS) that a cough or echo does not reach.
+ *   (interruptible="none"), three calls in a row played the reply right after a long answer in full.
+ *   Telnyx has no barge-in sensitivity setting.
  * - With interruptible="none" no `interrupt` ever comes, so a caller who had not finished was not joined
- *   (App.voice.continueWithinMs): "...for one two" came as a final prompt, the reply went out 0.2 s later,
- *   clientSpeaking went on 24 ms after it (before agentSpeaking on), and "three four" came 1.4 s later as a
- *   prompt of its own. The adapter now takes speech that starts that soon as the caller continuing
- *   (server/adapter.ts takeResumed).
+ *   (App.voice.continueWithinMs): "...for one two" came as a final prompt 0.31 s after clientSpeaking off,
+ *   the reply went out 0.21 s later, clientSpeaking went on 24 ms after it (before agentSpeaking on), and
+ *   "three four" came 1.4 s later as a prompt of its own. On another call the caller stopped mid-address,
+ *   the prompt came 0.79 s later, the reply went out 0.19 s after it, and clientSpeaking went on 0.70 s
+ *   after the reply (1.68 s after the caller stopped), with pauses of 60 to 500 ms until the rest of the
+ *   address came as a prompt of its own. The adapter now takes a caller who comes back in that soon after
+ *   their own pause and the reply as continuing (RESUME_AFTER_PAUSE_MS, RESUME_INTO_REPLY_MS,
+ *   server/adapter.ts takeResumed).
  *
  * ASSUMPTIONS, not in Telnyx's published pages and not yet seen on a live call:
  * 1. The parser below also reads a JSON body, and takes `call_control_id` (or `CallControlId`) for the call
@@ -97,7 +104,7 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *    anything else hangs up. A live capture of a relay failure should confirm the fields and words.
  * 7. A text frame's own `interruptible` (the app's word on whether a caller may talk over that line) is
  *    not on Telnyx's text frame page (token and last only), and how it meets the relay element's
- *    `interruptible` is not documented. With BARGE_IN=none, dtmf or server the adapter sends it `false`
+ *    `interruptible` is not documented. With BARGE_IN=none or dtmf the adapter sends it `false`
  *    (channel/relay/frames.ts bargeInFrame) so a line never allows what the element forbids.
  * The conformance fixtures (__fixtures__/telnyx) say which of their entries are documented and which assumed.
  */
@@ -218,10 +225,6 @@ export const telnyxProvider: VoiceProvider = {
   endDropsSpeech: true,
   // Seen on a live call (2026-10-05): with TELNYX_EVENTS, the playback and the caller's voice, reported as info messages.
   readEvent,
-  // Seen on a live call (2026-10-05): with TELNYX_EVENTS speaker-events, agentSpeaking and clientSpeaking as they happen.
-  reportsSpeaking: true,
-  // Seen on a live call (2026-10-05): a new frame replaces the current playback, even with interruptible none.
-  stopPlayback: 'silent-clip',
   id: 'telnyx',
   contentType: 'text/xml',
   verify: (req, secret) =>

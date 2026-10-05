@@ -1,5 +1,5 @@
 import type { SetupFrame } from '../../channel/relay/frames';
-import type { RelayBargeIn } from '../../channel/voiceProviders';
+import type { BargeIn } from '../../channel/voiceProviders';
 /**
  * A phone carrier that runs a text relay (ConversationRelay or a compatible one) in front of the
  * engine. Everything carrier-specific is here: proving a webhook came from the carrier, the document
@@ -49,11 +49,10 @@ export interface StartDocumentOptions {
   /** Optional event streams the carrier sends on the socket (Telnyx's `events` attribute); absent: none. */
   readonly events?: string;
   /**
-   * Who may talk over a line the agent is saying (BARGE_IN, as channel/voiceProviders.ts relayBargeIn
-   * gives it: `none` for `server`), written as the relay element's `interruptible`; absent, `any`, as it
-   * always was.
+   * Who may talk over a line the agent is saying (BARGE_IN), written as the relay element's
+   * `interruptible`; absent, `any`, as it always was.
    */
-  readonly bargeIn?: RelayBargeIn;
+  readonly bargeIn?: BargeIn;
   readonly publicHost: string;
   readonly token: string;
   readonly hints: string;
@@ -161,20 +160,4 @@ export interface VoiceProvider {
    * a line it cuts short cannot be found, and only transcripts (partial ones included) end the no-input wait.
    */
   readEvent?(message: unknown): PlaybackEvent | null;
-  /**
-   * Whether readEvent reports both the caller speaking (`caller`) and the agent speaking (`playback`
-   * started and finished), as they happen: what BARGE_IN=server measures the caller's speech over a line
-   * by (server/adapter.ts). Absent: it does not (Twilio reports neither), and BARGE_IN=server is refused.
-   * A carrier that reports them only when asked (Telnyx, with TELNYX_EVENTS speaker-events) says true, and
-   * config.ts holds the deployment to asking.
-   */
-  readonly reportsSpeaking?: boolean;
-  /**
-   * How the server stops the carrier's playback of the lines it has been sent, for BARGE_IN=server.
-   * `silent-clip`: a `play` frame of a short silent clip the server hosts (server/voice/silence.ts), which
-   * replaces what is playing (Telnyx, seen on a live call: a new frame replaces the current playback even
-   * with the relay's interruptible none). Absent: the server has no way to stop it (Twilio, whose own
-   * barge-in has a sensitivity setting instead), and BARGE_IN=server is refused.
-   */
-  readonly stopPlayback?: 'silent-clip';
 }

@@ -2,7 +2,7 @@
  * The legacy Twilio documents, answered on the unprefixed `/voice` and `/cr-action`. Their bodies
  * live with the Twilio voice provider (server/voice/twilio.ts); these names stay for existing imports.
  */
-import type { RelayBargeIn } from '../channel/voiceProviders';
+import type { BargeIn } from '../channel/voiceProviders';
 import { twilioConnectDocument, twilioProvider } from './voice/twilio';
 
 export { escapeXml } from './voice/xml';
@@ -14,8 +14,8 @@ export interface ConnectOptions {
   /** TTS provider/voice for the segments that are not recorded clips; set both or neither. */
   ttsProvider?: string;
   voice?: string;
-  /** The relay element's `interruptible` for BARGE_IN (StartDocumentOptions.bargeIn); absent, `any`. */
-  bargeIn?: RelayBargeIn;
+  /** BARGE_IN, the relay element's `interruptible` (StartDocumentOptions.bargeIn); absent, `any`. */
+  bargeIn?: BargeIn;
   /** Seconds of silence before it connects (a planned restart's handover; StartDocumentOptions.pauseS). */
   pauseS?: number;
 }

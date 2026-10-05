@@ -158,13 +158,14 @@ describe('a caller who had not finished (voice.continueWithinMs)', () => {
       }
       return last!;
     };
-    expect((await run(300, (c) => c.resumed(24))).joined).toEqual(['at', '22']);
-    expect((await run(300, (c) => c.resumed(0))).joined).toEqual(['at', '22']);
-    // Past the window it is no caller who had not finished; with the option 0, nothing ever joins.
-    expect((await run(300, (c) => c.resumed(301))).joined).toBeNull();
-    expect((await run(0, (c) => c.resumed(0))).joined).toBeNull();
-    // After the window was ended by a reset (a key the server drops, a reconnect), nothing to continue.
-    expect((await run(300, (c) => { c.reset(); c.resumed(24); })).joined).toBeNull();
+    expect((await run(300, (c) => c.resumed())).joined).toEqual(['at', '22']);
+    // The adapter decides by the caller's pause, not the window: a short window still joins.
+    expect((await run(1, (c) => c.resumed())).joined).toEqual(['at', '22']);
+    // Without it, "22" is a turn of its own; with the option 0, nothing ever joins.
+    expect((await run(300, () => {})).joined).toBeNull();
+    expect((await run(0, (c) => c.resumed())).joined).toBeNull();
+    // After joining was ended by a reset (a key the server drops, a reconnect), nothing to continue.
+    expect((await run(300, (c) => { c.reset(); c.resumed(); })).joined).toBeNull();
   });
 
   it('undoes only a turn that did nothing but speak', async () => {

@@ -140,13 +140,11 @@ function loggedContinueWithinMs(lines: readonly ReadFrameLogLine[]): number {
   return 0;
 }
 
-/** The `afterMs` of a `{ callerResumed: { afterMs } }` log line (server/adapter.ts takeResumed), or null for any other line. */
-function callerResumedMs(line: ReadFrameLogLine): number | null {
-  if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return null;
+/** A `{ callerResumed: { ... } }` log line (server/adapter.ts takeResumed): the prompt after it continues the one before. */
+function isCallerResumed(line: ReadFrameLogLine): boolean {
+  if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return false;
   const r = (line.msg as { callerResumed?: unknown }).callerResumed;
-  if (typeof r !== 'object' || r === null) return null;
-  const ms = (r as { afterMs?: unknown }).afterMs;
-  return typeof ms === 'number' && Number.isFinite(ms) && ms >= 0 ? ms : null;
+  return typeof r === 'object' && r !== null;
 }
 
 /** The adapter gave up on a downstream service's answer (server/adapter.ts queueService). */
@@ -233,9 +231,8 @@ export async function replayFrameLog(
     }
     // A caller who came back in at once over the last reply (server/adapter.ts takeResumed): the prompt
     // after this line continues the one before it, as it did live.
-    const resumedAfter = callerResumedMs(line);
-    if (resumedAfter !== null) {
-      if (session && !ended) continuation.resumed(resumedAfter);
+    if (isCallerResumed(line)) {
+      if (session && !ended) continuation.resumed();
       continue;
     }
     if (line.dir !== 'in') continue;
