@@ -78,6 +78,33 @@
     "pass": true,
     "mismatches": []
   },
+  "outage-address-picked": {
+    "id": "outage-address-picked",
+    "decision": "prompt",
+    "promptId": "confirm_report_outage",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": "22 Alder Street",
+      "symptom": "no_power",
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
   "outage-symptom-keypad": {
     "id": "outage-symptom-keypad",
     "decision": "prompt",

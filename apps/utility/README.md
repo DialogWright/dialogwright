@@ -115,7 +115,10 @@ A change to the words in the YAML (criteria, labels, prompts, the questions a sl
 
 ### Recording again: what changed since the committed cassette
 
-- **The `done` intent** (a caller who is finished, "that's all" at "anything else?"). The intent question, which every turn asks, now lists it, so every request of the replay is new: the committed cassette misses all of them (254 cassette misses) until it is recorded again, and so does the test that replays it (`src/sessionRoundTrip.test.ts`, "as the recorded cassette replays them"). New lines: corpus `dn-01` to `dn-08`, scripted call `outage-then-done`.
+- **The `done` intent** (a caller who is finished, "that's all" at "anything else?"). The intent question, which every turn asks, now lists it, so every request of the replay is new. New lines: corpus `dn-01` to `dn-08`, scripted call `outage-then-done`.
+- **The address picked out of the words** (`pick` on `place`, below). A turn on which `place` listens and the words make more than one part now asks `placePick` beside `placeGiven`, with the parts as its criteria. New: scripted call `outage-address-picked`.
+
+The committed cassette misses every request of the replay (255 cassette misses) until it is recorded again, and so does the test that replays it (`src/sessionRoundTrip.test.ts`, "as the recorded cassette replays them").
 
 To record it again, at the repository root, with the key from this folder's `.env` (`regress` does not read `ENV_FILE`; only the server does, so the line loads the file into a subshell):
 
@@ -126,14 +129,14 @@ pnpm --filter @dialogwright/example-utility regress --client recorded
 
 The second line, with no key, must exit 0; triage any difference as in step 3 above, and commit the cassette.
 
-### Picking the address out of the words (not turned on)
+### Picking the address out of the words
 
-`place` is a `text` slot, so an address said with the request is read back whole: "at this address: the power is out at 22 Alder Street and nothing works". The `text` type's `pick` option picks out the part that is the address instead ([docs/slots/text.md](../../docs/slots/text.md), "Picking the value out of the words"): code splits the words into candidate parts, a second question (`placePick`) asks which part is the street address, and the value is that part, as said. It is the example to turn on, and it is off here because it changes what the model is sent, so the cassette must be recorded again. To turn it on:
+`place` is a `text` slot, and an address said with the request was read back whole: "at this address: the power is out at 22 Alder Street and nothing works". The `text` type's `pick` option picks out the part that is the address instead ([docs/slots/text.md](../../docs/slots/text.md), "Picking the value out of the words"): code splits the words into candidate parts, a second question (`placePick`) asks which part is the street address, and the value is that part, as said ("at this address: 22 Alder Street"; the scripted call `outage-address-picked`). It is turned on, as follows:
 
-1. In `slots.yaml`, add to `place`: `pick: { what: the street address }`.
-2. Label the part picked on each corpus line that says more than the address, with the question's id and the part's words: `ro-05` gets `"placePick": "22 Alder Street"`; a line whose whole words are the address, or that offers one part, needs none. The stub answers the label with that part's letter.
-3. Run `pnpm --filter @dialogwright/example-utility regress` and read each difference: the `place` values and read-backs that change from the whole sentence to the address. Edit those baseline entries by hand to the stub's new outcome, log them under "Baseline edits" in [DESIGN.md](DESIGN.md), and run it again until it prints `no changes`.
-4. The maintainer records the cassette again (the steps under "Recording against the real model"): every request that holds `placePick` is new, so the replay reports cassette misses until then.
+1. In `slots.yaml`, `place` has `pick: { what: the street address }`.
+2. Each corpus line that says more than the address is labelled with the part picked, by the question's id and the part's words: `ro-05` `"placePick": "22 Alder Street"`, `ro-07` `"Maple Avenue"` (from "there's a wire down on Maple Avenue") and `pl-03` `"the corner of Elm and Third"` (from "the corner of Elm and Third, by the school"). A line whose whole words are the address, or that offers one part ("It's 14 Birch Lane"), needs none: the pick question is not asked. `pl-05` ("sorry, I meant 41 Birch Lane, not 14") has no label: no part is the address alone ("I meant 41 Birch Lane" is the nearest), so the stub answers none and the value is the whole words, as before. The stub answers a label with that part's letter.
+3. The three entries whose `place` changed from the sentence to the address were edited by hand to the stub's new outcome and logged under "Baseline edits" in [DESIGN.md](DESIGN.md); the regression prints `no changes`.
+4. The maintainer records the cassette again (below): every request that holds `placePick` is new.
 
 ### Known gaps
 

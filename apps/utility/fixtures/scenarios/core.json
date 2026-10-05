@@ -64,6 +64,24 @@
     }
   },
   {
+    "id": "outage-address-picked",
+    "steps": [
+      {
+        "say": "the power is out at 22 Alder Street and nothing works"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_outage",
+      "form": "report_outage",
+      "slots": {
+        "place": "22 Alder Street",
+        "symptom": "no_power"
+      },
+      "text": "at this address: 22 Alder Street. Shall I file that?"
+    }
+  },
+  {
     "id": "outage-symptom-keypad",
     "steps": [
       {

@@ -111,7 +111,7 @@
     "verdict": "route",
     "form": "report_outage",
     "slots": {
-      "place": "the power is out at 22 Alder Street and nothing works",
+      "place": "22 Alder Street",
       "symptom": "no_power",
       "account": null,
       "count": null,
@@ -161,7 +161,7 @@
     "verdict": "route",
     "form": "report_outage",
     "slots": {
-      "place": "there's a wire down on Maple Avenue",
+      "place": "Maple Avenue",
       "symptom": "wire_down",
       "account": null,
       "count": null,
@@ -303,7 +303,7 @@
     "verdict": "proceed",
     "form": "report_outage",
     "slots": {
-      "place": "the corner of Elm and Third, by the school",
+      "place": "the corner of Elm and Third",
       "symptom": null,
       "account": null,
       "count": null,

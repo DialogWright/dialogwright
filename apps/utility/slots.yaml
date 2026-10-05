@@ -13,6 +13,10 @@ place:
   say: null
   redact: none
   maxLength: 200
+  # The part of the words that is the address, picked out: "the power is out at 22 Alder Street and
+  # nothing works" is read back as "22 Alder Street" (docs/slots/text.md, "Picking the value out of
+  # the words"). The model chooses among the caller's own words, cut by code; it never writes one.
+  pick: { what: the street address }
 
 # What the caller is seeing.
 symptom:
