@@ -101,8 +101,9 @@ export class FakeRelay {
     return this.received;
   }
 
+  /** The lines said, each without the space a carrier that joins a turn's lines gets between them (server/adapter.ts sendFrames). */
   texts(): string[] {
-    return this.received.filter((m) => m.type === 'text').map((m) => m.token as string);
+    return this.received.filter((m) => m.type === 'text').map((m) => (m.token as string).trimEnd());
   }
 
   close(): void {

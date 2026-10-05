@@ -1261,6 +1261,9 @@ function respelled(frame: OutboundFrame, list: PronounceList | undefined): Outbo
   return frame.type === 'text' && list ? { ...frame, token: pronounce(frame.token, list) } : frame;
 }
 
+/** A line the carrier runs into the next one, ending with a space (sendFrames). */
+const spaced = (token: string, joined: boolean): string => (joined && !/\s$/.test(token) ? `${token} ` : token);
+
 async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundFrame[], decision: unknown = null): Promise<OutboundFrame[]> {
   const log = deps.log;
   const timeoutMs = deps.sendTimeoutMs ?? SEND_TIMEOUT_MS;
@@ -1277,8 +1280,12 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
     // still leads its digits), then the respellings. The frame log records what actually went out,
     // digit spacing and respellings and all, but with a redacted value masked before it is
     // respelled: masking finds the value as written, never a respelling of it.
+    // Such a carrier joins the turn's text frames into one utterance as sent, so a line before the
+    // last ends with a space: without it "outage." ran into "What's", which a voice read as "outage
+    // dot what's" (Telnyx, seen on a live call).
+    const joined = lastText >= 0 && i !== lastText;
     const spoken: OutboundFrame = original.type === 'text'
-      ? { ...original, token: spokenDigits(original.token, voice?.spokenDigits), ...(lastText >= 0 && i !== lastText ? { last: false } : {}) }
+      ? { ...original, token: spaced(spokenDigits(original.token, voice?.spokenDigits), joined), ...(joined ? { last: false } : {}) }
       : original;
     const frame = bargeInFrame(respelled(spoken, respell), deps.bargeIn ?? 'any');
     const logged = bargeInFrame(respelled(loggedFrame(spoken, scrub), respell), deps.bargeIn ?? 'any');

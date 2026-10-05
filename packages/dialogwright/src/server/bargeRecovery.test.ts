@@ -74,7 +74,7 @@ function liveCall(provider: string, bargeIn: BargeIn, more: Partial<AdapterDeps>
   const send = (m: object) => handleSocketMessage(deps, sock, ctx, JSON.stringify(m));
   const info = (name: string, value: string) => send({ type: 'info', name, value });
   const caller = (on: boolean) => info('clientSpeaking', on ? 'on' : 'off');
-  const texts = () => sent.filter((f) => f.type === 'text').map((f) => f.token as string);
+  const texts = () => sent.filter((f) => f.type === 'text').map((f) => (f.token as string).trimEnd());
   return {
     sent, store, caller, texts, deps,
     start: () => send({ type: 'setup', sessionId: 'VX9', callSid: CALL, from: '+15555550100', to: '+15555550199', customParameters: {} }),

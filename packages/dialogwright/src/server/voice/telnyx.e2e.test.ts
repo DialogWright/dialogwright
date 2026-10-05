@@ -115,6 +115,12 @@ describe('a Telnyx call end to end', () => {
     // Telnyx drops a turn's text after the first last: true (seen on a live call), so only the turn's final line carries it.
     const texts = relay.received.filter((m) => m.type === 'text');
     expect(texts.slice(-3).map((m) => (m as { last?: boolean }).last)).toEqual([false, false, true]);
+    // Telnyx joins a turn's text frames as one utterance, as sent: a line that ends with no space ran
+    // into the next ("outage.What's"), which a voice read as "outage dot what's" on a live call. Each
+    // line before the last ends with a space, so the lines read as sentences.
+    const tokens = texts.slice(-3).map((m) => m.token as string);
+    expect(tokens.slice(0, -1).every((t) => t.endsWith(' '))).toBe(true);
+    expect(tokens.join('')).toBe(`Thanks, Alex. On Saturday, September 19, we can deliver in the morning. ${ANYTHING_ELSE}`);
     relay.prompt("no, that's all", true, 'en');
     await relay.waitForTexts(8);
     expect(relay.texts().at(-1)).toBe(GOODBYE);

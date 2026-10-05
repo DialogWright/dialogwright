@@ -130,7 +130,8 @@ function graceDeps(endCloseGraceMs: number): AdapterDeps & { dir: string; lines:
 
 const setupMsg = (callSid: string, sessionId = 'VX1', from = '+1') => JSON.stringify({ type: 'setup', sessionId, callSid, from, to: '+2', customParameters: {} });
 const prompt = (t: string) => JSON.stringify({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true });
-const texts = (s: Fake) => s.sent.filter((m) => (m as { type: string }).type === 'text').map((m) => (m as { token: string }).token);
+// The lines said, each without the space a joined line gets before the next (sendFrames).
+const texts = (s: Fake) => s.sent.filter((m) => (m as { type: string }).type === 'text').map((m) => (m as { token: string }).token.trimEnd());
 type LogLine = { dir: string; msg: Record<string, unknown> };
 
 const GREETING_TEXT = "Thanks for calling Example Parcels. You're speaking with the automated assistant. I can track a parcel, check a delivery window, or report a missing parcel. How can I help?";
