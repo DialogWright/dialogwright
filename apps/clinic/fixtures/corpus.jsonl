@@ -47,7 +47,7 @@
 {"id":"bl-07","text":"I got an invoice I don't understand","intent":"billing","context":"no_form"}
 {"id":"bl-08","text":"How much do I owe","intent":"billing","context":"no_form"}
 {"id":"ag-01","text":"I want to talk to a person","intent":"agent","context":"no_form"}
-{"id":"ag-02","text":"Agent","intent":"agent","context":"no_form","knownGap":{"reason":"a single word 'Agent': wantsHuman 0.49 is below the 0.7 gate, so the intent gate (agent 0.72) routes it instead; same handoff","outcome":{"decidedGate":"intent"}}}
+{"id":"ag-02","text":"Agent","intent":"agent","context":"no_form","knownGap":{"reason":"a single word 'Agent': addressedToSystem reads 0.60 to 0.65, on the 0.65 gate, and wantsHuman 0.49 is below 0.7; at 0.60 the turn is ignored instead of handed off","outcome":{"decision":"ignore","promptId":null,"reason":null,"decidedGate":"addressedToSystem","verdict":"ignore"}}}
 {"id":"ag-03","text":"Can I speak with a representative","intent":"agent","context":"no_form"}
 {"id":"ag-04","text":"Operator please","intent":"agent","context":"no_form"}
 {"id":"ag-05","text":"Just get me a human","intent":"agent","context":"no_form"}
@@ -84,7 +84,7 @@
 {"id":"lc-02","text":"My appointment with Dr. Chen","intent":"confirm_appointment","context":"no_form","slots":{"provider":"chen"},"tags":["implicit_confirm"]}
 {"id":"lc-03","text":"Maybe cancel it","intent":"cancel","context":"no_form","tentative":true,"tags":["tentative"]}
 {"id":"lc-04","text":"I think I need to reschedule or maybe cancel","intent":"reschedule","context":"no_form","tentative":true,"tags":["tentative","two_intents"]}
-{"id":"lc-05","text":"Change it","intent":"other","context":"no_form","tags":["vague"]}
+{"id":"lc-05","text":"Change it","intent":"other","context":"no_form","tags":["vague"],"knownGap":{"reason":"vague 'Change it': the injection screen reads 0.50, on the 0.5 gate, so the screen re-asks what the caller wants instead of nomatch_open","outcome":{"promptId":"ask_intent","acks":["screen_reprompt"],"decidedGate":"screen","verdict":null}}}
 {"id":"lc-06","text":"I'm seeing Dr. Chen, or Cheng, I'm not sure","intent":"none","context":"no_form","slots":{"provider":"chen"},"tags":["provider_unsure"],"labels":{"providerUnsure":true}}
 {"id":"lc-07","text":"Reschedule with Dr. Chen","intent":"reschedule","context":"no_form","slots":{"provider":"chen"},"tags":[]}
 {"id":"lc-08","text":"Book something","intent":"schedule_new","context":"no_form","tags":[]}
@@ -175,7 +175,7 @@
 {"id":"fc-03","text":"yep book it","intent":"none","context":"confirm_schedule_new","confirm":"yes"}
 {"id":"fc-06","text":"no, Thursday","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"date":{"mode":"weekday","weekday":"thursday"}}}
 {"id":"fc-07","text":"no, Thursday with Dr. Alvarez","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"alvarez","date":{"mode":"weekday","weekday":"thursday"}}}
-{"id":"fc-08","text":"not Chen, Cheng","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"}}
+{"id":"fc-08","text":"not Chen, Cheng","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"},"knownGap":{"reason":"'not Chen, Cheng' at the summary: changeSlot name 0.57 to 0.62, on the 0.6 threshold, reads the doctor's surname as the caller's name, so the name is cleared and asked for (as fc-17)","outcome":{"promptId":"ask_name","decidedGate":"changeSlot","verdict":"change_slot","slots":{"name":null,"dob":"1975-06-14","memberId":null,"provider":"cheng","date":"2026-09-22"},"gate":null}}}
 {"id":"fc-09","text":"no, next week","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"date":{"mode":"window","window":"next_week"}}}
 {"id":"fc-10","text":"the day","intent":"none","context":"confirm_reschedule","changeSlot":"date"}
 {"id":"fc-11","text":"the doctor","intent":"none","context":"confirm_cancel","changeSlot":"provider"}

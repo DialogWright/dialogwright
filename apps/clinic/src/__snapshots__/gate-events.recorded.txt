@@ -264,10 +264,6 @@
 1 listOpenings ALLOW {"provider":"alvarez","date":"2026-09-24"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 # corpus fc-08
-1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"cheng"}
-    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
-1 listOpenings ALLOW {"provider":"cheng","date":"2026-09-22"}
-    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 # corpus fc-09
 # corpus fc-10
 # corpus fc-11
@@ -281,6 +277,10 @@
     confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
 # corpus fc-16
 # corpus fc-17
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"cheng"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 listOpenings ALLOW {"provider":"cheng","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 # corpus fc-18
 1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0

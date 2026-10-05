@@ -142,10 +142,13 @@ The second line, with no key, must exit 0; triage any difference as in step 3 ab
 
 See [docs/known-gaps.md](../../docs/known-gaps.md) for each gap's caller impact and candidate fix, and [DESIGN.md](DESIGN.md) ("Baseline edits", "Gaps") for the triage of the first recording.
 
-Where the decision model reads a corpus line differently from its label and the label is the truth, the entry carries a `knownGap` in `fixtures/corpus.jsonl`: a one-line reason, and the outcome fields the model is known to produce instead, as in the [clinic](../../apps/clinic/README.md). A recorded or live run that shows exactly that outcome prints each difference as `(allowed: knownGap: <reason>)` and does not count it as a failure; any other difference on the entry fails. A stub run ignores `knownGap` and must still match the baseline exactly. Today two entries drift this way:
+Where the decision model reads a corpus line differently from its label and the label is the truth, the entry carries a `knownGap` in `fixtures/corpus.jsonl`: a one-line reason, and the outcome fields the model is known to produce instead, as in the [clinic](../../apps/clinic/README.md). A recorded or live run that shows exactly that outcome prints each difference as `(allowed: knownGap: <reason>)` and does not count it as a failure; any other difference on the entry fails. A stub run ignores `knownGap` and must still match the baseline exactly. Today five entries carry a tag:
 
 - `om-07`: "where can I check when power comes back" splits between the outage map (0.58) and a question (0.41), below the 0.6 an informational answer is said at, so the caller is asked whether they want the outage map (`confirm_intent_explicit`) before hearing it.
 - `rp-07`: a bare "pardon" in a form is read as no request (0.56) rather than `repeat_prompt` (0.44), so the question's retry is said instead of a replay.
+- `ro-01`: "I want to report a power outage" is a coin flip for the symptom `no_power`, so the caller may be asked what they are seeing.
+- `ns-03`: a bare "um" sits on the addressed-to-system gate, so it may be ignored instead of counted as a miss.
+- `pl-03`: the address pick may keep "the corner of Elm and Third, by the school" whole.
 
 ## Running it
 

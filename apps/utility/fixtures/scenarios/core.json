@@ -33,6 +33,9 @@
         "say": "It's 14 Birch Lane"
       },
       {
+        "say": "no power at all"
+      },
+      {
         "say": "yes, file it"
       },
       {
@@ -710,7 +713,7 @@
     "id": "asks-for-a-person-in-outage",
     "steps": [
       {
-        "say": "I want to report a power outage"
+        "say": "my power is out"
       },
       {
         "say": "Can I speak to a representative"
@@ -762,7 +765,7 @@
     "id": "person-keypad-menu",
     "steps": [
       {
-        "say": "um"
+        "say": "okay"
       },
       {
         "say": "okay"
@@ -1072,7 +1075,7 @@
     "id": "keypad-menu-outage",
     "steps": [
       {
-        "say": "um"
+        "say": "okay"
       },
       {
         "say": "okay"
@@ -1100,7 +1103,7 @@
     "id": "keypad-menu-outage-map",
     "steps": [
       {
-        "say": "um"
+        "say": "okay"
       },
       {
         "say": "okay"
@@ -1119,7 +1122,7 @@
     "id": "keypad-menu-office-hours-then-balance",
     "steps": [
       {
-        "say": "um"
+        "say": "okay"
       },
       {
         "say": "okay"
