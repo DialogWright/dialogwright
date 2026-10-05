@@ -374,18 +374,18 @@ pnpm start --app utility</code></pre>
           <li>Go to <strong>Real-Time Communications, Voice, Programmable Voice</strong>, the <strong>TeXML Applications</strong>
             tab, and create an application.</li>
           <li>In <strong>Send a TeXML Webhook to the URL</strong>, enter <code>https://ivr.example.com/voice/telnyx</code>
-            (your <code>PUBLIC_HOST</code>), with the <strong>Voice Method</strong> POST.</li>
-          <li>Assign your number to the application, on its <strong>Numbers</strong> tab (or from <strong>Real-Time
-            Communications, Numbers, Manage Numbers</strong>).</li>
+            (your <code>PUBLIC_HOST</code>), with the <strong>Voice Method</strong> set to POST (Telnyx defaults it to GET, and the server takes POST webhooks).</li>
+          <li>Assign your number to the application, on its <strong>Numbers</strong> tab or from <strong>Real-Time
+            Communications, Numbers, Manage Numbers</strong>, where it is the small link icon next to the number (easy to miss).</li>
           <li>Copy the public key from <strong>Account settings, Keys &amp; Credentials, Public Key</strong> into
             <code>TELNYX_PUBLIC_KEY</code>, with <code>VOICE_PROVIDERS=telnyx</code>, (<code>pnpm configure</code> does both).</li>
-          <li>On a line people rely on: the application's fallback URL (<strong>Webhook Failover URL</strong>) is asked when your
+          <li>On a line people rely on: the application's <strong>Webhook Failover URL</strong> is asked when your
             server does not answer. Point it at the document <code>pnpm fallback</code> writes (<a href="#fallback">section 9</a>), so a
             call still reaches you when the machine is off.</li>
         </ol>
         <p class="unverified">
           Portal labels move. These are the ones Telnyx's TeXML pages use as of this writing; if yours differ, the fields are the
-          application's voice URL, its method and its failover URL.
+          application's voice URL, its method and its Webhook Failover URL.
         </p>
         <h3>Twilio</h3>
         <ol>
@@ -818,7 +818,7 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
           with it, a caller reaches a person whenever the server cannot answer; without it, they hear the carrier's own error.
         </p>
 <pre data-copy><code>pnpm fallback --provider telnyx --number +15555550123 --out fallback.xml
-# Telnyx: the TeXML application's fallback URL. Twilio (--provider twilio): the number's "Primary handler fails" URL.</code></pre>
+# Telnyx: the TeXML application's Webhook Failover URL. Twilio (--provider twilio): the number's "Primary handler fails" URL.</code></pre>
         <p class="unverified">
           That a carrier uses its fallback for a failed callback mid-call (and not only for a call that comes in), and takes the
           pause before it connects again, is read from the carriers' references and not yet shown on a live call:
@@ -1001,6 +1001,13 @@ TIMEZONE=America/Chicago
 
 # Optional: the voice and the recognizer (each carrier names its own).
 # TELNYX_VOICE=Telnyx.Ultra.Callie
+# Telnyx's event streams (speaker-events, tokens-played), space-separated, so quoted: the server's own
+# loader takes it with or without quotes, and a shell can `source` the file only with them. With
+# tokens-played, a line Telnyx cuts short is said again (RESAY_CUT_LINES, on by default; it does
+# nothing without the events). RESAY_MIN_FRACTION (0.05 to 0.95, default 0.35) is how short counts as cut.
+# TELNYX_EVENTS="speaker-events tokens-played"
+# RESAY_CUT_LINES=on
+# RESAY_MIN_FRACTION=0.35
 # TTS_PROVIDER=Google
 # TTS_VOICE=en-US-Neural2-F
 

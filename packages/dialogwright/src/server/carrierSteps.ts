@@ -9,8 +9,8 @@ export function carrierSteps(carrier: string, webhook: string): string[] {
       'In the Telnyx Mission Control Portal:',
       '  1. Get a number with voice (Numbers, Buy Numbers).',
       '  2. Real-Time Communications, Voice, Programmable Voice, TeXML Applications: create an application.',
-      `  3. Send a TeXML Webhook to the URL: ${webhook}, Voice Method POST.`,
-      '  4. Assign your number to the application (its Numbers tab).',
+      `  3. Send a TeXML Webhook to the URL: ${webhook}, Voice Method POST (it defaults to GET).`,
+      '  4. Assign your number to the application: on the Numbers page, the small link icon next to the number (easy to miss).',
       '  Worth it: a Webhook Failover URL (a TeXML Bin that dials your mobile) is asked when this server does not answer.',
     ];
   }

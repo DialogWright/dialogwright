@@ -26,7 +26,7 @@ const WHERE: Readonly<Record<string, readonly string[]>> = {
     'set to the URL, with HTTP POST. (A TwiML Bin there works too: paste the file\'s contents.)',
   ],
   telnyx: [
-    'Telnyx: the TeXML application the number uses (Voice > TeXML Applications), its voice fallback URL',
+    'Telnyx: the TeXML application the number uses (Voice > TeXML Applications), its Webhook Failover URL',
     '(voice_fallback_url in the API), with the same method as its voice URL.',
   ],
 };
