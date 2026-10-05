@@ -339,6 +339,18 @@ function resumeNoInput(deps: AdapterDeps, entry: CallEntry, after: 'speech' | 'h
 }
 
 /**
+ * Arm the no-input wait as already due, for a caller heard going on over a reply held and never said
+ * (holdReply): held while they speak, and run NO_INPUT_AFTER_SPEECH_MS after they stop (resumeNoInput), or
+ * that long from now when they have stopped already. Their prompt in that time clears it, as any does.
+ */
+function armDue(deps: AdapterDeps, entry: CallEntry): void {
+  if ((deps.noInputMs ?? 0) <= 0) return;
+  clearNoInput(entry.callSid);
+  if (callerSpeaking.has(entry.callSid)) holdNoInput(deps, entry, Date.now());
+  else scheduleNoInput(deps, entry, deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS);
+}
+
+/**
  * The carrier heard the caller start or stop speaking (a PlaybackEvent `caller speaking`, read by the
  * carrier's provider: Telnyx's clientSpeaking; Twilio reports none, and sends partial prompts instead).
  * The caller is not silent while they speak, so an armed no-input wait is held; their stop resumes it
@@ -356,7 +368,7 @@ function onCallerSpeech(deps: AdapterDeps, entry: CallEntry, speaking: boolean):
     // settling one the caller did not make (a spurious interrupt).
     callerHeard(callSid);
     // A reply held for a caller who had not finished is not said: they went on (holdReply).
-    releaseReply(callSid, 'joined');
+    releaseReply(callSid, 'speech');
     if (noInputHeld.has(callSid)) return;
     // An armed wait keeps its deadline. A silence turn already queued behind a busy one (its timer fired)
     // has a deadline just passed: it is held too, rather than said over the caller once the queue frees.
@@ -731,20 +743,26 @@ async function recoverSpurious(deps: AdapterDeps, e: CallEntry, w: Watched | und
  *
  * Not on a carrier that reports no caller speaking (Twilio), where no wait could end early; not for an app
  * whose continueWithinMs is 0 (it joins nothing); not past CONTINUE_MAX_FRAGMENTS. A key pressed in the
- * wait, or the socket gone, sends it at once. The no-input wait does not run during the hold (it is
- * cleared, and armed by the turn afterwards, from the reply's send or, with nothing sent, held while the
- * caller speaks). The frame log has `{ replyHeld: { ms, outcome: 'joined' | 'sent', utteranceComplete, turn } }`
+ * wait, or the socket gone, sends it at once. The no-input wait does not run during the hold: it is
+ * cleared, and armed by the turn afterwards from the reply's send. A reply not said leaves it to the prompt
+ * that went on, whose own turn arms it; or, for a caller only heard going on (a cough, too, with no prompt
+ * after it), it is due at once: held while they speak, it runs NO_INPUT_AFTER_SPEECH_MS after they stop,
+ * as for any caller heard past the wait's deadline (resumeNoInput), not a whole NO_INPUT_MS later. The
+ * frame log has `{ replyHeld: { ms, outcome: 'joined' | 'sent', utteranceComplete, turn } }`
  * when it ends, `turn` being the held turn's turnIndex, by which replay tells its Continuation after that
  * turn, as here (harness-text/replay.ts).
  */
 interface HeldReply {
   timer: ReturnType<typeof setTimeout>;
-  resolve: (outcome: 'joined' | 'sent') => void;
+  resolve: (outcome: HeldOutcome) => void;
 }
 const heldReplies = new Map<string, HeldReply>();
 
-/** End a call's held reply, if any: `joined`, the caller went on; `sent`, it goes. */
-function releaseReply(callSid: string, outcome: 'joined' | 'sent'): void {
+/** How a held reply ended: the caller went on, heard speaking (`speech`) or with a prompt (`prompt`); or it goes (`sent`). */
+type HeldOutcome = 'speech' | 'prompt' | 'sent';
+
+/** End a call's held reply, if any. */
+function releaseReply(callSid: string, outcome: HeldOutcome): void {
   const h = heldReplies.get(callSid);
   if (!h) return;
   clearTimeout(h.timer);
@@ -766,9 +784,10 @@ export function holdsReply(result: TurnResult, below: number): number | null {
  * Hold a final prompt's reply for a caller not finished (above), in the call's queue; null when it is not
  * one to hold. `promptAtMs` is when the prompt came: a caller heard starting since then has gone on.
  */
-async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, run: ContinuedRun, promptAtMs: number | undefined): Promise<'joined' | 'sent' | null> {
+async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, run: ContinuedRun, promptAtMs: number | undefined): Promise<HeldOutcome | null> {
   const wait = deps.incompleteWait;
-  if (!wait || wait.waitMs <= 0 || !readsPlaybackEvents(entry.provider)) return null;
+  // A socket already gone has no one to wait for (and nothing left to end the wait early).
+  if (!wait || wait.waitMs <= 0 || !readsPlaybackEvents(entry.provider) || entry.socket === null) return null;
   if (event.type !== 'user.speech' || !event.final) return null;
   const continuation = continuationOf(entry);
   if (continuation.withinMs === 0 || (run.joined?.length ?? 1) >= CONTINUE_MAX_FRAGMENTS) return null;
@@ -779,15 +798,16 @@ async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEven
   clearNoInput(callSid);
   const heldAtMs = Date.now();
   const back = callerSpeaking.has(callSid) || (lastStart.get(callSid) ?? -Infinity) >= (promptAtMs ?? heldAtMs);
-  const outcome = back ? 'joined' : await new Promise<'joined' | 'sent'>((resolve) => {
+  const ended = back ? 'speech' : await new Promise<HeldOutcome>((resolve) => {
     releaseReply(callSid, 'sent');
     const h: HeldReply = { timer: setTimeout(() => releaseReply(callSid, 'sent'), wait.waitMs), resolve };
     h.timer.unref?.();
     heldReplies.set(callSid, h);
   });
+  const outcome = ended === 'sent' ? 'sent' : 'joined';
   entry.frames.write('log', { replyHeld: { ms: Date.now() - heldAtMs, outcome, utteranceComplete: complete, turn: run.result.session.turnIndex } });
   if (outcome === 'joined') continuation.resumed();
-  return outcome;
+  return ended;
 }
 
 /**
@@ -1401,7 +1421,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // A reply to words the model reads as unfinished waits for the caller to go on (INCOMPLETE_WAIT_MS),
     // and is never said when they do: the next final prompt continues this one.
     const held = await holdReply(deps, entry, event, run, promptAtMs);
-    const frames = held === 'joined' ? [] : actionsToFrames(run.result.actions);
+    const said = held !== 'speech' && held !== 'prompt';
+    const frames = said ? actionsToFrames(run.result.actions) : [];
     // A carrier that acts on `end` at once drops the lines not yet said (END_AFTER_PLAYBACK): the
     // goodbye or the transfer line goes now, and the `end` once it has played.
     const at = ending && holdsEnd(deps, entry.provider) ? frames.findIndex((f) => f.type === 'end') : -1;
@@ -1421,7 +1442,12 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // ladder walks itself. So does anything that left the caller still owing an answer: an
     // ignored digit mid-slot, a barge-in, a relay error frame. Those produce no frames of their
     // own, so the wait is the bare `noInputMs` from the moment the frame arrived.
-    else if (!ending && (kind === 'prompt' || entry.session.promptedFor !== null)) armNoInput(deps, entry, sent);
+    else if (!ending && (kind === 'prompt' || entry.session.promptedFor !== null)) {
+      // A reply held and not said: the prompt that went on arms the wait in its own turn; a caller only
+      // heard going on is asked again soon after they stop, should no prompt come (holdReply).
+      if (held === 'speech') armDue(deps, entry);
+      else if (said) armNoInput(deps, entry, sent);
+    }
     return true;
   } catch (err) {
     const info = describe(err);
@@ -1694,7 +1720,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     callerHeard(ctx.callSid);
   }
   // A reply held for a caller not finished: more words are the caller going on; a key sends it now.
-  if (frame.type === 'prompt') releaseReply(ctx.callSid, 'joined');
+  if (frame.type === 'prompt') releaseReply(ctx.callSid, 'prompt');
   else if (frame.type === 'dtmf') releaseReply(ctx.callSid, 'sent');
   // Before the ignore/turn split below: a digit the adapter drops is still a digit the caller pressed.
   if (logged.type === 'dtmf') publish(deps, { type: 'dtmf', callSid: ctx.callSid, at: Date.now(), digit: logged.digit });

@@ -16,7 +16,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { registerTestkit } from '../testing/testkit';
 import { ANONYMOUS } from '../gate/principal';
 import { PLACE_APP_ID, placeApp, placeClient } from '../testing/placeApp';
-import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, type BargeIn } from '../channel/voiceProviders';
+import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, type BargeIn } from '../channel/voiceProviders';
 import { describeConfig, loadConfig } from './config';
 import type { TurnResult } from '../core/turn';
 
@@ -476,6 +476,21 @@ describe('a reply held for a caller clearly not finished, INCOMPLETE_WAIT_MS on 
     await call.caller(false);
     await vi.advanceTimersByTimeAsync(3_000);
     expect(call.logs().some((l) => l.msg.type === 'silence')).toBe(true);
+  });
+
+  it('held and joined on a cough with no prompt after it: asked again NO_INPUT_AFTER_SPEECH_MS after the cough, not a whole NO_INPUT_MS', async () => {
+    const call = liveCall('telnyx', 'speech', HOLD);
+    const { held } = await toFragment(call, FIRST, () => { call.deps.noInputMs = 7_000; });
+    await vi.advanceTimersByTimeAsync(680);
+    await call.caller(true);
+    await held;
+    await vi.advanceTimersByTimeAsync(200);
+    await call.caller(false);
+    const silences = () => call.logs().filter((l) => l.msg.type === 'silence').length;
+    await vi.advanceTimersByTimeAsync(DEFAULT_NO_INPUT_AFTER_SPEECH_MS - 1);
+    expect(silences()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(silences()).toBe(1);
   });
 
   it('off (no setting): the reply goes at once, as before', async () => {
