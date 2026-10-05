@@ -1,4 +1,4 @@
-import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
+import type { CallbackParams, PlaybackEvent, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
 import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, pauseVerb, relayElement, xmlResponse } from './xml';
 import { verifyTelnyxSignature } from './telnyxSignature';
 
@@ -28,6 +28,17 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *   in `customParameters` (`telnyx_call_from`, `telnyx_call_to`, and other `telnyx_*` keys).
  * - Telnyx's default recognizer ends a prompt at short pauses: "22 Alder Street" came as three
  *   final prompts. `TELNYX_TRANSCRIPTION_PROVIDER` chooses another (deepgram, google, telnyx).
+ * - The event streams the `events` attribute asks for (TELNYX_EVENTS: speaker-events, tokens-played) come
+ *   on the socket as `{ "type": "info", "name": <event>, "value": <value> }`: `agentSpeaking` and
+ *   `clientSpeaking` with `on` or `off`, and `tokensPlayed` with the line played, as it was sent
+ *   (readEvent below).
+ * - Telnyx cuts a reply short and reports it played. Right after the caller spoke, the engine sent one
+ *   24-word line (9.6 s by the estimate, last: true); agentSpeaking went on 0.07 s later, tokensPlayed
+ *   came with the whole line 0.67 s after that, and agentSpeaking went off 0.03 s later, with no
+ *   `interrupt` and no clientSpeaking between. The caller heard nothing, and sat in silence until the
+ *   no-input wait asked again, 16.6 s after the line went out; then the same line played in full (tokensPlayed 9.6 s after
+ *   agentSpeaking on). Earlier calls, before the events were on, had the same silence after a reply right
+ *   after the caller spoke. The adapter says such a line again (RESAY_CUT_LINES, server/adapter.ts).
  *
  * ASSUMPTIONS, not in Telnyx's published pages and not yet seen on a live call:
  * 1. The parser below also reads a JSON body, and takes `call_control_id` (or `CallControlId`) for the call
@@ -132,12 +143,45 @@ function startDocument(o: StartDocumentOptions): string {
   return xmlResponse(`${pauseVerb(o.pauseS)}<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx">${relay}</Connect>`);
 }
 
+/** An event's on or off, as Telnyx writes it (`on`, `off`); null for anything else. */
+function onOff(value: unknown): boolean | null {
+  return value === 'on' ? true : value === 'off' ? false : null;
+}
+
+/**
+ * Telnyx's event messages (TELNYX_EVENTS) in the engine's terms, in the shape seen on a live call
+ * (2026-10-05): `{ type: 'info', name, value }`. agentSpeaking on and off are the playback starting
+ * and finishing; tokensPlayed is the playback finishing with the line it played; clientSpeaking on
+ * and off are the caller. Any other message, name or value is not a playback event.
+ */
+function readEvent(message: unknown): PlaybackEvent | null {
+  if (typeof message !== 'object' || message === null || Array.isArray(message)) return null;
+  const m = message as { type?: unknown; name?: unknown; value?: unknown };
+  if (m.type !== 'info') return null;
+  switch (m.name) {
+    case 'agentSpeaking': {
+      const on = onOff(m.value);
+      return on === null ? null : on ? { kind: 'playback', state: 'started' } : { kind: 'playback', state: 'finished' };
+    }
+    case 'tokensPlayed':
+      return typeof m.value === 'string' ? { kind: 'playback', state: 'finished', text: m.value } : null;
+    case 'clientSpeaking': {
+      const on = onOff(m.value);
+      return on === null ? null : { kind: 'caller', speaking: on };
+    }
+    default:
+      return null;
+  }
+}
+
 export const telnyxProvider: VoiceProvider = {
   // Seen on a live call (2026-10-05): the setup's callSid is a 36-character id, and the webhook's CallSid
   // (a v3: id) arrives as callControlId.
   setupCallId: (setup) => setup.callControlId ?? setup.callSid,
   // Seen on a live call (2026-10-05): after a text frame with last: true, Telnyx drops the turn's next one.
   textLast: 'final',
+  // Seen on a live call (2026-10-05): with TELNYX_EVENTS, the playback and the caller's voice, reported as info messages.
+  readEvent,
   id: 'telnyx',
   contentType: 'text/xml',
   verify: (req, secret) =>

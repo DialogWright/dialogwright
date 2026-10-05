@@ -145,3 +145,24 @@ describe('the Telnyx voice provider', () => {
     expect(telnyxProvider.startDocument({ publicHost: 'voice.example.com', token: 'b'.repeat(32), hints: '' })).not.toContain('events=');
   });
 });
+
+describe("Telnyx's playback events in the engine's terms", () => {
+  const info = (name: string, value: unknown) => ({ type: 'info', name, value });
+  it('reads agentSpeaking, tokensPlayed and clientSpeaking as a live call sends them', () => {
+    expect(telnyxProvider.readEvent!(info('agentSpeaking', 'on'))).toEqual({ kind: 'playback', state: 'started' });
+    expect(telnyxProvider.readEvent!(info('agentSpeaking', 'off'))).toEqual({ kind: 'playback', state: 'finished' });
+    expect(telnyxProvider.readEvent!(info('tokensPlayed', 'What are you seeing?'))).toEqual({ kind: 'playback', state: 'finished', text: 'What are you seeing?' });
+    expect(telnyxProvider.readEvent!(info('clientSpeaking', 'on'))).toEqual({ kind: 'caller', speaking: true });
+    expect(telnyxProvider.readEvent!(info('clientSpeaking', 'off'))).toEqual({ kind: 'caller', speaking: false });
+  });
+  it('reads nothing else: another name, a value it does not know, another type, or no object', () => {
+    expect(telnyxProvider.readEvent!(info('agentSpeaking', 'maybe'))).toBeNull();
+    expect(telnyxProvider.readEvent!(info('clientSpeaking', 3))).toBeNull();
+    expect(telnyxProvider.readEvent!(info('tokensPlayed', 42))).toBeNull();
+    expect(telnyxProvider.readEvent!(info('somethingElse', 'on'))).toBeNull();
+    expect(telnyxProvider.readEvent!({ type: 'agentSpeaking', value: 'on' })).toBeNull();
+    expect(telnyxProvider.readEvent!({ type: 'prompt', voicePrompt: 'hello', last: true })).toBeNull();
+    expect(telnyxProvider.readEvent!(null)).toBeNull();
+    expect(telnyxProvider.readEvent!('agentSpeaking')).toBeNull();
+  });
+});
