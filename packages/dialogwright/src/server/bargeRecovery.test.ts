@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { forgetNoInput, handleSocketMessage, holdsReply, newConnectionContext, noInputArmed, SPURIOUS_INTERRUPT_SETTLE_MS, type AdapterDeps } from './adapter';
+import { forgetNoInput, handleSocketMessage, holdsReply, newConnectionContext, noInputArmed, SPURIOUS_INTERRUPT_SETTLE_MS, SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS, type AdapterDeps } from './adapter';
 import { SessionStore, type SocketLike } from './sessions';
 import { CallTokens } from './tokens';
 import { FrameLog } from './frameLog';
@@ -130,8 +130,8 @@ describe('a spurious interrupt, RESAY_SPURIOUS_INTERRUPTS on Telnyx (BARGE_IN=sp
     const greeting = await greeted(call);
     await vi.advanceTimersByTimeAsync(1_639);
     const cut = call.cut(greeting, 1_704);
-    // Waits out the settle for a caller the carrier reports late; nothing is said meanwhile.
-    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_SETTLE_MS - 1);
+    // Waits out the settle for the caller's words: Telnyx reports no caller over the greeting. Nothing is said meanwhile.
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS - 1);
     expect(call.texts()).toEqual([greeting]);
     await vi.advanceTimersByTimeAsync(1);
     await cut;
@@ -155,11 +155,11 @@ describe('a spurious interrupt, RESAY_SPURIOUS_INTERRUPTS on Telnyx (BARGE_IN=sp
     const greeting = await greeted(call);
     await vi.advanceTimersByTimeAsync(1_639);
     const first = call.cut(greeting, 1_704);
-    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_SETTLE_MS);
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS);
     await first;
     await vi.advanceTimersByTimeAsync(1_500);
     const second = call.cut(greeting, 1_500);
-    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_SETTLE_MS);
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS);
     await second;
     expect(call.texts()).toEqual([greeting, greeting]);
     expect(logged(call, 'spuriousInterrupt')).toHaveLength(2);
@@ -176,7 +176,7 @@ describe('a spurious interrupt, RESAY_SPURIOUS_INTERRUPTS on Telnyx (BARGE_IN=sp
     // Taken at once: no settle.
     await call.cut(greeting, 1_704);
     expect(call.session().lastInterrupt).toEqual({ heard: greeting, afterMs: 1_704 });
-    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_SETTLE_MS * 3);
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS * 2);
     expect(call.texts()).toEqual([greeting]);
     expect(logged(call, 'spuriousInterrupt')).toEqual([]);
     await call.caller(false);
@@ -206,12 +206,30 @@ describe('a spurious interrupt, RESAY_SPURIOUS_INTERRUPTS on Telnyx (BARGE_IN=sp
     await call.caller(true);
     await cut;
     expect(call.session().lastInterrupt).toEqual({ heard: greeting, afterMs: 1_704 });
-    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_SETTLE_MS * 3);
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS * 2);
     expect(call.texts()).toEqual([greeting]);
     expect(logged(call, 'spuriousInterrupt')).toEqual([]);
     await call.caller(false);
     await vi.advanceTimersByTimeAsync(900);
     await call.say('i want to report a problem');
+    await sameOnReplay(call);
+  });
+
+  it('a short barge-in over the greeting, which Telnyx does not report: its prompt within the longer settle makes it real, and the greeting is not said again', async () => {
+    const call = liveCall('telnyx', 'speech', SPURIOUS);
+    const greeting = await greeted(call);
+    await vi.advanceTimersByTimeAsync(1_639);
+    // "agent", over the greeting: no clientSpeaking, the interrupt, then the transcript about a second after the caller stopped.
+    const cut = call.cut(greeting, 1_704);
+    await vi.advanceTimersByTimeAsync(1_200);
+    expect(call.texts()).toEqual([greeting]);
+    const said = call.say('i want to report a problem');
+    await cut;
+    await said;
+    expect(call.texts()).toEqual([greeting, 'Sure, I can help you report a problem.', 'Where is the problem?']);
+    expect(logged(call, 'spuriousInterrupt')).toEqual([]);
+    expect(logged(call, 'resaid')).toEqual([]);
+    expect(call.records().at(-1)!.turnState).toMatchObject({ asr: { bargeIn: true } });
     await sameOnReplay(call);
   });
 
@@ -265,7 +283,7 @@ describe('a spurious interrupt, RESAY_SPURIOUS_INTERRUPTS on Telnyx (BARGE_IN=sp
     const before = call.texts();
     await vi.advanceTimersByTimeAsync(300);
     await call.cut(before.at(-1)!, 300);
-    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_SETTLE_MS * 2);
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS * 2);
     expect(call.texts()).toEqual(before);
     expect(logged(call, 'resaid')).toEqual([]);
   });
@@ -276,7 +294,7 @@ describe('a spurious interrupt, RESAY_SPURIOUS_INTERRUPTS on Telnyx (BARGE_IN=sp
     await vi.advanceTimersByTimeAsync(1_639);
     await call.cut(greeting, 1_704);
     expect(call.session().lastInterrupt).toEqual({ heard: greeting, afterMs: 1_704 });
-    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_SETTLE_MS * 2);
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS * 2);
     expect(call.texts()).toEqual([greeting]);
   });
 
@@ -287,7 +305,7 @@ describe('a spurious interrupt, RESAY_SPURIOUS_INTERRUPTS on Telnyx (BARGE_IN=sp
     await vi.advanceTimersByTimeAsync(1_704);
     await call.cut(greeting, 1_704);
     expect(call.session().lastInterrupt).toEqual({ heard: greeting, afterMs: 1_704 });
-    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_SETTLE_MS * 2);
+    await vi.advanceTimersByTimeAsync(SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS * 2);
     expect(call.texts()).toEqual([greeting]);
   });
 });

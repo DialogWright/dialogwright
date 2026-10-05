@@ -13,7 +13,7 @@ import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { replayFrameLog } from '../../harness-text/replay';
 import { useTestkit } from '../../testing/apps';
 import { defaultCorpusFile } from '../../run/fixtures';
-import { RESAY_SETTLE_MS, SPURIOUS_INTERRUPT_SETTLE_MS } from '../adapter';
+import { RESAY_SETTLE_MS, SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS } from '../adapter';
 
 useTestkit();
 
@@ -322,8 +322,8 @@ describe('a line the carrier cut short', () => {
  * the greeting with no clientSpeaking at all, and the caller, hearing nothing, said nothing for 11 s.
  */
 describe('an interrupt with no caller heard', () => {
-  /** Long enough for the settle and a re-send. */
-  const settle = () => new Promise((r) => setTimeout(r, SPURIOUS_INTERRUPT_SETTLE_MS + 300));
+  /** Long enough for the settle (the longer one: no caller reported over the greeting) and a re-send. */
+  const settle = () => new Promise((r) => setTimeout(r, SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS + 300));
 
   it('is not a barge-in, and the greeting is said again from the start, once', async () => {
     const call = await startCall('telnyx', { ...TELNYX_EVENTS, BARGE_IN: 'speech' });

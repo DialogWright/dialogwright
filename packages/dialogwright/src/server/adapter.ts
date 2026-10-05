@@ -603,11 +603,25 @@ function callerHeard(callSid: string): void {
 export const SPURIOUS_INTERRUPT_SETTLE_MS = 400;
 
 /**
+ * The settle instead, for an interrupt on a call whose carrier has not reported the caller's voice at all
+ * yet (quietMs null): there no report of the caller can be counted on, and only their words can say the
+ * interrupt was theirs. Telnyx sent no clientSpeaking while a call's first line played (about 13 live
+ * calls, one with any), so a caller talking over the greeting is not heard until their transcript comes,
+ * about a second after they stop. A short barge-in ("agent", "operator") is over before the lines could go
+ * again, and on Telnyx lines once sent play on to their end (a frame sent mid-line does not stop them): with
+ * the 0.4 s settle the caller would hear the whole greeting again before the answer to what they said.
+ * 2 s takes in the transcript of a barge-in up to about a second long; a longer one is still going when the
+ * lines go again. A greeting cut with no caller at all comes back 2 s after the cut, not 0.4 s.
+ */
+export const SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS = 2_000;
+
+/**
  * A spurious interrupt (RESAY_SPURIOUS_INTERRUPTS), on a carrier that reports the caller's voice. A
  * carrier's barge-in can fire with no caller speaking: on Telnyx (2026-10-05, BARGE_IN=speech) an
  * `interrupt` came 1704 ms into the greeting with no clientSpeaking at all, and the caller, hearing
  * nothing, was silent for about 11 s. An interrupt that comes with the caller not speaking, and not heard
- * starting or stopping within SPURIOUS_INTERRUPT_WINDOW_MS before it, waits SPURIOUS_INTERRUPT_SETTLE_MS in
+ * starting or stopping within SPURIOUS_INTERRUPT_WINDOW_MS before it, waits SPURIOUS_INTERRUPT_SETTLE_MS
+ * (SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS before the carrier has reported the caller's voice on the call) in
  * the call's queue (so nothing runs ahead of it): the caller heard meanwhile (speaking, a prompt, a digit,
  * another interrupt), or the socket gone, makes it theirs, and it is taken as before. Otherwise it was not
  * theirs:
@@ -656,7 +670,7 @@ function settleInterrupt(entry: CallEntry, afterMs: number, quietMs: number | nu
         // Written as it is decided, before any caller frame after it, where replay looks for it.
         entry.frames.write('log', { spuriousInterrupt: { afterMs, quietMs } });
         resolve(true);
-      }, SPURIOUS_INTERRUPT_SETTLE_MS),
+      }, quietMs === null ? SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS : SPURIOUS_INTERRUPT_SETTLE_MS),
       resolve,
     };
     s.timer.unref?.();
