@@ -36,8 +36,9 @@ export function parseInbound(raw: string): InboundFrame | null {
   switch (m.type) {
     case 'setup': {
       if (!str(m.sessionId) || !str(m.callSid)) return null;
-      if (m.from !== undefined && !str(m.from)) return null;
-      if (m.to !== undefined && !str(m.to)) return null;
+      // A carrier may send null for a number it does not give (Telnyx's setup has from, to and direction null).
+      if (m.from !== undefined && m.from !== null && !str(m.from)) return null;
+      if (m.to !== undefined && m.to !== null && !str(m.to)) return null;
       const extras: Partial<Pick<SetupFrame, (typeof SETUP_EXTRAS)[number]>> = {};
       for (const k of SETUP_EXTRAS) {
         if (str(m[k])) extras[k] = m[k];

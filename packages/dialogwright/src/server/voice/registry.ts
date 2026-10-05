@@ -1,3 +1,4 @@
+import type { SetupFrame } from '../../channel/relay/frames';
 import type { VoiceProvider } from './provider';
 import { twilioProvider } from './twilio';
 import { telnyxProvider } from './telnyx';
@@ -83,4 +84,10 @@ export function providerIdForPath(enabled: readonly string[], path: string, base
 export function providerForPath(enabled: readonly VoiceProvider[], path: string, base: VoicePathBase): VoiceProvider | null {
   const id = providerIdForPath(enabled.map((p) => p.id), path, base);
   return enabled.find((p) => p.id === id) ?? null;
+}
+
+/** The call id a carrier's setup frame names, the one its webhooks and the relay token use. */
+export function setupCallIdOf(providerId: string, setup: SetupFrame): string {
+  const p = Object.hasOwn(ALL, providerId) ? ALL[providerId as keyof typeof ALL] : undefined;
+  return p?.provider.setupCallId?.(setup) ?? setup.callSid;
 }

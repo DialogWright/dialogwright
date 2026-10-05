@@ -16,10 +16,22 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  * `transcriptionLanguage`: it changes the speech and transcription language); and the webhook
  * signature headers.
  *
- * ASSUMPTIONS, not in Telnyx's published pages, to confirm with a live capture of a Telnyx call:
- * 1. The TeXML voice and action webhooks are form-encoded with Twilio-compatible field names
- *    (`CallSid`, `From`, `To`, `CallStatus`). The parser below reads a JSON body as well, and takes
- *    `call_control_id` (or `CallControlId`) for the call id when `CallSid` is absent, so either answer works.
+ * SEEN ON LIVE CALLS (2026-10-05), where Telnyx's pages differ or say nothing:
+ * - The TeXML voice and action webhooks are form-encoded with Twilio-compatible field names (`CallSid`,
+ *   `CallSidLegacy`, `From`, `To`, `CallStatus`, `Direction`, `CallSessionId`, `ConnectionId`), signed with
+ *   `telnyx-signature-ed25519`. The call id is a `v3:` id. The action callback adds `SessionStatus`,
+ *   `SessionId`, `ConversationId`, `DurationSec`, `SessionDuration`, and on a relay failure `ErrorCode`
+ *   (64105, "WebSocket connection ended unexpectedly") and `Reason`; a normal hang-up has `CallStatus`
+ *   and `SessionStatus` both `completed`.
+ * - The setup frame's `callSid` is another, 36-character id; the webhook's `CallSid` comes as
+ *   `callControlId` (setupCallId below). Its `from`, `to` and `direction` are null, and the numbers come
+ *   in `customParameters` (`telnyx_call_from`, `telnyx_call_to`, and other `telnyx_*` keys).
+ * - Telnyx's default recognizer ends a prompt at short pauses: "22 Alder Street" came as three
+ *   final prompts. `TELNYX_TRANSCRIPTION_PROVIDER` chooses another (deepgram, google, telnyx).
+ *
+ * ASSUMPTIONS, not in Telnyx's published pages and not yet seen on a live call:
+ * 1. The parser below also reads a JSON body, and takes `call_control_id` (or `CallControlId`) for the call
+ *    id when `CallSid` is absent, should a webhook ever come that way (none has).
  * 2. The `<Connect action>` callback hands the `end` frame's data back as `HandoffData`. The parser
  *    also takes `handoffData`.
  * 3. `hints` is not a documented attribute; it is sent so recognition gets the app's words if Telnyx
@@ -120,6 +132,9 @@ function startDocument(o: StartDocumentOptions): string {
 }
 
 export const telnyxProvider: VoiceProvider = {
+  // Seen on a live call (2026-10-05): the setup's callSid is a 36-character id, and the webhook's CallSid
+  // (a v3: id) arrives as callControlId.
+  setupCallId: (setup) => setup.callControlId ?? setup.callSid,
   id: 'telnyx',
   contentType: 'text/xml',
   verify: (req, secret) =>

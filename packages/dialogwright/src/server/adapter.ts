@@ -1,3 +1,4 @@
+import { setupCallIdOf } from './voice/registry';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
@@ -548,12 +549,37 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
   }
 }
 
+/**
+ * A refused message's shape for the log: its field names and the kind of each value, with only the
+ * `type` value itself (a carrier's own word, never a caller's), so a carrier whose messages differ from
+ * its documentation can be read from the log without one phone number or id written to it.
+ */
+export function messageShape(raw: string): string {
+  let m: unknown;
+  try {
+    m = JSON.parse(raw);
+  } catch {
+    return `not JSON (${raw.length} chars)`;
+  }
+  const kind = (v: unknown): string => {
+    if (v === null) return 'null';
+    if (Array.isArray(v)) return `array(${v.length})`;
+    if (typeof v === 'object') return `{${Object.keys(v as object).slice(0, 20).join(',')}}`;
+    if (typeof v === 'string') return `string(${v.length})`;
+    return typeof v;
+  };
+  if (typeof m !== 'object' || m === null || Array.isArray(m)) return kind(m);
+  const fields = Object.entries(m as Record<string, unknown>).slice(0, 40).map(([k, v]) =>
+    k === 'type' && typeof v === 'string' && /^[A-Za-z_.-]{1,40}$/.test(v) ? `type="${v}"` : `${k}:${kind(v)}`);
+  return `{${fields.join(' ')}}`;
+}
+
 /** Handle one raw socket message for a connection. Safe to call concurrently; turns are serialized per call by the store. */
 export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, raw: string): Promise<void> {
   const parsed = parseInbound(raw);
   if (!parsed) {
     ctx.malformed += 1;
-    deps.log(`${ctx.callSid ?? 'unknown'}: malformed inbound message (${ctx.malformed})`);
+    deps.log(`${ctx.callSid ?? 'unknown'}: malformed inbound message (${ctx.malformed}): ${messageShape(raw)}`);
     const entry = ctx.callSid ? deps.store.get(ctx.callSid) : undefined;
     entry?.frames.write('log', { malformed: raw.slice(0, 200) });
     // Whatever is on the other end is not ConversationRelay; stop paying for its messages.
@@ -566,55 +592,56 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   }
 
   if (parsed.type === 'setup') {
-    if (!ctx.token || !deps.tokens.verify(ctx.token, parsed.callSid, ctx.provider)) {
-      deps.log(`${parsed.callSid}: setup refused, bad token`);
+    const callId = setupCallIdOf(ctx.provider, parsed);
+    if (!ctx.token || !deps.tokens.verify(ctx.token, callId, ctx.provider)) {
+      deps.log(`${callId}: setup refused, bad token`);
       await sendOne(socket, endFrame('unauthorized'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
       socket.close(1008, 'unauthorized');
       return;
     }
-    ctx.callSid = parsed.callSid;
+    ctx.callSid = callId;
     // A call this server does not hold may have been saved by the one before it (SESSION_STORE=file): a
     // planned restart's handover answered its carrier's callback there, so its socket comes here with no
     // callback first. Loaded, it resumes; one saved in a shape this server cannot read is ended toward a
     // person (the carrier's callback with that handoff dials HANDOFF_NUMBER), never begun again as a new
     // call. With the memory store there is never one to load.
-    if (deps.store.get(parsed.callSid) === undefined && deps.store.durable) {
-      const loaded = await deps.store.restore(parsed.callSid, ctx.provider);
+    if (deps.store.get(callId) === undefined && deps.store.durable) {
+      const loaded = await deps.store.restore(callId, ctx.provider);
       if (loaded === 'unreadable') {
         await sendOne(socket, endFrame('unreadable'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
-        deps.tokens.revoke(parsed.callSid);
+        deps.tokens.revoke(callId);
         return;
       }
     }
-    const existing = deps.store.get(parsed.callSid);
+    const existing = deps.store.get(callId);
     if (existing) {
       // Masked at write time, not only when the dashboard reads it back: the setup frame carries
       // the caller's whole number, and the file on disk must never hold it either.
       existing.frames.write('in', redactDeep(parsed));
       if (existing.ended) {
-        deps.log(`${parsed.callSid}: setup for an ended call, closing`);
+        deps.log(`${callId}: setup for an ended call, closing`);
         socket.close(1000, 'call ended');
         return;
       }
       // The wait the old connection was counting down no longer means anything. The replay below
       // starts a fresh one; this clear is what covers a reconnect with no prompt to replay yet.
-      clearNoInput(parsed.callSid);
+      clearNoInput(callId);
       const previous = existing.socket;
       if (previous && previous !== socket) {
         // Twilio reconnected before the old socket's close reached us; retire it explicitly so
         // nothing is written to two sockets for one call.
-        deps.log(`${parsed.callSid}: reconnect replaced a live socket`);
+        deps.log(`${callId}: reconnect replaced a live socket`);
         existing.frames.write('log', { replacedSocket: true });
         previous.close(1000, 'replaced by reconnect');
       }
-      const entry = deps.store.attach(parsed.callSid, socket) ?? existing;
+      const entry = deps.store.attach(callId, socket) ?? existing;
       // A call loaded from the session store after a restart (SESSION_STORE=file): its caller heard
       // nothing for a moment, and is told so before the question is asked again.
-      const restarted = deps.store.takeRestored(parsed.callSid);
+      const restarted = deps.store.takeRestored(callId);
       entry.frames.write('log', { resumed: true, sessionId: parsed.sessionId, ...(restarted ? { afterRestart: true } : {}) });
-      if (restarted) deps.log(`${parsed.callSid}: resumed after a restart`);
-      publish(deps, { type: 'reconnect', callSid: parsed.callSid, at: Date.now(), attempt: entry.reconnects });
-      await deps.store.enqueue(parsed.callSid, async (e) => {
+      if (restarted) deps.log(`${callId}: resumed after a restart`);
+      publish(deps, { type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects });
+      await deps.store.enqueue(callId, async (e) => {
         const again = restarted ? [resumedLine(e.session), e.session.lastPromptText].filter(Boolean).join(' ') : e.session.lastPromptText;
         if (!again) return;
         // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
@@ -634,11 +661,11 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       });
       return;
     }
-    const entry = deps.store.create(parsed.callSid, socket, ctx.provider);
+    const entry = deps.store.create(callId, socket, ctx.provider);
     entry.frames.write('in', redactDeep(parsed));
     // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
     publish(deps, {
-      type: 'call_started', callSid: parsed.callSid, at: Date.now(),
+      type: 'call_started', callSid: callId, at: Date.now(),
       from: maskNumber(parsed.from), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
       // Voice only, here, with the carrier it came in on; an app's chat (an AppRoute,
       // src/server/appRoutes.ts) is the other publisher of this event, and there `caller` names who is chatting.
@@ -653,7 +680,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       // A client whose warm throws synchronously is no reason to drop the call.
     }
     const start = frameToEvent(parsed);
-    await enqueueUnsettled(deps, parsed.callSid, async (e) => {
+    await enqueueUnsettled(deps, callId, async (e) => {
       await turn(deps, e, start);
     });
     return;
