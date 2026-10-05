@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>DialogWright: your own phone system, on a machine you own</title>
-  <meta name="description" content="DialogWright is an open-source TypeScript framework for your own phone system: an IVR that understands callers, on a machine you own with a carrier number and a model key, designed to scale to a contact center.">
+  <title>DialogWright: voice and chat agents that understand people and act safely</title>
+  <meta name="description" content="DialogWright is an open-source TypeScript framework for voice and chat agents, easy enough to run yourself and powerful enough for your contact center. A decision model understands what callers mean, code decides what happens, and a policy gate checks every action.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -16,8 +16,8 @@
   <link rel="apple-touch-icon" href="brand/favicon-180.png">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://dialogwright.com/">
-  <meta property="og:title" content="DialogWright: your own phone system">
-  <meta property="og:description" content="An IVR for your life, on a machine you own, with a carrier number and a model key. The same open-source framework is designed to scale to a contact center.">
+  <meta property="og:title" content="DialogWright">
+  <meta property="og:description" content="Voice and chat agents that understand people and act safely. Easy enough to run yourself, powerful enough for your contact center. An open-source TypeScript framework.">
   <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
   <link rel="stylesheet" href="style.css">
   <script src="copy.js" defer></script>
@@ -53,18 +53,19 @@
           <source media="(prefers-color-scheme: dark)" srcset="brand/dialogwright-logo-dark.svg">
           <img class="logo" src="brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
         </picture>
-        <h1 id="hero-title">Your own phone system. An IVR for your life, on a machine you own.</h1>
+        <h1 id="hero-title">Voice and chat agents that understand people and act safely.</h1>
         <p class="lede">
-          Answer your own number, screen callers, take messages and put the urgent ones through to your mobile.
-          It runs on your laptop or a box at home with a carrier number and a model key, and the same framework
-          is designed to scale to a contact center.
+          A new take on virtual agents: natural understanding, predictable words and actions, and fast
+          replies. Callers say it their own way; the agent understands, does the right thing and says what
+          you approved.
         </p>
+        <p class="lede"><strong>Easy enough to run yourself, powerful enough for your contact center.</strong></p>
         <p class="actions">
-          <a class="button primary" href="guides/home-server.html">Run it on a machine you own</a>
-          <a class="button" href="https://github.com/DialogWright/dialogwright">GitHub repository</a>
+          <a class="button primary" href="https://github.com/DialogWright/dialogwright">GitHub repository</a>
+          <a class="button" href="#start">Quick start</a>
           <a class="button" href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Read the design</a>
         </p>
-        <p class="note">Voice and chat agents that understand people and act safely: an open-source TypeScript framework. Apache-2.0. Pre-release. Try it on a laptop with no keys.</p>
+        <p class="note">An open-source TypeScript framework. Apache-2.0. Pre-release. Runs on a laptop with no keys.</p>
       </div>
     </section>
 
@@ -72,10 +73,9 @@
       <div class="wrap">
         <h2 id="why-title">Nobody calls an IVR to chat</h2>
         <p>
-          People call a business to pay a bill, report an outage or move an appointment. They call you to reach
-          you, to leave a message, or to find out whether it can wait. Either way they judge the line by one
-          thing: whether it understood them. Nobody hangs up impressed that it said the same thing a dozen
-          different ways.
+          People call to pay a bill, report an outage or move an appointment. They judge your IVR or chatbot
+          by one thing: whether it understood them. Nobody hangs up impressed that it said the same thing a
+          dozen different ways.
         </p>
         <p>
           Large language models finally made real understanding possible, and generation came bundled with
@@ -97,49 +97,7 @@
       </div>
     </section>
 
-    <section id="guides" aria-labelledby="guides-title">
-      <div class="wrap">
-        <h2 id="guides-title">From your desk to the enterprise</h2>
-        <p class="intro">
-          Start with one machine and your own number. When a business needs more, the same app is designed to run
-          on many servers.
-        </p>
-        <div class="cards two">
-          <article class="card">
-            <h3>One machine, for you</h3>
-            <p>
-              Your laptop to try it, then any machine that stays on: a Mac, a Linux mini PC, a spare desktop. A phone
-              line needs two keys, a carrier's (Telnyx or Twilio) and a decision model's, and a tunnel (a quick one
-              needs no account). One process, no database: it starts at boot, survives its own restarts without dropping
-              a caller, and shows you calls on your phone. Built.
-            </p>
-            <p><a href="guides/home-server.html">Run your own IVR on a machine you own</a></p>
-          </article>
-          <article class="card">
-            <h3>Many servers, for a business</h3>
-            <p>
-              The same app behind a load balancer, with sessions in a shared store so that a deploy or a failed server
-              never drops a call. Designed, not built yet: the seams are in (store interfaces with a contract suite,
-              versioned sessions, idempotent writes), and the shared stores are Phase 8b of the
-              <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>.
-            </p>
-            <p><a href="guides/scaling.html">Scaling out (a design)</a></p>
-          </article>
-        </div>
-        <ul class="facts">
-          <li><strong>The same app folder.</strong> Intents, forms, prompts and slots in YAML, tools in TypeScript.</li>
-          <li><strong>The same policy.</strong> <code>policy.yaml</code> and the gate decide every action, on one machine or fifty.</li>
-          <li><strong>The same audit.</strong> Every decision, allowed or refused, in a hash-chained log, with a trace of every turn.</li>
-          <li><strong>The same tests.</strong> <code>pnpm check</code>, the policy matrix and the scripted calls, before any call is taken.</li>
-        </ul>
-        <p class="note">
-          A personal line (a voicemail replacement) is not an example app yet: it is what you can build. The examples today are a
-          clinic and a utility, below, and <code>pnpm create-app</code> starts yours.
-        </p>
-      </div>
-    </section>
-
-    <section id="how" class="alt" aria-labelledby="how-title">
+    <section id="how" aria-labelledby="how-title">
       <div class="wrap">
         <h2 id="how-title">How it works</h2>
         <p class="intro">
@@ -179,6 +137,44 @@
           <li><strong>Explainable.</strong> The audit names the rule that passed or failed, and what it compared.</li>
           <li><strong>Not steerable by the caller.</strong> What a caller says is data the model classifies, never instructions the code follows.</li>
           <li><strong>Tunable.</strong> Thresholds are numbers, adjusted by measurement rather than by rewording a prompt.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="guides" class="alt" aria-labelledby="guides-title">
+      <div class="wrap">
+        <h2 id="guides-title">From a single instance to full horizontal scale</h2>
+        <p class="intro">
+          From a personal system on one machine you own to a contact center across many servers, it is the same
+          app: what it understands, what it says and what the policy allows do not change.
+        </p>
+        <div class="cards two">
+          <article class="card">
+            <h3>On a machine you own</h3>
+            <p>
+              Try it on a laptop, then run it on any machine that stays on, for a small office or your own line. A
+              phone line needs two keys, a carrier's (Telnyx or Twilio) and a decision model's, and a tunnel (a quick
+              one needs no account). It starts at boot, survives its own restarts without dropping a caller, and
+              shows you calls on your phone.
+            </p>
+            <p><a href="guides/home-server.html">Run it on a machine you own</a></p>
+          </article>
+          <article class="card">
+            <h3>Across many servers</h3>
+            <p>
+              Behind a load balancer, with sessions in a shared store, so a deploy or a failed server never drops a
+              call. Designed, with the seams in place (store interfaces with a contract suite, versioned sessions,
+              idempotent writes); the shared stores are Phase 8b of the
+              <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>.
+            </p>
+            <p><a href="guides/scaling.html">Scaling out (a design)</a></p>
+          </article>
+        </div>
+        <ul class="facts">
+          <li><strong>The same app folder.</strong> Intents, forms, prompts and slots in YAML, tools in TypeScript.</li>
+          <li><strong>The same policy.</strong> <code>policy.yaml</code> and the gate decide every action, on one machine or fifty.</li>
+          <li><strong>The same audit.</strong> Every decision, allowed or refused, in a hash-chained log, with a trace of every turn.</li>
+          <li><strong>The same tests.</strong> <code>pnpm check</code>, the policy matrix and the scripted calls, before any call is taken.</li>
         </ul>
       </div>
     </section>
