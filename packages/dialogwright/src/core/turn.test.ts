@@ -795,9 +795,12 @@ describe('final confirm', () => {
     expect(r.session.slots.missingNote!.value).toBe(STATEMENT);
     expect(r.session.slots.expectedDate!.display).toBe(SUNDAY);
     expect(r.session.pendingConfirmation).toEqual({ target: 'form', form: 'report_missing', attempts: 0 });
-    // A new value for the detail named itself is the same correction.
+    // A new value for the detail named itself is the same correction. The description is held and
+    // was not just asked for, so it is new only as a correction reads it (its value on file hidden,
+    // FillOptions.correcting): the gates must read the turn exactly as the fill that follows does.
     const both = afterTurns([...HAPPY, 'the description, it was a green bag left at the porch']);
     expect(both.decision).toMatchObject({ promptId: 'confirm_report' });
+    expect(both.rows.find((x) => x.gate === 'changeSlot')).toMatchObject({ outcome: 'value_given:missingNote', decided: false });
     expect(both.session.slots.missingNote!.value).toBe('the description, it was a green bag left at the porch');
   });
 
