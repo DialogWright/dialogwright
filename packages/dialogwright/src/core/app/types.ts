@@ -646,10 +646,22 @@ export interface VoiceConfig {
    * out is rewritten: the session text, the trace and the manifest keep the readable form.
    */
   readonly spokenDigits?: readonly SpokenDigitRule[];
+  /**
+   * Words the text-to-speech voice says wrong, each with the respelling it is sent instead
+   * (channel/pronounce.ts): matched whole, whatever its case, in every line spoken. Only what goes out
+   * on the voice wire is rewritten; the session, the trace and the console keep the words.
+   */
+  readonly pronounce?: Readonly<Record<string, string>>;
   /** The locale a call starts in, by the number called (E.164); a number not listed starts in the app's default. Each is one of App.locales. */
   readonly numbers?: Readonly<Record<string, string>>;
   /** Per-locale speech settings on the phone, by the app's locale tags: languages, a voice per carrier, hints. */
   readonly locales?: Readonly<Record<string, VoiceLocale>>;
+  /**
+   * A caller who had not finished (run/continuation.ts): when the reply to a final prompt is
+   * interrupted within this many milliseconds of starting, the next final prompt continues it, and
+   * the turn runs on the words joined. 0 turns it off; 0 to 2000. Absent: 300.
+   */
+  readonly continueWithinMs?: number;
 }
 
 /** How the phone speaks and hears one of the app's locales (VoiceConfig.locales). Each field is optional. */
@@ -668,6 +680,8 @@ export interface VoiceLocale {
   readonly voices?: Readonly<Record<string, string | ProviderVoice>>;
   /** Words the recognizer should expect in this locale, in place of VoiceConfig.hints. */
   readonly hints?: readonly string[];
+  /** Words the voice says another way in this locale, in place of VoiceConfig.pronounce. */
+  readonly pronounce?: Readonly<Record<string, string>>;
   /**
    * The speech recognizer, by voice provider id (twilio, telnyx), each in the carrier's own names.
    * It wins over the deployment's recognizer for that carrier (TWILIO_TRANSCRIPTION_PROVIDER and

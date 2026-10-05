@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { checkAlways, identifier, localeTag, matching, name, text, textMap, unique } from './common';
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS } from '../../channel/voiceProviders';
+import { PRONOUNCE_MAX_SAY, PRONOUNCE_MAX_WORD, pronounceProblems } from '../../channel/pronounce';
+import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
@@ -180,6 +182,16 @@ const twilioVoice = z
   })
   .describe('A Twilio voice that names its TTS provider. A voice written as a name alone takes the deployment\'s TTS_PROVIDER, or Twilio\'s default provider when that is unset.');
 
+/** Words the voice says another way, with their respellings (channel/pronounce.ts): voice.pronounce, and a locale's own. */
+const pronounceList = () =>
+  z
+    .record(z.string().min(1).max(PRONOUNCE_MAX_WORD), z.string())
+    .check(checkAlways((value, ctx) => {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
+      const strings = Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
+      for (const p of pronounceProblems(strings)) ctx.addIssue({ code: 'custom', path: [p.word], message: p.message, params: { fix: p.fix } });
+    }));
+
 /** One locale's speech settings on the phone (voice.locales.<tag>). */
 const voiceLocale = z
   .strictObject({
@@ -193,6 +205,9 @@ const voiceLocale = z
           'A voice is a name; a Twilio voice may also be { voice, provider }, so it does not depend on the deployment\'s TTS_PROVIDER.',
       ),
     hints: z.array(text()).optional().describe('Words the speech recognizer should expect in this locale, in place of voice.hints.'),
+    pronounce: pronounceList()
+      .optional()
+      .describe('Words the voice says another way in this locale, in place of voice.pronounce: each word (matched whole, whatever its case) with the respelling the voice is sent. {} respells nothing in this locale.'),
     recognition: z
       .record(identifier(), recognition)
       .optional()
@@ -207,6 +222,20 @@ const voice = z
   .strictObject({
     hints: z.array(text()).optional().describe('Words the speech recognizer should expect (ConversationRelay hints), before the engine\'s number words.'),
     spokenDigits: z.array(spokenDigitRule).optional().describe('How digits that are identifiers are spelled out for text-to-speech, tried in order.'),
+    pronounce: pronounceList()
+      .optional()
+      .describe(
+        `Words the text-to-speech voice says wrong, each with a respelling it says right (Alder: All-der). A word is matched whole, whatever its case, in every line the agent speaks, a value the caller gave included; only the text sent to the voice changes, never the trace, the console or a chat. A respelling is plain letters (no SSML: not every carrier reads it), at most ${PRONOUNCE_MAX_SAY} characters; a word at most ${PRONOUNCE_MAX_WORD}.`,
+      ),
+    continueWithinMs: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_CONTINUE_WITHIN_MS)
+      .optional()
+      .describe(
+        `A caller who had not finished: when the agent's reply to a final prompt is interrupted within this many milliseconds of starting, the next final prompt continues the one before it, and the turn runs on the words joined, as if they had been said at once, with the cut-off reply undone. 0 turns it off. Default ${DEFAULT_CONTINUE_WITHIN_MS}.`,
+      ),
     numbers: z
       .record(matching(/^\+\d{8,15}$/, 'must be an E.164 number like +15555550142', 'write the number with + and the country code, in quotes ("+15555550142")'), localeTag())
       .optional()

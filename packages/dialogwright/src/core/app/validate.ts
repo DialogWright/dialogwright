@@ -13,6 +13,8 @@ import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
 import { SLOT_LISTEN_VALUES } from '../slots/types';
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS, VOICE_PROVIDER_IDS } from '../../channel/voiceProviders';
+import { pronounceProblems } from '../../channel/pronounce';
+import { MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 import { handoffDataProblems } from '../../handoff/data';
 
 /** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
@@ -158,6 +160,10 @@ export function validateApp(app: App): void {
   for (const { digit, intent } of app.menu) if (!Object.hasOwn(app.intents, intent)) fail(`menu digit "${digit}" has unknown intent "${intent}"`);
   // The locales the app speaks (core/locale.ts localesOf, written out here: that module reads the registry, which reads this one).
   const speaks = app.locales ? [app.locales.default, ...Object.keys(app.locales.prompts)] : ['en-US'];
+  const within = app.voice?.continueWithinMs;
+  if (within !== undefined && (!Number.isInteger(within) || within < 0 || within > MAX_CONTINUE_WITHIN_MS)) fail(`voice.continueWithinMs ${within} is not a whole number from 0 to ${MAX_CONTINUE_WITHIN_MS}`);
+  for (const p of pronounceProblems(app.voice?.pronounce ?? {})) fail(`voice.pronounce: ${p.message}`);
+  for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) for (const p of pronounceProblems(settings.pronounce ?? {})) fail(`voice.locales.${tag}.pronounce: ${p.message}`);
   for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) if (!speaks.includes(tag)) fail(`voice.numbers starts ${number} in the locale "${tag}", which the app does not speak`);
   for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {
     if (!speaks.includes(tag)) fail(`voice.locales names the locale "${tag}", which the app does not speak`);

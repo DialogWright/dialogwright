@@ -40,6 +40,8 @@ export interface TraceInput {
   timing: TraceTiming;
   /** What the knowledge retriever did before the turn was planned; null or absent when it did not run. */
   retrieval?: RetrievalRecord | null;
+  /** The prompts a joined turn's words join (TraceRecord.joined); null or absent for a turn of its own. */
+  joined?: readonly string[] | null;
   /** What answers the call (TraceRecord.answeredBy): on the session start's record, from a client that asks a model. */
   answeredBy?: AnsweredBy | null;
   ts: string;
@@ -94,6 +96,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     kb: result.kb,
     // Only on a turn the retriever ran: every other record is as it was.
     ...(input.retrieval ? { retrieval: input.retrieval } : {}),
+    // Only on a joined turn: every other record is as it was.
+    ...(input.joined ? { joined: { fragments: [...input.joined] } } : {}),
     // As recorded: each param masked as its call was (core/recording.ts recordedEffect); the runner sends the effect itself.
     effects: result.effects.map(recordedEffect),
     audit: [...result.audit],
