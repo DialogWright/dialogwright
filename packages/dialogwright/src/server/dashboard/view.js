@@ -71,6 +71,62 @@ const ENGINE_HANDOFF_REASONS = {
   'system-failure': 'system failure',
 };
 
+/** A duration for a delivery note: `0.7 s`; `?` when the fact has no such number. */
+function secs(ms) {
+  return typeof ms === 'number' && Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)} s` : '?';
+}
+
+/**
+ * Delivery notes: what happened on the line to what the agent said, as a short sentence under the line
+ * it concerns (the console otherwise shows none of it; the frame log has it). One entry per kind of fact
+ * the server reports (a `delivery` event, server/dashboard/delivery.ts): `on` is the line the note goes
+ * under (`agent`: the agent's latest line, the one it concerns; `caller`: the caller's latest line;
+ * null: under none, held for the next turn's notes to read), and `text(fact, held)` says it from the
+ * fact's fields, which are timings and short codes only, never anyone's words. `held` has the facts of
+ * the `on: null` kinds that came within the last turn, by kind.
+ *
+ * A fact is one of the adapter's frame-log lines under its kind's key, its fields flattened
+ * (`{ resaid: { heardMs, expectedMs } }` is `{ kind: 'resaid', heardMs, expectedMs }`; a key's bare
+ * value is `value`, and the line's other fields stay as they are), or the carrier's interrupt
+ * (`interrupt`). To show a new kind: one line here, and the adapter writes its frame-log line through
+ * `logDelivery` (server/adapter.ts). Live and on reload alike, nothing else changes.
+ */
+export const DELIVERY_NOTES = {
+  // A line the carrier cut short, said again (RESAY_CUT_LINES); `reason` names a cause other than the carrier's report of the line ending.
+  resaid: { on: 'agent', text: (f) => (f.reason === 'spurious-interrupt'
+    ? `stopped at ${secs(f.heardMs)} by an interrupt with no caller speaking, said again`
+    : `cut off at ${secs(f.heardMs)} of about ${secs(f.expectedMs)}, said again`) },
+  cutAgain: { on: 'agent', text: (f) => `cut short again at ${secs(f.heardMs)} of about ${secs(f.expectedMs)}, not said a third time` },
+  // The carrier's interrupt of the line; `callerHeard` is null on a carrier that reports no caller speech.
+  interrupt: { on: 'agent', text: (f) => (f.callerHeard === false
+    ? `interrupted ${secs(f.afterMs)} in, caller not heard speaking`
+    : `caller talked over this, ${secs(f.afterMs)} in`) },
+  // A turn's `end` held until its lines played (END_AFTER_PLAYBACK); `value` is how it came to go.
+  endAfter: { on: 'agent', text: (f) => ({
+    played: `call end held ${secs(f.endHeldMs)} until it played`,
+    estimate: `call end held ${secs(f.endHeldMs)}, the line's estimated length`,
+    timeout: `call end held ${secs(f.endHeldMs)} until the time limit`,
+    closed: `caller hung up ${secs(f.endHeldMs)} into it`,
+  })[f.value] ?? `call end held ${secs(f.endHeldMs)}` },
+  // The caller came back in over the reply to their last answer: `joined` reads its pause.
+  callerResumed: { on: null },
+  // The caller's words joined to their previous answer, as one turn (run/continuation.ts).
+  joined: { on: 'caller', text: (f, held) => (held.callerResumed
+    ? `joined with the previous answer (paused ${secs(held.callerResumed.pauseMs)})`
+    : 'joined with the previous answer') },
+};
+
+/**
+ * A delivery fact's note, or null for a kind the console does not show (not in DELIVERY_NOTES, or
+ * `on: null`). `held` as DELIVERY_NOTES's `text` reads it.
+ */
+export function deliveryNote(fact, held) {
+  const kind = fact?.kind;
+  const entry = typeof kind === 'string' && Object.hasOwn(DELIVERY_NOTES, kind) ? DELIVERY_NOTES[kind] : null;
+  if (!entry || !entry.on) return null;
+  return { kind, on: entry.on, text: entry.text(fact, held ?? {}) };
+}
+
 /** The console metadata in force: neutral until the page (or a test) configures the app's. */
 let META = {
   formLabels: {}, slotLabels: {}, questionPrefixes: {}, detectQuestions: [], stepUp: [], chipStyle: {},
@@ -642,6 +698,9 @@ export function reduce(events, opts) {
   let facts = new Map();
   let factForm = null;
   let transfer = null;
+  /** Delivery facts of the kinds shown under no line (DELIVERY_NOTES `on: null`), by kind, each with the `turn` events seen when it came. */
+  let held = new Map();
+  let turnsSeen = 0;
   /**
    * The action webhook publishes `ended{hangup}` before a reconnect is known, so anything that
    * only a live call produces takes the status back.
@@ -666,6 +725,8 @@ export function reduce(events, opts) {
         facts = new Map();
         factForm = null;
         transfer = null;
+        held = new Map();
+        turnsSeen = 0;
         from = e.from;
         ended = true; // so `live()` sets the status from one place
         live();
@@ -692,6 +753,7 @@ export function reduce(events, opts) {
       }
       case 'turn': {
         const r = e.record;
+        turnsSeen += 1;
         // The language the session speaks, which only an app that declares locales records.
         if (typeof r.locale === 'string') v.locale = r.locale;
         // The configuration the call runs under, which only an app with hashes (App.configHashes) records.
@@ -837,6 +899,10 @@ export function reduce(events, opts) {
         // card to attach to (a stray or reordered event) is dropped rather than fabricating one.
         if (v.handoff) v.handoff = { ...v.handoff, summary: e.text, summaryPending: false, summaryDemo: e.demo === true };
         break;
+      case 'delivery':
+        addDeliveryNote(v.lines, e.fact, held, turnsSeen);
+        // Not a moment the caller acted in: a silence is still measured from the turn before it.
+        continue;
     }
     prevAt = at ?? prevAt;
   }
@@ -859,6 +925,32 @@ export function reduce(events, opts) {
   v.lines = merged;
   v.now = nowOf(v, task, completed, facts, transfer);
   return v;
+}
+
+/**
+ * Puts a delivery fact's note (DELIVERY_NOTES) under the line it concerns: the latest agent line, or
+ * the latest caller line, in `lines` as they stand. A fact arrives after the line it is about (a re-send
+ * once the line was cut, the join once the joined turn ran), and before the next one is said: the
+ * adapter writes it so (server/adapter.ts), and replay keeps that order (replayEvents). A kind shown
+ * under no line is held, for the notes up to the end of the next turn to read.
+ */
+function addDeliveryNote(lines, fact, held, turnsSeen) {
+  const kind = fact?.kind;
+  if (typeof kind !== 'string' || !Object.hasOwn(DELIVERY_NOTES, kind)) return;
+  if (!DELIVERY_NOTES[kind].on) {
+    held.set(kind, { fact, turnsSeen });
+    return;
+  }
+  const recent = {};
+  for (const [k, h] of held) if (turnsSeen - h.turnsSeen <= 1) recent[k] = h.fact;
+  const note = deliveryNote(fact, recent);
+  if (!note) return;
+  const want = note.on === 'agent' ? 'system' : 'caller';
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].kind !== want) continue;
+    lines[i] = { ...lines[i], notes: [...(lines[i].notes ?? []), { kind: note.kind, text: note.text }] };
+    return;
+  }
 }
 
 /**
@@ -914,13 +1006,25 @@ function reasonCodeOf(handoffData) {
 const REPLAY_RANK = {
   silence: 0, dtmf: 0, interrupt: 0, reconnect: 0,
   asked: 1, turn: 1,
+  delivery: 1.5,
   handoff: 2, ended: 2,
 };
+
+/**
+ * Where a delivery fact sorts among events sharing its timestamp: the carrier's interrupt with the
+ * interrupt it is (ahead of the turn it causes); any other after the turn whose line it is about.
+ */
+function replayRank(e) {
+  if (e.type === 'delivery') return e.fact?.kind === 'interrupt' ? 0 : REPLAY_RANK.delivery;
+  return REPLAY_RANK[e.type] ?? 1;
+}
 
 /**
  * Rebuilds the live event sequence from a trace file and its frame log, so the page has one
  * renderer and two sources. `records` are what `/dashboard/traces/<sid>` returns: redacted, each
  * with the `spokenText` the caller heard (the browser has no prompt manifest to render it from).
+ * `opts.deliveries` are the call's delivery facts as that route read them from the frame log
+ * (server/dashboard/delivery.ts deliveriesOf), the same `delivery` events the adapter published live.
  */
 export function replayEvents(records, frames, opts) {
   const events = [];
@@ -978,8 +1082,11 @@ export function replayEvents(records, frames, opts) {
   });
   // A silence or dtmf frame precedes the turn it caused and an end frame follows it, all three
   // sharing a timestamp, so the sort breaks ties by that order (stable, so `asked` keeps its turn).
-  const rank = (e) => REPLAY_RANK[e.type] ?? 1;
-  const all = frameEvents.concat(turnEvents).sort((a, b) => a.at - b.at || rank(a) - rank(b));
+  // Deliveries after the frames, so an interrupt's fact follows the interrupt it shares a time and a rank with.
+  const deliveries = (Array.isArray(opts?.deliveries) ? opts.deliveries : [])
+    .filter((d) => d && d.type === 'delivery' && typeof d.at === 'number')
+    .map((d) => ({ ...d, callSid }));
+  const all = frameEvents.concat(deliveries, turnEvents).sort((a, b) => a.at - b.at || replayRank(a) - replayRank(b));
   return events.concat(all);
 }
 
@@ -1121,8 +1228,9 @@ export function scriptOf(lines, turnsView) {
   const screened = new Set((turnsView ?? []).filter((t) => t.stages?.screen?.state === 'fail').map((t) => t.turnIndex));
   const out = [];
   for (const l of lines ?? []) {
-    if (l.kind === 'caller') out.push({ who: 'caller', text: l.text, screened: screened.has(l.turn), codeMasked: l.text.includes(CODE_MASK) });
-    else if (l.kind === 'system') out.push({ who: 'agent', text: l.text });
+    const notes = l.notes?.length ? { notes: l.notes } : {};
+    if (l.kind === 'caller') out.push({ who: 'caller', text: l.text, screened: screened.has(l.turn), codeMasked: l.text.includes(CODE_MASK), ...notes });
+    else if (l.kind === 'system') out.push({ who: 'agent', text: l.text, ...notes });
     else if (l.kind === 'handoff') out.push({ who: 'handoff', text: l.text });
     else if (/^keypad /.test(l.text)) out.push({ who: 'keypad', text: l.text.slice('keypad '.length) });
     else if (/^silence\b/.test(l.text) || l.text === 'interrupted') out.push({ who: 'note', text: l.text });
@@ -1151,7 +1259,8 @@ function collecting(e) {
  * presses. A keypad entry is one step instead: from before its first digit to the turn that
  * answers it, whichever order the keypresses and their turns were recorded in. A wrong code and its
  * re-entry are still two steps: the turn that answered the first entry ends it. Play still shows
- * the digits land one by one. Always includes 0 and the end.
+ * the digits land one by one. A delivery note is no step of its own: it lands with the step before
+ * it. Always includes 0 and the end.
  */
 export function replayStops(events) {
   const n = events?.length ?? 0;
@@ -1159,6 +1268,8 @@ export function replayStops(events) {
   for (let c = 1; c < n; c++) {
     const next = events[c];
     if (collecting(events[c - 1]) && inEntry(next)) continue;
+    // A delivery note lands with the step before it: the line it is about, or the interrupt it is.
+    if (next?.type === 'delivery') continue;
     stops.push(c);
   }
   if (n > 0) stops.push(n);

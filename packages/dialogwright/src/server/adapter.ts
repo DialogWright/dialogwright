@@ -19,6 +19,7 @@ import type { CallEntry, SessionStore, SocketLike } from './sessions';
 import type { CallTokens } from './tokens';
 import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactDeep, type DashboardEvent } from './dashboard/events';
+import { callerHeardAt, deliveryFactOf, interruptFact, reportsSpeakers } from './dashboard/delivery';
 import { redactHandoffData, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
 import { codeLengthOf } from '../core/app/lookup';
@@ -240,6 +241,7 @@ export function forgetNoInput(callSid: string): void {
   continuations.delete(callSid);
   unwatch(callSid);
   callerSpeaking.delete(callSid);
+  speakersReported.delete(callSid);
   heldEnds.get(callSid)?.release('closed');
   reportsPlayback.delete(callSid);
   forgetResumed(callSid);
@@ -415,6 +417,8 @@ const watched = new Map<string, Watched>();
 
 /** Calls whose caller the carrier reports speaking now (a PlaybackEvent `caller speaking`). */
 const callerSpeaking = new Set<string>();
+/** Calls whose carrier has reported its speakers (dashboard/delivery.ts reportsSpeakers): a caller it never reported was not heard. */
+const speakersReported = new Set<string>();
 
 /**
  * A caller who came back in (App.voice.continueWithinMs, run/continuation.ts), on a carrier that reports
@@ -559,7 +563,7 @@ function takeResumed(deps: AdapterDeps, entry: CallEntry): void {
   }
   const pauseMs = r.resumedAtMs - r.speechEndMs;
   const intoReplyMs = r.sentAtMs === null ? 0 : Math.max(0, r.resumedAtMs - r.sentAtMs);
-  entry.frames.write('log', { callerResumed: { pauseMs, intoReplyMs } });
+  logDelivery(deps, entry, { callerResumed: { pauseMs, intoReplyMs } });
   void deps.store.enqueue(callSid, async () => continuationOf(entry).resumed());
 }
 
@@ -929,7 +933,7 @@ function sendEndAfterPlayback(deps: AdapterDeps, entry: CallEntry, end: Outbound
   if (handoffData !== undefined) entry.heldHandoffData = handoffData;
   const done: Promise<void> = holdEnd(deps, callSid, sent)
     .then(async ({ after, heldMs, expectedMs }) => {
-      entry.frames.write('log', { endAfter: after, endHeldMs: heldMs, expectedMs });
+      logDelivery(deps, entry, { endAfter: after, endHeldMs: heldMs, expectedMs });
       if (after === 'closed') return;
       if (after === 'timeout' && reportsPlayback.has(callSid)) {
         deps.log(`${callSid}: end sent after ${seconds(heldMs, 2)} with no report the lines finished (~${seconds(expectedMs, 1)} estimated)`);
@@ -1021,7 +1025,7 @@ function onPlaybackEvent(deps: AdapterDeps, entry: CallEntry, ev: PlaybackEvent,
   if (w.resent) {
     w.done = true;
     deps.log(`${callSid}: playback cut short again (${seconds(heardMs, 2)} of ~${seconds(w.expectedMs, 1)}), not said a third time`);
-    entry.frames.write('log', { cutAgain: { heardMs, expectedMs: w.expectedMs } });
+    logDelivery(deps, entry, { cutAgain: { heardMs, expectedMs: w.expectedMs } });
     return;
   }
   const timer = setTimeout(() => resay(deps, callSid, w), RESAY_SETTLE_MS);
@@ -1043,7 +1047,7 @@ function resay(deps: AdapterDeps, callSid: string, w: Watched): void {
     if (e.ended || !e.socket || callerSpeaking.has(callSid)) return;
     const { heardMs } = w.finished;
     deps.log(`${callSid}: playback cut short (${seconds(heardMs, 2)} of ~${seconds(w.expectedMs, 1)}), lines said again`);
-    e.frames.write('log', { resaid: { heardMs, expectedMs: w.expectedMs } });
+    logDelivery(deps, e, { resaid: { heardMs, expectedMs: w.expectedMs } });
     const sent = await sendFrames(deps, e, w.frames, w.decision);
     watchPlayback(deps, e, w.frames, w.decision, sent, true);
     if (noInputTimers.has(callSid)) armNoInput(deps, e, sent);
@@ -1189,6 +1193,17 @@ export const RESAY_SETTLE_MS = 250;
  */
 function publish(deps: AdapterDeps, event: DashboardEvent): void {
   deps.bus?.publish(event);
+}
+
+/**
+ * Write a frame-log line that is a delivery fact (dashboard/delivery.ts: a line said again, a join, a
+ * held end), and hand the fact to the dashboard, which notes it under the line it concerns (view.js
+ * DELIVERY_NOTES). A reload of the call reads the same fact back from the frame log.
+ */
+function logDelivery(deps: AdapterDeps, entry: CallEntry, msg: Record<string, unknown>): void {
+  entry.frames.write('log', msg);
+  const fact = deliveryFactOf(msg);
+  if (fact) publish(deps, { type: 'delivery', callSid: entry.callSid, at: Date.now(), fact });
 }
 
 export function newConnectionContext(token: string | null, socket: SocketLike | null = null, provider = 'twilio'): ConnectionContext {
@@ -1396,7 +1411,7 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // Through the call's Continuation: a final prompt that continues one whose reply the caller cut
     // off at once runs as the words joined, on the session from before the first of them.
     const run = await continuationOf(entry).run(entry.session, event, entry.opts, arrival);
-    if (run.joined) entry.frames.write('log', { joined: run.joined.length });
+    if (run.joined) logDelivery(deps, entry, { joined: run.joined.length });
     turnFailures.delete(entry.callSid);
     entry.session = run.result.session;
     // Kept on the call's own entry whether or not the console is on: the handoff summary reads it.
@@ -1539,6 +1554,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // Read for a held `end` too (END_AFTER_PLAYBACK), which waits for the report that its lines played.
     const ev = playbackEventOf(ctx.provider, message);
     if (ev) {
+      if (reportsSpeakers(ev)) speakersReported.add(entry.callSid);
       if (ev.kind === 'playback') reportsPlayback.add(entry.callSid);
       // The caller heard speaking holds the no-input wait, on any carrier whose provider reports it.
       else onCallerSpeech(deps, entry, ev.speaking);
@@ -1728,6 +1744,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // Our line as written, as the turn will record it (run/turn.ts): the carrier echoes the respellings it was sent.
     const heard = unpronounce(frame.utteranceUntilInterrupt, pronounceFor(appOf(entry.session).voice, localeOf(entry.session)));
     publish(deps, { type: 'interrupt', callSid: ctx.callSid, at: Date.now(), utteranceUntilInterrupt: heard });
+    const voice = { reported: speakersReported.has(ctx.callSid), speaking: callerSpeaking.has(ctx.callSid), lastStartMs: lastStart.get(ctx.callSid) ?? null };
+    publish(deps, { type: 'delivery', callSid: ctx.callSid, at: Date.now(), fact: interruptFact(frame.durationUntilInterruptMs, callerHeardAt(voice, Date.now(), frame.durationUntilInterruptMs)) });
   }
   // The slots have fixed digit lengths, so the keypad terminators carry no meaning yet.
   if (frame.type === 'dtmf' && (frame.digit === '#' || frame.digit === '*')) {

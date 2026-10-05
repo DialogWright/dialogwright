@@ -14,6 +14,8 @@ import { replayFrameLog } from '../../harness-text/replay';
 import { useTestkit } from '../../testing/apps';
 import { defaultCorpusFile } from '../../run/fixtures';
 import { RESAY_SETTLE_MS, SPURIOUS_INTERRUPT_UNREPORTED_SETTLE_MS } from '../adapter';
+import type { DashboardEvent } from '../dashboard/events';
+import { reduce } from '../dashboard/view.js';
 
 useTestkit();
 
@@ -192,6 +194,12 @@ describe('a line the carrier cut short', () => {
     expect(lines.filter((l) => l.dir === 'in' && typeof l.msg === 'object' && l.msg !== null && 'carrierEvent' in l.msg)).toHaveLength(3);
     // And the server says so.
     expect(call.logs).toContain(`${CALL_ID}: playback cut short (0.67 s of ~${(expectedMs / 1000).toFixed(1)} s), lines said again`);
+    // The console is told, under the line said again (the bus hands a new watcher the call so far).
+    const seen: DashboardEvent[] = [];
+    running!.bus!.subscribe((e) => seen.push(e));
+    expect(seen.filter((e) => e.type === 'delivery').map((e) => (e as { fact: unknown }).fact)).toEqual([{ kind: 'resaid', heardMs: 670, expectedMs }]);
+    const said = reduce(seen).lines.filter((l) => l.kind === 'system').at(-1)!;
+    expect(said.notes?.map((n) => n.text)).toEqual([`cut off at 0.7 s of about ${(expectedMs / 1000).toFixed(1)} s, said again`]);
     call.relay.assertKnownTypes();
   });
 

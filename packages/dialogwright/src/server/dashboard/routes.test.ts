@@ -4,7 +4,10 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DashboardBus } from './bus';
-import { BOOT_ID, handleDashboardRequest } from './routes';
+import { BOOT_ID, handleDashboardRequest, type ReplayRecord } from './routes';
+import { reduce, replayEvents } from './view.js';
+import type { DashboardEvent } from './events';
+import type { FrameLogLine } from '../frameLog';
 import { consoleMetaOf } from './meta';
 import { defaultAppId, getApp } from '../../core/app/registry';
 import { useTestkit } from '../../testing/apps';
@@ -110,6 +113,33 @@ describe('dashboard routes', () => {
     expect(one.records[0]!.spokenText).toMatch(/\S/);
     expect((await fetch(`${s.base}/dashboard/traces/..%2Fetc`)).status).toBe(404);
     expect((await fetch(`${s.base}/dashboard/traces/CA404`)).status).toBe(404);
+    s.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("reloads a past call's delivery notes from its frame log, under the line they concern", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dash-'));
+    const rec = { v: 1, sessionId: 'CA8', turnIndex: 0, ts: '2026-09-21T00:00:00.000Z', event: { type: 'setup', from: '+15555550199', to: '+15550000002' }, decision: { kind: 'prompt', promptId: 'greeting', vars: {}, acks: [] }, slots: {}, form: null, gates: [], frames: [], timing: {}, usage: {} };
+    writeFileSync(join(dir, 'CA8.jsonl'), JSON.stringify(rec) + '\n');
+    const at = (ms: number) => new Date(Date.parse('2026-09-21T00:00:00.000Z') + ms).toISOString();
+    const frames = [
+      { ts: at(0), dir: 'in', msg: { type: 'setup', callSid: 'CA8', from: '+15555550199', to: '+15550000002' } },
+      { ts: at(5), dir: 'out', msg: { type: 'text', token: 'Hello.', last: true } },
+      { ts: at(150), dir: 'in', msg: { carrierEvent: { type: 'info', name: 'agentSpeaking', value: 'on' } } },
+      { ts: at(1854), dir: 'in', msg: { type: 'interrupt', utteranceUntilInterrupt: 'Hello', durationUntilInterruptMs: 1704 } },
+      { ts: at(3000), dir: 'log', msg: { resaid: { heardMs: 640, expectedMs: 9600 } } },
+    ];
+    writeFileSync(join(dir, 'CA8.frames.jsonl'), frames.map((f) => JSON.stringify(f)).join('\n') + '\n');
+    const s = await serve(new DashboardBus(), dir);
+    const one = await (await fetch(`${s.base}/dashboard/traces/CA8`)).json() as { records: ReplayRecord[]; frames: FrameLogLine[]; deliveries: DashboardEvent[] };
+    expect(one.deliveries.map((d) => (d.type === 'delivery' ? d.fact : null))).toEqual([
+      { kind: 'interrupt', afterMs: 1704, callerHeard: false },
+      { kind: 'resaid', heardMs: 640, expectedMs: 9600 },
+    ]);
+    // The page's reload: the same events the call published live, and the notes under the greeting.
+    const v = reduce(replayEvents(one.records, one.frames, { deliveries: one.deliveries }), { fromTrace: true });
+    const greeting = v.lines.find((l) => l.kind === 'system')!;
+    expect(greeting.notes?.map((n) => n.text)).toEqual(['interrupted 1.7 s in, caller not heard speaking', 'cut off at 0.6 s of about 9.6 s, said again']);
     s.close();
     rmSync(dir, { recursive: true, force: true });
   });

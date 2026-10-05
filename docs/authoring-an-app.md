@@ -2257,7 +2257,7 @@ With `RESAY_CUT_LINES` on (the default), the engine finds such a line and says i
 - **What the carrier reports, in the engine's terms.** A voice provider reads its carrier's own events into three kinds (`VoiceProvider.readEvent`): the playback started; the playback finished, with the line it says it played or without; the caller started or stopped speaking. Telnyx's are its `agentSpeaking` (`on`, `off`), `tokensPlayed` and `clientSpeaking` (`on`, `off`), which it sends only when `TELNYX_EVENTS` asks for them. Twilio reports none, so on Twilio nothing changes. Every event is still written to the call's frame log as it came (`{ carrierEvent: ... }`).
 - **A cut line.** The engine keeps what each turn sent and how long it should take to say (the estimate the no-input wait uses: 2.5 words a second, a clip by its length). The turn's playback is finished when the carrier says it stopped, or that it played the turn's last line. Finished in under `RESAY_MIN_FRACTION` of the estimate (default 0.35), measured from when the carrier said it started (or from the send, when it did not), with no `interrupt`, no caller speaking, no digit and no prompt since the lines went out, the lines were cut. The engine waits a quarter of a second more: a carrier that starts playing again (the next line of the turn) or a caller heard in that time means it was not.
 - **Said again, once.** The turn's lines go again as they were sent (the same text and clips, with `last` as the carrier needs it), and the no-input wait is armed again from the new playback. The server log says `<call>: playback cut short (0.67 s of ~9.6 s), lines said again`, and the frame log has `{ resaid: { heardMs, expectedMs } }` before the frames. Never more than once for a turn (a re-send cut as well is logged as `{ cutAgain: ... }` and left to the no-input wait), never while the caller is speaking, never after the call has ended, and never for a turn that ends the call or sends digits.
-- **Not a turn.** Nothing reaches the core, the trace, the audit or the console: the caller said nothing, and the session is where the turn left it. Replaying a frame log reads only what came in, and passes over the carrier's events, so a call with a re-send replays to the same turns.
+- **Not a turn.** Nothing reaches the core, the trace or the audit: the caller said nothing, and the session is where the turn left it. The console notes it under the line ([13.12](#1312-what-happened-on-the-line-in-the-console)). Replaying a frame log reads only what came in, and passes over the carrier's events, so a call with a re-send replays to the same turns.
 
 **An interrupt the caller did not make (`RESAY_SPURIOUS_INTERRUPTS`).** A carrier's barge-in can fire with no caller speaking: on a live Telnyx call (`BARGE_IN=speech`) an `interrupt` came 1704 ms into the greeting with no `clientSpeaking` at all, and the caller, hearing nothing, said nothing for about 11 s. On a carrier that reports the caller speaking (Telnyx with `TELNYX_EVENTS` speaker-events), with the setting on (the default):
 
@@ -2296,6 +2296,24 @@ Telnyx sends no partial transcripts: only the final one, about a second after th
 - **What the frame log shows.** `{ noInputHeld: "speaking" }` when the wait is held, and `{ noInputArmedMs, after: "speech" }` when it resumes (`after: "holdLimit"` for a stop taken as given), beside each `{ carrierEvent: ... }` as it came. The startup line says `no-input after speech 2500 ms` when a carrier that reports the caller speaking is listed.
 
 Twilio reports no speaking, so nothing changes there. A carrier added later that reports the caller's voice maps its own events in its provider's `readEvent`, and the wait uses them with no other change.
+
+### 13.12 What happened on the line, in the console
+
+The console's conversation (Turns and Script alike) shows a small muted note, labelled "on the line", under a line whose delivery the frame log says something about, so the frame log need not be read to know it:
+
+| What happened | The frame log | The note, under |
+|---|---|---|
+| A line the carrier cut short, said again ([13.9](#139-a-line-the-carrier-cut-short)) | `{ resaid: { heardMs, expectedMs } }` | "cut off at 0.7 s of about 9.6 s, said again", the agent's line |
+| The same line cut short again | `{ cutAgain: { heardMs, expectedMs } }` | "cut short again at 0.5 s of about 9.6 s, not said a third time", the agent's line |
+| The carrier's interrupt | the `interrupt` frame's `durationUntilInterruptMs` | "caller talked over this, 0.7 s in"; on a carrier that reports its speakers (Telnyx with speaker-events) and heard no caller since the line began, "interrupted 1.7 s in, caller not heard speaking", the agent's line |
+| The caller's words joined to their last answer ([13.8](#138-a-caller-who-had-not-finished-and-how-a-word-is-said)) | `{ joined: n }`, after `{ callerResumed: { pauseMs, intoReplyMs } }` when the caller came back in | "joined with the previous answer (paused 1.2 s)", the joined words' caller line |
+| The end held until the lines played ([13.10](#1310-the-goodbye-before-the-hang-up)) | `{ endAfter, endHeldMs, expectedMs }` | "call end held 2.0 s until it played" (or "until the time limit"; "caller hung up 1.2 s into it"), the goodbye or transfer line |
+
+A no-input silence is a turn of its own and shows as before: `silence · 12 s` under the question, counted from the turn that asked it (so the question's playback is in it).
+
+The adapter hands each note to the console as it writes the frame-log line (a `delivery` event on the live feed), and a replay of a past call reads the same facts back from the frame log (`/dashboard/traces/<call>` answers them as `deliveries`), so a reloaded call shows the notes the live one did; nothing is added to the trace. A note carries timings and short codes only, never the caller's words or ours.
+
+To note something new, add one line to `DELIVERY_NOTES` in `packages/dialogwright/src/server/dashboard/view.js` (its kind, the line it goes under, and its sentence from the fact's fields), and have the adapter write the frame-log line through its `logDelivery` helper instead of writing it directly. A kind's frame-log line is read as a fact by its key: `{ replyHeld: { ms, outcome } }` is the fact `{ kind: 'replyHeld', ms, outcome }`.
 
 ## 14. Running it
 

@@ -12,6 +12,7 @@ import { upgradeTraceRecord } from '../../trace/read';
 import { defaultAppId, getApp } from '../../core/app/registry';
 import { spokenText } from '../../prompts/render';
 import { consoleMetaOf, renderConsolePage } from './meta';
+import { deliveriesOf, type DeliveryEvent } from './delivery';
 import type { ConsoleGate, ConsoleSession } from '../console/auth';
 
 /**
@@ -91,8 +92,13 @@ function traceLines(path: string): TraceRecord[] {
     });
 }
 
-/** The redacted records and frames of one trace. Both are raw on disk and public over this route. */
-function readTrace(traceDir: string, sid: string): { records: ReplayRecord[]; frames: ReadFrameLogLine[] } {
+/**
+ * The redacted records and frames of one trace. Both are raw on disk and public over this route. With
+ * them, the call's delivery facts as the adapter published them live (delivery.ts deliveriesOf), read
+ * from the frame log, so a reloaded call shows the same delivery notes; a page from before them reads
+ * none.
+ */
+function readTrace(traceDir: string, sid: string): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
   const records = traceLines(join(traceDir, `${sid}.jsonl`)).map((raw) => {
     const record = redactRecord(raw);
     return { ...record, spokenText: spokenOf(record) };
@@ -101,7 +107,7 @@ function readTrace(traceDir: string, sid: string): { records: ReplayRecord[]; fr
   // redactFrameLine widens the type back to FrameLogLine; readFrameLog's line number survives the
   // spread, so it is restored here rather than dropped from what the page gets.
   const frames = existsSync(framesPath) ? readFrameLog(framesPath).map((l) => ({ ...redactFrameLine(l), line: l.line })) : [];
-  return { records, frames };
+  return { records, frames, deliveries: deliveriesOf(frames, sid) };
 }
 
 /** Returns true when the request was a dashboard route (handled), false to let the caller continue. */

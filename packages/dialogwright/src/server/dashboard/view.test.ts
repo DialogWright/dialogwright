@@ -1120,3 +1120,103 @@ describe('now', () => {
     expect(reduce(replayed.slice(0, i + 1), { fromTrace: true }).now.asking).toBe('asking expectedDate · attempt 1 of 3');
   });
 });
+
+/**
+ * Delivery notes: what happened on the line to what the agent said (said again, talked over, the end
+ * held) and a join of the caller's words, each under the line it concerns, live and on reload alike.
+ */
+describe('delivery notes', () => {
+  const delivery = (at: number, fact: Record<string, unknown>): DashboardEvent => ({ type: 'delivery', callSid: CALL, at, fact: fact as never });
+  /** `events` with `extra` put in right after its nth `turn` event (0 is the greeting). */
+  const afterTurn = (events: readonly DashboardEvent[], n: number, ...extra: DashboardEvent[]): DashboardEvent[] => {
+    const at = turnIndexes(events)[n]! + 1;
+    return [...events.slice(0, at), ...extra, ...events.slice(at)];
+  };
+  const notesOf = (v: ReturnType<typeof reduce>) => v.lines.filter((l) => l.notes).map((l) => [l.kind, l.text, l.notes!.map((n) => n.text)]);
+
+  it('puts a line said again under the agent line it concerns, which came before it', async () => {
+    const { events } = await scripted([OPENER, ACCOUNT_ID]);
+    const turns = turnIndexes(events);
+    const reply = (events[turns[1]!] as { spoken: string }).spoken;
+    const v = reduce(afterTurn(events, 1,
+      delivery(7000, { kind: 'resaid', heardMs: 640, expectedMs: 9600 }),
+      delivery(8000, { kind: 'cutAgain', heardMs: 500, expectedMs: 9600 })));
+    expect(notesOf(v)).toEqual([['system', reply, ['cut off at 0.6 s of about 9.6 s, said again', 'cut short again at 0.5 s of about 9.6 s, not said a third time']]]);
+    // The next turn's line has none, and the exchange keeps the note on its prompt line.
+    const block = exchanges(v.lines).find((b) => b.prompt.some((l) => l.text === reply))!;
+    expect(block.prompt.at(-1)!.notes).toHaveLength(2);
+  });
+
+  it('puts an interrupt under the line it cut, beside the interrupted marker', () => {
+    const greeting = turnEvent({ turnIndex: 1, event: { type: 'session.start' }, decision: { kind: 'prompt', promptId: 'greeting' } });
+    const v = reduce([started, { ...greeting, spoken: 'Hello, how can I help?' } as DashboardEvent,
+      { type: 'interrupt', callSid: CALL, at: 12, utteranceUntilInterrupt: 'Hello' },
+      delivery(12, { kind: 'interrupt', afterMs: 1704, callerHeard: false })]);
+    expect(notesOf(v)).toEqual([['system', 'Hello, how can I help?', ['interrupted 1.7 s in, caller not heard speaking']]]);
+    expect(v.lines.map((l) => l.text)).toContain('interrupted');
+  });
+
+  it("notes a join on the joined turn's caller line, with the pause the caller came back in after", async () => {
+    const { events } = await scripted([OPENER, ACCOUNT_ID, DOB]);
+    // Came back in ahead of the account ID's turn, which joined: the pause is said.
+    const joined = afterTurn(afterTurn(events, 1, delivery(10_000, { kind: 'callerResumed', pauseMs: 1200, intoReplyMs: 300 })), 2,
+      delivery(11_000, { kind: 'joined', value: 2 }));
+    const v = reduce(joined);
+    expect(notesOf(v)).toEqual([['caller', ACCOUNT_ID, ['joined with the previous answer (paused 1.2 s)']]]);
+    // A coming back in two turns before the join is not this join's: no pause.
+    const stale = afterTurn(afterTurn(events, 1, delivery(10_000, { kind: 'callerResumed', pauseMs: 1200, intoReplyMs: 300 })), 3,
+      delivery(16_000, { kind: 'joined', value: 2 }));
+    expect(notesOf(reduce(stale))).toEqual([['caller', DOB, ['joined with the previous answer']]]);
+  });
+
+  it('drops a note with no line to go under, and a kind it does not know', () => {
+    const v = reduce([started, delivery(1, { kind: 'resaid', heardMs: 1, expectedMs: 2 }), delivery(2, { kind: 'replyHeld', ms: 800 })]);
+    expect(v.lines).toEqual([]);
+  });
+
+  it('never moves the silence clock: a silence is measured from the turn before it', async () => {
+    const { events } = await scripted([OPENER, { silence: true }]);
+    const v = reduce(afterTurn(events, 1, delivery(8000, { kind: 'resaid', heardMs: 640, expectedMs: 9600 })));
+    expect(v.lines.filter((l) => l.kind === 'marker').map((l) => l.text)).toEqual(['silence · 5 s']);
+    expect(scriptOf(v.lines, v.turnsView).find((l) => l.who === 'note')?.text).toBe('silence · 5 s');
+  });
+
+  it('carries the notes into the script, on the agent and the caller lines', () => {
+    const script = scriptOf([
+      { kind: 'system', text: 'Your account ID?', turn: 1, notes: [{ kind: 'resaid', text: 'cut off at 0.6 s of about 9.6 s, said again' }] },
+      { kind: 'caller', text: 'five five five', turn: 2, notes: [{ kind: 'joined', text: 'joined with the previous answer' }] },
+      { kind: 'system', text: 'Thanks.', turn: 2 },
+    ], []);
+    expect(script).toEqual([
+      { who: 'agent', text: 'Your account ID?', notes: [{ kind: 'resaid', text: 'cut off at 0.6 s of about 9.6 s, said again' }] },
+      { who: 'caller', text: 'five five five', screened: false, codeMasked: false, notes: [{ kind: 'joined', text: 'joined with the previous answer' }] },
+      { who: 'agent', text: 'Thanks.' },
+    ]);
+  });
+
+  it('replays a past call with the same notes as live: the route\'s deliveries sorted in among the turns', async () => {
+    const { events, records } = await scripted([OPENER, ACCOUNT_ID]);
+    const turns = turnIndexes(events);
+    const at1 = events[turns[1]!]!.at;
+    const at2 = events[turns[2]!]!.at;
+    // A re-send at the very millisecond of its turn sorts after it; an interrupt at the very millisecond of the
+    // turn it caused sorts ahead of it, with the interrupt it is.
+    const resaid = delivery(at1, { kind: 'resaid', heardMs: 640, expectedMs: 9600 });
+    const interrupt = delivery(at2, { kind: 'interrupt', afterMs: 700, callerHeard: true });
+    const live = afterTurn(events, 1, resaid, interrupt);
+    const frames = [frameLine('in', { type: 'interrupt', utteranceUntilInterrupt: 'Your', durationUntilInterruptMs: 700 }, at2)];
+    const rebuilt = replayEvents(replayRecords(records), frames, { from: FROM, thresholds: DEFAULT_THRESHOLDS, deliveries: [resaid, interrupt] });
+    const types = rebuilt.map((e) => (e.type === 'delivery' ? `delivery:${e.fact.kind}` : e.type));
+    expect(types.indexOf('delivery:resaid')).toBe(types.indexOf('turn', types.indexOf('asked')) + 1);
+    expect(types.slice(types.indexOf('interrupt'), types.indexOf('interrupt') + 2)).toEqual(['interrupt', 'delivery:interrupt']);
+    expect(notesOf(reduce(rebuilt))).toEqual(notesOf(reduce(live)));
+    expect(notesOf(reduce(rebuilt))).toHaveLength(1);
+    // A page from before deliveries (none in the answer) replays as it did.
+    expect(replayEvents(replayRecords(records), [], {}).some((e) => e.type === 'delivery')).toBe(false);
+  });
+
+  it('is no replay step of its own: it lands with the step before it', () => {
+    const evs: DashboardEvent[] = [started, { ...turnEvent({}), spoken: 'Hi' } as DashboardEvent, delivery(11, { kind: 'resaid', heardMs: 1, expectedMs: 9000 }), { type: 'ended', callSid: CALL, at: 12, reason: 'completed' }];
+    expect(replayStops(evs)).toEqual([0, 1, 3, 4]);
+  });
+});

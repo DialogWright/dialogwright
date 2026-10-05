@@ -130,6 +130,11 @@
   .said.hand { color:var(--warn); font-weight:600; }
   /* The talk-track line under a keyed digit: why a secret can be typed instead of spoken. */
   .keynote { color:var(--faint); font-size:.72em; margin:.15em 0 0; }
+  /* A delivery note: what happened to the line on the call (said again, talked over, the end held), small and muted under it. */
+  .dnote { display:block; color:var(--muted); font-size:.78em; margin:.2em 0 0; }
+  .dnote .lbl-d { font-size:.82em; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); font-weight:600; margin-right:.5em; }
+  .dnote.k-resaid .lbl-d, .dnote.k-cutAgain .lbl-d { color:var(--warn); }
+  .sline .dnote { grid-column:2; margin:0; }
   .qtag { display:inline-block; margin:.35em 0 .1em; padding:.15em .6em; border-radius:6px; background:var(--fail-bg); color:#ffb3ba; font-size:.78em; font-weight:600; letter-spacing:.02em; }
 
   /* the five-stage strip under each caller turn */
@@ -494,9 +499,14 @@
   /** Under a caller line that held a one-time code said aloud. */
   const CODE_TAG = '<div class="qtag ctag">code said aloud · masked before anything logged it</div>';
 
+  /** A line's delivery notes (view.js DELIVERY_NOTES), one muted row each under it; spans, as a script line is a paragraph. */
+  function notesHtml(l) {
+    return (l.notes ?? []).map((n) => `<span class="dnote k-${esc(n.kind)}"><span class="lbl-d">on the line</span>${esc(n.text)}</span>`).join('');
+  }
+
   function inputHtml(l, turn) {
     const turnTag = turn !== null && turn !== undefined ? `<span class="turnno">Turn ${esc(turn)}</span>` : '';
-    if (l.kind === 'caller') return `<div class="who">Caller${turnTag}</div><div class="said caller">${esc(l.text)}</div>${l.text.includes(CODE_MASK) ? CODE_TAG : ''}`;
+    if (l.kind === 'caller') return `<div class="who">Caller${turnTag}</div><div class="said caller">${esc(l.text)}</div>${notesHtml(l)}${l.text.includes(CODE_MASK) ? CODE_TAG : ''}`;
     if (l.kind === 'handoff') return `<div class="who hand">Handoff</div><div class="said hand">${esc(l.text)}</div>`;
     // Digits buffered toward a slot (an ID, a keyed code) are one caller entry on screen and
     // share the turn number of the prompt they are answering -- the block's own resolved turn.
@@ -525,7 +535,7 @@
       const delay = i === 0 && turnAge !== null ? ` style="animation-delay:-${Math.round(turnAge)}ms"` : '';
       const asked = b.prompt.map((l) => {
         const pid = l.promptId ? `<span class="pid">${esc(l.promptId)}</span>` : '';
-        return `<div class="who">${esc(APP.brand.name)}${pid}</div><div class="said sys">${esc(l.text)}</div>`;
+        return `<div class="who">${esc(APP.brand.name)}${pid}</div><div class="said sys">${esc(l.text)}</div>${notesHtml(l)}`;
       }).join('');
       // A downstream service's answer is a turn of its own with nothing said: name where it came from.
       // The service's answer, and what its client made of it: refused, or text it never read, in the warning color.
@@ -551,9 +561,9 @@
       if (l.who === 'caller') {
         const tag = (l.screened ? '<span class="stag">screened · not acted on</span>' : '')
           + (l.codeMasked ? '<span class="stag ctag">code said aloud · masked</span>' : '');
-        return `<p class="sline"><span class="swho">Caller</span><span class="said caller">${esc(l.text)}</span>${tag}</p>`;
+        return `<p class="sline"><span class="swho">Caller</span><span class="said caller">${esc(l.text)}</span>${tag}${notesHtml(l)}</p>`;
       }
-      if (l.who === 'agent') return `<p class="sline"><span class="swho">${esc(APP.brand.name)}</span><span class="said sys">${esc(l.text)}</span></p>`;
+      if (l.who === 'agent') return `<p class="sline"><span class="swho">${esc(APP.brand.name)}</span><span class="said sys">${esc(l.text)}</span>${notesHtml(l)}</p>`;
       if (l.who === 'keypad') return `<p class="sline"><span class="swho">Caller · keypad</span><span class="marker key">${esc(l.text)}</span></p>`;
       if (l.who === 'handoff') return `<p class="sline hand"><span class="swho">Handoff</span><span class="said">${esc(l.text)}</span></p>`;
       return `<p class="sline"><span class="swho"></span><span class="marker">${esc(l.text)}</span></p>`;
@@ -1099,7 +1109,8 @@
     const data = await json(`/dashboard/traces/${encodeURIComponent(sid)}`);
     const records = data && Array.isArray(data.records) ? data.records : [];
     const frames = data && Array.isArray(data.frames) ? data.frames : [];
-    state.all = replayEvents(records, frames, { from: 'replay', thresholds: DEFAULTS });
+    const deliveries = data && Array.isArray(data.deliveries) ? data.deliveries : [];
+    state.all = replayEvents(records, frames, { from: 'replay', thresholds: DEFAULTS, deliveries });
     state.stops = replayStops(state.all);
     state.totalTurns = reduce(state.all).turnCount;
     draw();

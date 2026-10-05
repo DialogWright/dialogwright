@@ -10,7 +10,9 @@ import { DashboardBus } from './dashboard/bus';
 import type { DashboardEvent } from './dashboard/events';
 import { makeObserver } from './dashboard/observer';
 import { CallTokens } from './tokens';
-import { FrameLog } from './frameLog';
+import { FrameLog, readFrameLog } from './frameLog';
+import { deliveriesOf } from './dashboard/delivery';
+import { reduce } from './dashboard/view.js';
 import { newSession } from '../core/session';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { loadCorpus } from '../jev/corpus';
@@ -144,6 +146,21 @@ describe('the end held until the lines play (END_AFTER_PLAYBACK)', () => {
     // The end follows the goodbye in the frame log, with the hold between.
     const out = frameLines(call.d.dir).filter((l) => l.dir === 'out' || (l.dir === 'log' && 'endAfter' in l.msg)).slice(-3);
     expect(out.map((l) => (l.dir === 'out' ? l.msg.type : 'hold'))).toEqual(['text', 'hold', 'end']);
+  });
+
+  it('tells the console the end was held until the goodbye played, under the goodbye, as a reload reads it too', async () => {
+    const call = await atAnythingElse('telnyx', deps(), true);
+    await sayThatsAll(call);
+    await call.send(info('agentSpeaking', 'on'));
+    await vi.advanceTimersByTimeAsync(GOODBYE_MS);
+    await call.send(info('tokensPlayed', GOODBYE));
+    await vi.advanceTimersByTimeAsync(0);
+    const published = call.d.events.flatMap((e) => (e.type === 'delivery' ? [e.fact] : []));
+    expect(published).toEqual([{ kind: 'endAfter', value: 'played', endHeldMs: GOODBYE_MS, expectedMs: GOODBYE_MS }]);
+    expect(deliveriesOf(readFrameLog(join(call.d.dir, `${CALL}.frames.jsonl`)), CALL).map((e) => e.fact)).toEqual(published);
+    const goodbye = reduce(call.d.events).lines.filter((l) => l.kind === 'system').at(-1)!;
+    expect(goodbye.text).toBe(GOODBYE);
+    expect(goodbye.notes).toEqual([{ kind: 'endAfter', text: `call end held ${(GOODBYE_MS / 1000).toFixed(1)} s until it played` }]);
   });
 
   it('takes the carrier stopping as the end of the lines, once it has stayed stopped for the settle', async () => {

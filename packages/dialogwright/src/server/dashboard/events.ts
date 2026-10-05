@@ -44,10 +44,22 @@ export type DashboardEvent =
    * by a model: the card says so. Live calls never set it.
    */
   | (Base & { type: 'handoff_summary'; text: string | null; demo?: boolean })
+  /**
+   * What happened on the line to the agent's latest line (or a join of the caller's), for a delivery
+   * note under it (view.js DELIVERY_NOTES): published by the adapter as it writes the frame-log line,
+   * and read back from the frame log on a reload (delivery.ts). Timings and short codes only.
+   */
+  | (Base & { type: 'delivery'; fact: DeliveryFact })
   /** `abandoned`: a chat nobody wrote to for its idle limit (server/chat/socket.ts), audited so too. */
   | (Base & { type: 'ended'; reason: 'completed' | 'hangup' | 'handoff' | 'error' | 'abandoned' });
 
 export type DashboardEventType = DashboardEvent['type'];
+
+/**
+ * One fact about a line's delivery (server/dashboard/delivery.ts): its `kind`, and the fields of the
+ * frame-log line it came from, flattened. Only numbers, booleans, nulls and short codes, never words.
+ */
+export type DeliveryFact = { kind: string } & { [field: string]: number | boolean | string | null };
 
 /** The last four digits only; the page never shows a whole caller number. */
 export function maskNumber(n: string | undefined | null): string {

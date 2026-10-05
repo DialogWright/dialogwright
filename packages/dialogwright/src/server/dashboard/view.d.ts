@@ -2,7 +2,7 @@
  * Types for `view.js`. The module itself is plain JavaScript so the browser can load it with no
  * build step; this file is what TypeScript resolves for `import … from './view.js'`.
  */
-import type { DashboardEvent } from './events';
+import type { DashboardEvent, DeliveryFact } from './events';
 import type { ReplayRecord } from './routes';
 import type { FrameLogLine } from '../frameLog';
 import type { Thresholds } from '../../core/thresholds';
@@ -36,12 +36,21 @@ export interface Chip {
   attempts: number;
 }
 
+/** A delivery note under a line: what happened to it on the line (DELIVERY_NOTES), in a short sentence. */
+export interface LineNote {
+  /** The fact's kind (`resaid`, `interrupt`, ...), for the page's styling. */
+  kind: string;
+  text: string;
+}
+
 export interface Line {
   /** `handoff` is the transfer to a person, as its own labelled row ("to …9110 · caller asked for a person"). */
   kind: 'system' | 'caller' | 'marker' | 'handoff';
   text: string;
   promptId?: string;
   turn?: number;
+  /** Delivery notes, oldest first: on an agent line, what became of it on the line; on a caller line, a join. */
+  notes?: LineNote[];
 }
 
 export interface StageCell {
@@ -223,6 +232,8 @@ export interface View {
 
 export interface ReplayOptions {
   from?: string;
+  /** The call's delivery facts, as `/dashboard/traces/<sid>` reads them from the frame log (`deliveries`). */
+  deliveries?: readonly DashboardEvent[];
   thresholds?: Partial<Thresholds>;
   /** Masked, for the handoff row's `to …4567`; the trace does not record the number dialled. */
   handoffNumber?: string;
@@ -240,6 +251,16 @@ export interface TraceRow {
   turns: number;
   sizeBytes: number;
 }
+
+/** One kind of delivery note: the line it goes under (null: none, held for the next turn's notes), and its sentence. */
+export interface DeliveryNoteKind {
+  on: 'agent' | 'caller' | null;
+  text?: (fact: DeliveryFact, held: Readonly<Record<string, DeliveryFact>>) => string;
+}
+/** Every delivery fact kind the console knows, by kind: the mapping from a fact to its sentence. */
+export const DELIVERY_NOTES: Readonly<Record<string, DeliveryNoteKind>>;
+/** A fact's note, or null for a kind not shown (unknown, or `on: null`). */
+export function deliveryNote(fact: DeliveryFact, held?: Readonly<Record<string, DeliveryFact>>): { kind: string; on: 'agent' | 'caller'; text: string } | null;
 
 /** Takes the app's console metadata; until then the view is neutral, with no slots. */
 export function configure(meta: ConsoleMeta): void;
@@ -277,6 +298,8 @@ export function serviceNoteView(event: { result?: unknown; note?: { outcome: str
 export interface ScriptLine {
   who: 'caller' | 'agent' | 'keypad' | 'handoff' | 'note';
   text: string;
+  /** The line's delivery notes (Line.notes), when it has any. */
+  notes?: LineNote[];
   screened?: boolean;
   /** A caller line that held a one-time code said aloud, masked on arrival. */
   codeMasked?: boolean;
