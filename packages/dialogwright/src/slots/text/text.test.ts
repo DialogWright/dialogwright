@@ -217,6 +217,28 @@ describe('pick: the candidates code proposes', () => {
     expect(pickCandidates(ALDER, en).slice(0, 3)).toEqual(['the power is out at 22 Alder Street', '22 Alder Street', 'nothing works']);
   });
 
+  it('offers the tail after "for": a report made for an address', () => {
+    expect(pickCandidates("yeah i'd like to report a outage for twelve oak hollow road", en)).toEqual([
+      "yeah i'd like to report a outage for twelve oak hollow road",
+      'twelve oak hollow road',
+    ]);
+    expect(pickCandidates('a delivery for the house on Elm', en)).toEqual(['a delivery for the house on Elm', 'the house on Elm', 'Elm']);
+  });
+
+  it('a "for" tail comes in the order said, so it never moves a clause or an earlier tail out of the cap', () => {
+    const said = 'the power is out at 22 Alder Street for the whole block and nothing works';
+    expect(pickCandidates(said, en).slice(0, 4)).toEqual([
+      'the power is out at 22 Alder Street for the whole block',
+      '22 Alder Street for the whole block',
+      'the whole block',
+      'nothing works',
+    ]);
+    const got = pickCandidates('the light is out for the street, the heat is out for the lane, at 9 Quarry Hill', en);
+    expect(got).toEqual([
+      'the light is out for the street', 'the street', 'the heat is out for the lane', 'the lane', 'at 9 Quarry Hill', '9 Quarry Hill',
+    ]);
+  });
+
   it('then offers the parts that span one joining word, and their tails, after every part split there', () => {
     expect(pickCandidates(ALDER, en)).toEqual(['the power is out at 22 Alder Street', '22 Alder Street', 'nothing works', ALDER, '22 Alder Street and nothing works']);
     expect(pickCandidates('meet me at the corner of Elm and Third, by the bank', en)).toEqual([

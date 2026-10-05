@@ -247,6 +247,31 @@
     "principalLevel": 0,
     "gate": null
   },
+  "ro-11": {
+    "id": "ro-11",
+    "decision": "prompt",
+    "promptId": "ask_symptom",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_outage",
+    "slots": {
+      "place": "twelve oak hollow road",
+      "symptom": null,
+      "account": null,
+      "count": null,
+      "firstDate": null,
+      "subject": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
   "pl-01": {
     "id": "pl-01",
     "decision": "prompt",

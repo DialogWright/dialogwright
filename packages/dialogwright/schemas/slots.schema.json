@@ -1138,7 +1138,7 @@
                 "description": "What the value is, as a noun phrase the pick question names (\"the street address\")."
               },
               "words": {
-                "description": "The joining words and prepositions by language tag (\"fr\", or \"fr-CA\" for one region, whose missing list is the language's), for a language with no built-in list or to replace one. Built in: English (\"and\", \"but\", \"so\", \"because\"; \"at\", \"on\", \"in\", \"near\", \"by\"), also read with no locale, and Spanish (\"y\", \"e\", \"pero\", \"porque\", \"así que\"; \"en\", \"cerca de\", \"junto a\"). A language with neither splits at punctuation only.",
+                "description": "The joining words and prepositions by language tag (\"fr\", or \"fr-CA\" for one region, whose missing list is the language's), for a language with no built-in list or to replace one. Built in: English (\"and\", \"but\", \"so\", \"because\"; \"at\", \"on\", \"in\", \"near\", \"by\", \"for\"), also read with no locale, and Spanish (\"y\", \"e\", \"pero\", \"porque\", \"así que\"; \"en\", \"cerca de\", \"junto a\"). A language with neither splits at punctuation only.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string",

@@ -9,7 +9,8 @@
  *   whole; and the marks that always part words: ¿ ¡ and the full-width ones) and at a joining word
  *   ("and", "but", "so", "because"), which is dropped.
  * - First, each clause, followed by its tail after each preposition in it ("at", "on", "in",
- *   "near", "by"): "the power is out at 22 Alder Street" offers itself and "22 Alder Street".
+ *   "near", "by", "for"): "the power is out at 22 Alder Street" offers itself and "22 Alder Street",
+ *   and "an outage for 22 Alder Street" (no punctuation, as a recognizer gives it) offers its tail too.
  * - Then, for two clauses side by side with only joining words between them (no punctuation), the
  *   two together as said, followed by the tails of that join that start in the first clause:
  *   "meet me at the corner of Elm and Third" offers "the corner of Elm and Third", since a joining
@@ -40,7 +41,7 @@ export type PickWordsByLocale = Readonly<Record<string, Partial<PickWords>>>;
 
 /** The built-in words, by language: English (also read with no locale) and Spanish. */
 export const PICK_WORDS: Readonly<Record<string, PickWords>> = Object.freeze({
-  en: Object.freeze({ joiners: Object.freeze(['and', 'but', 'so', 'because']), prepositions: Object.freeze(['at', 'on', 'in', 'near', 'by']) }),
+  en: Object.freeze({ joiners: Object.freeze(['and', 'but', 'so', 'because']), prepositions: Object.freeze(['at', 'on', 'in', 'near', 'by', 'for']) }),
   es: Object.freeze({ joiners: Object.freeze(['y', 'e', 'pero', 'porque', 'así que']), prepositions: Object.freeze(['en', 'cerca de', 'junto a']) }),
 });
 
