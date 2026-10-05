@@ -282,7 +282,7 @@
     "verdict": "proceed",
     "form": "report_outage",
     "slots": {
-      "place": "It's 14 Birch Lane",
+      "place": "14 Birch Lane",
       "symptom": null,
       "account": null,
       "count": null,
@@ -374,7 +374,7 @@
     "verdict": "proceed",
     "form": "report_outage",
     "slots": {
-      "place": "sorry, I meant 41 Birch Lane, not 14",
+      "place": "41 Birch Lane",
       "symptom": null,
       "account": null,
       "count": null,

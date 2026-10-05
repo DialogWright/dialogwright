@@ -963,7 +963,7 @@
     "verdict": "handoff",
     "form": "report_outage",
     "slots": {
-      "place": "It's 14 Birch Lane",
+      "place": "14 Birch Lane",
       "symptom": "no_power",
       "account": null,
       "count": null,

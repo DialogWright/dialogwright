@@ -9,11 +9,11 @@
 {"id": "ro-09", "text": "report an outage at one of my buildings", "intent": "report_outage", "context": "no_form", "as": "riley"}
 {"id": "ro-10", "text": "half the apartment has no power", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "partial"}}
 {"id": "ro-11", "text": "yeah i'd like to report a outage for twelve oak hollow road", "intent": "report_outage", "context": "no_form", "labels": {"placeGiven": true, "placePick": "twelve oak hollow road"}}
-{"id": "pl-01", "text": "It's 14 Birch Lane", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
+{"id": "pl-01", "text": "It's 14 Birch Lane", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true, "placePick": "14 Birch Lane"}}
 {"id": "pl-02", "text": "200 Heron Row", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
 {"id": "pl-03", "text": "the corner of Elm and Third, by the school", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true, "placePick": "the corner of Elm and Third"}, "knownGap": {"reason": "'the corner of Elm and Third, by the school': the address pick reads none 0.64 (candidate e 0.23), so the whole answer is kept as the place; the read-back adds ', by the school'", "outcome": {"slots": {"place": "the corner of Elm and Third, by the school", "symptom": null, "account": null, "count": null, "firstDate": null, "subject": null, "accountId": "55501234", "dob": "1980-04-12"}}}}
 {"id": "pl-04", "text": "I'm not sure of the number", "intent": "none", "context": "report_outage", "prompted": "place"}
-{"id": "pl-05", "text": "sorry, I meant 41 Birch Lane, not 14", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
+{"id": "pl-05", "text": "sorry, I meant 41 Birch Lane, not 14", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true, "placePick": "41 Birch Lane"}}
 {"id": "pl-06", "text": "9 Fernhill Court", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true}}
 {"id": "pl-07", "text": "yeah my address is twelve oak hollow road", "intent": "none", "context": "report_outage", "prompted": "place", "labels": {"placeGiven": true, "placePick": "twelve oak hollow road"}}
 {"id": "sy-01", "text": "no power at all", "intent": "none", "context": "report_outage", "prompted": "symptom", "labels": {"symptom": "no_power"}}
