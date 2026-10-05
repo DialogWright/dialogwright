@@ -47,12 +47,19 @@ describe('a caller who had not finished, live and replayed', () => {
     const sock = { send: (d: string, cb?: (e?: Error) => void) => { sent.push(JSON.parse(d)); cb?.(); }, close: () => {} };
     const ctx = newConnectionContext(tokens.mint('CA9'));
     const frame = (m: object) => handleSocketMessage(deps, sock, ctx, JSON.stringify(m));
-    const say = (t: string) => frame({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true });
-    const cut = (heard: string, ms: number) => frame({ type: 'interrupt', utteranceUntilInterrupt: heard, durationUntilInterruptMs: ms });
     const records = () => readFileSync(join(dir, 'CA9.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as TraceRecord);
     const replay = () => replayFrameLog(join(dir, 'CA9.frames.jsonl'), { ...opts, client: placeClient(), trace: null }, undefined, { todayIsoOverride: opts.todayIso });
     const start = () => frame({ type: 'setup', sessionId: 'VX9', callSid: 'CA9', from: '+15555550100', to: '+15555550199', customParameters: {} });
-    return { dir, store, sent, frame, say, cut, records, replay, start, framesPath: join(dir, 'CA9.frames.jsonl') };
+    // The relay drops and the carrier opens a new socket for the same call, with a new token.
+    let socket = sock;
+    let conn = ctx;
+    const reconnect = async () => {
+      socket = { send: sock.send, close: () => {} };
+      conn = newConnectionContext(tokens.mint('CA9'));
+      await handleSocketMessage(deps, socket, conn, JSON.stringify({ type: 'setup', sessionId: 'VX10', callSid: 'CA9', from: '+15555550100', to: '+15555550199', customParameters: {} }));
+    };
+    const send = (m: object) => handleSocketMessage(deps, socket, conn, JSON.stringify(m));
+    return { dir, store, sent, frame: send, say: (t: string) => send({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true }), cut: (heard: string, ms: number) => send({ type: 'interrupt', utteranceUntilInterrupt: heard, durationUntilInterruptMs: ms }), reconnect, records, replay, start, framesPath: join(dir, 'CA9.frames.jsonl') };
   }
 
   const shape = (r: TraceRecord) => [r.event.type, (r.event as { text?: string }).text ?? null, r.decision.kind, (r.decision as { promptId?: string }).promptId ?? null, r.joined?.fragments ?? null];
@@ -107,6 +114,21 @@ describe('a caller who had not finished, live and replayed', () => {
     await call.say('at');
     await call.cut('Sorry, where', 119);
     await call.frame({ type: 'dtmf', digit: '#' });
+    await call.say('22 Alder Street.');
+    const live = call.records();
+    expect(live.at(-1)!.joined).toBeUndefined();
+    expect(call.store.get('CA9')!.session.slots.place!.value).toBe('22 Alder Street.');
+    const replayed = await call.replay();
+    expect(replayed.records.map(shape)).toEqual(live.map(shape));
+  });
+
+  it('ends joining at a reconnect: the caller hears the question again, live and replayed', async () => {
+    const call = liveCall();
+    await call.start();
+    await call.say('i want to report a problem');
+    await call.say('at');
+    await call.cut('Sorry, where', 119);
+    await call.reconnect();
     await call.say('22 Alder Street.');
     const live = call.records();
     expect(live.at(-1)!.joined).toBeUndefined();

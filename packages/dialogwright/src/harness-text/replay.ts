@@ -235,6 +235,8 @@ export async function replayFrameLog(
     if (frame?.type === 'setup') {
       if (session) {
         skipped.push(`line ${lineNumber}: setup for ${frame.callSid} after the session started`);
+        // A reconnect: the adapter asks the question again, and continues nothing said before the drop.
+        continuation.reset();
         continue;
       }
       setupDate = line.ts.slice(0, 10);

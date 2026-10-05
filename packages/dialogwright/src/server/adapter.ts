@@ -658,8 +658,6 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       // The wait the old connection was counting down no longer means anything. The replay below
       // starts a fresh one; this clear is what covers a reconnect with no prompt to replay yet.
       clearNoInput(callId);
-      // The caller hears the question again, so nothing said before the drop is continued.
-      continuations.get(callId)?.reset();
       const previous = existing.socket;
       if (previous && previous !== socket) {
         // Twilio reconnected before the old socket's close reached us; retire it explicitly so
@@ -676,6 +674,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       if (restarted) deps.log(`${callId}: resumed after a restart`);
       publish(deps, { type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects });
       await deps.store.enqueue(callId, async (e) => {
+        // The caller hears the question again, so nothing said before the drop is continued (replay
+        // resets at the repeated setup too). In the queue, after the turns before it.
+        continuations.get(callId)?.reset();
         const again = restarted ? [resumedLine(e.session), e.session.lastPromptText].filter(Boolean).join(' ') : e.session.lastPromptText;
         if (!again) return;
         // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
