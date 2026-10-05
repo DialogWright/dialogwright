@@ -239,6 +239,20 @@ describe('the end held until the lines play (END_AFTER_PLAYBACK)', () => {
     expect(endLogs(d.dir)[0]).toMatchObject({ endAfter: 'played' });
   });
 
+  it('takes a report of the lines run together, ending with the last, as the end of them', async () => {
+    const call = await atAnythingElse('telnyx', deps(), true);
+    await sayThatsAll(call);
+    await call.send(info('agentSpeaking', 'on'));
+    // A report that names an earlier line, or the last one with more after it, is not the end of the lines.
+    await call.send(info('tokensPlayed', 'Is there anything else I can help with?'));
+    await call.send(info('tokensPlayed', `${GOODBYE} Is there anything else I can help with?`));
+    expect(ends(call.sock)).toEqual([]);
+    // Telnyx may report a turn's lines as one, with no space between them (seen on a live call).
+    await call.send(info('tokensPlayed', `Is there anything else I can help with?${GOODBYE}`));
+    expect(ends(call.sock)).toHaveLength(1);
+    expect(endLogs(call.d.dir)[0]).toMatchObject({ endAfter: 'played', endHeldMs: 0 });
+  });
+
   it('a caller who hangs up during the hold: nothing more is sent, no error, and the call reads as ended, not dropped', async () => {
     const call = await atAnythingElse('telnyx', deps({ endCloseGraceMs: 1000 }), true);
     await sayThatsAll(call);

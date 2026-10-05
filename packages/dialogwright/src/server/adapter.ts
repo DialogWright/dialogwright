@@ -328,7 +328,10 @@ type EndAfter = 'played' | 'estimate' | 'timeout' | 'closed';
 
 /** A turn's `end` frame held until the lines before it have played (holdEnd). */
 interface HeldEnd {
-  /** The last line as it went out, whitespace folded: a carrier's report of it playing names it. */
+  /**
+   * The last line as it went out (pronounced and spelled as sent), whitespace folded: a carrier's report
+   * of it playing names it. Null when the lines end with a clip, which no report names.
+   */
   lastText: string | null;
   /** The carrier has started playing since the lines went out: a stop after that is the end of them. */
   started: boolean;
@@ -366,7 +369,8 @@ function holdEnd(deps: AdapterDeps, callSid: string, sent: readonly OutboundFram
   const reported = reportsPlayback.has(callSid);
   const wanted = expectedMs + (reported ? END_PLAYBACK_MARGIN_MS : END_PLAYBACK_LEAD_MS);
   const waitMs = Math.min(deps.endPlaybackMaxMs ?? DEFAULT_END_PLAYBACK_MAX_MS, wanted);
-  const last = [...said].reverse().find((f) => f.type === 'text');
+  // The last thing said, when it is a line: a clip after the last line still plays once the line has.
+  const last = said.at(-1);
   heldEnds.get(callSid)?.release('closed');
   const heldAtMs = Date.now();
   return new Promise((resolve) => {
@@ -400,9 +404,10 @@ function onHeldEndEvent(callSid: string, ev: PlaybackEvent): void {
     }
     return;
   }
-  // The report of a line played: the end of the lines when it names the last one.
+  // The report of a line played: the end of the lines when it ends with the last one. Telnyx may report
+  // a turn's lines as one, run together ("...an outage.What's the street..."), seen on a live call.
   if (ev.text !== undefined) {
-    if (held.lastText !== null && folded(ev.text) === held.lastText) held.release('played');
+    if (held.lastText !== null && folded(ev.text).endsWith(held.lastText)) held.release('played');
     return;
   }
   // A stop that names no line: only once the lines have started (a stop before is of what played before
