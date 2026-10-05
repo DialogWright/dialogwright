@@ -27,6 +27,8 @@ A slot of this type is written under its id in slots.yaml, with `type: text` and
 | `pick.words` | map of map | unset | The joining words and prepositions by language tag ("fr", or "fr-CA" for one region, whose missing list is the language's), for a language with no built-in list or to replace one. Built in: English ("and", "but", "so", "because"; "at", "on", "in", "near", "by", "for"), also read with no locale, and Spanish ("y", "e", "pero", "porque", "así que"; "en", "cerca de", "junto a"). A language with neither splits at punctuation only. |
 | `pick.words.<key>.joiners` | list of string | unset | Words or phrases that join two clauses, where the words are split ("et", "parce que"). Replaces the built-in list of the language. |
 | `pick.words.<key>.prepositions` | list of string | unset | Words or phrases after which a clause's tail is offered too ("au", "près de"). Replaces the built-in list of the language. |
+| `numbers` | one of `words`, `digits` | `words` | How the value writes the numbers the caller says in words. "words": as said. "digits": code writes each run of number words as digits ("seventy six twenty five oak hollow lane" is "7625 oak hollow lane", "one zero two four six" is "10246", "one oh two" is "102"); ordinals stay words ("fifth avenue", "twenty third street"), and so do digits already said. The value (a tool's param, the gate, the audit, the console) is written; with say: null the display, which a line reads back, stays the words as said, since text-to-speech reads "7625" as a quantity. With pick, the part picked is written. Only in a language with rules: English, also read with no locale; another keeps the words as said. |
+| `case` | one of `as-said`, `title` | `as-said` | How the value writes the case of the words. "as-said": as the recognizer or the caller wrote them. "title": words written with no capital at all (a recognizer that writes none) have each word capitalized, but for minor words after the first ("7625 oak hollow lane" is "7625 Oak Hollow Lane"); words with any capital stay as they are. The value only: with say: null the display stays the words as said. Only in a language with rules: English, also read with no locale. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: given, pick, pickNone. |
 | `ids` | map | unset | Question ids in place of the defaults (the slot's id followed by the part: given, pick), to keep the ids an existing slot used. |
 | `listen` | one of `up-front`, `form`, `anywhere`, `call` | `up-front` | Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). "form": asked and filled only while a form that has it is open; outside one its question is not sent. "anywhere": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. "call": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. |
@@ -98,9 +100,52 @@ The words live in the slot's options, not in `locale/<tag>/slots.yaml`, because 
 
 **Turning it on in an app.** `pick` adds a question to the turns the slot listens on, so the requests the model is sent change: an app that turns it on records its cassette again, and its corpus can label the part picked with the question's id and the part's words (`labels: { placePick: 22 Alder Street }`), which the fixture stub answers with that part's letter. A letter itself is read as the letter; words that name two parts but for case (said "Elm Park" and "elm park") must be written as said.
 
+## Writing the value: numbers and case
+
+A recognizer on the phone gives numbers as words: "seventy six twenty five oak hollow lane", "one zero two four six aspen glade lane". A tool wants "7625 Oak Hollow Lane". With `numbers: digits` (and `case: title`), code writes the value from the words, and the display stays the words as said:
+
+```yaml
+place:
+  type: text
+  what: the street address where the power problem is
+  say: null
+  redact: none
+  numbers: digits
+  case: title
+  pick: { what: the street address }
+```
+
+- **The value** is written: "7625 Oak Hollow Lane". It is what a tool's param of the same name, the gate (and the hash of the values the caller confirmed, which a form's `confirmedParams` takes from the values, as its write does), the audit, the trace, the console and a handoff get.
+- **The display** of a slot shown as said (`say: null`) is the words as the caller said them: "seventy six twenty five oak hollow lane". A line that reads the slot back (`{place}` in a summary) says it, since text-to-speech reads "7625" as a quantity ("seven thousand six hundred twenty five"), not as the caller grouped it. The model's turn state holds the display too, so the requests the model is sent are the same as without the options. Such a slot is `displayFrom: 'said'`: a locale switch keeps its display, since `display(value)` cannot give the words back. With a stand-in (`say: your address`), the display is the stand-in as ever.
+- **Code writes it, never the model.** The model chooses a part of the words (`pick`) or keeps them whole, as before; the rules below then rewrite that part. With `pick`, the part picked is written; with no pick, or none chosen, the whole words are.
+
+`numbers: digits`, in English: each run of number words (side by side, with only spaces or a hyphen between them) becomes one string of digits, and the numbers in a run concatenate.
+
+| Said | Written |
+|---|---|
+| one zero two four six | 10246 |
+| one oh two; nineteen oh five | 102; 1905 |
+| seventy six twenty five; seven six twenty five | 7625 |
+| eighty six; twelve | 86; 12 |
+| twenty five hundred; two thousand four | 2500; 2004 |
+| one hundred twenty three; one hundred and five; a hundred | 123; 105; 100 |
+| unit four at twenty two alder street | unit 4 at 22 alder street |
+| twenty third street; fifth avenue | (as said: ordinals stay words) |
+| seventy six twenty third street | 76 twenty third street |
+| one hundred first street | (as said: which part is the house number is not clear) |
+| 22 alder street; oh I see; five and six | 22 alder street; oh I see; 5 and 6 |
+
+"oh" and "o" are a zero only between two number words; "a" is one only before "hundred" or "thousand", and "and" is part of a number only after one of them, so "the corner of Elm and Third" is unchanged. Digits already said stay, and every other character is kept. A run the rules cannot read whole stays words. Since the rules run on the slot's value only, which `pick` cuts to the part that is the value, "one" in prose is written too ("one main street" is "1 main street").
+
+`case: title`, in English: words written with no capital at all (a recognizer that writes none) have each word capitalized, but for minor words after the first ("the corner of elm and third" is "The Corner of Elm and Third"). Words with any capital were cased by the recognizer or the caller, and stay as they are. It is a separate option because it is a separate choice: a recognizer that writes capitals needs only `numbers`, and a note or a reason (not a name or an address) should keep its case.
+
+**Languages.** The rules are English's, read with no locale and in `en-*` (`WRITTEN_RULES` in `written.ts`, one entry per language: `digits` and `title`). In a language with no rules the value is the words as said, whatever the options, so English number words never change a Spanish sentence. A language is added there, with its tests.
+
+**Turning it on in an app.** The model's requests do not change, so a recorded cassette still replays. The baseline does, wherever a slot's value had number words or was all lower case: edit those values by hand, and say why.
+
 ## Examples
 
-The starter examples, listed below, are five configurations with starter utterances: the defaults, a courier note with its own stand-in and length, a slot keeping its recorded wording and id (`text.given`, `ids.given`), a phrase shown as said, and an address picked out of the words (`pick`). In an app's `slots.yaml`:
+The starter examples, listed below, are six configurations with starter utterances: the defaults, a courier note with its own stand-in and length, a slot keeping its recorded wording and id (`text.given`, `ids.given`), a phrase shown as said, an address picked out of the words (`pick`), and an address written as digits (`numbers`, `case`). In an app's `slots.yaml`:
 
 ```yaml
 courierNote:
@@ -249,6 +294,36 @@ place:
 | meet me at the corner of Elm and Third, by the bank | `placeGiven`: yes 0.9<br>`placePick`: `a` 0.02, `b` 0.05, `c` 0.01, `d` 0.01, `e` 0.01, `f` 0.04, `g` 0.84, `none` 0.02 | filled: value `the corner of Elm and Third`, display `the corner of Elm and Third` |
 | la panne est au 22 rue Alder et rien ne marche<br>_locale fr_ | `placeGiven`: yes 0.9<br>`placePick`: `a` 0.05, `b` 0.91, `c` 0.01, `none` 0.03 | filled: value `22 rue Alder`, display `22 rue Alder` |
 | the lights flicker at night | `placeGiven`: yes 0.2<br>`placePick`: `a` 0.1, `b` 0.1, `none` 0.8 | absent |
+
+</details>
+
+#### an address written as digits
+
+A street address a recognizer gives in words. Code writes the value (numbers as digits, words in lower case capitalized) from the part picked; a line reads back the words as said, since text-to-speech reads "7625" as a quantity. The model is asked what it is asked without these options.
+
+```yaml
+place:
+  type: text
+  what: the street address where the problem is
+  say: null
+  redact: none
+  maxLength: 200
+  numbers: digits
+  case: title
+  pick:
+    what: the street address
+```
+
+<details><summary>Starter utterances (6)</summary>
+
+| The caller says | The model answers | The slot gives |
+|---|---|---|
+| yeah my address is seventy six twenty five oak hollow lane | `placeGiven`: yes 0.93<br>`placePick`: `a` 0.02, `b` 0.01, `c` 0.01, `d` 0.02, `e` 0.88, `f` 0.04, `none` 0.02 | filled: value `7625 Oak Hollow Lane`, display `seventy six twenty five oak hollow lane`, confirm `none`, display in es `seventy six twenty five oak hollow lane` |
+| one zero two four six aspen glade lane | `placeGiven`: yes 0.9<br>`placePick`: `a` 0.9, `none` 0.1 | filled: value `10246 Aspen Glade Lane`, display `one zero two four six aspen glade lane` |
+| it's nineteen oh five twenty third street | `placeGiven`: yes 0.9<br>`placePick`: `b` 0.9, `none` 0.1 | filled: value `1905 Twenty Third Street`, display `nineteen oh five twenty third street` |
+| 22 Alder Street | `placeGiven`: yes 0.95 | filled: value `22 Alder Street`, display `22 Alder Street` |
+| se fue la luz en la calle Alder veintidós<br>_locale es_ | `placeGiven`: yes 0.9<br>`placePick`: `b` 0.9, `none` 0.1 | filled: value `la calle Alder veintidós`, display `la calle Alder veintidós` |
+| the lights flicker at night | `placeGiven`: yes 0.2 | absent |
 
 </details>
 

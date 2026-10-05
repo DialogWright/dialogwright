@@ -49,7 +49,7 @@ describe('a text slot built from the defaults', () => {
 
   it('carries its type and its parsed options, defaults applied', () => {
     expect(note.type).toBe('text');
-    expect(note.config).toEqual({ what: 'a note for the courier', maxLength: 500, say: 'your description', keep: 'first-unless-prompted', redact: 'length' });
+    expect(note.config).toEqual({ what: 'a note for the courier', maxLength: 500, say: 'your description', keep: 'first-unless-prompted', redact: 'length', numbers: 'words', case: 'as-said' });
     expect(Object.isFrozen(note.config)).toBe(true);
   });
 
@@ -161,7 +161,7 @@ describe('the docs', () => {
   it('the docs page names every option', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/text.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(textType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['ids', 'instructions', 'keep', 'listen', 'maxLength', 'pick', 'redact', 'say', 'text', 'what']);
+    expect(options.sort()).toEqual(['case', 'ids', 'instructions', 'keep', 'listen', 'maxLength', 'numbers', 'pick', 'redact', 'say', 'text', 'what']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
   });
 });
@@ -543,5 +543,57 @@ describe('pick: the question and the value', () => {
     expect(problems({ pick: {} })).toEqual([expect.stringContaining('place.pick.what  required key "what" is missing')]);
     expect(problems({ pick: { what: 'the address', words: { fr: { joiners: [] } } } })).toEqual([expect.stringContaining('place.pick.words.fr.joiners')]);
     expect(problems({ pick: { what: 'the address', words: { French: { joiners: ['et'] } } } })).toEqual([expect.stringContaining('place.pick.words.French')]);
+  });
+});
+
+describe('numbers and case: the value written by code, the words read back', () => {
+  const SAID = 'yeah my address is seventy six twenty five oak hollow lane';
+  const place = defineSlot('place', { type: 'text', what: 'where', say: null, redact: 'none', numbers: 'digits', case: 'title', pick: { what: 'the street address' } });
+  const given = (p: number) => ({ placeGiven: noul(p) });
+  const picked = { ...given(0.9), placePick: choice({ e: 0.86, h: 0.06, none: 0.08 }) };
+
+  it('writes the part picked as digits and title case, and keeps the words as said for the read-back', () => {
+    expect(place.fill(picked, testSlotContext(SAID))).toEqual({
+      kind: 'filled', value: '7625 Oak Hollow Lane', display: 'seventy six twenty five oak hollow lane', confidence: 0.9, confirm: 'none',
+    });
+  });
+
+  it('asks the model the same questions: the candidates are the words as said, and code writes the one chosen', () => {
+    const plain = defineSlot('place', { type: 'text', what: 'where', say: null, redact: 'none', pick: { what: 'the street address' } });
+    expect(place.questions(testSlotContext(SAID))).toEqual(plain.questions(testSlotContext(SAID)));
+    expect(place.questionIds).toEqual(plain.questionIds);
+  });
+
+  it('writes the whole words when they are kept: no pick, none picked, or one candidate', () => {
+    const whole = defineSlot('place', { type: 'text', what: 'where', say: null, redact: 'none', numbers: 'digits' });
+    expect(whole.fill(given(0.9), testSlotContext('one zero two four six aspen glade lane'))).toMatchObject({ value: '10246 aspen glade lane', display: 'one zero two four six aspen glade lane' });
+    expect(place.fill({ ...given(0.9), placePick: choice({ none: 0.9, e: 0.1 }) }, testSlotContext(SAID))).toMatchObject({
+      value: 'Yeah My Address Is 7625 Oak Hollow Lane', display: SAID,
+    });
+  });
+
+  it('is shown as said only where the display is the words and the value is written from them', () => {
+    expect(place.displayFrom).toBe('said');
+    expect(defineSlot('place', { type: 'text', what: 'where', say: null, redact: 'none', case: 'title' }).displayFrom).toBe('said');
+    expect(defineSlot('place', { type: 'text', what: 'where', say: null, redact: 'none' }).displayFrom).toBeUndefined();
+    // With a stand-in, the display is the stand-in as ever, display(value) gives it, and the value is written.
+    const standIn = defineSlot('place', { type: 'text', what: 'where', numbers: 'digits' });
+    expect(standIn.displayFrom).toBeUndefined();
+    expect(standIn.fill(given(0.9), testSlotContext('twenty two alder street'))).toMatchObject({ value: '22 alder street', display: 'your description' });
+  });
+
+  it('leaves the words as said in a language with no rules', () => {
+    expect(place.fill(given(0.9), testSlotContext('calle Alder veintidós', { locale: 'es' }))).toMatchObject({ value: 'calle Alder veintidós', display: 'calle Alder veintidós' });
+  });
+
+  it('cuts the words to maxLength before writing them, so the value is never longer', () => {
+    const short = defineSlot('place', { type: 'text', what: 'where', say: null, redact: 'none', numbers: 'digits', maxLength: 27 });
+    expect(short.fill(given(0.9), testSlotContext('seventy six twenty five oak hollow lane'))).toMatchObject({ value: '7625 oak', display: 'seventy six twenty five oak' });
+  });
+
+  it('defaults to the words as said, and refuses another value', () => {
+    expect(defineSlot('place', { type: 'text', what: 'where' }).config).toMatchObject({ numbers: 'words', case: 'as-said' });
+    const r = buildSlot('place', { type: 'text', what: 'where', numbers: 'numerals' });
+    expect(!r.ok && r.problems.map(formatProblem)).toEqual([expect.stringContaining('place.numbers')]);
   });
 });

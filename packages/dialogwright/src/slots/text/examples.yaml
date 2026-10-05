@@ -160,3 +160,46 @@
         placeGiven: { noul: 0.2 }
         placePick: { choice: { a: 0.1, b: 0.1, none: 0.8 } }
       expect: { kind: absent }
+
+- name: an address written as digits
+  about: A street address a recognizer gives in words. Code writes the value (numbers as digits, words in lower case capitalized) from the part picked; a line reads back the words as said, since text-to-speech reads "7625" as a quantity. The model is asked what it is asked without these options.
+  slot: place
+  config:
+    what: the street address where the problem is
+    say: null
+    redact: none
+    maxLength: 200
+    numbers: digits
+    case: title
+    pick:
+      what: the street address
+  utterances:
+    - text: yeah my address is seventy six twenty five oak hollow lane
+      answers:
+        placeGiven: { noul: 0.93 }
+        placePick: { choice: { a: 0.02, b: 0.01, c: 0.01, d: 0.02, e: 0.88, f: 0.04, none: 0.02 } }
+      expect: { kind: filled, value: 7625 Oak Hollow Lane, display: seventy six twenty five oak hollow lane, confirm: none, displays: { es: seventy six twenty five oak hollow lane } }
+    - text: one zero two four six aspen glade lane
+      answers:
+        placeGiven: { noul: 0.9 }
+        placePick: { choice: { a: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: 10246 Aspen Glade Lane, display: one zero two four six aspen glade lane }
+    - text: it's nineteen oh five twenty third street
+      answers:
+        placeGiven: { noul: 0.9 }
+        placePick: { choice: { b: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: 1905 Twenty Third Street, display: nineteen oh five twenty third street }
+    - text: 22 Alder Street
+      answers:
+        placeGiven: { noul: 0.95 }
+      expect: { kind: filled, value: 22 Alder Street, display: 22 Alder Street }
+    - text: se fue la luz en la calle Alder veintidós
+      context: { locale: es }
+      answers:
+        placeGiven: { noul: 0.9 }
+        placePick: { choice: { b: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: la calle Alder veintidós, display: la calle Alder veintidós }
+    - text: the lights flicker at night
+      answers:
+        placeGiven: { noul: 0.2 }
+      expect: { kind: absent }

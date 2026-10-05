@@ -889,6 +889,19 @@ note:
   say: your note
 ```
 
+An address the caller says in their own words. `pick` keeps only the part that is the address, and `numbers: digits` with `case: title` has code write the value a tool gets ("seventy six twenty five oak hollow lane" said, "7625 Oak Hollow Lane" sent), while the summary reads back the words as said (`say: null`), since text-to-speech reads "7625" as a quantity. The model is asked the same questions either way; the rules are English's, and a language without rules keeps the words as said.
+
+```yaml
+place:
+  type: text
+  what: the street address where the problem is
+  say: null                 # the summary reads back the words themselves
+  redact: none              # needed with say: null: the words are in the trace and the audit
+  pick: { what: the street address }
+  numbers: digits           # the value: number words as digits; ordinals ("fifth avenue") stay words
+  case: title               # the value: all-lower-case words capitalized
+```
+
 What the type does not do for you:
 
 - **The lines it says.** A type declares the prompts it may lead to (`ask_<slot>` and `ask_<slot>_retry` for every slot; `ask_<slot>_dtmf` with a keypad; `ack_<slot>` when a value is acknowledged; `disambiguate_<slot>`; a type's own named lines). You write them in `prompts.yaml`, and `pnpm check` says which are missing in every locale, and why.

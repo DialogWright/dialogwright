@@ -123,6 +123,15 @@ describe('slot metadata: the handoff and the follow-up for a partial', () => {
     expect(handoff(s, 'identity').slots.birthDate).toBe(IDENTITY_VERIFIED);
   });
 
+  it('hands a slot shown as said over by its written value, not the words read back', () => {
+    const said = clinic({ id: 'clinic-said', slots: { ...SLOTS, place: slot('place', { displayFrom: 'said' }) } });
+    registerApp(said);
+    const s = newSession('c', 0, VOICE_RELAY, undefined, said.id);
+    Object.assign(s.slots.place!, { value: '7625 Oak Hollow Lane', display: 'seventy six twenty five oak hollow lane' });
+    Object.assign(s.slots.ward!, { value: 'north', display: 'North' });
+    expect(handoff(s, 'live-agent').slots).toEqual({ place: '7625 Oak Hollow Lane', ward: 'North' });
+  });
+
   it('asks for the rest of a partial by the slot\'s own prompt, and for a slot without one by ask_<slot>', () => {
     const s = session();
     expect(askSlot(s, 'birthDate', { kind: 'md', month: 1, day: 2 }, []).promptId).toBe('ask_birthDate_year');

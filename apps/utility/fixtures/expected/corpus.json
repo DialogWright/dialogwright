@@ -259,7 +259,7 @@
     "verdict": "route",
     "form": "report_outage",
     "slots": {
-      "place": "twelve oak hollow road",
+      "place": "12 Oak Hollow Road",
       "symptom": null,
       "account": null,
       "count": null,
@@ -420,7 +420,7 @@
     "verdict": "proceed",
     "form": "report_outage",
     "slots": {
-      "place": "twelve oak hollow road",
+      "place": "12 Oak Hollow Road",
       "symptom": null,
       "account": null,
       "count": null,

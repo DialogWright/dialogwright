@@ -17,6 +17,14 @@ place:
   # nothing works" is read back as "22 Alder Street" (docs/slots/text.md, "Picking the value out of
   # the words"). The model chooses among the caller's own words, cut by code; it never writes one.
   pick: { what: the street address }
+  # The address as a crew's system wants it: a recognizer on the phone gives "seventy six twenty
+  # five oak hollow lane", and code writes the value "7625 Oak Hollow Lane" (numbers as digits, words
+  # in lower case capitalized) for reportOutage, the gate, the audit and the console. The summary
+  # reads back the words as said ({place} is the display), since text-to-speech reads "7625" as a
+  # quantity. The model's questions are unchanged: code writes the part it picked (docs/slots/text.md,
+  # "Writing the value: numbers and case").
+  numbers: digits
+  case: title
 
 # What the caller is seeing.
 symptom:

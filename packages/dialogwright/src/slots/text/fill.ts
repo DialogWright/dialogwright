@@ -5,6 +5,7 @@ import { meetsThreshold } from '../parts/thresholds';
 import type { TextOptions } from './options';
 import { PICK_LABELS } from './pick';
 import { keepsCurrent, pickCandidatesOf } from './questions';
+import { writtenForm } from './written';
 
 /**
  * The part of the words the pick question chose: the candidate under the model's label, when the
@@ -25,9 +26,11 @@ function pickedPart(o: TextOptions, pickId: string, answers: AnswerMap, ctx: Slo
 /**
  * A text slot's fill: when the model says the caller gives the text (SLOT_DETECT), the value is the
  * caller's words this turn, trimmed and cut to maxLength; with `pick`, the part of them the pick
- * question chose, as said, when it chose one (see pickedPart). A value already on file is kept as
- * `keep` says (a later aside must not overwrite a description; the engine hides `current` during a
- * correction, so one can still replace it).
+ * question chose, as said, when it chose one (see pickedPart). With `numbers: digits` or
+ * `case: title`, code then writes that part (written.ts): the value is the written form, and the
+ * display of a slot shown as said (`say: null`) is the words as said, which a line reads back. A
+ * value already on file is kept as `keep` says (a later aside must not overwrite a description; the
+ * engine hides `current` during a correction, so one can still replace it).
  */
 export function textFill(
   o: TextOptions,
@@ -39,8 +42,9 @@ export function textFill(
     if (!meetsThreshold(ctx.thresholds, 'SLOT_DETECT', p)) return { kind: 'absent' };
     if (keepsCurrent(o, ctx)) return { kind: 'absent' };
     const words = pickedPart(o, ids.pick, answers, ctx) ?? ctx.text;
-    const value = words.trim().slice(0, o.maxLength);
-    if (!value) return { kind: 'absent' };
-    return { kind: 'filled', value, display: display(value, ctx.locale), confidence: p, confirm: 'none' };
+    const said = words.trim().slice(0, o.maxLength);
+    if (!said) return { kind: 'absent' };
+    const value = writtenForm(said, o, ctx.locale);
+    return { kind: 'filled', value, display: o.say === null ? said : display(value, ctx.locale), confidence: p, confirm: 'none' };
   };
 }

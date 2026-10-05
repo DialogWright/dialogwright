@@ -514,7 +514,7 @@ audit:
 | A choice among a few amounts or counts | `choice`, keys that start with a letter (`two`, `three`), `say` for how each is spoken. | nothing |
 | An amount the caller names freely, in whole units ("between 10 and 100 dollars") | No money type yet. A `digits` slot with `mask: '\d{1,3}'` and no `length`, `redact: none` and a `noun` ("dollar amount"), held to its bounds by `limit`. It reads "twenty five" and "one hundred fifty", but not "a hundred and fifty" (it parses numbers as identifiers), has no keypad (that needs `length`) and no cents. | a gap |
 | An amount the caller names freely, with cents | No type yet. Offer choices instead, or write a slot in code ([authoring guide, "When no type fits"](../../../docs/authoring-an-app.md#when-no-type-fits-a-slot-in-code)). | a gap |
-| A street address | `text` with `say: null` (the summary reads the caller's words) and `redact: none`, and a summary line that quotes them ("at: {place}"). The value is the whole turn's words, so the read-back is the caller's sentence. | a gap |
+| A street address | `text` with `say: null` (the summary reads the caller's words) and `redact: none`, and a summary line that quotes them ("at: {place}"). `pick` keeps only the part that is the address; `numbers: digits` and `case: title` have code write the value a tool gets ("7625 Oak Hollow Lane") while the read-back keeps the words as said. | a gap |
 | A code with letters | A slot in code. | a gap |
 
 The address in `slots.yaml`:
@@ -527,6 +527,9 @@ place:
   say: null          # the read-back is the caller's own words
   redact: none       # required with say: null; the words are kept in the trace and the audit
   maxLength: 200
+  pick: { what: the street address }   # the part of the words that is the address
+  numbers: digits    # the value: "seventy six twenty five" -> 7625 (the read-back keeps the words)
+  case: title        # the value: all-lower-case words capitalized
 ```
 
 `redact: none` is the trade-off: with `say: null` the display is the caller's words, and the default `redact: length` keeps those out of the trace, so `pnpm check` refuses the pair (`give "say" a stand-in such as "your note", or set redact: none`). A stand-in would read back "your note" instead of the address, which defeats the read-back, so an address takes `redact: none`, and the words are then in the trace and the audit as said. Declare the param the same way (`place: keep` under `audit:` in policy.yaml), so what is recorded is stated, and note the trade-off in the worksheet's gaps: whatever the caller says with the address is kept too.

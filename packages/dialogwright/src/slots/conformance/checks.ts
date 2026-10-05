@@ -38,7 +38,7 @@ export const CHECK_ABOUT: Readonly<Record<CheckId, string>> = {
   thresholds: 'thresholds are read by name from ctx.thresholds, never written into the type',
   'threshold-names': 'every threshold a fill reads is the engine\'s or one the slot declares, and every one it declares is read',
   boundary: 'a probability exactly at a threshold meets it (atLeast), as one just above does',
-  display: 'display(value, locale) is the display every fill, keypad value and candidate carries, in every locale, and the example pins one in each',
+  display: 'display(value, locale) is the display every fill, keypad value and candidate carries, in every locale (a fill of a slot shown as said, SlotSpec.displayFrom, carries the words instead), and the example pins one in each',
   keypad: 'keys of the right length give the value the example expects, and keys of a wrong length give none',
   prompts: 'every line an outcome can lead to is in the slot\'s prompts, with the variables it is given',
   'prompt-vars': 'every line the slot declares uses only variables the engine gives it, and an acknowledged value has its ack line declared',
@@ -476,7 +476,8 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
       for (const locale of locales) {
         const ctx = kitContext(u.text, u.context, locale);
         const o = fillOf(r, spec, answersOf(u.answers), ctx, `utterance ${said(u)} (${locale ?? 'no locale'})`);
-        if (o?.kind === 'filled') agree(o.value, o.display, locale, `the fill of ${said(u)} (${locale ?? 'no locale'})`);
+        // A slot shown as said (SlotSpec.displayFrom) carries the words, which display(value) cannot give back.
+        if (o?.kind === 'filled' && spec.displayFrom !== 'said') agree(o.value, o.display, locale, `the fill of ${said(u)} (${locale ?? 'no locale'})`);
         if (o?.kind === 'disambiguate') {
           agree(o.a.value, o.a.display, locale, `the first candidate for ${said(u)}`);
           agree(o.b.value, o.b.display, locale, `the second candidate for ${said(u)}`);

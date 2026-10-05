@@ -10,6 +10,7 @@ import { mockCodeVerifier } from '../core/tools';
 import { promptSay, spokenText } from '../prompts/render';
 import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap, QuestionMap } from '../jev/types';
+import type { SlotSpec } from '../core/slots/types';
 import { appendFileSync, cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -261,6 +262,24 @@ describe('switching language mid-call (an informational intent with locale:)', (
       'Buenas noticias, El atlas del río le espera en la sucursal Norte.',
       '¿Hay algo más en que pueda ayudarle?',
     ]);
+  });
+
+  it('keeps the words of a slot shown as said (SlotSpec.displayFrom), and says every other value in the new language', () => {
+    // A slot whose value code writes from the words (a text slot with numbers: digits): display(value)
+    // gives the written value, so a switch that formatted it again would read "7625 ..." back.
+    const said: SlotSpec = {
+      id: 'place', spokenConfirm: 'summary', questions: () => ({}), fill: () => ({ kind: 'absent' }), display: (v) => v, displayFrom: 'said',
+    };
+    const app = { ...plain, id: 'library-switch-said', slots: { ...plain.slots, place: said } };
+    registerApp(app);
+    const t = tc();
+    const start = resolve(newSession('switch-said', 0, VOICE_RELAY, ANONYMOUS, app.id), startEvent(), null, t);
+    const hold = say(start, 'is my hold for The River Atlas in', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
+    Object.assign(hold.session.slots.place!, { value: '7625 Oak Hollow Lane', display: 'seventy six twenty five oak hollow lane' });
+    const switched = say(hold, 'can we do this in Spanish', { intent: choice({ spanish: 0.95, none: 0.05 }), intentChange: choice({ answering: 0.05, adding: 0.9, replacing: 0.05 }) }, t).turn;
+    expect(switched.session.locale).toBe('es');
+    expect(switched.session.slots.book?.display).toBe('El atlas del río');
+    expect(switched.session.slots.place).toMatchObject({ value: '7625 Oak Hollow Lane', display: 'seventy six twenty five oak hollow lane' });
   });
 
   it('switches a chat\'s lines to Spanish without set_language', () => {

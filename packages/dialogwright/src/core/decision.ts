@@ -83,6 +83,7 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
     if (slot.value === null) continue;
     if (spec.handoff === 'last4') slots[id] = maskId(slot.value.replace(/\D/g, ''));
     else if (spec.handoff === 'verified') slots[id] = s.principal.kind === identityOf(app).subjectKind ? IDENTITY_VERIFIED : IDENTITY_UNVERIFIED;
+    else if (spec.displayFrom === 'said') slots[id] = slot.value;
     else slots[id] = slot.display ?? slot.value;
   }
   return { kind: 'handoff', reason, promptId: handoffPromptId(reason), acks, completed: [...s.completed], queued: [...s.queued], slots };

@@ -306,7 +306,7 @@ function chipsOf(slots, prevSlots, form) {
     return {
       id,
       state: s.value ? 'filled' : s.window ? 'partial' : 'empty',
-      label: s.value ? (s.display ?? s.value) : s.window ? partialLabel(s.window) : '',
+      label: s.value ? (Object.hasOwn(META.chipStyle, id) && META.chipStyle[id] === 'value' ? s.value : (s.display ?? s.value)) : s.window ? partialLabel(s.window) : '',
       changed: !!prev && (prev.value !== s.value || !sameWindow(prev.window, s.window)),
       attempts: s.attempts ?? 0,
     };
@@ -589,7 +589,7 @@ function steppingUp(promptedFor) {
  * One NOW chip's value, never an identifier in full (ConsoleMeta.chipStyle): an identifier only by
  * its last four (the record's display is already `...1234`; anything else is masked again here), a
  * verified factor only as given or verified, the caller's own words only as recorded (live they
- * are the words, in replay their length).
+ * are the words, in replay their length), and a slot shown as said by its written value.
  */
 function nowChipLabel(id, s, level) {
   const style = Object.hasOwn(META.chipStyle, id) ? META.chipStyle[id] : null;
@@ -600,6 +600,7 @@ function nowChipLabel(id, s, level) {
     }
     if (style === 'verified') return level >= 1 ? 'verified' : 'given';
     if (style === 'recorded') return 'recorded';
+    if (style === 'value') return String(s.value);
     return String(s.display ?? s.value);
   }
   if (s.window) return style === 'verified' ? 'partial' : partialLabel(s.window);

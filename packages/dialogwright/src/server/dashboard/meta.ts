@@ -18,9 +18,11 @@ export interface ConsoleMeta {
   /**
    * How the NOW panel shows a filled slot, from its spec: `last4` (redact last4: an identifier by
    * its last four), `verified` (handed over as verified: given or verified, never its value),
-   * `recorded` (redacted to its length: the caller's own words). A slot not listed shows its display.
+   * `recorded` (redacted to its length: the caller's own words), `value` (shown as said while its
+   * value is written by code, SlotSpec.displayFrom: the value, "7625 Oak Hollow Lane", rather than the
+   * words). A slot not listed shows its display.
    */
-  chipStyle: Record<string, 'last4' | 'verified' | 'recorded'>;
+  chipStyle: Record<string, 'last4' | 'verified' | 'recorded' | 'value'>;
   formLabels: Record<string, string>;
   slotLabels: Record<string, string>;
   questionPrefixes: Record<string, string[]>;
@@ -63,6 +65,7 @@ function chipStyleOf(app: App): ConsoleMeta['chipStyle'] {
     if (spec.redact === 'last4') out[id] = 'last4';
     else if (spec.handoff === 'verified') out[id] = 'verified';
     else if (spec.redact === 'length') out[id] = 'recorded';
+    else if (spec.displayFrom === 'said') out[id] = 'value';
   }
   return out;
 }

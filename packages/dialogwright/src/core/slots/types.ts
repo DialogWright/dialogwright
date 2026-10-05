@@ -174,6 +174,16 @@ export interface SlotSpec {
    */
   display(value: string, locale?: string): string;
   /**
+   * `said`: a fill's display is the caller's words as said, and its value a form of them written by
+   * code that display(value) cannot give back (a text slot with `say: null` and `numbers: digits` or
+   * `case: title`: "seventy six twenty five oak hollow lane" is read back as said, and the value is
+   * "7625 Oak Hollow Lane"). The display is what a line and the model's turn state carry, as for any
+   * slot; a locale switch keeps it rather than formatting the value again, a handoff and the console
+   * show the value, and the conformance kit does not hold a fill's display to display(value).
+   * Absent: a display is display(value, locale).
+   */
+  displayFrom?: 'said';
+  /**
    * How the slot's value is masked wherever it leaves the turn: a tool call's param of the same
    * name as it is recorded (the gate event, the trace, the audit), and the trace's and console's
    * copies of the slot (its value, display, the turn state the model saw, a readback, a handoff's
@@ -188,7 +198,7 @@ export interface SlotSpec {
   redact?: 'last4' | 'mask' | 'length';
   /**
    * How a handoff hands the slot over in what the call collected (HandoffDecision.slots). Absent:
-   * its display. `last4`: the value's last four digits. `verified`: only whether identity was
+   * its display (its value for a slot shown as said, `displayFrom: 'said'`). `last4`: the value's last four digits. `verified`: only whether identity was
    * verified (IDENTITY_VERIFIED, or IDENTITY_UNVERIFIED), never the value itself.
    */
   handoff?: 'last4' | 'verified';

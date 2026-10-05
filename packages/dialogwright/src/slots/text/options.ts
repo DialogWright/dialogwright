@@ -81,6 +81,18 @@ export const textOptions = z
       .default('length')
       .describe('"length": the words leave the turn (the trace, a tool call\'s param) as their length only, and the display is kept. "none": as they are.'),
     pick: pickOption.optional(),
+    numbers: z
+      .enum(['words', 'digits'])
+      .default('words')
+      .describe(
+        'How the value writes the numbers the caller says in words. "words": as said. "digits": code writes each run of number words as digits ("seventy six twenty five oak hollow lane" is "7625 oak hollow lane", "one zero two four six" is "10246", "one oh two" is "102"); ordinals stay words ("fifth avenue", "twenty third street"), and so do digits already said. The value (a tool\'s param, the gate, the audit, the console) is written; with say: null the display, which a line reads back, stays the words as said, since text-to-speech reads "7625" as a quantity. With pick, the part picked is written. Only in a language with rules: English, also read with no locale; another keeps the words as said.',
+      ),
+    case: z
+      .enum(['as-said', 'title'])
+      .default('as-said')
+      .describe(
+        'How the value writes the case of the words. "as-said": as the recognizer or the caller wrote them. "title": words written with no capital at all (a recognizer that writes none) have each word capitalized, but for minor words after the first ("7625 oak hollow lane" is "7625 Oak Hollow Lane"); words with any capital stay as they are. The value only: with say: null the display stays the words as said. Only in a language with rules: English, also read with no locale.',
+      ),
     text: TEXT_PARTS.schema,
     ids: TEXT_QUESTIONS.schema,
   })

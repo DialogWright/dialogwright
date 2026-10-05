@@ -60,9 +60,52 @@ The words live in the slot's options, not in `locale/<tag>/slots.yaml`, because 
 
 **Turning it on in an app.** `pick` adds a question to the turns the slot listens on, so the requests the model is sent change: an app that turns it on records its cassette again, and its corpus can label the part picked with the question's id and the part's words (`labels: { placePick: 22 Alder Street }`), which the fixture stub answers with that part's letter. A letter itself is read as the letter; words that name two parts but for case (said "Elm Park" and "elm park") must be written as said.
 
+## Writing the value: numbers and case
+
+A recognizer on the phone gives numbers as words: "seventy six twenty five oak hollow lane", "one zero two four six aspen glade lane". A tool wants "7625 Oak Hollow Lane". With `numbers: digits` (and `case: title`), code writes the value from the words, and the display stays the words as said:
+
+```yaml
+place:
+  type: text
+  what: the street address where the power problem is
+  say: null
+  redact: none
+  numbers: digits
+  case: title
+  pick: { what: the street address }
+```
+
+- **The value** is written: "7625 Oak Hollow Lane". It is what a tool's param of the same name, the gate (and the hash of the values the caller confirmed, which a form's `confirmedParams` takes from the values, as its write does), the audit, the trace, the console and a handoff get.
+- **The display** of a slot shown as said (`say: null`) is the words as the caller said them: "seventy six twenty five oak hollow lane". A line that reads the slot back (`{place}` in a summary) says it, since text-to-speech reads "7625" as a quantity ("seven thousand six hundred twenty five"), not as the caller grouped it. The model's turn state holds the display too, so the requests the model is sent are the same as without the options. Such a slot is `displayFrom: 'said'`: a locale switch keeps its display, since `display(value)` cannot give the words back. With a stand-in (`say: your address`), the display is the stand-in as ever.
+- **Code writes it, never the model.** The model chooses a part of the words (`pick`) or keeps them whole, as before; the rules below then rewrite that part. With `pick`, the part picked is written; with no pick, or none chosen, the whole words are.
+
+`numbers: digits`, in English: each run of number words (side by side, with only spaces or a hyphen between them) becomes one string of digits, and the numbers in a run concatenate.
+
+| Said | Written |
+|---|---|
+| one zero two four six | 10246 |
+| one oh two; nineteen oh five | 102; 1905 |
+| seventy six twenty five; seven six twenty five | 7625 |
+| eighty six; twelve | 86; 12 |
+| twenty five hundred; two thousand four | 2500; 2004 |
+| one hundred twenty three; one hundred and five; a hundred | 123; 105; 100 |
+| unit four at twenty two alder street | unit 4 at 22 alder street |
+| twenty third street; fifth avenue | (as said: ordinals stay words) |
+| seventy six twenty third street | 76 twenty third street |
+| one hundred first street | (as said: which part is the house number is not clear) |
+| 22 alder street; oh I see; five and six | 22 alder street; oh I see; 5 and 6 |
+
+"oh" and "o" are a zero only between two number words; "a" is one only before "hundred" or "thousand", and "and" is part of a number only after one of them, so "the corner of Elm and Third" is unchanged. Digits already said stay, and every other character is kept. A run the rules cannot read whole stays words. Since the rules run on the slot's value only, which `pick` cuts to the part that is the value, "one" in prose is written too ("one main street" is "1 main street").
+
+`case: title`, in English: words written with no capital at all (a recognizer that writes none) have each word capitalized, but for minor words after the first ("the corner of elm and third" is "The Corner of Elm and Third"). Words with any capital were cased by the recognizer or the caller, and stay as they are. It is a separate option because it is a separate choice: a recognizer that writes capitals needs only `numbers`, and a note or a reason (not a name or an address) should keep its case.
+
+**Languages.** The rules are English's, read with no locale and in `en-*` (`WRITTEN_RULES` in `written.ts`, one entry per language: `digits` and `title`). In a language with no rules the value is the words as said, whatever the options, so English number words never change a Spanish sentence. A language is added there, with its tests.
+
+**Turning it on in an app.** The model's requests do not change, so a recorded cassette still replays. The baseline does, wherever a slot's value had number words or was all lower case: edit those values by hand, and say why.
+
 ## Examples
 
-The starter examples, listed below, are five configurations with starter utterances: the defaults, a courier note with its own stand-in and length, a slot keeping its recorded wording and id (`text.given`, `ids.given`), a phrase shown as said, and an address picked out of the words (`pick`). In an app's `slots.yaml`:
+The starter examples, listed below, are six configurations with starter utterances: the defaults, a courier note with its own stand-in and length, a slot keeping its recorded wording and id (`text.given`, `ids.given`), a phrase shown as said, an address picked out of the words (`pick`), and an address written as digits (`numbers`, `case`). In an app's `slots.yaml`:
 
 ```yaml
 courierNote:

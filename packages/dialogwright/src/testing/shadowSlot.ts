@@ -18,7 +18,7 @@ import type { SlotCandidate, SlotContext, SlotOutcome, SlotPartial, SlotSpec } f
  * - `display(value, locale)` on every value a fill or a keypad parse yields (in the context's
  *   locale), and wherever it is asked;
  * - the declared fields, once, when the shadow is made: id, spokenConfirm, redact, handoff, detect,
- *   valueKind, partialPromptId, whether there is a keypad and its length, whether there is a
+ *   valueKind, displayFrom, partialPromptId, whether there is a keypad and its length, whether there is a
  *   partialVars. Not the declarations a hand-written spec need not make (questionIds, prompts): the
  *   shadow carries the legacy spec's, and the candidate's are the conformance kit's to prove. Nor
  *   `nominates`: a hand-written slot may retrieve in its own code where its library replacement
@@ -280,6 +280,7 @@ function staticFields(spec: SlotSpec): Record<string, unknown> {
     handoff: spec.handoff,
     detect: spec.detect,
     valueKind: spec.valueKind,
+    displayFrom: spec.displayFrom,
     partialPromptId: spec.partialPromptId,
     dtmf: spec.dtmf ? { length: spec.dtmf.length } : undefined,
     partialVars: typeof spec.partialVars === 'function',
@@ -293,6 +294,7 @@ function pick(spec: SlotSpec): Pick<SlotSpec, 'id' | 'spokenConfirm'> & Partial<
   if (spec.handoff !== undefined) out.handoff = spec.handoff;
   if (spec.detect !== undefined) out.detect = spec.detect;
   if (spec.valueKind !== undefined) out.valueKind = spec.valueKind;
+  if (spec.displayFrom !== undefined) out.displayFrom = spec.displayFrom;
   if (spec.partialPromptId !== undefined) out.partialPromptId = spec.partialPromptId;
   if (spec.questionIds !== undefined) out.questionIds = spec.questionIds;
   if (spec.prompts !== undefined) out.prompts = spec.prompts;

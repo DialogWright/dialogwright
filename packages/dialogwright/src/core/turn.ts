@@ -619,12 +619,15 @@ function switchLocale(s: Session, io: TurnIO, target: string): void {
   s.locale = target;
   if (s.caps.speech) io.prefix.push({ type: 'set_language', ...speechLanguagesOf(io.app, target) });
   // A value already held is said in the new locale too: a fill's display is its slot's display(value,
-  // locale) (the slot conformance kit's `display` check), so it is formatted again in the new one.
+  // locale) (the slot conformance kit's `display` check), so it is formatted again in the new one. A
+  // slot shown as said (SlotSpec.displayFrom) keeps the words: they are the caller's in any locale,
+  // and display(value) would give the written value in their place.
   const locale = slotLocaleOf(s);
+  const formatted = (id: SlotId): boolean => Object.hasOwn(io.app.slots, id) && slotSpecOf(io.app, id).displayFrom !== 'said';
   const shown = (id: SlotId, value: string): string => slotSpecOf(io.app, id).display(value, locale);
-  for (const [id, slot] of Object.entries(s.slots)) if (slot.value !== null && Object.hasOwn(io.app.slots, id)) slot.display = shown(id, slot.value);
+  for (const [id, slot] of Object.entries(s.slots)) if (slot.value !== null && formatted(id)) slot.display = shown(id, slot.value);
   const pc = s.pendingConfirmation;
-  if (pc?.target === 'slot' && Object.hasOwn(io.app.slots, pc.slot)) pc.display = shown(pc.slot, pc.value);
+  if (pc?.target === 'slot' && formatted(pc.slot)) pc.display = shown(pc.slot, pc.value);
 }
 
 /**

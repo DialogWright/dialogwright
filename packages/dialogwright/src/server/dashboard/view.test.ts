@@ -1248,3 +1248,18 @@ describe('delivery notes', () => {
     expect(replayStops(evs)).toEqual([0, 1, 3, 4]);
   });
 });
+
+describe('a slot shown as said (SlotSpec.displayFrom) in the console', () => {
+  it('shows its written value in the form chips and the NOW panel, not the words a line reads back', () => {
+    const meta = consoleMetaOf(testkitApp);
+    configure({ ...meta, chipStyle: { ...meta.chipStyle, missingNote: 'value' } });
+    try {
+      const missingNote = { value: '7625 Oak Hollow Lane', display: 'seventy six twenty five oak hollow lane', confirmed: false, attempts: 0, window: null, helped: [] };
+      const v = reduce([started, turnEvent({ slots: { missingNote } })]);
+      expect(v.chips.find((c: { id: string }) => c.id === 'missingNote')).toMatchObject({ state: 'filled', label: '7625 Oak Hollow Lane' });
+      expect(v.now.chips.find((c: { id: string }) => c.id === 'missingNote')).toMatchObject({ state: 'filled', label: '7625 Oak Hollow Lane' });
+    } finally {
+      configure(meta);
+    }
+  });
+});

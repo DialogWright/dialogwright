@@ -135,6 +135,10 @@ The second line, with no key, must exit 0; triage any difference as in step 3 ab
 3. The three entries whose `place` changed from the sentence to the address were edited by hand to the stub's new outcome and logged under "Baseline edits" in [DESIGN.md](DESIGN.md); the regression prints `no changes`.
 4. The cassette was recorded again (above): every request that holds `placePick` was new.
 
+### Writing the address: digits and capitals
+
+A recognizer on the phone gives numbers as words: "seventy six twenty five oak hollow lane". `place` has `numbers: digits` and `case: title` ([docs/slots/text.md](../../docs/slots/text.md), "Writing the value: numbers and case"), so code writes the value from the part picked: `reportOutage` is sent `place: 7625 Oak Hollow Lane`, and the gate, the audit and the console show that, while the summary reads back the words as said ("at this address: seventy six twenty five oak hollow lane"), since text-to-speech would read "7625" as a quantity. The model is asked exactly what it was asked before (the turn state holds the words), so the cassette did not need recording again. `ro-11` and `pl-07` ("twelve oak hollow road") are the two baseline entries whose value changed, to `12 Oak Hollow Road`, edited by hand and logged under "Baseline edits" in [DESIGN.md](DESIGN.md). `src/writtenPlace.test.ts` runs the whole report on the stub with the address in number words.
+
 ### Known gaps
 
 See [docs/known-gaps.md](../../docs/known-gaps.md) for each gap's caller impact and candidate fix, and [DESIGN.md](DESIGN.md) ("Baseline edits", "Gaps") for the triage of the first recording.

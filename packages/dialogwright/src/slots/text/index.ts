@@ -8,8 +8,13 @@ import { givenIdOf, pickIdOf, textQuestions } from './questions';
 
 export { textOptions, textWording, TEXT_PARTS, TEXT_QUESTIONS, DEFAULT_MAX_LENGTH, DEFAULT_SAY } from './options';
 export type { TextOptions, TextWording } from './options';
+export { WRITTEN_RULES, writtenForm, writtenRulesFor } from './written';
+export type { WrittenCase, WrittenNumbers, WrittenRules } from './written';
 export { MAX_PICK_CANDIDATES, MAX_PICK_SPLITS, MIN_TAIL_WORDS, PICK_LABELS, PICK_WORDS, pickCandidates, pickWordsFor } from './pick';
 export type { PickWords, PickWordsByLocale } from './pick';
+
+/** Whether a fill's display is the words as said while its value is written from them (SlotSpec.displayFrom). */
+const displaysSaid = (o: TextOptions): boolean => o.say === null && (o.numbers === 'digits' || o.case === 'title');
 
 const examples = examplesFrom(new URL('./examples.yaml', import.meta.url));
 
@@ -33,6 +38,8 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
       // Never acknowledged or read back on its own: the stand-in says nothing a caller could correct.
       spokenConfirm: 'summary',
       ...(o.redact === 'length' ? { redact: 'length' as const } : {}),
+      // Shown as said while the value is written (written.ts): display(value) cannot give the words back.
+      ...(displaysSaid(o) ? { displayFrom: 'said' as const } : {}),
       detect: true,
       questionIds: o.pick ? [givenId, pickId] : [givenId],
       prompts: [],

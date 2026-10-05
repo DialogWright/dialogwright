@@ -29,6 +29,14 @@ describe('consoleMetaOf', () => {
   });
 });
 
+describe('consoleMetaOf: a slot shown as said', () => {
+  it('shows a slot whose display is the words as said by its written value (SlotSpec.displayFrom)', () => {
+    const note = testkitApp.slots.missingNote!;
+    const said: App = { ...bare, slots: { ...bare.slots, missingNote: { ...note, redact: undefined, displayFrom: 'said' } } };
+    expect(consoleMetaOf(said).chipStyle).toEqual({ accountId: 'last4', dob: 'verified', missingNote: 'value' });
+  });
+});
+
 describe('consoleMetaOf: the level badge', () => {
   it('names each level as identity.yaml does where the console gives no words, and neutrally where neither does', () => {
     // The testkit's identity.yaml calls level 1 "verified" and level 2 "confirmed by code" (bare above).
