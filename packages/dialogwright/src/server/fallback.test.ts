@@ -63,7 +63,7 @@ describe('pnpm fallback', () => {
     expect(r.code).toBe(0);
     expect(readFileSync(join(r.dir, 'telnyx.xml'), 'utf8')).toContain('<Say>One moment, please.</Say><Dial>+15555550123</Dial>');
     expect(r.out).toContain('TeXML application');
-    expect(r.out).toContain('fallback URL');
+    expect(r.out).toContain('Webhook Failover URL');
   });
 
   it('refuses what it cannot write: a carrier it does not know, a number that is not E.164, an empty message, no --out', async () => {

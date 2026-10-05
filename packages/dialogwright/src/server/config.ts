@@ -102,7 +102,9 @@ export interface ServerConfig {
   telnyxTranscriptionProvider: string | null;
   /**
    * TELNYX_EVENTS, optional: the event streams Telnyx sends on the socket (its relay's `events` attribute:
-   * speaker-events, tokens-played). The adapter writes each to the call's frame log; nothing acts on them.
+   * speaker-events, tokens-played). The adapter writes each to the call's frame log. tokens-played also
+   * lets the adapter notice a line Telnyx cut short and say it again (RESAY_CUT_LINES, below); without it
+   * Telnyx reports no playback and nothing is said twice.
    */
   telnyxEvents?: string | null;
   /**

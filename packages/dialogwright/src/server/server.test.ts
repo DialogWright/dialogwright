@@ -511,6 +511,8 @@ describe('server end to end', () => {
     expect(relay.received.map((f) => f.type)).toEqual(['text']);
     relay.assertKnownTypes();
     expect(logs.some((l) => l.startsWith('clips: off'))).toBe(true);
+    // The line names the configured carrier, not one carrier's product.
+    expect(logs.find((l) => l.startsWith('clips: off'))).toMatch(/TTS voice: Twilio\)$/);
     // The recorded clip on disk still exists, but CLIPS=off means it is never checked: no presence
     // or staleness lines, just the one quiet line above.
     expect(logs.some((l) => l.includes('clips present'))).toBe(false);

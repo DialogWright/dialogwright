@@ -168,7 +168,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       log(`audio: ${cov.stale.length} stale clips (recorded text differs from the sheet): ${cov.stale.join(', ')}`);
     }
   } else {
-    log('clips: off (every prompt spoken by the ConversationRelay TTS voice)');
+    const carriers = config.voiceProviders.map((id) => id.charAt(0).toUpperCase() + id.slice(1)).join(', ');
+    log(`clips: off (every prompt spoken by the carrier's TTS voice: ${carriers})`);
   }
   const noInputMs = overrides.noInputMs ?? config.noInputMs;
   log(noInputMs > 0 ? `no-input: ${noInputMs} ms after playback (${durations.size} clip durations)` : 'no-input: off');
