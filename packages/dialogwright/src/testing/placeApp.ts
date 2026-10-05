@@ -8,14 +8,14 @@ import { testkitApp } from './testkit';
 /**
  * A small app for the voice options' tests: one form that asks where a problem is (`place`), with no
  * identity and no entry call, so a turn goes through no gate. The place is the caller's words as said,
- * taken once they name a street: "at" and "22" are not one, "Alder Street." is, and so is
- * "at 22 Alder Street.".
+ * taken once they name a street or a lane: "at" and "22" are not one, "Alder Street." is, and so are
+ * "at 22 Alder Street." and "seventy six twenty five oak hollow lane".
  */
 const place: SlotSpec = {
   id: 'place',
   spokenConfirm: 'summary',
   questions: () => ({}),
-  fill: (_answers, ctx) => (/\bstreet\b/i.test(ctx.text)
+  fill: (_answers, ctx) => (/\b(street|lane)\b/i.test(ctx.text)
     ? { kind: 'filled', value: ctx.text.trim(), display: ctx.text.trim(), confidence: 0.95, confirm: 'none' }
     : { kind: 'absent' }),
   display: (v) => v,

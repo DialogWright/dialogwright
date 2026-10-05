@@ -21,11 +21,16 @@ import { runTurn, type Arrival, type RunOptions, type TurnRun } from './turn';
  * Only a turn that spoke and did nothing else is undone (undoable): a turn that went through the
  * gate, handed work to a service, switched the language, ended the call or was quarantined has done
  * something no session can take back, so the prompt after it is a turn of its own, as today. A key
- * pressed, a no-input silence, or any other event in between ends joining, and so does an interrupt
- * after `withinMs`, which is an ordinary barge-in. With the relay's barge-in off no interrupt comes, so a
- * carrier that reports the caller speaking stands in for it: a caller who comes back in soon after their
- * own pause and the reply going out (RESUME_AFTER_PAUSE_MS, RESUME_INTO_REPLY_MS), and goes on into the
- * next final prompt, is told here as `resumed` (server/adapter.ts). At most CONTINUE_MAX_FRAGMENTS prompts are joined, and never past the wire's text limit.
+ * pressed, a no-input silence, or any other event in between ends joining. An interrupt after `withinMs`
+ * is an ordinary barge-in: the next final prompt is its own. With the relay's barge-in off no interrupt
+ * comes, so a carrier that reports the caller speaking stands in for it: a caller who comes back in soon
+ * after their own pause and the reply going out (RESUME_AFTER_PAUSE_MS, RESUME_INTO_REPLY_MS), and goes
+ * on into the next final prompt, is told here as `resumed` (server/adapter.ts). With the barge-in on, that
+ * same speech may also bring the carrier's interrupt, later than `withinMs` (on Telnyx 0.73 s into the
+ * re-ask, after the caller was heard back in): an interrupt is no other event, so it ends no join, and a
+ * prompt told `resumed` continues the one before it whichever came first. A further interrupt of a reply
+ * already cut off is the same caller still talking. At most CONTINUE_MAX_FRAGMENTS prompts are joined,
+ * and never past the wire's text limit.
  *
  * The engine's, not a carrier's: it reads the core's events, and the voice server and the frame-log
  * replay (harness-text/replay.ts) run every turn of a call through one Continuation, in the order the
@@ -69,7 +74,13 @@ type State =
   /** A final prompt's turn spoke, and only spoke: `base` is the session before the first fragment's turn. */
   | { kind: 'replied'; base: Session; fragments: readonly string[] }
   /** ... and the caller talked over the reply within the window: the next final prompt continues. */
-  | { kind: 'cut'; base: Session; fragments: readonly string[] };
+  | { kind: 'cut'; base: Session; fragments: readonly string[] }
+  /**
+   * ... and the carrier cut the reply off after the window: an ordinary barge-in, so the next final prompt
+   * is its own, unless the caller is found to have come back in at once (resumed), whose speech the
+   * interrupt then was.
+   */
+  | { kind: 'barged'; base: Session; fragments: readonly string[] };
 
 const IDLE: State = { kind: 'idle' };
 
@@ -84,12 +95,13 @@ export class Continuation {
    * of that speech (server/adapter.ts takeResumed, on a carrier that reports the caller speaking, which
    * decides it by the caller's own pause and the reply's send, not by `withinMs`; replay reads it from the
    * frame log's `callerResumed`): taken as an interrupt within the window is, so that prompt continues the
-   * one before it. Not a turn: no event reaches the core, and nothing changes unless the last turn was a
-   * reply to a final prompt that only spoke (so never with `withinMs` 0).
+   * one before it, though the carrier's interrupt of the reply came after the window. Not a turn: no event
+   * reaches the core, and nothing changes unless the last turn was a reply to a final prompt that only
+   * spoke, with nothing but interrupts since (so never with `withinMs` 0).
    */
   resumed(): void {
     const state = this.state;
-    if (state.kind === 'replied' || state.kind === 'cut') {
+    if (state.kind !== 'idle') {
       this.state = { kind: 'cut', base: state.base, fragments: state.fragments };
     }
   }
@@ -124,8 +136,11 @@ export class Continuation {
       return { ...run, joined: null };
     }
     const run = await runTurn(session, event, opts, arrival);
-    if (event.type === 'user.interrupt' && (state.kind === 'replied' || state.kind === 'cut') && event.afterMs <= this.withinMs) {
-      this.state = { kind: 'cut', base: state.base, fragments: state.fragments };
+    if (event.type === 'user.interrupt' && state.kind !== 'idle') {
+      // Within the window, or over a reply already cut off: the caller had not finished. After it, a
+      // barge-in, which a caller found to have come back in at once (resumed) still continues.
+      const cut = state.kind === 'cut' || event.afterMs <= this.withinMs;
+      this.state = { kind: cut ? 'cut' : 'barged', base: state.base, fragments: state.fragments };
     } else if (event.type === 'user.speech') {
       // A partial (only a harness hands one to a turn) holds: the final prompt is still to come.
       this.state = state;

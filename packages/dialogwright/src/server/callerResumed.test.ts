@@ -62,6 +62,8 @@ function liveCall(provider: string, bargeIn: BargeIn, more: Partial<AdapterDeps>
     sent, store, caller,
     start: () => send({ type: 'setup', sessionId: 'VX7', callSid: CALL, from: '+15555550100', to: '+15555550199', customParameters: {} }),
     say: (t: string) => send({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true }),
+    /** The carrier's own barge-in (BARGE_IN speech or any): `heard` is the text it was sent, `ms` into the line. */
+    cut: (heard: string, ms: number) => send({ type: 'interrupt', utteranceUntilInterrupt: heard, durationUntilInterruptMs: ms }),
     agent: (on: boolean) => info('agentSpeaking', on ? 'on' : 'off'),
     /** The caller heard speaking for each of `bursts` ms in turn, with the pauses between them: on, burst, off, pause, on... */
     speak: async (...bursts: number[]) => {
@@ -94,7 +96,7 @@ async function sameOnReplay(call: ReturnType<typeof liveCall>): Promise<void> {
  * comes `promptMs` later. The test's turn takes no time, so the re-ask goes out as the prompt comes: on
  * a live call the prompt's delay and the turn's time are one gap here.
  */
-async function toReask(call: ReturnType<typeof liveCall>, speakMs: number, promptMs: number): Promise<void> {
+async function toReask(call: ReturnType<typeof liveCall>, speakMs: number, promptMs: number, first = 'at'): Promise<void> {
   await call.start();
   await call.speak(900);
   await vi.advanceTimersByTimeAsync(800);
@@ -102,15 +104,15 @@ async function toReask(call: ReturnType<typeof liveCall>, speakMs: number, promp
   await vi.advanceTimersByTimeAsync(3_000);
   await call.speak(speakMs);
   await vi.advanceTimersByTimeAsync(promptMs);
-  await call.say('at');
+  await call.say(first);
   expect(call.sent.filter((f) => f.type === 'text').at(-1)?.token).toBe(REASK);
 }
 
 /** The frame log's callerResumed line, and that the prompt it joins comes next. */
-function resumedLine(call: ReturnType<typeof liveCall>): Record<string, unknown> {
+function resumedLine(call: ReturnType<typeof liveCall>, prompt = '22 Alder Street.'): Record<string, unknown> {
   const logs = call.logs();
   const at = logs.findIndex((l) => l.dir === 'log' && l.msg.callerResumed !== undefined);
-  expect(logs[at + 1]).toMatchObject({ dir: 'in', msg: { type: 'prompt', voicePrompt: '22 Alder Street.' } });
+  expect(logs[at + 1]).toMatchObject({ dir: 'in', msg: { type: 'prompt', voicePrompt: prompt } });
   return logs[at]!.msg;
 }
 
@@ -213,6 +215,107 @@ describe.each(['none', 'any'] as const)('a caller who came back in, BARGE_IN=%s 
     await vi.advanceTimersByTimeAsync(DEFAULT_NO_INPUT_AFTER_SPEECH_MS + 1);
     await call.say('22 Alder Street.');
     expect(call.place()).toBe('22 Alder Street.');
+    await sameOnReplay(call);
+  });
+});
+
+/**
+ * The carrier's own barge-in on as well (BARGE_IN speech): the caller who comes back in over the re-ask
+ * also cuts it off, so an interrupt comes, but later than continueWithinMs into the line. Seen on Telnyx
+ * (2026-10-05): the caller stopped, "seventy six" came as a final prompt 0.55 s later and the re-ask
+ * went out 0.16 s after that; the caller was heard again 0.52 s into it (1.23 s after they stopped),
+ * Telnyx's interrupt came 0.30 s after that, 730 ms into the line, and the rest of the address came as a
+ * prompt of its own 2.26 s after they came back in. The interrupt is that same speech: it ends no join.
+ */
+describe('a caller who came back in and cut the re-ask off late, BARGE_IN=speech on Telnyx', () => {
+  const FIRST = 'seventy six';
+  const REST = 'twenty five oak hollow lane';
+  const JOINED = 'seventy six twenty five oak hollow lane';
+
+  /** To the re-ask (one gap of 712 ms from the caller's stop to the reply's send here), and its agentSpeaking 67 ms later. */
+  async function toLateCut(call: ReturnType<typeof liveCall>): Promise<void> {
+    await toReask(call, 595, 712, FIRST);
+    await vi.advanceTimersByTimeAsync(67);
+    await call.agent(true);
+  }
+
+  /** The joined turn: the rest of the address, as the answer to the place question, read back. */
+  function expectJoined(call: ReturnType<typeof liveCall>): void {
+    expect(call.place()).toBe(JOINED);
+    const records = call.records();
+    const last = records.at(-1)!;
+    expect(last.event).toMatchObject({ type: 'user.speech', text: JOINED });
+    expect(last.joined).toEqual({ fragments: [FIRST, REST] });
+    expect(last.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_report', vars: { place: JOINED } });
+    // Run on the session as it was before "seventy six": the re-ask's retry is undone, and the interrupt
+    // that cut it off is no barge-in on the joined turn.
+    const session = call.store.get(CALL)!.session;
+    expect(session.lastInterrupt).toBeNull();
+    const request = records.find((r) => (r.event as { text?: string }).text === 'i want to report a problem')!;
+    const fragment = records.find((r) => (r.event as { text?: string }).text === FIRST)!;
+    expect(fragment.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_place_retry' });
+    expect(fragment.slots.place!.attempts).toBeGreaterThan(request.slots.place?.attempts ?? 0);
+    expect(session.slots.place!.attempts).toBe(request.slots.place?.attempts ?? 0);
+    expect(call.sent.filter((f) => f.type === 'text').at(-1)?.token).toBe(`A problem at ${JOINED}. Is that right?`);
+  }
+
+  it('the live call: back in 518 ms into the re-ask, the interrupt 296 ms later at 730 ms, the rest joined', async () => {
+    const call = liveCall('telnyx', 'speech');
+    await toLateCut(call);
+    await vi.advanceTimersByTimeAsync(451);
+    // Back in, 0.52 s after the re-ask went out; Telnyx's barge-in 0.30 s later.
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(296);
+    await call.cut(REASK, 730);
+    await vi.advanceTimersByTimeAsync(336);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(100);
+    await call.speak(800, 150, 400);
+    await vi.advanceTimersByTimeAsync(182);
+    await call.say(REST);
+    expect(resumedLine(call, REST)).toEqual({ callerResumed: { pauseMs: 1_230, intoReplyMs: 518 } });
+    expectJoined(call);
+    await sameOnReplay(call);
+  });
+
+  it('the interrupt before the caller is heard back in: joined the same way', async () => {
+    const call = liveCall('telnyx', 'speech');
+    await toLateCut(call);
+    await vi.advanceTimersByTimeAsync(383);
+    // Telnyx's barge-in 450 ms into the re-ask, then the clientSpeaking that says the caller is back in.
+    await call.cut(REASK, 450);
+    await vi.advanceTimersByTimeAsync(68);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(632);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(100);
+    await call.speak(800, 150, 400);
+    await vi.advanceTimersByTimeAsync(182);
+    await call.say(REST);
+    expect(resumedLine(call, REST)).toEqual({ callerResumed: { pauseMs: 1_230, intoReplyMs: 518 } });
+    expectJoined(call);
+    await sameOnReplay(call);
+  });
+
+  it('a late interrupt from a caller who was not back in at once is an ordinary barge-in, as before', async () => {
+    const call = liveCall('telnyx', 'speech');
+    await toLateCut(call);
+    // The caller heard the re-ask, and answers it 1.2 s in; the interrupt is theirs, 1.25 s into the line.
+    await vi.advanceTimersByTimeAsync(1_133);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(50);
+    await call.cut(REASK, 1_250);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say(REST);
+    expect(call.place()).toBe(REST);
+    const last = call.records().at(-1)!;
+    expect(last.event).toMatchObject({ type: 'user.speech', text: REST });
+    expect(last.joined).toBeUndefined();
+    // The barge-in is reported to the model on the next turn, as an ordinary one always was.
+    expect(last.turnState).toMatchObject({ asr: { bargeIn: true } });
+    expect(call.logs().some((l) => l.msg.callerResumed !== undefined)).toBe(false);
     await sameOnReplay(call);
   });
 });

@@ -426,7 +426,11 @@ const callerSpeaking = new Set<string>();
  * - **For replay.** The frame log has `{ callerResumed: { pauseMs, intoReplyMs } }` just before the prompt
  *   it joins, and replay tells its Continuation there (harness-text/replay.ts).
  *
- * A carrier's own interrupt joins as before, within continueWithinMs; an app whose continueWithinMs is 0
+ * A carrier's own interrupt joins as before, within continueWithinMs. One later than that, with the
+ * relay's barge-in on, is an ordinary barge-in unless the caller came back in as above: then it is that
+ * same speech cutting the reply off, before or after the clientSpeaking that says they are back in, and it
+ * ends no join (seen on Telnyx, 2026-10-05: back in 0.52 s into the re-ask, the interrupt 0.30 s later at
+ * 730 ms into the line, the rest of the address 1.96 s after that). An app whose continueWithinMs is 0
  * joins nothing either way.
  */
 interface AfterPrompt {

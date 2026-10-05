@@ -76,6 +76,15 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *   address came as a prompt of its own. The adapter now takes a caller who comes back in that soon after
  *   their own pause and the reply as continuing (RESUME_AFTER_PAUSE_MS, RESUME_INTO_REPLY_MS,
  *   server/adapter.ts takeResumed).
+ * - With interruptible="speech", the caller coming back in over a re-ask brings an `interrupt` too, but
+ *   not soon: clientSpeaking went on 0.52 s into the re-ask and the interrupt came 0.30 s after it, with
+ *   durationUntilInterruptMs 730, past continueWithinMs. That interrupt is the same speech, so it ends no
+ *   join (run/continuation.ts): the rest of the address, 1.96 s later, continued the first part.
+ * - Telnyx's barge-in fires without caller speech it reports. With interruptible="speech", an `interrupt`
+ *   came 1704 ms into the greeting with no clientSpeaking at all (the caller was silent until about 11 s
+ *   later), and its utteranceUntilInterrupt carried the whole greeting's text. So an interrupt does not
+ *   say the caller spoke, and utteranceUntilInterrupt is the text sent for the line, not what the caller
+ *   heard of it.
  *
  * ASSUMPTIONS, not in Telnyx's published pages and not yet seen on a live call:
  * 1. The parser below also reads a JSON body, and takes `call_control_id` (or `CallControlId`) for the call

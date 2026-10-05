@@ -168,6 +168,49 @@ describe('a caller who had not finished (voice.continueWithinMs)', () => {
     expect((await run(300, (c) => { c.reset(); c.resumed(); })).joined).toBeNull();
   });
 
+  it('a caller who came back in joins though the carrier\'s interrupt of the reply came after the window', async () => {
+    const o = opts();
+    /** The opening, the request and "seventy six", then `between` (events through the Continuation, or a call on it), then the rest. */
+    const run = async (between: (SessionEvent | ((c: Continuation) => void))[]) => {
+      const c = new Continuation(300);
+      let session = newSession('c4', 0, VOICE_RELAY, ANONYMOUS, PLACE_APP_ID);
+      const runs: (TurnRun & { joined: readonly string[] | null })[] = [];
+      for (const e of [startEvent(), speechEvent('i want to report a problem'), speechEvent('seventy six'), ...between, speechEvent('twenty five oak hollow lane')]) {
+        if (typeof e === 'function') {
+          e(c);
+          continue;
+        }
+        const r = await c.run(session, e, o);
+        session = r.result.session;
+        runs.push(r);
+      }
+      return { runs, session };
+    };
+    const late = interruptEvent('Sorry, where is', 730);
+    // The live order: the interrupt, then the prompt the caller came back in with (resumed, just before it).
+    const joined = await run([late, (c) => c.resumed()]);
+    const last = joined.runs.at(-1)!;
+    expect(last.joined).toEqual(['seventy six', 'twenty five oak hollow lane']);
+    expect(last.record.event).toMatchObject({ type: 'user.speech', text: 'seventy six twenty five oak hollow lane' });
+    expect(last.result.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_report', vars: { place: 'seventy six twenty five oak hollow lane' } });
+    // On the session before "seventy six": its re-ask is undone, and so is the interrupt that cut it off.
+    expect(joined.runs[2]!.result.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_place_retry' });
+    expect(joined.session.slots.place!.attempts).toBe(joined.runs[1]!.result.session.slots.place?.attempts ?? 0);
+    expect(joined.session.lastInterrupt).toBeNull();
+    // A second interrupt of the same reply ends nothing either, early or late, before or after a cut.
+    expect((await run([late, interruptEvent('Sorry, where is the', 900), (c) => c.resumed()])).runs.at(-1)!.joined).toEqual(['seventy six', 'twenty five oak hollow lane']);
+    expect((await run([interruptEvent('Sorry', 120), late])).runs.at(-1)!.joined).toEqual(['seventy six', 'twenty five oak hollow lane']);
+    // Without resumed, a late interrupt is an ordinary barge-in, as it always was: the prompt is its own,
+    // and the barge-in is the next turn's to report.
+    const alone = await run([late]);
+    expect(alone.runs.at(-1)!.joined).toBeNull();
+    expect(alone.session.slots.place!.value).toBe('twenty five oak hollow lane');
+    expect(alone.runs.at(-1)!.record.turnState).toMatchObject({ asr: { bargeIn: true } });
+    // And anything else in between still ends joining, interrupt or not.
+    expect((await run([late, silenceEvent(), (c) => c.resumed()])).runs.at(-1)!.joined).toBeNull();
+    expect((await run([late, (c) => { c.reset(); c.resumed(); }])).runs.at(-1)!.joined).toBeNull();
+  });
+
   it('undoes only a turn that did nothing but speak', async () => {
     const { runs } = await call(300, [speechEvent('at')]);
     const spoke = runs.at(-1)!.result;
