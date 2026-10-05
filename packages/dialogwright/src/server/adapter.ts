@@ -1,8 +1,9 @@
-import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCallIdOf, textLastOf } from './voice/registry';
+import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCallIdOf, stopPlaybackOf, textLastOf } from './voice/registry';
+import { SILENCE_MS } from './voice/silence';
 import type { PlaybackEvent } from './voice/provider';
-import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
+import type { InboundFrame, InterruptFrame, OutboundFrame, PlayFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
-import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
+import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPEECH_GAP_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
@@ -242,6 +243,7 @@ export function forgetNoInput(callSid: string): void {
   callerSpeaking.delete(callSid);
   heldEnds.get(callSid)?.release('closed');
   reportsPlayback.delete(callSid);
+  forgetBargeIn(callSid);
 }
 
 /**
@@ -345,6 +347,8 @@ function resumeNoInput(deps: AdapterDeps, entry: CallEntry, after: 'speech' | 'h
  */
 function onCallerSpeech(deps: AdapterDeps, entry: CallEntry, speaking: boolean): void {
   const callSid = entry.callSid;
+  // Whether this is a caller coming back in at once over the reply to their last final prompt.
+  followResumed(deps, entry, speaking);
   if (speaking) {
     callerSpeaking.add(callSid);
     // Nor is a line the carrier stopped playing then one to say again (RESAY_CUT_LINES).
@@ -675,6 +679,333 @@ function resay(deps: AdapterDeps, callSid: string, w: Watched): void {
 }
 
 /**
+ * BARGE_IN=server: the server does the barge-in a carrier's relay would, from the carrier's reports of
+ * the caller and the agent speaking (VoiceProvider.readEvent, reportsSpeaking), and stops the playback
+ * itself (VoiceProvider.stopPlayback). Why: Telnyx's own barge-in has no sensitivity setting, and is the
+ * suspect in replies that played to a caller who heard nothing (server/voice/telnyx.ts); a minimum length
+ * of speech (BARGE_IN_MIN_SPEECH_MS) is what a cough, an "mm" or an echo does not reach.
+ *
+ * - **What is playing.** Each batch of lines sendFrames puts on the wire replaces the last (a carrier that
+ *   replaces its playback with each new frame does the same), each line with the app's own `interruptible`
+ *   from its prompt, the flag before bargeInFrame sends it `false`. The carrier's report of the agent
+ *   speaking says the lines are playing; its report of a line played (Telnyx's tokensPlayed) marks it and
+ *   every line before it played.
+ * - **Which lines may be cut.** Only while every line not yet reported played is one the app lets the
+ *   caller talk over: stopping the playback drops what is queued behind the line playing, so a line the
+ *   app marked not interruptible (a confirmation, a closing or transfer line, a legal line) is never lost to
+ *   a barge-in, before it or while it plays.
+ * - **How much speech.** Only the caller's speech while the agent is speaking counts (speech that began
+ *   before the lines did is counted from when they began), summed across the carrier's on and off reports
+ *   while each pause is no longer than SPEECH_GAP_MS: Telnyx reports one sentence as a dozen short
+ *   bursts. A longer pause starts a new stretch, counted from nothing. When the stretch reaches
+ *   BARGE_IN_MIN_SPEECH_MS, the playback is stopped (bargeIn): once per stretch, however long it goes on.
+ */
+interface PlayingLine {
+  /** The line as it went out, whitespace folded (what a carrier's report of it names); null for a clip. */
+  text: string | null;
+  /** The app's own word on whether the caller may talk over it (its prompt's flag). */
+  interruptible: boolean;
+  /** The carrier reported it played. */
+  played: boolean;
+}
+
+/** The lines a call's carrier is playing (or about to), for BARGE_IN=server. */
+interface Playing {
+  lines: PlayingLine[];
+  sentAtMs: number;
+  /** When the carrier first reported the agent speaking since they went out; null until it has. */
+  startedAtMs: number | null;
+  /** The carrier reports the agent speaking now. */
+  agentOn: boolean;
+}
+const playing = new Map<string, Playing>();
+
+/** A stretch of the caller's speech, measured over the lines playing (BARGE_IN=server). */
+interface Stretch {
+  /** Speech over a line that may be cut, already summed. */
+  countedMs: number;
+  /** Counting since then (the caller speaking over such a line now); null when not. */
+  sinceMs: number | null;
+  /** When the stretch began: how far into the lines the caller came in (the interrupt's afterMs) is measured from it. */
+  startedAtMs: number;
+  /** When the caller last stopped; null while they have not since the stretch began. */
+  stoppedAtMs: number | null;
+  /** The playback was stopped for this stretch: never twice. */
+  fired: boolean;
+  /** Fires when the counted speech reaches the minimum. */
+  timer: ReturnType<typeof setTimeout> | null;
+}
+const stretches = new Map<string, Stretch>();
+
+/** The server's barge-in settings for a call on `provider`: BARGE_IN=server, on a carrier whose playback it can stop. */
+function serverBargeInFor(deps: AdapterDeps, provider: string | undefined): ServerBargeInSettings | null {
+  return deps.serverBargeIn && deps.bargeIn === 'server' && stopPlaybackOf(provider) !== null ? deps.serverBargeIn : null;
+}
+
+/** SPEECH_GAP_MS: the longest pause that keeps the caller's speech one stretch. */
+function speechGapOf(deps: AdapterDeps): number {
+  return deps.speechGapMs ?? DEFAULT_SPEECH_GAP_MS;
+}
+
+/** Drop a call's barge-in bookkeeping, and what it knows of a caller coming back in (a reconnect, a close, a call gone). */
+function forgetBargeIn(callSid: string): void {
+  const s = stretches.get(callSid);
+  if (s?.timer) clearTimeout(s.timer);
+  stretches.delete(callSid);
+  playing.delete(callSid);
+  replies.delete(callSid);
+  resumed.delete(callSid);
+}
+
+/** Stop counting a stretch, keeping what it has counted. */
+function pauseCount(s: Stretch, nowMs: number): void {
+  if (s.sinceMs !== null) s.countedMs += nowMs - s.sinceMs;
+  s.sinceMs = null;
+  if (s.timer) clearTimeout(s.timer);
+  s.timer = null;
+}
+
+/** Whether the lines playing may be cut now: the carrier says the agent is speaking, and every line still to play may be talked over. */
+function cuttable(p: Playing): boolean {
+  const unplayed = p.lines.filter((l) => !l.played);
+  return p.agentOn && unplayed.length > 0 && unplayed.every((l) => l.interruptible);
+}
+
+/**
+ * A batch of lines is going out (sendFrames, at its first line; `lines` grows as the rest go): they replace
+ * what was playing, and the stretch counts afresh over them.
+ */
+function notePlaying(deps: AdapterDeps, entry: CallEntry, lines: PlayingLine[]): void {
+  const settings = serverBargeInFor(deps, entry.provider);
+  if (!settings) return;
+  playing.set(entry.callSid, { lines, sentAtMs: Date.now(), startedAtMs: null, agentOn: false });
+  const s = stretches.get(entry.callSid);
+  if (s) {
+    pauseCount(s, Date.now());
+    s.countedMs = 0;
+  }
+}
+
+/** Mark the lines a carrier's report of a line played names: the last line it names, and every line before it. */
+function markPlayed(p: Playing, report: string): void {
+  const heard = folded(report);
+  let last = -1;
+  p.lines.forEach((l, i) => {
+    if (l.text !== null && l.text !== '' && heard.includes(l.text)) last = i;
+  });
+  for (let i = 0; i <= last; i += 1) p.lines[i]!.played = true;
+}
+
+/** A carrier's report of the caller or the agent speaking, for BARGE_IN=server. */
+function onBargeInEvent(deps: AdapterDeps, entry: CallEntry, ev: PlaybackEvent, settings: ServerBargeInSettings): void {
+  const callSid = entry.callSid;
+  const now = Date.now();
+  if (ev.kind === 'caller') {
+    let s = stretches.get(callSid);
+    if (ev.speaking) {
+      // A pause longer than the gap ended the stretch before: this is a new one.
+      if (!s || (s.stoppedAtMs !== null && now - s.stoppedAtMs > speechGapOf(deps))) {
+        if (s?.timer) clearTimeout(s.timer);
+        s = { countedMs: 0, sinceMs: null, startedAtMs: now, stoppedAtMs: null, fired: false, timer: null };
+        stretches.set(callSid, s);
+      }
+      s.stoppedAtMs = null;
+    } else if (s) {
+      s.stoppedAtMs = now;
+    }
+  } else {
+    const p = playing.get(callSid);
+    if (p) {
+      if (ev.state === 'started') {
+        p.agentOn = true;
+        p.startedAtMs ??= now;
+      } else if (ev.text !== undefined) {
+        markPlayed(p, ev.text);
+      } else {
+        p.agentOn = false;
+      }
+    }
+  }
+  recount(deps, entry, settings, now);
+}
+
+/** Start or stop counting the caller's speech as the caller and the lines now stand. */
+function recount(deps: AdapterDeps, entry: CallEntry, settings: ServerBargeInSettings, now: number): void {
+  const callSid = entry.callSid;
+  const s = stretches.get(callSid);
+  if (!s) return;
+  const p = playing.get(callSid);
+  // A call already ended is cut only while its `end` is held for its lines (END_AFTER_PLAYBACK).
+  const over = entry.ended && !heldEnds.has(callSid);
+  const counting = !s.fired && !over && callerSpeaking.has(callSid) && p !== undefined && cuttable(p);
+  if (!counting) {
+    pauseCount(s, now);
+    return;
+  }
+  if (s.sinceMs !== null) return;
+  s.sinceMs = now;
+  s.timer = setTimeout(() => {
+    s.timer = null;
+    const at = Date.now();
+    const speechMs = s.countedMs + (s.sinceMs === null ? 0 : at - s.sinceMs);
+    const lines = playing.get(callSid);
+    if (stretches.get(callSid) !== s || s.sinceMs === null || lines === undefined || !cuttable(lines) || !callerSpeaking.has(callSid)) return;
+    if (speechMs < settings.minSpeechMs) return;
+    bargeIn(deps, entry, settings, lines, s, speechMs, at);
+  }, Math.max(0, settings.minSpeechMs - s.countedMs));
+  s.timer.unref?.();
+}
+
+/**
+ * Stop the playback the caller spoke over, and take it as the carrier's own interrupt would be taken: a
+ * `play` frame of the silent clip (VoiceProvider.stopPlayback `silent-clip`), which replaces what is
+ * playing, then an `interrupt` for the core, as a carrier's barge-in sends it. Its `utteranceUntilInterrupt`
+ * is the lines the carrier reported played before the stop (empty when it reported none), and its
+ * `durationUntilInterruptMs` how far into the lines the caller came in. The interrupt is written to the
+ * frame log as an inbound frame, so replay runs it where it came, and goes through the call's queue as one
+ * from the wire does: the no-input wait, the lines watched for a cut (RESAY_CUT_LINES), the console and the
+ * next turn all see an interrupt. A call already ended (a goodbye held for its `end`) has no turn to run.
+ */
+function bargeIn(deps: AdapterDeps, entry: CallEntry, settings: ServerBargeInSettings, p: Playing, s: Stretch, speechMs: number, now: number): void {
+  const callSid = entry.callSid;
+  s.fired = true;
+  pauseCount(s, now);
+  playing.delete(callSid);
+  const line = p.lines.findIndex((l) => !l.played);
+  const heard = p.lines.filter((l) => l.played && l.text !== null).map((l) => l.text).join(' ');
+  // From when the stretch began: speech that began before the lines did came in at their start.
+  const afterMs = Math.max(0, s.startedAtMs - (p.startedAtMs ?? p.sentAtMs));
+  entry.frames.write('log', { bargeIn: { speechMs, line, lines: p.lines.length } });
+  deps.log(`${callSid}: the caller spoke over line ${line + 1} of ${p.lines.length} for ${speechMs} ms, playback stopped`);
+  // What plays now is the silent clip: a wait armed from here measures from its end, not the lines'.
+  lastPlayback.set(callSid, { sentAtMs: now, estimateMs: SILENCE_MS });
+  const stop: PlayFrame = { type: 'play', source: settings.stopSource, loop: 1, preemptible: true, interruptible: false };
+  const socket = entry.socket;
+  const sending = socket
+    ? sendOne(socket, stop, deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).then(() => entry.frames.write('out', stop))
+    : Promise.resolve(entry.frames.write('log', { dropped: stop }));
+  void sending
+    .catch((err: unknown) => {
+      const info = describe(err);
+      deps.log(`${callSid}: send failed for the barge-in's play: ${info.name}: ${info.message}`);
+      entry.frames.write('log', { sendFailed: 'play', error: info });
+    })
+    .then(() => {
+      if (entry.ended) return;
+      const frame: InterruptFrame = { type: 'interrupt', utteranceUntilInterrupt: heard, durationUntilInterruptMs: afterMs };
+      takeInterrupt(deps, entry, frame);
+    });
+}
+
+/**
+ * An interrupt the server made (bargeIn), taken as handleSocketMessage takes one off the wire: logged as
+ * inbound, the no-input wait cleared and the watched lines heard over, the console told, and the core's
+ * event run in the call's queue (an interrupt is state, not a prompt).
+ */
+function takeInterrupt(deps: AdapterDeps, entry: CallEntry, frame: InterruptFrame): void {
+  const callSid = entry.callSid;
+  entry.frames.write('in', frame);
+  clearNoInput(callSid);
+  callerHeard(callSid);
+  const heard = unpronounce(frame.utteranceUntilInterrupt, pronounceFor(appOf(entry.session).voice, localeOf(entry.session)));
+  publish(deps, { type: 'interrupt', callSid, at: Date.now(), utteranceUntilInterrupt: heard });
+  const event = frameToEvent(frame);
+  const arrival: Arrival = { sensitive: null, duringService: entry.session.pendingService !== null };
+  void enqueueTurn(deps, callSid, async (e) => {
+    if (e.ended) return;
+    await turn(deps, e, event, arrival);
+  }, false).catch((err: unknown) => deps.log(`${callSid}: barge-in turn failed: ${describe(err).message}`));
+}
+
+/**
+ * A caller who came back in at once (App.voice.continueWithinMs, run/continuation.ts), on a carrier that
+ * reports the caller speaking. A carrier's interrupt within the window of the reply to a final prompt
+ * says the caller had not finished; with the relay's barge-in off (BARGE_IN none, dtmf or server) no
+ * interrupt ever comes, and the next final prompt would run alone. Seen on Telnyx (2026-10-05): the
+ * caller's "...for one two" came as a final prompt, the reply went out 0.2 s later, Telnyx heard the
+ * caller speaking again 24 ms after it (before it began playing), and "three four" came as a prompt of
+ * its own: the number split in two. So the caller's speech is read too:
+ *
+ * - **The trigger.** The caller starts speaking within continueWithinMs of the reply's first frame going
+ *   out (the send, which comes before the carrier begins playing it), or is speaking as it goes out.
+ * - **The same speech, to the next final prompt.** That stretch goes on across pauses no longer than
+ *   SPEECH_GAP_MS; a longer one ends it (a caller who said "mm", listened, and then answered the reply
+ *   gives a new utterance, not more of the last). When the next final prompt comes with the stretch still
+ *   going, or no longer than NO_INPUT_AFTER_SPEECH_MS (the carrier's transcript time) after it ended, the
+ *   caller had not finished: the Continuation is told (Continuation.resumed), as an interrupt within the
+ *   window would tell it, and the prompt continues the one before it. Nothing is cut and no turn runs for
+ *   it; the joined turn's reply replaces the one still playing, as a new frame does on Telnyx.
+ * - **For replay.** The frame log has `{ callerResumed: { afterMs } }` just before the prompt it joins,
+ *   and replay tells its Continuation there (harness-text/replay.ts).
+ */
+interface Resumed {
+  /** How long after the reply went out the caller came back in (0: they were speaking as it went out). */
+  afterMs: number;
+  /** When the caller last stopped; null while they speak. */
+  stoppedAtMs: number | null;
+}
+
+/** When each call's last reply to a final prompt went out (its first frame). */
+const replies = new Map<string, number>();
+/** A caller who came back in within the window of that reply, while the stretch goes on. */
+const resumed = new Map<string, Resumed>();
+
+/**
+ * A turn's lines went out (`sentAtMs`, the first of them): a reply to a final prompt is the one a caller
+ * may come back in over; any other line ends what was known of the last reply.
+ */
+function noteReply(entry: CallEntry, event: SessionEvent, sentAtMs: number): void {
+  const callSid = entry.callSid;
+  resumed.delete(callSid);
+  if (event.type !== 'user.speech' || !event.final) {
+    replies.delete(callSid);
+    return;
+  }
+  replies.set(callSid, sentAtMs);
+  // Still speaking as the reply goes out: they came back in before it, or never stopped.
+  if (callerSpeaking.has(callSid) && continuationOf(entry).withinMs > 0) resumed.set(callSid, { afterMs: 0, stoppedAtMs: null });
+}
+
+/** The caller started or stopped speaking: whether they came back in at once over the reply to their last final prompt. */
+function followResumed(deps: AdapterDeps, entry: CallEntry, speaking: boolean): void {
+  const callSid = entry.callSid;
+  const now = Date.now();
+  const r = resumed.get(callSid);
+  if (!speaking) {
+    if (r) r.stoppedAtMs = now;
+    return;
+  }
+  if (r) {
+    // A pause longer than the gap: what they say now is a new utterance.
+    if (r.stoppedAtMs !== null && now - r.stoppedAtMs > speechGapOf(deps)) resumed.delete(callSid);
+    else r.stoppedAtMs = null;
+    return;
+  }
+  const sentAtMs = replies.get(callSid);
+  if (sentAtMs === undefined) return;
+  const afterMs = now - sentAtMs;
+  const withinMs = continuationOf(entry).withinMs;
+  if (withinMs > 0 && afterMs >= 0 && afterMs <= withinMs) resumed.set(callSid, { afterMs, stoppedAtMs: null });
+}
+
+/**
+ * A final prompt arrived: when the caller came back in at once over the last reply and has not paused
+ * since for longer than the gap, it continues the prompt before it (Continuation.resumed, through the
+ * call's queue ahead of the prompt's turn). Logged for replay before the prompt's own line.
+ */
+function takeResumed(deps: AdapterDeps, entry: CallEntry): void {
+  const callSid = entry.callSid;
+  const r = resumed.get(callSid);
+  resumed.delete(callSid);
+  replies.delete(callSid);
+  if (!r) return;
+  const settle = deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS;
+  if (r.stoppedAtMs !== null && Date.now() - r.stoppedAtMs > settle) return;
+  entry.frames.write('log', { callerResumed: { afterMs: r.afterMs } });
+  void deps.store.enqueue(callSid, async () => continuationOf(entry).resumed(r.afterMs));
+}
+
+/**
  * Rewrite the identifiers in an outbound text so Twilio's TTS reads them one digit at a time, by the
  * app's rules (App.voice.spokenDigits), in order. A `lead` rule keeps the words before the digits:
  * "order 4702" becomes "order 4 7 0 2". A `groups` rule spells each space-separated group out, with
@@ -761,6 +1092,25 @@ export interface AdapterDeps {
   endAfterPlayback?: EndAfterPlayback;
   /** END_PLAYBACK_MAX_MS: the longest an `end` is held. Absent: DEFAULT_END_PLAYBACK_MAX_MS. */
   endPlaybackMaxMs?: number;
+  /**
+   * BARGE_IN=server: the server's own barge-in (onBargeInEvent, below), on a call whose carrier can have
+   * its playback stopped (VoiceProvider.stopPlayback). Absent: none, the carrier's barge-in as BARGE_IN says.
+   */
+  serverBargeIn?: ServerBargeInSettings;
+  /**
+   * SPEECH_GAP_MS: on a carrier that reports the caller speaking, the longest pause that keeps their speech
+   * one stretch (BARGE_IN=server's count; a caller who came back in at once, callerResumed). Absent:
+   * DEFAULT_SPEECH_GAP_MS.
+   */
+  speechGapMs?: number;
+}
+
+/** How the server does the barge-in with BARGE_IN=server. */
+export interface ServerBargeInSettings {
+  /** BARGE_IN_MIN_SPEECH_MS: the caller's speech over a line, summed across pauses of SPEECH_GAP_MS or less, that stops it. */
+  minSpeechMs: number;
+  /** The silent clip's URL (server/voice/silence.ts silenceSource): the `play` frame that stops the playback. */
+  stopSource: string;
 }
 
 /** How the adapter says again a line the carrier cut short (RESAY_CUT_LINES, RESAY_MIN_FRACTION). */
@@ -854,6 +1204,8 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
   const voice = appOf(entry.session).voice;
   // The words the voice says another way, for the language the lines are in (channel/pronounce.ts).
   const respell = pronounceFor(voice, localeOf(entry.session));
+  // The spoken lines that reach the wire, each with the app's own flag (before bargeInFrame), for BARGE_IN=server.
+  const lines: PlayingLine[] = [];
   for (const [i, original] of frames.entries()) {
     // Digits spelled out first, by rules written against the lines as written (a respelled lead word
     // still leads its digits), then the respellings. The frame log records what actually went out,
@@ -874,6 +1226,11 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
       await sendOne(socket, frame, timeoutMs);
       entry.frames.write('out', logged);
       sent.push(frame);
+      if (frame.type === 'text' || frame.type === 'play') {
+        lines.push({ text: frame.type === 'text' ? folded(frame.token) : null, interruptible: original.type === 'text' || original.type === 'play' ? original.interruptible : false, played: false });
+        // As soon as the first is on the wire (the carrier may report it playing before the last is sent); the rest join it.
+        if (lines.length === 1) notePlaying(deps, entry, lines);
+      }
     } catch (err) {
       const info = describe(err);
       log(`${entry.callSid}: send failed for ${frame.type}: ${info.name}: ${info.message}`);
@@ -1013,7 +1370,10 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // A carrier that acts on `end` at once drops the lines not yet said (END_AFTER_PLAYBACK): the
     // goodbye or the transfer line goes now, and the `end` once it has played.
     const at = ending && holdsEnd(deps, entry.provider) ? frames.findIndex((f) => f.type === 'end') : -1;
+    const sentAtMs = Date.now();
     const sent = await sendFrames(deps, entry, at >= 0 ? frames.slice(0, at) : frames, run.result.decision);
+    // A caller may come back in at once over the reply to a final prompt (a caller who had not finished).
+    if (sent.some((f) => f.type === 'text' || f.type === 'play')) noteReply(entry, event, sentAtMs);
     if (at >= 0) {
       endHeld = sendEndAfterPlayback(deps, entry, frames.slice(at), sent, run.result.decision);
       if (!endHeld) sent.push(...(await sendFrames(deps, entry, frames.slice(at), run.result.decision)));
@@ -1123,6 +1483,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       else onCallerSpeech(deps, entry, ev.speaking);
       onHeldEndEvent(entry.callSid, ev);
       if (deps.resay) onPlaybackEvent(deps, entry, ev, deps.resay);
+      // BARGE_IN=server: the caller's speech over a line, measured from these reports.
+      const settings = serverBargeInFor(deps, entry.provider);
+      if (settings) onBargeInEvent(deps, entry, ev, settings);
     }
     return;
   }
@@ -1178,6 +1541,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       // Nor do the lines it was playing, or what it heard of the caller.
       unwatch(callId);
       callerSpeaking.delete(callId);
+      forgetBargeIn(callId);
       const previous = existing.socket;
       if (previous && previous !== socket) {
         // Twilio reconnected before the old socket's close reached us; retire it explicitly so
@@ -1277,6 +1641,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     ...(event.type === 'user.key' ? { promptedFor: entry.session.promptedFor, epoch: promptEpoch(entry.session) } : {}),
   };
   const logged: InboundFrame = frame.type === 'dtmf' && arrival.sensitive !== null ? { type: 'dtmf', digit: CODE_DIGIT } : frame;
+  // A final prompt from a caller who came back in at once over the last reply continues the one before it;
+  // logged ahead of the prompt's own line, where replay reads it.
+  if (frame.type === 'prompt' && frame.last && !entry.ended) takeResumed(deps, entry);
   entry.frames.write('in', logged);
   if (entry.ended) {
     deps.log(`${ctx.callSid}: ${frame.type} after end, ignored`);
@@ -1414,6 +1781,7 @@ export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContex
   clearNoInput(ctx.callSid);
   unwatch(ctx.callSid);
   callerSpeaking.delete(ctx.callSid);
+  forgetBargeIn(ctx.callSid);
   // A held `end` has no one left to hear its lines: it is not sent (the call already ended for the store).
   heldEnds.get(ctx.callSid)?.release('closed');
   entry.frames.write('log', { socketClosed: true, ended: entry.ended });

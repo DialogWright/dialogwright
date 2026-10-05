@@ -131,6 +131,15 @@ function aheadOutcomes(lines: readonly ReadFrameLogLine[]): (string | null)[] {
  * never joined (the option off, or a log from before it), and replays as that call ran: 0. Replay
  * follows the log rather than the app as it is now, so a call replays as it was taken.
  */
+/** The `afterMs` of a `{ callerResumed: { afterMs } }` log line (server/adapter.ts takeResumed), or null for any other line. */
+function callerResumedMs(line: ReadFrameLogLine): number | null {
+  if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return null;
+  const r = (line.msg as { callerResumed?: unknown }).callerResumed;
+  if (typeof r !== 'object' || r === null) return null;
+  const ms = (r as { afterMs?: unknown }).afterMs;
+  return typeof ms === 'number' && Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+
 function loggedContinueWithinMs(lines: readonly ReadFrameLogLine[]): number {
   for (const line of lines) {
     if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
@@ -220,6 +229,13 @@ export async function replayFrameLog(
     if (isServiceWaitAbandoned(line) && current && !ended) {
       session = { ...current, pendingService: null };
       await flushDeferred();
+      continue;
+    }
+    // A caller who came back in at once over the last reply (server/adapter.ts takeResumed): the prompt
+    // after this line continues the one before it, as it did live.
+    const resumedAfter = callerResumedMs(line);
+    if (resumedAfter !== null) {
+      if (session && !ended) continuation.resumed(resumedAfter);
       continue;
     }
     if (line.dir !== 'in') continue;

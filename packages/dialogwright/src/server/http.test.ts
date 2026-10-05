@@ -717,7 +717,7 @@ describe('app route paths', () => {
   });
 
   it('refuses a path on or under one the engine serves, and routes that overlap', () => {
-    for (const path of ['/dashboard', '/dashboard/x', '/health', '/audio', '/voice', '/cr-action', '/conversation']) {
+    for (const path of ['/dashboard', '/dashboard/x', '/health', '/audio', '/voice', '/cr-action', '/conversation', '/relay', '/relay/clip']) {
       expect(() => validateRoutes([route(path)]), path).toThrow(/overlaps/);
     }
     expect(() => validateRoutes([route('/chat', 'a'), route('/chat/more', 'b')])).toThrow(/overlaps route "a"/);

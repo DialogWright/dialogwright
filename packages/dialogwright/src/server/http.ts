@@ -15,6 +15,8 @@ import { CONSOLE_PATHS, isConsolePath, isDirectLocalRequest, localOnlyPaths } fr
 import { ConsoleAuth } from './console/auth';
 import type { CallbackParams, RelayLanguage, StartDocumentOptions, VoiceProvider, WebhookRequest } from './voice/provider';
 import { providerForPath, voiceProviders } from './voice/registry';
+import { SILENCE_PATH, SILENCE_WAV } from './voice/silence';
+import { relayBargeIn } from '../channel/voiceProviders';
 import { twilioCallbackParams, twilioProvider } from './voice/twilio';
 import { formFields } from './voice/xml';
 import type { App } from '../core/app/types';
@@ -175,6 +177,20 @@ function serveClip(req: IncomingMessage, res: ServerResponse, audioDir: string, 
   res.end(req.method === 'HEAD' ? undefined : body);
 }
 
+/**
+ * The silent clip BARGE_IN=server stops a carrier's playback with (server/voice/silence.ts), served
+ * whatever CLIPS says: it never changes, so a carrier may keep it for a day.
+ */
+function serveSilence(req: IncomingMessage, res: ServerResponse): void {
+  res.writeHead(200, {
+    'content-type': AUDIO_TYPES.wav!,
+    'content-length': SILENCE_WAV.length,
+    'cache-control': 'public, max-age=86400, immutable',
+    'accept-ranges': 'none',
+  });
+  res.end(req.method === 'HEAD' ? undefined : SILENCE_WAV);
+}
+
 /** Where the server serves the web chat widget's script when WIDGET=on. */
 export const WIDGET_PATH = '/widget.js';
 
@@ -251,7 +267,8 @@ function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, 
   const deployment = voiceFor(deps.config, provider.id);
   const deploymentRecognition = recognitionFor(deps.config, provider.id);
   const events = provider.id === 'telnyx' && deps.config.telnyxEvents ? { events: deps.config.telnyxEvents } : {};
-  const bargeIn = deps.config.bargeIn ? { bargeIn: deps.config.bargeIn } : {};
+  // The relay element's own mode: `none` for BARGE_IN=server, whose barge-in is the server's (server/adapter.ts).
+  const bargeIn = deps.config.bargeIn ? { bargeIn: relayBargeIn(deps.config.bargeIn) } : {};
   const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: deps.hints, ...deployment, recognition: deploymentRecognition, ...events, ...bargeIn };
   const app = deps.app;
   if (!app?.locales || !namesLanguages(app) || locale === undefined) return base;
@@ -452,6 +469,10 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       }
       if (deps.config.widget && (req.method === 'GET' || req.method === 'HEAD') && path === WIDGET_PATH) {
         serveWidget(req, res, deps.config.widget.file, deps.log);
+        return;
+      }
+      if ((req.method === 'GET' || req.method === 'HEAD') && path === SILENCE_PATH) {
+        serveSilence(req, res);
         return;
       }
       if ((req.method === 'GET' || req.method === 'HEAD') && path.startsWith('/audio/')) {

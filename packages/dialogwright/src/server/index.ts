@@ -22,6 +22,8 @@ import type { JevClient } from '../jev/types';
 import { TraceWriter } from '../trace/writer';
 import type { TurnObserver } from '../run/turn';
 import { clipVersions, discoverClips, recordableClips } from '../prompts/clips';
+import { silenceSource } from './voice/silence';
+import { DEFAULT_BARGE_IN_MIN_SPEECH_MS } from '../channel/voiceProviders';
 import { clipDurations } from '../prompts/playback';
 import { clipStatus, readRecorded } from '../prompts/sheet';
 import { demoTools } from '../core/tools';
@@ -327,6 +329,11 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
       summarizeHandoff: overrides.summarizeHandoff,
       bargeIn: config.bargeIn ?? 'any',
+      // BARGE_IN=server: the server's own barge-in, stopping a line with the silent clip it serves (server/voice/silence.ts).
+      ...(config.bargeIn === 'server'
+        ? { serverBargeIn: { minSpeechMs: config.bargeInMinSpeechMs ?? DEFAULT_BARGE_IN_MIN_SPEECH_MS, stopSource: silenceSource(config.publicHost) } }
+        : {}),
+      ...(config.speechGapMs !== undefined ? { speechGapMs: config.speechGapMs } : {}),
       // END_AFTER_PLAYBACK: absent from a config made by hand before it existed reads as auto, as loadConfig's default.
       endAfterPlayback: config.endAfterPlayback ?? 'auto',
       ...(config.endPlaybackMaxMs !== undefined ? { endPlaybackMaxMs: config.endPlaybackMaxMs } : {}),

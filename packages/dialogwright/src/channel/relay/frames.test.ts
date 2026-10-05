@@ -47,8 +47,8 @@ describe('barge-in on outbound frames (BARGE_IN)', () => {
     for (const mode of ['any', 'speech'] as const) expect(frames.map((f) => bargeInFrame(f, mode))).toEqual(frames);
   });
 
-  it('marks every spoken line and clip not interruptible for none and dtmf, and leaves the other frames alone', () => {
-    for (const mode of ['none', 'dtmf'] as const) {
+  it('marks every spoken line and clip not interruptible for none, dtmf and server (whose barge-in is the server\'s), and leaves the other frames alone', () => {
+    for (const mode of ['none', 'dtmf', 'server'] as const) {
       expect(frames.map((f) => bargeInFrame(f, mode))).toEqual([
         textFrame('Hello', false),
         textFrame('Your code is 1234', false),

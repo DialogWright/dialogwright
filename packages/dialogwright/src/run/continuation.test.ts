@@ -141,6 +141,32 @@ describe('a caller who had not finished (voice.continueWithinMs)', () => {
     expect(runs.at(-1)!.joined).toEqual(['i want to report a problem', 'at 22 Alder Street.']);
   });
 
+  it('a caller who came back in at once (resumed, from a carrier\'s report of the caller speaking) joins as an interrupt in the window does', async () => {
+    const o = opts();
+    /** The opening, the request and "at", then `between` on the Continuation, then "22". */
+    const run = async (withinMs: number, between: (c: Continuation) => void) => {
+      const c = new Continuation(withinMs);
+      let session = newSession('c3', 0, VOICE_RELAY, ANONYMOUS, PLACE_APP_ID);
+      let last: (TurnRun & { joined: readonly string[] | null }) | null = null;
+      for (const e of [startEvent(), speechEvent('i want to report a problem'), speechEvent('at'), null, speechEvent('22')]) {
+        if (e === null) {
+          between(c);
+          continue;
+        }
+        last = await c.run(session, e, o);
+        session = last.result.session;
+      }
+      return last!;
+    };
+    expect((await run(300, (c) => c.resumed(24))).joined).toEqual(['at', '22']);
+    expect((await run(300, (c) => c.resumed(0))).joined).toEqual(['at', '22']);
+    // Past the window it is no caller who had not finished; with the option 0, nothing ever joins.
+    expect((await run(300, (c) => c.resumed(301))).joined).toBeNull();
+    expect((await run(0, (c) => c.resumed(0))).joined).toBeNull();
+    // After the window was ended by a reset (a key the server drops, a reconnect), nothing to continue.
+    expect((await run(300, (c) => { c.reset(); c.resumed(24); })).joined).toBeNull();
+  });
+
   it('undoes only a turn that did nothing but speak', async () => {
     const { runs } = await call(300, [speechEvent('at')]);
     const spoke = runs.at(-1)!.result;

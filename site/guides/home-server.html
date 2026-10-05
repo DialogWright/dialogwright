@@ -1012,10 +1012,14 @@ TIMEZONE=America/Chicago
 # that drops unsaid lines at the end (Telnyx) until they have played, on for every carrier, off for none.
 # END_AFTER_PLAYBACK=auto
 # END_PLAYBACK_MAX_MS=15000
-# Who may talk over a line: any (default), speech, dtmf or none (the relay element's interruptible).
-# A carrier's barge-in can stop speech on noise or echo; dtmf or none also rules barge-in out when
-# callers report not hearing replies.
+# Who may talk over a line: any (default), speech, dtmf, none (the relay element's interruptible) or
+# server. A carrier's barge-in can stop speech on noise or echo; dtmf or none also rules barge-in out when
+# callers report not hearing replies. server (Telnyx, with speaker-events above): the relay says none,
+# and the server stops a line once the caller has spoken over it for BARGE_IN_MIN_SPEECH_MS (default
+# 400), summed across pauses up to SPEECH_GAP_MS (default 300), so a cough or an echo does not.
 # BARGE_IN=any
+# BARGE_IN_MIN_SPEECH_MS=400
+# SPEECH_GAP_MS=300
 # TTS_PROVIDER=Google
 # TTS_VOICE=en-US-Neural2-F
 

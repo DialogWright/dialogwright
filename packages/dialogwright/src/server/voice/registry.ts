@@ -119,3 +119,31 @@ export function readsPlaybackEvents(providerId: string | undefined): boolean {
 export function playbackEventOf(providerId: string | undefined, message: unknown): PlaybackEvent | null {
   return providerOf(providerId)?.readEvent?.(message) ?? null;
 }
+
+/** Whether a carrier reports the caller and the agent speaking as they happen (VoiceProvider.reportsSpeaking). */
+export function reportsSpeakingOf(providerId: string | undefined): boolean {
+  return providerOf(providerId)?.reportsSpeaking === true;
+}
+
+/** How the server stops a carrier's playback (VoiceProvider.stopPlayback); null when it cannot. */
+export function stopPlaybackOf(providerId: string | undefined): 'silent-clip' | null {
+  return providerOf(providerId)?.stopPlayback ?? null;
+}
+
+/**
+ * The message for the first enabled carrier BARGE_IN=server cannot work on: one that does not report the
+ * caller speaking (the server would never hear them), or that has no way to have its playback stopped;
+ * null when every one can. The carrier's own barge-in is the way on such a carrier.
+ */
+export function serverBargeInRefusal(ids: readonly string[]): string | null {
+  for (const id of ids) {
+    const lacks = [
+      ...(reportsSpeakingOf(id) ? [] : ['does not report the caller and the agent speaking']),
+      ...(stopPlaybackOf(id) !== null ? [] : ['has no way for the server to stop its playback']),
+    ];
+    if (lacks.length > 0) {
+      return `BARGE_IN=server needs a voice provider that reports the caller speaking and whose playback the server can stop; ${id} ${lacks.join(' and ')}. Use the carrier's own barge-in there (BARGE_IN=any, speech, dtmf or none), or take ${id} out of VOICE_PROVIDERS`;
+    }
+  }
+  return null;
+}

@@ -3,9 +3,9 @@ import { resolveJevProvider, type JevProvider } from '../jev/provider';
 
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
-import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
+import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf, reportsSpeakingOf, serverBargeInRefusal } from './voice/registry';
 import {
-  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
+  BARGE_IN_MODES, bargeInRefusal, DEFAULT_BARGE_IN_MIN_SPEECH_MS, DEFAULT_SPEECH_GAP_MS, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
   type BargeIn, type EndAfterPlayback,
 } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
@@ -129,11 +129,27 @@ export interface ServerConfig {
    * echo (a speakerphone, a noisy room), and turning it to `dtmf` or `none` is also the way to rule
    * barge-in in or out when callers report not hearing replies. With `none` or `dtmf` the lines the
    * engine sends are not marked interruptible either (their per-line `interruptible` says false;
-   * channel/relay/frames.ts bargeInFrame). A mode an enabled voice provider does not take is refused
-   * at startup, never ignored. Optional in the type only, for a config made by hand before it existed
-   * (absent reads as any).
+   * channel/relay/frames.ts bargeInFrame). `server`: the relay element says `none`, and the server does
+   * the barge-in itself: with the caller heard speaking over a line the app lets them talk over for
+   * BARGE_IN_MIN_SPEECH_MS, it stops the playback and the turn goes on as after the carrier's own
+   * interrupt (server/adapter.ts). It needs a carrier that reports the caller speaking and whose playback
+   * the server can stop (Telnyx, with TELNYX_EVENTS speaker-events); any other is refused. A mode an
+   * enabled voice provider does not take is refused at startup, never ignored. Optional in the type only,
+   * for a config made by hand before it existed (absent reads as any).
    */
   bargeIn?: BargeIn;
+  /**
+   * BARGE_IN_MIN_SPEECH_MS, 50 to 5000, default 400 (DEFAULT_BARGE_IN_MIN_SPEECH_MS): with BARGE_IN=server,
+   * how much of the caller's speech over a line stops it, summed across pauses no longer than SPEECH_GAP_MS.
+   * Optional in the type only (absent reads as the default).
+   */
+  bargeInMinSpeechMs?: number;
+  /**
+   * SPEECH_GAP_MS, 0 to 2000, default 300 (DEFAULT_SPEECH_GAP_MS): on a carrier that reports the caller
+   * speaking, the longest pause in their speech that keeps it one stretch (BARGE_IN=server's count, and a
+   * caller who came back in at once after a reply, server/adapter.ts). Optional in the type only.
+   */
+  speechGapMs?: number;
   /**
    * END_AFTER_PLAYBACK=auto|on|off, default auto: whether a turn that ends the call (a goodbye before the
    * hang-up, a line before a transfer) holds its `end` frame until the lines before it have played. A
@@ -264,16 +280,33 @@ function resayOf(env: Env): { resayCutLines: boolean; resayMinFraction: number }
   return { resayCutLines: sw === 'on', resayMinFraction: fraction };
 }
 
-/** BARGE_IN, any unless set; a value an enabled voice provider does not take is refused with the provider named. */
-function bargeInOf(env: Env, voiceProviders: readonly string[]): BargeIn {
+/**
+ * BARGE_IN, any unless set; a value an enabled voice provider does not take is refused with the provider
+ * named. `server` also needs every enabled carrier to report the caller speaking and to have a way to stop
+ * its playback (serverBargeInRefusal), and Telnyx to be asked for its speaker events, without which it
+ * reports nothing: refused, with the fix, rather than a barge-in that never comes.
+ */
+function bargeInOf(env: Env, voiceProviders: readonly string[], telnyxEvents: string | null): BargeIn {
   const raw = env.BARGE_IN?.trim().toLowerCase() || 'any';
   if (!(BARGE_IN_MODES as readonly string[]).includes(raw)) {
     throw new Error(`BARGE_IN must be ${BARGE_IN_MODES.slice(0, -1).join(', ')} or ${BARGE_IN_MODES.at(-1)}, got "${env.BARGE_IN}"`);
   }
   const mode = raw as BargeIn;
-  const refusal = bargeInRefusal(mode, voiceProviders);
+  const refusal = bargeInRefusal(mode, voiceProviders) ?? (mode === 'server' ? serverBargeInRefusal(voiceProviders) : null);
   if (refusal) throw new Error(refusal);
+  if (mode === 'server' && voiceProviders.includes('telnyx') && !(telnyxEvents ?? '').toLowerCase().split(' ').includes('speaker-events')) {
+    throw new Error('BARGE_IN=server needs Telnyx to report the caller speaking: add speaker-events to TELNYX_EVENTS (TELNYX_EVENTS="speaker-events tokens-played")');
+  }
   return mode;
+}
+
+/** BARGE_IN_MIN_SPEECH_MS and SPEECH_GAP_MS, checked; read whatever BARGE_IN is, so a typo is caught before it matters. */
+function speechOf(env: Env): { bargeInMinSpeechMs: number; speechGapMs: number } {
+  const minMs = integer(env, 'BARGE_IN_MIN_SPEECH_MS', DEFAULT_BARGE_IN_MIN_SPEECH_MS);
+  if (minMs < 50 || minMs > 5_000) throw new Error(`BARGE_IN_MIN_SPEECH_MS must be from 50 to 5000 milliseconds, got "${env.BARGE_IN_MIN_SPEECH_MS}"`);
+  const gapMs = integer(env, 'SPEECH_GAP_MS', DEFAULT_SPEECH_GAP_MS);
+  if (gapMs > 2_000) throw new Error(`SPEECH_GAP_MS must be from 0 to 2000 milliseconds, got "${env.SPEECH_GAP_MS}"`);
+  return { bargeInMinSpeechMs: minMs, speechGapMs: gapMs };
 }
 
 /** END_AFTER_PLAYBACK and END_PLAYBACK_MAX_MS, checked. */
@@ -437,7 +470,8 @@ export function loadConfig(env: Env): ServerConfig {
     telnyxTranscriptionProvider,
     telnyxEvents,
     ...resayOf(env),
-    bargeIn: bargeInOf(env, voiceProviders),
+    bargeIn: bargeInOf(env, voiceProviders, telnyxEvents),
+    ...speechOf(env),
     ...endAfterPlaybackOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     noInputAfterSpeechMs: integer(env, 'NO_INPUT_AFTER_SPEECH_MS', DEFAULT_NO_INPUT_AFTER_SPEECH_MS),
@@ -638,6 +672,14 @@ function describeEndAfterPlayback(c: ServerConfig): string {
   return held.length === 0 ? 'end after playback auto (no carrier listed needs it)' : `end after playback auto (${held.join(', ')}), ${upTo}`;
 }
 
+/** BARGE_IN as the startup line says it; with `server`, how much speech stops a line. */
+function describeBargeIn(c: ServerConfig): string {
+  const mode = c.bargeIn ?? 'any';
+  if (mode !== 'server') return `barge-in ${mode}`;
+  const minMs = c.bargeInMinSpeechMs ?? DEFAULT_BARGE_IN_MIN_SPEECH_MS;
+  return `barge-in server (a line stops after ${minMs} ms of the caller's speech)`;
+}
+
 export function describeConfig(c: ServerConfig): string {
   // A prefix of a secret is still a piece of the secret; the length alone is enough to tell
   // "the variable is set" from "the variable is the wrong value".
@@ -664,7 +706,7 @@ export function describeConfig(c: ServerConfig): string {
       : []),
     `jev timeout ${c.jevTimeoutMs} ms`,
     `screen ${c.screen}`,
-    `barge-in ${c.bargeIn ?? 'any'}`,
+    describeBargeIn(c),
     describeEndAfterPlayback(c),
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
     c.consoleAuth ? describeConsoleAuth(c.consoleAuth) : `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
@@ -681,6 +723,8 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
     ...(c.voiceProviders.includes('telnyx') && c.telnyxEvents ? [`telnyx events ${c.telnyxEvents}`] : []),
     ...(c.voiceProviders.some(readsPlaybackEvents) ? [describeResay(c)] : []),
+    // Read only where a carrier reports the caller speaking (BARGE_IN=server, a caller who came back in at once).
+    ...(c.voiceProviders.some(reportsSpeakingOf) ? [`speech gap ${c.speechGapMs ?? DEFAULT_SPEECH_GAP_MS} ms`] : []),
     ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)}) up to ${c.chat.maxSessions} sessions`, describeChatSignIn(c.chat.signIn)] : []),
     ...(c.widget ? [`widget on (${c.widget.file})`] : []),
   ].join('  ');
