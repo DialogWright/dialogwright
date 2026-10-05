@@ -8,10 +8,10 @@ import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/re
 import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
-import { Continuation, continueWithinMsOf } from '../run/continuation';
+import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun } from '../run/continuation';
 import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
 import { localeOf } from '../core/locale';
-import { digitAtRun, promptEpoch, sensitiveDigit, type ArrivalDigit } from '../core/turn';
+import { digitAtRun, promptEpoch, sensitiveDigit, type ArrivalDigit, type TurnResult } from '../core/turn';
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
 import type { Session } from '../core/session';
@@ -243,6 +243,8 @@ export function forgetNoInput(callSid: string): void {
   heldEnds.get(callSid)?.release('closed');
   reportsPlayback.delete(callSid);
   forgetResumed(callSid);
+  settleHeard(callSid);
+  releaseReply(callSid, 'sent');
 }
 
 /**
@@ -350,8 +352,11 @@ function onCallerSpeech(deps: AdapterDeps, entry: CallEntry, speaking: boolean):
   followResumed(deps, entry, speaking);
   if (speaking) {
     callerSpeaking.add(callSid);
-    // Nor is a line the carrier stopped playing then one to say again (RESAY_CUT_LINES).
+    // Nor is a line the carrier stopped playing then one to say again (RESAY_CUT_LINES), nor an interrupt
+    // settling one the caller did not make (a spurious interrupt).
     callerHeard(callSid);
+    // A reply held for a caller who had not finished is not said: they went on (holdReply).
+    releaseReply(callSid, 'joined');
     if (noInputHeld.has(callSid)) return;
     // An armed wait keeps its deadline. A silence turn already queued behind a busy one (its timer fired)
     // has a deadline just passed: it is held too, rather than said over the caller once the queue frees.
@@ -560,12 +565,12 @@ function unwatch(callSid: string): void {
 
 /**
  * Watch the lines a turn just sent (or a re-send of them), in place of whatever was watched before.
- * Only on a carrier that reports its playback, with RESAY_CUT_LINES on; never a turn that ends the call
- * or sends digits, and never one whose lines did not all reach the wire.
+ * Only on a carrier that reports its playback, with RESAY_CUT_LINES or RESAY_SPURIOUS_INTERRUPTS on; never
+ * a turn that ends the call or sends digits, and never one whose lines did not all reach the wire.
  */
 function watchPlayback(deps: AdapterDeps, entry: CallEntry, frames: readonly OutboundFrame[], decision: unknown, sent: readonly OutboundFrame[], resent: boolean): void {
   unwatch(entry.callSid);
-  if (!deps.resay || !readsPlaybackEvents(entry.provider)) return;
+  if ((!deps.resay && !deps.spuriousInterrupts) || !readsPlaybackEvents(entry.provider)) return;
   if (frames.some((f) => f.type === 'end' || f.type === 'sendDigits')) return;
   const said = frames.filter((f) => f.type === 'text' || f.type === 'play');
   const out = sent.filter((f) => f.type === 'text' || f.type === 'play');
@@ -578,10 +583,197 @@ function watchPlayback(deps: AdapterDeps, entry: CallEntry, frames: readonly Out
   });
 }
 
-/** The caller was heard: the lines watched are not said again, whatever the carrier reports of them. */
+/**
+ * The caller was heard: the lines watched are not said again, whatever the carrier reports of them, and an
+ * interrupt settling (settleInterrupt) was theirs.
+ */
 function callerHeard(callSid: string): void {
   const w = watched.get(callSid);
   if (w) w.heard = true;
+  settleHeard(callSid);
+}
+
+/**
+ * How long a carrier's interrupt with no caller heard around it waits for a report of the caller speaking
+ * before it is taken as not theirs (settleInterrupt). Telnyx reports the caller and fires its barge-in
+ * independently: on a live call (2026-10-05) clientSpeaking went on 0.30 s before the interrupt, and a
+ * report can come after it as well. 400 ms is over the largest gap seen between the two, and short enough
+ * that the lines said again follow the cut with less than half a second more of silence.
+ */
+export const SPURIOUS_INTERRUPT_SETTLE_MS = 400;
+
+/**
+ * A spurious interrupt (RESAY_SPURIOUS_INTERRUPTS), on a carrier that reports the caller's voice. A
+ * carrier's barge-in can fire with no caller speaking: on Telnyx (2026-10-05, BARGE_IN=speech) an
+ * `interrupt` came 1704 ms into the greeting with no clientSpeaking at all, and the caller, hearing
+ * nothing, was silent for about 11 s. An interrupt that comes with the caller not speaking, and not heard
+ * starting or stopping within SPURIOUS_INTERRUPT_WINDOW_MS before it, waits SPURIOUS_INTERRUPT_SETTLE_MS in
+ * the call's queue (so nothing runs ahead of it): the caller heard meanwhile (speaking, a prompt, a digit,
+ * another interrupt), or the socket gone, makes it theirs, and it is taken as before. Otherwise it was not
+ * theirs:
+ *
+ * - **Not a barge-in.** No turn runs for it: the core never sees it, so the next answer is not told of a
+ *   barge-in and a Continuation does not take it as a caller who had not finished. The frame log has
+ *   `{ spuriousInterrupt: { afterMs, quietMs } }` (how far into the line it came, and how long since the
+ *   caller was last heard, null for never) after the interrupt's own line, before any caller frame after
+ *   it, and replay skips the interrupt there (harness-text/replay.ts).
+ * - **Said again.** The interrupted turn's lines (the ones watched, watchPlayback) go again from the start,
+ *   once, as a cut line does (resay): `{ resaid: { reason: 'spurious-interrupt', afterMs, expectedMs } }`
+ *   before the frames, and the no-input wait armed from them. Not when a turn has said anything since,
+ *   the lines are already a re-send, the caller is speaking, or the call is over; never a turn that ends
+ *   the call or sends digits (it is never watched).
+ */
+interface Settling {
+  timer: ReturnType<typeof setTimeout>;
+  resolve: (spurious: boolean) => void;
+}
+const settling = new Map<string, Settling>();
+
+/**
+ * Whether a carrier's interrupt arriving now settles before it is taken (a spurious interrupt): with the
+ * setting on, on a carrier that reads its events, the caller not speaking and not heard within the window.
+ * The quiet before it, for the log; null when the interrupt is the caller's at once.
+ */
+function interruptUnheard(deps: AdapterDeps, entry: CallEntry): { quietMs: number | null } | null {
+  const settings = deps.spuriousInterrupts;
+  const callSid = entry.callSid;
+  if (!settings || !readsPlaybackEvents(entry.provider) || callerSpeaking.has(callSid)) return null;
+  const now = Date.now();
+  const last = Math.max(lastStart.get(callSid) ?? -Infinity, lastStop.get(callSid) ?? -Infinity);
+  if (now - last <= settings.windowMs) return null;
+  return { quietMs: Number.isFinite(last) ? now - last : null };
+}
+
+/** Wait out the settle for an interrupt: true when no caller was heard in it (logged then), false when one was. */
+function settleInterrupt(entry: CallEntry, afterMs: number, quietMs: number | null): Promise<boolean> {
+  const callSid = entry.callSid;
+  settleHeard(callSid);
+  return new Promise((resolve) => {
+    const s: Settling = {
+      timer: setTimeout(() => {
+        if (settling.get(callSid) !== s) return;
+        settling.delete(callSid);
+        // Written as it is decided, before any caller frame after it, where replay looks for it.
+        entry.frames.write('log', { spuriousInterrupt: { afterMs, quietMs } });
+        resolve(true);
+      }, SPURIOUS_INTERRUPT_SETTLE_MS),
+      resolve,
+    };
+    s.timer.unref?.();
+    settling.set(callSid, s);
+  });
+}
+
+/** The caller was heard, or the call's socket went: an interrupt settling is taken as theirs. */
+function settleHeard(callSid: string): void {
+  const s = settling.get(callSid);
+  if (!s) return;
+  clearTimeout(s.timer);
+  settling.delete(callSid);
+  s.resolve(false);
+}
+
+/**
+ * After a spurious interrupt, in the call's queue: the interrupted lines (`w`, watched as it came) said
+ * again from the start, once, or, when they cannot be, the no-input wait armed again as the interrupt's
+ * own turn would have.
+ */
+async function recoverSpurious(deps: AdapterDeps, e: CallEntry, w: Watched | undefined, afterMs: number): Promise<void> {
+  const callSid = e.callSid;
+  if (e.ended) return;
+  if (w === undefined || watched.get(callSid) !== w || w.resent || e.socket === null || callerSpeaking.has(callSid)) {
+    if (w?.resent && watched.get(callSid) === w) deps.log(`${callSid}: interrupted again with no caller heard, not said a third time`);
+    if (e.session.promptedFor !== null && e.session.pendingService === null) armNoInput(deps, e, []);
+    return;
+  }
+  w.done = true;
+  deps.log(`${callSid}: interrupted ${seconds(afterMs, 2)} into the lines with no caller heard, lines said again`);
+  e.frames.write('log', { resaid: { reason: 'spurious-interrupt', afterMs, expectedMs: w.expectedMs } });
+  const sent = await sendFrames(deps, e, w.frames, w.decision);
+  watchPlayback(deps, e, w.frames, w.decision, sent, true);
+  // As the turn that said them armed it.
+  const kind = (w.decision as { kind?: unknown } | null)?.kind;
+  if (e.session.pendingService === null && (kind === 'prompt' || e.session.promptedFor !== null)) armNoInput(deps, e, sent);
+}
+
+/**
+ * A reply held for a caller clearly not finished (INCOMPLETE_WAIT_MS, INCOMPLETE_WAIT_BELOW), on a carrier
+ * that reports the caller's voice. A recognizer that ends a prompt at a short pause splits an answer: on
+ * Telnyx (2026-10-05) "seventy six" came as a final prompt, the re-ask went out 0.16 s later, and the
+ * caller, going on with the rest of the address 0.52 s into it, talked over it. The caller-resumed join
+ * (takeResumed) joins the two prompts, but the re-ask has been said over the caller by then. The model
+ * reads every final prompt's words for whether the caller finished (utteranceComplete, in the same request,
+ * so no time is added to a finished one); the gates only note a low reading on a final prompt. Here, when
+ * a final prompt's turn reads under INCOMPLETE_WAIT_BELOW (the call's GATE_COMPLETE unless set) and the
+ * turn only spoke (run/continuation.ts undoable: nothing went through the gate, no service, no end, no
+ * quarantine), its reply is held, after the turn ran and before any frame goes, for up to
+ * INCOMPLETE_WAIT_MS:
+ *
+ * - **The caller goes on** (the carrier reports them speaking, or a prompt comes, in the wait; or they
+ *   were speaking again already when the turn ended): the reply is never said. The Continuation is told
+ *   (Continuation.resumed), so the next final prompt continues this one, joined and run on the session
+ *   before the first fragment, as after an early interrupt.
+ * - **They do not**: the reply goes when the wait has passed, as any reply does.
+ *
+ * Not on a carrier that reports no caller speaking (Twilio), where no wait could end early; not for an app
+ * whose continueWithinMs is 0 (it joins nothing); not past CONTINUE_MAX_FRAGMENTS. A key pressed in the
+ * wait, or the socket gone, sends it at once. The no-input wait does not run during the hold (it is
+ * cleared, and armed by the turn afterwards, from the reply's send or, with nothing sent, held while the
+ * caller speaks). The frame log has `{ replyHeld: { ms, outcome: 'joined' | 'sent', utteranceComplete, turn } }`
+ * when it ends, `turn` being the held turn's turnIndex, by which replay tells its Continuation after that
+ * turn, as here (harness-text/replay.ts).
+ */
+interface HeldReply {
+  timer: ReturnType<typeof setTimeout>;
+  resolve: (outcome: 'joined' | 'sent') => void;
+}
+const heldReplies = new Map<string, HeldReply>();
+
+/** End a call's held reply, if any: `joined`, the caller went on; `sent`, it goes. */
+function releaseReply(callSid: string, outcome: 'joined' | 'sent'): void {
+  const h = heldReplies.get(callSid);
+  if (!h) return;
+  clearTimeout(h.timer);
+  heldReplies.delete(callSid);
+  h.resolve(outcome);
+}
+
+/**
+ * Whether a turn's reply may be held for a caller not finished: the model's utteranceComplete reading when
+ * it is under `below` and the turn only spoke (undoable); null otherwise, or when the words were not read.
+ */
+export function holdsReply(result: TurnResult, below: number): number | null {
+  if (!undoable(result)) return null;
+  const value = result.rows.find((r) => r.gate === 'utteranceComplete')?.value;
+  return typeof value === 'number' && value < below ? value : null;
+}
+
+/**
+ * Hold a final prompt's reply for a caller not finished (above), in the call's queue; null when it is not
+ * one to hold. `promptAtMs` is when the prompt came: a caller heard starting since then has gone on.
+ */
+async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, run: ContinuedRun, promptAtMs: number | undefined): Promise<'joined' | 'sent' | null> {
+  const wait = deps.incompleteWait;
+  if (!wait || wait.waitMs <= 0 || !readsPlaybackEvents(entry.provider)) return null;
+  if (event.type !== 'user.speech' || !event.final) return null;
+  const continuation = continuationOf(entry);
+  if (continuation.withinMs === 0 || (run.joined?.length ?? 1) >= CONTINUE_MAX_FRAGMENTS) return null;
+  const complete = holdsReply(run.result, wait.below ?? entry.opts.thresholds.GATE_COMPLETE);
+  if (complete === null) return null;
+  const callSid = entry.callSid;
+  // No silence turn over the hold: the turn arms the wait once it ends.
+  clearNoInput(callSid);
+  const heldAtMs = Date.now();
+  const back = callerSpeaking.has(callSid) || (lastStart.get(callSid) ?? -Infinity) >= (promptAtMs ?? heldAtMs);
+  const outcome = back ? 'joined' : await new Promise<'joined' | 'sent'>((resolve) => {
+    releaseReply(callSid, 'sent');
+    const h: HeldReply = { timer: setTimeout(() => releaseReply(callSid, 'sent'), wait.waitMs), resolve };
+    h.timer.unref?.();
+    heldReplies.set(callSid, h);
+  });
+  entry.frames.write('log', { replyHeld: { ms: Date.now() - heldAtMs, outcome, utteranceComplete: complete, turn: run.result.session.turnIndex } });
+  if (outcome === 'joined') continuation.resumed();
+  return outcome;
 }
 
 /**
@@ -918,6 +1110,29 @@ export interface AdapterDeps {
   endAfterPlayback?: EndAfterPlayback;
   /** END_PLAYBACK_MAX_MS: the longest an `end` is held. Absent: DEFAULT_END_PLAYBACK_MAX_MS. */
   endPlaybackMaxMs?: number;
+  /**
+   * RESAY_SPURIOUS_INTERRUPTS and SPURIOUS_INTERRUPT_WINDOW_MS: a carrier's interrupt with no caller heard
+   * around it is not the caller's, and the lines it cut are said again (a spurious interrupt, above).
+   * Absent: off. The server sets it only where the carrier is asked to report the caller's voice (Telnyx
+   * with TELNYX_EVENTS speaker-events), and it acts only on a call whose carrier reads its events.
+   */
+  spuriousInterrupts?: SpuriousInterruptSettings;
+  /**
+   * INCOMPLETE_WAIT_MS and INCOMPLETE_WAIT_BELOW: the reply to a final prompt the model reads as unfinished
+   * is held for the caller to go on (a reply held, above). Absent: off; set, as spuriousInterrupts is.
+   */
+  incompleteWait?: IncompleteWaitSettings;
+}
+
+/** A spurious interrupt's setting: how recently before it the caller must have been heard for it to be theirs. */
+export interface SpuriousInterruptSettings {
+  windowMs: number;
+}
+
+/** A held reply's settings: the longest it is held, and the utteranceComplete reading under which it is (absent: the call's GATE_COMPLETE). */
+export interface IncompleteWaitSettings {
+  waitMs: number;
+  below?: number;
 }
 
 /** How the adapter says again a line the carrier cut short (RESAY_CUT_LINES, RESAY_MIN_FRACTION). */
@@ -1135,8 +1350,11 @@ function fireHandoffSummary(deps: AdapterDeps, entry: CallEntry): void {
     .catch((err: unknown) => deps.log(`${entry.callSid}: handoff summary failed: ${describe(err).message}`));
 }
 
-/** Run one turn and send what it decided. False when the turn threw (the apology was spoken instead). */
-async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, arrival?: Arrival): Promise<boolean> {
+/**
+ * Run one turn and send what it decided. False when the turn threw (the apology was spoken instead).
+ * `promptAtMs`, for a prompt, is when it came (a reply held for a caller not finished, holdReply).
+ */
+async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, arrival?: Arrival, promptAtMs?: number): Promise<boolean> {
   let ending = false;
   // The turn's `end` waits for its lines to play, and is sent (with the grace after it) by the wait.
   let endHeld = false;
@@ -1166,7 +1384,10 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // Defensive: nothing can be armed here today, because whatever drove this turn cleared the
     // timer on its way in. Kept so a future path that arms and then ends cannot strand a timer.
     if (ending) clearNoInput(entry.callSid);
-    const frames = actionsToFrames(run.result.actions);
+    // A reply to words the model reads as unfinished waits for the caller to go on (INCOMPLETE_WAIT_MS),
+    // and is never said when they do: the next final prompt continues this one.
+    const held = await holdReply(deps, entry, event, run, promptAtMs);
+    const frames = held === 'joined' ? [] : actionsToFrames(run.result.actions);
     // A carrier that acts on `end` at once drops the lines not yet said (END_AFTER_PLAYBACK): the
     // goodbye or the transfer line goes now, and the `end` once it has played.
     const at = ending && holdsEnd(deps, entry.provider) ? frames.findIndex((f) => f.type === 'end') : -1;
@@ -1339,6 +1560,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       unwatch(callId);
       callerSpeaking.delete(callId);
       forgetResumed(callId);
+      settleHeard(callId);
+      releaseReply(callId, 'sent');
       const previous = existing.socket;
       if (previous && previous !== socket) {
         // Twilio reconnected before the old socket's close reached us; retire it explicitly so
@@ -1453,9 +1676,12 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // below, because a partial prompt or a bare `#` is still a caller who is not silent.
   if (frame.type === 'prompt' || frame.type === 'dtmf' || frame.type === 'interrupt') {
     clearNoInput(ctx.callSid);
-    // Nor is a line the carrier stopped playing then one to say again.
+    // Nor is a line the carrier stopped playing then one to say again, nor an interrupt settling one the caller did not make.
     callerHeard(ctx.callSid);
   }
+  // A reply held for a caller not finished: more words are the caller going on; a key sends it now.
+  if (frame.type === 'prompt') releaseReply(ctx.callSid, 'joined');
+  else if (frame.type === 'dtmf') releaseReply(ctx.callSid, 'sent');
   // Before the ignore/turn split below: a digit the adapter drops is still a digit the caller pressed.
   if (logged.type === 'dtmf') publish(deps, { type: 'dtmf', callSid: ctx.callSid, at: Date.now(), digit: logged.digit });
   if (frame.type === 'interrupt') {
@@ -1492,7 +1718,17 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // where replay (harness-text/replay.ts arrivalFlags) looks for it.
   const flags = arrivalFlags(event, arrival, (pendingTurns.get(ctx.callSid) ?? 0) > 0);
   if (flags) entry.frames.write('log', flags);
+  const arrivedAtMs = Date.now();
+  // An interrupt with no caller heard around it settles before it is taken (a spurious interrupt), and the
+  // lines it cut, as they are watched now, are said again when no caller is heard in that time either.
+  const unheard = event.type === 'user.interrupt' ? interruptUnheard(deps, entry) : null;
+  const settled = event.type === 'user.interrupt' && unheard ? settleInterrupt(entry, event.afterMs, unheard.quietMs) : null;
+  const cutLines = settled ? watched.get(ctx.callSid) : undefined;
   const run = async (e: CallEntry): Promise<void> => {
+    if (settled && event.type === 'user.interrupt' && (await settled)) {
+      await recoverSpurious(deps, e, cutLines, event.afterMs);
+      return;
+    }
     // Whether a digit keyed ahead is taken is only known now, as its turn runs. Taken, it is not
     // sensitive where it lands, so the log keeps its value for replay; one line either way, in the
     // order the digits run, which is the order they arrived (the store runs a call's turns in order).
@@ -1500,7 +1736,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       const taken = digitAtRun(e.session, event, arrivalContext(e.session, event, arrival)) === null;
       e.frames.write('log', taken ? { aheadAccepted: event.digit } : { aheadIgnored: true });
     }
-    await turn(deps, e, event, arrival);
+    await turn(deps, e, event, arrival, arrivedAtMs);
   };
   // Only speech can move the prompt; an interrupt or relay error is state, not a turn.
   await enqueueTurn(deps, ctx.callSid, run, event.type === 'user.speech');
@@ -1582,6 +1818,8 @@ export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContex
   unwatch(ctx.callSid);
   callerSpeaking.delete(ctx.callSid);
   forgetResumed(ctx.callSid);
+  settleHeard(ctx.callSid);
+  releaseReply(ctx.callSid, 'sent');
   // A held `end` has no one left to hear its lines: it is not sent (the call already ended for the store).
   heldEnds.get(ctx.callSid)?.release('closed');
   entry.frames.write('log', { socketClosed: true, ended: entry.ended });

@@ -84,7 +84,8 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *   came 1704 ms into the greeting with no clientSpeaking at all (the caller was silent until about 11 s
  *   later), and its utteranceUntilInterrupt carried the whole greeting's text. So an interrupt does not
  *   say the caller spoke, and utteranceUntilInterrupt is the text sent for the line, not what the caller
- *   heard of it.
+ *   heard of it. The adapter now takes an interrupt with no caller heard around it as not the
+ *   caller's, and says the lines it cut again (RESAY_SPURIOUS_INTERRUPTS, server/adapter.ts).
  *
  * ASSUMPTIONS, not in Telnyx's published pages and not yet seen on a live call:
  * 1. The parser below also reads a JSON body, and takes `call_control_id` (or `CallControlId`) for the call

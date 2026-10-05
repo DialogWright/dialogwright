@@ -106,3 +106,24 @@ export const DEFAULT_RESUME_AFTER_PAUSE_MS = 2_000;
  * and 696 ms after the reply went out.
  */
 export const DEFAULT_RESUME_INTO_REPLY_MS = 1_000;
+
+/**
+ * SPURIOUS_INTERRUPT_WINDOW_MS unless set: on a carrier that reports the caller's voice, how recently
+ * before a carrier's `interrupt` the caller must have been heard (starting or stopping speaking) for it to
+ * be their barge-in (server/adapter.ts, a spurious interrupt). Telnyx's interrupt came 0.30 s after the
+ * caller was heard starting on a live call (2026-10-05), and its endpointing ends a prompt about 0.8 s
+ * after the caller stops: 700 ms covers the first with room, and is shorter than the gap a reply to a
+ * final prompt always leaves after the caller stopped, so a carrier's barge-in on the reply with no new
+ * speech is not taken as the caller's.
+ */
+export const DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS = 700;
+
+/**
+ * INCOMPLETE_WAIT_MS unless set: on a carrier that reports the caller's voice, the longest the reply to a
+ * final prompt the model reads as unfinished is held for the caller to go on (server/adapter.ts, a reply
+ * held). On live Telnyx calls (2026-10-05) callers who had not finished came back in 24 ms, 518 ms and
+ * 696 ms after the reply to their fragment went out (0.23 s to 0.89 s after its prompt came): 1000 ms
+ * covers them, and is RESUME_INTO_REPLY_MS's default, past which a caller is taken as answering the reply
+ * anyway.
+ */
+export const DEFAULT_INCOMPLETE_WAIT_MS = 1_000;

@@ -70,10 +70,11 @@ function quiet(q: Question): AnswerMap[string] {
 }
 
 /**
- * A model that hears what a careful one would: the caller asking to report a problem, words addressed
- * to the system and complete, and nothing else. The place itself is read from the words by the slot.
+ * A model that hears what a careful one would: the caller asking to report a problem or for an agent,
+ * words addressed to the system and complete, and nothing else. The place itself is read from the words by the slot.
+ * `utteranceComplete` says how finished it hears the words (0.9 unless given): a voice test's fragment.
  */
-export function placeClient(): JevClient & { asked: string[] } {
+export function placeClient(o: { utteranceComplete?: (text: string) => number } = {}): JevClient & { asked: string[] } {
   const asked: string[] = [];
   return {
     asked,
@@ -87,8 +88,9 @@ export function placeClient(): JevClient & { asked: string[] } {
       };
       set('addressedToSystem', noul(0.95));
       set('intelligible', noul(0.95));
-      set('utteranceComplete', noul(0.9));
-      set('intent', /\breport\b/i.test(text) ? choice({ report: 0.95, none: 0.05 }) : choice({ none: 0.9, other: 0.1 }));
+      set('utteranceComplete', noul(o.utteranceComplete?.(text) ?? 0.9));
+      set('intent', /\breport\b/i.test(text) ? choice({ report: 0.95, none: 0.05 })
+        : /\bagent\b/i.test(text) ? choice({ agent: 0.95, none: 0.05 }) : choice({ none: 0.9, other: 0.1 }));
       set('confirmsYes', noul(/^yes\b/i.test(text) ? 0.95 : 0.02));
       return { answers, model: 'place-test', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 0, source: 'stub:fixture' };
     },

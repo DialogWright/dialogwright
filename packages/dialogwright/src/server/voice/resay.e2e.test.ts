@@ -13,7 +13,7 @@ import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { replayFrameLog } from '../../harness-text/replay';
 import { useTestkit } from '../../testing/apps';
 import { defaultCorpusFile } from '../../run/fixtures';
-import { RESAY_SETTLE_MS } from '../adapter';
+import { RESAY_SETTLE_MS, SPURIOUS_INTERRUPT_SETTLE_MS } from '../adapter';
 
 useTestkit();
 
@@ -237,6 +237,9 @@ describe('a line the carrier cut short', () => {
     const reply = await ask(interrupted, 'can you deliver tomorrow morning');
     const sentBefore = interrupted.relay.texts().length;
     await playedFor(interrupted, 670, reply.lines.at(-1)!, async () => {
+      // Heard speaking as they cut in, as Telnyx reports a caller's barge-in: an interrupt with no caller
+      // heard around it is not theirs (RESAY_SPURIOUS_INTERRUPTS, below).
+      await event(interrupted, info('clientSpeaking', 'on'));
       interrupted.relay.interrupt(reply.lines[0]!.slice(0, 12), 600);
       await interrupted.settled();
     });
@@ -310,5 +313,87 @@ describe('a line the carrier cut short', () => {
     expect(resaidLines(call)).toEqual([]);
     // Still written to the frame log as they came, as before.
     expect(frameLines(call).filter((l) => l.dir === 'in' && typeof l.msg === 'object' && l.msg !== null && 'carrierEvent' in l.msg)).toHaveLength(3);
+  });
+});
+
+/**
+ * An interrupt the caller did not make (RESAY_SPURIOUS_INTERRUPTS), over a real socket: on a live Telnyx call
+ * (2026-10-05, BARGE_IN=speech, TELNYX_EVENTS=speaker-events tokens-played) an `interrupt` came 1704 ms into
+ * the greeting with no clientSpeaking at all, and the caller, hearing nothing, said nothing for 11 s.
+ */
+describe('an interrupt with no caller heard', () => {
+  /** Long enough for the settle and a re-send. */
+  const settle = () => new Promise((r) => setTimeout(r, SPURIOUS_INTERRUPT_SETTLE_MS + 300));
+
+  it('is not a barge-in, and the greeting is said again from the start, once', async () => {
+    const call = await startCall('telnyx', { ...TELNYX_EVENTS, BARGE_IN: 'speech' });
+    const greeting = call.relay.texts()[0]!;
+    call.relay.interrupt(greeting, 1704);
+    await call.relay.waitForTexts(2);
+    await settle();
+    await call.settled();
+    expect(call.relay.texts()).toEqual([greeting, greeting]);
+    const spurious = frameLines(call).filter((l) => l.dir === 'log' && typeof l.msg === 'object' && l.msg !== null && 'spuriousInterrupt' in l.msg);
+    expect(spurious.map((l) => l.msg)).toEqual([{ spuriousInterrupt: { afterMs: 1704, quietMs: null } }]);
+    expect(resaidLines(call)).toEqual([{ reason: 'spurious-interrupt', afterMs: 1704, expectedMs: expect.any(Number) }]);
+    expect(call.logs).toContain(`${CALL_ID}: interrupted 1.70 s into the lines with no caller heard, lines said again`);
+    expect(running!.store.get(CALL_ID)!.session.lastInterrupt).toBeNull();
+  });
+
+  it('is a barge-in, as before, where Telnyx is not asked for speaker-events, or with RESAY_SPURIOUS_INTERRUPTS=off', async () => {
+    for (const env of [{ TELNYX_EVENTS: 'tokens-played' }, { ...TELNYX_EVENTS, RESAY_SPURIOUS_INTERRUPTS: 'off' }]) {
+      const call = await startCall('telnyx', { ...env, BARGE_IN: 'speech' });
+      const greeting = call.relay.texts()[0]!;
+      call.relay.interrupt(greeting, 1704);
+      await settle();
+      await call.settled();
+      expect(call.relay.texts(), JSON.stringify(env)).toEqual([greeting]);
+      expect(running!.store.get(CALL_ID)!.session.lastInterrupt).toEqual({ heard: greeting, afterMs: 1704 });
+      await running!.close();
+      running = null;
+    }
+  });
+});
+
+/**
+ * A reply held for a caller not finished (INCOMPLETE_WAIT_MS), over a real socket, where Telnyx is asked to
+ * report the caller's voice: words the model reads as unfinished get no reply while the caller goes on.
+ */
+describe('a reply held for a caller not finished', () => {
+  it('is never said when the caller goes on, and the next prompt continues theirs', async () => {
+    const call = await startCall('telnyx', { ...TELNYX_EVENTS, BARGE_IN: 'speech' });
+    const before = call.relay.texts().length;
+    // The heuristic model reads words that end in "and" as unfinished.
+    call.relay.prompt('i want to and', true, 'en');
+    await new Promise((r) => setTimeout(r, 300));
+    await event(call, info('clientSpeaking', 'on'));
+    await event(call, info('clientSpeaking', 'off'));
+    await call.settled();
+    expect(call.relay.texts()).toHaveLength(before);
+    const held = frameLines(call).filter((l) => l.dir === 'log' && typeof l.msg === 'object' && l.msg !== null && 'replyHeld' in l.msg);
+    expect(held.map((l) => (l.msg as { replyHeld: { outcome: string } }).replyHeld.outcome)).toEqual(['joined']);
+    const reply = await ask(call, 'track a parcel');
+    expect(reply.lines.length).toBeGreaterThan(0);
+    const last = readFileSync(join(call.traceDir, `${safeFileStem(CALL_ID)}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as TraceRecord).at(-1)!;
+    expect(last.joined).toEqual({ fragments: ['i want to and', 'track a parcel'] });
+  });
+
+  it('is not held for a turn that went through the gate, however unfinished the words', async () => {
+    const call = await startCall('telnyx', { ...TELNYX_EVENTS, BARGE_IN: 'speech' });
+    // The testkit asks who is calling before a delivery: an identity step, through the gate.
+    const reply = await ask(call, 'can you deliver tomorrow and');
+    expect(reply.lines.length).toBeGreaterThan(0);
+    expect(frameLines(call).some((l) => l.dir === 'log' && typeof l.msg === 'object' && l.msg !== null && 'replyHeld' in l.msg)).toBe(false);
+  });
+
+  it('is not held where Telnyx is not asked for speaker-events, or with INCOMPLETE_WAIT_MS=0', async () => {
+    for (const env of [{ TELNYX_EVENTS: 'tokens-played' }, { ...TELNYX_EVENTS, INCOMPLETE_WAIT_MS: '0' }]) {
+      const call = await startCall('telnyx', { ...env, BARGE_IN: 'speech' });
+      const reply = await ask(call, 'i want to and');
+      expect(reply.lines.length, JSON.stringify(env)).toBeGreaterThan(0);
+      expect(frameLines(call).some((l) => l.dir === 'log' && typeof l.msg === 'object' && l.msg !== null && 'replyHeld' in l.msg)).toBe(false);
+      await running!.close();
+      running = null;
+    }
   });
 });

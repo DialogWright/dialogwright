@@ -147,6 +147,43 @@ function isCallerResumed(line: ReadFrameLogLine): boolean {
   return typeof r === 'object' && r !== null;
 }
 
+/**
+ * The turns whose reply the adapter held for a caller not finished, and who went on (server/adapter.ts
+ * holdReply): `{ replyHeld: { outcome: 'joined', turn } }`, by the held turn's turnIndex. The line is
+ * written when the hold ends, which can be after frames that came during it (a prompt), whose turns ran
+ * after it; so replay reads them all first, and tells its Continuation straight after that turn, as the
+ * adapter did. A reply held and then sent changes nothing.
+ */
+function heldAndJoined(lines: readonly ReadFrameLogLine[]): Set<number> {
+  const turns = new Set<number>();
+  for (const line of lines) {
+    if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
+    const h = (line.msg as { replyHeld?: unknown }).replyHeld;
+    if (typeof h !== 'object' || h === null) continue;
+    const { outcome, turn } = h as { outcome?: unknown; turn?: unknown };
+    if (outcome === 'joined' && typeof turn === 'number' && Number.isInteger(turn)) turns.add(turn);
+  }
+  return turns;
+}
+
+/** A frame from the caller: what tells the adapter, as it came, that an interrupt settling was theirs. */
+const CALLER_FRAMES: ReadonlySet<string> = new Set(['prompt', 'dtmf', 'interrupt', 'setup']);
+
+/**
+ * Whether the interrupt at `index` was spurious (server/adapter.ts settleInterrupt): its
+ * `{ spuriousInterrupt: ... }` line comes after it, before any frame from the caller (a prompt, a digit,
+ * another interrupt, a reconnect's setup), since any of those, arriving during its settle, made it the
+ * caller's. A carrier's own events in between are passed over: a report of the caller speaking makes it
+ * theirs too, and then no line is written.
+ */
+function spuriousAt(lines: readonly ReadFrameLogLine[], index: number): boolean {
+  for (const line of lines.slice(index + 1)) {
+    if (line.dir === 'log' && typeof line.msg === 'object' && line.msg !== null && 'spuriousInterrupt' in line.msg) return true;
+    if (line.dir === 'in' && CALLER_FRAMES.has(rawType(line.msg))) return false;
+  }
+  return false;
+}
+
 /** The adapter gave up on a downstream service's answer (server/adapter.ts queueService). */
 function isServiceWaitAbandoned(line: ReadFrameLogLine): boolean {
   if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return false;
@@ -174,7 +211,9 @@ interface Pending {
  * with `NaN`. The arrival decisions the adapter logged (arrivalFlags) are honored, and a frame that
  * arrived during the service wait runs after the service's answer, as it did live. Every turn runs
  * through one Continuation with the window the log names (loggedContinueWithinMs), as the adapter ran
- * the live call's, so the final prompts of a caller who had not finished are joined where they were.
+ * the live call's, so the final prompts of a caller who had not finished are joined where they were,
+ * a reply held for one who went on included (heldAndJoined). An interrupt the adapter found spurious
+ * (spuriousAt) runs no turn, as it ran none live.
  *
  * Each turn runs with the clock and default date the recording actually happened under: `now`
  * returns the frame line's own timestamp, and `todayIso` is the setup line's date unless the
@@ -198,11 +237,14 @@ export async function replayFrameLog(
   const deferred: Pending[] = [];
   // Every turn through one Continuation, as the adapter runs the live call's (run/continuation.ts).
   const continuation = new Continuation(loggedContinueWithinMs(lines));
+  const joinedHolds = heldAndJoined(lines);
   const run = async (p: Pending): Promise<void> => {
     const turnOpts: RunOptions = { ...opts, now: () => p.lineMs, todayIso: options?.todayIsoOverride ?? setupDate! };
     try {
       const r = await continuation.run(session!, p.event, turnOpts, p.arrival);
       session = r.result.session;
+      // Its reply held, and the caller went on: the next final prompt continues it (heldAndJoined).
+      if (p.event.type === 'user.speech' && p.event.final && joinedHolds.has(session.turnIndex)) continuation.resumed();
       runs.push(r);
       onRun?.(r);
       if (session.ended) ended = true;
@@ -237,6 +279,8 @@ export async function replayFrameLog(
     }
     if (line.dir !== 'in') continue;
     if (isCarrierEvent(line.msg)) continue;
+    // An interrupt the adapter found was not the caller's ran no turn (server/adapter.ts settleInterrupt).
+    if (rawType(line.msg) === 'interrupt' && spuriousAt(lines, index)) continue;
     const lineNumber = line.line;
     const lineMs = typeof line.ts === 'string' ? Date.parse(line.ts) : NaN;
     if (Number.isNaN(lineMs)) {

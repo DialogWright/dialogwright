@@ -5,7 +5,7 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
-  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
+  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
   type BargeIn, type EndAfterPlayback,
 } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
@@ -169,6 +169,26 @@ export interface ServerConfig {
   resumeAfterPauseMs?: number;
   resumeIntoReplyMs?: number;
   /**
+   * RESAY_SPURIOUS_INTERRUPTS=on|off, default on, and SPURIOUS_INTERRUPT_WINDOW_MS, 0 to 5000, default 700
+   * (DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS). On a carrier that reports the caller's voice (Telnyx with
+   * TELNYX_EVENTS speaker-events; reportsCallerVoice), a carrier's interrupt with the caller not speaking and
+   * not heard within the window before it, nor within a short settle after it, is not the caller's: no turn
+   * runs for it, and the lines it cut are said again once (server/adapter.ts, a spurious interrupt). Optional
+   * in the type only (absent reads as the defaults).
+   */
+  resaySpuriousInterrupts?: boolean;
+  spuriousInterruptWindowMs?: number;
+  /**
+   * INCOMPLETE_WAIT_MS, 0 to 3000, default 1000 (DEFAULT_INCOMPLETE_WAIT_MS; 0 turns it off), and
+   * INCOMPLETE_WAIT_BELOW, 0.05 to 0.95, unset by default (null: the call's GATE_COMPLETE). On a carrier that
+   * reports the caller's voice, the reply to a final prompt whose words the model reads as unfinished (its
+   * utteranceComplete under the value) is held up to INCOMPLETE_WAIT_MS, and never said when the caller goes
+   * on in that time: the next final prompt continues it (server/adapter.ts, a reply held). Optional in the
+   * type only (absent reads as the defaults).
+   */
+  incompleteWaitMs?: number;
+  incompleteWaitBelow?: number | null;
+  /**
    * How long one request to Jev may take before the turn gives up on it, plays the slow-turn
    * hint and keeps the prompt open. The SDK retries once inside this budget, so a caller waits up
    * to twice this on a turn the model never answers. A phone-turn budget, not a recording one.
@@ -304,6 +324,36 @@ function resumeOf(env: Env): { resumeAfterPauseMs: number; resumeIntoReplyMs: nu
   const intoMs = integer(env, 'RESUME_INTO_REPLY_MS', DEFAULT_RESUME_INTO_REPLY_MS);
   if (intoMs > 5_000) throw new Error(`RESUME_INTO_REPLY_MS must be from 0 to 5000 milliseconds, got "${env.RESUME_INTO_REPLY_MS}"`);
   return { resumeAfterPauseMs: pauseMs, resumeIntoReplyMs: intoMs };
+}
+
+/** RESAY_SPURIOUS_INTERRUPTS and SPURIOUS_INTERRUPT_WINDOW_MS, checked; read on every carrier, so a typo is caught before it matters. */
+function spuriousOf(env: Env): { resaySpuriousInterrupts: boolean; spuriousInterruptWindowMs: number } {
+  const sw = (env.RESAY_SPURIOUS_INTERRUPTS?.trim() || 'on').toLowerCase();
+  if (sw !== 'on' && sw !== 'off') throw new Error(`RESAY_SPURIOUS_INTERRUPTS must be on or off, got "${env.RESAY_SPURIOUS_INTERRUPTS}"`);
+  const windowMs = integer(env, 'SPURIOUS_INTERRUPT_WINDOW_MS', DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS);
+  if (windowMs > 5_000) throw new Error(`SPURIOUS_INTERRUPT_WINDOW_MS must be from 0 to 5000 milliseconds, got "${env.SPURIOUS_INTERRUPT_WINDOW_MS}"`);
+  return { resaySpuriousInterrupts: sw === 'on', spuriousInterruptWindowMs: windowMs };
+}
+
+/** INCOMPLETE_WAIT_MS and INCOMPLETE_WAIT_BELOW, checked; read on every carrier. */
+function incompleteWaitOf(env: Env): { incompleteWaitMs: number; incompleteWaitBelow: number | null } {
+  const waitMs = integer(env, 'INCOMPLETE_WAIT_MS', DEFAULT_INCOMPLETE_WAIT_MS);
+  if (waitMs > 3_000) throw new Error(`INCOMPLETE_WAIT_MS must be from 0 to 3000 milliseconds, got "${env.INCOMPLETE_WAIT_MS}"`);
+  const raw = env.INCOMPLETE_WAIT_BELOW?.trim() ?? '';
+  const below = raw === '' ? null : Number(raw);
+  if (below !== null && (!Number.isFinite(below) || below < 0.05 || below > 0.95)) {
+    throw new Error(`INCOMPLETE_WAIT_BELOW must be a reading from 0.05 to 0.95, got "${env.INCOMPLETE_WAIT_BELOW}"`);
+  }
+  return { incompleteWaitMs: waitMs, incompleteWaitBelow: below };
+}
+
+/**
+ * Whether a carrier this deployment answers is asked to report the caller's voice: Telnyx with
+ * TELNYX_EVENTS speaker-events (Twilio reports none). What a spurious interrupt and a held reply need: with
+ * no report of the caller speaking, every interrupt would look spurious and every hold run its whole wait.
+ */
+export function reportsCallerVoice(c: Pick<ServerConfig, 'voiceProviders' | 'telnyxEvents'>): boolean {
+  return c.voiceProviders.includes('telnyx') && (c.telnyxEvents ?? '').toLowerCase().split(/\s+/).includes('speaker-events');
 }
 
 /** The pause a planned restart's handover asks of each carrier, unless RESTART_PAUSE_S says otherwise. */
@@ -461,6 +511,8 @@ export function loadConfig(env: Env): ServerConfig {
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     noInputAfterSpeechMs: integer(env, 'NO_INPUT_AFTER_SPEECH_MS', DEFAULT_NO_INPUT_AFTER_SPEECH_MS),
     ...resumeOf(env),
+    ...spuriousOf(env),
+    ...incompleteWaitOf(env),
     jevTimeoutMs: jevTimeout(env),
     screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
     dashboard: dash === 'on',
@@ -648,6 +700,25 @@ function describeResay(c: ServerConfig): string {
   return `cut lines said again (under ${c.resayMinFraction ?? DEFAULT_RESAY_MIN_FRACTION} of the estimate${inactive})`;
 }
 
+/** On Telnyx without speaker-events, the startup line says a setting that needs them is inactive. */
+function inactiveWithoutVoice(c: ServerConfig): string {
+  return reportsCallerVoice(c) ? '' : '; inactive without TELNYX_EVENTS speaker-events';
+}
+
+/** RESAY_SPURIOUS_INTERRUPTS as the startup line says it, on a deployment with a carrier that reports its events. */
+function describeSpurious(c: ServerConfig): string {
+  if (c.resaySpuriousInterrupts === false) return 'spurious interrupts not said again';
+  return `spurious interrupts said again (no caller heard within ${c.spuriousInterruptWindowMs ?? DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS} ms${inactiveWithoutVoice(c)})`;
+}
+
+/** INCOMPLETE_WAIT_MS and INCOMPLETE_WAIT_BELOW as the startup line says them. */
+function describeIncompleteWait(c: ServerConfig): string {
+  const waitMs = c.incompleteWaitMs ?? DEFAULT_INCOMPLETE_WAIT_MS;
+  if (waitMs === 0) return 'replies never held';
+  const below = c.incompleteWaitBelow ?? 'GATE_COMPLETE';
+  return `replies held up to ${waitMs} ms for an unfinished caller (under ${below}${inactiveWithoutVoice(c)})`;
+}
+
 /** END_AFTER_PLAYBACK as the startup line says it: which of the carriers listed have their `end` held. */
 function describeEndAfterPlayback(c: ServerConfig): string {
   const mode = c.endAfterPlayback ?? 'auto';
@@ -704,7 +775,7 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
     ...(c.voiceProviders.includes('telnyx') && c.telnyxEvents ? [`telnyx events ${c.telnyxEvents}`] : []),
-    ...(c.voiceProviders.some(readsPlaybackEvents) ? [describeResay(c)] : []),
+    ...(c.voiceProviders.some(readsPlaybackEvents) ? [describeResay(c), describeSpurious(c), describeIncompleteWait(c)] : []),
     ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)}) up to ${c.chat.maxSessions} sessions`, describeChatSignIn(c.chat.signIn)] : []),
     ...(c.widget ? [`widget on (${c.widget.file})`] : []),
   ].join('  ');

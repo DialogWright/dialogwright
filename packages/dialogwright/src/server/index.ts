@@ -2,7 +2,8 @@ import { createServer, type Server } from 'node:http';
 import { applyEnvFile, envFilePathOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { join, resolve as resolvePath } from 'node:path';
-import { consoleExposure, DEFAULT_DRAIN_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, type ServerConfig } from './config';
+import { consoleExposure, DEFAULT_DRAIN_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, type ServerConfig } from './config';
+import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from '../channel/voiceProviders';
 import { createRequestHandler, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, heldEndsOf, type AdapterDeps } from './adapter';
@@ -334,6 +335,13 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       ...(config.endPlaybackMaxMs !== undefined ? { endPlaybackMaxMs: config.endPlaybackMaxMs } : {}),
       // RESAY_CUT_LINES: absent from a config made by hand before it existed reads as on, as loadConfig's default.
       ...(config.resayCutLines === false ? {} : { resay: { minFraction: config.resayMinFraction ?? DEFAULT_RESAY_MIN_FRACTION } }),
+      // A spurious interrupt and a held reply read the caller's voice: only where the carrier is asked to report it.
+      ...(config.resaySpuriousInterrupts !== false && reportsCallerVoice(config)
+        ? { spuriousInterrupts: { windowMs: config.spuriousInterruptWindowMs ?? DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } }
+        : {}),
+      ...((config.incompleteWaitMs ?? DEFAULT_INCOMPLETE_WAIT_MS) > 0 && reportsCallerVoice(config)
+        ? { incompleteWait: { waitMs: config.incompleteWaitMs ?? DEFAULT_INCOMPLETE_WAIT_MS, ...(config.incompleteWaitBelow != null ? { below: config.incompleteWaitBelow } : {}) } }
+        : {}),
     },
     overrides.setupTimeoutMs,
     config.voiceProviders,

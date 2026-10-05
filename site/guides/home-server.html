@@ -1017,6 +1017,13 @@ TIMEZONE=America/Chicago
 # prompt continues the one before it.
 # RESUME_AFTER_PAUSE_MS=2000
 # RESUME_INTO_REPLY_MS=1000
+# With speaker-events, an interrupt with no caller heard around it is not taken as a barge-in, and the
+# lines it cut are said again once (RESAY_SPURIOUS_INTERRUPTS, on by default; SPURIOUS_INTERRUPT_WINDOW_MS,
+# default 700). A reply to words the model reads as unfinished waits up to INCOMPLETE_WAIT_MS (default
+# 1000; 0 turns it off) for the caller to go on, and is not said if they do.
+# RESAY_SPURIOUS_INTERRUPTS=on
+# SPURIOUS_INTERRUPT_WINDOW_MS=700
+# INCOMPLETE_WAIT_MS=1000
 # Who may talk over a line: any (default), speech, dtmf or none (the relay element's interruptible).
 # A carrier's barge-in can stop speech on noise or echo; dtmf or none also rules barge-in out when
 # callers report not hearing replies.

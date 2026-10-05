@@ -97,7 +97,9 @@ export class Continuation {
    * frame log's `callerResumed`): taken as an interrupt within the window is, so that prompt continues the
    * one before it, though the carrier's interrupt of the reply came after the window. Not a turn: no event
    * reaches the core, and nothing changes unless the last turn was a reply to a final prompt that only
-   * spoke, with nothing but interrupts since (so never with `withinMs` 0).
+   * spoke, with nothing but interrupts since (so never with `withinMs` 0). The adapter tells it too when it
+   * held such a turn's reply for a caller not finished and they went on (server/adapter.ts holdReply;
+   * replay reads that from the frame log's `replyHeld`): the reply was never said.
    */
   resumed(): void {
     const state = this.state;
