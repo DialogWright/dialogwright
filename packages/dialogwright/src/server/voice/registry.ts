@@ -1,5 +1,5 @@
 import type { SetupFrame } from '../../channel/relay/frames';
-import type { VoiceProvider } from './provider';
+import type { PlaybackEvent, VoiceProvider } from './provider';
 import { twilioProvider } from './twilio';
 import { telnyxProvider } from './telnyx';
 import { telnyxPublicKey } from './telnyxSignature';
@@ -97,4 +97,20 @@ export function textLastOf(providerId: string | undefined): 'each' | 'final' {
   const id = providerId ?? LEGACY_PROVIDER;
   const p = Object.hasOwn(ALL, id) ? ALL[id as keyof typeof ALL] : undefined;
   return p?.provider.textLast ?? 'each';
+}
+
+/** The provider by id, or undefined for one the engine does not know. */
+function providerOf(providerId: string | undefined): VoiceProvider | undefined {
+  const id = providerId ?? LEGACY_PROVIDER;
+  return Object.hasOwn(ALL, id) ? ALL[id as keyof typeof ALL].provider : undefined;
+}
+
+/** Whether a carrier reports its playback (VoiceProvider.readEvent), so a line it cuts short can be found. */
+export function readsPlaybackEvents(providerId: string | undefined): boolean {
+  return providerOf(providerId)?.readEvent !== undefined;
+}
+
+/** A carrier's own socket message as a PlaybackEvent (VoiceProvider.readEvent); null for a carrier that reads none. */
+export function playbackEventOf(providerId: string | undefined, message: unknown): PlaybackEvent | null {
+  return providerOf(providerId)?.readEvent?.(message) ?? null;
 }

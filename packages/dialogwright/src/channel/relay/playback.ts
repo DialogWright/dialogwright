@@ -21,3 +21,13 @@ export function playbackEstimateMs(frames: readonly OutboundFrame[], durations: 
   }
   return total;
 }
+
+/**
+ * Whether a playback the carrier reported finished was cut short: it took less than `minFraction` of
+ * what the frames were estimated to take (playbackEstimateMs). The estimate is rough by design, so the
+ * fraction is well under one: a line said a little fast is not cut. Nothing to measure, nothing cut.
+ */
+export function cutShort(heardMs: number, expectedMs: number, minFraction: number): boolean {
+  if (!(expectedMs > 0) || !(heardMs >= 0)) return false;
+  return heardMs < expectedMs * minFraction;
+}

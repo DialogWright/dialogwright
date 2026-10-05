@@ -34,6 +34,15 @@ function isRecordedSilence(msg: unknown): boolean {
 }
 
 /**
+ * A carrier's own event as the adapter logged it, `{ carrierEvent: ... }` (server/adapter.ts): its report
+ * of its playback or of the caller's voice (TELNYX_EVENTS), never a turn. What the adapter did with one
+ * (a cut line said again, RESAY_CUT_LINES) is outbound only, so replay passes over it as nothing to run.
+ */
+function isCarrierEvent(msg: unknown): boolean {
+  return typeof msg === 'object' && msg !== null && Object.keys(msg).length === 1 && 'carrierEvent' in msg;
+}
+
+/**
  * A downstream service's answer as the adapter logged it: `{ type: 'service_result', service, result }`.
  * Like silence it is server-made and parseInbound refuses it off the wire, so replay reads our own
  * log's line here. The result goes through the service's own check again (ServiceDef.fromLog: a
@@ -151,7 +160,9 @@ interface Pending {
  * Feed every inbound message of a recorded call through runTurn, in order, exactly as the
  * adapter did: non-final prompts are skipped, a repeated setup (reconnect) is skipped, `#`/`*` DTMF
  * digits are skipped since the adapter logs them as `in` before dropping them, and everything
- * after the call ends is skipped and reported rather than fed to a dead session. A line with a
+ * after the call ends is skipped and reported rather than fed to a dead session. A carrier's own
+ * events (`{ carrierEvent }`) are passed over without a word: they are its reports, never a turn, and a
+ * line the adapter said again on one (RESAY_CUT_LINES) is outbound only. A line with a
  * missing or unparsable `ts` is skipped and reported rather than throwing or driving the clock
  * with `NaN`. The arrival decisions the adapter logged (arrivalFlags) are honored, and a frame that
  * arrived during the service wait runs after the service's answer, as it did live. Every turn runs
@@ -212,6 +223,7 @@ export async function replayFrameLog(
       continue;
     }
     if (line.dir !== 'in') continue;
+    if (isCarrierEvent(line.msg)) continue;
     const lineNumber = line.line;
     const lineMs = typeof line.ts === 'string' ? Date.parse(line.ts) : NaN;
     if (Number.isNaN(lineMs)) {

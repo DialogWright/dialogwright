@@ -3,7 +3,7 @@ import { resolveJevProvider, type JevProvider } from '../jev/provider';
 
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
-import { checkSecretOf, KNOWN_VOICE_PROVIDERS, secretLabelOf, secretVarOf } from './voice/registry';
+import { checkSecretOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
@@ -105,6 +105,16 @@ export interface ServerConfig {
    * speaker-events, tokens-played). The adapter writes each to the call's frame log; nothing acts on them.
    */
   telnyxEvents?: string | null;
+  /**
+   * RESAY_CUT_LINES=on|off, default on: a turn's lines the carrier reports it finished playing in less
+   * than `resayMinFraction` of their estimated length, with no interrupt and no caller heard between,
+   * are sent again once (server/adapter.ts). Active only on a carrier that reports its playback
+   * (VoiceProvider.readEvent: Telnyx with TELNYX_EVENTS); on any other call it changes nothing.
+   * Optional in the type only, for a config made by hand before it existed (absent reads as on).
+   */
+  resayCutLines?: boolean;
+  /** RESAY_MIN_FRACTION, 0.05 to 0.95, default 0.35 (DEFAULT_RESAY_MIN_FRACTION): under it, a playback was cut short. */
+  resayMinFraction?: number;
   /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
   noInputMs: number;
   /**
@@ -196,6 +206,21 @@ export interface SessionStoreSetting {
    * callback that finds no server goes to the carrier's fallback document.
    */
   restartPauseS: number;
+}
+
+/** Under this fraction of its estimated length, a playback the carrier reports finished was cut short, unless RESAY_MIN_FRACTION says otherwise. */
+export const DEFAULT_RESAY_MIN_FRACTION = 0.35;
+
+/** RESAY_CUT_LINES and RESAY_MIN_FRACTION, checked. */
+function resayOf(env: Env): { resayCutLines: boolean; resayMinFraction: number } {
+  const sw = (env.RESAY_CUT_LINES?.trim() || 'on').toLowerCase();
+  if (sw !== 'on' && sw !== 'off') throw new Error(`RESAY_CUT_LINES must be on or off, got "${env.RESAY_CUT_LINES}"`);
+  const raw = env.RESAY_MIN_FRACTION?.trim() ?? '';
+  const fraction = raw === '' ? DEFAULT_RESAY_MIN_FRACTION : Number(raw);
+  if (!Number.isFinite(fraction) || fraction < 0.05 || fraction > 0.95) {
+    throw new Error(`RESAY_MIN_FRACTION must be a fraction from 0.05 to 0.95, got "${env.RESAY_MIN_FRACTION}"`);
+  }
+  return { resayCutLines: sw === 'on', resayMinFraction: fraction };
 }
 
 /** The pause a planned restart's handover asks of each carrier, unless RESTART_PAUSE_S says otherwise. */
@@ -347,6 +372,7 @@ export function loadConfig(env: Env): ServerConfig {
     twilioSpeechModel,
     telnyxTranscriptionProvider,
     telnyxEvents,
+    ...resayOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     jevTimeoutMs: jevTimeout(env),
     screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
@@ -525,6 +551,16 @@ export function publicBase(c: Pick<ServerConfig, 'publicHost'>, port: number): s
   return isLoopbackHost(c.publicHost) ? localBase(port) : `https://${c.publicHost}`;
 }
 
+/**
+ * RESAY_CUT_LINES as the startup line says it, on a deployment with a carrier that reports its playback.
+ * Telnyx reports it only when TELNYX_EVENTS asks for its events, so the line says when it is inactive.
+ */
+function describeResay(c: ServerConfig): string {
+  if (c.resayCutLines === false) return 'cut lines not said again';
+  const inactive = c.voiceProviders.includes('telnyx') && !c.telnyxEvents ? '; inactive without TELNYX_EVENTS' : '';
+  return `cut lines said again (under ${c.resayMinFraction ?? DEFAULT_RESAY_MIN_FRACTION} of the estimate${inactive})`;
+}
+
 export function describeConfig(c: ServerConfig): string {
   // A prefix of a secret is still a piece of the secret; the length alone is enough to tell
   // "the variable is set" from "the variable is the wrong value".
@@ -561,6 +597,7 @@ export function describeConfig(c: ServerConfig): string {
     ...(c.voiceProviders.includes('twilio') ? [`twilio recognition ${c.twilioTranscriptionProvider} ${c.twilioSpeechModel ?? '(its default model)'}`] : []),
     ...(c.voiceProviders.includes('telnyx') ? [`telnyx recognition ${c.telnyxTranscriptionProvider ?? 'default'}`] : []),
     ...(c.voiceProviders.includes('telnyx') && c.telnyxEvents ? [`telnyx events ${c.telnyxEvents}`] : []),
+    ...(c.voiceProviders.some(readsPlaybackEvents) ? [describeResay(c)] : []),
     ...(c.chat ? [`chat on (${describeOrigins(c.chat.origins)}) up to ${c.chat.maxSessions} sessions`, describeChatSignIn(c.chat.signIn)] : []),
     ...(c.widget ? [`widget on (${c.widget.file})`] : []),
   ].join('  ');

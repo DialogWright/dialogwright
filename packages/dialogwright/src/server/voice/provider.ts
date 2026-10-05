@@ -97,6 +97,19 @@ export interface RelayLanguage {
   readonly recognition?: Recognition;
 }
 
+/**
+ * What a carrier reports of its own playback and of the caller's voice, in the engine's terms, from
+ * the optional events it sends on the socket (Telnyx's speaker-events and tokens-played). The adapter
+ * reads them to find a line the carrier cut short (server/adapter.ts, RESAY_CUT_LINES).
+ * - `playback started`: the carrier began speaking the agent's lines.
+ * - `playback finished`: it stopped; with `text`, the line it says it played (the line as it was sent).
+ * - `caller speaking`: the carrier heard the caller start (`true`) or stop (`false`) speaking.
+ */
+export type PlaybackEvent =
+  | { readonly kind: 'playback'; readonly state: 'started' }
+  | { readonly kind: 'playback'; readonly state: 'finished'; readonly text?: string }
+  | { readonly kind: 'caller'; readonly speaking: boolean };
+
 export interface VoiceProvider {
   /** Lower-case id used in paths (`/voice/<id>`) and VOICE_PROVIDERS. */
   readonly id: string;
@@ -124,4 +137,10 @@ export interface VoiceProvider {
    * reply at the first `last: true` and drops what follows needs it (Telnyx, seen on a live call).
    */
   readonly textLast?: 'each' | 'final';
+  /**
+   * A message of the carrier's own on the socket (one the relay wire does not know), as a PlaybackEvent,
+   * or null when it is not one. Absent: the carrier reports no playback (Twilio), and a line it cuts
+   * short cannot be found.
+   */
+  readEvent?(message: unknown): PlaybackEvent | null;
 }
