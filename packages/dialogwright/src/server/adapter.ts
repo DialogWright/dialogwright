@@ -7,7 +7,7 @@ import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/
 import { playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
 import { Continuation, continueWithinMsOf } from '../run/continuation';
-import { pronounce, pronounceFor } from '../channel/pronounce';
+import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
 import { localeOf } from '../core/locale';
 import { digitAtRun, promptEpoch, sensitiveDigit, type ArrivalDigit } from '../core/turn';
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
@@ -368,6 +368,11 @@ export function loggedFrame(frame: OutboundFrame, scrub: Scrub | null): Outbound
   return frame;
 }
 
+/** A text frame with the words the voice says another way respelled (channel/pronounce.ts); any other frame as it is. */
+function respelled(frame: OutboundFrame, list: PronounceList | undefined): OutboundFrame {
+  return frame.type === 'text' && list ? { ...frame, token: pronounce(frame.token, list) } : frame;
+}
+
 async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundFrame[], decision: unknown = null): Promise<OutboundFrame[]> {
   const log = deps.log;
   const timeoutMs = deps.sendTimeoutMs ?? SEND_TIMEOUT_MS;
@@ -380,19 +385,24 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
   // The words the voice says another way, for the language the lines are in (channel/pronounce.ts).
   const respell = pronounceFor(voice, localeOf(entry.session));
   for (const [i, original] of frames.entries()) {
-    // The frame log records what actually went out, respellings and digit spacing and all.
-    const frame: OutboundFrame = original.type === 'text'
-      ? { ...original, token: spokenDigits(pronounce(original.token, respell), voice?.spokenDigits), ...(lastText >= 0 && i !== lastText ? { last: false } : {}) }
+    // Digits spelled out first, by rules written against the lines as written (a respelled lead word
+    // still leads its digits), then the respellings. The frame log records what actually went out,
+    // digit spacing and respellings and all, but with a redacted value masked before it is
+    // respelled: masking finds the value as written, never a respelling of it.
+    const spoken: OutboundFrame = original.type === 'text'
+      ? { ...original, token: spokenDigits(original.token, voice?.spokenDigits), ...(lastText >= 0 && i !== lastText ? { last: false } : {}) }
       : original;
+    const frame = respelled(spoken, respell);
+    const logged = respelled(loggedFrame(spoken, scrub), respell);
     const socket = entry.socket;
     if (!socket) {
       log(`${entry.callSid}: no socket, dropped ${frame.type}`);
-      entry.frames.write('log', { dropped: loggedFrame(frame, scrub) });
+      entry.frames.write('log', { dropped: logged });
       continue;
     }
     try {
       await sendOne(socket, frame, timeoutMs);
-      entry.frames.write('out', loggedFrame(frame, scrub));
+      entry.frames.write('out', logged);
       sent.push(frame);
     } catch (err) {
       const info = describe(err);
@@ -768,7 +778,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // Before the ignore/turn split below: a digit the adapter drops is still a digit the caller pressed.
   if (logged.type === 'dtmf') publish(deps, { type: 'dtmf', callSid: ctx.callSid, at: Date.now(), digit: logged.digit });
   if (frame.type === 'interrupt') {
-    publish(deps, { type: 'interrupt', callSid: ctx.callSid, at: Date.now(), utteranceUntilInterrupt: frame.utteranceUntilInterrupt ?? null });
+    // Our line as written, as the turn will record it (run/turn.ts): the carrier echoes the respellings it was sent.
+    const heard = unpronounce(frame.utteranceUntilInterrupt, pronounceFor(appOf(entry.session).voice, localeOf(entry.session)));
+    publish(deps, { type: 'interrupt', callSid: ctx.callSid, at: Date.now(), utteranceUntilInterrupt: heard });
   }
   // The slots have fixed digit lengths, so the keypad terminators carry no meaning yet.
   if (frame.type === 'dtmf' && (frame.digit === '#' || frame.digit === '*')) {

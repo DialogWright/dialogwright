@@ -26,7 +26,7 @@ function appWith(id: string, voice: App['voice']): App {
   return app;
 }
 
-async function readBack(app: App, place: string) {
+async function readBack(app: App, place: string, after: object[] = []) {
   const dir = mkdtempSync(join(tmpdir(), 'pronounce-'));
   const store = new SessionStore((callSid) => ({
     session: newSession(callSid, 0, VOICE_RELAY, ANONYMOUS, app.id),
@@ -38,14 +38,18 @@ async function readBack(app: App, place: string) {
   const sent: { type: string; token?: string }[] = [];
   const sock = { send: (d: string, cb?: (e?: Error) => void) => { sent.push(JSON.parse(d)); cb?.(); }, close: () => {} };
   const ctx = newConnectionContext(tokens.mint('CA5'));
-  const frame = (m: object) => handleSocketMessage({ store, tokens, log: () => {} }, sock, ctx, JSON.stringify(m));
+  const published: { type: string; utteranceUntilInterrupt?: string | null }[] = [];
+  const bus = { publish: (e: { type: string }) => { published.push(e); } };
+  const frame = (m: object) => handleSocketMessage({ store, tokens, log: () => {}, bus: bus as never }, sock, ctx, JSON.stringify(m));
   await frame({ type: 'setup', sessionId: 'VX5', callSid: 'CA5', from: '+15555550100', to: '+15555550199', customParameters: {} });
   await frame({ type: 'prompt', voicePrompt: 'i want to report a problem', lang: 'en-US', last: true });
   await frame({ type: 'prompt', voicePrompt: place, lang: 'en-US', last: true });
+  for (const m of after) await frame(m);
   const wire = sent.filter((f) => f.type === 'text').map((f) => f.token!);
   const records = readFileSync(join(dir, 'CA5.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as TraceRecord);
   const said = records.flatMap((r) => r.actions.flatMap((a) => (a.type === 'say' ? a.parts.flatMap((p) => ('text' in p ? [p.text] : [])) : [])));
-  return { wire, said, session: store.get('CA5')!.session };
+  const frameLog = readFileSync(join(dir, 'CA5.frames.jsonl'), 'utf8');
+  return { wire, said, records, frameLog, published, session: store.get('CA5')!.session };
 }
 
 describe('voice.pronounce on the wire', () => {
@@ -68,6 +72,38 @@ describe('voice.pronounce on the wire', () => {
     const app = appWith('place-pronounce-locale', { pronounce: { Alder: 'All-der' }, locales: { 'en-US': { pronounce: { Alder: 'Awl-dur' } } } });
     const { wire } = await readBack(app, '22 Alder Street');
     expect(wire.at(-1)).toBe('A problem at 22 Awl-dur Street. Is that right?');
+  });
+
+  it('a redacted value read back is masked in the frame log even where a word of it is respelled', async () => {
+    const base = placeApp();
+    const app = placeApp({ id: 'place-pronounce-redacted', voice: { pronounce: { Alder: 'All-der' } }, slots: { place: { ...base.slots.place!, redact: 'mask' } } });
+    registerApp(app);
+    const outText = (log: string) => log.trim().split('\n').map((l) => JSON.parse(l) as { dir: string; msg: { type?: string; token?: string } }).filter((l) => l.dir === 'out' && l.msg.type === 'text').map((l) => l.msg.token!);
+    const { wire, frameLog } = await readBack(app, '22 Alder Street');
+    expect(wire.at(-1)).toBe('A problem at 22 All-der Street. Is that right?');
+    // What went out is logged with the value masked: neither its words nor their respelling.
+    const out = outText(frameLog);
+    expect(out.at(-1)).not.toContain('Alder');
+    expect(out.at(-1)).not.toContain('All-der');
+    // ... masked as it is without a list.
+    const plain = placeApp({ id: 'place-plain-redacted', slots: { place: { ...base.slots.place!, redact: 'mask' } } });
+    registerApp(plain);
+    const without = await readBack(plain, '22 Alder Street');
+    expect(out).toEqual(outText(without.frameLog));
+  });
+
+  it('an interruption heard our line as it was said: the session, the trace and the console get the words, not the respelling', async () => {
+    const app = appWith('place-pronounce-heard', { pronounce: { Alder: 'All-der' } });
+    const { records, session, published } = await readBack(app, '22 Alder Street', [{ type: 'interrupt', utteranceUntilInterrupt: 'A problem at 22 All-der Street', durationUntilInterruptMs: 900 }]);
+    expect(published.filter((e) => e.type === 'interrupt')).toEqual([expect.objectContaining({ utteranceUntilInterrupt: 'A problem at 22 Alder Street' })]);
+    expect(records.at(-1)!.event).toMatchObject({ type: 'user.interrupt', heard: 'A problem at 22 Alder Street' });
+    expect(session.lastInterrupt).toMatchObject({ heard: 'A problem at 22 Alder Street' });
+  });
+
+  it('a respelled word that leads an identifier still has the identifier spelled out (spokenDigits)', async () => {
+    const app = appWith('place-pronounce-digits', { pronounce: { unit: 'yoo-nit' }, spokenDigits: [{ pattern: /(unit) (\d{3,})/g, spell: 'lead' }] });
+    const { wire } = await readBack(app, 'unit 4471 Alder Street');
+    expect(wire.at(-1)).toBe('A problem at yoo-nit 4 4 7 1 Alder Street. Is that right?');
   });
 
   it('without a list, the wire is as it was', async () => {

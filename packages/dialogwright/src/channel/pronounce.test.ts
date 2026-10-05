@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pronounce, pronounceFor, pronounceProblems } from './pronounce';
+import { pronounce, pronounceFor, pronounceProblems, unpronounce } from './pronounce';
 import type { VoiceConfig } from '../core/app/types';
 
 describe('pronounce: the words the voice says another way (voice.pronounce)', () => {
@@ -20,9 +20,34 @@ describe('pronounce: the words the voice says another way (voice.pronounce)', ()
     expect(pronounce('Ålder', list)).toBe('Ålder');
   });
 
+  it('matches a word however its accents are encoded (composed or decomposed)', () => {
+    const composed = { 'Caf\u00e9': 'Ka-fay' };
+    const decomposed = { 'Cafe\u0301': 'Ka-fay' };
+    expect(pronounce('Caf\u00e9 Row', composed)).toBe('Ka-fay Row');
+    expect(pronounce('Cafe\u0301 Row', composed)).toBe('Ka-fay Row');
+    expect(pronounce('Caf\u00e9 Row', decomposed)).toBe('Ka-fay Row');
+    expect(pronounce('CAFE\u0301 row', composed)).toBe('Ka-fay row');
+    // Still whole: a mark after the word is part of it.
+    expect(pronounce('Cafe\u0301s', composed)).toBe('Cafe\u0301s');
+    expect(pronounce('Cafe Row', composed)).toBe('Cafe Row');
+  });
+
   it('respells each word once: a respelling is never respelled again', () => {
     expect(pronounce('Alder', { Alder: 'Alder Grove', Grove: 'Grohv' })).toBe('Alder Grove');
     expect(pronounce('Alder Grove', { 'Alder Grove': 'All-der Grohv', Alder: 'All-der' })).toBe('All-der Grohv');
+  });
+
+  it('maps a respelling back to its word (what an interruption heard of a line), whole and whatever its case', () => {
+    expect(unpronounce('A problem at 22 All-der Street', list)).toBe('A problem at 22 Alder Street');
+    expect(unpronounce('near saint ives, by the ALL-DER', list)).toBe('near St. Ives, by the Alder');
+    // Cut off part way through a respelling: left as heard.
+    expect(unpronounce('A problem at 22 All-', list)).toBe('A problem at 22 All-');
+    expect(unpronounce('All-derman', list)).toBe('All-derman');
+    expect(unpronounce('22 All-der Street', undefined)).toBe('22 All-der Street');
+    expect(unpronounce('22 All-der Street', {})).toBe('22 All-der Street');
+    // Round trip: what the voice was sent, mapped back, is the line as written.
+    const line = 'A problem at 22 Alder Street, near St. Ives.';
+    expect(unpronounce(pronounce(line, list), list)).toBe(line);
   });
 
   it('leaves the text as it is without a list', () => {
@@ -50,5 +75,7 @@ describe('pronounce: the words the voice says another way (voice.pronounce)', ()
     expect(pronounceProblems({ Alder: 'x'.repeat(121) }).map((p) => p.at)).toEqual(['say']);
     expect(pronounceProblems({ Alder: '<sub alias="x">Alder</sub>' }).map((p) => p.at)).toEqual(['say']);
     expect(pronounceProblems({ Alder: 'All\nder' }).map((p) => p.at)).toEqual(['say']);
+    // The same word, its accent composed once and decomposed once, is listed twice.
+    expect(pronounceProblems({ 'Caf\u00e9': 'Ka-fay', 'Cafe\u0301': 'Ka-fay' }).map((p) => p.at)).toEqual(['word']);
   });
 });

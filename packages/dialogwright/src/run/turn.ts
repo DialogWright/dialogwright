@@ -3,6 +3,7 @@ import { wordsOf, type SessionEvent } from '../channel/events';
 import { plan, resolve, sensitiveDigit, type ArrivalDigit, type DigitArrivalContext, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
 import type { Session } from '../core/session';
 import { maskCodeEvent, maskSpokenCode, saidCode } from '../core/spokenCode';
+import { pronounceFor, unpronounce } from '../channel/pronounce';
 import { maskId } from '../gate/principal';
 import { isAnonymous } from '../gate/types';
 import { demoTools, type Tools } from '../core/tools';
@@ -152,6 +153,18 @@ export function arrivalContext(session: Session, event: SessionEvent, arrival?: 
 }
 
 /**
+ * An interruption's `heard` is our own line as far as the carrier had played it, echoed in the text
+ * it was sent, so with the app's respellings (voice.pronounce): each whole one is mapped back to its
+ * word, so the session, the trace and the console read the line as it was written, and a redacted
+ * value in it is masked as written (trace/redact.ts). Any other event is as it came.
+ */
+function heardAsWritten(session: Session, event: SessionEvent): SessionEvent {
+  if (event.type !== 'user.interrupt') return event;
+  const heard = unpronounce(event.heard, pronounceFor(appOf(session).voice, localeOf(session)));
+  return heard === event.heard ? event : { ...event, heard };
+}
+
+/**
  * `arrival` is the server's once-only decision about the event, made when it came off the wire.
  * Unset (the harness, the CLI, which run each event as it arrives), it is made here from `session`,
  * by the same predicate. `joined` is set only by a Continuation (run/continuation.ts), for a turn
@@ -163,7 +176,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // perception, the core and the trace all get the masked words. This is the same masking the voice
   // adapter applies to the wire frame (maskCodeFrame) before its frame log, so there it is already
   // masked and this is a no-op; this covers every other way in.
-  const event = maskCodeEvent(session.promptedFor, heard, codeLengthOf(appOf(session)));
+  const event = heardAsWritten(session, maskCodeEvent(session.promptedFor, heard, codeLengthOf(appOf(session))));
   // The prompts a joined turn's words join, kept beside them in the trace: where the joined words
   // held a code said aloud, every digit of each prompt is masked, as no one prompt held enough of it
   // to be masked on its own (the code may have been said across them).
