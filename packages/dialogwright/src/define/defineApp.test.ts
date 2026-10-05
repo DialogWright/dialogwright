@@ -195,6 +195,24 @@ describe('defineApp: what the change question does beside a new value (app.yaml 
   });
 });
 
+describe('defineApp: what silence after "anything else?" gets (app.yaml anythingElseSilence)', () => {
+  const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
+  const withLine = (line: string): string => read('app.yaml').replace('carrySlots: [branch]', `carrySlots: [branch]\n${line}`);
+
+  it('leaves it off the App unless written, and puts it on as written', () => {
+    expect('anythingElseSilence' in libraryApp).toBe(false);
+    for (const value of ['repeat', 'opener', 'goodbye']) {
+      expect(defineApp(folder({ 'app.yaml': withLine(`anythingElseSilence: ${value}`) }), libraryCode).anythingElseSilence).toBe(value);
+    }
+  });
+
+  it('refuses a value it does not have, offering the near one', () => {
+    expect(problems(libraryCode, folder({ 'app.yaml': withLine('anythingElseSilence: repeats') }))).toEqual([
+      'app.yaml:28:22  anythingElseSilence  "anythingElseSilence" is "repeats", which is not allowed here; it must be one of "repeat", "opener", "goodbye"  ->  change it to "repeat"',
+    ]);
+  });
+});
+
 describe('defineApp: what an unsure intent gets (app.yaml unsureIntent, intents.yaml unsure)', () => {
   const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
   const withIntent = (intent: string, line: string): string => read('intents.yaml').replace(`  ${intent}:\n`, `  ${intent}:\n    ${line}\n`);

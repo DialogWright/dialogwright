@@ -78,3 +78,12 @@ export const END_PLAYBACK_MARGIN_MS = 2_000;
  * the `end` goes: the carrier's time to begin speaking a line it has just been sent.
  */
 export const END_PLAYBACK_LEAD_MS = 500;
+
+/**
+ * NO_INPUT_AFTER_SPEECH_MS unless set: on a carrier that reports the caller's voice (Telnyx's clientSpeaking,
+ * VoiceProvider.readEvent), how long after the caller stops speaking the no-input wait gives the carrier's
+ * transcript to arrive before a silence turn may run, when the wait would otherwise have run out sooner.
+ * Telnyx's transcript came about a second after the last report of the caller speaking on a live call
+ * (2026-10-05); 2.5 s covers that with room, and is short enough after a cough with no transcript.
+ */
+export const DEFAULT_NO_INPUT_AFTER_SPEECH_MS = 2_500;

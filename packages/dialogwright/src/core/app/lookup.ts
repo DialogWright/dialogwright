@@ -1,4 +1,4 @@
-import type { App, ChangeSlotWithValue, FormDef, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
+import type { AnythingElseSilence, App, ChangeSlotWithValue, FormDef, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 
@@ -66,6 +66,11 @@ export function unsureOf(app: App, intent: Intent): UnsureIntent {
 /** What the change question's reading does beside a new value at a summary: the app's (App.changeSlotWithValue), else `set-aside`. */
 export function changeSlotWithValueOf(app: App): ChangeSlotWithValue {
   return app.changeSlotWithValue ?? 'set-aside';
+}
+
+/** What a silence turn right after "anything else?" does: the app's (App.anythingElseSilence), else `repeat`. */
+export function anythingElseSilenceOf(app: App): AnythingElseSilence {
+  return app.anythingElseSilence ?? 'repeat';
 }
 
 /** How many digits a one-time code has where the identity gives none (IdentityConfig.codeLength). */

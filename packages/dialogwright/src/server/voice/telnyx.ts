@@ -40,6 +40,13 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *   no-input wait asked again, 16.6 s after the line went out; then the same line played in full (tokensPlayed 9.6 s after
  *   agentSpeaking on). Earlier calls, before the events were on, had the same silence after a reply right
  *   after the caller spoke. The adapter says such a line again (RESAY_CUT_LINES, server/adapter.ts).
+ * - Telnyx sends no partial prompts, only the final one, about a second after the caller's last
+ *   clientSpeaking off. On a call (deepgram recognizer) the caller spoke one sentence for 5.5 s
+ *   (clientSpeaking on and off twelve times), the no-input wait ran out 0.7 s after the last off, and
+ *   "I didn't hear anything." went out 0.3 s before the transcript. clientSpeaking (read below as the
+ *   caller speaking) now holds the wait, with NO_INPUT_AFTER_SPEECH_MS after the stop for the transcript
+ *   (server/adapter.ts onCallerSpeech). The same call showed clientSpeaking blips of 0.12 to 0.24 s with
+ *   no prompt after them (noise the recognizer dropped).
  * - Telnyx acts on an `end` frame at once and drops the speech it has been sent and not yet played. A
  *   turn that ended the call sent "Goodbye." (last: true) and `end` in the same millisecond; agentSpeaking
  *   went on 0.13 s later and off 14 ms after that, Telnyx closed the socket 146 ms after the `end`, and the

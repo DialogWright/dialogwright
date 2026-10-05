@@ -1270,6 +1270,48 @@ describe('silence', () => {
     expect(three.decision).toMatchObject({ kind: 'handoff', reason: 'max-attempts', acks: [{ promptId: 'no_input', vars: {} }] });
   });
 
+  /** The caller just heard "Is there anything else I can help with?" after a booked window. */
+  const AT_ANYTHING_ELSE = [WINDOW_OPENER, 'five five five zero one two three four', 'april twelfth nineteen eighty five'];
+
+  it('re-asks "anything else?" on silence after it, not the opening question (anythingElseSilence repeat, the default), then walks the intent ladder', () => {
+    const at = afterTurns(AT_ANYTHING_ELSE);
+    expect(at.decision).toMatchObject({ kind: 'prompt', promptId: 'anything_else' });
+    const one = resolve(at.session, silenceEvent(), null, tc);
+    expect(one.decision).toMatchObject({ kind: 'prompt', promptId: 'anything_else', target: 'intent', acks: [{ promptId: 'no_input', vars: {} }] });
+    expect(spokenText(testkitApp, one.decision)).toBe("I didn't hear anything. Is there anything else I can help with?");
+    expect(one.session.intentAttempts).toBe(1);
+    const two = resolve(one.session, silenceEvent(), null, tc);
+    expect(two.decision).toMatchObject({ promptId: 'nomatch_dtmf_menu', menu: true, acks: [{ promptId: 'no_input', vars: {} }] });
+    const three = resolve(two.session, silenceEvent(), null, tc);
+    expect(three.decision).toMatchObject({ kind: 'handoff', reason: 'max-attempts' });
+  });
+
+  /** The testkit asking the opening question again on silence after "anything else?", as before the option. */
+  const OPENER_APP = 'testkit-anything-else-opener';
+  registerApp({ ...testkitApp, id: OPENER_APP, anythingElseSilence: 'opener' });
+  /** The testkit taking silence after "anything else?" as a caller who is done. */
+  const GOODBYE_APP = 'testkit-anything-else-goodbye';
+  registerApp({ ...testkitApp, id: GOODBYE_APP, anythingElseSilence: 'goodbye' });
+
+  it('asks the opening question on silence after "anything else?" where the app says opener', () => {
+    const one = resolve(afterTurns(AT_ANYTHING_ELSE, OPENER_APP).session, silenceEvent(), null, tc);
+    expect(one.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [{ promptId: 'no_input', vars: {} }] });
+    expect(one.session.intentAttempts).toBe(1);
+  });
+
+  it('ends the call with the goodbye on silence after "anything else?" where the app says goodbye', () => {
+    const one = resolve(afterTurns(AT_ANYTHING_ELSE, GOODBYE_APP).session, silenceEvent(), null, tc);
+    expect(one.decision).toMatchObject({ kind: 'complete', form: null, promptId: 'goodbye', acks: [{ promptId: 'no_input', vars: {} }], completed: ['delivery_window'] });
+    expect(one.session.ended).toBe(true);
+  });
+
+  it('leaves the opening question\'s own silence alone whatever the app says of "anything else?"', () => {
+    for (const app of [OPENER_APP, GOODBYE_APP, undefined]) {
+      const one = resolve(started(app), silenceEvent(), null, tc);
+      expect(one.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [{ promptId: 'no_input', vars: {} }] });
+    }
+  });
+
   it('re-asks the explicit intent confirmation on silence, then hands off', () => {
     // A tentative opener puts the intent behind an explicit yes/no rather than a form.
     const r = say(started(), 'maybe report a missing parcel', { intent: intent('report_missing', 0.5) });

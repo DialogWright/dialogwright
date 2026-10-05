@@ -111,6 +111,11 @@ prompts:
   ```yaml
   changeSlotWithValue: decides   # "the description, and make it Sunday" asks for the description again
   ```
+- `anythingElseSilence` says what a caller who says nothing after "Is there anything else I can help with?" (the `anything_else` line, said when a form is done and the call goes on) hears when the no-input wait runs out. `repeat`, the default: "I didn't hear anything." (`no_input`) and "anything else?" again, the question they were asked. `opener`: `no_input` and the opening question (`ask_intent`), as the engine did before this option. `goodbye`: `no_input` and the goodbye, ending the call as the `done` intent does, for an app that takes a caller with nothing more to say as one who has finished. With `repeat` and `opener`, a further silence walks the intent ladder as it does at the opening (the keypad menu, then a person). Only the first silence after the line changes; silence after the opening question is never affected. Every line it uses is one each app already has, so `pnpm check` asks for nothing more, and refuses a value it does not know.
+
+  ```yaml
+  anythingElseSilence: goodbye   # nothing said after "anything else?" ends the call
+  ```
 - `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. The folder is relative to the app's package root, which is the folder its commands run in: the engine reads it from the working directory, and an app's `regress`, `cli` and `serve` scripts run in its package. It must stay inside the package, so an absolute path or one with `..` is refused. `check` then requires every intent to have examples there.
 - `prompts` holds what is said about prompts besides their text: which opening lines to use, which variables are always spoken by text to speech, the clips' vocabulary.
 
@@ -1320,7 +1325,7 @@ When a schema problem is found, the cross-checks against the code do not run unt
 These are real messages. The folder was a copy of the library fixture, with these edits: an unknown key `colour: blue` in app.yaml, `level: three` for `renewLoan` in policy.yaml. The first run:
 
 ```
-app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, fixtures, prompts
+app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, fixtures, prompts
 policy.yaml:4:12  actions.renewLoan.level  "level" is "three", which is not allowed here; it must be one of 0, 1, 2  ->  use one of 0, 1, 2
 2 problems in broken-library
 ```
@@ -2036,6 +2041,7 @@ The same app answers on the phone, through Twilio, Telnyx or both, and on the we
 | Telnyx's events | `TELNYX_EVENTS` (env): `speaker-events`, `tokens-played`, space-separated; quote it in the settings file (`TELNYX_EVENTS="speaker-events tokens-played"`), which lets a shell `source` the file too (the server's loader takes it either way) | none | To have Telnyx report when the agent and the caller speak and what it played: each is written to the call's frame log, and they are what finds a line Telnyx cuts short ([13.9](#139-a-line-the-carrier-cut-short)). |
 | A line the carrier cut short | `RESAY_CUT_LINES` (env), `on` or `off`; `RESAY_MIN_FRACTION` (env), 0.05 to 0.95 | `on`, `0.35`: a turn's lines reported finished in under 0.35 of their estimated length, with the caller not heard, are said again once. Active only on a carrier that reports its playback (Telnyx with `TELNYX_EVENTS`) | `off` to never say a line twice; a lower fraction if lines the caller did hear are said again ([13.9](#139-a-line-the-carrier-cut-short)). |
 | The goodbye before the hang-up | `END_AFTER_PLAYBACK` (env): `auto`, `on` or `off`; `END_PLAYBACK_MAX_MS` (env) | `auto`, `15000`: on a carrier that drops what it has not said when `end` comes (Telnyx), a turn that ends the call holds its `end` until the lines before it have played, never longer than 15 s | `on` if callers on another carrier lose the goodbye or the transfer line; `off` to send the `end` with the lines, as before ([13.10](#1310-the-goodbye-before-the-hang-up)). |
+| The no-input wait | `NO_INPUT_MS` (env); `NO_INPUT_AFTER_SPEECH_MS` (env) | `7000`: after a question has played (by its estimated length), 7 s of silence runs a silence turn ("I didn't hear anything." and the question again); `2500`: on a carrier that reports the caller speaking (Telnyx with `TELNYX_EVENTS` speaker-events), the wait is held while they speak and runs at least 2.5 s after they stop | `0` turns the wait off. A longer `NO_INPUT_AFTER_SPEECH_MS` if a silence turn still comes just before a transcript; shorter if callers wait too long after a cough ([13.11](#1311-the-no-input-wait-and-a-caller-heard-speaking)). |
 | Who may talk over a line | `BARGE_IN` (env): `any`, `speech`, `dtmf` or `none` | `any`: speech or a keypress cuts a line off, as the engine always connected | When a carrier's barge-in stops the agent's speech on noise or echo (`speech` keeps a keypress, `dtmf` or `none` stop speech cutting a line); or to rule barge-in in or out when callers report not hearing replies (try `none`, and see whether they hear the whole reply). It is the relay element's `interruptible` on every carrier (both take all four values; a value a listed carrier does not take is refused at startup). With `dtmf` or `none` the lines the engine sends say `interruptible: false` as well, so no line offers what the setting forbids; with `any` or `speech` each line keeps the `interruptible` its prompt has. |
 | Reconnects after a dropped relay | `RECONNECT_LIMIT` (env) | `2` | Fewer to hand a troubled call to a person sooner. |
 | What a transfer hands the carrier | `handoff.data` (app.yaml): `slots` (`all`, `none` or a list), `send` by slot (`omit`, `masked`, `as-is`) | no identity factor; a redacted slot masked; any other slot as it is | When the person taking the call needs a value in the clear (name it `as-is`), or fewer values on the carrier. |
@@ -2122,7 +2128,7 @@ Choosing it, by words, by its menu key or on the yes to an unsure reading, sets 
 - A call's `hints` are its starting locale's: a mid-call switch keeps them, since the carriers take hints on the relay element only.
 - That a carrier applies a `<Language>` child's voice and recognizer to the call's first language as well as to a switch is read from Twilio's reference ("map a language code to a set of text-to-speech and speech-to-text settings"), and is to be confirmed on a live call, on Twilio and on Telnyx.
 - Telnyx documents the `<Language>` child (`code`, and per language `voice`, `ttsProvider`, `transcriptionProvider` and `speechModel`, so a locale's recognizer model on Telnyx is a documented attribute), the `<Parameter>` child (its pairs come back in the setup frame's `customParameters`, where the engine reads `locale`) and the `language` frame. Still to confirm on a live Telnyx call: whether it reads a text frame's `lang` (its text frame example has `token` and `last` only), and whether a `<Language>` child inherits what it leaves out from the relay element, as Twilio documents.
-- The no-input wait is cancelled at the caller's first syllable by the relay's partial prompts. That a locale moved off Deepgram flux keeps sending them is to be confirmed live.
+- The no-input wait is cancelled at the caller's first syllable by the relay's partial prompts on Twilio. That a locale moved off Deepgram flux keeps sending them is to be confirmed live. Telnyx sends no partial prompts; with `TELNYX_EVENTS` speaker-events its reports of the caller speaking hold the wait instead ([13.11](#1311-the-no-input-wait-and-a-caller-heard-speaking)).
 
 ### 13.4 Web chat
 
@@ -2264,6 +2270,19 @@ With `END_AFTER_PLAYBACK` at `auto` (the default), a turn that ends the call on 
 - **A stopping server waits for it.** The drain (`DRAIN_MS`) counts a call whose `end` is held as a live call, so a restart does not cut its line short.
 
 The frame log has one line for the wait, before the `end` it releases: `{ endAfter, endHeldMs, expectedMs }`, where `endAfter` is `played` (the carrier's report), `estimate` (no report expected), `timeout` (the ceiling passed) or `closed` (the socket closed first, and no `end` was sent). `on` holds the `end` on every carrier, should another one lose the goodbye; `off` sends it with the lines, as before. The startup line says which carriers have their `end` held.
+
+### 13.11 The no-input wait and a caller heard speaking
+
+After each question the engine waits for an answer: the question's estimated length (2.5 words a second, a clip by its length) and then `NO_INPUT_MS` (default 7000). If nothing comes, a silence turn runs: "I didn't hear anything." and the question again, walking the same ladder as an answer that missed (the keypad menu or rung, then a person). A transcript, a digit or an interrupt ends the wait. On Twilio, partial transcripts arrive while the caller is still speaking, so the wait ends at their first syllable.
+
+Telnyx sends no partial transcripts: only the final one, about a second after the caller stops. Seen on a live call: the caller spoke one long sentence, the wait ran out 0.7 s after they stopped, and "I didn't hear anything." went out 0.3 s before the transcript of the sentence arrived. With `TELNYX_EVENTS` asking for speaker-events, Telnyx reports when the caller starts and stops speaking (`clientSpeaking` on and off), and the voice provider reads those reports into the engine's terms (`VoiceProvider.readEvent`, the caller started or stopped speaking), so the wait uses them:
+
+- **While the caller speaks, the wait is held.** No silence turn runs over a caller who is talking. A question that goes out while they are still speaking starts its wait held, too.
+- **When they stop, the wait resumes, never sooner than the settle.** The silence turn comes when the wait would have run out anyway, or `NO_INPUT_AFTER_SPEECH_MS` (default 2500) after the caller stopped, whichever is later. A transcript in that time ends the wait as any prompt does. So a cough with half the wait left changes nothing (the silence turn comes when it would have), and speech that runs past the deadline with no transcript (a noise the recognizer drops) is followed by 2.5 s, not by a whole new `NO_INPUT_MS`.
+- **A stop that never comes.** A caller reported speaking for 30 s with no stop reported is taken as stopped, and the wait resumes as above, so a lost report cannot leave a call with no wait at all.
+- **What the frame log shows.** `{ noInputHeld: "speaking" }` when the wait is held, and `{ noInputArmedMs, after: "speech" }` when it resumes (`after: "holdLimit"` for a stop taken as given), beside each `{ carrierEvent: ... }` as it came. The startup line says `no-input after speech 2500 ms` when a carrier that reports the caller speaking is listed.
+
+Twilio reports no speaking, so nothing changes there. A carrier added later that reports the caller's voice maps its own events in its provider's `readEvent`, and the wait uses them with no other change.
 
 ## 14. Running it
 

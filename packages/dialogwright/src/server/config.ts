@@ -5,7 +5,7 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
-  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
+  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
   type BargeIn, type EndAfterPlayback,
 } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
@@ -150,6 +150,14 @@ export interface ServerConfig {
   endPlaybackMaxMs?: number;
   /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
   noInputMs: number;
+  /**
+   * NO_INPUT_AFTER_SPEECH_MS, default 2500 (DEFAULT_NO_INPUT_AFTER_SPEECH_MS). On a carrier that reports
+   * the caller's voice (Telnyx with TELNYX_EVENTS speaker-events), the no-input wait is held while the
+   * caller speaks, and runs at least this long after they stop, so the transcript of what they said
+   * arrives before a silence turn could. Optional in the type only, for a config made by hand before it
+   * existed (absent reads as the default).
+   */
+  noInputAfterSpeechMs?: number;
   /**
    * How long one request to Jev may take before the turn gives up on it, plays the slow-turn
    * hint and keeps the prompt open. The SDK retries once inside this budget, so a caller waits up
@@ -432,6 +440,7 @@ export function loadConfig(env: Env): ServerConfig {
     bargeIn: bargeInOf(env, voiceProviders),
     ...endAfterPlaybackOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
+    noInputAfterSpeechMs: integer(env, 'NO_INPUT_AFTER_SPEECH_MS', DEFAULT_NO_INPUT_AFTER_SPEECH_MS),
     jevTimeoutMs: jevTimeout(env),
     screen: parseScreenMode(env.SCREEN_MODE, 'SCREEN_MODE'),
     dashboard: dash === 'on',
@@ -649,6 +658,10 @@ export function describeConfig(c: ServerConfig): string {
     `reconnect limit ${c.reconnectLimit}`,
     `audio dir ${c.audioDir}`,
     c.noInputMs > 0 ? `no-input ${c.noInputMs} ms` : 'no-input off',
+    // Held while the caller is heard speaking only on a carrier that reports it (VoiceProvider.readEvent).
+    ...(c.noInputMs > 0 && c.voiceProviders.some(readsPlaybackEvents)
+      ? [`no-input after speech ${c.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS} ms`]
+      : []),
     `jev timeout ${c.jevTimeoutMs} ms`,
     `screen ${c.screen}`,
     `barge-in ${c.bargeIn ?? 'any'}`,

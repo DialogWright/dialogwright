@@ -63,6 +63,14 @@ export type UnsureIntent = 'confirm' | 'no-match';
  */
 export type ChangeSlotWithValue = 'set-aside' | 'decides';
 
+/**
+ * What a silence turn (the no-input wait run out) does right after the engine asked whether there is
+ * anything else (the `anything_else` line, said when a form is done and the call goes on), for
+ * App.anythingElseSilence: `repeat`, "anything else?" again; `opener`, the opening question
+ * (`ask_intent`); `goodbye`, the caller is taken as done and the call ends with the goodbye.
+ */
+export type AnythingElseSilence = 'repeat' | 'opener' | 'goodbye';
+
 export interface FormDef {
   /** Business slots, in prompt priority order. */
   slots: readonly SlotId[];
@@ -853,6 +861,17 @@ export interface App {
    * not new and sets nothing aside. Without it, `set-aside`.
    */
   changeSlotWithValue?: ChangeSlotWithValue;
+  /**
+   * What a caller who says nothing after "Is there anything else I can help with?" (the `anything_else`
+   * line) hears when the no-input wait runs out: `repeat`, the `no_input` line and "anything else?"
+   * again, the question they were asked; `opener`, the `no_input` line and the opening question
+   * (`ask_intent`); `goodbye`, the `no_input` line and the goodbye, ending the call as `done` does (a
+   * caller with nothing more is often one who has stopped listening). With `repeat` and `opener` a
+   * further silence walks the intent ladder as at the opening (the keypad menu, then a person). Only
+   * the first silence after the line is changed; the opening question's own silence is never. Without
+   * it, `repeat`.
+   */
+  anythingElseSilence?: AnythingElseSilence;
   /**
    * The app's own named thresholds and their defaults (e.g. how sure the model must be of a part
    * of the day before a hook keeps it), read where the engine's are: TurnContext.thresholds and

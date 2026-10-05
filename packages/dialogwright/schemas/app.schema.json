@@ -880,6 +880,15 @@
         "decides"
       ]
     },
+    "anythingElseSilence": {
+      "description": "What a caller who says nothing after \"anything else?\" (the anything_else line, said when a form is done) hears when the no-input wait runs out. \"repeat\": the no_input line and \"anything else?\" again. \"opener\": the no_input line and the opening question (ask_intent). \"goodbye\": the no_input line and the goodbye, ending the call as done does. With repeat and opener a further silence walks the intent ladder as at the opening (the keypad menu, then a person). Default \"repeat\".",
+      "type": "string",
+      "enum": [
+        "repeat",
+        "opener",
+        "goodbye"
+      ]
+    },
     "fixtures": {
       "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",
       "type": "object",
