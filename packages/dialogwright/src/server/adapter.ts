@@ -122,6 +122,13 @@ function releaseHeld(callSid: string): void {
  */
 const noInputGeneration = new Map<string, number>();
 
+/**
+ * A call whose no-input timer has fired and whose silence turn waits in the call's queue behind another,
+ * by the generation it carries. A report of the caller speaking before it runs holds it as it would an
+ * armed wait (onCallerSpeech); any clear drops it, since the generation it carries no longer matches.
+ */
+const silenceQueued = new Map<string, number>();
+
 /** When a call's last frames went out and how long they were estimated to take to play. */
 interface Playback {
   sentAtMs: number;
@@ -207,6 +214,7 @@ function clearNoInput(callSid: string): void {
     noInputTimers.delete(callSid);
   }
   releaseHeld(callSid);
+  silenceQueued.delete(callSid);
   noInputGeneration.set(callSid, (noInputGeneration.get(callSid) ?? 0) + 1);
 }
 
@@ -225,6 +233,7 @@ export function forgetNoInput(callSid: string): void {
   if (armed) clearTimeout(armed.timer);
   noInputTimers.delete(callSid);
   releaseHeld(callSid);
+  silenceQueued.delete(callSid);
   noInputGeneration.delete(callSid);
   lastPlayback.delete(callSid);
   turnFailures.delete(callSid);
@@ -277,7 +286,9 @@ function scheduleNoInput(deps: AdapterDeps, entry: CallEntry, delay: number): vo
   const generation = noInputGeneration.get(entry.callSid) ?? 0;
   const timer = setTimeout(() => {
     noInputTimers.delete(entry.callSid);
+    silenceQueued.set(entry.callSid, generation);
     void enqueueUnsettled(deps, entry.callSid, async (e) => {
+      if (silenceQueued.get(e.callSid) === generation) silenceQueued.delete(e.callSid);
       // A real turn ran between the arm and now (it bumped the generation), or the call is
       // over: either way the caller is not silent and this turn has nothing to say.
       if (e.ended || (noInputGeneration.get(e.callSid) ?? 0) !== generation) return;
@@ -294,6 +305,7 @@ function scheduleNoInput(deps: AdapterDeps, entry: CallEntry, delay: number): vo
 /** Hold a call's no-input wait, due at `dueAtMs`, while the caller is heard speaking. Nothing is armed meanwhile. */
 function holdNoInput(deps: AdapterDeps, entry: CallEntry, dueAtMs: number): void {
   const callSid = entry.callSid;
+  releaseHeld(callSid);
   const limit = setTimeout(() => {
     // No stop came: taken as given, so the caller is no longer counted as speaking anywhere.
     callerSpeaking.delete(callSid);
@@ -337,10 +349,14 @@ function onCallerSpeech(deps: AdapterDeps, entry: CallEntry, speaking: boolean):
     callerSpeaking.add(callSid);
     // Nor is a line the carrier stopped playing then one to say again (RESAY_CUT_LINES).
     callerHeard(callSid);
+    if (noInputHeld.has(callSid)) return;
+    // An armed wait keeps its deadline. A silence turn already queued behind a busy one (its timer fired)
+    // has a deadline just passed: it is held too, rather than said over the caller once the queue frees.
     const armed = noInputTimers.get(callSid);
-    if (!armed || noInputHeld.has(callSid)) return;
+    const dueAtMs = armed ? armed.dueAtMs : silenceQueued.has(callSid) ? Date.now() : null;
+    if (dueAtMs === null) return;
     clearNoInput(callSid);
-    holdNoInput(deps, entry, armed.dueAtMs);
+    holdNoInput(deps, entry, dueAtMs);
     return;
   }
   callerSpeaking.delete(callSid);

@@ -975,6 +975,55 @@ describe('no-input timer', () => {
       expect(texts(sock)).toEqual([GREETING, NO_INPUT, ASK_INTENT]);
     });
 
+    it('a silence turn queued behind a busy one is held when the caller is heard speaking before it runs', async () => {
+      const d = noInputDeps(LIVE_WAIT);
+      const { sock, ctx } = await greetedOnTelnyx(d);
+      // Something holds the call's queue as the wait runs out: the silence turn queues behind it.
+      let release!: () => void;
+      void d.store.enqueue('CA1', () => new Promise<void>((r) => { release = r; }));
+      await vi.advanceTimersByTimeAsync(LIVE_DEADLINE);
+      expect(noInputArmed('CA1')).toBe(false);
+      await handleSocketMessage(d, sock, ctx, speaking(true));
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      // Not said over the caller: held, as a wait still armed would have been, from a deadline already past.
+      expect(texts(sock)).toEqual([GREETING]);
+      expect(logged(d.dir, 'noInputHeld')).toEqual([{ noInputHeld: 'speaking' }]);
+      await handleSocketMessage(d, sock, ctx, speaking(false));
+      expect(logged(d.dir, 'after')).toEqual([{ noInputArmedMs: DEFAULT_NO_INPUT_AFTER_SPEECH_MS, after: 'speech' }]);
+      await vi.advanceTimersByTimeAsync(DEFAULT_NO_INPUT_AFTER_SPEECH_MS);
+      expect(texts(sock)).toEqual([GREETING, NO_INPUT, ASK_INTENT]);
+      expect(silenceLines(d.dir)).toHaveLength(1);
+    });
+
+    it('a silence turn queued behind a busy one waits the settle when the caller starts and stops before it runs', async () => {
+      const d = noInputDeps(LIVE_WAIT);
+      const { sock, ctx } = await greetedOnTelnyx(d);
+      let release!: () => void;
+      void d.store.enqueue('CA1', () => new Promise<void>((r) => { release = r; }));
+      await vi.advanceTimersByTimeAsync(LIVE_DEADLINE);
+      await handleSocketMessage(d, sock, ctx, speaking(true));
+      await handleSocketMessage(d, sock, ctx, speaking(false));
+      release();
+      // The transcript of what they said has the settle to arrive in, as after any speech.
+      await vi.advanceTimersByTimeAsync(DEFAULT_NO_INPUT_AFTER_SPEECH_MS - 1);
+      expect(texts(sock)).toEqual([GREETING]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(texts(sock)).toEqual([GREETING, NO_INPUT, ASK_INTENT]);
+      expect(silenceLines(d.dir)).toHaveLength(1);
+    });
+
+    it('an ended call gets no silence turn, whatever the carrier reports of the caller after it', async () => {
+      const d = noInputDeps(LIVE_WAIT);
+      const { sock, ctx } = await greetedOnTelnyx(d);
+      d.store.end('CA1');
+      await handleSocketMessage(d, sock, ctx, speaking(true));
+      await handleSocketMessage(d, sock, ctx, speaking(false));
+      await vi.advanceTimersByTimeAsync(LIVE_DEADLINE + NO_INPUT_HOLD_MAX_MS);
+      expect(texts(sock)).toEqual([GREETING]);
+      expect(silenceLines(d.dir)).toHaveLength(0);
+    });
+
     it('a prompt ends the hold: the reply arms the wait as usual', async () => {
       const d = noInputDeps(WAIT);
       const { sock, ctx } = await greetedOnTelnyx(d);
