@@ -104,7 +104,7 @@ This app's baseline was made once, with `regress --update`, and read entry by en
 
 ## Recording against the real model
 
-The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API, so it is the maintainer's deliberate local step, run by hand with their own key, and never part of CI. The committed cassette is `fixtures/recorded/jev-1.13.0.jsonl` (the 307 requests of a full run: every corpus line and every spoken turn of the scripted calls), and CI replays it offline with no secrets (`pnpm --filter @dialogwright/example-utility regress --client recorded`, the last step of `.github/workflows/ci.yml`). The replay must exit 0: no cassette misses, every scripted call passing its expectation, and no difference from the baseline other than the known gaps below.
+The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API, so it is the maintainer's deliberate local step, run by hand with their own key, and never part of CI. The committed cassette is `fixtures/recorded/jev-1.13.0.jsonl` (the 321 requests of a full run: every corpus line and every spoken turn of the scripted calls), and CI replays it offline with no secrets (`pnpm --filter @dialogwright/example-utility regress --client recorded`, the last step of `.github/workflows/ci.yml`). The replay must exit 0: no cassette misses, every scripted call passing its expectation, and no difference from the baseline other than the known gaps below.
 
 1. Copy [`.env.example`](.env.example) to `.env` in this folder (it is git-ignored) and put your TypeSafe API key in it as `TYPESAFE_API_KEY` (or a key from OpenRouter or the Vercel AI Gateway, or a compatible endpoint's, with `JEV_PROVIDER`: `.env.example` lists them). `regress` and `cli` do not read `.env` themselves (the server does, when `ENV_FILE` names it), so load it into your shell: `set -a && source .env && set +a`.
 2. At the repository root: `pnpm --filter @dialogwright/example-utility regress --client record --threshold JEV_TIMEOUT_MS=15000`. It appends each answer to `fixtures/recorded/<model>.jsonl` and aborts after three consecutive client errors. The diff against the stub baseline shows where the real model reads a line differently from its label; that is expected, and it never rewrites the baseline.
@@ -113,14 +113,11 @@ The stub answers from the corpus labels. A cassette holds the real decision mode
 
 A change to the words in the YAML (criteria, labels, prompts, the questions a slot sends) changes what the model is sent, so the replay reports each changed request as a cassette miss until the cassette is recorded again. So does a new corpus line or a new spoken step: its words were never recorded. A corpus label, by contrast, is read only by the stub, so correcting one leaves the cassette as it is.
 
-### Recording again: what changed since the committed cassette
+### Recording again
 
-- **The `done` intent** (a caller who is finished, "that's all" at "anything else?"). The intent question, which every turn asks, now lists it, so every request of the replay is new. New lines: corpus `dn-01` to `dn-08`, scripted call `outage-then-done`.
-- **The address picked out of the words** (`pick` on `place`, below). A turn on which `place` listens and the words make more than one part now asks `placePick` beside `placeGiven`, with the parts as its criteria. New: scripted call `outage-address-picked`.
+A change to what the model is sent makes each request it touches new, and the committed cassette misses it until it is recorded again. The `done` intent (listed in the intent question every turn asks) made every request of the replay new, and the address picked out of the words (`placePick`, below) made new every turn that asks it; the cassette was recorded again with both, so the replay has no miss. A miss also fails the test that replays the cassette (`src/sessionRoundTrip.test.ts`, "as the recorded cassette replays them").
 
-The committed cassette misses every request of the replay (255 cassette misses) until it is recorded again, and so does the test that replays it (`src/sessionRoundTrip.test.ts`, "as the recorded cassette replays them").
-
-To record it again, at the repository root, with the key from this folder's `.env` (`regress` does not read `ENV_FILE`; only the server does, so the line loads the file into a subshell):
+To record again, at the repository root, with the key from this folder's `.env` (`regress` does not read `ENV_FILE`; only the server does, so the line loads the file into a subshell):
 
 ```sh
 (set -a && . apps/utility/.env && set +a && pnpm --filter @dialogwright/example-utility regress --client record --threshold JEV_TIMEOUT_MS=15000)
@@ -136,7 +133,7 @@ The second line, with no key, must exit 0; triage any difference as in step 3 ab
 1. In `slots.yaml`, `place` has `pick: { what: the street address }`.
 2. Each corpus line that says more than the address is labelled with the part picked, by the question's id and the part's words: `ro-05` `"placePick": "22 Alder Street"`, `ro-07` `"Maple Avenue"` (from "there's a wire down on Maple Avenue") and `pl-03` `"the corner of Elm and Third"` (from "the corner of Elm and Third, by the school"). A line whose whole words are the address, or that offers one part ("It's 14 Birch Lane"), needs none: the pick question is not asked. `pl-05` ("sorry, I meant 41 Birch Lane, not 14") has no label: no part is the address alone ("I meant 41 Birch Lane" is the nearest), so the stub answers none and the value is the whole words, as before. The stub answers a label with that part's letter.
 3. The three entries whose `place` changed from the sentence to the address were edited by hand to the stub's new outcome and logged under "Baseline edits" in [DESIGN.md](DESIGN.md); the regression prints `no changes`.
-4. The maintainer records the cassette again (below): every request that holds `placePick` is new.
+4. The cassette was recorded again (above): every request that holds `placePick` was new.
 
 ### Known gaps
 
