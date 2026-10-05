@@ -778,6 +778,7 @@ function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {
   const config: { -readonly [K in keyof VoiceConfig]: VoiceConfig[K] } = {};
   put(config, 'hints', voice.hints);
   put(config, 'spokenDigits', voice.spokenDigits?.map(({ pattern, spell }) => ({ pattern: new RegExp(pattern, 'g'), spell })));
+  put(config, 'pronounce', voice.pronounce);
   put(config, 'continueWithinMs', voice.continueWithinMs);
   put(config, 'numbers', voice.numbers);
   put(config, 'locales', voice.locales === undefined ? undefined : Object.fromEntries(Object.entries(voice.locales).map(([tag, l]) => {
@@ -786,6 +787,7 @@ function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {
     put(one, 'transcription', l.transcription);
     put(one, 'voices', l.voices === undefined ? undefined : Object.fromEntries(Object.entries(l.voices).map(([provider, v]) => [provider, typeof v === 'string' ? v : { voice: v.voice, provider: v.provider }])));
     put(one, 'hints', l.hints);
+    put(one, 'pronounce', l.pronounce);
     put(one, 'recognition', l.recognition === undefined ? undefined : Object.fromEntries(Object.entries(l.recognition).map(([provider, r]) => {
       const each: { -readonly [K in keyof Recognition]: Recognition[K] } = {};
       put(each, 'provider', r.provider);

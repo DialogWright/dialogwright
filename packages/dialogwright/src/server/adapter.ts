@@ -7,6 +7,8 @@ import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/
 import { playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
 import { Continuation, continueWithinMsOf } from '../run/continuation';
+import { pronounce, pronounceFor } from '../channel/pronounce';
+import { localeOf } from '../core/locale';
 import { digitAtRun, promptEpoch, sensitiveDigit, type ArrivalDigit } from '../core/turn';
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
@@ -374,10 +376,13 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
   const scrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session));
   // A carrier that ends the reply at the first last: true gets it on the turn's final text frame only.
   const lastText = textLastOf(entry.provider) === 'final' ? frames.map((f) => f.type).lastIndexOf('text') : -1;
+  const voice = appOf(entry.session).voice;
+  // The words the voice says another way, for the language the lines are in (channel/pronounce.ts).
+  const respell = pronounceFor(voice, localeOf(entry.session));
   for (const [i, original] of frames.entries()) {
-    // The frame log records what actually went out, digit spacing and all.
+    // The frame log records what actually went out, respellings and digit spacing and all.
     const frame: OutboundFrame = original.type === 'text'
-      ? { ...original, token: spokenDigits(original.token, appOf(entry.session).voice?.spokenDigits), ...(lastText >= 0 && i !== lastText ? { last: false } : {}) }
+      ? { ...original, token: spokenDigits(pronounce(original.token, respell), voice?.spokenDigits), ...(lastText >= 0 && i !== lastText ? { last: false } : {}) }
       : original;
     const socket = entry.socket;
     if (!socket) {

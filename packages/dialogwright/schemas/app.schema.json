@@ -434,6 +434,18 @@
             "description": "One rule for how identifier digits are spelled out for text-to-speech on the wire. Only what goes out is rewritten: the session text, the trace and the manifest keep the readable form."
           }
         },
+        "pronounce": {
+          "description": "Words the text-to-speech voice says wrong, each with a respelling it says right (Alder: All-der). A word is matched whole, whatever its case, in every line the agent speaks, a value the caller gave included; only the text sent to the voice changes, never the trace, the console or a chat. A respelling is plain letters (no SSML: not every carrier reads it), at most 120 characters; a word at most 60.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "continueWithinMs": {
           "description": "A caller who had not finished: when the agent's reply to a final prompt is interrupted within this many milliseconds of starting, the next final prompt continues the one before it, and the turn runs on the words joined, as if they had been said at once, with the cut-off reply undone. 0 turns it off. Default 300.",
           "type": "integer",
@@ -519,6 +531,18 @@
                 "items": {
                   "type": "string",
                   "minLength": 1
+                }
+              },
+              "pronounce": {
+                "description": "Words the voice says another way in this locale, in place of voice.pronounce: each word (matched whole, whatever its case) with the respelling the voice is sent. {} respells nothing in this locale.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "additionalProperties": {
+                  "type": "string"
                 }
               },
               "recognition": {

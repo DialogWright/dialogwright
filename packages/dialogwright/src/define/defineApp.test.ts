@@ -520,9 +520,18 @@ describe('defineApp: the voice on the phone, by locale and by number called (voi
     ]);
   });
 
-  it('loads the window for a caller who had not finished', () => {
-    const app = defineApp(withVoice('  continueWithinMs: 400'), libraryCode);
+  it('loads the window for a caller who had not finished, and the words the voice says another way', () => {
+    const dir = withVoice(
+      '  continueWithinMs: 400',
+      '  pronounce: { Alder: All-der, St. Ives: Saint Ives }',
+      '  locales:',
+      '    es:',
+      '      pronounce: { Alder: Al-dair }',
+    );
+    const app = defineApp(dir, libraryCode);
     expect(app.voice?.continueWithinMs).toBe(400);
+    expect(app.voice?.pronounce).toEqual({ Alder: 'All-der', 'St. Ives': 'Saint Ives' });
+    expect(app.voice?.locales).toEqual({ es: { pronounce: { Alder: 'Al-dair' } } });
     expect(undefinedKeys(app.voice)).toEqual([]);
   });
 
@@ -531,6 +540,22 @@ describe('defineApp: the voice on the phone, by locale and by number called (voi
     expect(loadProblems(withVoice('  continueWithinMs: -1'))).toEqual([expect.stringMatching(/^app\.yaml:23:21 {2}voice\.continueWithinMs {2}.*0/)]);
     expect(loadProblems(withVoice('  continueWithinMs: 12.5'))).toEqual([expect.stringMatching(/^app\.yaml:23:21 {2}voice\.continueWithinMs {2}/)]);
     expect(loadProblems(withVoice('  continueWithinMs: 0'))).toEqual([]);
+  });
+
+  it('voice.pronounce: a word listed twice but for case, an empty or marked-up respelling, a word that is not one', () => {
+    expect(loadProblems(withVoice('  pronounce: { Alder: All-der, alder: All-dur }'))).toEqual([
+      'app.yaml:23:39  voice.pronounce.alder  "alder" is listed twice, but for case ("Alder")  ->  delete one of the two: a word is matched whatever its case',
+    ]);
+    expect(loadProblems(withVoice('  pronounce: { Alder: "" }'))).toEqual([expect.stringMatching(/^app\.yaml:23:23 {2}voice\.pronounce\.Alder {2}the respelling is empty/)]);
+    expect(loadProblems(withVoice('  pronounce: { Alder: "<phoneme ph=\'x\'>Alder</phoneme>" }'))).toEqual([
+      expect.stringMatching(/^app\.yaml:23:23 {2}voice\.pronounce\.Alder {2}the respelling has markup .* {2}-> {2}write the word as it should sound/),
+    ]);
+    expect(loadProblems(withVoice('  pronounce: { "Alder?": All-der }'))).toEqual([
+      expect.stringMatching(/^app\.yaml:23:26 {2}voice\.pronounce\["Alder\?"\] {2}"Alder\?" is not a word or a few words/),
+    ]);
+    expect(loadProblems(withVoice('  locales:', '    es:', '      pronounce: { Alder: Al-dair, ALDER: Al-dair }'))).toEqual([
+      expect.stringMatching(/^app\.yaml:25:43 {2}voice\.locales\.es\.pronounce\.ALDER {2}"ALDER" is listed twice/),
+    ]);
   });
 
   it('voice: tts and transcription must be language tags', () => {
