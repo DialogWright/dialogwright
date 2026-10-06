@@ -2048,7 +2048,7 @@ The same app answers on the phone, through Twilio, Telnyx or both, and on the we
 | A carrier's secret | `TWILIO_AUTH_TOKEN`, `TELNYX_PUBLIC_KEY` (env) | none; required for a listed carrier only | Always, for each carrier listed. The Telnyx key is the account's base64 Ed25519 public key. |
 | Webhook signatures | `SIGNATURE_CHECK` (env), `on` or `off` | `on` | `off` only to post webhooks by hand on a laptop. |
 | Twilio's voice | `TTS_PROVIDER` and `TTS_VOICE` (env), set together | Twilio's default voice | To choose the voice of the app's default locale on Twilio (`Google`, `en-US-Neural2-F`). |
-| Telnyx's voice | `TELNYX_VOICE` (env), a Telnyx voice name | Telnyx's default voice | To choose the voice of the default locale on Telnyx (`Telnyx.Ultra.Callie`). |
+| Telnyx's voice | `TELNYX_VOICE` (env), a Telnyx voice name | Telnyx's default voice | To choose the voice of the default locale on Telnyx (`Telnyx.NaturalHD.astra`; Telnyx's Ultra voices are named by an id, `Telnyx.Ultra.<id>`, as Mission Control lists them). |
 | Twilio's recognizer | `TWILIO_TRANSCRIPTION_PROVIDER`, `TWILIO_SPEECH_MODEL` (env) | `Deepgram`, and `flux` with Deepgram (no model with another provider) | When the app's default locale is not English (flux hears English), or to try another model. |
 | Telnyx's recognizer | `TELNYX_TRANSCRIPTION_PROVIDER` (env) | Telnyx's own default | To name `deepgram`, `google` or `telnyx`. |
 | Telnyx's events | `TELNYX_EVENTS` (env): `speaker-events`, `tokens-played`, space-separated; quote it in the settings file (`TELNYX_EVENTS="speaker-events tokens-played"`), which lets a shell `source` the file too (the server's loader takes it either way) | none | To have Telnyx report when the agent and the caller speak and what it played: each is written to the call's frame log, and they are what finds a line Telnyx cuts short ([13.9](#139-a-line-the-carrier-cut-short)). |
@@ -2089,7 +2089,7 @@ Each carrier listed in `VOICE_PROVIDERS` answers on three paths of its own: `POS
 
 A webhook's answer starts the relay with a one-time token in the socket's URL. The token is tied to the call and to the carrier that answered it: a Telnyx call's token opens no Twilio socket, and a Twilio call's opens no Telnyx one. When the socket drops mid-call, the carrier posts the action callback and the call reconnects, up to `RECONNECT_LIMIT` times, then goes to a person with an apology; the call resumes where it was, in the language it is in by then. Each carrier says whether the call is still live in its own words (Twilio: `in-progress`; Telnyx: `active` or `in-progress`), and a call that is not live hangs up. A callback that carries no call status at all reconnects only when its `SessionStatus` is `failed` and the engine still holds the call; anything else hangs up (to confirm on a live Telnyx call: [live-checks.md](live-checks.md), check 3).
 
-Each carrier names voices and recognizers its own way, so each has its own settings, and one carrier's never reaches another: `TTS_PROVIDER` and `TTS_VOICE` (both or neither) and `TWILIO_TRANSCRIPTION_PROVIDER` and `TWILIO_SPEECH_MODEL` are Twilio's; `TELNYX_VOICE` and `TELNYX_TRANSCRIPTION_PROVIDER` are Telnyx's. A Telnyx voice name carries its engine (`Telnyx.Ultra.Callie`, `AWS.Polly.Joanna-Neural`), so Telnyx has no provider variable; a Twilio-style name in `TELNYX_VOICE` is refused at startup. These settings are for the app's default locale; [13.3](#133-languages-on-the-phone) says how an app names them for each of its languages. The dashboard names the carrier of each call.
+Each carrier names voices and recognizers its own way, so each has its own settings, and one carrier's never reaches another: `TTS_PROVIDER` and `TTS_VOICE` (both or neither) and `TWILIO_TRANSCRIPTION_PROVIDER` and `TWILIO_SPEECH_MODEL` are Twilio's; `TELNYX_VOICE` and `TELNYX_TRANSCRIPTION_PROVIDER` are Telnyx's. A Telnyx voice name carries its engine (`Telnyx.NaturalHD.astra`, `AWS.Polly.Joanna-Neural`), so Telnyx has no provider variable; a Twilio-style name in `TELNYX_VOICE` is refused at startup. These settings are for the app's default locale; [13.3](#133-languages-on-the-phone) says how an app names them for each of its languages. The dashboard names the carrier of each call.
 
 ### 13.3 Languages on the phone
 
@@ -2103,13 +2103,13 @@ voice:
     "+15555550142": es        # a call to this number starts in Spanish
   locales:
     en-US:
-      voices: { twilio: en-US-Journey-O, telnyx: Telnyx.Ultra.Callie }
+      voices: { twilio: en-US-Journey-O, telnyx: Telnyx.NaturalHD.astra }
     es:
       tts: es-US              # the language the voice speaks; default: the locale's tag
       transcription: es-US    # the language speech is heard in; default: the locale's tag
       voices:
         twilio: { voice: es-US-Neural2-A, provider: Google }   # a Twilio voice with its own provider
-        telnyx: Telnyx.Ultra.Asher
+        telnyx: Telnyx.NaturalHD.albion
       hints: [renovar, reserva, sucursal]   # default: voice.hints
       recognition:            # the speech recognizer, per carrier
         twilio: { provider: Deepgram, model: nova-3-general }

@@ -29,7 +29,7 @@ Each check says what to set, what to do, what to look for, and where to record t
 
 **Why.** Telnyx's TeXML `<ConversationRelay>` is documented, but some of what the engine needs is not; `server/voice/telnyx.ts` lists six assumptions, and `server/voice/__fixtures__/telnyx/webhooks.json` marks the webhooks it could not copy from the docs `ASSUMED`. This check settles them.
 
-**Set.** `VOICE_PROVIDERS=telnyx` (or `twilio,telnyx`), `TELNYX_PUBLIC_KEY` (the account's public key, base64, as the Telnyx portal shows it), `HANDOFF_NUMBER`, `PUBLIC_HOST`. Optionally `TELNYX_VOICE=Telnyx.Ultra.Callie` to hear a voice the deployment chose.
+**Set.** `VOICE_PROVIDERS=telnyx` (or `twilio,telnyx`), `TELNYX_PUBLIC_KEY` (the account's public key, base64, as the Telnyx portal shows it), `HANDOFF_NUMBER`, `PUBLIC_HOST`. Optionally `TELNYX_VOICE=Telnyx.NaturalHD.astra` to hear a voice the deployment chose.
 
 **Do.** Create a TeXML application whose voice URL is `https://<PUBLIC_HOST>/voice/telnyx` (method POST), give a Telnyx number to it, and call the number. Run the same short call as in check 1 and end it normally.
 
@@ -82,11 +82,11 @@ voice:
     "+15555550142": es        # the real number you will call for Spanish, in place of this one
   locales:
     en-US:
-      voices: { twilio: { voice: en-US-Neural2-F, provider: Google }, telnyx: Telnyx.Ultra.Callie }
+      voices: { twilio: { voice: en-US-Neural2-F, provider: Google }, telnyx: Telnyx.NaturalHD.astra }
     es:
       tts: es-US
       transcription: es-US
-      voices: { twilio: { voice: es-US-Neural2-B, provider: Google }, telnyx: Telnyx.Ultra.Asher }
+      voices: { twilio: { voice: es-US-Neural2-B, provider: Google }, telnyx: Telnyx.NaturalHD.albion }
       recognition:
         twilio: { provider: Deepgram, model: nova-3-general }
 ```

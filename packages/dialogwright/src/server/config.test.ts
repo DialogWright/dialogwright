@@ -309,7 +309,7 @@ describe('voice providers', () => {
   it('refuses a Telnyx voice that is not named the way Telnyx names one (its engine, a dot, the voice)', () => {
     const telnyx = { ...base, VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY };
     expect(() => loadConfig({ ...telnyx, TELNYX_VOICE: 'en-US-Neural2-F' })).toThrow(
-      'TELNYX_VOICE must be a Telnyx voice name like Telnyx.Ultra.Callie, got "en-US-Neural2-F"',
+      'TELNYX_VOICE must be a Telnyx voice name like Telnyx.NaturalHD.astra, got "en-US-Neural2-F"',
     );
     expect(() => loadConfig({ ...telnyx, TELNYX_VOICE: 'Telnyx.Ultra Callie' })).toThrow(/TELNYX_VOICE must be a Telnyx voice name/);
   });

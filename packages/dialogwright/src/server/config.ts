@@ -91,7 +91,7 @@ export interface ServerConfig {
   ttsVoice: string | null;
   /**
    * TELNYX_VOICE, optional: Telnyx's voice for the prompts, a Telnyx voice name, which carries its
-   * engine (`Telnyx.Ultra.Callie`, say). Unset, Telnyx speaks with its default voice.
+   * engine (`Telnyx.NaturalHD.astra`, say). Unset, Telnyx speaks with its default voice.
    */
   telnyxVoice: string | null;
   /**
@@ -462,10 +462,10 @@ export function loadConfig(env: Env): ServerConfig {
   // clips, not whatever ConversationRelay defaults to.
   if ((ttsProvider === null) !== (ttsVoice === null)) throw new Error('TTS_PROVIDER and TTS_VOICE must be set together');
   const telnyxVoice = env.TELNYX_VOICE?.trim() || null;
-  // A Telnyx voice is its engine, a dot, then the voice (Telnyx.Ultra.Callie, AWS.Polly.Joanna-Neural,
+  // A Telnyx voice is its engine, a dot, then the voice (Telnyx.NaturalHD.astra, AWS.Polly.Joanna-Neural,
   // Azure.en-US-AvaMultilingualNeural). A Twilio voice name here (en-US-Neural2-F) is the likely mistake.
   if (telnyxVoice && !/^[A-Za-z]+(\.[A-Za-z0-9_-]+)+$/.test(telnyxVoice)) {
-    throw new Error(`TELNYX_VOICE must be a Telnyx voice name like Telnyx.Ultra.Callie, got "${telnyxVoice}"`);
+    throw new Error(`TELNYX_VOICE must be a Telnyx voice name like Telnyx.NaturalHD.astra, got "${telnyxVoice}"`);
   }
   const twilioTranscriptionProvider = recognizerName(env, 'TWILIO_TRANSCRIPTION_PROVIDER', 'Deepgram') ?? 'Deepgram';
   // flux is Deepgram's: another provider without a model of its own gets that provider's default.
