@@ -51,7 +51,22 @@ export interface IntentDef {
    * one and `done`. Absent: the app's (App.unsureIntent).
    */
   unsure?: UnsureIntent;
+  /**
+   * Something that must never wait or be missed (an emergency, a safety report): read at the
+   * threshold or more, the intent is acted on this turn, whatever else the turn was going to do
+   * (gates.ts, the priorityIntent row). Mid-form it takes the turn from the intentChange question
+   * and from a pending confirmation, and is a switch as a replacing one is (the form in hand is
+   * left, not queued); it is never ignored as side speech or re-asked as unintelligible. A handoff
+   * to a person, a held partial and the injection screen still stand, and the policy gate decides
+   * what the intent's form may do as for any other. `true` reads PRIORITY_INTENT; `{ threshold }`
+   * names another, the engine's or one of App.thresholds. For a form intent or an informational
+   * one. Absent or false: an intent like any other.
+   */
+  priority?: IntentPriority;
 }
+
+/** Whether an intent is a priority intent, and at which threshold (IntentDef.priority). */
+export type IntentPriority = boolean | { readonly threshold: string };
 
 /** What an intent the model is unsure of gets: a confirmation, or the no-match line (IntentDef.unsure, App.unsureIntent). */
 export type UnsureIntent = 'confirm' | 'no-match';

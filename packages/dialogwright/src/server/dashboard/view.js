@@ -50,6 +50,9 @@ const CONFIRM_IDS = new Set(['confirmsYes', 'confirmsNo', 'changeSlot']);
 const DECIDED_ALIAS = {
   menuNumber: ['menuNumberSaid'],
   intentMargin: ['intent'],
+  // A priority intent read strongly enough to take the turn (gates.ts priorityIntent): the intent
+  // answer is what decided, whichever gate it took the turn from.
+  priorityIntent: ['intent'],
 };
 
 /**

@@ -635,3 +635,152 @@ describe('evaluateGates: an unsure intent', () => {
     expect(run(at(ON_BUT), baseAnswers({ intent: OTHER_FORM })).verdict).toEqual({ kind: 'route', intent: 'track_parcel', confirm: 'explicit' });
   });
 });
+
+describe('evaluateGates: a priority intent (IntentDef.priority)', () => {
+  /** The testkit with `report_missing` marked priority, and whatever else `over` changes. */
+  const withPriority = (id: string, intents: Record<string, IntentDef['priority']>, over: Partial<App> = {}): string => {
+    const own = Object.fromEntries(Object.entries(intents).map(([intent, priority]) => [intent, { ...testkitApp.intents[intent]!, priority }]));
+    registerApp({ ...testkitApp, id, ...over, intents: { ...testkitApp.intents, ...own } });
+    return id;
+  };
+  const PRIORITY = withPriority('testkit-priority', { report_missing: true });
+  const INFO_PRIORITY = withPriority('testkit-priority-info', { capabilities: true });
+  const NAMED = withPriority('testkit-priority-named', { report_missing: { threshold: 'MISSING_SURE' } }, { thresholds: { MISSING_SURE: 0.6 } });
+
+  const at = (app?: string): Session => newSession('s', 0, VOICE_RELAY, undefined, app);
+  const inForm = (app?: string, form = 'track_parcel'): Session => setForm(at(app), form);
+  /** The trial's reading: the priority intent at 0.91, and intentChange reading the turn as an answer at 0.77. */
+  const SWITCH = { intent: choice({ report_missing: 0.91, none: 0.08, track_parcel: 0.01 }), intentChange: choice({ answering: 0.77, replacing: 0.19, adding: 0.04 }) };
+  const row = (r: ReturnType<typeof run>, gate: string) => r.rows.find((g) => g.gate === gate);
+  const decided = (r: ReturnType<typeof run>) => r.rows.filter((g) => g.decided).map((g) => g.gate);
+  const ACTS = { kind: 'route', intent: 'report_missing', confirm: 'none' };
+
+  it('defaults PRIORITY_INTENT to 0.8', () => {
+    expect(DEFAULT_THRESHOLDS.PRIORITY_INTENT).toBe(0.8);
+  });
+
+  it('acts mid-form on a priority reading the intentChange question reads as an answer', () => {
+    const r = run(inForm(PRIORITY), baseAnswers(SWITCH));
+    expect(r.verdict).toEqual(ACTS);
+    expect(decided(r)).toEqual(['priorityIntent']);
+    expect(row(r, 'priorityIntent')).toMatchObject({ value: 0.91, threshold: 0.8, passed: true, outcome: 'act:report_missing:over:intent' });
+    // The rows it overrode still say what they made of the turn.
+    expect(row(r, 'intentChange')).toMatchObject({ outcome: 'answering' });
+    expect(row(r, 'intent')).toMatchObject({ outcome: 'answering:report_missing', decided: false });
+  });
+
+  it('leaves a reading below the threshold to the gates as before', () => {
+    const below = { ...SWITCH, intent: choice({ report_missing: 0.75, none: 0.25 }) };
+    const r = run(inForm(PRIORITY), baseAnswers(below));
+    expect(r.verdict).toEqual({ kind: 'proceed' });
+    expect(row(r, 'priorityIntent')).toMatchObject({ value: 0.75, threshold: 0.8, passed: false, outcome: 'below', decided: false });
+    // The same turn in the app without priority intents, row for row.
+    const plain = run(inForm(), baseAnswers(below));
+    expect(r.rows.filter((g) => g.gate !== 'priorityIntent')).toEqual(plain.rows);
+  });
+
+  it('changes nothing for an app without priority intents: no row, the same verdict', () => {
+    const r = run(inForm(), baseAnswers(SWITCH));
+    expect(r.verdict).toEqual({ kind: 'proceed' });
+    expect(row(r, 'priorityIntent')).toBeUndefined();
+    const side = run(inForm(), baseAnswers({ ...SWITCH, addressedToSystem: noul(0.52) }));
+    expect(side.verdict).toEqual({ kind: 'ignore' });
+    expect(row(side, 'priorityIntent')).toBeUndefined();
+  });
+
+  it('is not ignored as side speech when the reading is strong, and is when it is not', () => {
+    // The trial's half-aside reading: addressed 0.52, complete 0.65, the intent 0.83, and intentChange answering 0.96.
+    const aside = { addressedToSystem: noul(0.52), utteranceComplete: noul(0.65), intent: choice({ report_missing: 0.83, none: 0.17 }), intentChange: choice({ answering: 0.96, replacing: 0.02, adding: 0.02 }) };
+    const r = run(inForm(PRIORITY, 'delivery_window'), baseAnswers(aside));
+    expect(r.verdict).toEqual(ACTS);
+    expect(row(r, 'addressedToSystem')).toMatchObject({ passed: false, outcome: 'ignore', decided: false });
+    expect(row(r, 'priorityIntent')).toMatchObject({ outcome: 'act:report_missing:over:addressedToSystem', decided: true });
+    const weak = run(inForm(PRIORITY, 'delivery_window'), baseAnswers({ ...SWITCH, addressedToSystem: noul(0.52), intent: choice({ report_missing: 0.5, none: 0.5 }) }));
+    expect(weak.verdict).toEqual({ kind: 'ignore' });
+    expect(decided(weak)).toEqual(['addressedToSystem']);
+    expect(row(weak, 'priorityIntent')).toMatchObject({ outcome: 'below', decided: false });
+  });
+
+  it('is not re-asked when the words read as unintelligible', () => {
+    const r = run(at(PRIORITY), baseAnswers({ intelligible: noul(0.3), intent: choice({ report_missing: 0.85, none: 0.15 }) }));
+    expect(r.verdict).toEqual(ACTS);
+    expect(row(r, 'priorityIntent')).toMatchObject({ outcome: 'act:report_missing:over:intelligible' });
+  });
+
+  it('routes as normal at the opener, where the intent row still decides', () => {
+    const r = run(at(PRIORITY), baseAnswers({ intent: choice({ report_missing: 0.9, none: 0.1 }) }));
+    expect(r.verdict).toEqual(ACTS);
+    expect(decided(r)).toEqual(['intent']);
+    expect(row(r, 'priorityIntent')).toMatchObject({ passed: true, outcome: 'agrees', decided: false });
+  });
+
+  it('is not confirmed for a hedge: a priority request is acted on', () => {
+    const r = run(at(PRIORITY), baseAnswers({ intent: choice({ report_missing: 0.9, none: 0.1 }), intentTentative: noul(0.9) }));
+    expect(r.verdict).toEqual(ACTS);
+    expect(row(r, 'priorityIntent')).toMatchObject({ outcome: 'act:report_missing:over:intent', decided: true });
+  });
+
+  it('acts at a summary confirmation, whatever the yes or no', () => {
+    const s = inForm(PRIORITY);
+    s.pendingConfirmation = { target: 'form', form: 'track_parcel', attempts: 0 };
+    s.promptedFor = 'confirm';
+    const r = run(s, baseAnswers({ ...SWITCH, confirmsYes: noul(0.8), confirmsNo: noul(0.05) }));
+    expect(r.verdict).toEqual(ACTS);
+    expect(row(r, 'priorityIntent')).toMatchObject({ outcome: 'act:report_missing:over:confirmation', decided: true });
+  });
+
+  it('acts at the transfer offer and at an intent confirmation, where the confirmation gate would decide first', () => {
+    const offer = inForm(PRIORITY);
+    offer.pendingConfirmation = { target: 'transfer', attempts: 0 };
+    offer.promptedFor = 'confirm';
+    const r = run(offer, baseAnswers({ ...SWITCH, confirmsYes: noul(0.1), confirmsNo: noul(0.1) }));
+    expect(r.verdict).toEqual(ACTS);
+    expect(row(r, 'confirmation')).toMatchObject({ outcome: 'rejected', decided: false });
+    const asked = at(PRIORITY);
+    asked.pendingConfirmation = { target: 'intent', intent: 'track_parcel', answers: {}, text: 'x' };
+    asked.promptedFor = 'confirm';
+    expect(run(asked, baseAnswers({ confirmsYes: noul(0.05), confirmsNo: noul(0.9), intent: choice({ report_missing: 0.9, none: 0.1 }) })).verdict).toEqual(ACTS);
+  });
+
+  it('takes the turn from a spoken menu number', () => {
+    const s = at(PRIORITY);
+    s.menuActive = true;
+    const r = run(s, baseAnswers({ menuNumberSaid: choice({ '1': 0.9, none: 0.1 }), intent: choice({ report_missing: 0.85, none: 0.15 }) }));
+    expect(r.verdict).toEqual(ACTS);
+    expect(row(r, 'priorityIntent')).toMatchObject({ outcome: 'act:report_missing:over:menuNumber' });
+  });
+
+  it('leaves a handoff to a person and a held partial to stand', () => {
+    const human = run(inForm(PRIORITY), baseAnswers({ ...SWITCH, wantsHuman: noul(0.9) }));
+    expect(human.verdict).toEqual({ kind: 'handoff', reason: 'live-agent' });
+    expect(decided(human)).toEqual(['wantsHuman']);
+    expect(row(human, 'priorityIntent')).toMatchObject({ passed: true, outcome: 'stands:wantsHuman', decided: false });
+    const held = run(inForm(PRIORITY), baseAnswers({ ...SWITCH, utteranceComplete: noul(0.2) }), false);
+    expect(held.verdict).toEqual({ kind: 'hold' });
+    expect(row(held, 'priorityIntent')).toMatchObject({ outcome: 'stands:utteranceComplete' });
+  });
+
+  it('does nothing inside its own form', () => {
+    const r = run(inForm(PRIORITY, 'report_missing'), baseAnswers(SWITCH));
+    expect(r.verdict).toEqual({ kind: 'proceed' });
+    expect(row(r, 'priorityIntent')).toMatchObject({ outcome: 'in_form', decided: false });
+  });
+
+  it('says an informational priority intent mid-form under INTENT_SWITCH', () => {
+    const r = run(inForm(INFO_PRIORITY), baseAnswers({ intent: choice({ capabilities: 0.82, none: 0.18 }), intentChange: choice({ answering: 0.9, replacing: 0.05, adding: 0.05 }) }));
+    expect(r.verdict).toEqual({ kind: 'inform', promptId: 'capabilities' });
+    expect(row(r, 'priorityIntent')).toMatchObject({ outcome: 'act:capabilities:over:intent' });
+  });
+
+  it('reads the threshold the intent names, an app threshold', () => {
+    const r = run(inForm(NAMED), baseAnswers({ ...SWITCH, intent: choice({ report_missing: 0.65, none: 0.35 }) }));
+    expect(r.verdict).toEqual(ACTS);
+    expect(row(r, 'priorityIntent')).toMatchObject({ value: 0.65, threshold: 0.6 });
+  });
+
+  it('reads PRIORITY_INTENT as the run sets it', () => {
+    const ts = buildTurnState(inForm(PRIORITY), { text: 'x', isFinal: true, dtmf: null }, 0);
+    const r = evaluateGates(inForm(PRIORITY), ts, baseAnswers(SWITCH), { ...T, PRIORITY_INTENT: 0.95 });
+    expect(r.verdict).toEqual({ kind: 'proceed' });
+  });
+});

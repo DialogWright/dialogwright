@@ -52,6 +52,28 @@
               "confirm",
               "no-match"
             ]
+          },
+          "priority": {
+            "description": "Something that must never wait or be missed, such as an emergency or a safety report. Read at PRIORITY_INTENT (0.8) or more, the intent is acted on this turn: mid-form over the question being answered and any pending confirmation (the form in hand is left, as on a switch), and never ignored as side speech or re-asked as unintelligible. A handoff to a person and the injection screen still stand. true reads PRIORITY_INTENT; { threshold: NAME } reads another. For a form intent or an informational one. Default false.",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "threshold": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*$",
+                    "description": "The threshold the intent is read against in place of PRIORITY_INTENT: one of the engine's, or one under thresholds in app.yaml."
+                  }
+                },
+                "required": [
+                  "threshold"
+                ],
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "required": [

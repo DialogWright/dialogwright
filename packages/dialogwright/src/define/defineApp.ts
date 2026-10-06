@@ -346,6 +346,15 @@ export function crossLink(
     if (def.unsure !== undefined && def.kind === 'control' && id !== 'done') {
       yaml('intents.yaml', ['intents', id, 'unsure'], `the control intent "${id}" is never confirmed, so "unsure" does nothing for it`, 'delete "unsure": only a form intent, an informational one and done are confirmed when the model is unsure of them', true);
     }
+    // A priority intent is acted on as a form or an answer (gates.ts priorityIntent); a control
+    // intent is neither, and the agent intent already reaches a person through wantsHuman.
+    if (def.priority !== undefined && def.priority !== false && def.kind === 'control') {
+      yaml('intents.yaml', ['intents', id, 'priority'], `the control intent "${id}" cannot be a priority intent: a priority intent starts its form or says its answer`, 'delete "priority": only a form intent or an informational one is a priority intent (a person on request is the agent intent, and wantsHuman already acts on it at once)', true);
+    }
+    if (typeof def.priority === 'object' && !thresholdNamesOf(config.app.thresholds).includes(def.priority.threshold)) {
+      const name = def.priority.threshold;
+      yaml('intents.yaml', ['intents', id, 'priority', 'threshold'], `intent "${id}" names the threshold "${name}", which is neither one of the engine's thresholds nor one the app names`, `${renameHint(name, thresholdNamesOf(config.app.thresholds))}add "${name}" under thresholds in app.yaml, or write priority: true for PRIORITY_INTENT`);
+    }
     if (def.passage !== undefined) {
       promptExists('intents.yaml', ['intents', id, 'passage'], KB_ANSWER_PROMPT);
       promptExists('intents.yaml', ['intents', id, 'passage'], KB_UNAVAILABLE_PROMPT);
@@ -757,6 +766,7 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
   put(intent, 'passage', def.passage);
   put(intent, 'locale', def.locale);
   put(intent, 'unsure', def.unsure);
+  put(intent, 'priority', def.priority);
   return intent;
 }
 

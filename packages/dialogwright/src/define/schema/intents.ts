@@ -36,10 +36,36 @@ const intentDef = z
         'When the model is unsure of this intent (outside a form, read from INTENT_EXPLICIT, 0.4, up to INTENT_IMPLICIT, 0.6): "confirm" asks the caller ("Just to check, do you want to ...?"), ' +
           '"no-match" takes it as no match (the no-match line, counted). For a form intent, an informational one and done. Default: app.yaml\'s unsureIntent, else "confirm".',
       ),
+    priority: z
+      .union([
+        z.boolean(),
+        z.strictObject({
+          threshold: matching(
+            /^[A-Z][A-Z0-9_]*$/,
+            'is not a threshold name: it must be upper case letters, digits and underscores, starting with a letter',
+            'name one of the engine\'s thresholds (PRIORITY_INTENT) or one under thresholds in app.yaml',
+          ).describe('The threshold the intent is read against in place of PRIORITY_INTENT: one of the engine\'s, or one under thresholds in app.yaml.'),
+        }),
+      ])
+      .optional()
+      .describe(
+        'Something that must never wait or be missed, such as an emergency or a safety report. Read at PRIORITY_INTENT (0.8) or more, the intent is acted on this turn: ' +
+          'mid-form over the question being answered and any pending confirmation (the form in hand is left, as on a switch), and never ignored as side speech or re-asked as unintelligible. ' +
+          'A handoff to a person and the injection screen still stand. true reads PRIORITY_INTENT; { threshold: NAME } reads another. For a form intent or an informational one. Default false.',
+      ),
   })
   .check(checkAlways((value, ctx) => {
-    const def = value as { kind?: unknown; promptId?: unknown; passage?: unknown; locale?: unknown } | null;
+    const def = value as { kind?: unknown; promptId?: unknown; passage?: unknown; locale?: unknown; priority?: unknown } | null;
     if (typeof def !== 'object' || def === null) return;
+    // "priority: high" or "priority: yes" (a string in YAML 1.2): the union alone would say only that it is no shape it knows.
+    if (def.priority !== undefined && typeof def.priority !== 'boolean' && (typeof def.priority !== 'object' || def.priority === null || Array.isArray(def.priority))) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['priority'],
+        message: `"priority" is ${JSON.stringify(def.priority)}, which is not true, false or { threshold: NAME }`,
+        params: { fix: 'write priority: true to read PRIORITY_INTENT, or priority: { threshold: NAME } for another threshold' },
+      });
+    }
     if (def.kind === 'informational' && def.promptId === undefined && def.passage === undefined && def.locale === undefined) {
       ctx.addIssue({
         code: 'custom',

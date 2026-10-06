@@ -104,7 +104,7 @@ prompts:
   ```
 
   `pnpm check` refuses a slot that is not one, a slot listed twice, a listed identity factor with no `send` (it would still be left out), a `send` for a slot that is never sent, and `masked` for a slot with no `redact` (or `handoff: last4` or `verified`), which would send it as it is; `validateApp` refuses the same for an app built in code.
-- `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`). `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again). It is shorthand for `listen: call` on each slot it names ([Where a slot listens](#where-a-slot-listens-listen)); a carried slot that says another `listen` is refused.
+- `thresholds` adds the app's own named thresholds (the clinic has `TIME_OF_DAY`), which a slot's options or a priority intent (`priority: { threshold: NAME }`) may name. `carrySlots` names slots that outlast the form that filled them (the clinic carries the caller's name and date of birth, so a second task does not ask again). It is shorthand for `listen: call` on each slot it names ([Where a slot listens](#where-a-slot-listens-listen)); a carried slot that says another `listen` is refused.
 - `unsureIntent` says what an intent the model is unsure of gets, for every intent that does not say: `confirm` (the default) or `no-match` ([When the model is unsure](#when-the-model-is-unsure-unsure), under intents.yaml).
 - `changeSlotWithValue` says what the change question does at a form's summary when the same turn also gives one of the form's slots a new value. The change question (`wording.changeSlot`) asks which detail the caller names as wrong without saying its new value, and a reading at `SLOT_CHANGE` (0.6) or more reopens that detail and asks for it again. A turn that gives a slot a value it does not already hold contradicts that reading: in "not Chen, Cheng" the model can take the doctor's surname for the caller's name. `set-aside`, the default, lets such a reading decide nothing, so the turn goes as it would without it: a no with a correction, the value applied and the summary read again (the debug table's changeSlot row says `value_given:<slot>`, naming the detail the reading named). A value said again unchanged ("no, it's Patel" with Patel held) is not new, so "the doctor, it's Patel" still reopens the doctor. What the default gives up: a caller who does name one detail and give another its value in one breath ("the doctor's wrong, and make it Thursday") has the value applied and hears the summary again, where they name the doctor once more; where the naming was misread (as the clinic's recordings showed for "not Chen, Cheng"), letting it decide would instead clear a detail that was right and ask for it. `decides` lets the reading decide as it would alone: the detail named is reopened unless the same turn gives it its new value, and a value given for another slot is filled on the way.
 
@@ -154,6 +154,7 @@ menu:
 - `kind: form` starts the form with the same id in forms.yaml. `kind: informational` plays its `promptId` and goes back to where the caller was; its key on the menu does the same, then gives the menu back. `kind: control` is the engine's own.
 - How sure the model must be. Outside a form, a form intent read at `INTENT_IMPLICIT` (0.6) or more starts its form, and one read from `INTENT_EXPLICIT` (0.4) up to that is confirmed first with `confirm_intent_explicit` ("Just to check, do you want to {intentLabel}?"); below that the caller hears `nomatch_open`. An informational intent has the same band: said at 0.6 or more, confirmed from 0.4, and said on the yes, so a caller the model half understood is asked rather than told the words were not understood. A form close behind either (within `GATE_INTENT_MARGIN`) is asked about as a choice between the two (`disambiguate_intent`). Inside a form, an informational intent is said at `INTENT_SWITCH` (0.85) and has no band: a confirmation there would stand in for the question the form is asking.
 - When the model is unsure, see the next subsection: an app or an intent can say that such a reading is no match rather than confirmed.
+- Something that must never wait or be missed (an emergency, a safety report) is marked `priority: true`: read at `PRIORITY_INTENT` (0.8) or more it is acted on this turn, mid-form included ([Must never wait: `priority`](#must-never-wait-priority)).
 - Two control intents are required, because the engine reads them by name: `agent` and `repeat_prompt`. The snippet above shows both. The other control intents (`done`, `other`, `none`) are optional to the engine; the library has all three.
 - `done` is how a caller who is finished is understood: outside a form, "no, that's all" ends the call with the goodbye (`goodbye`, or `goodbye_chat` in a chat). Every app has the `anything_else` line, which the engine says when a form is done and the call goes on, so `pnpm check` refuses an app with that line and no `done` intent: without it, "no, that's all" is no intent the app knows, and the caller hears the no-match line, then the keypad menu or a person, instead of the goodbye. The fix it prints is the intent to paste. Give it corpus lines at the `anything_else` context (`testing.seed.anythingElse`) in the words callers use ("no, that's all", "I'm all set", "I don't need anything else").
 - Keypad digits are quoted strings.
@@ -179,6 +180,53 @@ intents:
 ```
 
 It applies alike to a form intent, an informational one and `done`; `check` refuses it on another control intent, which is never confirmed. It changes nothing else: a reading of 0.6 or more acts as before, a hedged request read at 0.6 or more ("I think I might want to ...") is still confirmed, since the doubt is the caller's and not the model's, a switch away from the form in hand is still confirmed in its own band, since it would drop what the caller has given, and inside a form an informational intent still needs `INTENT_SWITCH`. Keep `confirm` where a caller half understood is better asked one yes-or-no question than told the words were not understood. Choose `no-match` where a wrong guess costs more than a second try: intents that sound alike, so that "did you want X?" would often be wrong, or a request that should start only when the caller is understood plainly. The setting is the app's, and changes no question the model is sent.
+
+#### Must never wait: `priority`
+
+Inside a form, a request for another form starts it only when the model reads the turn as replacing the task in hand (the `intentChange` question at `INTENT_CHANGE`, 0.6) and the intent at `INTENT_SWITCH` (0.85); a turn read as answering the question goes to the form, whatever intent it names. And a turn the model reads as not addressed to the line (`addressedToSystem` under `GATE_ADDRESSED`, 0.65) is ignored. Both are right for most requests and wrong for one that must never wait: "actually, water is pouring in right now", said at "Do you own the home?", reads as an answer, and "hold on, the wall just started giving way" reads as said half aside. Mark such an intent `priority`:
+
+```yaml
+intents:
+  urgent_repair:
+    criteria: Water is pouring in right now, or a wall looks like it is giving way right now
+    label: reach the office right away
+    kind: form
+    priority: true      # acted on at PRIORITY_INTENT (0.8) or more, whatever else the turn was
+```
+
+Read at `PRIORITY_INTENT` or more, the intent is acted on this turn: its form starts (with its acknowledgement, never a "just to check" confirmation, even for a hedge), or an informational one is said. What it takes the turn from:
+
+- The question in hand: an answer, an added task, a switch the model was unsure of. The form in hand is left as a switch leaves it: not queued, its values still on the session (a slot the priority form shares is not asked again), and what this turn said fills the priority form's own slots.
+- A pending confirmation: the summary (the form read back is not filed), an intent or slot read-back, the transfer offer.
+- A spoken menu number, while the keypad menu listens. A key pressed is a key, and does what it does.
+- Side speech (`addressedToSystem`) and words read as unintelligible (`intelligible`): a caller in trouble is not talking to the line alone, and a re-ask costs the turn that matters. A false reading costs a caller put through to a form or a person they did not need.
+
+What it never takes the turn from:
+
+- The injection screen, which runs before the gates and discards the turn's answers when it fires.
+- A handoff to a person (`wantsHuman`, the third frustrated turn, the `agent` intent): the caller reaches someone at once either way.
+- A partial still being said (`utteranceComplete` holding a transcript that is not final): the words are read again when they are.
+- The policy gate: what the priority form may do is decided as for any other form. Inside the priority form itself nothing changes.
+
+The trace and the console show it as a gate row of its own, `priorityIntent`, read only in an app that marks an intent priority (any other app's rows are unchanged): `act:<intent>:over:<gate>` when it took the turn (it is the row that decided, and `<gate>` is the row that would have, which keeps its own outcome), `agrees` when the turn already did what it would, `stands:<gate>` for a handoff or a hold it leaves, `in_form` inside its own form, `below` under the threshold, `none` when no priority intent was read. `priority: { threshold: NAME }` reads another threshold in place of `PRIORITY_INTENT`: one of the engine's, or one under `thresholds:` in app.yaml (`check` refuses a name neither defines), so an app sets its own:
+
+```yaml
+# app.yaml
+thresholds:
+  URGENT_SURE: 0.75
+```
+
+```yaml
+# intents.yaml
+intents:
+  urgent_repair:
+    criteria: Water is pouring in right now, or a wall looks like it is giving way right now
+    label: reach the office right away
+    kind: form
+    priority: { threshold: URGENT_SURE }
+```
+
+A run moves `PRIORITY_INTENT` with `--threshold PRIORITY_INTENT=0.85`; the sweep leaves it alone unless asked (`--only PRIORITY_INTENT`), since a rise lets such a request wait. `priority` is for a form intent or an informational one; `check` refuses it on a control intent (a person on request is the `agent` intent, which `wantsHuman` already acts on at once). It reads only answers the model already gives (the intent's probabilities), so it changes no question the model is sent, and an app without a priority intent behaves exactly as before. Give the intent corpus lines inside the forms (`context: <form>`, `change: replacing`), in the words a caller would use there, and one said half aside.
 
 ### forms.yaml
 

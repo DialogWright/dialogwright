@@ -248,6 +248,34 @@ describe('defineApp: what an unsure intent gets (app.yaml unsureIntent, intents.
   });
 });
 
+describe('defineApp: a priority intent (intents.yaml priority)', () => {
+  const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
+  const withIntent = (intent: string, line: string): string => read('intents.yaml').replace(`  ${intent}:\n`, `  ${intent}:\n    ${line}\n`);
+
+  it('leaves it off the App unless written, and puts it on as written', () => {
+    expect(Object.values(libraryApp.intents).some((def) => 'priority' in def)).toBe(false);
+    const app = defineApp(folder({
+      'app.yaml': read('app.yaml').replace('carrySlots: [branch]', 'carrySlots: [branch]\nthresholds:\n  HOURS_SURE: 0.7'),
+      'intents.yaml': withIntent('hours', 'priority: { threshold: HOURS_SURE }').replace('  renew_loan:\n', '  renew_loan:\n    priority: true\n'),
+    }), libraryCode);
+    expect(app.intents.renew_loan!.priority).toBe(true);
+    expect(app.intents.hours!.priority).toEqual({ threshold: 'HOURS_SURE' });
+    expect('priority' in app.intents.check_hold!).toBe(false);
+  });
+
+  it('refuses it on a control intent, and a threshold nothing defines', () => {
+    expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('agent', 'priority: true') }))).toEqual([
+      'intents.yaml:21:5  intents.agent.priority  the control intent "agent" cannot be a priority intent: a priority intent starts its form or says its answer  ->  delete "priority": only a form intent or an informational one is a priority intent (a person on request is the agent intent, and wantsHuman already acts on it at once)',
+    ]);
+    expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('hours', 'priority: { threshold: PRIORITY_INTNET }') }))).toEqual([
+      'intents.yaml:16:28  intents.hours.priority.threshold  intent "hours" names the threshold "PRIORITY_INTNET", which is neither one of the engine\'s thresholds nor one the app names  ->  rename it to "PRIORITY_INTENT", or add "PRIORITY_INTNET" under thresholds in app.yaml, or write priority: true for PRIORITY_INTENT',
+    ]);
+    expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('hours', 'priority: always') }))).toEqual([
+      'intents.yaml:16:15  intents.hours.priority  "priority" is "always", which is not true, false or { threshold: NAME }  ->  write priority: true to read PRIORITY_INTENT, or priority: { threshold: NAME } for another threshold',
+    ]);
+  });
+});
+
 describe('defineApp: what a transfer hands the channel (app.yaml handoff.data)', () => {
   const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
   const withData = (lines: string): string => `${read('app.yaml')}\nhandoff:\n  data:\n${lines}`;

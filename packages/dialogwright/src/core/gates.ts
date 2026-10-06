@@ -1,6 +1,6 @@
 import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from '../jev/types';
 import { informationOf, isFormIntent, type Informs } from './app/intents';
-import { changeSlotWithValueOf, formOf, unsureOf } from './app/lookup';
+import { changeSlotWithValueOf, formOf, priorityIntentsOf, priorityThresholdOf, unsureOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
@@ -447,5 +447,59 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   }
 
   // `verdict` is only ever assigned inside the `decide` closure, so TypeScript narrows it to null here; the `??` is load-bearing at runtime.
-  return { rows, verdict: withFrustration(verdict ?? routeVerdict, frustrationRung) };
+  let settledVerdict: Verdict = verdict ?? routeVerdict;
+  // 10. priority intent (IntentDef.priority), only for an app that marks one: every other app's rows
+  // and verdicts are exactly what the ladder above settled. Read last, from answers the ladder already
+  // has (the intent's probabilities), so it can say which gate it took the turn from. It overrides
+  // every verdict but a handoff to a person (wantsHuman, frustration, the agent intent, a menu's 0)
+  // and a held partial (read again when final); the injection screen runs before the gates.
+  if (priorityIntentsOf(app).length > 0) {
+    const p = priorityReading(app, ranked, t);
+    const decidedBy = rows.find((r) => r.decided)?.gate ?? 'intent';
+    const row: GateRow = { gate: 'priorityIntent', value: p?.p ?? null, threshold: p?.threshold ?? null, passed: p?.reached === true, outcome: '', decided: false };
+    // `none` stands when the intent answer ranks no priority intent at all.
+    if (p === null) row.outcome = 'none';
+    else if (!p.reached) row.outcome = 'below';
+    else if (p.intent === activeForm) row.outcome = 'in_form';
+    else if (settledVerdict.kind === 'handoff' || settledVerdict.kind === 'hold') row.outcome = `stands:${decidedBy}`;
+    else if (actsOn(settledVerdict, p.intent, label)) row.outcome = 'agrees';
+    else {
+      const informs = informationOf(app, p.intent);
+      settledVerdict = informs !== undefined ? { kind: 'inform', ...informs } : { kind: 'route', intent: p.intent, confirm: 'none' };
+      row.outcome = `act:${p.intent}:over:${decidedBy}`;
+      for (const r of rows) r.decided = false;
+      row.decided = true;
+    }
+    rows.push(row);
+  }
+
+  return { rows, verdict: withFrustration(settledVerdict, frustrationRung) };
+}
+
+/**
+ * The turn's reading of the app's priority intents: the likeliest of them, its probability, the
+ * threshold it is read against (IntentDef.priority: PRIORITY_INTENT, or the one it names, the
+ * engine's or the app's own), and whether the probability reaches it. Null when the intent answer
+ * ranks none of them.
+ */
+function priorityReading(app: App, ranked: readonly { label: string; p: number }[], t: Thresholds): { intent: Intent; p: number; threshold: number | null; reached: boolean } | null {
+  for (const { label, p } of ranked) {
+    const name = priorityThresholdOf(app, label);
+    if (name === null) continue;
+    // A direct call with the engine's thresholds alone still reads the app's own (App.thresholds).
+    const threshold = t[name] ?? app.thresholds?.[name] ?? null;
+    return { intent: label as Intent, p, threshold, reached: threshold !== null && atLeast(p, threshold) };
+  }
+  return null;
+}
+
+/**
+ * Whether the verdict the ladder settled on already does what a priority reading of `intent` would:
+ * starts its form without asking (a route that is not an explicit confirmation), or says it (an
+ * inform verdict for the top intent, `top`). Then the ladder's own row keeps the credit, and whatever
+ * it carries (a second task queued at the opener) stands.
+ */
+function actsOn(v: Verdict, intent: Intent, top: Intent): boolean {
+  if (v.kind === 'route') return v.intent === intent && v.confirm !== 'explicit';
+  return v.kind === 'inform' && top === intent;
 }

@@ -63,6 +63,21 @@ export function unsureOf(app: App, intent: Intent): UnsureIntent {
   return app.intents[intent]?.unsure ?? app.unsureIntent ?? 'confirm';
 }
 
+/**
+ * The threshold a priority intent is read against, by name (IntentDef.priority): PRIORITY_INTENT
+ * for `true`, the one it names otherwise. Null for an intent that is not a priority intent.
+ */
+export function priorityThresholdOf(app: App, intent: Intent): string | null {
+  const priority = app.intents[intent]?.priority;
+  if (priority === undefined || priority === false) return null;
+  return priority === true ? 'PRIORITY_INTENT' : priority.threshold;
+}
+
+/** The app's priority intents (IntentDef.priority), in the order it lists them; empty for most apps. */
+export function priorityIntentsOf(app: App): Intent[] {
+  return Object.keys(app.intents).filter((id) => priorityThresholdOf(app, id) !== null);
+}
+
 /** What the change question's reading does beside a new value at a summary: the app's (App.changeSlotWithValue), else `set-aside`. */
 export function changeSlotWithValueOf(app: App): ChangeSlotWithValue {
   return app.changeSlotWithValue ?? 'set-aside';

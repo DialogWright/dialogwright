@@ -279,10 +279,14 @@ export function problemsOfIssues(issues: readonly ZodIssue[], src: IssueSource):
       if (guess !== undefined) meant.add(JSON.stringify([...path, guess]));
     }
   }
+  // A union of shapes says only that the value is none of them; a check of the schema's own that
+  // names the same field says what to write instead, so it alone is reported there.
+  const explained = new Set(issues.filter((i) => i.code === 'custom').map((i) => JSON.stringify(pathOf(i))));
   const problems: Problem[] = [];
   const seen = new Set<string>();
   for (const issue of issues) {
     const path = pathOf(issue);
+    if (issue.code === 'invalid_union' && explained.has(JSON.stringify(path))) continue;
     if ((issue.code === 'invalid_type' || issue.code === 'invalid_union') && meant.has(JSON.stringify(path))) {
       const here = find(src.doc, path);
       if (here.node === null && here.keyNode === null) continue;

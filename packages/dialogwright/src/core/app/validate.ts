@@ -3,7 +3,7 @@ import { isBuiltInRuleId, NAMED_RULE_IDS, sourceOf } from '../../gate/compiled';
 import { isDefinedRule, ruleDefinitionProblems } from '../../gate/defineRule';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../questionIds';
 import { askedQuestionIds, probeContexts } from './probeQuestions';
-import { unknownSlotThresholds, unknownThresholdMessage } from '../slotThresholds';
+import { thresholdNamesOf, unknownSlotThresholds, unknownThresholdMessage } from '../slotThresholds';
 import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, SIGN_IN_CLAIM, topLevelOf } from './lookup';
@@ -85,6 +85,17 @@ export function validateApp(app: App): void {
   if (app.anythingElseSilence !== undefined && !ANYTHING_ELSE_SILENCE.includes(app.anythingElseSilence)) fail(`anythingElseSilence "${app.anythingElseSilence}" is not "repeat", "opener" or "goodbye"`);
   for (const [id, def] of Object.entries(app.intents)) {
     if (def.unsure !== undefined && !UNSURE_VALUES.includes(def.unsure)) fail(`intent "${id}" has unsure "${def.unsure}", which is not "confirm" or "no-match"`);
+    // A priority intent (IntentDef.priority): true, false or { threshold } naming a threshold there is,
+    // on a form intent or an informational one.
+    const priority: unknown = def.priority;
+    if (priority !== undefined && typeof priority !== 'boolean' && !(typeof priority === 'object' && priority !== null && typeof (priority as { threshold?: unknown }).threshold === 'string')) {
+      fail(`intent "${id}" has priority ${JSON.stringify(priority)}, which is not true, false or { threshold: NAME }`);
+    }
+    if (priority !== undefined && priority !== false && def.kind === 'control') fail(`intent "${id}" is a control intent, which cannot be a priority intent: only a form intent or an informational one is`);
+    if (typeof priority === 'object' && priority !== null) {
+      const name = (priority as { threshold: string }).threshold;
+      if (!thresholdNamesOf(app.thresholds).includes(name)) fail(`intent "${id}" names the priority threshold "${name}", which is neither one of the engine's thresholds nor one the app names (App.thresholds)`);
+    }
   }
   // A slot that declares its question ids (SlotSpec.questionIds) is checked here.
   for (const clash of declaredQuestionIdClashes(app.slots)) fail(clashMessage(clash));

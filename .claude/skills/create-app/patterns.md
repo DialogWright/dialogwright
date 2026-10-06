@@ -404,6 +404,21 @@ and the line in `prompts.yaml`. After it the caller hears `ask_intent`, so a scr
 
 A key on the keypad menu may name it: the key plays the line, then offers the menu again. A key for a control intent other than `agent` does nothing, so `pnpm check` refuses one. When the menu listens is under "Keypad entry".
 
+## Something that must never wait
+
+When the app has something that must never wait or be missed, an emergency or a safety report, mark its intent `priority: true`. Without it, a caller who says "actually, water is pouring in right now" at a form's question is read as answering that question, and the form asks the rest of its questions first; one who says "hold on, the wall just started giving way" half aside is ignored as side speech.
+
+```yaml
+# intents.yaml, under intents:
+  urgent_repair:
+    criteria: Water is pouring in right now, or a wall looks like it is giving way right now
+    label: reach the office right away
+    kind: form
+    priority: true
+```
+
+Read at `PRIORITY_INTENT` (0.8) or more, the intent is acted on that turn, wherever the call is: the form in hand is left (not queued), a pending confirmation is dropped, and side speech or words read as unintelligible do not stop it. A handoff to a person and the injection screen still win, and its form's actions go through the policy gate as any other's. The usual shape is a form with no slots whose `complete` hook hands off with a line of its own. Only a form intent or an informational one may be priority. Give it corpus lines inside each form a caller could be in (`context: <form>`, `change: replacing`) and one said aside ("hold on, ..."). The debug table's `priorityIntent` row says when it took the turn (`act:<intent>:over:<gate>`). The whole option is under "Must never wait" in the [authoring guide](../../../docs/authoring-an-app.md#must-never-wait-priority).
+
 ## A knowledge form
 
 A general question a document answers ("what is the late fee?"), said from a passage a person approved, word for word. The whole feature is section 12 of the [authoring guide](../../../docs/authoring-an-app.md#12-the-knowledge-base); this is the wiring, as built in a running app (the engine's library fixture), and the traps.

@@ -18,6 +18,15 @@ export const DEFAULT_THRESHOLDS = {
   INTENT_IMPLICIT: 0.6,
   INTENT_EXPLICIT: 0.4,
   INTENT_SWITCH: 0.85,
+  // A priority intent (IntentDef.priority): read at this or more, it is acted on this turn, over the
+  // form in hand, a pending confirmation, side speech and words read as unintelligible (gates.ts,
+  // priorityIntent). Under INTENT_SWITCH because a priority intent is one whose miss costs more than a
+  // wrong switch (an emergency waiting two questions, against a caller put through to a person they
+  // did not need), and above INTENT_ROUTE because it overrides gates a plain route never does. The first
+  // trial recording read its emergency mid-form at 0.91 to 0.95, and at 0.82 to 0.83 when spoken half
+  // aside ("hold on, the wall just started giving way"), which INTENT_SWITCH would miss. Read only by
+  // an app that marks an intent priority; an intent may name a threshold of its own.
+  PRIORITY_INTENT: 0.8,
   GATE_INTENT_MARGIN: 0.15,
   GATE_FRUSTRATION_HIGH: 0.6,
   // question redesign

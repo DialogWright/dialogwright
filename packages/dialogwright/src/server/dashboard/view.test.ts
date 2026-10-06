@@ -895,6 +895,19 @@ describe('row helpers', () => {
     expect(decisiveRows(answers, DEFAULT_THRESHOLDS, gates).find((r) => r.id === 'confirmsNo')!.decisive).toBe(true);
   });
 
+  it('credits the intent answer when a priority intent took the turn', () => {
+    const answers = {
+      addressedToSystem: { type: 'noul', noul: 0.52 },
+      intent: { type: 'choice', choice: 'report_missing', probabilities: { report_missing: 0.9, none: 0.1 } },
+    };
+    const gates = [
+      { gate: 'addressedToSystem', value: 0.52, threshold: 0.65, passed: false, outcome: 'ignore', decided: false },
+      { gate: 'priorityIntent', value: 0.9, threshold: 0.8, passed: true, outcome: 'act:report_missing:over:addressedToSystem', decided: true },
+    ];
+    const rows = decisiveRows(answers, { GATE_ADDRESSED: 0.65, INTENT_SWITCH: 0.95, INTENT_EXPLICIT: 0.95 }, gates);
+    expect(rows.filter((r) => r.decisive).map((r) => r.id)).toEqual(['intent']);
+  });
+
   it('credits only the confirmation answer the gate read', () => {
     const answers = {
       confirmsYes: { type: 'noul', noul: 0.92 },

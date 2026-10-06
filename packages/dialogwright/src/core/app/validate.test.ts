@@ -54,6 +54,17 @@ describe('validateApp', () => {
       expect(() => validateApp({ ...copy(), intents })).toThrow('intent "report_missing" has unsure "maybe", which is not "confirm" or "no-match"');
     });
 
+    it('refuses a priority setting it does not have, on a control intent, or naming no threshold there is', () => {
+      const withPriority = (id: string, priority: unknown) => ({ ...copy(), intents: { ...testkitApp.intents, [id]: { ...testkitApp.intents[id]!, priority: priority as never } } });
+      expect(() => validateApp(withPriority('report_missing', true))).not.toThrow();
+      expect(() => validateApp(withPriority('capabilities', { threshold: 'INTENT_SWITCH' }))).not.toThrow();
+      expect(() => validateApp({ ...withPriority('report_missing', { threshold: 'MISSING_SURE' }), thresholds: { MISSING_SURE: 0.7 } })).not.toThrow();
+      expect(() => validateApp(withPriority('report_missing', 'yes'))).toThrow('intent "report_missing" has priority "yes", which is not true, false or { threshold: NAME }');
+      expect(() => validateApp(withPriority('agent', true))).toThrow('intent "agent" is a control intent, which cannot be a priority intent: only a form intent or an informational one is');
+      expect(() => validateApp(withPriority('agent', false))).not.toThrow();
+      expect(() => validateApp(withPriority('report_missing', { threshold: 'MISSING_SURE' }))).toThrow('intent "report_missing" names the priority threshold "MISSING_SURE", which is neither one of the engine\'s thresholds nor one the app names (App.thresholds)');
+    });
+
     it('refuses a changeSlotWithValue it does not have', () => {
       for (const value of ['set-aside', 'decides'] as const) expect(() => validateApp({ ...copy(), changeSlotWithValue: value })).not.toThrow();
       expect(() => validateApp({ ...copy(), changeSlotWithValue: 'always' as never })).toThrow('changeSlotWithValue "always" is not "set-aside" or "decides"');
