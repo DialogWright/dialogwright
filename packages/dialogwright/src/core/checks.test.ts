@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadScenarios, runScenario, type Scenario, type ScenarioRun } from '../harness-text/runner';
 import { loadCorpus } from '../jev/corpus';
@@ -21,6 +23,8 @@ import { newTurnOut } from './lifecycle';
 import { mockCodeVerifier } from './tools';
 import { testkitApp } from '../testing/testkit';
 import { SCREENED_DIR, ScreenedSystems, screenedApp, screenedCode } from '../testing/screened/app';
+import { openFileStores } from '../server/stores/file';
+import { contractCall } from '../testing/storeContract';
 
 /**
  * A form's checks (forms.yaml `checks`, core/checks.ts), on the engine's fixture for them: Example
@@ -452,6 +456,25 @@ describe('the session', () => {
     t.checked = { checkOwner: 'x' };
     setForm(t, 'urgent');
     expect('checked' in t).toBe(false);
+  });
+
+  it('keeps what the checks passed with across a restart (SESSION_STORE=file): an unchanged answer asks the gate nothing, a changed one runs the check', async () => {
+    const r = await call("there's water in my basement", 'yes, I own it');
+    const before = last(r).session;
+    expect(Object.keys(before.checked ?? {})).toEqual(['checkOwner']);
+    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-checked-'));
+    try {
+      openFileStores(dir, { tokenTtlMs: 60_000 }).calls.save(contractCall('CA0001', 3, { session: before }));
+      const saved = openFileStores(dir, { tokenTtlMs: 60_000 }).calls.load('CA0001')!.session;
+      expect(saved.checked).toEqual(before.checked);
+      // "Yes, I own it" again, then "I rent it", on the session the next process read back.
+      const again = resolve(saved, speechEvent('I own it', true), { ...PLAIN, ownership: choice({ own: 0.95, none: 0.05 }) }, turnContext());
+      expect(again.gateEvents).toEqual([]);
+      const changed = resolve(saved, speechEvent('I rent it', true), { ...PLAIN, ownership: choice({ rent: 0.95, none: 0.05 }) }, turnContext());
+      expect(gates(changed)).toEqual(['checkOwner:BLOCK:not-owner']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
