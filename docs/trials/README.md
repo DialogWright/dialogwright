@@ -2,10 +2,11 @@
 
 The design's first goal is that a developer can point an AI coding assistant at this repository with a one-paragraph description of an app and get a working app in one session, with `pnpm check` and the scripted calls green. A trial tests that directly. A fresh assistant, with no context from the people or sessions that built the framework, is given one paragraph and one instruction: use the create-app skill in this repository (`.claude/skills/create-app/SKILL.md`). It may read anything in the repository. It builds the app and, as it goes, logs every stumble: what it was doing, what it expected, what happened, what it cost, how it got past it, and the cause (docs, skill, scaffold, error message, framework). Each stumble is then fixed, or recorded with the reason it is not, and the fix is noted against the entry.
 
-Two trials have been run, on different paragraphs, the second after the first one's fixes:
+Three trials have been run, on different paragraphs, each after the one before's fixes:
 
 - [2026-10-03-utility.md](2026-10-03-utility.md): Example Power & Light, a small electric utility. The app is in [apps/utility](../../apps/utility).
 - [2026-10-03-transit.md](2026-10-03-transit.md): Example Metro Transit, a city bus and rail agency. The app was built in a scratch worktree and is not committed; the log is the evidence.
+- [2026-10-06-foundation-repair.md](2026-10-06-foundation-repair.md): Example Foundation Repair, a foundation repair and waterproofing company whose line qualifies a caller and books a free inspection. The first trial taken past a green app: the owner recorded it against the real model twice and the builder triaged each recording. The app is not committed; the log is the evidence, and the trial runs again once its findings are fixed. Its paragraph is in its log; the side-by-side table below covers the first two.
 
 The logs name sections of the authoring guide by the numbers it had when the trials ran; since then policy and identity became its section 3, and what was section 3 onward moved down by one.
 
