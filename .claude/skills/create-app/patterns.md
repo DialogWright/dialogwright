@@ -2,7 +2,7 @@
 
 The YAML and TypeScript for what a paragraph usually asks for. Each was built and run in an app scaffolded by `pnpm create-app --identity` (check, type check, tests and regression), with the scaffold's names (`accountId`, `dob`, `verifyCustomer`, `findAccount`, `Systems`, `ACCOUNTS`, `accountIdOf`); use your own. Imports are from `'dialogwright'` unless shown. The reference for every field is [docs/authoring-an-app.md](../../../docs/authoring-an-app.md); the engine's own test app, [the testkit](../../../packages/dialogwright/src/testing/testkit/README.md), uses every hook and is worth reading for a feature these patterns leave out (it is a test fixture, not a model of design).
 
-Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [Informational answers](#informational-answers) · [Keypad entry](#keypad-entry) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
+Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [Informational answers](#informational-answers) · [Keypad entry](#keypad-entry) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
 
 ## Verification (level 1)
 
@@ -548,6 +548,14 @@ place:
 ```
 
 `redact: none` is the trade-off: with `say: null` the display is the caller's words, and the default `redact: length` keeps those out of the trace, so `pnpm check` refuses the pair (`give "say" a stand-in such as "your note", or set redact: none`). A stand-in would read back "your note" instead of the address, which defeats the read-back, so an address takes `redact: none`, and the words are then in the trace and the audit as said. Declare the param the same way (`place: keep` under `audit:` in policy.yaml), so what is recorded is stated, and note the trade-off in the worksheet's gaps: whatever the caller says with the address is kept too.
+
+## Names the engine keeps
+
+Choose ids that none of the engine's own take, so `pnpm check` does not refuse a name after you have written it in every file.
+
+- **Slot ids.** A slot's questions to the model are named after its id: a `choice` slot `x` asks `x`, the other types add a suffix (`xGiven`, `xSpan`, `xMode`, ...: [corpus.md](corpus.md#labels-by-slot-type)). The engine asks questions of its own on every turn, so a slot may not take, or make, one of their ids: `intent`, `intentTentative`, `addressedToSystem`, `utteranceComplete`, `wantsHuman`, `rephrasingLastTurn`, `confusedByPrompt`, `spokeAMenuNumber`, `frustration`, `urgency`, `triedSelfService`, `languageSwitch`, `intelligible`, `confirmsYes`, `confirmsNo`, `intentChange`, `secondIntent`, `changeSlot`, `menuNumberSaid`, `manipulation`. The ones a paragraph tempts you to: `urgency` (how urgent the problem is: say `howUrgent`), `frustration`, `intent`. The list is exported as `ENGINE_QUESTION_IDS` by `'dialogwright'`.
+- **Intent ids.** `agent`, `repeat_prompt` and `done` are the engine's control intents (`other` and `none` are the scaffold's): keep them as they are, and do not give one of your tasks their id.
+- **The subject's kind** in identity.yaml may not be `anonymous`, `channel`, `principal`, `level`, `factor`, `pass`, `config` or `configFiles`.
 
 ## Testing the policy
 
