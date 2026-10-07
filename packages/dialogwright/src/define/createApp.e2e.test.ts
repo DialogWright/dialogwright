@@ -66,7 +66,7 @@ describe('a scaffolded app, end to end', () => {
   it.each([
     { name: 'plain-demo', identity: false },
     { name: 'identity-demo', identity: true },
-  ])('$name passes check, typecheck, its tests and its stub regression as created', async ({ name, identity }) => {
+  ])('$name passes check, typecheck, its tests and its stub regression as created, and its recorded launchers run', async ({ name, identity }) => {
     const base = mkdtempSync(join(SHORT_TMP, 'dialogwright-scaffold-'));
     scratch.push(base);
     const app = join(base, name);
@@ -108,5 +108,11 @@ describe('a scaffolded app, end to end', () => {
     expect(replay.stdout).toContain('example-model-from-env.jsonl (not found; every turn will miss until recorded)');
     expect(replay.stdout).toMatch(/cassette misses \d+/);
     rmSync(join(app, '.env'));
+    // `pnpm --filter ... cassette:trim`: the launcher runs; the scaffold has no cassette yet, so every
+    // request misses and it writes nothing.
+    const trim = nodeRun(app, tool('tsx', 'dist', 'cli.mjs'), ['src/cassetteTrim.ts']);
+    expect(trim.code, trim.stdout + trim.stderr).toBe(1);
+    expect(trim.stderr).toMatch(/jev-1\.13\.0\.jsonl: \d+ requests missed; re-record the cassette .* Nothing written\./);
+    expect(existsSync(join(app, 'fixtures', 'recorded'))).toBe(false);
   }, 240_000);
 });

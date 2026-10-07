@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "regress": "tsx src/regress.ts",
+    "cassette:trim": "tsx src/cassetteTrim.ts",
     "cli": "tsx src/cli.ts",
     "serve": "tsx src/serve.ts"
   },
