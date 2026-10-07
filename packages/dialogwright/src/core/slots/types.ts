@@ -100,8 +100,9 @@ export interface SlotPrompt {
  *   has the slot: values said up front with the request ("book a window for tomorrow morning").
  * - `form`: asked and filled only while a form that has it is open. Outside one its question is
  *   not sent, and nothing is taken up front.
- * - `anywhere`: asked outside a form, and a value said there is kept whenever it is said, until a
- *   form that has the slot uses it and clears it as it closes.
+ * - `anywhere`: asked outside a form, and a value said there is kept when said on a turn that opens
+ *   no form, or with the request for a form that has the slot, until a form that has the slot uses it
+ *   and clears it as it closes; a turn that opens a form without it keeps nothing for it (turn.ts).
  * - `call`: as `anywhere`, and kept for the whole call, across forms (App.carrySlots).
  * An identity factor listens as identity says, whatever this is (fia.ts activeSlots).
  */
