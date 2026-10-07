@@ -1585,6 +1585,10 @@ It runs the same turns as the whole regression, with the same client (`--client 
 
 Note what the last line above shows: once a form completes, the form and its own slots are cleared (the slots app.yaml lists under `carrySlots` excepted; the identity factors, which no form lists, stay on the call). A scripted call that ends after a completion can expect `promptId: anything_else`, the `gate` and the completion line's words (`text`), never `form` or the form's `slots`.
 
+### After a recorded run
+
+A borderline line the model reads one way in one recording and another way in the next can be tagged with a few outcomes instead of one: `"knownGap": {"reason": "...", "outcomes": [{"promptId": "ask_name"}, {"promptId": "anything_else"}]}`. Any one of them shown is allowed (`allowed: knownGap: <reason>`), anything else fails, and the baseline itself reads `knownGap now matches`. A tag has `outcome` or `outcomes`, never both ([known gaps](known-gaps.md)).
+
 ### Where to start
 
 To build an app from a description (a paragraph of what callers can ask for, who must verify, what is confirmed), follow the create-app skill, [.claude/skills/create-app/SKILL.md](../.claude/skills/create-app/SKILL.md): it plans the app in a worksheet, maps it onto slot types, policy and identity, scaffolds it, and iterates on the checks until green. Its [patterns](../.claude/skills/create-app/patterns.md) and [corpus guide](../.claude/skills/create-app/corpus.md) are useful on their own.

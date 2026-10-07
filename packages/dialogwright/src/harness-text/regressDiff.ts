@@ -1,4 +1,4 @@
-import type { CorpusEntry, KnownGap } from '../jev/corpus';
+import { gapOutcomes, type CorpusEntry, type KnownGap } from '../jev/corpus';
 
 /**
  * The two fields that say how a decision was reached rather than what it was: which gate decided
@@ -12,9 +12,9 @@ export type DriftAllowance = ReadonlySet<string>;
 
 /**
  * Ids with a documented gap (CorpusEntry.knownGap), each with its reason and the outcome fields the
- * model is known to produce. Such an id may differ from the baseline only by exactly those fields:
- * when its outcome equals the baseline's with the pinned fields overlaid, each difference is
- * allowed and says why; any other outcome fails as usual. Only a run against a real model's answers
+ * model is known to produce (or a few such outcomes). Such an id may differ from the baseline only by
+ * exactly those fields: when its outcome equals the baseline's with one pinned outcome's fields
+ * overlaid, each difference is allowed and says why; any other outcome fails as usual. Only a run against a real model's answers
  * is given any; a stub run is held to the baseline exactly.
  */
 export type KnownGaps = ReadonlyMap<string, KnownGap>;
@@ -48,9 +48,15 @@ export function gapsNowMatching<T extends object>(expected: Record<string, T>, a
   return [...gaps.keys()].filter((id) => expected[id] !== undefined && actual[id] !== undefined && canonical(expected[id]) === canonical(actual[id]));
 }
 
-/** True when `a` is the baseline outcome `e` with the gap's pinned fields overlaid, and nothing else. */
+/** True when `a` is the baseline outcome `e` with one of the gap's pinned outcomes overlaid, and nothing else. */
 function showsGap(e: object, a: object, gap: KnownGap): boolean {
-  return canonical({ ...e, ...gap.outcome }) === canonical(a);
+  return gapOutcomes(gap).some((pinned) => canonical({ ...e, ...pinned }) === canonical(a));
+}
+
+/** What the gap's outcomes pin `key` to, each value once (`"b"`, or `"b" or "c"`); null when none pins it. */
+function pinnedValues(gap: KnownGap, key: string): string | null {
+  const values = [...new Set(gapOutcomes(gap).filter((o) => Object.hasOwn(o, key)).map((o) => JSON.stringify((o as Record<string, unknown>)[key])))];
+  return values.length > 0 ? values.join(' or ') : null;
 }
 
 /** One diff line per differing key, so a changed outcome names exactly what moved. */
@@ -68,8 +74,10 @@ function diffOne<T extends object>(name: string, id: string, e: T | undefined, a
     if (known) allowed.push(`${line} (allowed: knownGap: ${gap.reason})`);
     else if (drift && DRIFT_FIELDS.has(key)) allowed.push(`${line} (allowed: cosmeticDrift)`);
     // A gap the model no longer shows as pinned: say what the pin expected, so the line explains itself.
-    else if (gap !== undefined && Object.hasOwn(gap.outcome, key)) lines.push(`${line} (knownGap pins ${JSON.stringify((gap.outcome as Record<string, unknown>)[key])})`);
-    else lines.push(line);
+    else {
+      const pinned = gap === undefined ? null : pinnedValues(gap, key);
+      lines.push(pinned === null ? line : `${line} (knownGap pins ${pinned})`);
+    }
   }
   return { lines, allowed };
 }

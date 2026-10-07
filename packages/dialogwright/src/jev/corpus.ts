@@ -48,13 +48,29 @@ const PINNABLE: ReadonlySet<string> = new Set([
  * A documented gap between an entry's label and what a real decision model does with it: why, and
  * the outcome fields the model is known to produce instead (the baseline's outcome with these
  * fields overlaid is the known outcome). Only that exact outcome is tolerated; anything else the
- * model does on the entry still fails the run.
+ * model does on the entry still fails the run. A borderline line the model reads one way in one
+ * recording and another way in the next gives `outcomes` instead, a few such pins: any one of them
+ * shown is tolerated.
  */
-export interface KnownGap {
+export type KnownGap = {
   /** one line: what the model reads, and what follows from it */
   reason: string;
-  /** the fields that differ from the baseline when the model shows the gap, each with the value it produces */
-  outcome: PinnedOutcome;
+} & (
+  | {
+      /** the fields that differ from the baseline when the model shows the gap, each with the value it produces */
+      outcome: PinnedOutcome;
+      outcomes?: never;
+    }
+  | {
+      /** each outcome the model is known to produce on the line, pinned as `outcome` is; any one of them is tolerated */
+      outcomes: PinnedOutcome[];
+      outcome?: never;
+    }
+);
+
+/** The outcomes a known gap tolerates: its one `outcome`, or each of its `outcomes`. */
+export function gapOutcomes(gap: KnownGap): PinnedOutcome[] {
+  return gap.outcomes ?? [gap.outcome!];
 }
 
 /** An identity factor a step-up asks for (App.identity.factorSlots); `prompted` may name one in any form context. */
@@ -163,16 +179,30 @@ const ENTRY_KEYS = new Set([
   'confirm', 'changeSlot', 'secondIntent', 'manipulation', 'answers', 'tags', 'as', 'labels', 'knownGap',
 ]);
 
-/** A known gap (CorpusEntry.knownGap): a reason, and at least one outcome field it pins. */
+/** A known gap (CorpusEntry.knownGap): a reason, and the outcome it pins or a list of a few, each pinning at least one field. */
 function checkKnownGap(entry: CorpusEntry, gap: unknown): void {
-  const shape = `corpus ${entry.id}: knownGap must be { reason, outcome }, a one-line reason and the outcome fields the model is known to produce`;
+  const shape = `corpus ${entry.id}: knownGap must be { reason, outcome } or { reason, outcomes }, a one-line reason and the outcome fields the model is known to produce (outcomes: a list of them, any one allowed)`;
   if (typeof gap !== 'object' || gap === null || Array.isArray(gap)) throw new Error(shape);
-  const { reason, outcome, ...rest } = gap as Record<string, unknown>;
+  const { reason, outcome, outcomes, ...rest } = gap as Record<string, unknown>;
   if (Object.keys(rest).length > 0) throw new Error(`${shape}; unknown key ${Object.keys(rest)[0]}`);
   if (typeof reason !== 'string' || reason.trim() === '') throw new Error(`${shape}; the reason is missing`);
-  if (typeof outcome !== 'object' || outcome === null || Array.isArray(outcome) || Object.keys(outcome).length === 0) throw new Error(`${shape}; the outcome pins no field`);
+  if (outcome !== undefined && outcomes !== undefined) throw new Error(`corpus ${entry.id}: knownGap takes outcome or outcomes, not both`);
+  if (outcomes !== undefined) {
+    if (!Array.isArray(outcomes) || outcomes.length === 0) throw new Error(`${shape}; outcomes must be a list of at least one outcome`);
+    outcomes.forEach((o, i) => checkPinned(entry, o, `knownGap.outcomes[${i}]`, shape));
+    return;
+  }
+  if (outcome === undefined) throw new Error(`${shape}; the outcome pins no field: give outcome, or outcomes (a list of the outcomes it may show)`);
+  checkPinned(entry, outcome, 'knownGap.outcome', shape);
+}
+
+/** One pinned outcome of a known gap: an object of at least one outcome field. */
+function checkPinned(entry: CorpusEntry, outcome: unknown, where: string, shape: string): void {
+  if (typeof outcome !== 'object' || outcome === null || Array.isArray(outcome) || Object.keys(outcome).length === 0) {
+    throw new Error(`${shape}; ${where === 'knownGap.outcome' ? 'the outcome' : where} pins no field`);
+  }
   for (const key of Object.keys(outcome)) {
-    if (!PINNABLE.has(key)) throw new Error(`corpus ${entry.id}: knownGap.outcome pins ${key}, which is not an outcome field (${[...PINNABLE].join(', ')})`);
+    if (!PINNABLE.has(key)) throw new Error(`corpus ${entry.id}: ${where} pins ${key}, which is not an outcome field (${[...PINNABLE].join(', ')})`);
   }
 }
 

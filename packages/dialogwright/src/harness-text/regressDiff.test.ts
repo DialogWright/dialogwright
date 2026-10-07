@@ -82,6 +82,38 @@ describe('diff', () => {
     expect(diff('corpus', e, { g: { ...e.g, promptId: 'b' } }, new Set(), two).lines).toEqual(['~ corpus g.promptId: "a" -> "b" (knownGap pins "b")']);
   });
 
+  it('allows a gap with a few outcomes when any one of them shows, and fails one that shows none, naming every pinned value', () => {
+    const base: { decision: string; promptId: string; gate: string | null } = { decision: 'prompt', promptId: 'a', gate: null };
+    const e = { g: base };
+    const gaps = new Map([['g', { reason: 'a borderline line', outcomes: [{ promptId: 'b' }, { promptId: 'c', gate: 'listOpenings:ALLOW' }] }]]);
+    // The first outcome.
+    expect(diff('corpus', e, { g: { ...base, promptId: 'b' } }, new Set(), gaps)).toEqual({
+      lines: [],
+      matching: 0,
+      allowed: ['~ corpus g.promptId: "a" -> "b" (allowed: knownGap: a borderline line)'],
+      gapped: ['g'],
+    });
+    // The second, both of its fields.
+    expect(diff('corpus', e, { g: { ...base, promptId: 'c', gate: 'listOpenings:ALLOW' } }, new Set(), gaps)).toEqual({
+      lines: [],
+      matching: 0,
+      allowed: [
+        '~ corpus g.promptId: "a" -> "c" (allowed: knownGap: a borderline line)',
+        '~ corpus g.gate: null -> "listOpenings:ALLOW" (allowed: knownGap: a borderline line)',
+      ],
+      gapped: ['g'],
+    });
+    // A mix of the two is neither outcome, and fails; so does a third value.
+    expect(diff('corpus', e, { g: { ...base, promptId: 'b', gate: 'listOpenings:ALLOW' } }, new Set(), gaps).lines).toEqual([
+      '~ corpus g.promptId: "a" -> "b" (knownGap pins "b" or "c")',
+      '~ corpus g.gate: null -> "listOpenings:ALLOW" (knownGap pins "listOpenings:ALLOW")',
+    ]);
+    expect(diff('corpus', e, { g: { ...base, promptId: 'd' } }, new Set(), gaps).lines).toEqual(['~ corpus g.promptId: "a" -> "d" (knownGap pins "b" or "c")']);
+    // The baseline itself: matching, and the tag may be removable.
+    expect(diff('corpus', e, e, new Set(), gaps)).toEqual({ lines: [], matching: 1, allowed: [], gapped: [] });
+    expect(gapsNowMatching(e, e, gaps)).toEqual(['g']);
+  });
+
   it('compares a pinned object by value, whatever order its keys were written in', () => {
     const e: Record<string, { slots: Record<string, string | null> }> = { g: { slots: { name: 'ann', dob: '1975-06-14' } } };
     const a = { g: { slots: { name: null, dob: '1975-06-14' } } };
