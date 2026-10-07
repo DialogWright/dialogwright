@@ -278,7 +278,7 @@ function completeFault(c: CompletionContext): Completion {
 }
 ```
 
-`said` carries on to "anything else?"; `{ kind: 'end', promptId, vars, acks }` ends the call on the line instead.
+`said` carries on to "anything else?"; `{ kind: 'end', promptId, vars, acks }` ends the call on the line instead. The engine says the `goodbye` line after an `end` completion's line, so a line that ends the call never says goodbye itself, or the caller hears "Goodbye. Goodbye.". The same holds for a polite no that ends the call (`{ kind: 'end', promptId: 'decline_renter', ... }`): end it on the no, and let the engine close.
 
 ## Bounds: `limit` and `dateInRange`
 
