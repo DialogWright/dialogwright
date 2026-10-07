@@ -119,6 +119,17 @@ Every hand edit to `fixtures/expected/*.json` after the first `regress --update`
 |---|---|---|---|
 | | | | |
 
+## Recordings
+
+Filled in once the owner has recorded the app (step 9 of the create-app skill, and its `triage.md`). One block per recording.
+
+- Recording <n>, <date>, model `<model>`: corpus <matching>/<total>, scripted calls <passing>/<total>; `to triage: <N> untagged differences, <M> failing scripted calls, <K> misses`.
+- Labels fixed (the model was right): `<id>`, ... (each also under "Baseline edits").
+- Tagged `knownGap` (the label is the truth): `<id>`: <the model's numbers>; <what the caller hears>.
+- Scripted calls changed on an incidental line: `<id>`: <the step, before and after>.
+- Checked on this recording without a new one: <code, policy or flag changes, and what the replay showed>.
+- For the owner: <each engine gap or open question, with its numbers and caller impact, and any scripted call left failing because of it>.
+
 ## Final checklist
 
 - [ ] Every sentence of the paragraph is a row above, and every row is built.

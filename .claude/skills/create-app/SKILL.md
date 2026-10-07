@@ -1,17 +1,18 @@
 ---
 name: create-app
-description: Use when building a new DialogWright app from a plain-language description (a paragraph saying what callers can ask for, who must verify and how, what must be confirmed, what goes to a person). Plans the app in a worksheet, scaffolds it with pnpm create-app, writes the YAML, the tool stubs, the corpus and the scenarios, and iterates until pnpm check, the type check, the tests and the stub regression are green.
+description: Use when building a new DialogWright app from a plain-language description (a paragraph saying what callers can ask for, who must verify and how, what must be confirmed, what goes to a person). Plans the app in a worksheet, scaffolds it with pnpm create-app, writes the YAML, the tool stubs, the corpus and the scenarios, and iterates until pnpm check, the type check, the tests and the stub regression are green; then hands the owner the recording command and triages the recording.
 ---
 
 # Create an app from a description
 
-You are given a paragraph and asked to build an app. This skill is the procedure, from the paragraph to a green app in `apps/<name>`, in eight steps, with one more (step 6b) when callers ask questions that documents answer. Do them in order; each step ends with something you can check.
+You are given a paragraph and asked to build an app. This skill is the procedure, from the paragraph to a green app in `apps/<name>`, in eight steps, with one more (step 6b) when callers ask questions that documents answer, and a ninth once the owner has recorded the app against the real model. Do them in order; each step ends with something you can check.
 
-Three supporting files sit next to this one:
+Four supporting files sit next to this one:
 
 - [worksheet.md](worksheet.md): the template for the app's design worksheet (`apps/<name>/DESIGN.md`), with the final checklist you tick.
 - [patterns.md](patterns.md): the YAML and TypeScript for each feature a paragraph usually asks for (verification, a one-time code, delegates, confirmed writes, bounds on a date or an amount, refusals and handoffs, informational answers, a knowledge form, policy tests), each tried in a running app, and the known gaps with their workarounds.
 - [corpus.md](corpus.md): how to write corpus lines and scripted calls, including how to label each slot type's questions.
+- [triage.md](triage.md): what to do with the owner's recording (step 9): the three buckets, the order of the fixes, and what to bring to the owner.
 
 ## Before you start
 
@@ -28,7 +29,7 @@ The rules you keep, whatever the paragraph says:
 - **Never let a model write a regulated line.** Every line a caller hears is in `prompts.yaml`, word for word. The model only answers typed questions. Information answers are fixed lines too, or passages of a knowledge base that people approved: either way word for word.
 - **Fictional data only.** Invented names, invented streets, the 555 phone range, `example.com` web addresses. Nothing real, nothing private.
 - **Do not change `packages/dialogwright`.** If the framework is in your way, see "When something doesn't fit" at the end.
-- **Never run `regress --client record`.** Recording calls a paid API; it is for the app's owner to do later.
+- **Never run `regress --client record`.** Recording calls a paid API; it is for the app's owner to do. You hand them the command, whole (step 9), and triage what it recorded.
 - **Never approve a passage of a knowledge base, and never use a model key.** Only a person approves what callers will hear, after reading it against its source: you do not run `pnpm kb:approve`, you do not write an `approval` or a hash, and you do not edit `kb/approvals.jsonl`. You do not run `pnpm kb:draft` either, since it calls a model with the owner's own key, which you never handle and never put in a file. Step 6b says what you do instead.
 
 ## Step 1: The worksheet
@@ -187,6 +188,28 @@ A knowledge form's resolving action and its account line's reads are in the matr
 ## Step 8: The final checklist
 
 Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#final-checklist)), in the worksheet itself. In short: every intent has corpus lines and a scenario; every action has a policy entry, a row in `policy.matrix` and a line in `POLICY.md` you have read, and its bounds tested at their edges; identity matches the paragraph; nothing private or real; `pnpm check`, `pnpm verify` and every app's regression green; the README describes the app and keeps the recording steps the scaffold wrote; the gaps are written up; and, if there is a knowledge base, every draft is either approved by a person or listed in the worksheet as awaiting one, with `pnpm check`'s approval findings the only ones left. Then commit, with the worksheet.
+
+## Step 9: Hand over the recording, then triage it
+
+The app is green on the stub, which answers from your own labels. How the real model reads the same lines is the next thing to know, and only a recording shows it. Recording calls a paid API with the owner's key, so the owner runs it, never you.
+
+**Hand the owner exactly this**, whole, with the app's name filled in, and nothing else to type:
+
+```sh
+pnpm --filter @dialogwright/example-<name> regress --client record --threshold JEV_TIMEOUT_MS=15000
+```
+
+It runs at the repository root and reads the key from the app's own `apps/<name>/.env` (git-ignored). Tell them how the key gets there: `pnpm configure --app <name>` asks for it and writes that file, or they copy a key into `apps/<name>/.env` as `TYPESAFE_API_KEY=...` (the folder's `.env.example` lists the other providers). Do not ask for the key, read the `.env` or put a key in any file yourself. Do not split the command into steps or add a `source` of a `.env`: a `.env` may hold a value a shell cannot read as written. The run takes a few minutes and has cost a few cents for an app this size; it appends the model's answers to `fixtures/recorded/<model>.jsonl` and never touches the baseline.
+
+**When they have recorded**, triage it as [triage.md](triage.md) says. In short:
+
+1. Replay it, offline and free: `pnpm --filter @dialogwright/example-<name> regress --client recorded`. Read its last line, `to triage: N untagged differences, M failing scripted calls, K misses`, not its exit code.
+2. Look at each difference with `regress --client recorded --corpus <id>` (the line's model answers, with their probabilities) or `--scenario <id>`, and put it in one bucket: the label was wrong (fix the label, edit the baseline entry by hand, log it under "Baseline edits"); the model misread a borderline line (a `knownGap` with the model's numbers and the caller impact, `outcomes` if it flips); a scripted call broke on an incidental line (change that line, such as a keypad call's opener, not the expectation).
+3. A scripted call has no allowance but `cosmeticDrift`, so one that tests a real gap stays failing: report it to the owner, do not make it pass.
+4. Fix in this order: first everything that changes no request (code, the policy, a `priority` flag, silences and keys, labels and tags), checked on the recording you have; then all the rewording at once; then ask for one re-record (the same command); then `pnpm --filter @dialogwright/example-<name> cassette:trim`, and replay again.
+5. Bring the engine's gaps and the open questions to the owner as a short table (triage.md, "What to bring to the owner"), and write the triage in the worksheet's "Recordings" section.
+
+Commit the cassette with the triage: it holds only the corpus text and the model's answers.
 
 ## When something doesn't fit
 
