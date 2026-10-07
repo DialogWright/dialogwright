@@ -11,6 +11,7 @@ import { FILE_NAMES, FOLDER_FILES } from './schema/index';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 import { withoutFallbackWarnings } from '../kb/fallback';
 import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProblems } from './knowledgeUse';
+import { checkPromptReferences, checkWarnings } from './formChecks';
 
 /**
  * `dialogwright check`: everything that can be wrong with an app folder, found in one pass.
@@ -203,6 +204,13 @@ export interface CheckResult {
   problems: Problem[];
   /** Whether the folder was checked against the app's code: false when there was none to check. */
   codeChecked: boolean;
+  /**
+   * What is not wrong but likely a mistake: printed, never counted as a problem (the exit code is
+   * the problems'). Absent when there is none. Only a form's checks have any (./formChecks.ts
+   * checkWarnings): an `on` reason the check never refuses for, and a rule a check holds the
+   * caller to that the form's write does not.
+   */
+  warnings?: Problem[];
 }
 
 /** Every problem with the app folder `dir`: the loader's, the cross-checks against the code, and the checks above. */
@@ -219,6 +227,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   const found = options.code ? { code: options.code } : await loadCode(dir);
   const codeFile = ('file' in found ? found.file : undefined) ?? CODE_FILE;
   const problems: Problem[] = [];
+  const warnings: Problem[] = [];
   let code: AppCode | undefined;
   let linked = false;
   if ('problems' in found) {
@@ -231,6 +240,13 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     if (found.code) code = codeWithLinkedSlots(config, found.code, loaded.document, codeFile);
   } else if (found.code) {
     problems.push(...crossLink(config, found.code, locate, codeFile, loaded.locateKey, loaded.document));
+    checkWarnings({
+      config,
+      report: (file, path, message, fix, atKey = false) => {
+        const at = (atKey && loaded.locateKey ? loaded.locateKey(file, path) : locate(file, path)) ?? { line: 1, column: 1 };
+        warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+      },
+    }, found.code.customRules ?? {});
     // The checks below read the slots' specs: the folder's library slots count as the code's.
     code = { ...found.code, slots: linkSlots(config, found.code, loaded.document, codeFile).slots };
     linked = true;
@@ -247,7 +263,9 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   // to the code when it ran; without it, to the folder alone. A passage an intent says must be fresh.
   if (!linked) problems.push(...knowledgeUseProblems(config, locate));
   problems.push(...knowledgeUseStateProblems(config, locate));
-  return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
+  const result: CheckResult = { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
+  if (warnings.length > 0) result.warnings = sortProblems(warnings, codeFile);
+  return result;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -398,6 +416,8 @@ function referencesOf(config: LoadedConfig): Reference[] {
   for (const [id, form] of Object.entries(config.forms.forms)) {
     if (form.summaryPromptId !== null) refs.push({ id: form.summaryPromptId, file: 'forms.yaml', path: ['forms', id, 'summaryPromptId'] });
   }
+  // The lines a form's checks say: each outcome's line, each handoff's, and checksPassed (./formChecks.ts).
+  for (const ref of checkPromptReferences(config)) refs.push(ref);
   // The lines a knowledge answer is said through: a form's answers (kb_answer and kb_unavailable, or its own) and an intent's passage.
   for (const { id, file, path } of knowledgePromptReferences(config)) refs.push({ id, file, path });
   const identity = identityParts(config);

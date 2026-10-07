@@ -16,6 +16,7 @@ import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type 
 import { applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCode, awaitingSignIn, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type TurnOut } from './lifecycle';
+import { checkEnding, runChecks, type FormStopped } from './checks';
 import type { Tools } from './tools';
 import { withAppThresholds, type Thresholds } from './thresholds';
 import type { ScreenResult } from './screen';
@@ -172,6 +173,8 @@ export interface TurnResult {
   kb: KbSource | null;
   /** side effects for the runner or the server to perform after the turn */
   effects: Effect[];
+  /** the form a check ended this turn (core/checks.ts); absent on every other turn */
+  stopped?: FormStopped;
   /** what the injection screen made of this turn's words; null when it was not asked (no model turn) */
   screen: ScreenResult | null;
   /** the screen fired: perception's answers were discarded and nothing was filled, gated or called */
@@ -398,7 +401,11 @@ function enqueue(s: Session, intent: FormId | undefined): Ack[] {
  * the transfer it offered (declineTransfer).
  */
 function completeForm(s: Session, form: FormId, acks: Ack[], io: TurnIO): Decision {
-  const c = completion(s, form, acks, io.tc, io.out);
+  // The form's checks first: a yes that changed what one reads ("yes, but I rent") is refused here,
+  // with the check's own line, and the write is never attempted.
+  const checks = runChecks(s, form, io.tc, io.out);
+  if (checks.kind === 'refused') return stopForm(s, form, checks, acks, io);
+  const c = completion(s, form, [...acks, ...passedAcks(s, checks)], io.tc, io.out);
   switch (c.kind) {
     case 'said':
       return finishForm(s, form, c.acks, io);
@@ -779,6 +786,11 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   // A refused entry call still drains the queue: the caller's other requests are not lost to it.
   if (entry?.kind === 'refused') return finishForm(s, form, entry.acks, io, false);
   if (entry) return entry;
+  // The form's checks, once its entry is through: an answer that rules the caller out ends the form
+  // here, before the next question (core/checks.ts).
+  const checks = runChecks(s, form, io.tc, io.out);
+  if (checks.kind === 'refused') return stopForm(s, form, checks, said, io);
+  said.push(...passedAcks(s, checks));
   const next = nextPrompt(s);
   // The caller said whether they know the answer rather than answering: the slot's help prompt
   // takes the question's place this once, and the attempt count does not move, but only when the form would still ask that slot next; otherwise the question the
@@ -786,6 +798,36 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   if (help && next.kind === 'ask' && next.slot === help.slot) return { ...prompt(help.promptId, help.slot, {}, said), help };
   if (next.kind === 'complete') return askSummary(s, form, said, io);
   return askSlot(s, next.slot, next.window, said);
+}
+
+/** The form's checksPassed line, when this turn's checks passed the last of them (core/checks.ts). */
+function passedAcks(s: Session, checks: Extract<ReturnType<typeof runChecks>, { kind: 'passed' }>): Ack[] {
+  return checks.passedPromptId === null ? [] : [{ promptId: checks.passedPromptId, vars: summaryVars(s) }];
+}
+
+/**
+ * A check refused (core/checks.ts): the form ends as its reason's outcome says, and the audit is told
+ * (`form_stopped`). The form is never counted as completed. When the form was entered on this very
+ * turn, its ack_intent ("Sure, I can help you ...") is dropped, so the caller does not hear yes and no
+ * in one breath. `end` leaves the form and its slots on the session, as a completion that ends the
+ * call does, with no question pending; with a request queued, the call goes on to it instead.
+ */
+function stopForm(s: Session, form: FormId, refused: Extract<ReturnType<typeof runChecks>, { kind: 'refused' }>, acks: Ack[], io: TurnIO): Decision {
+  const label = intentLabel(io.app, form);
+  const kept = acks.filter((a) => !(a.promptId === 'ack_intent' && a.vars.intentLabel === label) && !(a.promptId === 'ack_intent_then' && a.vars.a === label));
+  const ending = checkEnding(s, refused.check, refused.decision, kept, summaryVars(s));
+  io.out.stopped = { form, action: refused.check.action, reason: refused.decision.reason ?? null, then: ending.then };
+  switch (ending.then) {
+    case 'end':
+      if (s.queued.length > 0) return finishForm(s, form, [...ending.acks, ending.line], io, false);
+      s.pendingConfirmation = null;
+      s.pendingHash = null;
+      return { kind: 'complete', form, promptId: ending.line.promptId, vars: ending.line.vars, acks: ending.acks, completed: [...s.completed] };
+    case 'anything-else':
+      return finishForm(s, form, ending.acks, io, false);
+    case 'handoff':
+      return handoff(s, ending.reason, ending.acks);
+  }
 }
 
 /**
@@ -1197,6 +1239,7 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
   const r = resolveTurn(session, event, answers, tc, error, screen);
   const audit = auditDrafts({
     before: session, after: r.session, event, decision: r.decision, gateEvents: r.gateEvents, kb: r.kb, screen: r.screen, quarantined: r.quarantined,
+    ...(r.stopped ? { stopped: r.stopped } : {}),
   });
   return { ...r, audit };
 }

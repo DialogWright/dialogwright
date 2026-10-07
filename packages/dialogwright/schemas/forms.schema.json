@@ -80,12 +80,83 @@
             "additionalProperties": false
           },
           "calls": {
-            "description": "The actions (tools) this form's hooks call through the gate: its entry call and the calls its completion makes. Declare it for every form or for none (an empty list for a form that calls nothing): the app map draws each form to its actions, and `check` reports an action that no form reaches and the identity flow does not call.",
+            "description": "The actions (tools) this form's hooks call through the gate: its entry call and the calls its completion makes. Declare it for every form or for none (an empty list for a form that calls nothing): the app map draws each form to its actions, and `check` reports an action that no form reaches and the identity flow does not call. A check action is reached through `checks`, not listed here.",
             "type": "array",
             "items": {
               "type": "string",
               "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
             }
+          },
+          "checks": {
+            "description": "Actions the gate decides on part-way through the form, in the order written: each runs as soon as the slots it reads are filled (after the entry call, before the next question, and again at completion), and again whenever one of them changes. ALLOW lets the form go on; a refusal ends the form with the line and the ending `on` maps its reason to. Checks ask the model nothing.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                  "description": "The action the gate decides on: an action in policy.yaml with check: true (no tool runs; the gate only answers)."
+                },
+                "with": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "description": "The form's slots the check reads, each sent as the param of the same name. The check runs once every one of them holds a value, and again whenever one of them changes."
+                },
+                "on": {
+                  "description": "A refusal reason (the gate's reason) mapped to its line and how the form ends. A reason not listed gets the engine's refusal: a BLOCK with a line from the app's blockPromptId says it and the call carries on; anything else goes to a person. A STEP_UP always goes to a person.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "say": {
+                        "description": "The line said (a prompt in prompts.yaml); it renders with the form's slot displays as variables, as the summary does. Required for end and anything-else; for handoff, said before the handoff line.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "then": {
+                        "type": "string",
+                        "enum": [
+                          "end",
+                          "anything-else",
+                          "handoff"
+                        ],
+                        "description": "What follows the line: end (the call ends, the goodbye after it; with a request queued, the call goes on to it), anything-else (the form closes uncounted and the call carries on: the next queued request, or \"anything else?\"), or handoff (to a person, with the handoff line handoff_<reason>)."
+                      },
+                      "reason": {
+                        "description": "For then: handoff, the handoff reason, whose line is handoff_<reason>. Default: the reason the gate gave.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                      }
+                    },
+                    "required": [
+                      "then"
+                    ],
+                    "additionalProperties": false,
+                    "description": "What a refusal for this reason does: a line, and how the form ends."
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "with"
+              ],
+              "additionalProperties": false,
+              "description": "One check: an action the gate decides on as soon as the slots it reads are filled."
+            }
+          },
+          "checksPassed": {
+            "description": "A line said once, on the turn every check of the form has passed (never again after a correction). It renders with the form's slot displays as variables. Only with checks.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
           }
         },
         "required": [

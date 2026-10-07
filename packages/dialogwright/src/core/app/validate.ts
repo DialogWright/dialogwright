@@ -221,6 +221,21 @@ export function validateApp(app: App): void {
   for (const id of Object.keys(app.forms)) {
     if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') fail(`form "${id}" has no form intent`);
   }
+  // A form's checks (FormDef.checks): each a check of the policy, reading the form's own slots, each
+  // outcome that ends the call with a line to end on.
+  const checkSource = sourceOf(app.policy);
+  for (const [id, form] of Object.entries(app.forms)) {
+    for (const check of form.checks ?? []) {
+      const action = checkSource && Object.hasOwn(checkSource.actions, check.action) ? checkSource.actions[check.action] : undefined;
+      if (action?.check !== true) fail(`form "${id}" checks "${check.action}", which is not a check of the policy (check: true)`);
+      for (const slot of check.with) if (!form.slots.includes(slot)) fail(`form "${id}"'s check "${check.action}" reads "${slot}", which is not one of its slots`);
+      if (check.with.length === 0) fail(`form "${id}"'s check "${check.action}" reads no slot`);
+      for (const [reason, outcome] of Object.entries(check.on ?? {})) {
+        if ((outcome.then === 'end' || outcome.then === 'anything-else') && outcome.say === undefined) fail(`form "${id}"'s check "${check.action}" ends with ${outcome.then} for "${reason}" and says no line`);
+      }
+    }
+    if (form.checksPassed !== undefined && !(form.checks ?? []).length) fail(`form "${id}" has a checksPassed line and no checks`);
+  }
   for (const id of REQUIRED_CONTROL_INTENTS) if (!Object.hasOwn(app.intents, id)) fail(`missing control intent "${id}"`);
   const { rulesFor, toolLevel, purposeLevel, roles, subjects, customRules } = app.policy;
   for (const [id, rule] of Object.entries(customRules ?? {})) {
@@ -233,8 +248,12 @@ export function validateApp(app: App): void {
   // The range rules (dateInRange, limit) take parameters only a policy file gives: tables compiled
   // from one carry the rules they were compiled from (sourceOf), and the rule must be one of them.
   const source = sourceOf(app.policy);
+  const isCheck = (tool: string): boolean => source !== null && Object.hasOwn(source.actions, tool) && source.actions[tool]!.check === true;
   for (const [tool, ids] of Object.entries(rulesFor)) {
-    if (!Object.hasOwn(app.tools, tool)) fail(`policy has rules for tool "${tool}", which is not a tool`);
+    // A form's check (policy.yaml `check: true`) is a question to the gate only: it has no tool, and may have none.
+    if (isCheck(tool)) {
+      if (Object.hasOwn(app.tools, tool)) fail(`policy's check "${tool}" is also a tool; a check has no tool`);
+    } else if (!Object.hasOwn(app.tools, tool)) fail(`policy has rules for tool "${tool}", which is not a tool`);
     const named = source && Object.hasOwn(source.actions, tool) ? source.actions[tool]!.rules.map((r) => r.rule as string) : [];
     for (const id of ids) {
       if (NAMED_RULE_IDS.includes(id)) {

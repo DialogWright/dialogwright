@@ -1,5 +1,5 @@
 import type {
-  App, AppBrand, AppLocales, ConsoleConfig, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
+  App, AppBrand, AppLocales, CheckOutcome, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
   PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale,
 } from '../core/app/types';
 import { SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
@@ -21,6 +21,7 @@ import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, decla
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
 import { kbLinkProblems } from '../kb/rules';
+import { checkProblems } from './formChecks';
 import type { Retriever } from '../kb/types';
 import { kbCatalog } from '../kb/catalog';
 import { defaultRetriever } from '../kb/hybrid';
@@ -57,7 +58,7 @@ import { handoffDataProblems } from '../handoff/data';
 export type FormHooks = Pick<FormDef, FormHook>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 
@@ -408,6 +409,8 @@ export function crossLink(
       }
     }
   }
+  // forms.yaml's checks: their actions, slots, levels and lines (./formChecks.ts).
+  checkProblems({ config, report: yaml, promptExists });
   for (const id of Object.keys(code.forms ?? {})) {
     if (has(forms, id)) continue;
     const guess = closest(id, Object.keys(forms));
@@ -431,7 +434,8 @@ export function crossLink(
     }
   }
   const flow = config.identity ? { verifyTool: config.identity.levels[1].verify, ...(config.identity.levels[2] ? { codeTool: config.identity.levels[2].verify, sendCodeTool: config.identity.levels[2].send } : {}) } : undefined;
-  for (const tool of unreachedActions(Object.keys(policy.actions), forms, flow)) {
+  // A check no form names is formChecks.ts's to report, in its own words.
+  for (const tool of unreachedActions(Object.keys(policy.actions).filter((t) => policy.actions[t]!.check !== true), forms, flow)) {
     yaml('policy.yaml', ['actions', tool], `action "${tool}" is reached by no form: no form's calls list it, and the identity flow does not call it`, `add "${tool}" to the calls of the form whose hooks call it in forms.yaml, or delete the action from policy.yaml and the tool from ${inCode('tools', tool)}`, true);
   }
 
@@ -778,12 +782,23 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
 function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks | undefined): FormDef {
   const def: Record<string, unknown> = { slots: form.slots, summaryPromptId: form.summaryPromptId };
   if (form.calls !== undefined) def.calls = form.calls;
+  if (form.checks !== undefined && form.checks.length > 0) def.checks = form.checks.map(checkOf);
+  if (form.checksPassed !== undefined) def.checksPassed = form.checksPassed;
   for (const hook of form.hooks ?? []) def[hook] = hooks?.[hook];
   if (form.answers) {
     const { slot, via, answer, unavailable } = form.answers;
     def.complete = kbCompletion({ slot, ...(via !== undefined ? { via } : {}), ...(answer !== undefined ? { answer } : {}), ...(unavailable !== undefined ? { unavailable } : {}) });
   }
   return def as unknown as FormDef;
+}
+
+/** A form's check as forms.yaml writes it, as FormDef carries it. */
+function checkOf(check: NonNullable<LoadedConfig['forms']['forms'][string]['checks']>[number]): FormCheck {
+  const on = check.on === undefined ? undefined : Object.fromEntries(Object.entries(check.on).map(([reason, o]) => {
+    const outcome = { ...(o.say !== undefined ? { say: o.say } : {}), then: o.then, ...(o.reason !== undefined ? { reason: o.reason } : {}) } satisfies CheckOutcome;
+    return [reason, outcome];
+  }));
+  return on === undefined ? { action: check.action, with: check.with } : { action: check.action, with: check.with, on };
 }
 
 function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {

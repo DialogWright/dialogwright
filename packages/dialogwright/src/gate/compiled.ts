@@ -146,6 +146,11 @@ export const NAMED_RULE_IDS: readonly string[] = [DATE_IN_RANGE_ID, LIMIT_ID];
 export interface PolicyAction {
   /** What the action does, in plain words (policy.yaml's `say`): the policy card's label. The gate never reads it. */
   readonly say?: string;
+  /**
+   * A form's check (policy.yaml `check: true`): a question to the gate only. It has no tool, and an
+   * ALLOW runs nothing (core/lifecycle.ts callTool). Absent for every other action.
+   */
+  readonly check?: true;
   readonly level: Level;
   readonly rules: readonly Rule[];
 }

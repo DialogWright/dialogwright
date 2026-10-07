@@ -185,8 +185,13 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
 
   const results: Record<string, Problem[]> = {};
   for (const { label, path } of dirs) {
-    const { problems, codeChecked } = await checkAppFully(path);
+    const { problems, codeChecked, warnings } = await checkAppFully(path);
     results[label] = problems;
+    // A warning is printed and never counted: on stderr under --json, so the JSON stays the problems.
+    for (const warning of warnings ?? []) {
+      if (json) io.err(`warning: ${formatProblem(warning)}`);
+      else io.out(`warning: ${formatProblem(warning)}`);
+    }
     if (json) continue;
     for (const problem of problems) io.out(formatProblem(problem));
     io.out(problems.length === 0 ? `${label}: ok` : `${problems.length} problem${problems.length === 1 ? '' : 's'} in ${label}`);

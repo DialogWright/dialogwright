@@ -3,6 +3,7 @@ import { wordsOf, type SessionEvent } from '../channel/events';
 import { maskId } from '../gate/principal';
 import { isAnonymous, type ToolCall } from '../gate/types';
 import type { GateEvent, KbSource } from './lifecycle';
+import type { FormStopped } from './checks';
 import type { Decision } from './decision';
 import type { ScreenResult } from './screen';
 import type { Session } from './session';
@@ -35,6 +36,8 @@ export interface AuditInput {
   kb: KbSource | null;
   screen: ScreenResult | null;
   quarantined: boolean;
+  /** The form a check ended this turn (core/checks.ts): its `form_stopped` row, before the call's end. */
+  stopped?: FormStopped;
 }
 
 /** A redacted call as one line: "createReport(accountId=...1234, missingNote=<38 chars>, expectedDate=2026-09-15)". */
@@ -111,6 +114,8 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // An answer read from the knowledge base that no tool's audit hook recorded (an informational
   // intent's passage, said with no gated read): the engine records it, as kbAnswerTool's hook would.
   if (t.kb !== null && !drafts.some((d) => d.type === 'kb_answer')) drafts.push(kbAuditRow(t.kb));
+  // A form a check ended (core/checks.ts): which check, for what reason, and how the form ended.
+  if (t.stopped) drafts.push({ type: 'form_stopped', detail: { form: t.stopped.form, action: t.stopped.action, reason: t.stopped.reason, then: t.stopped.then } });
   if (decision.kind === 'handoff') {
     drafts.push({ type: 'handoff', detail: { reason: decision.reason, completed: [...decision.completed], queued: [...decision.queued] } });
     drafts.push({ type: 'call_ended', detail: { reason: 'handoff', completed: [...decision.completed] } });

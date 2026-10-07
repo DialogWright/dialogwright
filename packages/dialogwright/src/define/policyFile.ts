@@ -180,7 +180,7 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
     const rules = Object.freeze(action.rules.map((entry) => Object.freeze(readRule(entry))));
     toolLevel[tool] = level;
     rulesFor[tool] = Object.freeze(rules.map(ruleIdOf));
-    actions[tool] = Object.freeze(action.say === undefined ? { level, rules } : { say: action.say, level, rules });
+    actions[tool] = Object.freeze({ ...(action.say === undefined ? {} : { say: action.say }), ...(action.check === true ? { check: true as const } : {}), level, rules });
     for (const rule of rules) {
       if (rule.rule === 'scope' && rule.subject !== null) subjects[tool] = rule.subject;
       else if (rule.rule === 'fields') serviceFields[tool] = rule.fields;
@@ -472,7 +472,10 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
   };
 
   for (const [tool, action] of Object.entries(policy.actions)) {
-    if (c.tools && !c.tools.includes(tool)) at(P, ['actions', tool], `tool "${tool}" is not defined in the code`, `${renameHint(tool, c.tools)}add it to the app's tools in ${c.inCode('tools', tool)}, or delete this action`, true);
+    // A check (`check: true`) is a question to the gate only: it has no tool, and must have none.
+    if (action.check === true) {
+      if (c.tools && c.tools.includes(tool)) at(P, ['actions', tool, 'check'], `action "${tool}" is a check, which has no tool, but the code defines a tool "${tool}"`, `delete the tool from ${c.inCode('tools', tool)}, since a check runs nothing, or delete "check: true" to make it an action with a tool`);
+    } else if (c.tools && !c.tools.includes(tool)) at(P, ['actions', tool], `tool "${tool}" is not defined in the code`, `${renameHint(tool, c.tools)}add it to the app's tools in ${c.inCode('tools', tool)}, or delete this action`, true);
     const given = action.level !== undefined;
     levelProblem(`action "${tool}"`, action.level ?? DEFAULT_ACTION_LEVEL, given ? ['actions', tool, 'level'] : ['actions', tool], given);
     action.rules.forEach((entry, i) => {

@@ -1,13 +1,14 @@
 import { confirmationHash } from '../gate/policy';
 import { raise } from '../gate/principal';
 import { isAnonymous, isParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
-import { codeLengthOf, formOf, gateOf, hasCode, identityOf, toolOf } from './app/lookup';
+import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
 import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
+import type { FormStopped } from './checks';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { idempotencyKey } from './idempotency';
 import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
@@ -86,6 +87,8 @@ export interface TurnOut {
   gateEvents: GateEvent[];
   kb: KbSource | null;
   effects: Effect[];
+  /** The form a check ended this turn (core/checks.ts), for the audit's `form_stopped` row. Absent on every other turn. */
+  stopped?: FormStopped;
 }
 
 export function newTurnOut(): TurnOut {
@@ -168,7 +171,8 @@ export const RESULT_UNREDACTABLE = 'result-unredactable';
  * The only way a turn reaches a tool: evaluate the gate, and on ALLOW run the tool, withhold from
  * its result what the policy keeps from this caller (policy.yaml `redact:`), and record a summary
  * (no PHI). Every gate decision is recorded, allowed or not, with the call redacted. A probe
- * (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW.
+ * (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW. So is a form's check
+ * (policy.yaml `check: true`), which has no tool: its ALLOW is recorded with no result.
  *
  * The summary and the record it names are masked as the call is (a raw value of a param recorded
  * masked or never) and as the result was (every text a withheld field held), and so are the params
@@ -184,7 +188,8 @@ export const RESULT_UNREDACTABLE = 'result-unredactable';
 export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code?: string): ToolOutcome {
   // Nothing past this line holds the raw call: the event, the trace and the audit see the redacted one.
   const decision = evaluate(s, call, tc);
-  if (decision.verdict !== 'ALLOW' || (call.purpose !== undefined && PROBES.has(call.purpose))) {
+  // A form's check (policy.yaml `check: true`) has no tool: like a probe, the gate's answer is all there is.
+  if (decision.verdict !== 'ALLOW' || (call.purpose !== undefined && PROBES.has(call.purpose)) || isCheckAction(appOf(s), call.tool)) {
     out.gateEvents.push({ decision, summary: null });
     return { decision, value: null };
   }

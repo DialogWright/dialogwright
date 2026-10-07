@@ -124,3 +124,12 @@ export function gateOf(app: App): CompiledPolicy {
   const identity = identityOf(app);
   return app.gate ?? compiledPolicyOf(app.policy, identity.subjectKind, identityToolsOf(identity));
 }
+
+/**
+ * Whether an action is a form's check (policy.yaml `check: true`, PolicyAction.check): a question to
+ * the gate only, with no tool, so an ALLOW runs nothing (core/lifecycle.ts callTool).
+ */
+export function isCheckAction(app: App, tool: ToolName): boolean {
+  const actions = gateOf(app).source.actions;
+  return Object.hasOwn(actions, tool) && actions[tool]!.check === true;
+}

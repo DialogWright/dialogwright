@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { checkAlways, identifier, unique } from './common';
+import { checkAlways, identifier, name, unique } from './common';
 
 /**
  * forms.yaml: the forms (tasks that collect slots and then act). Mirrors App.forms (FormDef): the
@@ -20,6 +20,47 @@ export const FORM_HOOKS = [
   'onSummaryRead',
 ] as const;
 export type FormHook = (typeof FORM_HOOKS)[number];
+
+/** How a form ends when a check refuses for a reason (forms.yaml `checks[].on`). */
+export const CHECK_THEN = ['end', 'anything-else', 'handoff'] as const;
+export type CheckThen = (typeof CHECK_THEN)[number];
+
+const checkOutcome = z
+  .strictObject({
+    say: identifier()
+      .optional()
+      .describe('The line said (a prompt in prompts.yaml); it renders with the form\'s slot displays as variables, as the summary does. Required for end and anything-else; for handoff, said before the handoff line.'),
+    then: z
+      .enum(CHECK_THEN)
+      .describe('What follows the line: end (the call ends, the goodbye after it; with a request queued, the call goes on to it), anything-else (the form closes uncounted and the call carries on: the next queued request, or "anything else?"), or handoff (to a person, with the handoff line handoff_<reason>).'),
+    reason: name()
+      .optional()
+      .describe('For then: handoff, the handoff reason, whose line is handoff_<reason>. Default: the reason the gate gave.'),
+  })
+  .check(checkAlways((value, ctx) => {
+    const outcome = value as { say?: unknown; then?: unknown; reason?: unknown } | null;
+    if (typeof outcome !== 'object' || outcome === null || Array.isArray(outcome)) return;
+    if ((outcome.then === 'end' || outcome.then === 'anything-else') && outcome.say === undefined) {
+      ctx.addIssue({ code: 'custom', path: [], message: `then: ${outcome.then} says a line first, and this outcome names none`, params: { fix: 'add "say: <a prompt id in prompts.yaml>" with the line the caller hears' } });
+    }
+    if (outcome.reason !== undefined && outcome.then !== 'handoff') {
+      ctx.addIssue({ code: 'custom', path: ['reason'], message: 'a reason names the handoff line, and this outcome does not hand off', params: { fix: 'delete "reason", or write "then: handoff"' } });
+    }
+  }))
+  .describe('What a refusal for this reason does: a line, and how the form ends.');
+
+const check = z
+  .strictObject({
+    action: identifier().describe('The action the gate decides on: an action in policy.yaml with check: true (no tool runs; the gate only answers).'),
+    with: unique(identifier(), 'slot')
+      .min(1, { error: 'must name at least one slot' })
+      .describe('The form\'s slots the check reads, each sent as the param of the same name. The check runs once every one of them holds a value, and again whenever one of them changes.'),
+    on: z
+      .record(name(), checkOutcome)
+      .optional()
+      .describe('A refusal reason (the gate\'s reason) mapped to its line and how the form ends. A reason not listed gets the engine\'s refusal: a BLOCK with a line from the app\'s blockPromptId says it and the call carries on; anything else goes to a person. A STEP_UP always goes to a person.'),
+  })
+  .describe('One check: an action the gate decides on as soon as the slots it reads are filled.');
 
 const form = z
   .strictObject({
@@ -56,12 +97,33 @@ const form = z
       .describe(
         'The actions (tools) this form\'s hooks call through the gate: its entry call and the calls its completion makes. ' +
           'Declare it for every form or for none (an empty list for a form that calls nothing): the app map draws each form to its actions, ' +
-          'and `check` reports an action that no form reaches and the identity flow does not call.',
+          'and `check` reports an action that no form reaches and the identity flow does not call. A check action is reached through `checks`, not listed here.',
       ),
+    checks: z
+      .array(check)
+      .optional()
+      .describe(
+        'Actions the gate decides on part-way through the form, in the order written: each runs as soon as the slots it reads are filled (after the entry call, before the next question, and again at completion), and again whenever one of them changes. ' +
+          'ALLOW lets the form go on; a refusal ends the form with the line and the ending `on` maps its reason to. Checks ask the model nothing.',
+      ),
+    checksPassed: identifier()
+      .optional()
+      .describe('A line said once, on the turn every check of the form has passed (never again after a correction). It renders with the form\'s slot displays as variables. Only with checks.'),
   })
   .check(checkAlways((value, ctx) => {
-    const form = value as { hooks?: unknown; answers?: unknown } | null;
+    const form = value as { hooks?: unknown; answers?: unknown; checks?: unknown; checksPassed?: unknown } | null;
     if (typeof form !== 'object' || form === null || Array.isArray(form)) return;
+    const checks = Array.isArray(form.checks) ? form.checks : [];
+    if (form.checksPassed !== undefined && checks.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['checksPassed'], message: 'the form has no checks, so checksPassed is never said', params: { fix: 'delete "checksPassed", or add "checks:" to the form' } });
+    }
+    const seen = new Set<string>();
+    checks.forEach((c: unknown, i) => {
+      const action = typeof c === 'object' && c !== null ? (c as { action?: unknown }).action : undefined;
+      if (typeof action !== 'string') return;
+      if (seen.has(action)) ctx.addIssue({ code: 'custom', path: ['checks', i, 'action'], message: `the check "${action}" is listed twice`, params: { fix: 'delete one of the two: a check runs once per change of what it reads' } });
+      seen.add(action);
+    });
     const hooks = Array.isArray(form.hooks) ? form.hooks : [];
     const answers = form.answers !== undefined;
     if (!answers && !hooks.includes('complete')) {

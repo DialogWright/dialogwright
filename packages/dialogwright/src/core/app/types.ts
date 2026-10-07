@@ -100,6 +100,15 @@ export interface FormDef {
    */
   calls?: readonly ToolName[];
   /**
+   * The form's checks (forms.yaml `checks`), in the order written: actions the gate decides on
+   * part-way through the form, each as soon as the slots it reads are filled and again whenever one
+   * of them changes (core/checks.ts). A refusal ends the form as its reason's outcome says. Without
+   * it, nothing is checked before the completion.
+   */
+  checks?: readonly FormCheck[];
+  /** The line said once, on the turn every check of the form has passed (forms.yaml `checksPassed`). Only with checks. */
+  checksPassed?: string;
+  /**
    * The call made before the form's own slots are asked (it may step identity up). Without it the
    * form is entered as it starts: no call, nothing to step up, and neither onEntry nor
    * principalEntry is called.
@@ -162,6 +171,29 @@ export interface FormDef {
    * a yes arms exactly what was read. Null reads the summary as it is.
    */
   onSummaryRead?(ctx: SummaryContext): SummaryRead | null;
+}
+
+/**
+ * One of a form's checks (FormDef.checks): an action the policy marks `check: true`, the form's
+ * slots it reads (each sent as the param of the same name), and what each refusal reason does.
+ */
+export interface FormCheck {
+  readonly action: ToolName;
+  readonly with: readonly SlotId[];
+  /** A refusal reason, mapped to its line and how the form ends. A reason not listed gets the engine's refusal (CompletionContext.refusal). */
+  readonly on?: Readonly<Record<string, CheckOutcome>>;
+}
+
+/**
+ * What a check's refusal does: `say` its line (with the form's slot displays as variables), then
+ * `end` the call (the goodbye follows; with a request queued, the call goes on to it), carry on with
+ * `anything-else` (the form closed uncounted), or `handoff` to a person (`reason`, default the
+ * gate's; its line is handoff_<reason>).
+ */
+export interface CheckOutcome {
+  readonly say?: string;
+  readonly then: 'end' | 'anything-else' | 'handoff';
+  readonly reason?: string;
 }
 
 /** A form's summary hook (FormDef.onSummaryRead): an AppContext with the acks the summary will follow. */

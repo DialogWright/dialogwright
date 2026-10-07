@@ -25,6 +25,11 @@
               2
             ]
           },
+          "check": {
+            "description": "true: the action is a question to the gate only, a form's check (forms.yaml `checks`). It has no tool: the gate decides and nothing runs. It lists no confirmed rule (nothing is confirmed part-way through a form).",
+            "type": "boolean",
+            "const": true
+          },
           "rules": {
             "type": "array",
             "items": {

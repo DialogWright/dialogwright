@@ -152,6 +152,13 @@ export interface Session {
   stepUp: StepUp | null;
   /** The form whose entry call has passed the gate. */
   entered: FormId | null;
+  /**
+   * The open form's checks that have passed (FormDef.checks, core/checks.ts): by action, the hash of
+   * the params it passed with, so a check runs again only when what it reads changes. Absent until a
+   * check runs, and gone when the form closes or another is entered, so a session of an app without
+   * checks is as it was.
+   */
+  checked?: Record<string, string>;
   /** Failed verifications, of the identity factors together and of the one-time code, which the gate's attempts rule caps. */
   identityAttempts: { factors: number; code: number };
   /** The one-time code has been texted on this call (sendCode); asking for it again does not text another, a reissue does. */
@@ -280,6 +287,7 @@ export function cloneSession(s: Session): Session {
     stepUp: s.stepUp ? { ...s.stepUp, call: { ...s.stepUp.call, params: { ...s.stepUp.call.params } } } : null,
     identityAttempts: { ...s.identityAttempts },
     pendingConfirmation: clonePending(s.pendingConfirmation),
+    ...(s.checked ? { checked: { ...s.checked } } : {}),
     queued: [...s.queued],
     completed: [...s.completed],
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
@@ -319,6 +327,8 @@ export function setForm(session: Session, form: FormId): Session {
   session.stepUp = null;
   session.codeReasks = 0;
   session.pendingHash = null;
+  // The checks a form passed are its own: the new form runs its checks afresh.
+  delete session.checked;
   return session;
 }
 
@@ -340,6 +350,7 @@ export function closeForm(session: Session): Session {
   session.pendingHash = null;
   session.confirmedHash = null;
   session.pendingConfirmation = null;
+  delete session.checked;
   app.facts?.onFormClosed?.(session.facts);
   return session;
 }

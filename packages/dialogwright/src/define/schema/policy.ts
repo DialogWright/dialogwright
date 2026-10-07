@@ -402,6 +402,10 @@ const action = z
     level: level()
       .optional()
       .describe('The identity level the action needs: 0 anonymous, 1 the factors matched, 2 the factors and the one-time code (identity.yaml names them). Default 2, the highest, so an action left without one fails closed.'),
+    check: z
+      .literal(true)
+      .optional()
+      .describe('true: the action is a question to the gate only, a form\'s check (forms.yaml `checks`). It has no tool: the gate decides and nothing runs. It lists no confirmed rule (nothing is confirmed part-way through a form).'),
     rules,
   })
   .describe('One action: what it is, the identity level it needs and the rules the gate runs before it.');
