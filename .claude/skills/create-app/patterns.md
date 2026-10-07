@@ -435,7 +435,34 @@ When the app has something that must never wait or be missed, an emergency or a 
     priority: true
 ```
 
-Read at `PRIORITY_INTENT` (0.8) or more, the intent is acted on that turn, wherever the call is: the form in hand is left (not queued), a pending confirmation is dropped, and side speech or words read as unintelligible do not stop it. A handoff to a person and the injection screen still win, and its form's actions go through the policy gate as any other's. The usual shape is a form with no slots whose `complete` hook hands off with a line of its own. Only a form intent or an informational one may be priority. Give it corpus lines inside each form a caller could be in (`context: <form>`, `change: replacing`) and one said aside ("hold on, ..."). The debug table's `priorityIntent` row says when it took the turn (`act:<intent>:over:<gate>`). The whole option is under "Must never wait" in the [authoring guide](../../../docs/authoring-an-app.md#must-never-wait-priority).
+Read at `PRIORITY_INTENT` (0.8) or more, the intent is acted on that turn, wherever the call is: the form in hand is left (not queued), a pending confirmation is dropped, and side speech or words read as unintelligible do not stop it. A handoff to a person and the injection screen still win, and its form's actions go through the policy gate as any other's. The usual shape is a form with no slots whose `complete` hook hands off with a line of its own:
+
+```yaml
+# forms.yaml, under forms:
+  urgent_repair:
+    slots: []
+    summaryPromptId: null
+    hooks: [complete]
+    calls: []
+```
+
+```ts
+// src/app.ts
+/**
+ * Put through to the office, for the reason given (handoff_<reason> is the line). The engine
+ * acknowledged the request on entering the form ("Sure, I can help you reach the office right
+ * away."); drop it, so a caller with water coming in hears one sentence, the handoff line.
+ */
+const toOffice = (reason: string) => (c: CompletionContext): Completion => ({
+  kind: 'decision',
+  decision: handoff(c.s, reason, c.acks.filter((a) => a.promptId !== 'ack_intent')),
+});
+
+// in code.forms:
+urgent_repair: { complete: toOffice('emergency') },
+```
+
+and the line `handoff_emergency` in `prompts.yaml` ("That sounds urgent. I'm putting you through to our office right now.", `interruptible: false`). Filter out only `ack_intent`: any other line the turn carries is still said. Only a form intent or an informational one may be priority. Give it corpus lines inside each form a caller could be in (`context: <form>`, `change: replacing`) and one said aside ("hold on, ..."). The debug table's `priorityIntent` row says when it took the turn (`act:<intent>:over:<gate>`). The whole option is under "Must never wait" in the [authoring guide](../../../docs/authoring-an-app.md#must-never-wait-priority).
 
 ## A knowledge form
 
