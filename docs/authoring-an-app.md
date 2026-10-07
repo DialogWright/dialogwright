@@ -9,11 +9,13 @@ Two apps in this repository are the examples, and the snippets below are copied 
 
 ## Contents
 
+The guide is long, too long to read in one go: read it a section at a time, from the list below. Building an app with the [create-app skill](../.claude/skills/create-app/SKILL.md), read only the sections each of its steps names. `grep -n '^##' docs/authoring-an-app.md` lists every heading with its line.
+
 1. [The folder](#1-the-folder)
-2. [The files, one by one](#2-the-files-one-by-one)
-3. [Policy and identity](#3-policy-and-identity)
+2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
+3. [Policy and identity](#3-policy-and-identity) (its own list of thirteen subsections is at its head)
 4. [What stays in TypeScript, and why](#4-what-stays-in-typescript-and-why)
-5. [Writing a slot](#5-writing-a-slot)
+5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
 6. [The form hooks](#6-the-form-hooks)
 7. [Checking an app: `pnpm check`](#7-checking-an-app-pnpm-check)
 8. [Locales](#8-locales)

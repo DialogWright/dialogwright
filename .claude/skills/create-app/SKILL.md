@@ -19,7 +19,7 @@ Four supporting files sit next to this one:
 Read these first; the rest of this skill assumes them:
 
 1. [CLAUDE.md](../../../CLAUDE.md): the three roles and the rules.
-2. [docs/authoring-an-app.md](../../../docs/authoring-an-app.md) (long: read it a section at a time, from its contents list): sections 1 and 2 (the folder and each file), 3 (policy and identity: [the built-in rules, including the range rules](../../../docs/authoring-an-app.md#33-the-built-in-rules), [the identity ladder](../../../docs/authoring-an-app.md#36-the-identity-ladder) and [what is recorded](../../../docs/authoring-an-app.md#39-what-is-recorded-audit-and-the-rule-names)), 4 (what stays in TypeScript), 6 (the form hooks) and 7 (`pnpm check`). Skim section 5 (slots); the type pages cover it.
+2. From [the authoring guide](../../../docs/authoring-an-app.md), only [1. The folder](../../../docs/authoring-an-app.md#1-the-folder) and [4. What stays in TypeScript, and why](../../../docs/authoring-an-app.md#4-what-stays-in-typescript-and-why) for now. The guide is the reference for every file, and it is too long to read in one go: never read it whole. Each step below names the sections it needs, under **Guide**; read those when you reach the step, one section at a time. `grep -n '^##' docs/authoring-an-app.md` lists every heading with its line, so you can read a section from its heading to the next.
 3. [docs/slots/README.md](../../../docs/slots/README.md): the slot types and "Which type?".
 4. Only if callers ask questions that documents answer: [section 12 of the authoring guide](../../../docs/authoring-an-app.md#12-the-knowledge-base), the knowledge base, before step 6b.
 
@@ -55,7 +55,10 @@ One thing you ask rather than choose: **the business name**, when the paragraph 
 
 ## Step 2: Map the worksheet onto the framework
 
-Add the mapping to the worksheet:
+Add the mapping to the worksheet.
+
+**Guide**: [Pick a type in slots.yaml](../../../docs/authoring-an-app.md#pick-a-type-in-slotsyaml) and [Where a slot listens](../../../docs/authoring-an-app.md#where-a-slot-listens-listen) (section 5; the type pages have the rest); [3.2 An action and its rules](../../../docs/authoring-an-app.md#32-an-action-and-its-rules), [3.3 The built-in rules](../../../docs/authoring-an-app.md#33-the-built-in-rules), [3.6 The identity ladder](../../../docs/authoring-an-app.md#36-the-identity-ladder), [3.7 How a form reaches an action](../../../docs/authoring-an-app.md#37-how-a-form-reaches-an-action-calls) and [3.9 What is recorded](../../../docs/authoring-an-app.md#39-what-is-recorded-audit-and-the-rule-names). With delegates, also [3.8 Redaction per principal](../../../docs/authoring-an-app.md#38-redaction-per-principal-redact).
+
 
 - **Each piece of information to a slot type**, using "Which type?" in [docs/slots/README.md](../../../docs/slots/README.md) and the type's page for its options. An identifier in digits is `digits`; one of a list you can write down is `choice` (option keys start with a letter: `two`, not `2`); a day is `date` (`range: future` or `past`); a date of birth is `birthdate`; the caller's own name is `name`; one of the caller's own records is `record`; free words are `text`. Some values have no type yet (an amount of money, a street address, a code with letters): [patterns.md](patterns.md#values-with-no-slot-type) says what to do instead.
 - **Each action to a policy entry**: its `level` (0 anonymous, 1 the identity factors, 2 the factors and a one-time code) and its `rules`, in the order the gate should run them, usually `identity`, `role`, `scope`, `confirmed`, the range rules (`limit`, `dateInRange`), then `custom`. Section 3.3 of the authoring guide ([the built-in rules](../../../docs/authoring-an-app.md#33-the-built-in-rules)) has every rule's parameters.
@@ -79,6 +82,8 @@ pnpm create-app <name> --display "<business name>"     # add --identity when any
 
 It writes `apps/<name>` (a one-form example: book a service, with an account number and a date of birth under `--identity`), links it into the workspace, and prints the next steps. It passes `pnpm check`, its tests and its regression as created. Move your worksheet into `apps/<name>/DESIGN.md` now. Then read the new folder's `README.md`, `CLAUDE.md` and `src/app.ts`: they say what each file is for, and the example shows the shape of a confirmed write and (with `--identity`) of a form that steps the caller up.
 
+**Guide**: the page for each file as you replace it, in section 2: [app.yaml](../../../docs/authoring-an-app.md#appyaml), [intents.yaml](../../../docs/authoring-an-app.md#intentsyaml) (with [Must never wait](../../../docs/authoring-an-app.md#must-never-wait-priority)), [forms.yaml](../../../docs/authoring-an-app.md#formsyaml), [prompts.yaml](../../../docs/authoring-an-app.md#promptsyaml), [policy.yaml](../../../docs/authoring-an-app.md#policyyaml), [identity.yaml](../../../docs/authoring-an-app.md#identityyaml-optional) and [slots.yaml](../../../docs/authoring-an-app.md#slotsyaml-optional); and [7. Checking an app](../../../docs/authoring-an-app.md#7-checking-an-app-pnpm-check) for what `pnpm check` reports.
+
 Replace the example one piece at a time, running `pnpm check` after each change:
 
 1. `app.yaml`: the brand, `console.formLabels` and `slotLabels`, `voice.hints`, `wording.addressee`.
@@ -96,12 +101,16 @@ What `pnpm check` does not see: the corpus beyond "every intent has examples" (t
 
 ## Step 4: Tools as stubs over fixture data
 
+**Guide**: [6. The form hooks](../../../docs/authoring-an-app.md#6-the-form-hooks), and [3.4 Rules of your own](../../../docs/authoring-an-app.md#34-rules-of-your-own-definerule) for a custom rule.
+
 - Each tool lists `params`, every param its calls carry, and each one that is not a slot with a redact setting is declared under `audit:` in `policy.yaml` ([patterns.md](patterns.md#what-is-recorded-params-and-audit)); `pnpm check` names the ones missing. Each tool's `run` reads or writes the in-memory `Systems` and the fixture data in `src/data.ts`, and returns `{ value, summary }`. Invented records only: names, 555 numbers, invented streets, amounts written as plain decimals (`240.00`). A real client replaces the stub later; keep the tests on the stub.
 - No `if` about who is calling, their level, a limit or a date inside a tool. If you find yourself writing one, it is a rule: put it in `policy.yaml`, or, when no built-in rule fits, write it with `defineRule` (with an example the gate allows and one it refuses) in `code.customRules` and name it with `custom:` ([patterns.md](patterns.md#bounds-limit-and-dateinrange)).
 - The gate's lookups are code: `systems()` returns `lookups.scopeOf` (the subject ids a principal may see: a subject their own id, a delegate the subjects they act for, an anonymous caller none), `lookups.ownerOf` (the subject a record belongs to, or null), and each lookup a range rule's bound names (also listed in `code.lookups`). The `--identity` scaffold's `scopeOf` gives a verified customer their own account and an anonymous caller none; extend it when delegates act for subjects ([patterns.md](patterns.md#delegates)). Without `--identity` the scaffold's `scopeOf: () => []` fails every `scope` rule, so replace it if you add one.
 - A form's `complete` calls its tool through `c.callTool`, never the tool directly, and turns the gate's decision into a line: `ALLOW` to the form's own line, anything else through `c.refusal(decision)` (a `blockPromptId` line, or a person). [patterns.md](patterns.md#refusals-and-handoffs) has each case.
 
 ## Step 5: The corpus and the scenarios
+
+**Guide**: [fixtures/](../../../docs/authoring-an-app.md#fixtures-optional) in section 2; [corpus.md](corpus.md) has the rest.
 
 The stub decision model answers from `fixtures/corpus.jsonl`, so the corpus is how the app is tested with no keys. [corpus.md](corpus.md) has the format, the contexts and the labels for each slot type. Write at least:
 
@@ -123,6 +132,8 @@ Scripted calls in `fixtures/scenarios/*.json`, each with the outcome it expects.
 - a caller who is done: a form that ends at "anything else?" (a `said` completion), then "no, that's all" (`done`), ending at `"decision": "complete", "promptId": "goodbye"`. Where every form ends the call on its own line, the caller says it at the next question instead (after an informational answer or a request the line does not handle).
 
 ## Step 6: Iterate until green, then make the baseline once
+
+**Guide**: [Follow one scripted call turn by turn](../../../docs/authoring-an-app.md#follow-one-scripted-call-turn-by-turn) (section 11).
 
 Run, at the repository root, until each is clean:
 
@@ -175,6 +186,8 @@ Callers ask general questions a document answers: when are you open, what is the
 
 ## Step 7: Read the policy back
 
+**Guide**: [3.10 Testing the policy](../../../docs/authoring-an-app.md#310-testing-the-policy) and [3.11 Reading the policy](../../../docs/authoring-an-app.md#311-reading-the-policy-the-card-and-the-app-map).
+
 Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write. The scaffold ships the example's read back: `testing.policyMatrix` in `src/app.ts`, the three pages beside `policy.yaml`, and their tests in `src/app.test.ts` ("the policy read back"), so from the first change to the policy, the forms or the tools those tests fail until the pages are written again. Make `testing.policyMatrix` your app's callers and records ([patterns.md](patterns.md#testing-the-policy): a principal per delegate role, the subject at each level), keep the tests, then write the policy matrix, the policy card and the app map:
 
 ```sh
@@ -192,6 +205,8 @@ A knowledge form's resolving action and its account line's reads are in the matr
 Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#final-checklist)), in the worksheet itself. In short: every intent has corpus lines and a scenario; every action has a policy entry, a row in `policy.matrix` and a line in `POLICY.md` you have read, and its bounds tested at their edges; identity matches the paragraph; nothing private or real; `pnpm check`, `pnpm verify` and every app's regression green; the README describes the app and keeps the recording steps the scaffold wrote; the gaps are written up; and, if there is a knowledge base, every draft is either approved by a person or listed in the worksheet as awaiting one, with `pnpm check`'s approval findings the only ones left. Then commit, with the worksheet.
 
 ## Step 9: Hand over the recording, then triage it
+
+**Guide**: [fixtures/](../../../docs/authoring-an-app.md#fixtures-optional) (the keys, the providers and the cassettes); [triage.md](triage.md) has the rest.
 
 The app is green on the stub, which answers from your own labels. How the real model reads the same lines is the next thing to know, and only a recording shows it. Recording calls a paid API with the owner's key, so the owner runs it, never you.
 
