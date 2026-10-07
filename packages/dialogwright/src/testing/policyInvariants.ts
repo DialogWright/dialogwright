@@ -11,7 +11,7 @@ import { gateGridCases, gateGridInput, type GateEvaluate, type GateGridCase, typ
  * Test support: the policy's invariants, read from the file. `policyInvariants(app)` puts the app's
  * gate through the gate grid (gateGrid.ts) and holds every decision to what the policy's named rules
  * say, whatever order they are written in: an action not listed is blocked for everyone; an identity
- * tool is never allowed for a party who is not a subject; a caller below an action's level is never allowed; scope, confirmed, role, fields and attempts each refuse
+ * tool is never allowed for a party who is not a subject; a caller below an action's level is never allowed; scope, confirmed, role, fields, attempts and the list rules (oneOf, noneOf) each refuse
  * what they exist to refuse; an allowed call ran every rule its action lists, and each passed;
  * raising a caller's level never turns an allow into a refusal; and the scope rule's answer does not
  * move with conversation state. Each failure names the invariant, the grid case and the rule.
@@ -22,7 +22,7 @@ import { gateGridCases, gateGridInput, type GateEvaluate, type GateGridCase, typ
  */
 
 export const INVARIANTS = [
-  'unlisted', 'subject-only', 'level', 'scope', 'confirmed', 'role', 'fields', 'attempts', 'all-rules-passed', 'monotonic', 'scope-stable',
+  'unlisted', 'subject-only', 'level', 'scope', 'confirmed', 'role', 'fields', 'attempts', 'one-of', 'all-rules-passed', 'monotonic', 'scope-stable',
 ] as const;
 export type InvariantName = (typeof INVARIANTS)[number];
 
@@ -36,6 +36,7 @@ export const INVARIANT_ABOUT: Readonly<Record<InvariantName, string>> = {
   role: 'with role, a role the rule refuses or sends to a person, and a party acting for subjects with no role, is never allowed',
   fields: 'with fields, a call that sends a field beyond the list is never allowed',
   attempts: 'with attempts, a call is never allowed at the maximum of failed attempts',
+  'one-of': 'with oneOf or noneOf, a call whose value is missing or empty, not listed (oneOf) or listed (noneOf) is never allowed',
   'all-rules-passed': 'an allowed call ran every rule its action lists, and each passed',
   monotonic: 'raising the caller\'s level never turns an allow into a refusal',
   'scope-stable': 'the scope rule\'s answer does not move with conversation state: the other params, the purpose, the facts, or anything the gate is not given',
@@ -205,6 +206,15 @@ export function checkPolicyInvariants(app: App, options: PolicyInvariantOptions 
           if (extra.length === 0) break;
           applied.fields += 1;
           if (allowed) broke('fields', ruleLabel(rule), `ALLOW with ${extra.join(', ')}, beyond [${rule.fields.join(', ')}]`);
+          break;
+        }
+        case 'oneOf':
+        case 'noneOf': {
+          const value = has(c.call.params, rule.field) ? c.call.params[rule.field]! : '';
+          const listed = value !== '' && rule.values.includes(value);
+          if (value !== '' && (rule.rule === 'oneOf' ? listed : !listed)) break;
+          applied['one-of'] += 1;
+          if (allowed) broke('one-of', ruleLabel(rule), `ALLOW, but ${rule.field} is ${value === '' ? 'missing or empty' : listed ? 'one of' : 'none of'} [${rule.values.join(', ')}]`);
           break;
         }
         case 'attempts': {

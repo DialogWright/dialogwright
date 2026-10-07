@@ -37,7 +37,7 @@ A slot is one value a form collects. Most slots are configuration: name a type i
 
 ## Policy and identity
 
-`policy.yaml` is the whole of what the agent may do: one entry per action (a tool) with its identity `level` and its `rules`, run in order, the first failure deciding. `identity.yaml` (optional) says who the app serves and how a caller proves who they are. The rules are `identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `dateInRange` (bounds such as `today`, `today+30`, a date, or a lookup reference) and `limit`, and `custom: <id>` for a rule of the app's own, written with `defineRule` and shipped with examples. Rules are recorded by name. See [section 3 of the authoring guide](docs/authoring-an-app.md#3-policy-and-identity).
+`policy.yaml` is the whole of what the agent may do: one entry per action (a tool) with its identity `level` and its `rules`, run in order, the first failure deciding. `identity.yaml` (optional) says who the app serves and how a caller proves who they are. The rules are `identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `dateInRange` (bounds such as `today`, `today+30`, a date, or a lookup reference), `limit`, `oneOf` and `noneOf` (a value one of, or none of, a list, as a form's checks ask), and `custom: <id>` for a rule of the app's own, written with `defineRule` and shipped with examples. Rules are recorded by name. See [section 3 of the authoring guide](docs/authoring-an-app.md#3-policy-and-identity).
 
 ## Schemas
 

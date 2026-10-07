@@ -23,7 +23,7 @@ Copy everything below the line into `apps/<name>/DESIGN.md` (draft it in your sc
 |---|---|---|---|---|---|---|
 | `<form>` | <what it is> | `<slotId>` | `<type>`: <options> | <always, or only for some callers> | <yes: `keypad: true`> | <masked by default?> |
 
-Does any answer rule the caller out before you collect the rest (a renter, a home outside the area, an age)? <no, or each answer, the reason the gate gives, and the line or ending: one form, qualifying slots first, with a check on each ([patterns.md](patterns.md#qualify-before-you-collect))>
+Does any answer rule the caller out before you collect the rest (a renter, a home outside the area, an age)? <no, or each answer, the list rule that holds it (`oneOf`, `noneOf`) or why it needs one of its own, the reason the gate gives, and the line or ending: one form, qualifying slots first, with a check on each ([patterns.md](patterns.md#qualify-before-you-collect))>
 
 ## Actions
 
@@ -67,7 +67,7 @@ The app's one list of confirmed fields (every `confirmed` rule names it, in this
 
 ## Bounds
 
-| Action | Field | Bound | Where it comes from | Rule (`limit`, `dateInRange`, `custom`) | Verdict and reason |
+| Action | Field | Bound | Where it comes from | Rule (`limit`, `dateInRange`, `oneOf`, `noneOf`, `custom`) | Verdict and reason |
 |---|---|---|---|---|---|
 | `<tool>` | `<param>` | <not before today> | <the call's day> | `dateInRange` | BLOCK, `date-range` |
 

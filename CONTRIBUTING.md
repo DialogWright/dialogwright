@@ -81,7 +81,7 @@ Before you open the pull request: `pnpm verify`, `pnpm check`, and both regressi
 
 ## Adding a built-in policy rule
 
-The built-in rules (`identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `dateInRange`, `limit`) are what an app's `policy.yaml` names, and the gate runs them. A new one is a change to what compliance reads and what an auditor sees, so it is held to more than a function: it needs a shape in the file, a place in the gate, tests, an invariant if it refuses something it exists to refuse, wording on the policy card, and a page in the docs. Read [authoring-an-app.md](docs/authoring-an-app.md#3-policy-and-identity) first: it says what each existing rule does, and `packages/dialogwright/src/gate/bounded.ts` (the range rules) is the model to copy.
+The built-in rules (`identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `dateInRange`, `limit`, `oneOf`, `noneOf`) are what an app's `policy.yaml` names, and the gate runs them. A new one is a change to what compliance reads and what an auditor sees, so it is held to more than a function: it needs a shape in the file, a place in the gate, tests, an invariant if it refuses something it exists to refuse, wording on the policy card, and a page in the docs. Read [authoring-an-app.md](docs/authoring-an-app.md#3-policy-and-identity) first: it says what each existing rule does, and `packages/dialogwright/src/gate/bounded.ts` (the range rules) and `gate/listed.ts` (the list rules) are the models to copy.
 
 **Where it goes.**
 

@@ -280,7 +280,7 @@ forms:
     checksPassed: home_qualifies
 ```
 
-- `action` is an action in policy.yaml marked `check: true` ([section 3.2](#32-an-action-and-its-rules)): a question to the gate only. It has no tool, and an ALLOW runs nothing. The rule that refuses lives in policy.yaml with every other rule, and the write names the same rule, so the completion still refuses what the check refused.
+- `action` is an action in policy.yaml marked `check: true` ([section 3.2](#32-an-action-and-its-rules)): a question to the gate only. It has no tool, and an ALLOW runs nothing. The rule that refuses lives in policy.yaml with every other rule, and the write names the same rule, so the completion still refuses what the check refused. A qualifying answer is usually one of a list, so the rule is usually a built-in one: `oneOf` (the town is one of the four the business works in, the caller owns the home) or `noneOf` (how urgent it is is not an emergency), each with the reason `on` maps ([section 3.3](#33-the-built-in-rules)). A rule of your own (`defineRule`) is for what no list says.
 - `with` lists the form's slots the check reads. Each is sent as the param of the same name, its value as the slot holds it. A check is ready when every slot in `with` holds a value. It runs then, and again whenever one of them changes; a slot reopened and given the same value, or an unchanged yes at the summary, asks the gate nothing.
 - Checks run in the order written, on every turn that changed slots: after a disambiguation and a slot read-back (so never on an unsettled value) and after the form's entry call (so identity the form needs is proven first), before the next question. They run again first thing at completion, so "yes, but I rent" is refused with the check's own line and the write is never attempted. The first refusal ends the turn. Put the check the business cares most about first: a caller with two reasons hears its line.
 - `on` maps a reason the gate gives to what follows. `then: end` says the line, then the call ends (the goodbye follows; with a request queued, the call goes on to it instead). `then: anything-else` says the line, closes the form uncounted, and carries on to the next queued request or "anything else?". `then: handoff` goes to a person with the line `handoff_<reason>` (`reason:` names another), after `say` if there is one. `say` is required for `end` and `anything-else`. A reason `on` does not list gets what a completion's refusal gives (`c.refusal`): a BLOCK with a line from the app's `blockPromptId` says it and carries on; anything else goes to a person. A `STEP_UP` from a check always goes to a person.
@@ -480,7 +480,7 @@ actions:
 
 - An action is a tool. Every tool in the code needs an action here, and every action needs a tool: a tool with no action cannot be called, and the gate blocks any call to a tool the policy does not list (`unlisted`), for every caller.
 - `level` is the identity level the action needs: 0 anonymous, 1 the factors matched, 2 the factors and a one-time code (`identity.yaml` names them). An action with no `level` needs the highest, so one left without fails closed. `say` is what the action does, in a reviewer's words, as the policy card says it; write it for every action.
-- `rules` is a list, run in the order written. The first rule that fails decides, and the gate answers with that rule's verdict: `BLOCK`, `STEP_UP` (verify further, then try again) or `NEEDS_HUMAN` (a person takes the call). Order is part of the policy: put `scope` before a rule that looks something up, so a lookup is only asked about a record the caller may see. A rule with no parameters is its bare name (`identity`, `attempts`); a rule with parameters is a one-key map. A rule is listed once per action (a range rule once per field). An empty list runs no rule, and the policy card says so.
+- `rules` is a list, run in the order written. The first rule that fails decides, and the gate answers with that rule's verdict: `BLOCK`, `STEP_UP` (verify further, then try again) or `NEEDS_HUMAN` (a person takes the call). Order is part of the policy: put `scope` before a rule that looks something up, so a lookup is only asked about a record the caller may see. A rule with no parameters is its bare name (`identity`, `attempts`); a rule with parameters is a one-key map. A rule is listed once per action (a range or list rule once per field). An empty list runs no rule, and the policy card says so.
 - No rule is implied. An action that must check the level lists `identity`; a tool that verifies a caller lists only `attempts` at level 0 (it cannot ask for a level its own call is there to raise).
 - `check: true` makes the action a form's check ([forms.yaml, Checks](#checks-ending-a-form-part-way)): a question to the gate only, with no tool, so an ALLOW runs nothing (the gate event is recorded with no tool result). Some form's `checks` must name it. It may not list `confirmed` (nothing is confirmed part-way through a form), and its level is 0 unless the form's entry call proves more first (a form with an `entry` hook whose purpose, under `purposes`, needs that level). Name the same rules in the action the form writes with, so the write holds what the check held:
 
@@ -490,13 +490,15 @@ actions:
     say: check the caller owns the home
     check: true
     level: 0
-    rules: [identity, { custom: homeowners-only }]
+    rules:
+      - identity
+      - oneOf: { field: ownership, values: [own], reason: not-owner }
   bookInspection:
     say: book a free inspection
     level: 0
     rules:
       - identity
-      - custom: homeowners-only
+      - oneOf: { field: ownership, values: [own], reason: not-owner }
       - confirmed: [ownership, address, name, phone, day]
 ```
 
@@ -512,6 +514,8 @@ actions:
 | `fields` | `fields: [report, missingNote, expectedDate]` | the call sends no field beyond these | `BLOCK` `minimization` |
 | `dateInRange` | `dateInRange: { field: returnDate, notAfter: today }` | the date is within its bounds | `BLOCK` or `NEEDS_HUMAN`, by reason |
 | `limit` | `limit: { field: amount, max: 500 }` | the number is within its limits | `BLOCK` or `NEEDS_HUMAN`, by reason |
+| `oneOf` | `oneOf: { field: town, values: [millbrook, ashford], reason: out-of-area }` | the value is one of those listed | `BLOCK` (or `NEEDS_HUMAN`) with the rule's `reason`, `not-one-of` if none; `BLOCK` `value-missing` with no value |
+| `noneOf` | `noneOf: { field: howUrgent, values: [emergency], verdict: NEEDS_HUMAN }` | the value is none of those listed | `BLOCK` (or `NEEDS_HUMAN`) with the rule's `reason`, `one-of` if none; `BLOCK` `value-missing` with no value |
 | `custom` | `custom: not-delivered-that-day` | the app's own rule says so (section 3.4) | the rule's own verdict and reason |
 
 Every rule fails closed: a param that is missing, a record that does not exist or a lookup that throws is a refusal, never a pass.
@@ -586,6 +590,32 @@ export const code: AppCode = {
 A bound comes only from the app's code and systems, never from the session's facts or the conversation. `check` refuses a reference to a lookup `code.lookups` does not name, a name every object has (`constructor`, `toString`, `prototype`, ...) as a lookup or a field, the gate's own `ownerOf` or `scopeOf`, and, where the action's `fields` or `confirmed` rule says which params it sends, a `field` or reference param outside them. A field is read only as a plain object's own value, never a getter or an inherited one.
 
 Each records itself under its name (`dateInRange`, `limit`) with lines like `amount at least 0.01, at most orderTotal(orderId) 120` and `returnDate outside returnWindow(orderId) 2026-09-20..2026-10-20`: the param's name and the bounds it was held to (today's date, a number of days from today with the date it gave, `on or before today+30 2026-11-01`, a literal, what a lookup gave), with a reference as written: the param a lookup was called with by its name only. No param's value is ever in the line, not even its last four, since it may be a value the app records hidden or never, and a line goes to the audit as it is.
+
+**`oneOf` and `noneOf`.** Two rules that hold a param's value to a list, so the commonest qualifying question needs no code: the home is in one of the towns the business works in, the caller owns it, the problem is not an emergency. They are what a form's checks most often ask ([Checks](#checks-ending-a-form-part-way)):
+
+```yaml
+actions:
+  checkUrgency:
+    say: send an emergency to the office
+    check: true
+    level: 0
+    rules:
+      - identity
+      - noneOf: { field: howUrgent, values: [emergency], reason: emergency, verdict: NEEDS_HUMAN }
+  checkArea:
+    say: check the home is in the service area
+    check: true
+    level: 0
+    rules:
+      - identity
+      - oneOf: { field: town, values: [millbrook, cedar_falls, ashford, riverton], reason: out-of-area }
+```
+
+- `oneOf: { field, values, reason?, verdict? }` passes when the value is one of `values`; `noneOf` (the same keys) when it is none of them. `field` is the param that holds the value: for a check, one of the slots its `with` sends (`check` refuses one no check of it sends); for an action with a tool, a param it sends, as for the range rules. `values` lists at least one value, each once, each as text (quote one YAML would read as a number or as true or false: `"1"`, `"true"`).
+- The match is exact: the value as the call carries it, character for character. A slot's value is already what its type made of the caller's words, and a choice slot's is one of its option ids (`cedar_falls`, never "Cedar Falls"), so list the ids. `check` holds a list on a param of a choice slot's name to that slot's option ids, and names the closest when one is not (`"cedar falls" is not an option of the choice slot "town" ... rename it to "cedar_falls"`). There is no case-insensitive match on purpose: words a caller says several ways belong in a choice slot's options, which turn them into one id, not in the policy.
+- `reason` names the reason a refusal gives, for a check's `on:`, the app's refusal lines (`blockPromptId`) and handoff lines (`handoff_<reason>`). Without it, `not-one-of` for `oneOf` and `one-of` for `noneOf`. `verdict` is `BLOCK` (the default) or `NEEDS_HUMAN`, for a person to take the call (an emergency).
+- They fail closed. A value that is missing or empty BLOCKs with the reason `value-missing`, whatever `verdict` says, for `noneOf` too: a call that says nothing is not "none of these". A check never sends an empty value (it runs once its slots are filled), so `value-missing` is what a write without the param gets.
+- Each records itself under its name (`oneOf`, `noneOf`) with lines like `town one of [millbrook, cedar_falls, ashford, riverton]` (a `oneOf` that passes), `town not one of [...]` (one that refuses) and `howUrgent none of [emergency]` (a `noneOf` that passes): the param's name and the list, never the call's value. The policy card says it in words, with a choice option's own words: "town must be one of Millbrook, Cedar Falls, Ashford or Riverton: any other is refused (`out-of-area`), and a missing value is refused".
 
 ### 3.4 Rules of your own: `defineRule`
 

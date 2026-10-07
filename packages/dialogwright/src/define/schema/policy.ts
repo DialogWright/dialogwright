@@ -32,6 +32,12 @@ import type { AuditMask } from '../../core/app/types';
  *         - scope: { record: orderId }
  *         - limit: { field: amount, min: 0.01, max: orderTotal(orderId) }
  *         - dateInRange: { field: returnDate, notAfter: today, within: returnWindow(orderId) }
+ *     checkArea:
+ *       check: true
+ *       level: 0
+ *       rules:
+ *         - identity
+ *         - oneOf: { field: town, values: [millbrook, ashford], reason: out-of-area }
  *   purposes:
  *     file_request: { level: 2 }
  *   redact:
@@ -44,7 +50,8 @@ import type { AuditMask } from '../../core/app/types';
  * map of its name to them, one rule per list entry, so each rule is one line to read and to diff.
  * The range rules' bounds (dateInRange, limit) are literals (for a date, also `today`, `today+N` or
  * `today-N`) or references to the app's lookups, `<lookup>(<param>)` or `<lookup>(<param>).<field>`
- * (../../gate/bounded.ts), read here, never run.
+ * (../../gate/bounded.ts), read here, never run. The list rules' values (oneOf, noneOf;
+ * ../../gate/listed.ts) are the param's values as a slot holds them, matched exactly.
  *
  * `redact:` names, by who asks (a delegate kind, or `<kind>.<role>` for one role's own list), the
  * fields of an action's result withheld from a party who acts for subjects; the tool declares the
@@ -100,9 +107,9 @@ export const policyWording = z
 /** The rules written by their bare name: they take no parameters. */
 export const BARE_RULES = ['identity', 'attempts'] as const;
 /** The rules written as a map of the name to their parameters. */
-export const PARAM_RULES = ['scope', 'role', 'confirmed', 'fields', 'dateInRange', 'limit', 'custom'] as const;
+export const PARAM_RULES = ['scope', 'role', 'confirmed', 'fields', 'dateInRange', 'limit', 'oneOf', 'noneOf', 'custom'] as const;
 /** Every rule name, in the order the docs list them. */
-export const RULE_NAMES = ['identity', 'scope', 'role', 'confirmed', 'attempts', 'fields', 'dateInRange', 'limit', 'custom'] as const;
+export const RULE_NAMES = ['identity', 'scope', 'role', 'confirmed', 'attempts', 'fields', 'dateInRange', 'limit', 'oneOf', 'noneOf', 'custom'] as const;
 export type BareRule = (typeof BARE_RULES)[number];
 export type ParamRule = (typeof PARAM_RULES)[number];
 export type RuleName = (typeof RULE_NAMES)[number];
@@ -238,7 +245,27 @@ const limitRule = z
   .check(rangeProblems(['min', 'max'], 'min', 'max', parseNumberBound))
   .describe('limit: the action\'s number param is within its limits, each inclusive. At least one of min, max.');
 
-const RULE_PARAMS: Record<ParamRule, z.ZodType> = { scope: scopeRule, role: roleRule, confirmed: confirmedRule, fields: fieldsRule, dateInRange: dateInRangeRule, limit: limitRule, custom: customRule };
+// The list rules (../../gate/listed.ts): a param's value held to a list of values, matched exactly.
+
+/** One value of a list rule: text, as the slot holds it (a choice slot's option id). A number or true/false is refused, with the fix to quote it. */
+const listValue = () => text();
+
+const listRule = (which: 'oneOf' | 'noneOf') =>
+  z
+    .strictObject({
+      field: identifier().describe('The action\'s param that holds the value (for a check, one of the slots its `with` sends). A value that is missing or empty BLOCKs, reason "value-missing".'),
+      values: unique(listValue(), 'value')
+        .min(1, { error: 'must list at least one value' })
+        .describe(`The values ${which === 'oneOf' ? 'the param must be one of' : 'the param must not be'}, each as the slot holds it (a choice slot's option ids), matched exactly.`),
+      reason: name().optional().describe(`The reason ${which === 'oneOf' ? 'a value not listed' : 'a value listed'} fails for, for a form check's \`on:\`, the app's refusal lines and handoffs. Default "${which === 'oneOf' ? 'not-one-of' : 'one-of'}".`),
+      verdict: rangeVerdict().optional().describe(`BLOCK (default) or NEEDS_HUMAN, for ${which === 'oneOf' ? 'a value not listed' : 'a value listed'}. A missing value always BLOCKs.`),
+    })
+    .describe(which === 'oneOf' ? 'oneOf: the action\'s param is one of the values listed.' : 'noneOf: the action\'s param is none of the values listed.');
+
+const oneOfRule = listRule('oneOf');
+const noneOfRule = listRule('noneOf');
+
+const RULE_PARAMS: Record<ParamRule, z.ZodType> = { scope: scopeRule, role: roleRule, confirmed: confirmedRule, fields: fieldsRule, dateInRange: dateInRangeRule, limit: limitRule, oneOf: oneOfRule, noneOf: noneOfRule, custom: customRule };
 
 /** An example of each rule with parameters, for a fix. */
 const RULE_EXAMPLES: Record<ParamRule, string> = {
@@ -248,6 +275,8 @@ const RULE_EXAMPLES: Record<ParamRule, string> = {
   fields: 'fields: [note, date]',
   dateInRange: 'dateInRange: { field: returnDate, notAfter: today }',
   limit: 'limit: { field: amount, max: orderTotal(orderId) }',
+  oneOf: 'oneOf: { field: town, values: [millbrook, ashford] }',
+  noneOf: 'noneOf: { field: howUrgent, values: [emergency], verdict: NEEDS_HUMAN }',
   custom: 'custom: <the rule\'s id in code.customRules>',
 };
 
@@ -272,6 +301,14 @@ export interface LimitYaml {
   verdicts?: { outOfRange?: 'BLOCK' | 'NEEDS_HUMAN' };
 }
 
+/** The parameters of a oneOf or noneOf rule, as written. */
+export interface ListYaml {
+  field: string;
+  values: string[];
+  reason?: string;
+  verdict?: 'BLOCK' | 'NEEDS_HUMAN';
+}
+
 /** One entry of an action's rules, as written: a bare rule's name, or a map of one rule's name to its parameters. */
 export type RuleEntryYaml =
   | BareRule
@@ -281,6 +318,8 @@ export type RuleEntryYaml =
   | { fields: string[] }
   | { dateInRange: DateInRangeYaml }
   | { limit: LimitYaml }
+  | { oneOf: ListYaml }
+  | { noneOf: ListYaml }
   | { custom: string };
 
 /** The JSON Schema of one rule entry, for an editor: the bare names, and each rule with its parameters. */
@@ -364,9 +403,9 @@ const ruleEntry = z
       ctx.addIssue({ ...(inner as unknown as z.core.$ZodRawIssue), path: [rule, ...inner.path] } as z.core.$ZodRawIssue);
     }
   }))
-  .meta({ ...ruleEntryJson, description: 'One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, dateInRange, limit, custom).' }) as unknown as z.ZodType<RuleEntryYaml>;
+  .meta({ ...ruleEntryJson, description: 'One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, dateInRange, limit, oneOf, noneOf, custom).' }) as unknown as z.ZodType<RuleEntryYaml>;
 
-/** What makes two rules of an action the same rule: its name, and for a custom rule its id, for a range rule its field. Null for an entry that is no rule (its own problem says why). */
+/** What makes two rules of an action the same rule: its name, and for a custom rule its id, for a range or list rule its field. Null for an entry that is no rule (its own problem says why). */
 export function ruleKey(entry: unknown): string | null {
   if (typeof entry === 'string') return (BARE_RULES as readonly string[]).includes(entry) ? entry : null;
   if (!isMap(entry)) return null;
@@ -374,8 +413,8 @@ export function ruleKey(entry: unknown): string | null {
   if (keys.length !== 1 || !(PARAM_RULES as readonly string[]).includes(keys[0]!)) return null;
   const rule = keys[0]!;
   if (rule === 'custom') return `custom: ${String(entry.custom)}`;
-  // A range rule holds one param to its bounds: an action may hold two params (a start and an end date) with one each.
-  if (rule === 'dateInRange' || rule === 'limit') {
+  // A range or list rule holds one param: an action may hold two params (a start and an end date) with one each.
+  if (rule === 'dateInRange' || rule === 'limit' || rule === 'oneOf' || rule === 'noneOf') {
     const params = entry[rule];
     return isMap(params) && typeof params.field === 'string' ? `${rule}: ${params.field}` : null;
   }

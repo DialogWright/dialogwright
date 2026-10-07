@@ -69,7 +69,7 @@ describe('the refusals', () => {
     const { problems } = await checked(dir);
     expect(problems).toContain('forms.yaml:19:17  forms.book_visit.checks[2].action  form "book_visit" checks "bookVisit", which is an action with a tool, not a check  ->  add "check: true" to actions.bookVisit in policy.yaml (and delete its tool from the code), or check an action that has it');
     // checkArea is now named by no form's checks.
-    expect(problems).toContain('policy.yaml:15:3  actions.checkArea  check "checkArea" is named by no form\'s checks, so the gate is never asked it  ->  add "- action: checkArea" with the slots it reads to the checks of a form in forms.yaml, or delete the action');
+    expect(problems).toContain('policy.yaml:20:3  actions.checkArea  check "checkArea" is named by no form\'s checks, so the gate is never asked it  ->  add "- action: checkArea" with the slots it reads to the checks of a form in forms.yaml, or delete the action');
   });
 
   it('a slot the form does not have', async () => {
@@ -79,11 +79,23 @@ describe('the refusals', () => {
 
   it('a check action that runs the confirmed rule, or needs a level the form\'s entry does not prove', async () => {
     const dir = folder({
-      'policy.yaml': (t) => replace('    rules: [identity, { custom: owners-only }]', '    rules: [identity, { custom: owners-only }, { confirmed: [problem, ownership, town, howUrgent, visitDay, timeOfDay] }]')(t).replace('    say: check the home is in the area\n    check: true\n    level: 0', '    say: check the home is in the area\n    check: true\n    level: 1'),
+      'policy.yaml': (t) => replace('      - oneOf: { field: ownership, values: [own], reason: not-owner }\n  checkArea:', '      - oneOf: { field: ownership, values: [own], reason: not-owner }\n      - confirmed: [problem, ownership, town, howUrgent, visitDay, timeOfDay]\n  checkArea:')(t).replace('    say: check the home is in the area\n    check: true\n    level: 0', '    say: check the home is in the area\n    check: true\n    level: 1'),
     });
     const { problems } = await checked(dir);
-    expect(problems).toContain('policy.yaml:14:48  actions.checkOwner.rules[2]  check "checkOwner" runs the confirmed rule, but nothing is confirmed part-way through a form, so it would refuse every time  ->  delete the rule: the write the form makes at its completion holds what the caller confirmed');
-    expect(problems).toContain('policy.yaml:18:12  actions.checkArea.level  check "checkArea" of form "book_visit" needs identity level 1, which the form\'s entry does not prove first, so the check could only go to a person  ->  set it to 0, or give the form an entry call with a purpose of level 1 (policy.yaml purposes: book_visit: { level: 1 })');
+    expect(problems).toContain('policy.yaml:20:9  actions.checkOwner.rules[2]  check "checkOwner" runs the confirmed rule, but nothing is confirmed part-way through a form, so it would refuse every time  ->  delete the rule: the write the form makes at its completion holds what the caller confirmed');
+    expect(problems).toContain('policy.yaml:24:12  actions.checkArea.level  check "checkArea" of form "book_visit" needs identity level 1, which the form\'s entry does not prove first, so the check could only go to a person  ->  set it to 0, or give the form an entry call with a purpose of level 1 (policy.yaml purposes: book_visit: { level: 1 })');
+  });
+
+  it('a list rule of a check on a param no check of it sends, and a value a choice slot does not have', async () => {
+    const dir = folder({
+      'policy.yaml': (t) => replace('field: town, values: [millbrook, cedar_falls, ashford, riverton], reason: out-of-area }\n  bookVisit:', 'field: postcode, values: [millbrook], reason: out-of-area }\n  bookVisit:')(t)
+        .replace('values: [own], reason: not-owner }\n  checkArea:', 'values: [owner], reason: not-owner }\n  checkArea:'),
+    });
+    const { problems } = await checked(dir);
+    expect(problems).toEqual([
+      'policy.yaml:19:45  actions.checkOwner.rules[1].oneOf.values[0]  "owner" is not an option of the choice slot "ownership" (own, rent), so the param never carries it  ->  rename it to "own", or list the option\'s id as slots.yaml has it, or add "owner" to the slot\'s options',
+      'policy.yaml:26:25  actions.checkArea.rules[1].oneOf.field  check "checkArea" holds "postcode", which no form\'s check of it reads (with: town), so it would refuse every time  ->  add "postcode" to the check\'s `with` in forms.yaml',
+    ]);
   });
 
   it('a line a check says that prompts.yaml does not have, in any locale', async () => {
@@ -101,7 +113,7 @@ describe('the refusals', () => {
   it('a check action with a tool in the code', async () => {
     const code: AppCode = { ...screenedCode, tools: { ...screenedCode.tools, checkOwner: { params: ['ownership'], run: () => ({ value: null, summary: 'x' }) } } };
     const { problems } = await checked(folder(), code);
-    expect(problems).toContain('policy.yaml:12:12  actions.checkOwner.check  action "checkOwner" is a check, which has no tool, but the code defines a tool "checkOwner"  ->  delete the tool from app.ts (code.tools.checkOwner), since a check runs nothing, or delete "check: true" to make it an action with a tool');
+    expect(problems).toContain('policy.yaml:15:12  actions.checkOwner.check  action "checkOwner" is a check, which has no tool, but the code defines a tool "checkOwner"  ->  delete the tool from app.ts (code.tools.checkOwner), since a check runs nothing, or delete "check: true" to make it an action with a tool');
   });
 
   it('the schema: an ending with no line, a reason that hands off nothing, a check listed twice, checksPassed with no checks', () => {
@@ -135,13 +147,13 @@ describe('the warnings', () => {
   it('an `on` reason the check never refuses for, and a rule the write does not hold the caller to: printed, never counted', async () => {
     const dir = folder({
       'forms.yaml': replace('out-of-area: { say: decline_out_of_area, then: end }', 'out-of-town: { say: decline_out_of_area, then: end }'),
-      'policy.yaml': replace('      - custom: in-area\n', ''),
+      'policy.yaml': replace('      - oneOf: { field: town, values: [millbrook, cedar_falls, ashford, riverton], reason: out-of-area }\n      - confirmed:', '      - confirmed:'),
     });
     const { problems, warnings } = await checked(dir);
     expect(problems).toEqual([]);
     expect(warnings).toEqual([
-      'forms.yaml:22:11  forms.book_visit.checks[2].on.out-of-town  check "checkArea" never refuses for "out-of-town" (its rules refuse for "identity", "out-of-area"), so this outcome never applies  ->  add an example to the custom rule that refuses for it, or delete it',
-      'policy.yaml:19:23  actions.checkArea.rules[1]  check "checkArea" holds form "book_visit" to "custom: in-area", which no action the form calls (bookVisit) runs, so the write would not hold what the check held  ->  add "custom: in-area" to the rules of the action the form writes with, so the completion still refuses what the check refused',
+      'forms.yaml:22:11  forms.book_visit.checks[2].on.out-of-town  check "checkArea" never refuses for "out-of-town" (its rules refuse for "identity", "out-of-area", "value-missing"), so this outcome never applies  ->  give it as the reason of the rule that refuses (a list or range rule\'s `reason`), or delete it',
+      'policy.yaml:26:9  actions.checkArea.rules[1]  check "checkArea" holds form "book_visit" to "oneOf: town", which no action the form calls (bookVisit) runs, so the write would not hold what the check held  ->  add "oneOf: town" to the rules of the action the form writes with, so the completion still refuses what the check refused',
     ]);
     // The command prints them and exits 0; under --json they go to stderr and the JSON is the problems.
     writeFileSync(join(dir, 'app.ts'), `export { code } from ${JSON.stringify(join(SCREENED_DIR, 'app.ts'))};\n`);

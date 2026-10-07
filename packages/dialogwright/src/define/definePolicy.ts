@@ -3,7 +3,7 @@ import { ruleDefinitionProblems } from '../gate/defineRule';
 import { BUILT_IN_IDS_NOTE, BUILT_IN_RULES } from '../gate/compiled';
 import { AppDefinitionError, codePath } from './defineApp';
 import { loadConfigFile, type ConfigFile } from './load';
-import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotRedactOf, toolFieldProblems, toolParamProblems, type PolicyCheckInput } from './policyFile';
+import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotChoicesOf, slotRedactOf, toolFieldProblems, toolParamProblems, type PolicyCheckInput } from './policyFile';
 import { keyPositionOf, positionOf, type Problem } from './problems';
 import type { IdentityYaml, PolicyYaml } from './schema/index';
 
@@ -37,7 +37,11 @@ export interface DefinePolicyOptions {
    * its calls carry (ToolDef.params), every one a slot with a redact setting or declared under `audit:`.
    */
   tools?: Readonly<Record<ToolName, unknown>>;
-  /** The app's slots (App.slots): their redact settings say how a param of a slot's name is recorded, so `audit:` declares the rest. */
+  /**
+   * The app's slots (App.slots): their redact settings say how a param of a slot's name is recorded,
+   * so `audit:` declares the rest; a choice slot's options are the values a list rule on a param of
+   * its name may name.
+   */
   slots?: Readonly<Record<SlotId, unknown>>;
   /** The app's own rules, by the id `custom:` names them by (PolicyTables.customRules). */
   customRules?: PolicyTables['customRules'];
@@ -94,6 +98,7 @@ function checkInput(policy: ConfigFile<PolicyYaml> | null, identity: ConfigFile<
   if (code.slots) {
     input.slots = new Set(Object.keys(code.slots));
     input.slotRedact = slotRedactOf(code.slots as Readonly<Record<string, unknown>>);
+    input.slotChoices = slotChoicesOf(code.slots as Readonly<Record<string, unknown>>);
   }
   if (code.prompts) input.prompts = Array.isArray(code.prompts) ? code.prompts : Object.keys(code.prompts);
   return input;

@@ -47,15 +47,15 @@ flowchart LR
   slots --> summary
   c_checkUrgency{{"Check<br/>send something urgent to the office<br/>level 0: anonymous<br/>urgent: handoff urgent"}}
   s_howUrgent -.->|"checked"| c_checkUrgency
-  r_checkUrgency(["Rules, in order<br/>1. identity<br/>2. custom urgent-to-office"])
+  r_checkUrgency(["Rules, in order<br/>1. identity<br/>2. noneOf howUrgent"])
   c_checkUrgency --> r_checkUrgency
   c_checkOwner{{"Check<br/>check the caller owns the home<br/>level 0: anonymous<br/>not-owner: say decline_renter, end"}}
   s_ownership -.->|"checked"| c_checkOwner
-  r_checkOwner(["Rules, in order<br/>1. identity<br/>2. custom owners-only"])
+  r_checkOwner(["Rules, in order<br/>1. identity<br/>2. oneOf ownership"])
   c_checkOwner --> r_checkOwner
   c_checkArea{{"Check<br/>check the home is in the area<br/>level 0: anonymous<br/>out-of-area: say decline_out_of_area, end"}}
   s_town -.->|"checked"| c_checkArea
-  r_checkArea(["Rules, in order<br/>1. identity<br/>2. custom in-area"])
+  r_checkArea(["Rules, in order<br/>1. identity<br/>2. oneOf town"])
   c_checkArea --> r_checkArea
   passed[/"Said once every check has passed<br/>visit_qualifies"/]
   c_checkUrgency -.->|"passes"| passed
@@ -63,7 +63,7 @@ flowchart LR
   c_checkArea -.->|"passes"| passed
   a_bookVisit["Book a free visit<br/>level 0: anonymous"]
   summary -->|"calls"| a_bookVisit
-  r_bookVisit(["Rules, in order<br/>1. identity<br/>2. custom urgent-to-office<br/>3. custom owners-only<br/>4. custom in-area<br/>5. confirmed"])
+  r_bookVisit(["Rules, in order<br/>1. identity<br/>2. noneOf howUrgent<br/>3. oneOf ownership<br/>4. oneOf town<br/>5. confirmed"])
   a_bookVisit --> r_bookVisit
 ```
 

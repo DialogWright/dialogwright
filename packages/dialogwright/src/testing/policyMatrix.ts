@@ -127,6 +127,8 @@ function ruleText(rule: Rule, source: PolicySource): string {
     case 'fields': return `fields(${rule.fields.join(', ')})`;
     case 'dateInRange': return `dateInRange(${rule.field})`;
     case 'limit': return `limit(${rule.field})`;
+    case 'oneOf': return `oneOf(${rule.field}: ${rule.values.join(', ')})`;
+    case 'noneOf': return `noneOf(${rule.field}: ${rule.values.join(', ')})`;
     case 'custom': return `custom ${rule.id}`;
   }
 }

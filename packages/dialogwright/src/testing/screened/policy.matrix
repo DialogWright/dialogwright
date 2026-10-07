@@ -25,44 +25,25 @@
 
 purposes: none
 
-checkUrgency · level 0 · identity, custom urgent-to-office
+checkUrgency · level 0 · identity, noneOf(howUrgent: urgent)
   every caller   fields exact|extra, params routine  ALLOW
                  fields exact|extra, params urgent   NEEDS_HUMAN urgent
-                 fields missing                      BLOCK urgency-unknown
+                 fields missing                      BLOCK value-missing
 
-checkOwner · level 0 · identity, custom owners-only
+checkOwner · level 0 · identity, oneOf(ownership: own)
   every caller   fields exact|extra, params owner   ALLOW
                  fields exact|extra, params renter  BLOCK not-owner
-                 fields missing                     BLOCK not-owner
+                 fields missing                     BLOCK value-missing
 
-checkArea · level 0 · identity, custom in-area
+checkArea · level 0 · identity, oneOf(town: millbrook, cedar_falls, ashford, riverton)
   every caller   fields exact|extra, params inArea     ALLOW
                  fields exact|extra, params elsewhere  BLOCK out-of-area
-                 fields missing                        BLOCK out-of-area
+                 fields missing                        BLOCK value-missing
 
-bookVisit · level 0 · identity, custom urgent-to-office, custom owners-only, custom in-area, confirmed(problem, ownership, town, howUrgent, visitDay, timeOfDay)
+bookVisit · level 0 · identity, noneOf(howUrgent: urgent), oneOf(ownership: own), oneOf(town: millbrook, cedar_falls, ashford, riverton), confirmed(problem, ownership, town, howUrgent, visitDay, timeOfDay)
   every caller   fields exact, confirmed none|mismatch  BLOCK confirmation
                  fields exact, confirmed match          ALLOW
                  fields extra|missing                   BLOCK confirmation
 
 (unlisted) · not in the policy
   every caller   BLOCK unknown-tool
-
-custom rules, and their examples as the gate decides them in each action that names the rule
-  urgent-to-office: Something urgent goes to the office rather than to a booked visit
-    checkUrgency  it can wait       ALLOW
-    bookVisit  it can wait          ALLOW
-    checkUrgency  it is urgent      NEEDS_HUMAN urgent
-    bookVisit  it is urgent         NEEDS_HUMAN urgent
-    checkUrgency  no urgency given  BLOCK urgency-unknown
-    bookVisit  no urgency given     BLOCK urgency-unknown
-  owners-only: The caller owns the home
-    checkOwner  an owner  ALLOW
-    bookVisit  an owner   ALLOW
-    checkOwner  a renter  BLOCK not-owner
-    bookVisit  a renter   BLOCK not-owner
-  in-area: The home is in Millbrook, Cedar Falls, Ashford or Riverton
-    checkArea  a town in the area  ALLOW
-    bookVisit  a town in the area  ALLOW
-    checkArea  another town        BLOCK out-of-area
-    bookVisit  another town        BLOCK out-of-area

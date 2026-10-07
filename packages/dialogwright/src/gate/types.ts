@@ -60,7 +60,7 @@ export interface ToolCall {
 export type GateVerdict = 'ALLOW' | 'BLOCK' | 'STEP_UP' | 'NEEDS_HUMAN';
 
 export interface RuleResult {
-  /** The rule's name (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`), an app's own rule's id, or `unlisted` (the tool itself is not on the approved list). */
+  /** The rule's name (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`, `oneOf`, `noneOf`), an app's own rule's id, or `unlisted` (the tool itself is not on the approved list). */
   readonly id: string;
   readonly description: string; // plain English, for the console and the audit log
   /**

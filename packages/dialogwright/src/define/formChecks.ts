@@ -1,4 +1,5 @@
 import { DATE_IN_RANGE_REASONS, LIMIT_REASONS } from '../gate/bounded';
+import { NONE_OF_REASON, ONE_OF_REASON, VALUE_MISSING } from '../gate/listed';
 import { isDefinedRule } from '../gate/defineRule';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import { handoffPromptId } from '../prompts/render';
@@ -99,9 +100,16 @@ export function checkProblems(c: FormCheckInput): void {
   for (const [tool, action] of Object.entries(actions)) {
     if (action.check !== true) continue;
     if (!named.has(tool)) report('policy.yaml', ['actions', tool], `check "${tool}" is named by no form's checks, so the gate is never asked it`, `add "- action: ${tool}" with the slots it reads to the checks of a form in forms.yaml, or delete the action`, true);
+    // What the check is sent: the slots every form's check of it reads (`with`), each as the param of its name.
+    const sent = [...new Set(Object.values(config.forms.forms).flatMap((form) => (form.checks ?? []).filter((x) => x.action === tool).flatMap((x) => x.with)))];
     action.rules.forEach((entry, i) => {
-      if (readRule(entry).rule === 'confirmed') {
+      const rule = readRule(entry);
+      if (rule.rule === 'confirmed') {
         report('policy.yaml', ['actions', tool, 'rules', i], `check "${tool}" runs the confirmed rule, but nothing is confirmed part-way through a form, so it would refuse every time`, 'delete the rule: the write the form makes at its completion holds what the caller confirmed');
+      } else if ((rule.rule === 'oneOf' || rule.rule === 'noneOf' || rule.rule === 'dateInRange' || rule.rule === 'limit') && named.has(tool) && !sent.includes(rule.field)) {
+        // A rule on a param the check is never sent refuses every time (value-missing, not-a-date, ...).
+        const guess = closest(rule.field, sent);
+        report('policy.yaml', ['actions', tool, 'rules', i, rule.rule, 'field'], `check "${tool}" holds "${rule.field}", which no form's check of it reads (with: ${sent.join(', ') || 'none'}), so it would refuse every time`, `${guess ? `rename it to "${guess}", or ` : ''}add "${rule.field}" to the check's \`with\` in forms.yaml`);
       }
     });
   }
@@ -126,6 +134,8 @@ function reasonsOf(rules: readonly unknown[], customRules: Readonly<Record<strin
       case 'fields': out.add('minimization'); break;
       case 'dateInRange': for (const r of Object.values({ ...DATE_IN_RANGE_REASONS, ...rule.reasons })) out.add(r); break;
       case 'limit': for (const r of Object.values({ ...LIMIT_REASONS, ...rule.reasons })) out.add(r); break;
+      case 'oneOf': out.add(rule.reason ?? ONE_OF_REASON); out.add(VALUE_MISSING); break;
+      case 'noneOf': out.add(rule.reason ?? NONE_OF_REASON); out.add(VALUE_MISSING); break;
       case 'custom': {
         const defined = Object.hasOwn(customRules, rule.id) ? customRules[rule.id] : undefined;
         if (!isDefinedRule(defined)) return null;
@@ -147,10 +157,13 @@ export function checkWarnings(c: Omit<FormCheckInput, 'promptExists'>, customRul
       if (!action || action.check !== true) return;
       const reasons = reasonsOf(action.rules, customRules);
       if (reasons !== null) {
+        // Where the reason could come from: a custom rule's examples, or a list or range rule's own reason.
+        const custom = action.rules.some((entry) => readRule(entry).rule === 'custom');
         for (const reason of Object.keys(check.on ?? {})) {
           if (reasons.has(reason)) continue;
           const guess = closest(reason, [...reasons]);
-          report('forms.yaml', ['forms', id, 'checks', i, 'on', reason], `check "${check.action}" never refuses for "${reason}" (its rules refuse for ${[...reasons].map((r) => `"${r}"`).join(', ') || 'nothing'}), so this outcome never applies`, `${guess ? `rename it to "${guess}", or ` : ''}add an example to the custom rule that refuses for it, or delete it`, true);
+          const give = custom ? 'add an example to the custom rule that refuses for it' : 'give it as the reason of the rule that refuses (a list or range rule\'s `reason`)';
+          report('forms.yaml', ['forms', id, 'checks', i, 'on', reason], `check "${check.action}" never refuses for "${reason}" (its rules refuse for ${[...reasons].map((r) => `"${r}"`).join(', ') || 'nothing'}), so this outcome never applies`, `${guess ? `rename it to "${guess}", or ` : ''}${give}, or delete it`, true);
         }
       }
       // Defence in depth: the write the form makes names every rule the check holds the caller to.

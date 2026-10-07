@@ -9,28 +9,41 @@ import type { GateEvaluate } from './gateGrid';
 import {
   checkPolicyInvariants, formatPolicyInvariantViolations, INVARIANTS, policyInvariants, PolicyInvariantError, type InvariantName,
 } from './policyInvariants';
+import { screenedApp } from './screened/app';
 import { testkitApp } from './testkit';
 
 /**
- * The policy's invariants on the testkit and the library fixture: their gates hold to every one on
- * the whole grid, and on the testkit, whose policy has every kind of rule, each invariant applies to
- * cases (it is not vacuous). Then the anti-tautology test: a gate with one bug per invariant, each a
- * bug the gate's own lines would agree with, is caught by the invariant written for it, and the
- * failure names the invariant, the case and the rule.
+ * The policy's invariants on the testkit, the library fixture and the screened fixture: their gates
+ * hold to every one on the whole grid, and on the testkit, whose policy has every kind of rule but
+ * the list rules, each invariant applies to cases (it is not vacuous); the list rules' invariant
+ * applies on the screened fixture, whose checks are list rules. Then the anti-tautology test: a gate
+ * with one bug per invariant, each a bug the gate's own lines would agree with, is caught by the
+ * invariant written for it, and the failure names the invariant, the case and the rule.
  */
 
 useTestkit();
 
+/** The invariants the testkit's policy exercises: every one but the list rules', which it has none of. */
+type TestkitInvariant = Exclude<InvariantName, 'one-of'>;
+const TESTKIT_INVARIANTS = INVARIANTS.filter((name): name is TestkitInvariant => name !== 'one-of');
+
 describe('the policy invariants', () => {
-  it('hold on the testkit, and every invariant applies to some case', () => {
+  it('hold on the testkit, and every invariant but the list rules\' applies to some case', () => {
     const report = policyInvariants(testkitApp);
     expect(report.violations).toEqual([]);
     expect(report.cases).toBe(31104);
-    for (const name of INVARIANTS) expect([name, report.applied[name] > 0]).toEqual([name, true]);
+    for (const name of TESTKIT_INVARIANTS) expect([name, report.applied[name] > 0]).toEqual([name, true]);
+    expect(report.applied['one-of']).toBe(0);
   });
 
   it('hold on the library fixture', () => {
     expect(policyInvariants(libraryApp).violations).toEqual([]);
+  });
+
+  it('hold on the screened fixture, where the list rules\' invariant applies', () => {
+    const report = policyInvariants(screenedApp);
+    expect(report.violations).toEqual([]);
+    expect(report.applied['one-of']).toBeGreaterThan(0);
   });
 });
 
@@ -86,7 +99,7 @@ const ownerOrNull = (c: RuleContext, param: string, via: 'record' | undefined): 
 };
 
 /** Each invariant, and a gate with the one bug it exists to catch. */
-const BUGS: Record<InvariantName, { bug: string; evaluate: GateEvaluate }> = {
+const BUGS: Record<TestkitInvariant, { bug: string; evaluate: GateEvaluate }> = {
   unlisted: {
     bug: 'an action the policy does not list is allowed',
     evaluate: (call, p, facts, lk) => (Object.hasOwn(SOURCE.actions, call.tool) ? gate.evaluate(call, p, facts, lk) : ({ call, verdict: 'ALLOW', rules: [] } satisfies GateDecision)),
@@ -152,7 +165,7 @@ const BUGS: Record<InvariantName, { bug: string; evaluate: GateEvaluate }> = {
 };
 
 describe('the policy invariants catch a broken gate (anti-tautology)', () => {
-  for (const name of INVARIANTS) {
+  for (const name of TESTKIT_INVARIANTS) {
     const { bug, evaluate } = BUGS[name];
     it(`${name}: ${bug}`, () => {
       const { violations } = checkPolicyInvariants(testkitApp, { evaluate });
@@ -168,7 +181,33 @@ describe('the policy invariants catch a broken gate (anti-tautology)', () => {
   }
 
   it('each bug is caught by the invariant written for it, and by no other', () => {
-    const caughtBy = Object.fromEntries(INVARIANTS.map((name) => [name, [...new Set(checkPolicyInvariants(testkitApp, { evaluate: BUGS[name].evaluate }).violations.map((v) => v.invariant))].sort()]));
-    expect(caughtBy).toEqual(Object.fromEntries(INVARIANTS.map((name) => [name, [name]])));
+    const caughtBy = Object.fromEntries(TESTKIT_INVARIANTS.map((name) => [name, [...new Set(checkPolicyInvariants(testkitApp, { evaluate: BUGS[name].evaluate }).violations.map((v) => v.invariant))].sort()]));
+    expect(caughtBy).toEqual(Object.fromEntries(TESTKIT_INVARIANTS.map((name) => [name, [name]])));
+  });
+
+  // The list rules' invariant, on the screened fixture (its three checks and its booking hold to lists).
+  const screened = gateOf(screenedApp);
+  /** The screened gate with every oneOf rule letting a value it does not list through, as long as there is one. */
+  const looseOneOf: GateEvaluate = (() => {
+    const actions = Object.fromEntries(Object.entries(screened.source.actions).map(([tool, action]) => [tool, {
+      ...action,
+      rules: action.rules.map((r): Rule => (r.rule === 'oneOf' ? { rule: 'custom', id: RULE_ID.oneOf } : r)),
+    }]));
+    const loose = (c: RuleContext): RuleOutcome => {
+      const rule = screened.source.actions[c.call.tool]!.rules.find((r) => r.rule === 'oneOf');
+      const value = rule?.rule === 'oneOf' ? c.call.params[rule.field] ?? '' : '';
+      return value !== '' ? line(true) : line(false, { verdict: 'BLOCK', reason: 'value-missing' });
+    };
+    const g = compileGate({ ...screened.source, actions, customRules: { ...screened.source.customRules, [RULE_ID.oneOf]: loose } }, screened.tables, screened.subjectKind, screened.identityTools);
+    return (call, p, facts, lk) => g.evaluate(call, p, facts, lk);
+  })();
+
+  it('one-of: a oneOf rule lets through a value it does not list', () => {
+    const { violations } = checkPolicyInvariants(screenedApp, { evaluate: looseOneOf });
+    const caught = violations.filter((v) => v.invariant === 'one-of');
+    expect(caught.length).toBeGreaterThan(0);
+    expect(new Set(violations.map((v) => v.invariant))).toEqual(new Set(['one-of']));
+    expect(formatPolicyInvariantViolations(caught, 1)).toContain(`[one-of] ${caught[0]!.key}: oneOf: `);
+    expect(() => policyInvariants(screenedApp, { evaluate: looseOneOf })).toThrow(PolicyInvariantError);
   });
 });

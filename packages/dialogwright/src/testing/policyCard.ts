@@ -7,6 +7,7 @@ import { refText, todayText, type DateBound, type LookupRef, type NumberBound } 
 import { identityToolsOf, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { isDefinedRule } from '../gate/defineRule';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
+import { NONE_OF_REASON, ONE_OF_REASON } from '../gate/listed';
 import type { Level } from '../gate/types';
 import {
   andList, capitalize, cell, code, configHashOf, expectGeneratedPage, formWords, humanize, levelName, lowerFirst, mermaidLabel, nodeId, paramNoun, slotNoun, writeGeneratedPage,
@@ -93,6 +94,41 @@ function whoseLookups(app: App, rule: Extract<Rule, { rule: 'dateInRange' | 'lim
   return `; ${lookups} ${refs.length === 1 ? 'reads' : 'read'} the ${nouns} the scope rule above holds to the caller's own records, or those they act for`;
 }
 
+/** A list in words, as alternatives: "a", "a or b", "a, b or c". */
+function orList(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`;
+}
+
+/** A param in words, with its name in code where the words are not simply its name: "town", "owns or rents (`ownership`)". */
+function paramWords(app: App, param: string): string {
+  const noun = paramNoun(app, param);
+  return noun === humanize(param) ? noun : `${noun} (${code(param)})`;
+}
+
+/**
+ * A value of a list rule in words: for a choice slot's option, what the option says ("Cedar Falls"),
+ * with its id in code where the words are not simply the id ("you own it (`own`)"); any other value
+ * in code, as the param carries it.
+ */
+function valueWords(app: App, param: string, value: string): string {
+  const spec = Object.hasOwn(app.slots, param) ? (app.slots[param] as { type?: unknown; config?: { options?: unknown } }) : undefined;
+  const options = spec?.type === 'choice' ? spec.config?.options : undefined;
+  const option = typeof options === 'object' && options !== null && Object.hasOwn(options, value) ? (options as Record<string, { say?: unknown }>)[value] : undefined;
+  const say = typeof option?.say === 'string' && option.say !== '' ? option.say : null;
+  if (say === null) return code(value);
+  return say.toLowerCase() === humanize(value) ? say : `${say} (${code(value)})`;
+}
+
+/** A oneOf or noneOf rule in words: "town must be one of Millbrook, Cedar Falls or Ashford: any other is refused (`out-of-area`), ...". */
+function listLine(app: App, rule: Extract<Rule, { rule: 'oneOf' | 'noneOf' }>): string {
+  const values = rule.values.map((v) => valueWords(app, rule.field, v));
+  const who = paramWords(app, rule.field);
+  const outcome = `${failure(rule.verdict)} (${code(rule.reason ?? (rule.rule === 'oneOf' ? ONE_OF_REASON : NONE_OF_REASON))}), and a missing value is refused`;
+  if (rule.rule === 'oneOf') return values.length === 1 ? `${who} must be ${values[0]}: anything else ${outcome}` : `${who} must be one of ${orList(values)}: any other ${outcome}`;
+  return values.length === 1 ? `${who} must not be ${values[0]}: that ${outcome}` : `${who} must be none of ${orList(values)}: any of them ${outcome}`;
+}
+
 /** One rule of an action in plain English, with its parameters. */
 function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Rule): string {
   const subjectKind = identityOf(app).subjectKind;
@@ -128,6 +164,9 @@ function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Ru
       const bounds = [...(rule.min ? [`at least ${boundText(rule.min)}`] : []), ...(rule.max ? [`at most ${boundText(rule.max)}`] : [])];
       return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (a number outside it ${failure(rule.verdicts?.outOfRange)}; anything that is not a number is refused)${whoseLookups(app, rule)}`;
     }
+    case 'oneOf':
+    case 'noneOf':
+      return listLine(app, rule);
     case 'custom': {
       const defined = source.customRules?.[rule.id];
       const what = isDefinedRule(defined) ? lowerFirst(defined.description) : `the app's own rule (no description given)`;
@@ -136,9 +175,10 @@ function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Ru
   }
 }
 
-/** A rule by its name, as a diagram says it: `scope`, `custom R8`, `limit amount`. */
+/** A rule by its name, as a diagram says it: `scope`, `custom R8`, `limit amount`, `oneOf town`. */
 export function ruleName(rule: Rule): string {
-  return rule.rule === 'custom' ? `custom ${rule.id}` : rule.rule === 'dateInRange' || rule.rule === 'limit' ? `${rule.rule} ${rule.field}` : rule.rule;
+  if (rule.rule === 'custom') return `custom ${rule.id}`;
+  return rule.rule === 'dateInRange' || rule.rule === 'limit' || rule.rule === 'oneOf' || rule.rule === 'noneOf' ? `${rule.rule} ${rule.field}` : rule.rule;
 }
 
 /** The levels the ladder has, from 0 to its top. */

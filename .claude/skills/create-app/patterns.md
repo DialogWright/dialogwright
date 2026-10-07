@@ -352,6 +352,20 @@ customRules: { 'first-date-within-30-days': within30Days },
 
 A custom rule's `compared` line goes to the audit as it is: never put a value in it that the app masks (an identifier, a date of birth, free text). Log the custom rule as a gap in the worksheet.
 
+## A value from a list: `oneOf` and `noneOf`
+
+A param held to a list is a built-in rule, not a custom one ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)):
+
+```yaml
+# policy.yaml, in an action's rules:
+      - oneOf: { field: town, values: [millbrook, cedar_falls, ashford, riverton], reason: out-of-area }
+      - noneOf: { field: howUrgent, values: [emergency], reason: emergency, verdict: NEEDS_HUMAN }
+```
+
+- The values are the param's values as the slot holds them, matched exactly: a choice slot's option ids (`check` refuses one that is not an option, and names the closest). No case-insensitive match: a value said several ways is one choice option.
+- A failure is `BLOCK` with the rule's `reason` (`not-one-of` or `one-of` without one), or a person with `verdict: NEEDS_HUMAN`. A missing or empty value is always `BLOCK` `value-missing`.
+- They are what a form's checks ask ([below](#qualify-before-you-collect)). Log nothing as a gap: they need no code.
+
 ## A value no slot holds, in the read-back
 
 A summary can name a value the code works out (a total from the record, a fee): the form's `onSummaryRead` hook gives it as a variable. Without it the regression stops with `prompt variable missing: <name>`.
@@ -405,32 +419,39 @@ A paragraph that says who the line is not for ("if they rent, or the home is out
     say: send an emergency to the office
     check: true
     level: 0
-    rules: [identity, { custom: emergency-to-office }]
+    rules:
+      - identity
+      - noneOf: { field: howUrgent, values: [emergency], reason: emergency, verdict: NEEDS_HUMAN }
   checkOwner:
     say: check the caller owns the home
     check: true
     level: 0
-    rules: [identity, { custom: homeowners-only }]
+    rules:
+      - identity
+      - oneOf: { field: ownership, values: [own], reason: not-owner }
   checkArea:
     say: check the home is in the service area
     check: true
     level: 0
-    rules: [identity, { custom: in-service-area }]
+    rules:
+      - identity
+      - oneOf: { field: town, values: [millbrook, cedar_falls, ashford, riverton], reason: out-of-area }
   bookInspection:
     say: book a free inspection
     level: 0
     rules:
       - identity
-      - custom: emergency-to-office
-      - custom: homeowners-only
-      - custom: in-service-area
+      - noneOf: { field: howUrgent, values: [emergency], reason: emergency, verdict: NEEDS_HUMAN }
+      - oneOf: { field: ownership, values: [own], reason: not-owner }
+      - oneOf: { field: town, values: [millbrook, cedar_falls, ashford, riverton], reason: out-of-area }
       - confirmed: [problem, howUrgent, ownership, town, address, name, phone, heardFrom, day, timeOfDay, visitDate]
       - dateInRange: { field: visitDate, notBefore: today+1 }
 ```
 
 - **A check action has no tool** (`check: true`): the gate decides and nothing runs, so there is no tool to write and no `params` to list. `calls` does not list it; the form reaches it through `checks`.
-- **The rules are written once**, each a `defineRule` in the code with examples, and named twice: in the check, and in the write. That is defence in depth: the completion still refuses what a check refused, and `pnpm check` warns when a check's rule is missing from every action the form calls. A rule's examples send every param the write sends (the write's `confirmed` rule holds a call to exactly its fields), so each example passes or fails on the rule alone in both actions.
-- **`with` names the slots the check sends**, each as the param of the same name: the rule reads `c.call.params.ownership`, the value as the slot holds it (`rent`, not "you rent it"). A rule fails closed: a missing or empty param refuses.
+- **The rules are lists, so they are built-in**: `oneOf` (the value is one of those listed: an owner, a town in the area) and `noneOf` (none of them: not an emergency), each with the `reason` the check's `on` maps and, for a person, `verdict: NEEDS_HUMAN` ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)). No code, and no examples to write: the policy card says each in words ("town must be one of Millbrook, Cedar Falls, Ashford or Riverton: any other is refused (`out-of-area`), ..."). Write a `defineRule` only for what no list says (an age from a date of birth, say).
+- **Each rule is named twice**: in the check, and in the write. That is defence in depth: the completion still refuses what a check refused, and `pnpm check` warns when a check's rule is missing from every action the form calls. Copy the line as it is, so the two lists cannot drift.
+- **`with` names the slots the check sends**, each as the param of the same name, its value as the slot holds it (`rent`, not "you rent it"; `cedar_falls`, not "Cedar Falls"). So a list names a choice slot's option ids, and `pnpm check` refuses one that is not an option (with the closest) and a rule on a param no check of it sends. The match is exact. A rule fails closed: a missing or empty value refuses, `value-missing`.
 - **One check per answer, or one for the group.** A check per answer refuses on the turn the answer is given, so a renter is told before the town is asked. One check over several slots (`with: [howUrgent, ownership, town]`, one `checkHome` action) runs only once all are filled: use it only when the answers rule a caller out together.
 - **The order of `checks` is the order a caller with two reasons hears them.** Put first the one the business cares about most (an emergency, then ownership). All the slots of the form listen from its first turn, so "I rent a place in Ashford and water is pouring in" fills three and runs the checks in order; the first refusal speaks.
 - **The endings**: `end` (the line, then the goodbye), `anything-else` (the line, then "anything else?"), `handoff` (to a person with `handoff_<reason>`, `say` optional before it). Each line is in `prompts.yaml` and renders with the form's slot displays (`{town}`). A reason `on` does not list gets `c.refusal`'s handling. When the check refuses on the turn the form opened, the engine drops "Sure, I can help you ..." for you.
@@ -634,7 +655,7 @@ audit:
 - The rule lines and the tool's summary are masked the same way. A custom rule still writes only what may be recorded.
 - A param no tool lists, or a listed param nothing declares, is a `pnpm check` problem whose fix names both ways out. A `confirmed` field is always a slot or declared. The confirmed list's fields that an action sends empty (the union list, above) are listed too.
 - The policy card has the "What is recorded" table: read it against the worksheet.
-- Write `passed(decision, 'role')` (from `'dialogwright/policy'`) to ask whether a rule passed, by its name; rule lines are recorded under names (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`, a custom rule's own id).
+- Write `passed(decision, 'role')` (from `'dialogwright/policy'`) to ask whether a rule passed, by its name; rule lines are recorded under names (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`, `oneOf`, `noneOf`, a custom rule's own id).
 
 ## Values with no slot type
 
@@ -704,30 +725,30 @@ testing: {
 
 `record` (one of the subject's records, `{ subject: '55501234', record: 'R-1' }`) is needed only when a rule scopes by a record (`scope: { record: <param> }`); the grid then says which of the four lacks one. With `scope: { param }` rules only, leave it out.
 
-**An action whose rules read params needs named calls.** For each action the grid builds one call: its subject param and its `confirmed` or `fields` list, each valued from `values`. An action with neither (a read whose custom rules decide on what the caller said: whether they own the home, its town, how urgent it is) is sent no params at all, so its rules fail closed and every caller is refused for the same reason. That matrix looks plausible ("every caller BLOCK not-owner") and is wrong. Give each such action named sets of params under `calls`, one for each outcome its rules can reach, so the matrix shows every reason the paragraph gives:
+**An action whose rules read params needs named calls.** For each action the grid builds one call: its subject param and its `confirmed` or `fields` list, each valued from `values`. An action with neither (a form's check, whose rules decide on what the caller said: whether they own the home, its town, how urgent it is) is sent no params at all, so its rules fail closed and every caller is refused for the same reason. That matrix looks plausible ("every caller BLOCK value-missing") and is wrong. Give each such action named sets of params under `calls`, one for each outcome its rules can reach, so the matrix shows every reason the paragraph gives. The engine's fixture for checks (`packages/dialogwright/src/testing/screened`) has these:
 
 ```ts
 // src/app.ts, in testing.policyMatrix, beside principals, records and values
 calls: {
-  checkHome: {
-    qualifies: { howUrgent: 'worsening', ownership: 'own', town: 'cedar_falls' },
-    emergency: { howUrgent: 'emergency', ownership: 'rent', town: 'elsewhere' },
-    renter: { howUrgent: 'worsening', ownership: 'rent', town: 'cedar_falls' },
-    outsideArea: { howUrgent: 'worsening', ownership: 'own', town: 'elsewhere' },
-  },
+  checkUrgency: { routine: { howUrgent: 'routine' }, urgent: { howUrgent: 'urgent' } },
+  checkOwner: { owner: { ownership: 'own' }, renter: { ownership: 'rent' } },
+  checkArea: { inArea: { town: 'riverton' }, elsewhere: { town: 'elsewhere' } },
 },
 ```
 
 ```text
-checkHome · level 0 · identity, custom emergency-to-office, custom homeowners-only, custom in-service-area
-  every caller   fields exact|extra, params qualifies  ALLOW
-                 fields missing, params qualifies      BLOCK out-of-area
-                 params emergency                      NEEDS_HUMAN emergency
-                 params renter                         BLOCK not-owner
-                 params outsideArea                    BLOCK out-of-area
+checkOwner · level 0 · identity, oneOf(ownership: own)
+  every caller   fields exact|extra, params owner   ALLOW
+                 fields exact|extra, params renter  BLOCK not-owner
+                 fields missing                     BLOCK value-missing
+
+checkArea · level 0 · identity, oneOf(town: millbrook, cedar_falls, ashford, riverton)
+  every caller   fields exact|extra, params inArea     ALLOW
+                 fields exact|extra, params elsewhere  BLOCK out-of-area
+                 fields missing                        BLOCK value-missing
 ```
 
-The grid still sets the subject param itself. Use `calls` too for an action with a `confirmed` list whose custom rules turn on a value (a visit today, one a rule refuses): one set that passes, and one for each value a rule refuses. A row where every caller is refused for one reason is a sign the calls are missing, so read it against the worksheet before you accept it.
+The grid still sets the subject param itself. Use `calls` too for an action with a `confirmed` list whose rules turn on a value (a visit today, one a rule refuses): one set that passes, and one for each value a rule refuses. A row where every caller is refused for one reason is a sign the calls are missing, so read it against the worksheet before you accept it.
 
 With an app with no delegates, the `unlistedRole`, `roleless` and `otherParty` callers are still given (of a kind the app does not serve), as the clinic's are. Then the test, and the first matrix written deliberately:
 

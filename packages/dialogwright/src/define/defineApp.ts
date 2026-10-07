@@ -17,7 +17,7 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { BUILT_IN_IDS_NOTE, BUILT_IN_RULES } from '../gate/compiled';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { ruleDefinitionProblems } from '../gate/defineRule';
-import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotRedactOf, toolFieldProblems, toolParamProblems } from './policyFile';
+import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotChoicesOf, slotRedactOf, toolFieldProblems, toolParamProblems } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
 import { kbLinkProblems } from '../kb/rules';
@@ -450,6 +450,7 @@ export function crossLink(
     toolFields: Object.fromEntries(tools.map((tool) => [tool, declaredFields(code.tools?.[tool])])),
     toolParams: Object.fromEntries(tools.map((tool) => [tool, declaredParams(code.tools?.[tool])])),
     slotRedact: slotRedactOf(linked.slots),
+    slotChoices: slotChoicesOf(linked.slots),
     slots: linked.known,
     addSlot,
     customRules: Object.keys(customRules),
