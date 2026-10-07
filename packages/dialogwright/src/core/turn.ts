@@ -808,13 +808,16 @@ function passedAcks(s: Session, checks: Extract<ReturnType<typeof runChecks>, { 
 /**
  * A check refused (core/checks.ts): the form ends as its reason's outcome says, and the audit is told
  * (`form_stopped`). The form is never counted as completed. When the form was entered on this very
- * turn, its ack_intent ("Sure, I can help you ...") is dropped, so the caller does not hear yes and no
- * in one breath. `end` leaves the form and its slots on the session, as a completion that ends the
- * call does, with no question pending; with a request queued, the call goes on to it instead.
+ * turn, the line that said so is dropped (its ack_intent, "Sure, I can help you ...", or the
+ * bridge_next into it from the queue, "Now, let's ..."), so the caller does not hear yes and no in
+ * one breath. `end` leaves the form and its slots on the session, as a completion that ends the call
+ * does, with no question pending (the call is over, so nothing reads them again); with a request
+ * queued, the call goes on to it instead.
  */
 function stopForm(s: Session, form: FormId, refused: Extract<ReturnType<typeof runChecks>, { kind: 'refused' }>, acks: Ack[], io: TurnIO): Decision {
   const label = intentLabel(io.app, form);
-  const kept = acks.filter((a) => !(a.promptId === 'ack_intent' && a.vars.intentLabel === label) && !(a.promptId === 'ack_intent_then' && a.vars.a === label));
+  const entering = (a: Ack): boolean => ((a.promptId === 'ack_intent' || a.promptId === 'bridge_next') && a.vars.intentLabel === label) || (a.promptId === 'ack_intent_then' && a.vars.a === label);
+  const kept = acks.filter((a) => !entering(a));
   const ending = checkEnding(s, refused.check, refused.decision, kept, summaryVars(s));
   io.out.stopped = { form, action: refused.check.action, reason: refused.decision.reason ?? null, then: ending.then };
   switch (ending.then) {

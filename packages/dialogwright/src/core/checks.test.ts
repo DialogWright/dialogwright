@@ -352,6 +352,29 @@ describe('a value carried into the form', () => {
     expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'anything_else' });
     expect(t.stopped).toEqual({ form: 'book_visit', action: 'checkOwner', reason: 'not-owner', then: 'anything-else' });
   });
+
+  it('bridged into from the queue: refused without "Now, let\'s ..." before the refusal', () => {
+    // A form finished with book_visit queued (here `urgent`, made to say its line and carry on).
+    const app: App = {
+      ...carried,
+      id: 'screened-bridged',
+      intents: { ...carried.intents, urgent: { ...carried.intents.urgent!, priority: false } },
+      forms: { ...carried.forms, urgent: { ...carried.forms.urgent!, complete: (c) => ({ kind: 'said', acks: c.acks }) } },
+    };
+    use(app);
+    const s = newSession('bridged', 0, VOICE_RELAY, ANONYMOUS, app.id);
+    s.slots.ownership = { ...s.slots.ownership!, value: 'rent', display: 'you rent it' };
+    setForm(s, 'urgent');
+    s.entered = 'urgent';
+    s.queued = ['book_visit'];
+    s.pendingConfirmation = { target: 'form', form: 'urgent', attempts: 0 };
+    s.promptedFor = 'confirm';
+    const t = resolve(s, speechEvent('yes', true), { ...PLAIN, confirmsYes: noul(0.95), confirmsNo: noul(0.02) }, turnContext());
+    expect(gates(t)).toEqual(['checkOwner:BLOCK:not-owner']);
+    expect(ackIds(t)).toEqual(['decline_renter']);
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'anything_else' });
+    expect(t.session.completed).toEqual(['urgent']);
+  });
 });
 
 describe('a detail named at the summary with another value in the same breath', () => {
