@@ -185,12 +185,20 @@ const TRY_HANDOFF = '+15555550123';
 /** The most times a question is asked again before the wizard gives up. */
 const TRIES = 3;
 
-/** A value as a settings file line; a value a line cannot hold is refused rather than written wrong. */
-function envLine(name: string, value: string): string {
+/**
+ * A value as a settings file line that a shell (`set -a && . ./.env && set +a`, as the README's
+ * recording steps do) and the server (Node's parseEnv, envFile.ts) both read as the value itself.
+ * Bare when it holds only characters neither treats specially (no `~`, which a shell expands after
+ * `=` or `:`); else in single quotes, inside which neither changes anything; else, for a value with a
+ * `'` in it, in double quotes, when it holds none of the characters a shell or parseEnv would read
+ * there (`"`, `$`, a backquote, a backslash). Anything else is refused rather than written wrong.
+ */
+export function envLine(name: string, value: string): string {
   if (/[\r\n]/.test(value)) throw new UsageError(`${name} cannot hold a line break`);
-  if (/^[A-Za-z0-9_@%+=:,./~-]*$/.test(value)) return `${name}=${value}`;
-  if (value.includes("'")) throw new UsageError(`${name} cannot be written with both spaces or symbols and a ' in it`);
-  return `${name}='${value}'`;
+  if (/^[A-Za-z0-9_@%+=:,./-]*$/.test(value)) return `${name}=${value}`;
+  if (!value.includes("'")) return `${name}='${value}'`;
+  if (!/["$`\\]/.test(value)) return `${name}="${value}"`;
+  throw new UsageError(`${name} cannot be written so that a shell and the server read it alike: it has a ' and one of " $ \` \\ in it`);
 }
 
 /** What a settings file says, in groups, each with its comment. */
@@ -454,7 +462,9 @@ function writeSettings(file: string, app: WorkspaceApp, sections: Section[], out
     `# ${app.name}'s settings, written by pnpm configure. It holds keys: it is readable by you alone (mode 600)`,
     '# and git-ignored. Never commit it, paste it or send it. pnpm start reads it (as ENV_FILE), and so do the',
     '# server and pnpm diagnose when ENV_FILE or --env-file names it; a variable already in the environment wins',
-    '# over the file. Every other setting, with its default, is in .env.example beside it.',
+    '# over the file. The regression run reads it too, against a model or its cassette (regress --client record,',
+    "# recorded or jev, and the cassette trim), and a shell can source it (set -a && . ./.env && set +a).",
+    '# Every other setting, with its default, is in .env.example beside it.',
     ...sections.flatMap((s) => ['', ...s.comment.map((c) => `# ${c}`), ...s.lines.map((l) => `${l.commented ? '# ' : ''}${envLine(l.name, l.value)}`)]),
     '',
   ].join('\n');

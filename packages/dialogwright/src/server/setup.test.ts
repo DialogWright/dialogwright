@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { parseEnv } from 'node:util';
-import { linePrompt, runSetup, type Prompt, type SetupIo } from './setup';
+import { envLine, linePrompt, runSetup, type Prompt, type SetupIo } from './setup';
 
 /**
  * `pnpm configure` (setup.ts): the wizard with scripted answers, and with flags alone. Every key is a
@@ -191,6 +192,76 @@ describe('pnpm configure with flags alone', () => {
     const bad = io(w.root, null, { TWILIO_AUTH_TOKEN: TWILIO_TOKEN });
     expect(await runSetup([...argv.filter((a) => a !== 'http://localhost:8000' && a !== '--base-url'), '--base-url', 'http://jev.example.com', '--force'], bad)).toBe(2);
     expect(bad.lines.join('\n')).toContain('JEV_BASE_URL must be https unless its host is localhost');
+  });
+});
+
+/**
+ * What a shell reads from a settings file: `set -a; . ./file; set +a`, as the README's recording steps
+ * source it, then each variable named, as JSON. HOME is set, so a `~` the shell expanded would show.
+ */
+function sourced(file: string, names: readonly string[]): Record<string, string | undefined> {
+  const script = `set -a; . "$1"; set +a; shift; exec "$NODE" -e 'const o={};for(const n of process.argv.slice(1))o[n]=process.env[n];process.stdout.write(JSON.stringify(o))' "$@"`;
+  const out = execFileSync('/bin/sh', ['-c', script, 'sh', file, ...names], {
+    env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: '/home/example', NODE: process.execPath },
+    encoding: 'utf8',
+  });
+  return JSON.parse(out) as Record<string, string | undefined>;
+}
+
+describe('the settings file, read alike by a shell and by the server', () => {
+  const TRICKY = [
+    'plain', '', 'two words', 'speaker-events tokens-played', '$HOME', 'a#b', '#lead', '~/x', 'a:~/b', 'semi;colon', 'and&', 'pipe|',
+    'glob*?', '[x]', '(paren)', '<in>', 'bang!', 'tab\there', ' padded ', 'say "hi"', 'back\\slash', 'tick`s`', "it's", "it's (fine)",
+    'naïve café', 'x=y', 'a,b:c@d%e+f',
+  ];
+
+  it('writes each value so that sh and parseEnv both read the value itself, or refuses it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'configure-sh-'));
+    dirs.push(dir);
+    const lines: string[] = [];
+    const written: Record<string, string> = {};
+    TRICKY.forEach((value, i) => {
+      lines.push(envLine(`V${i}`, value));
+      written[`V${i}`] = value;
+    });
+    const file = join(dir, '.env');
+    writeFileSync(file, `# a comment with a ' in it\n${lines.join('\n')}\n`);
+    expect(sourced(file, Object.keys(written))).toEqual(written);
+    expect(parseEnv(readFileSync(file, 'utf8'))).toEqual(written);
+    // A bare ~ would be the shell's home; it is quoted instead.
+    expect(envLine('V', '~/x')).toBe("V='~/x'");
+    expect(envLine('V', "it's")).toBe('V="it\'s"');
+  });
+
+  it("refuses a value no quoting reads alike, and a line break, naming the variable and never the value", () => {
+    for (const value of [`it's $HOME`, `it's "quoted"`, "it's \\", "it's `x`"]) {
+      expect(() => envLine('JEV_API_KEY', value), value).toThrow(/^JEV_API_KEY cannot be written so that a shell and the server read it alike/);
+    }
+    expect(() => envLine('JEV_API_KEY', 'a\nb')).toThrow('JEV_API_KEY cannot hold a line break');
+  });
+
+  it('writes files a shell sources, as the server reads them: a laptop under a folder with a space in its name, and a key with a quote', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'configure with space-'));
+    dirs.push(root);
+    writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+    mkdirSync(join(root, 'apps', 'alpha'), { recursive: true });
+    writeFileSync(join(root, 'apps', 'alpha', 'package.json'), JSON.stringify({ name: '@example/alpha', scripts: { serve: 'tsx src/serve.ts' } }));
+    writeFileSync(join(root, 'apps', 'alpha', 'app.yaml'), 'id: alpha\n');
+    // The widget's script, so its path (with the space) is written uncommented.
+    mkdirSync(join(root, 'packages', 'widget', 'dist'), { recursive: true });
+    writeFileSync(join(root, 'packages', 'widget', 'dist', 'dialogwright-widget.js'), '');
+    const file = join(root, 'apps', 'alpha', '.env');
+    expect(await runSetup(['--app', 'alpha', '--mode', 'try', '--non-interactive'], io(root, null))).toBe(0);
+    const laptop = settings(file);
+    expect(laptop.WIDGET_FILE).toContain('configure with space-');
+    expect(sourced(file, Object.keys(laptop))).toEqual(laptop);
+
+    const key = "made-up key with a ' in it";
+    const argv = ['--app', 'alpha', '--mode', 'phone', '--carrier', 'twilio', '--model', 'custom', '--base-url', 'http://localhost:8000', '--model-id', 'example local model', '--handoff', '+15555550123', '--force', '--non-interactive'];
+    expect(await runSetup(argv, io(root, null, { TWILIO_AUTH_TOKEN: TWILIO_TOKEN, JEV_API_KEY: key }))).toBe(0);
+    const phone = settings(file);
+    expect(phone).toMatchObject({ JEV_API_KEY: key, JEV_MODEL: 'example local model' });
+    expect(sourced(file, Object.keys(phone))).toEqual(phone);
   });
 });
 

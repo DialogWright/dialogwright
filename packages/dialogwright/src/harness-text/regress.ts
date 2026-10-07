@@ -15,6 +15,7 @@ import type { ScenarioOutcome } from './baseline';
 import { readBaseline, REGRESS_TODAY, writeExpected } from './baseline';
 import { emptyRunAll, runAll } from './runAll';
 import { parseScreenMode } from '../core/screen';
+import { loadHarnessEnv } from '../server/envFile';
 
 /**
  * Whether a run on this client refuses a spoken step whose words no corpus line has: only the
@@ -48,6 +49,14 @@ async function run(): Promise<void> {
     console.error(`--update is stub-only: ${expectedDir()} is the label-derived baseline and is re-recorded from the stub`);
     process.exitCode = 1;
     return;
+  }
+  // A run against a model or its cassette reads the app's settings as `pnpm start` does (the file
+  // ENV_FILE names, else the app's own .env), so the key and the provider `pnpm configure` wrote are
+  // the ones it uses, a variable already in the environment winning. A stub run reads none: it needs
+  // no setting, and gives the same answers on every machine.
+  if (REAL_MODEL_KINDS.has(kind)) {
+    const loaded = loadHarnessEnv();
+    if (loaded !== null) console.error(loaded);
   }
   const thresholds = buildThresholds(args.threshold ?? []);
   const screen = parseScreenMode(args.screen, '--screen');

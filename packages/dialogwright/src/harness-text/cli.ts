@@ -15,6 +15,8 @@ import { buildThresholds, buildClient, defaultCorpusFile, isClientKind, modelHea
 import { defaultTimeZone, localDateIso } from '../run/clock';
 import { VOICE_RELAY } from '../channel/caps';
 import { parseScreenMode } from '../core/screen';
+import { loadHarnessEnv } from '../server/envFile';
+import { REAL_MODEL_KINDS } from './regressDiff';
 
 /** Parsed inside main() so a bad flag reports through the same clean error path as a bad run. */
 function parseCliArgs() {
@@ -111,6 +113,11 @@ async function repl(opts: RunOptions, quiet: boolean): Promise<TraceRecord[]> {
 
 async function run(): Promise<void> {
   const args = parseCliArgs();
+  // Against a model or its cassette, the app's settings as `pnpm start` reads them (regress.ts).
+  if (REAL_MODEL_KINDS.has(args.client!)) {
+    const loaded = loadHarnessEnv();
+    if (loaded !== null) console.error(loaded);
+  }
   const thresholds = buildThresholds(args.threshold ?? []);
   const todayIso = resolveTodayIso(args.today);
   // Resolved once, so the header names the model the client asks; buildClient refuses an unknown kind.

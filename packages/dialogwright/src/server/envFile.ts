@@ -60,3 +60,35 @@ export function applyEnvFile(path: string, env: Env): string[] {
   }
   return set;
 }
+
+/**
+ * The settings file a harness command reads (the regression run and the text harness against a model
+ * or its cassette, and the cassette trim): the file ENV_FILE names, relative to where the command was
+ * run as for `pnpm start`, else the app's own `.env` in the folder the command runs in (`pnpm --filter
+ * <app>` runs a script in its package folder, where `pnpm configure` writes it), if there is one.
+ * Null when ENV_FILE is unset and there is no `.env`.
+ */
+export function harnessEnvFilePath(env: Env, cwd: string = process.cwd()): string | null {
+  const named = envFilePathOf([], env, cwd);
+  if (named !== null) return named;
+  const own = resolve(cwd, '.env');
+  try {
+    return statSync(own).isFile() ? own : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the harness's settings file (harnessEnvFilePath) into `env`, a variable already there winning
+ * over the file, and returns the line that says so (the path and how many it set; never a value), or
+ * null when there is no file. Throws, as the server does, when ENV_FILE names a file that is not there.
+ */
+export function loadHarnessEnv(env: Env = process.env, cwd: string = process.cwd()): string | null {
+  const path = harnessEnvFilePath(env, cwd);
+  if (path === null) return null;
+  const total = Object.keys(readEnvFile(path)).length;
+  const set = applyEnvFile(path, env).length;
+  const kept = total - set;
+  return `settings from ${path} (${set} set${kept > 0 ? `, ${kept} already in the environment, which wins` : ''})`;
+}
