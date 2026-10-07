@@ -183,6 +183,8 @@ export interface NowView {
   /** What the task established, from its audit drafts by the app's fact rules (ConsoleMeta.facts). */
   fact: string | null;
   handoff: NowHandoff | null;
+  /** "stopped: checkOwner, not-owner": a form's check ended the form on the latest turn (core/checks.ts). Absent otherwise. */
+  stopped?: string;
 }
 
 export interface View {

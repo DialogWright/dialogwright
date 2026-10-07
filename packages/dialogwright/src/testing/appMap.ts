@@ -53,6 +53,7 @@ export function danglingReferences(app: App): DanglingReference[] {
     if (app.intents[id]?.kind !== 'form') add('form-without-intent', id, `the form ${code(id)} has no intent that starts it`);
     for (const slot of form.slots) if (!Object.hasOwn(app.slots, slot)) add('form-slot-missing', id, `the form ${code(id)} asks for the slot ${code(slot)}, which does not exist`);
     for (const tool of form.calls ?? []) if (!Object.hasOwn(actions, tool)) add('form-calls-unlisted', id, `the form ${code(id)} calls ${code(tool)}, which the policy does not list`);
+    for (const check of form.checks ?? []) if (!Object.hasOwn(actions, check.action)) add('form-calls-unlisted', id, `the form ${code(id)} checks ${code(check.action)}, which the policy does not list`);
   }
   for (const tool of unreachedActions(Object.keys(actions), app.forms, app.identity)) add('action-unreached', tool, `no form reaches the action ${code(tool)}, and the identity flow does not call it`);
   return out;
@@ -67,7 +68,7 @@ function slotLines(app: App, slot: string): string[] {
   return [slot, `type: ${type}`];
 }
 
-/** One form's diagram: the intent, its slots, the summary, the actions it calls and their rules. */
+/** One form's diagram: the intent, its slots, the checks on them, the summary, the actions it calls and their rules. */
 function formDiagram(app: App, id: FormId): string[] {
   const form = app.forms[id]!;
   const intent = app.intents[id];
@@ -84,13 +85,28 @@ function formDiagram(app: App, id: FormId): string[] {
     out.push(`  summary[/${mermaidLabel('Summary read back for a yes', form.summaryPromptId)}/]`, '  slots --> summary');
     last = 'summary';
   }
+  // The form's checks (forms.yaml `checks`): each runs as soon as the slots it reads are filled, and
+  // ends the form on a refusal as its outcomes say.
+  const classes: string[] = [];
+  for (const check of form.checks ?? []) {
+    const action = actions[check.action];
+    const node = nodeId('c', check.action);
+    const outcomes = Object.entries(check.on ?? {}).map(([reason, o]) => `${reason}: ${o.say !== undefined ? `say ${o.say}, ` : ''}${o.then === 'handoff' ? `handoff ${o.reason ?? reason}` : o.then}`);
+    out.push(`  ${node}{{${mermaidLabel('Check', action?.say === undefined ? check.action : action.say, action === undefined ? 'not in the policy' : `level ${action.level}: ${levelName(app, action.level)}`, ...outcomes)}}}`);
+    for (const slot of check.with) out.push(`  ${nodeId('s', slot)} -.->|${mermaidLabel('checked')}| ${node}`);
+    if (action === undefined) classes.push(node);
+    else out.push(`  ${nodeId('r', check.action)}([${mermaidLabel('Rules, in order', ...action.rules.map((r, i) => `${i + 1}. ${ruleName(r)}`))}])`, `  ${node} --> ${nodeId('r', check.action)}`);
+  }
+  if (form.checksPassed !== undefined && (form.checks ?? []).length > 0) {
+    out.push(`  passed[/${mermaidLabel('Said once every check has passed', form.checksPassed)}/]`);
+    for (const check of form.checks!) out.push(`  ${nodeId('c', check.action)} -.->|${mermaidLabel('passes')}| passed`);
+  }
   const calls = form.calls;
   if (calls === undefined) {
     out.push(`  note[${mermaidLabel('The form does not say which actions it calls')}]`, `  ${last} -.-> note`);
   } else if (calls.length === 0) {
     out.push(`  done[${mermaidLabel('Completes without calling an action')}]`, `  ${last} --> done`);
   }
-  const classes: string[] = [];
   for (const tool of calls ?? []) {
     const action = actions[tool];
     const node = nodeId('a', tool);

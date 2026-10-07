@@ -353,7 +353,9 @@ const RECORDED: Readonly<Record<AuditMask, string>> = {
  */
 function recordingSection(app: App, source: PolicySource): string[] {
   const tools = Object.keys(source.actions);
-  const listed = (tool: string): readonly string[] | undefined => (Object.hasOwn(app.tools, tool) ? app.tools[tool]!.params : undefined);
+  // A form's check (`check: true`) has no tool: what it is sent is the slots the forms' checks read.
+  const checked = (tool: string): readonly string[] => [...new Set(Object.values(app.forms).flatMap((f) => (f.checks ?? []).filter((c) => c.action === tool).flatMap((c) => c.with)))];
+  const listed = (tool: string): readonly string[] | undefined => (source.actions[tool]?.check === true ? checked(tool) : Object.hasOwn(app.tools, tool) ? app.tools[tool]!.params : undefined);
   if (app.policy.audit === undefined && !tools.some((tool) => listed(tool) !== undefined)) return [];
   const out = ['## What is recorded', ''];
   out.push('What the record of a call keeps of each value the action is sent: the gate\'s decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml\'s `audit` declares, and `check` refuses one that neither covers. Where a rule\'s line, the action\'s summary, its own audit rows, the side effects it queues (as recorded) or a downstream service\'s row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.');
@@ -375,7 +377,9 @@ function actionsSection(app: App, source: PolicySource): string[] {
   const out = ['## Actions', '', 'One row per action the agent may take. Anything else is refused.', ''];
   out.push('| Action | Level | The gate checks, in order |', '| --- | --- | --- |');
   for (const [tool, action] of Object.entries(source.actions)) {
-    const label = action.say === undefined ? code(tool) : `**${cell(capitalize(action.say))}**<br/>${code(tool)}`;
+    const named = action.say === undefined ? code(tool) : `**${cell(capitalize(action.say))}**<br/>${code(tool)}`;
+    // A form's check: the gate answers, and nothing runs (policy.yaml `check: true`).
+    const label = action.check === true ? `${named}<br/>a form's check: the gate answers, nothing runs` : named;
     // The identity tools' own check runs first (gate/compiled.ts subjectOnlyDecision), written in no file.
     const subjectOnly = app.identity !== undefined && identityTools.includes(tool) ? [`only ${article(subjectKind)} ${subjectKind}, or a caller not yet verified, may use it (any other party is refused)`] : [];
     const said = [...subjectOnly, ...action.rules.map((r) => ruleText(app, source, action, r))];

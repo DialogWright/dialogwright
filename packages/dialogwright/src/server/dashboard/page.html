@@ -632,13 +632,15 @@
       + (aside.length ? `<span class="aside now-aside">${esc(aside.join(' · '))}</span>` : '') + '</div>';
     const asking = n.asking ? `<span class="now-asking">${esc(n.asking)}</span>` : '';
     const fact = n.fact ? `<span class="now-fact">${esc(n.fact)}</span>` : '';
+    // A form's check ended the form on this turn: which check, and why.
+    const stopped = n.stopped ? `<span class="now-why">· ${esc(n.stopped)}</span>` : '';
     let body;
     if (n.state === 'handoff') {
       const h = n.handoff ?? { number: null, reason: '', reasonText: '' };
       const to = h.number ? ` (${esc(h.number)})` : '';
       const was = n.label ? `<div class="now-main"><span class="now-was">was working on: ${esc(n.label)}</span></div>` : '';
       body = `<div class="now-main"><span class="now-label">Handed off to a specialist${to}</span>`
-        + `<span class="now-why">· ${esc(h.reasonText || handoffReasonText(h.reason))}</span></div>${was}`;
+        + `<span class="now-why">· ${esc(h.reasonText || handoffReasonText(h.reason))}</span>${stopped}</div>${was}`;
     } else if (n.state === 'task') {
       const chips = (n.chips ?? []).map((c) => {
         const age = glowAge(c);
@@ -646,11 +648,11 @@
         const value = c.label ? ` <b>${esc(c.label)}</b>` : '';
         return `<span class="nchip ${esc(c.state)}${glow}"><span class="n">${esc(c.name)}</span>${value}</span>`;
       }).join('');
-      body = `<div class="now-main"><span class="now-label">${esc(n.label)}</span>${asking}${fact}</div><div class="now-chips">${chips}</div>`;
+      body = `<div class="now-main"><span class="now-label">${esc(n.label)}</span>${stopped}${asking}${fact}</div><div class="now-chips">${chips}</div>`;
     } else if (n.state === 'completed') {
-      body = `<div class="now-main"><span class="now-label">Completed: ${esc(n.completedLabel)}</span>${fact}${asking}</div>`;
+      body = `<div class="now-main"><span class="now-label">Completed: ${esc(n.completedLabel)}</span>${stopped}${fact}${asking}</div>`;
     } else {
-      body = `<div class="now-main"><span class="now-label">Waiting for a request</span>${asking}</div>`;
+      body = `<div class="now-main"><span class="now-label">Waiting for a request</span>${stopped}${asking}</div>`;
     }
     return `${head}<div class="now-body">${body}</div>`;
   }

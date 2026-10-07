@@ -683,6 +683,17 @@ function factOf(record, prevSlots, prev) {
   return fact;
 }
 
+/**
+ * The form a check ended on this turn, from its `form_stopped` audit draft (core/audit.ts), as the
+ * NOW panel says it: "stopped: checkOwner, not-owner". Null on every other turn.
+ */
+function stoppedOf(drafts) {
+  const d = (drafts ?? []).find((x) => x.type === 'form_stopped');
+  if (!d) return null;
+  const det = d.detail ?? {};
+  return `stopped: ${det.action}${det.reason ? `, ${det.reason}` : ''}`;
+}
+
 function emptyNow() {
   return { state: 'idle', form: null, label: null, chips: [], asking: null, queued: [], completedLabel: null, fact: null, handoff: null };
 }
@@ -848,6 +859,7 @@ export function reduce(events, opts) {
           chips: nowChipsOf(r.slots, r.form ?? null, r.promptedFor ?? null, v.level),
           asking: nowAskingOf(r, v.thresholds),
           queued: (r.queued ?? []).map((f) => formLabel(f).toLowerCase()),
+          stopped: stoppedOf(r.audit),
         };
         prevSlots = r.slots;
         v.pending = pendingLine(r.pendingConfirmation);
@@ -997,6 +1009,8 @@ function nowOf(v, task, completed, facts, transfer) {
   const done = completed.length ? [...new Set(completed.map(formLabel))].join(', ') : null;
   now.completedLabel = done;
   now.queued = task?.queued ?? [];
+  // A check ended the form on the latest turn (only then is the field there at all).
+  if (task?.stopped) now.stopped = task.stopped;
   if (v.handoff || transfer) {
     const reason = v.handoff?.reason ?? transfer.reason;
     now.state = 'handoff';

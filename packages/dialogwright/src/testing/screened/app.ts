@@ -22,8 +22,8 @@ export const SCREENED_DIR = dirname(fileURLToPath(import.meta.url));
 /** The towns a visit can be in. */
 export const TOWNS: readonly string[] = ['millbrook', 'cedar_falls', 'ashford', 'riverton'];
 
-/** Params every rule example sends: what a booking sends of the three answers the rules read. */
-const QUALIFIES = { howUrgent: 'routine', ownership: 'own', town: 'ashford' } as const;
+/** Params every rule example sends: what a booking sends, so the booking's confirmed rule passes and each rule decides. */
+const QUALIFIES = { problem: 'leak', ownership: 'own', town: 'ashford', howUrgent: 'routine', visitDay: 'monday', timeOfDay: 'morning' } as const;
 
 /** Something urgent goes to the office, not to a booking: NEEDS_HUMAN, reason `urgent`. */
 export const urgentToOffice = defineRule({
@@ -31,14 +31,14 @@ export const urgentToOffice = defineRule({
   description: 'Something urgent goes to the office rather than to a booked visit',
   run: (c) => {
     const howUrgent = c.call.params.howUrgent ?? '';
-    if (howUrgent === '') return { pass: false, compared: 'howUrgent not given', verdict: 'BLOCK', reason: 'howUrgent-unknown' };
-    if (howUrgent === 'urgent') return { pass: false, compared: 'howUrgent urgent: to the office', verdict: 'NEEDS_HUMAN', reason: 'urgent' };
-    return { pass: true, compared: `howUrgent ${howUrgent}: a visit can wait` };
+    if (howUrgent === '') return { pass: false, compared: 'urgency not given', verdict: 'BLOCK', reason: 'urgency-unknown' };
+    if (howUrgent === 'urgent') return { pass: false, compared: 'urgency urgent: to the office', verdict: 'NEEDS_HUMAN', reason: 'urgent' };
+    return { pass: true, compared: `urgency ${howUrgent}: a visit can wait` };
   },
   examples: [
     { name: 'it can wait', call: { params: { ...QUALIFIES } }, principal: ANONYMOUS, expect: { verdict: 'ALLOW' } },
     { name: 'it is urgent', call: { params: { ...QUALIFIES, howUrgent: 'urgent' } }, principal: ANONYMOUS, expect: { verdict: 'NEEDS_HUMAN', reason: 'urgent' } },
-    { name: 'no howUrgent given', call: { params: { ...QUALIFIES, howUrgent: '' } }, principal: ANONYMOUS, expect: { verdict: 'BLOCK', reason: 'howUrgent-unknown' } },
+    { name: 'no urgency given', call: { params: { ...QUALIFIES, howUrgent: '' } }, principal: ANONYMOUS, expect: { verdict: 'BLOCK', reason: 'urgency-unknown' } },
   ],
 });
 
