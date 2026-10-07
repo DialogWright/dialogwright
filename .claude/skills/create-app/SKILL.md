@@ -87,7 +87,7 @@ It writes `apps/<name>` (a one-form example: book a service, with an account num
 Replace the example one piece at a time, running `pnpm check` after each change:
 
 1. `app.yaml`: the brand, `console.formLabels` and `slotLabels`, `voice.hints`, `wording.addressee`.
-2. `intents.yaml`: your intents (form, informational); keep `agent` and `repeat_prompt` (required) and the other control intents, `done` among them: it is how "no, that's all" at "anything else?" ends the call with the goodbye, and `pnpm check` refuses an app that says `anything_else` without it; the keypad menu.
+2. `intents.yaml`: your intents (form, informational), each with criteria a one-breath answer to every slot of its form still matches ([patterns.md](patterns.md#an-intents-criteria)); keep `agent` and `repeat_prompt` (required) and the other control intents, `done` among them: it is how "no, that's all" at "anything else?" ends the call with the goodbye, and `pnpm check` refuses an app that says `anything_else` without it; the keypad menu.
 3. `slots.yaml`: your slots, from the mapping. Keep `accountId` and `dob` if your factors are an account number and a date of birth.
 4. `forms.yaml`: your forms, their slots, their summary prompts, their hooks and the actions they call (`calls`).
 5. `policy.yaml` (with its `audit:`) and `identity.yaml`: from the mapping.

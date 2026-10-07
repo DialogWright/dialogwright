@@ -2,7 +2,7 @@
 
 The YAML and TypeScript for what a paragraph usually asks for. Each was built and run in an app scaffolded by `pnpm create-app --identity` (check, type check, tests and regression), with the scaffold's names (`accountId`, `dob`, `verifyCustomer`, `findAccount`, `Systems`, `ACCOUNTS`, `accountIdOf`); use your own. Imports are from `'dialogwright'` unless shown. The reference for every field is [docs/authoring-an-app.md](../../../docs/authoring-an-app.md); the engine's own test app, [the testkit](../../../packages/dialogwright/src/testing/testkit/README.md), uses every hook and is worth reading for a feature these patterns leave out (it is a test fixture, not a model of design).
 
-Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [Informational answers](#informational-answers) · [Keypad entry](#keypad-entry) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
+Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [An intent's criteria](#an-intents-criteria) · [Informational answers](#informational-answers) · [Something that must never wait](#something-that-must-never-wait) · [Keypad entry](#keypad-entry) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
 
 ## Verification (level 1)
 
@@ -386,6 +386,24 @@ The same value goes in `confirmedParams`, so the caller's yes covers it.
 - A handoff your code makes for its own reason, `handoff(s, '<reason>', acks)` (exported by `'dialogwright'`), says `handoff_<reason>` with hyphens as underscores. Add the line yourself.
 - A person on request is built in: the `agent` control intent, with `handoff_live_agent`. Give `agent` corpus lines both outside and inside forms.
 - Three failed tries at verification hand over with `handoff_identity`.
+
+## An intent's criteria
+
+An intent's `criteria` are what the model reads to choose it, word for word, on every turn. So a change to them re-keys a recorded cassette: get them right before the first recording, and reword them all at once after it ([triage.md](triage.md#the-order-of-the-fixes)).
+
+**A sentence that gives every slot of a form at once is still a request for that form.** A caller who answers all the form's questions in one breath, with no request word ("I own the house in Cedar Falls, there's water in the basement and it's getting worse"), asks for nothing in so many words, and the model may read it as no request (`none`). Say in the form intent's criteria that such a sentence is the request:
+
+```yaml
+# intents.yaml, under intents:
+  book_inspection:
+    criteria: Has a problem with their home's foundation or basement, such as water in the basement or cracks, or asks to book an inspection. A caller who describes such a problem is asking for help, however many other details they add in the same breath, such as owning the home, its town, or how long it has been going on
+    label: look into that and set up a free inspection
+    kind: form
+```
+
+Give the corpus a line like it among the form's over-answers ([corpus.md](corpus.md#what-to-write)), labelled with the intent and every slot it fills. The stub reads the labels, not the criteria, so only a recording tests the wording.
+
+When two intents are near each other, say in each which requests are the other's ("asks to go on to choosing the day, after the questions; a request to schedule is book_inspection's").
 
 ## Informational answers
 
