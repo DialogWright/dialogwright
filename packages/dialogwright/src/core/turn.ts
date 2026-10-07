@@ -1054,7 +1054,16 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // same breath filled is kept, and acked on the way into the question.
       const st = s.slots[verdict.slot]!;
       Object.assign(st, emptySlot(), { attempts: st.attempts });
-      return { decision: askSlot(s, verdict.slot, null, [...acks, ...(fill?.acks ?? [])]), events: fill?.events ?? [] };
+      const said = [...acks, ...(fill?.acks ?? [])];
+      // What else the breath changed ("the town's wrong, and I rent it", where the naming decides)
+      // goes through the form's checks now, as any fill does in continueForm, rather than waiting
+      // for the reopened slot's answer: a caller it rules out is not asked that slot first.
+      if (form !== null && fill?.progress === true && s.entered === form) {
+        const checks = runChecks(s, form, io.tc, io.out);
+        if (checks.kind === 'refused') return { decision: stopForm(s, form, checks, said, io), events: fill.events };
+        said.push(...passedAcks(s, checks));
+      }
+      return { decision: askSlot(s, verdict.slot, null, said), events: fill?.events ?? [] };
     }
     case 'route':
       if (verdict.confirm === 'explicit') {

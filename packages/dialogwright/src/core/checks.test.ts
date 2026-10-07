@@ -11,7 +11,7 @@ import type { App, FormCheck, FormDef } from './app/types';
 import { DEFAULT_THRESHOLDS } from './thresholds';
 import { closeForm, cloneSession, newSession, setForm, type Session } from './session';
 import { resolve, type TurnContext, type TurnResult } from './turn';
-import { speechEvent } from '../channel/events';
+import { keyEvents, speechEvent } from '../channel/events';
 import { VOICE_RELAY } from '../channel/caps';
 import { ANONYMOUS } from '../gate/principal';
 import { compilePolicy } from '../define/policyFile';
@@ -285,6 +285,102 @@ describe('end with a request queued', () => {
     expect(t.session.completed).toEqual([]);
     expect(t.audit.map((d) => d.type)).toEqual(['gate', 'form_stopped', 'handoff', 'call_ended']);
   });
+});
+
+/** A turn context on a fresh set of the fixture's systems. */
+const turnContext = (): TurnContext => ({ nowMs: 0, todayIso: TODAY, thresholds: { ...DEFAULT_THRESHOLDS }, tools: { sys: new ScreenedSystems(), lookups: { ownerOf: () => null, scopeOf: () => [] }, codes: mockCodeVerifier } });
+
+/** A session of `app` in book_visit, entered, with `values` filled. */
+function inBooking(app: App, values: Record<string, [string, string]>): Session {
+  const s = newSession('hand', 0, VOICE_RELAY, ANONYMOUS, app.id);
+  setForm(s, 'book_visit');
+  s.entered = 'book_visit';
+  for (const [id, [value, display]] of Object.entries(values)) s.slots[id] = { ...s.slots[id]!, value, display };
+  return s;
+}
+
+describe('a keypad fill of a check\'s slot', () => {
+  // The fixture's ownership slot has no keypad rung: this variant keys it, 1 to own and 2 to rent.
+  const spec = screenedApp.slots.ownership!;
+  const keyed = variant('screened-keypad', screenedApp.forms.book_visit!.checks!, {
+    slots: {
+      ...screenedApp.slots,
+      ownership: {
+        ...spec,
+        dtmf: { length: 1, parse: (d) => (d === '1' ? { value: 'own', display: 'you own it' } : d === '2' ? { value: 'rent', display: 'you rent it' } : null) },
+      },
+    },
+  });
+  function atOwnership(): Session {
+    use(keyed);
+    const s = inBooking(keyed, { problem: ['leak', 'a leak'] });
+    s.promptedFor = 'ownership';
+    s.lastPromptId = 'ask_ownership';
+    return s;
+  }
+
+  it('runs the check as a spoken fill does: a renter keyed in is told at once', () => {
+    const t = resolve(atOwnership(), keyEvents('2')[0]!, null, turnContext());
+    expect(t.decision).toMatchObject({ kind: 'complete', form: 'book_visit', promptId: 'decline_renter', completed: [] });
+    expect(gates(t)).toEqual(['checkOwner:BLOCK:not-owner']);
+    expect(rows(t)).toEqual(['gate', 'form_stopped', 'call_ended']);
+  });
+
+  it('an owner keyed in passes the check and is asked the town', () => {
+    const t = resolve(atOwnership(), keyEvents('1')[0]!, null, turnContext());
+    expect(gates(t)).toEqual(['checkOwner:ALLOW']);
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_town' });
+    expect(Object.keys(t.session.checked ?? {})).toEqual(['checkOwner']);
+  });
+});
+
+describe('a value carried into the form', () => {
+  // Ownership carried for the call (App.carrySlots): a renter turned away with anything-else, who
+  // then asks for a visit again, is refused as the form is entered, before its first question.
+  const carried = variant('screened-carried', [OWNER({ 'not-owner': { say: 'decline_renter', then: 'anything-else' } })], { carrySlots: ['ownership'] });
+
+  it('is checked on the turn the form is entered: refused before any question, with no "Sure, I can help"', async () => {
+    use(carried);
+    const r = await call("there's water in my basement", 'I rent it', 'can someone come and look at a crack in my wall');
+    expect(r.runs[2]!.result.decision).toMatchObject({ kind: 'prompt', promptId: 'anything_else' });
+    // Kept past the form: the carried answer is still rent.
+    expect(r.runs[2]!.result.session.slots.ownership!.value).toBe('rent');
+    const t = last(r);
+    expect(t.session.form).toBeNull();
+    expect(gates(t)).toEqual(['checkOwner:BLOCK:not-owner']);
+    expect(ackIds(t)).toEqual(['decline_renter']);
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'anything_else' });
+    expect(t.stopped).toEqual({ form: 'book_visit', action: 'checkOwner', reason: 'not-owner', then: 'anything-else' });
+  });
+});
+
+describe('a detail named at the summary with another value in the same breath', () => {
+  // "The town's wrong, and I rent it": by default the new value sets the naming aside and the turn is
+  // a no with a correction; where the naming decides (changeSlotWithValue: decides), the town is
+  // reopened and the ownership filled. Either way the check runs on this turn.
+  const FULL: Record<string, [string, string]> = {
+    problem: ['leak', 'a leak'], ownership: ['own', 'you own it'], town: ['cedar_falls', 'Cedar Falls'],
+    howUrgent: ['routine', 'whenever suits'], visitDay: ['monday', 'Monday'], timeOfDay: ['morning', 'the morning'],
+  };
+  function atSummary(app: App): Session {
+    use(app);
+    const s = inBooking(app, FULL);
+    expect(runChecks(s, 'book_visit', turnContext(), newTurnOut())).toMatchObject({ kind: 'passed' });
+    s.pendingConfirmation = { target: 'form', form: 'book_visit', attempts: 0 };
+    s.promptedFor = 'confirm';
+    s.lastPromptId = 'confirm_book_visit';
+    return s;
+  }
+  const answers = { ...PLAIN, confirmsYes: noul(0.05), confirmsNo: noul(0.7), changeSlot: choice({ town: 0.9, none: 0.1 }), ownership: choice({ rent: 0.95, none: 0.05 }) };
+
+  for (const [mode, app] of [['set-aside', screenedApp], ['decides', { ...screenedApp, id: 'screened-decides', changeSlotWithValue: 'decides' } as App]] as const) {
+    it(`refuses on that turn (${mode})`, () => {
+      const t = resolve(atSummary(app), speechEvent("the town's wrong, and I rent it", true), answers, turnContext());
+      expect(gates(t)).toEqual(['checkOwner:BLOCK:not-owner']);
+      expect(t.decision).toMatchObject({ kind: 'complete', promptId: 'decline_renter', completed: [] });
+      expect(t.stopped?.action).toBe('checkOwner');
+    });
+  }
 });
 
 describe('the session', () => {
