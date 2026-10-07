@@ -25,7 +25,7 @@ It replays the model's answers from the cassette and compares each outcome with 
 The last line counts what is left to decide:
 
 ```text
-to triage: 3 untagged differences, 2 failing scripted calls, 0 misses
+to triage: 3 untagged corpus differences, 2 failing scripted calls, 1 passing scripted call that differs from the baseline, 0 cassette misses
 ```
 
 A recorded run with differences exits 1 even when most of them are allowed, so read that line, not the exit code. You are done when the untagged differences are 0, the failing scripted calls are only the ones you report to the owner (below), and the misses are 0.
@@ -71,7 +71,7 @@ Every request the model is sent carries the intents' criteria, the slots' questi
 1. **First, everything that changes no request, checked on the recording you have.** Code (a hook, a completion, a custom rule), the policy, a flag the engine reads without sending it (an intent's `priority: true`, say), a scripted call's silences and keys, a label in the corpus (bucket 1), a `knownGap` tag (bucket 2). After each, replay: `0 misses` on the "to triage" line says the change sent nothing new, and the run shows what it did against the real model's answers. Get every one of these right before the next step: this is the only time they can be checked on a real recording for free.
 2. **Then reword, all at once.** The intents' criteria, a slot's `what`, the app's `wording`: everything you want to change about what the model is asked, in one change. The stub regression must still be green (the stub reads labels, not criteria). The replay will now miss: that is expected.
 3. **Then ask for one re-record.** Hand the owner the same command as before (step 9), whole, and say what changed and why. One recording for all the rewording, not one for each.
-4. **Then trim the cassette**, once the new recording is in: `pnpm --filter @dialogwright/example-<name> cassette:trim`. Recording appends, so the first recording's answers stay in the file though no replay reads them. The trim replays the whole run from the cassette and keeps only the answers it uses, and writes nothing if a request misses. Replay again: the run should be the same, with 0 misses.
+4. **Then trim the cassette**, once the new recording is in: `pnpm --filter @dialogwright/example-<name> cassette:trim`. Recording appends, so the first recording's answers stay in the file though no replay reads them. The trim replays the whole run from the cassette and keeps only the answers it uses, and writes nothing if a request misses. Replay again: the run should be the same, with 0 misses. Then run the app's own tests (`pnpm --filter @dialogwright/example-<name> test`): the trim keeps what one whole `regress` replay asks for, so a test that replays the cassette another way (another screen mode, a shadow or round-trip test) can need an answer it dropped. If one fails, restore the file (`git checkout -- fixtures/recorded`) and keep the untrimmed cassette.
 5. **Triage the new recording the same way.** Remove each tag the run says `knownGap now matches` for; a line a new criteria wording made borderline is a new entry for bucket 2.
 
 ## What to bring to the owner

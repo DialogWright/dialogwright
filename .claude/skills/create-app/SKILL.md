@@ -220,7 +220,7 @@ It runs at the repository root and reads the key from the app's own `apps/<name>
 
 **When they have recorded**, triage it as [triage.md](triage.md) says. In short:
 
-1. Replay it, offline and free: `pnpm --filter @dialogwright/example-<name> regress --client recorded`. Read its last line, `to triage: N untagged differences, M failing scripted calls, K misses`, not its exit code.
+1. Replay it, offline and free: `pnpm --filter @dialogwright/example-<name> regress --client recorded`. Read its last line, `to triage: N untagged corpus differences, M failing scripted calls, K passing scripted calls that differ from the baseline, J cassette misses`, not its exit code.
 2. Look at each difference with `regress --client recorded --corpus <id>` (the line's model answers, with their probabilities) or `--scenario <id>`, and put it in one bucket: the label was wrong (fix the label, edit the baseline entry by hand, log it under "Baseline edits"); the model misread a borderline line (a `knownGap` with the model's numbers and the caller impact, `outcomes` if it flips); a scripted call broke on an incidental line (change that line, such as a keypad call's opener, not the expectation).
 3. A scripted call has no allowance but `cosmeticDrift`, so one that tests a real gap stays failing: report it to the owner, do not make it pass.
 4. Fix in this order: first everything that changes no request (code, the policy, a `priority` flag, silences and keys, labels and tags), checked on the recording you have; then all the rewording at once; then ask for one re-record (the same command); then `pnpm --filter @dialogwright/example-<name> cassette:trim`, and replay again.
