@@ -1,0 +1,136 @@
+[
+  {
+    "id": "renter-ends-before-the-town",
+    "steps": [
+      { "say": "there's water in my basement" },
+      { "say": "I rent it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "decline_renter",
+      "form": "book_visit",
+      "slots": { "problem": "leak", "ownership": "rent" },
+      "gate": "checkOwner:BLOCK"
+    }
+  },
+  {
+    "id": "out-of-area",
+    "steps": [
+      { "say": "can someone come and look at a crack in my wall" },
+      { "say": "yes, I own it" },
+      { "say": "Lakeview" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "decline_out_of_area",
+      "form": "book_visit",
+      "slots": { "problem": "crack", "ownership": "own", "town": "elsewhere" },
+      "gate": "checkArea:BLOCK"
+    }
+  },
+  {
+    "id": "one-breath-qualifies",
+    "steps": [
+      { "say": "I own a house in Riverton, water is coming into the basement and it's getting worse, can someone come out on a Saturday morning" },
+      { "say": "yes, book it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "visit_booked",
+      "form": "book_visit",
+      "slots": { "ownership": "own", "town": "riverton", "visitDay": "saturday", "timeOfDay": "morning" },
+      "gate": "bookVisit:ALLOW"
+    }
+  },
+  {
+    "id": "one-breath-renter",
+    "steps": [
+      { "say": "I rent a place in Ashford, water is seeping in and it's getting worse" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "decline_renter",
+      "form": "book_visit",
+      "gate": "checkOwner:BLOCK"
+    }
+  },
+  {
+    "id": "urgent-mid-qualify-priority",
+    "steps": [
+      { "say": "there's water in my basement" },
+      { "say": "yes, I own it" },
+      { "say": "oh no, water is pouring in right now" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "urgent"
+    }
+  },
+  {
+    "id": "urgent-by-the-check",
+    "steps": [
+      { "say": "there's water in my basement" },
+      { "say": "yes, I own it" },
+      { "say": "Cedar Falls" },
+      { "say": "it needs someone right away" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "urgent",
+      "gate": "checkUrgency:NEEDS_HUMAN"
+    }
+  },
+  {
+    "id": "summary-correction-disqualifies",
+    "steps": [
+      { "say": "there's water in my basement" },
+      { "say": "yes, I own it" },
+      { "say": "Cedar Falls" },
+      { "say": "it can wait, whenever suits" },
+      { "say": "Monday" },
+      { "say": "the morning" },
+      { "say": "no wait, it's my landlord's house, I rent" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "decline_renter",
+      "gate": "checkOwner:BLOCK"
+    }
+  },
+  {
+    "id": "summary-yes-but-renting",
+    "steps": [
+      { "say": "there's water in my basement" },
+      { "say": "yes, I own it" },
+      { "say": "Cedar Falls" },
+      { "say": "it can wait, whenever suits" },
+      { "say": "Monday" },
+      { "say": "the morning" },
+      { "say": "yes, but I rent it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "decline_renter",
+      "gate": "checkOwner:BLOCK"
+    }
+  },
+  {
+    "id": "summary-correction-requalifies",
+    "steps": [
+      { "say": "there's water in my basement" },
+      { "say": "yes, I own it" },
+      { "say": "Cedar Falls" },
+      { "say": "it can wait, whenever suits" },
+      { "say": "Monday" },
+      { "say": "the morning" },
+      { "say": "no, it's in Ashford" },
+      { "say": "yes, book it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "visit_booked",
+      "slots": { "town": "ashford" },
+      "gate": "bookVisit:ALLOW"
+    }
+  }
+]

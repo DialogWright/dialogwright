@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# The three checks are questions to the gate only (check: true): no tool runs. The booking names the
+# same rules, so the write still refuses what a check refused.
+actions:
+  checkUrgency:
+    say: send something urgent to the office
+    check: true
+    level: 0
+    rules: [identity, { custom: urgent-to-office }]
+  checkOwner:
+    say: check the caller owns the home
+    check: true
+    level: 0
+    rules: [identity, { custom: owners-only }]
+  checkArea:
+    say: check the home is in the area
+    check: true
+    level: 0
+    rules: [identity, { custom: in-area }]
+  bookVisit:
+    say: book a free visit
+    level: 0
+    rules:
+      - identity
+      - custom: urgent-to-office
+      - custom: owners-only
+      - custom: in-area
+      - confirmed: [problem, ownership, town, howUrgent, visitDay, timeOfDay]
+
+audit:
+  problem: keep
+  ownership: keep
+  town: keep
+  howUrgent: keep
+  visitDay: keep
+  timeOfDay: keep

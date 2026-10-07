@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../../schemas/forms.schema.json
+forms:
+  # The qualifying answers first, then the booking's, one summary over all of them. Each check runs
+  # as soon as its slot is filled, so a renter is told on the turn they say so.
+  book_visit:
+    slots: [problem, ownership, town, howUrgent, visitDay, timeOfDay]
+    summaryPromptId: confirm_book_visit
+    hooks: [confirmedParams, complete]
+    calls: [bookVisit]
+    checks:
+      - action: checkUrgency
+        with: [howUrgent]
+        on:
+          urgent: { then: handoff }
+      - action: checkOwner
+        with: [ownership]
+        on:
+          not-owner: { say: decline_renter, then: end }
+      - action: checkArea
+        with: [town]
+        on:
+          out-of-area: { say: decline_out_of_area, then: end }
+    checksPassed: visit_qualifies
+  urgent:
+    slots: []
+    summaryPromptId: null
+    hooks: [complete]
+    calls: []
