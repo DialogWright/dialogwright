@@ -49,7 +49,9 @@ The worksheet lists:
 - **What goes to a person**: on request (always), after failed verification, by a role, by a bound.
 - **Gaps**: anything the paragraph asks for that you are not sure the framework does. Fill this in as you go.
 
-Read the paragraph once more against the worksheet: every sentence of it should land in a row. Where the paragraph is silent (how many tries, how long a code is), choose the framework's default and write the choice down.
+Read the paragraph once more against the worksheet: every sentence of it should land in a row. Where the paragraph is silent (how many tries, how long a code is), choose the framework's default and write the choice down under "Choices the paragraph left open".
+
+One thing you ask rather than choose: **the business name**, when the paragraph gives none. Every caller hears it in the greeting ("Thanks for calling ..."), and `pnpm create-app --display` takes it. Ask the person who gave you the paragraph once, before the scaffold, and carry on with the worksheet while you wait. In this repository every name is fictional, so offer an invented one with the question ("Example Foundation Repair"). Everything else the paragraph leaves open, you decide and record as above.
 
 ## Step 2: Map the worksheet onto the framework
 
@@ -72,7 +74,7 @@ Decide now whether the app needs `--identity`: it does if any action is above le
 At the repository root:
 
 ```sh
-pnpm create-app <name>              # or, when any action is above level 0: pnpm create-app <name> --identity
+pnpm create-app <name> --display "<business name>"     # add --identity when any action is above level 0
 ```
 
 It writes `apps/<name>` (a one-form example: book a service, with an account number and a date of birth under `--identity`), links it into the workspace, and prints the next steps. It passes `pnpm check`, its tests and its regression as created. Move your worksheet into `apps/<name>/DESIGN.md` now. Then read the new folder's `README.md`, `CLAUDE.md` and `src/app.ts`: they say what each file is for, and the example shows the shape of a confirmed write and (with `--identity`) of a form that steps the caller up.
