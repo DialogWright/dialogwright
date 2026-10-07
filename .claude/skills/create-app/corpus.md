@@ -59,7 +59,7 @@ For each **form intent**, eight or more opening lines (`context: "no_form"`), fo
 {"id":"pl-05","text":"I can't pay it all at once","intent":"set_up_plan","context":"no_form","tentative":true}
 ```
 
-One of a form's over-answers gives every slot at once with no request word ("I own the house in Cedar Falls, there's water in the basement and it's getting worse"), labelled with the form's intent and every value: the model reads such a line as a request only when the intent's criteria say so ([patterns.md](patterns.md#an-intents-criteria)).
+One of a form's over-answers gives every slot at once with no request word ("I own the house in Cedar Falls, there's water in the basement and it's getting worse"), labelled with the form's intent and every value: the model reads such a line as a request only when the intent's criteria say so ([patterns.md](patterns.md#an-intents-criteria)). Another over-answers slots late in the form ("I own the house, can someone come out on a Saturday morning"), so a scripted call can show they are not asked again.
 
 For each **slot**, five or more answers inside its form:
 

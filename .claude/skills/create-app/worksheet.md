@@ -25,6 +25,8 @@ Copy everything below the line into `apps/<name>/DESIGN.md` (draft it in your sc
 
 Does any answer rule the caller out before you collect the rest (a renter, a home outside the area, an age)? <no, or each answer, the list rule that holds it (`oneOf`, `noneOf`) or why it needs one of its own, the reason the gate gives, and the line or ending: one form, qualifying slots first, with a check on each ([patterns.md](patterns.md#qualify-before-you-collect))>
 
+Do callers often give details for a later step in their first sentence ("book me in for a Saturday morning")? <no, or which: put those slots in the same form as the step they open, so the opener fills them>
+
 ## Actions
 
 | Tool | Reads | Writes | Params (exactly what it sends: `params` in code) | Level | Rules, in order |

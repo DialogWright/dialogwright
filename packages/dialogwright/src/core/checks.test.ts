@@ -130,6 +130,31 @@ describe('everything in one breath', () => {
   });
 });
 
+describe('a qualifying answer and the day and time said on the opener', () => {
+  // One form with checks: the turn that opens it fills every slot of it, so "a Saturday morning" said
+  // with the request is kept for the booking's questions, which are never asked. (A line of two forms,
+  // qualify then book, lost them: the turn fills only the form it opens.)
+  it('fills them on the opening turn, runs the ownership check at once, and never asks the day or the time', async () => {
+    const r = await call('I own my house, can someone come out on a Saturday morning', 'a crack in the wall', 'Cedar Falls', 'it can wait, whenever suits', 'yes, book it');
+    const opener = r.runs[1]!.result;
+    expect(opener.session.slots.ownership!.value).toBe('own');
+    expect(opener.session.slots.visitDay!.value).toBe('saturday');
+    expect(opener.session.slots.timeOfDay!.value).toBe('morning');
+    expect(gates(opener)).toEqual(['checkOwner:ALLOW']);
+    expect(heard(opener)).toBe("Sure, I can help you book a free visit. What's the problem with the home, a leak, a crack, or a draft?");
+    // The questions asked over the call: the problem, the town and the urgency; never the ownership, the day or the time.
+    const asked = r.runs.map((run) => run.result.session.lastPromptId);
+    expect(asked).not.toContain('ask_ownership');
+    expect(asked).not.toContain('ask_visitDay');
+    expect(asked).not.toContain('ask_timeOfDay');
+    // The urgency's turn passes the last check and goes straight to the summary, with the day and time read back.
+    expect(heard(r.runs[4]!.result)).toBe('Good news, we work in Cedar Falls, and the visit is free. A free visit about a crack in Cedar Falls, on Saturday in the morning. Shall I book it?');
+    const t = last(r);
+    expect(gates(t)).toEqual(['bookVisit:ALLOW']);
+    expect(t.decision).toMatchObject({ kind: 'complete', promptId: 'visit_booked', completed: ['book_visit'] });
+  });
+});
+
 describe('something urgent', () => {
   it('said mid-qualify as a request: the priority intent takes the turn before any slot fills or check runs', async () => {
     const t = last(await call("there's water in my basement", 'yes, I own it', 'oh no, water is pouring in right now'));
@@ -189,7 +214,7 @@ describe('the fixture\'s scripted calls', () => {
   const scenarios: Scenario[] = loadScenarios(join(FIXTURES, 'scenarios'));
   it('has one for each case', () => {
     expect(scenarios.map((s) => s.id)).toEqual([
-      'renter-ends-before-the-town', 'out-of-area', 'one-breath-qualifies', 'one-breath-renter', 'urgent-mid-qualify-priority',
+      'renter-ends-before-the-town', 'out-of-area', 'one-breath-qualifies', 'day-and-time-up-front-kept', 'one-breath-renter', 'urgent-mid-qualify-priority',
       'urgent-by-the-check', 'summary-correction-disqualifies', 'summary-yes-but-renting', 'summary-correction-requalifies',
     ]);
   });

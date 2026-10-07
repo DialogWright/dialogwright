@@ -4,6 +4,8 @@
 {"id":"hv-04","text":"I rent a place in Ashford, water is seeping in and it's getting worse","intent":"book_visit","context":"no_form","labels":{"problem":"leak","ownership":"rent","town":"ashford","howUrgent":"soon"}}
 {"id":"hv-05","text":"water is pouring in right now","intent":"urgent","context":"no_form"}
 {"id":"hv-06","text":"oh no, water is pouring in right now","intent":"urgent","context":"book_visit","prompted":"town","change":"replacing"}
+{"id":"hv-07","text":"I own my house, can someone come out on a Saturday morning","intent":"book_visit","context":"no_form","labels":{"ownership":"own","visitDay":"saturday","timeOfDay":"morning"}}
+{"id":"pr-01","text":"a crack in the wall","intent":"none","context":"book_visit","prompted":"problem","labels":{"problem":"crack"}}
 {"id":"ow-01","text":"I rent it","intent":"none","context":"book_visit","prompted":"ownership","labels":{"ownership":"rent"}}
 {"id":"ow-02","text":"yes, I own it","intent":"none","context":"book_visit","prompted":"ownership","labels":{"ownership":"own"}}
 {"id":"tw-01","text":"Lakeview","intent":"none","context":"book_visit","prompted":"town","labels":{"town":"elsewhere"}}

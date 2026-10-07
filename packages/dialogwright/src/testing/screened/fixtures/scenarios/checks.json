@@ -43,6 +43,23 @@
     }
   },
   {
+    "id": "day-and-time-up-front-kept",
+    "steps": [
+      { "say": "I own my house, can someone come out on a Saturday morning" },
+      { "say": "a crack in the wall" },
+      { "say": "Cedar Falls" },
+      { "say": "it can wait, whenever suits" },
+      { "say": "yes, book it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "visit_booked",
+      "form": "book_visit",
+      "slots": { "problem": "crack", "ownership": "own", "town": "cedar_falls", "howUrgent": "routine", "visitDay": "saturday", "timeOfDay": "morning" },
+      "gate": "bookVisit:ALLOW"
+    }
+  },
+  {
     "id": "one-breath-renter",
     "steps": [
       { "say": "I rent a place in Ashford, water is seeping in and it's getting worse" }

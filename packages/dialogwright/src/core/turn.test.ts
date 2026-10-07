@@ -535,6 +535,24 @@ describe('turn', () => {
       expect(code.session.form).toBe('delivery_window');
     });
 
+    it('pins a known gap: a detail for the queued request said in the same breath is not kept, and the queued form asks for it', () => {
+      // "Where is parcel 7201, and book a delivery window for tomorrow morning": the opener routes to
+      // tracking and queues the window. The turn fills only the form it opens, so tomorrow morning is
+      // dropped and the window's form asks the day again when it is bridged into. Deliberately not
+      // built yet (docs/authoring-an-app.md, "Where a slot listens"); a change here is a design change.
+      const opener = say(started(), 'where is parcel 7201, and can i book a delivery window for tomorrow morning', {
+        intent: intent('track_parcel'), secondIntent: choice({ delivery_window: 0.9, none: 0.1 }), parcelChoice: choice({ parcel_7201: 0.9, none: 0.1 }), ...TOMORROW_MORNING,
+      });
+      expect(opener.session.queued).toEqual(['delivery_window']);
+      expect(opener.session.slots.deliveryDay!.value).toBeNull();
+      expect(opener.session.slots.deliveryPart!.value).toBeNull();
+      const code = keys(identify(opener.session).session, '123456');
+      expect(code.session.form).toBe('delivery_window');
+      expect(code.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_deliveryDay' });
+      expect(code.session.slots.deliveryDay!.value).toBeNull();
+      expect(code.session.slots.deliveryPart!.value).toBeNull();
+    });
+
     it('hands the unstarted queue to the agent', () => {
       const added = say(atMissingNote().session, 'also where is my parcel', { intent: intent('track_parcel'), intentChange: ADDING });
       const human = say(added.session, 'get me a person', { wantsHuman: noul(0.9) });
