@@ -581,6 +581,31 @@ testing: {
 
 `record` (one of the subject's records, `{ subject: '55501234', record: 'R-1' }`) is needed only when a rule scopes by a record (`scope: { record: <param> }`); the grid then says which of the four lacks one. With `scope: { param }` rules only, leave it out.
 
+**An action whose rules read params needs named calls.** For each action the grid builds one call: its subject param and its `confirmed` or `fields` list, each valued from `values`. An action with neither (a read whose custom rules decide on what the caller said: whether they own the home, its town, how urgent it is) is sent no params at all, so its rules fail closed and every caller is refused for the same reason. That matrix looks plausible ("every caller BLOCK not-owner") and is wrong. Give each such action named sets of params under `calls`, one for each outcome its rules can reach, so the matrix shows every reason the paragraph gives:
+
+```ts
+// src/app.ts, in testing.policyMatrix, beside principals, records and values
+calls: {
+  checkHome: {
+    qualifies: { howUrgent: 'worsening', ownership: 'own', town: 'cedar_falls' },
+    emergency: { howUrgent: 'emergency', ownership: 'rent', town: 'elsewhere' },
+    renter: { howUrgent: 'worsening', ownership: 'rent', town: 'cedar_falls' },
+    outsideArea: { howUrgent: 'worsening', ownership: 'own', town: 'elsewhere' },
+  },
+},
+```
+
+```text
+checkHome · level 0 · identity, custom emergency-to-office, custom homeowners-only, custom in-service-area
+  every caller   fields exact|extra, params qualifies  ALLOW
+                 fields missing, params qualifies      BLOCK out-of-area
+                 params emergency                      NEEDS_HUMAN emergency
+                 params renter                         BLOCK not-owner
+                 params outsideArea                    BLOCK out-of-area
+```
+
+The grid still sets the subject param itself. Use `calls` too for an action with a `confirmed` list whose custom rules turn on a value (a visit today, one a rule refuses): one set that passes, and one for each value a rule refuses. A row where every caller is refused for one reason is a sign the calls are missing, so read it against the worksheet before you accept it.
+
 With an app with no delegates, the `unlistedRole`, `roleless` and `otherParty` callers are still given (of a kind the app does not serve), as the clinic's are. Then the test, and the first matrix written deliberately:
 
 ```ts
