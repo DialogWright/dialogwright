@@ -110,3 +110,17 @@ export function diff<T extends object>(
   }
   return { lines, matching, allowed, gapped };
 }
+
+/**
+ * The ids whose differences are not allowed (they fail the run): what `diff` reports in `lines`, by
+ * id rather than by field, so a summary can count what needs a decision.
+ */
+export function differingIds<T extends object>(
+  name: string,
+  expected: Record<string, T>,
+  actual: Record<string, T>,
+  drift: DriftAllowance = new Set(),
+  gaps: KnownGaps = new Map(),
+): string[] {
+  return [...new Set([...Object.keys(expected), ...Object.keys(actual)])].filter((id) => diffOne(name, id, expected[id], actual[id], drift.has(id), gaps.get(id)).lines.length > 0);
+}

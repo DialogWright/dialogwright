@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diff, gapsNowMatching, knownGapsFor } from './regressDiff';
+import { diff, differingIds, gapsNowMatching, knownGapsFor } from './regressDiff';
 import type { CorpusEntry } from '../jev/corpus';
 
 describe('diff', () => {
@@ -160,5 +160,15 @@ describe('knownGapsFor', () => {
     const a = { g: { promptId: 'b' } };
     expect(diff('corpus', e, a, new Set(), knownGapsFor('stub', corpus)).lines).toEqual(['~ corpus g.promptId: "a" -> "b"']);
     expect(diff('corpus', e, a, new Set(), knownGapsFor('recorded', corpus)).lines).toEqual([]);
+  });
+});
+
+describe('differingIds', () => {
+  it('names each id with a difference that fails, once, and not one whose differences are allowed or that matches', () => {
+    const e = { same: { v: 1 }, two: { v: 1, w: 1 }, gap: { v: 1 }, drift: { decidedGate: 'a', v: 1 }, gone: { v: 1 } };
+    const a = { same: { v: 1 }, two: { v: 2, w: 2 }, gap: { v: 2 }, drift: { decidedGate: 'b', v: 1 }, fresh: { v: 1 } };
+    const gaps = new Map([['gap', { reason: 'r', outcome: { v: 2 } as never }]]);
+    expect(differingIds('x', e, a, new Set(['drift']), gaps)).toEqual(['two', 'gone', 'fresh']);
+    expect(differingIds('x', e, a)).toEqual(['two', 'gap', 'drift', 'gone', 'fresh']);
   });
 });

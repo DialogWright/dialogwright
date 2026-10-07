@@ -1587,6 +1587,8 @@ Note what the last line above shows: once a form completes, the form and its own
 
 ### After a recorded run
 
+A run against a model or its cassette (`--client record`, `recorded` or `jev`, and `cassette:trim`) reads the app's `.env` first, as `pnpm start` does (ENV_FILE names another file; a variable already in the environment wins; a stub run reads none). It ends with one more line, what needs a decision: `to triage: 3 untagged corpus differences, 1 failing scripted call, 0 passing scripted calls that differ from the baseline, 0 cassette misses`. `regress --client recorded --corpus <id>` adds, under the line's turn, every question the model was asked with its probabilities, and the screen's reading. `--json` with `--corpus <id>` (or `--scenario <id>`) prints only the outcome, in the baseline file's own shape: the lines between its braces paste into `fixtures/expected/corpus.json` (or `scenarios.json`) as an entry added by hand. `pnpm --filter <package> cassette:trim` rewrites the cassette with only the answers a whole replay asks for, and writes nothing if a request misses.
+
 A borderline line the model reads one way in one recording and another way in the next can be tagged with a few outcomes instead of one: `"knownGap": {"reason": "...", "outcomes": [{"promptId": "ask_name"}, {"promptId": "anything_else"}]}`. Any one of them shown is allowed (`allowed: knownGap: <reason>`), anything else fails, and the baseline itself reads `knownGap now matches`. A tag has `outcome` or `outcomes`, never both ([known gaps](known-gaps.md)).
 
 ### Where to start

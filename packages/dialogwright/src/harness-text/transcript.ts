@@ -2,6 +2,7 @@ import type { CorpusEntry } from '../jev/corpus';
 import type { Session } from '../core/session';
 import type { GateEvent } from '../core/lifecycle';
 import { WEB_VISITOR, spokenText, type Scenario, type ScenarioRun, type ScenarioStep, type TurnRun } from './runner';
+import { rankProbabilities, type Answer, type Question } from '../jev/types';
 
 /**
  * A readable account of one scripted call or one corpus line, turn by turn, for `regress --scenario
@@ -136,4 +137,47 @@ export function corpusTranscript(entry: CorpusEntry, run: { run: TurnRun; setup:
     `  1. ${entry.as === undefined ? 'say' : `types (as ${entry.as})`} ${JSON.stringify(entry.text)}`,
     ...turnLines(run.run, '       '),
   ];
+}
+
+/** A choice's labels below this are counted, not listed, in a line's model answers. */
+const SHOWN_FROM = 0.01;
+
+const p2 = (n: number): string => n.toFixed(2);
+
+/** One answer as a cell: a yes-or-no question's reading, a choice's labels ranked with their probabilities, a score's levels in order. */
+function answerCell(q: Question | undefined, a: Answer): string {
+  if (a.type === 'noul') return `noul    ${p2(a.noul)}`;
+  if (a.type === 'score') {
+    const levels = q?.type === 'score' ? q.levels.map((l) => l.label) : Object.keys(a.probabilities);
+    return `score   ${levels.map((l) => `${l} ${p2(a.probabilities[l] ?? 0)}`).join('  ')}   (level ${a.score.toFixed(2)})`;
+  }
+  const ranked = rankProbabilities(a.probabilities);
+  const shown = ranked.filter((r) => r.p >= SHOWN_FROM);
+  const rest = ranked.length - shown.length;
+  return `choice  ${shown.map((r) => `${r.label} ${p2(r.p)}`).join('  ')}${rest > 0 ? `  (+${rest} under ${SHOWN_FROM})` : ''}`;
+}
+
+/**
+ * What the model answered on one turn, every question of its request with its probabilities (an
+ * intent's choice and its rivals, each yes-or-no reading, each slot's questions), then the injection
+ * screen's reading; for `regress --corpus <id>` against a model or its cassette, to see why a line
+ * read as it did. A turn the model did not answer (a cassette miss, a timeout) says so; a turn that
+ * asked nothing (the greeting) says nothing.
+ */
+export function modelAnswerLines(run: TurnRun, indent = '  '): string[] {
+  if (run.questions === null) return [];
+  const source = run.record.source;
+  if (run.response === null) return [`${indent}model answers: none (${run.error?.message ?? 'no response'})`];
+  const answers = run.response.answers;
+  const ids = [...new Set([...Object.keys(run.questions), ...Object.keys(answers)])].filter((id) => answers[id] !== undefined);
+  const width = Math.max(...ids.map((id) => id.length), 4);
+  const lines = [`${indent}model answers (${source})`];
+  for (const id of ids) lines.push(`${indent}   ${id.padEnd(width)}  ${answerCell(run.questions[id], answers[id]!)}`);
+  const screen = run.record.screen;
+  if (screen) {
+    const how = screen.inline ? 'in the same request' : 'asked on its own';
+    const reading = screen.error !== null ? `none (${screen.error})` : `${screen.value === null ? '-' : p2(screen.value)}${screen.fired ? ', fired' : ''}`;
+    lines.push(`${indent}   ${'screen'.padEnd(width)}  ${reading}   (${how})`);
+  }
+  return lines;
 }
