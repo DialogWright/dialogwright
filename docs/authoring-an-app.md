@@ -12,7 +12,7 @@ Two apps in this repository are the examples, and the snippets below are copied 
 The guide is long, too long to read in one go: read it a section at a time, from the list below. Building an app with the [create-app skill](../.claude/skills/create-app/SKILL.md), read only the sections each of its steps names. `grep -n '^##' docs/authoring-an-app.md` lists every heading with its line.
 
 1. [The folder](#1-the-folder)
-2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
+2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml) (with [checks](#checks-ending-a-form-part-way)), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
 3. [Policy and identity](#3-policy-and-identity) (its own list of thirteen subsections is at its head)
 4. [What stays in TypeScript, and why](#4-what-stays-in-typescript-and-why)
 5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
@@ -250,7 +250,45 @@ forms:
 - `summaryPromptId` is the prompt that reads the filled form back for a yes. `null` means the form completes as soon as its slots are full.
 - `hooks` lists the code hooks the form uses. `complete` is required. The list must match the code exactly: `defineApp` refuses a hook the code writes that the list leaves out, and a hook the list names that the code does not write. Section 6 says what each hook is.
 - `calls` lists the actions (tools) the form's hooks call through the gate. Declare it for every form or for none (`calls: []` for a form that calls nothing). The engine never reads it; the app map and `check` do ([section 3.7](#37-how-a-form-reaches-an-action-calls)).
+- `checks` and `checksPassed` (optional) end a form part-way on an answer: see [Checks](#checks-ending-a-form-part-way) below.
 - Every form id must also be a `kind: form` intent.
+
+#### Checks: ending a form part-way
+
+Some lines rule a caller out before they collect the rest: a renter calling a homeowners' service, a home outside the area, a caller under 18. A form's `checks` ask the gate about an answer as soon as it is given, and end the form on a refusal, before the next question. The qualifying slots come first in the form, the booking's after them, and one summary reads all of them back.
+
+```yaml
+forms:
+  book_inspection:
+    slots: [problem, ownership, town, howUrgent, address, name, phone, day, timeOfDay]
+    summaryPromptId: confirm_book_inspection
+    hooks: [confirmedParams, complete]
+    calls: [bookInspection]
+    checks:
+      - action: checkUrgency
+        with: [howUrgent]
+        on:
+          emergency: { then: handoff }
+      - action: checkOwner
+        with: [ownership]
+        on:
+          not-owner: { say: decline_renter, then: end }
+      - action: checkArea
+        with: [town]
+        on:
+          out-of-area: { say: decline_out_of_area, then: end }
+    checksPassed: home_qualifies
+```
+
+- `action` is an action in policy.yaml marked `check: true` ([section 3.2](#32-an-action-and-its-rules)): a question to the gate only. It has no tool, and an ALLOW runs nothing. The rule that refuses lives in policy.yaml with every other rule, and the write names the same rule, so the completion still refuses what the check refused.
+- `with` lists the form's slots the check reads. Each is sent as the param of the same name, its value as the slot holds it. A check is ready when every slot in `with` holds a value. It runs then, and again whenever one of them changes; a slot reopened and given the same value, or an unchanged yes at the summary, asks the gate nothing.
+- Checks run in the order written, on every turn that changed slots: after a disambiguation and a slot read-back (so never on an unsettled value) and after the form's entry call (so identity the form needs is proven first), before the next question. They run again first thing at completion, so "yes, but I rent" is refused with the check's own line and the write is never attempted. The first refusal ends the turn. Put the check the business cares most about first: a caller with two reasons hears its line.
+- `on` maps a reason the gate gives to what follows. `then: end` says the line, then the call ends (the goodbye follows; with a request queued, the call goes on to it instead). `then: anything-else` says the line, closes the form uncounted, and carries on to the next queued request or "anything else?". `then: handoff` goes to a person with the line `handoff_<reason>` (`reason:` names another), after `say` if there is one. `say` is required for `end` and `anything-else`. A reason `on` does not list gets what a completion's refusal gives (`c.refusal`): a BLOCK with a line from the app's `blockPromptId` says it and carries on; anything else goes to a person. A `STEP_UP` from a check always goes to a person.
+- `checksPassed` (optional) is a line said once, on the turn every check of the form has passed, and never again after a correction. Every line a check says renders with the form's slot displays as variables, as the summary does, so `home_qualifies` can say `{town}`.
+- When a check ends the form on the very turn the form was entered ("I'm renting and there's water in the basement"), the engine drops the form's `ack_intent`, so the caller does not hear "Sure, I can help" and "we can't help" in one breath.
+- One check per answer refuses on the turn the answer is given. One check over several slots (`with: [howUrgent, ownership, town]`) runs only once all are filled, so a renter is asked the town and the urgency first: use it when the answers only rule a caller out together.
+- What is recorded: each check that runs is a gate event like any call (the trace and the console show it as they show an entry call). A check that ends the form adds the audit row `form_stopped { form, action, reason, then }` before the handoff or the call's end, and the console's NOW panel says "stopped: checkOwner, not-owner". The form is not counted as completed. The session keeps what each check passed with (`checked`), which is absent until a check runs.
+- A check never writes the session's queue: a form's hooks never write `s.queued`, which is the engine's.
 
 ### prompts.yaml
 
@@ -444,6 +482,23 @@ actions:
 - `level` is the identity level the action needs: 0 anonymous, 1 the factors matched, 2 the factors and a one-time code (`identity.yaml` names them). An action with no `level` needs the highest, so one left without fails closed. `say` is what the action does, in a reviewer's words, as the policy card says it; write it for every action.
 - `rules` is a list, run in the order written. The first rule that fails decides, and the gate answers with that rule's verdict: `BLOCK`, `STEP_UP` (verify further, then try again) or `NEEDS_HUMAN` (a person takes the call). Order is part of the policy: put `scope` before a rule that looks something up, so a lookup is only asked about a record the caller may see. A rule with no parameters is its bare name (`identity`, `attempts`); a rule with parameters is a one-key map. A rule is listed once per action (a range rule once per field). An empty list runs no rule, and the policy card says so.
 - No rule is implied. An action that must check the level lists `identity`; a tool that verifies a caller lists only `attempts` at level 0 (it cannot ask for a level its own call is there to raise).
+- `check: true` makes the action a form's check ([forms.yaml, Checks](#checks-ending-a-form-part-way)): a question to the gate only, with no tool, so an ALLOW runs nothing (the gate event is recorded with no tool result). Some form's `checks` must name it. It may not list `confirmed` (nothing is confirmed part-way through a form), and its level is 0 unless the form's entry call proves more first (a form with an `entry` hook whose purpose, under `purposes`, needs that level). Name the same rules in the action the form writes with, so the write holds what the check held:
+
+```yaml
+actions:
+  checkOwner:
+    say: check the caller owns the home
+    check: true
+    level: 0
+    rules: [identity, { custom: homeowners-only }]
+  bookInspection:
+    say: book a free inspection
+    level: 0
+    rules:
+      - identity
+      - custom: homeowners-only
+      - confirmed: [ownership, address, name, phone, day]
+```
 
 ### 3.3 The built-in rules
 
@@ -644,7 +699,7 @@ signIn: { level: 2 }
 
 ### 3.7 How a form reaches an action: `calls`
 
-The action a form's hooks call goes through the gate, but the engine does not read which. Declare it in forms.yaml (`calls`, on each form, section 2) so the policy can be read as a whole: `calls` lists the actions the form's entry, summary and completion hooks make, and `check` reports an action no form reaches (an action the identity flow calls itself, the identity tools, is not counted). The app map (3.11) draws a form to its actions and their rules with it. Declare it for every form or for none (`calls: []` for a form that calls nothing).
+The action a form's hooks call goes through the gate, but the engine does not read which. Declare it in forms.yaml (`calls`, on each form, section 2) so the policy can be read as a whole: `calls` lists the actions the form's entry, summary and completion hooks make, and `check` reports an action no form reaches (an action the identity flow calls itself, the identity tools, is not counted). The app map (3.11) draws a form to its actions and their rules with it. Declare it for every form or for none (`calls: []` for a form that calls nothing). A form reaches its check actions through `checks`, which `calls` does not list; the app map draws each check beside the slots it reads.
 
 ### 3.8 Redaction per principal: `redact`
 
@@ -1361,6 +1416,8 @@ A library type's own tests (the conformance kit and its unit tests) cover its pa
 
 The clinic's reschedule form has six: `[onSummaryRead, onAnswers, onSummaryAnswer, keepsSlot, confirmedParams, complete]`. The library's check_hold has one. Start with `complete` and add a hook only when the form needs it.
 
+Where they run in a turn: the turn fills slots (speech, the keypad, a correction at the summary), then the form loop asks a disambiguation or a slot read-back if one is due, makes the `entry` call if the form has not passed it, runs the form's `checks` ([forms.yaml, Checks](#checks-ending-a-form-part-way)), and asks the next slot or reads the summary. A yes at the summary runs the checks once more, then `complete`. A form that rules a caller out on an answer needs no hook for it: write a check, not a `complete` that turns the caller away after the rest was asked, and never write `s.queued` from a hook to chain a second form.
+
 ## 7. Checking an app: `pnpm check`
 
 ```sh
@@ -1376,14 +1433,16 @@ At the repository root, `pnpm check` finds every folder under `apps/` that has a
 It checks, in one pass:
 
 1. **Each file against its schema.** Unknown keys, wrong types, a missing required file, a YAML syntax error. A misspelt name offers the near match, and a top-level key that belongs in another file names that file (`purposes` in identity.yaml: `move "purposes" and what is under it to policy.yaml`).
-2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every form's `calls` names tools the code defines, and, when forms declare `calls`, every action is reached by a form or the identity flow; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
+2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every form's `calls` names tools the code defines, and, when forms declare `calls`, every action is reached by a form or the identity flow; every form's `checks` names a `check: true` action and the form's own slots (not an identity factor), each check action is named by a form, has no tool in the code and no `confirmed` rule, and needs no level the form's entry does not prove, and every line a check says is in prompts.yaml; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
 3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for a role rule's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`. A missing line's message says when the engine says it and, when it gives the line variables, which ones (`..., and gives it {first}  ->  add "signin_thanks:" with its text (it may use {first}) and interruptible to prompts.yaml`).
 4. **The keypad menu**: every key names a form intent, an informational intent or `agent`; a key for another control intent is refused, since the engine ignores it.
 5. **A caller who is done**: an app that says `anything_else` ("Is there anything else I can help with?") has a `done` intent, so "no, that's all" ends the call with the goodbye rather than the no-match line (section 2, intents.yaml). The fix is the intent, ready to paste.
 6. **Each locale against prompts.yaml**: a translated line uses only the variables the prompts.yaml line has (the code fills those and no others, so another would fail when it is said), and a locale has no line that prompts.yaml does not (it would never be said).
 7. **The corpus**: every intent has at least one labelled example in `corpus.jsonl`, when app.yaml names a fixtures directory. The corpus must be inside the package (a link that leads out is refused) and at most 16 MB.
 
-The format is one line per problem, `file:line:column  path  message  ->  fix`, and then a summary line (`N problems in <folder>`, or `<folder>: ok`). A problem in the code has no YAML line, so it reads `app.ts` (or `src/app.ts`) and a code path such as `code.forms.renew_loan.entry`.
+The format is one line per problem, `file:line:column  path  message  ->  fix`, and then a summary line (`N problems in <folder>`, or `<folder>: ok`).
+
+A warning is a line that starts `warning: ` in the same format. It is printed and never counted: the exit code is the problems'. Under `--json` the warnings go to stderr and the JSON is the problems. Two things are warnings, both about a form's checks: an `on` reason the check's rules never refuse for (the outcome would never apply; a custom rule's reasons are the ones its examples expect), and a rule a check holds the caller to that no action in the form's `calls` runs (the write would not hold what the check held). A problem in the code has no YAML line, so it reads `app.ts` (or `src/app.ts`) and a code path such as `code.forms.renew_loan.entry`.
 
 When a schema problem is found, the cross-checks against the code do not run until it is fixed, because a file that does not parse cannot be linked. Fix the schema problems first, then run it again. Any other problem does not hold the rest back: an app module that builds the app with `defineApp` throws when the folder and the code disagree, and `check` still reads the code that `defineApp` was given, so the lines the code needs (a keypad slot's `ask_<slot>_dtmf`, a portal's sign-in lines) are reported in the same run as the problem that made it throw.
 

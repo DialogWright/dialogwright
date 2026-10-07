@@ -80,6 +80,16 @@ For each **summary**, four or more answers:
 {"id":"pc-04","text":"no, the date is wrong","intent":"none","context":"confirm_set_up_plan","confirm":"no","changeSlot":"firstDate"}
 ```
 
+For a form with **checks** ([patterns.md](patterns.md#qualify-before-you-collect)), a line for each refusal at each point it can be given: asked (the answer to its own question, `prompted` set to the slot), volunteered early (the answer to another question), in one breath with the request (`no_form`, labelled with the form's intent and every value), and at the summary, both as a correction with a no and with a yes:
+
+```json
+{"id":"ow-01","text":"I rent it","intent":"none","context":"book_inspection","prompted":"ownership","labels":{"ownership":"rent"}}
+{"id":"ow-02","text":"it's in Ashford, but I'm renting","intent":"none","context":"book_inspection","prompted":"town","labels":{"town":"ashford","ownership":"rent"}}
+{"id":"bi-09","text":"I rent a place in Ashford and water is seeping in","intent":"book_inspection","context":"no_form","labels":{"problem":"water","ownership":"rent","town":"ashford"}}
+{"id":"cb-05","text":"no wait, it's my landlord's house","intent":"none","context":"confirm_book_inspection","confirm":"no","labels":{"ownership":"rent"}}
+{"id":"cb-06","text":"yes, but I rent it","intent":"none","context":"confirm_book_inspection","confirm":"yes","labels":{"ownership":"rent"}}
+```
+
 For each **informational and control intent**, eight or more lines, some inside forms (a person asked for mid-form is `"intent":"agent"` with the form as context). For each **delegate**, opening lines with `"as"`.
 
 For the **identity factors**, answers with `prompted` set to the factor slot and the context of a form that steps up. The scaffold's `--identity` corpus has them for `accountId` and `dob`.

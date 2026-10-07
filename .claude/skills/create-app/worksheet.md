@@ -23,6 +23,8 @@ Copy everything below the line into `apps/<name>/DESIGN.md` (draft it in your sc
 |---|---|---|---|---|---|---|
 | `<form>` | <what it is> | `<slotId>` | `<type>`: <options> | <always, or only for some callers> | <yes: `keypad: true`> | <masked by default?> |
 
+Does any answer rule the caller out before you collect the rest (a renter, a home outside the area, an age)? <no, or each answer, the reason the gate gives, and the line or ending: one form, qualifying slots first, with a check on each ([patterns.md](patterns.md#qualify-before-you-collect))>
+
 ## Actions
 
 | Tool | Reads | Writes | Params (exactly what it sends: `params` in code) | Level | Rules, in order |

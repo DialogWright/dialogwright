@@ -372,6 +372,75 @@ onSummaryRead: ({ s }) => ({ vars: { total: balanceOf(accountIdOf(s)) ?? '' } })
 
 The same value goes in `confirmedParams`, so the caller's yes covers it.
 
+## Qualify before you collect
+
+A paragraph that says who the line is not for ("if they rent, or the home is outside our four towns, say we can't help") is a qualify-then-collect line: some answers rule the caller out, and the caller should hear so before they give a name, a number, an address and a day. Write it as **one form**: the qualifying slots first, then the booking's, one summary over all of them, and a **check** on each qualifying answer. A check asks the gate about an answer as soon as it is given; a refusal ends the form with its line ([authoring guide](../../../docs/authoring-an-app.md#checks-ending-a-form-part-way)). No second form, no intent nobody says, no code that turns the caller away after the rest was asked.
+
+```yaml
+# forms.yaml, under forms:
+  book_inspection:
+    slots: [problem, ownership, town, howUrgent, address, name, phone, heardFrom, day, timeOfDay]
+    summaryPromptId: confirm_book_inspection
+    hooks: [onSummaryRead, confirmedParams, complete]
+    calls: [findOpening, bookInspection]
+    checks:
+      - action: checkUrgency
+        with: [howUrgent]
+        on:
+          emergency: { then: handoff }
+      - action: checkOwner
+        with: [ownership]
+        on:
+          not-owner: { say: decline_renter, then: end }
+      - action: checkArea
+        with: [town]
+        on:
+          out-of-area: { say: decline_out_of_area, then: end }
+    checksPassed: home_qualifies
+```
+
+```yaml
+# policy.yaml, under actions:
+  checkUrgency:
+    say: send an emergency to the office
+    check: true
+    level: 0
+    rules: [identity, { custom: emergency-to-office }]
+  checkOwner:
+    say: check the caller owns the home
+    check: true
+    level: 0
+    rules: [identity, { custom: homeowners-only }]
+  checkArea:
+    say: check the home is in the service area
+    check: true
+    level: 0
+    rules: [identity, { custom: in-service-area }]
+  bookInspection:
+    say: book a free inspection
+    level: 0
+    rules:
+      - identity
+      - custom: emergency-to-office
+      - custom: homeowners-only
+      - custom: in-service-area
+      - confirmed: [problem, howUrgent, ownership, town, address, name, phone, heardFrom, day, timeOfDay, visitDate]
+      - dateInRange: { field: visitDate, notBefore: today+1 }
+```
+
+- **A check action has no tool** (`check: true`): the gate decides and nothing runs, so there is no tool to write and no `params` to list. `calls` does not list it; the form reaches it through `checks`.
+- **The rules are written once**, each a `defineRule` in the code with examples, and named twice: in the check, and in the write. That is defence in depth: the completion still refuses what a check refused, and `pnpm check` warns when a check's rule is missing from every action the form calls. A rule's examples send every param the write sends (the write's `confirmed` rule holds a call to exactly its fields), so each example passes or fails on the rule alone in both actions.
+- **`with` names the slots the check sends**, each as the param of the same name: the rule reads `c.call.params.ownership`, the value as the slot holds it (`rent`, not "you rent it"). A rule fails closed: a missing or empty param refuses.
+- **One check per answer, or one for the group.** A check per answer refuses on the turn the answer is given, so a renter is told before the town is asked. One check over several slots (`with: [howUrgent, ownership, town]`, one `checkHome` action) runs only once all are filled: use it only when the answers rule a caller out together.
+- **The order of `checks` is the order a caller with two reasons hears them.** Put first the one the business cares about most (an emergency, then ownership). All the slots of the form listen from its first turn, so "I rent a place in Ashford and water is pouring in" fills three and runs the checks in order; the first refusal speaks.
+- **The endings**: `end` (the line, then the goodbye), `anything-else` (the line, then "anything else?"), `handoff` (to a person with `handoff_<reason>`, `say` optional before it). Each line is in `prompts.yaml` and renders with the form's slot displays (`{town}`). A reason `on` does not list gets `c.refusal`'s handling. When the check refuses on the turn the form opened, the engine drops "Sure, I can help you ..." for you.
+- **`checksPassed`** is a line said once, when the last check passes ("Good news, we work in {town}, and the inspection is free."). A correction that re-runs a check does not say it again.
+- **An emergency stays a priority intent** ([above](#something-that-must-never-wait)): said as a request it takes the turn before any slot fills. The urgency check catches the same thing when it is given as the answer to "how urgent is it?", so the question order is free.
+- **Corrections at the summary are checked**: "no, wait, I rent" re-runs the ownership check and ends the call with its line; "yes, but I rent" is caught at completion, before the write. Script both ([corpus.md](corpus.md#what-to-write)).
+- **Never write `s.queued` from app code.** The queue is the engine's. Chaining a second form from a completion by putting it on the queue is the shape checks replace; a form that rules a caller out is one form with checks.
+
+The scripted calls to write: the renter (two questions, then the line), the caller outside the area, everything in one breath with and without a disqualifying answer, an emergency both as a request and as the urgency answer, and each summary correction. The engine's own fixture for this shape is `packages/dialogwright/src/testing/screened`.
+
 ## Refusals and handoffs
 
 - `c.refusal(decision)` for anything the gate did not allow: a `BLOCK` says the line `code.blockPromptId(reason, principal)` names, and the form ends ("anything else?" follows); with no line, and for `NEEDS_HUMAN`, the caller goes to a person with `handoff_needs_human`.
@@ -385,6 +454,7 @@ The same value goes in `confirmedParams`, so the caller's yes covers it.
 - A `role` rule's `person` goes to a person with `handoff_role_person` (or `handoff_<reason>` for its `reason`); `pnpm check` asks for it.
 - A handoff your code makes for its own reason, `handoff(s, '<reason>', acks)` (exported by `'dialogwright'`), says `handoff_<reason>` with hyphens as underscores. Add the line yourself.
 - A person on request is built in: the `agent` control intent, with `handoff_live_agent`. Give `agent` corpus lines both outside and inside forms.
+- An answer that rules the caller out mid-form is a check, not a refusal at completion ([above](#qualify-before-you-collect)). Never write `s.queued` from app code to send the caller on to another form: the queue is the engine's.
 - Three failed tries at verification hand over with `handoff_identity`.
 
 ## An intent's criteria
@@ -765,5 +835,5 @@ Found so far, with the workaround each time. Log the ones you meet in the worksh
 - **No slot type for an amount of money or an address** (above).
 - **Delegates only on a signed-in chat**: no phone path for a delegate; scripted calls use `as`, and a corpus line with `as` must be `no_form`. A delegate's answer inside a form comes from a corpus line without `as` that has the same words.
 - **A factor slot does not fill from a delegate's words**: give delegates their own slot for the subject they name (above).
-- **A value said with the request for a different form is lost**: "book me in for a Saturday morning" said on the opener, where the turn opens a form that has no day (a qualifying form, before the booking form that asks it), keeps neither the day nor the time, even with `listen: anywhere` or `call` on them: the turn that opens a form fills only that form's slots ([authoring guide](../../../docs/authoring-an-app.md#where-a-slot-listens-listen)). Let the later form ask again, and pin it with a scripted call. `listen: anywhere` keeps a value said on a turn that opens no form, such as an informational question.
+- **A value said with the request for a different form is lost**: "book me in for a Saturday morning" said on the opener, where the turn opens a form that has no day (a qualifying form, before the booking form that asks it), keeps neither the day nor the time, even with `listen: anywhere` or `call` on them: the turn that opens a form fills only that form's slots ([authoring guide](../../../docs/authoring-an-app.md#where-a-slot-listens-listen)). Let the later form ask again, and pin it with a scripted call. `listen: anywhere` keeps a value said on a turn that opens no form, such as an informational question. For a qualifying form before a booking, the gap goes away: make them one form with checks ([above](#qualify-before-you-collect)), and the day and time said on the opener fill, since they are slots of the form the turn opens.
 - **`pnpm check` does not check the corpus** beyond every intent having examples, nor the lines named only in code (`blockPromptId`, `handoff(...)`, a completion's line, a summary variable from `onSummaryRead`). The regression finds them, one at a time.
