@@ -63,7 +63,7 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 
 ### Where a slot listens
 
-Every slot takes `listen:` beside its type's options, so each page lists it: `up-front` (the default: asked outside a form, and a value kept only when the turn enters a form that has the slot), `form` (asked only while its form is open), `anywhere` (a value said outside a form is kept whenever it is said) or `call` (kept for the whole call, as app.yaml's `carrySlots` keeps it). An identity factor takes none. Any value but the default changes what the model is sent on some turns, so it re-keys a recorded cassette there. When to choose each is in section 5 of the [authoring guide](../authoring-an-app.md#where-a-slot-listens-listen).
+Every slot takes `listen:` beside its type's options, so each page lists it: `up-front` (the default: asked outside a form, and a value kept only when the turn enters a form that has the slot), `form` (asked only while its form is open), `anywhere` (a value said outside a form is kept, on a turn that opens no form or opens one that has the slot; not on a turn that opens a different form) or `call` (kept for the whole call, as app.yaml's `carrySlots` keeps it). An identity factor takes none. Any value but the default changes what the model is sent on some turns, so it re-keys a recorded cassette there. When to choose each is in section 5 of the [authoring guide](../authoring-an-app.md#where-a-slot-listens-listen).
 
 ### Locales
 
