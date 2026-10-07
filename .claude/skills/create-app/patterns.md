@@ -2,7 +2,7 @@
 
 The YAML and TypeScript for what a paragraph usually asks for. Each was built and run in an app scaffolded by `pnpm create-app --identity` (check, type check, tests and regression), with the scaffold's names (`accountId`, `dob`, `verifyCustomer`, `findAccount`, `Systems`, `ACCOUNTS`, `accountIdOf`); use your own. Imports are from `'dialogwright'` unless shown. The reference for every field is [docs/authoring-an-app.md](../../../docs/authoring-an-app.md); the engine's own test app, [the testkit](../../../packages/dialogwright/src/testing/testkit/README.md), uses every hook and is worth reading for a feature these patterns leave out (it is a test fixture, not a model of design).
 
-Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [Informational answers](#informational-answers) · [Keypad entry](#keypad-entry) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
+Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [An intent's criteria](#an-intents-criteria) · [Informational answers](#informational-answers) · [Something that must never wait](#something-that-must-never-wait) · [Keypad entry](#keypad-entry) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
 
 ## Verification (level 1)
 
@@ -278,7 +278,7 @@ function completeFault(c: CompletionContext): Completion {
 }
 ```
 
-`said` carries on to "anything else?"; `{ kind: 'end', promptId, vars, acks }` ends the call on the line instead.
+`said` carries on to "anything else?"; `{ kind: 'end', promptId, vars, acks }` ends the call on the line instead. The engine says the `goodbye` line after an `end` completion's line, so a line that ends the call never says goodbye itself, or the caller hears "Goodbye. Goodbye.". The same holds for a polite no that ends the call (`{ kind: 'end', promptId: 'decline_renter', ... }`): end it on the no, and let the engine close.
 
 ## Bounds: `limit` and `dateInRange`
 
@@ -387,6 +387,24 @@ The same value goes in `confirmedParams`, so the caller's yes covers it.
 - A person on request is built in: the `agent` control intent, with `handoff_live_agent`. Give `agent` corpus lines both outside and inside forms.
 - Three failed tries at verification hand over with `handoff_identity`.
 
+## An intent's criteria
+
+An intent's `criteria` are what the model reads to choose it, word for word, on every turn. So a change to them re-keys a recorded cassette: get them right before the first recording, and reword them all at once after it ([triage.md](triage.md#the-order-of-the-fixes)).
+
+**A sentence that gives every slot of a form at once is still a request for that form.** A caller who answers all the form's questions in one breath, with no request word ("I own the house in Cedar Falls, there's water in the basement and it's getting worse"), asks for nothing in so many words, and the model may read it as no request (`none`). Say in the form intent's criteria that such a sentence is the request:
+
+```yaml
+# intents.yaml, under intents:
+  book_inspection:
+    criteria: Has a problem with their home's foundation or basement, such as water in the basement or cracks, or asks to book an inspection. A caller who describes such a problem is asking for help, however many other details they add in the same breath, such as owning the home, its town, or how long it has been going on
+    label: look into that and set up a free inspection
+    kind: form
+```
+
+Give the corpus a line like it among the form's over-answers ([corpus.md](corpus.md#what-to-write)), labelled with the intent and every slot it fills. The stub reads the labels, not the criteria, so only a recording tests the wording.
+
+When two intents are near each other, say in each which requests are the other's ("asks to go on to choosing the day, after the questions; a request to schedule is book_inspection's").
+
 ## Informational answers
 
 An intent that only says something: no form, no tool, no policy.
@@ -417,7 +435,34 @@ When the app has something that must never wait or be missed, an emergency or a 
     priority: true
 ```
 
-Read at `PRIORITY_INTENT` (0.8) or more, the intent is acted on that turn, wherever the call is: the form in hand is left (not queued), a pending confirmation is dropped, and side speech or words read as unintelligible do not stop it. A handoff to a person and the injection screen still win, and its form's actions go through the policy gate as any other's. The usual shape is a form with no slots whose `complete` hook hands off with a line of its own. Only a form intent or an informational one may be priority. Give it corpus lines inside each form a caller could be in (`context: <form>`, `change: replacing`) and one said aside ("hold on, ..."). The debug table's `priorityIntent` row says when it took the turn (`act:<intent>:over:<gate>`). The whole option is under "Must never wait" in the [authoring guide](../../../docs/authoring-an-app.md#must-never-wait-priority).
+Read at `PRIORITY_INTENT` (0.8) or more, the intent is acted on that turn, wherever the call is: the form in hand is left (not queued), a pending confirmation is dropped, and side speech or words read as unintelligible do not stop it. A handoff to a person and the injection screen still win, and its form's actions go through the policy gate as any other's. The usual shape is a form with no slots whose `complete` hook hands off with a line of its own:
+
+```yaml
+# forms.yaml, under forms:
+  urgent_repair:
+    slots: []
+    summaryPromptId: null
+    hooks: [complete]
+    calls: []
+```
+
+```ts
+// src/app.ts
+/**
+ * Put through to the office, for the reason given (handoff_<reason> is the line). The engine
+ * acknowledged the request on entering the form ("Sure, I can help you reach the office right
+ * away."); drop it, so a caller with water coming in hears one sentence, the handoff line.
+ */
+const toOffice = (reason: string) => (c: CompletionContext): Completion => ({
+  kind: 'decision',
+  decision: handoff(c.s, reason, c.acks.filter((a) => a.promptId !== 'ack_intent')),
+});
+
+// in code.forms:
+urgent_repair: { complete: toOffice('emergency') },
+```
+
+and the line `handoff_emergency` in `prompts.yaml` ("That sounds urgent. I'm putting you through to our office right now.", `interruptible: false`). Filter out only `ack_intent`: any other line the turn carries is still said. Only a form intent or an informational one may be priority. Give it corpus lines inside each form a caller could be in (`context: <form>`, `change: replacing`) and one said aside ("hold on, ..."). The debug table's `priorityIntent` row says when it took the turn (`act:<intent>:over:<gate>`). The whole option is under "Must never wait" in the [authoring guide](../../../docs/authoring-an-app.md#must-never-wait-priority).
 
 ## A knowledge form
 
@@ -491,7 +536,7 @@ getFees: {
 - A `digits`, `date`, `birthdate` or `choice` slot takes `keypad: true` and then needs `ask_<slot>_dtmf` (the line that asks for the keys). The keypad is offered after spoken answers miss, and keys are taken whenever the slot was the last thing asked.
 - The one-time code is always keyed.
 - A scripted call's keypad step is `{ "dtmf": "55501234" }`.
-- **The keypad menu** (`menu:` in intents.yaml) listens only once it has been offered: on a call with a keypad (a phone call, never the chat), the second missed answer to "what can I help you with" (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the next turn's keys are menu keys. A third miss goes to a person (`max-attempts`). A key pressed before that, at the greeting for instance, is ignored and the caller hears nothing. After an informational key the menu is offered again, so it keeps listening. A scripted call for a menu key misses twice first: `[{ "say": "okay" }, { "say": "okay" }, { "dtmf": "4" }]`, with an "okay" corpus line at `no_form` whose intent is `none`. Open with "okay", not a filler like "um": the model reads a bare "um" as addressed to the line at about the threshold, so on a recording it is sometimes ignored rather than missed, and the menu is never offered (seen on two apps' first recordings).
+- **The keypad menu** (`menu:` in intents.yaml) listens only once it has been offered: on a call with a keypad (a phone call, never the chat), the second missed answer to "what can I help you with" (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the next turn's keys are menu keys. A third miss goes to a person (`max-attempts`). A key pressed before that, at the greeting for instance, is ignored and the caller hears nothing. After an informational key the menu is offered again, so it keeps listening. A scripted call for a menu key misses twice first, with two silences: `[{ "silence": true }, { "silence": true }, { "dtmf": "4" }]`. A silence is a miss with no model call, so no recording can change the path. Do not open with words: a filler like "um" is read as addressed to the line at about the threshold, so on a recording it is sometimes ignored rather than missed and the menu is never offered (seen on three apps' first recordings), and any word the model reads can move a call whose subject is the keypad. (The clinic's and the utility's older calls open with "okay"; keep theirs as they are, since changing them re-keys their cassettes.)
 
 ## What is recorded: `params` and `audit`
 
@@ -549,6 +594,14 @@ place:
 
 `redact: none` is the trade-off: with `say: null` the display is the caller's words, and the default `redact: length` keeps those out of the trace, so `pnpm check` refuses the pair (`give "say" a stand-in such as "your note", or set redact: none`). A stand-in would read back "your note" instead of the address, which defeats the read-back, so an address takes `redact: none`, and the words are then in the trace and the audit as said. Declare the param the same way (`place: keep` under `audit:` in policy.yaml), so what is recorded is stated, and note the trade-off in the worksheet's gaps: whatever the caller says with the address is kept too.
 
+## Names the engine keeps
+
+Choose ids that none of the engine's own take, so `pnpm check` does not refuse a name after you have written it in every file.
+
+- **Slot ids.** A slot's questions to the model are named after its id: a `choice` slot `x` asks `x`, the other types add a suffix (`xGiven`, `xSpan`, `xMode`, ...: [corpus.md](corpus.md#labels-by-slot-type)). The engine asks questions of its own on every turn, so a slot may not take, or make, one of their ids: `intent`, `intentTentative`, `addressedToSystem`, `utteranceComplete`, `wantsHuman`, `rephrasingLastTurn`, `confusedByPrompt`, `spokeAMenuNumber`, `frustration`, `urgency`, `triedSelfService`, `languageSwitch`, `intelligible`, `confirmsYes`, `confirmsNo`, `intentChange`, `secondIntent`, `changeSlot`, `menuNumberSaid`, `manipulation`. The ones a paragraph tempts you to: `urgency` (how urgent the problem is: say `howUrgent`), `frustration`, `intent`. The list is exported as `ENGINE_QUESTION_IDS` by `'dialogwright'`.
+- **Intent ids.** `agent`, `repeat_prompt` and `done` are the engine's control intents (`other` and `none` are the scaffold's): keep them as they are, and do not give one of your tasks their id.
+- **The subject's kind** in identity.yaml may not be `anonymous`, `channel`, `principal`, `level`, `factor`, `pass`, `config` or `configFiles`.
+
 ## Testing the policy
 
 Three kinds of test, all from `'dialogwright/testing'`.
@@ -580,6 +633,31 @@ testing: {
 ```
 
 `record` (one of the subject's records, `{ subject: '55501234', record: 'R-1' }`) is needed only when a rule scopes by a record (`scope: { record: <param> }`); the grid then says which of the four lacks one. With `scope: { param }` rules only, leave it out.
+
+**An action whose rules read params needs named calls.** For each action the grid builds one call: its subject param and its `confirmed` or `fields` list, each valued from `values`. An action with neither (a read whose custom rules decide on what the caller said: whether they own the home, its town, how urgent it is) is sent no params at all, so its rules fail closed and every caller is refused for the same reason. That matrix looks plausible ("every caller BLOCK not-owner") and is wrong. Give each such action named sets of params under `calls`, one for each outcome its rules can reach, so the matrix shows every reason the paragraph gives:
+
+```ts
+// src/app.ts, in testing.policyMatrix, beside principals, records and values
+calls: {
+  checkHome: {
+    qualifies: { howUrgent: 'worsening', ownership: 'own', town: 'cedar_falls' },
+    emergency: { howUrgent: 'emergency', ownership: 'rent', town: 'elsewhere' },
+    renter: { howUrgent: 'worsening', ownership: 'rent', town: 'cedar_falls' },
+    outsideArea: { howUrgent: 'worsening', ownership: 'own', town: 'elsewhere' },
+  },
+},
+```
+
+```text
+checkHome · level 0 · identity, custom emergency-to-office, custom homeowners-only, custom in-service-area
+  every caller   fields exact|extra, params qualifies  ALLOW
+                 fields missing, params qualifies      BLOCK out-of-area
+                 params emergency                      NEEDS_HUMAN emergency
+                 params renter                         BLOCK not-owner
+                 params outsideArea                    BLOCK out-of-area
+```
+
+The grid still sets the subject param itself. Use `calls` too for an action with a `confirmed` list whose custom rules turn on a value (a visit today, one a rule refuses): one set that passes, and one for each value a rule refuses. A row where every caller is refused for one reason is a sign the calls are missing, so read it against the worksheet before you accept it.
 
 With an app with no delegates, the `unlistedRole`, `roleless` and `otherParty` callers are still given (of a kind the app does not serve), as the clinic's are. Then the test, and the first matrix written deliberately:
 
@@ -687,4 +765,5 @@ Found so far, with the workaround each time. Log the ones you meet in the worksh
 - **No slot type for an amount of money or an address** (above).
 - **Delegates only on a signed-in chat**: no phone path for a delegate; scripted calls use `as`, and a corpus line with `as` must be `no_form`. A delegate's answer inside a form comes from a corpus line without `as` that has the same words.
 - **A factor slot does not fill from a delegate's words**: give delegates their own slot for the subject they name (above).
+- **A value said with the request for a different form is lost**: "book me in for a Saturday morning" said on the opener, where the turn opens a form that has no day (a qualifying form, before the booking form that asks it), keeps neither the day nor the time, even with `listen: anywhere` or `call` on them: the turn that opens a form fills only that form's slots ([authoring guide](../../../docs/authoring-an-app.md#where-a-slot-listens-listen)). Let the later form ask again, and pin it with a scripted call. `listen: anywhere` keeps a value said on a turn that opens no form, such as an informational question.
 - **`pnpm check` does not check the corpus** beyond every intent having examples, nor the lines named only in code (`blockPromptId`, `handoff(...)`, a completion's line, a summary variable from `onSummaryRead`). The regression finds them, one at a time.

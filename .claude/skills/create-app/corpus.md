@@ -45,7 +45,7 @@ Each library slot asks the model questions with ids built from the slot's id. A 
 
 A span label must be one of the spans the engine finds in the text, or the regression stops with `span "..." is not a candidate span of the text`. The regression's day is Friday 2026-09-18, so "tomorrow" is 2026-09-19 and "Friday" (ahead) is 2026-09-25.
 
-Every slot listens on every turn (inside a form, the form's slots; outside one, every slot but one that says `listen: form`), so a line can fill several slots at once: label each value it says. That is how over-answering is tested.
+Every slot listens on every turn (inside a form, the form's slots; outside one, every slot but one that says `listen: form`), so a line can fill several slots at once: label each value it says. That is how over-answering is tested. A line that opens a form fills only that form's slots, so a value it gives for another form's slot is not kept, whatever that slot's `listen` ([patterns.md](patterns.md#known-gaps)): its outcome shows the slot empty.
 
 ## What to write
 
@@ -58,6 +58,8 @@ For each **form intent**, eight or more opening lines (`context: "no_form"`), fo
 {"id":"pl-04","text":"three payments starting tomorrow","intent":"set_up_plan","context":"no_form","labels":{"count":"three","firstDateMode":"relative_day","firstDateRelative":"tomorrow"}}
 {"id":"pl-05","text":"I can't pay it all at once","intent":"set_up_plan","context":"no_form","tentative":true}
 ```
+
+One of a form's over-answers gives every slot at once with no request word ("I own the house in Cedar Falls, there's water in the basement and it's getting worse"), labelled with the form's intent and every value: the model reads such a line as a request only when the intent's criteria say so ([patterns.md](patterns.md#an-intents-criteria)).
 
 For each **slot**, five or more answers inside its form:
 

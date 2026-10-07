@@ -9,11 +9,13 @@ Two apps in this repository are the examples, and the snippets below are copied 
 
 ## Contents
 
+The guide is long, too long to read in one go: read it a section at a time, from the list below. Building an app with the [create-app skill](../.claude/skills/create-app/SKILL.md), read only the sections each of its steps names. `grep -n '^##' docs/authoring-an-app.md` lists every heading with its line.
+
 1. [The folder](#1-the-folder)
-2. [The files, one by one](#2-the-files-one-by-one)
-3. [Policy and identity](#3-policy-and-identity)
+2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
+3. [Policy and identity](#3-policy-and-identity) (its own list of thirteen subsections is at its head)
 4. [What stays in TypeScript, and why](#4-what-stays-in-typescript-and-why)
-5. [Writing a slot](#5-writing-a-slot)
+5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
 6. [The form hooks](#6-the-form-hooks)
 7. [Checking an app: `pnpm check`](#7-checking-an-app-pnpm-check)
 8. [Locales](#8-locales)
@@ -969,7 +971,7 @@ An app that is not built from a folder gets the same slots from code: `defineSlo
 
 ### Every slot listens on every turn
 
-The engine asks the questions of every slot the turn listens for, not only the one it just asked about: inside a form, the form's slots (and, while an anonymous caller is still to be verified, the identity factors); outside a form, every slot the app has but one that listens only in its form (`listen: form`, below). That is what lets a caller volunteer several details at once, and lets "what do I have out on card 5552 0417" fill the card on the opening turn. Outside a form, what is heard for a form's slot is kept only for the form the turn opens: the turn routes, the form opens and fills from what was said for it. A turn that opens no form (an informational answer, a declined offer of a person) keeps only what belongs to the call, the identity factors and the slots the app carries (`carrySlots`, or `listen: call`), and the slots that keep a value said anywhere (`listen: anywhere`); a topic or a day said in an informational question is not kept for a form asked for later, which starts from what is said then. It is true of library slots and slots in code alike, and it has two consequences:
+The engine asks the questions of every slot the turn listens for, not only the one it just asked about: inside a form, the form's slots (and, while an anonymous caller is still to be verified, the identity factors); outside a form, every slot the app has but one that listens only in its form (`listen: form`, below). That is what lets a caller volunteer several details at once, and lets "what do I have out on card 5552 0417" fill the card on the opening turn. Outside a form, what is heard for a form's slot is kept only for the form the turn opens: the turn routes, the form opens and fills from what was said for it. A turn that opens a form fills that form's slots (and, while an anonymous caller is still to be verified, the identity factors) and no others, whatever their `listen`: a day said for another form is not kept. A turn that opens no form (an informational answer, a declined offer of a person) keeps only what belongs to the call, the identity factors and the slots the app carries (`carrySlots`, or `listen: call`), and the slots that keep a value said anywhere (`listen: anywhere`); a topic or a day said in an informational question is not kept for a form asked for later, which starts from what is said then. It is true of library slots and slots in code alike, and it has two consequences:
 
 - A slot must give `absent` when the words say nothing about it. The library types do; a slot in code must.
 - Adding or changing a slot changes the model's request on every turn where it listens, because its questions are in the request and every slot's display is in the turn state. A recorded cassette then misses until it is recorded again, which calls the paid model and is a deliberate step (the clinic's README, "Recording the cassette").
@@ -982,7 +984,7 @@ Every slot takes `listen:` beside its type's options: in slots.yaml, in `defineS
 |---|---|---|
 | `up-front` (the default) | asked | kept only when the turn enters a form that has the slot: values said up front with the request. A turn that opens no form keeps none. |
 | `form` | not sent | never taken: the form asks for it once it is open, even when it was said with the request |
-| `anywhere` | asked | kept whenever it is said, until a form that has the slot uses it and empties it as it closes |
+| `anywhere` | asked | kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it and empties it as it closes. Not kept from a turn that opens a form without it (a known gap, below) |
 | `call` | asked | kept, and it outlasts every form, for the whole call |
 
 ```yaml
@@ -997,6 +999,8 @@ When to choose each:
 - **`up-front`** suits most slots. "Book a delivery window for tomorrow morning" has its day and time of day taken with the request, and an informational question that mentions a day leaves nothing behind for a later form.
 - **`form`** is for a value whose words come up in other requests, to be heard only in answer to its own form. A payment arrangement's first payment date is one: "are you open on Saturday", a question about office hours, mentions a day, and the arrangement should never take it as the first payment. The slot's question is then not sent outside its form, and a date said with the request ("set up a payment plan starting Friday") is asked for again once the form is open.
 - **`anywhere`** is for a value a caller often gives before saying what they want, which a later form should not ask for again: a reference number said at the greeting, an order number said with a question. That is how every slot behaved before a value said outside a form was tied to the form the turn enters.
+
+  It does not reach across forms on the turn one opens. "Book me in for a Saturday morning", said on the opener of a line whose first form qualifies the caller and whose second books the day, opens the first form, and the turn fills only that form's slots: the Saturday and the morning are lost, with `anywhere` or `call` on them alike. Today, let the booking form ask for them again, pin that with a scripted call, and write it in the app's gaps. Keeping such a value for a later form is a known gap in the engine.
 - **`call`** is for a value that is the caller's rather than one task's: their name, their date of birth. It is what app.yaml's `carrySlots` does, and `carrySlots` is shorthand for it; a slot `carrySlots` names that says another `listen` is refused by `check`. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary.
 
 An identity factor (identity.yaml) listens as identity says: while an anonymous caller is still to be verified, inside a form and out, and it stays for the call. `listen` does not apply to it, and `check` refuses it there. An unknown value is refused with the near one (`change it to "anywhere"`).

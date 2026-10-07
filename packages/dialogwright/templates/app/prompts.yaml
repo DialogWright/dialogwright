@@ -109,5 +109,5 @@ prompts:
     text: You'd like to book {service}. Shall I do that?
     interruptible: true
   service_booked:
-    text: Done. I've booked {service}, and the first opening is {when}. Goodbye.
+    text: Done. I've booked {service}, and the first opening is {when}.
     interruptible: false
