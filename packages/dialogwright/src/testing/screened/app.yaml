@@ -24,5 +24,11 @@ console:
 wording:
   addressee: the Example Home Visits line
 
+# The office sees which values the caller never confirmed: everything is still sent, and the end
+# frame, the console and the audit's handoff row name those the caller did not say yes to.
+handoff:
+  data:
+    unconfirmed: mark
+
 fixtures:
   dir: src/testing/screened/fixtures

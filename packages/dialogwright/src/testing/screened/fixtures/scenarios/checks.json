@@ -98,6 +98,24 @@
     }
   },
   {
+    "id": "urgent-at-the-summary-corrects",
+    "steps": [
+      { "say": "there's water in my basement" },
+      { "say": "yes, I own it" },
+      { "say": "Cedar Falls" },
+      { "say": "it's getting worse" },
+      { "say": "Monday" },
+      { "say": "the morning" },
+      { "say": "wait, water is coming through the wall right now" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "urgent",
+      "form": "urgent",
+      "slots": { "problem": "leak", "ownership": "own", "town": "cedar_falls", "howUrgent": "urgent", "visitDay": "monday", "timeOfDay": "morning" }
+    }
+  },
+  {
     "id": "summary-correction-disqualifies",
     "steps": [
       { "say": "there's water in my basement" },

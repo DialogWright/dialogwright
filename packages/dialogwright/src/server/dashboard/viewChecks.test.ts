@@ -42,3 +42,19 @@ describe('a form a check ended', () => {
     expect(reduce(events as DashboardEvent[]).now).toMatchObject({ state: 'handoff', stopped: 'stopped: checkUrgency, urgent' });
   });
 });
+
+describe('a handoff with values the caller never confirmed (handoff.data.unconfirmed: mark)', () => {
+  it('marks each such value in the packet, the corrected urgency among them', async () => {
+    const { events } = await scripted(["there's water in my basement", 'yes, I own it', 'Cedar Falls', "it's getting worse", 'Monday', 'the morning', 'wait, water is coming through the wall right now'], { client });
+    const v = reduce(events as DashboardEvent[]);
+    expect(v.handoff).toMatchObject({ reason: 'urgent' });
+    expect(v.handoff!.packet).toEqual([
+      'problem: a leak (not confirmed)',
+      'ownership: you own it (not confirmed)',
+      'town: Cedar Falls (not confirmed)',
+      'howUrgent: right away (not confirmed)',
+      'visitDay: Monday (not confirmed)',
+      'timeOfDay: the morning (not confirmed)',
+    ]);
+  });
+});

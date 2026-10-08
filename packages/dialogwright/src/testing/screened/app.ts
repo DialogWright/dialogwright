@@ -13,7 +13,10 @@ import { ANONYMOUS, defineApp, handoff, type AppCode, type Completion, type Comp
  * asked; something urgent goes to the office. Each check is a built-in list rule (oneOf, noneOf)
  * in policy.yaml, so the app has no rule of its own. The booking names the same three rules, so the
  * write still refuses what a check refused. Something urgent said at any point is also a priority intent
- * (`urgent`), which takes the turn before any slot fills. All names and places are made up.
+ * (`urgent`), which takes the turn before any check runs; what the same words say of the booking's
+ * answers corrects them first (`correctsForm`), so "water is coming through the wall right now" at the
+ * read-back hands the office "right away", and the handoff names the values the caller never
+ * confirmed (app.yaml `handoff.data.unconfirmed: mark`). All names and places are made up.
  */
 
 /** The folder this app's YAML is in. */

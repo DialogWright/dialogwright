@@ -12,12 +12,14 @@
 {"id":"tw-02","text":"Cedar Falls","intent":"none","context":"book_visit","prompted":"town","labels":{"town":"cedar_falls"}}
 {"id":"hu-01","text":"it can wait, whenever suits","intent":"none","context":"book_visit","prompted":"howUrgent","labels":{"howUrgent":"routine"}}
 {"id":"hu-02","text":"it needs someone right away","intent":"none","context":"book_visit","prompted":"howUrgent","labels":{"howUrgent":"urgent"}}
+{"id":"hu-03","text":"it's getting worse","intent":"none","context":"book_visit","prompted":"howUrgent","labels":{"howUrgent":"soon"}}
 {"id":"vd-01","text":"Monday","intent":"none","context":"book_visit","prompted":"visitDay","labels":{"visitDay":"monday"}}
 {"id":"td-01","text":"the morning","intent":"none","context":"book_visit","prompted":"timeOfDay","labels":{"timeOfDay":"morning"}}
 {"id":"cb-01","text":"yes, book it","intent":"none","context":"confirm_book_visit","confirm":"yes"}
 {"id":"cb-02","text":"no wait, it's my landlord's house, I rent","intent":"none","context":"confirm_book_visit","confirm":"no","labels":{"ownership":"rent"}}
 {"id":"cb-03","text":"no, it's in Ashford","intent":"none","context":"confirm_book_visit","confirm":"no","labels":{"town":"ashford"}}
 {"id":"cb-04","text":"yes, but I rent it","intent":"none","context":"confirm_book_visit","confirm":"yes","labels":{"ownership":"rent"}}
+{"id":"cb-05","text":"wait, water is coming through the wall right now","intent":"urgent","context":"confirm_book_visit","change":"replacing","labels":{"howUrgent":"urgent"}}
 {"id":"ag-01","text":"can I talk to a person","intent":"agent","context":"no_form"}
 {"id":"rp-01","text":"can you say that again","intent":"repeat_prompt","context":"no_form"}
 {"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}

@@ -8,7 +8,9 @@ intents:
     criteria: Says something is going wrong in the home right now and needs help at once
     label: get help right away
     kind: form
-    priority: true
+    # Acted on at once, and what the same words say of the booking's answers corrects them first: "water
+    # is coming through the wall right now" at the read-back makes howUrgent "right away" before the handoff.
+    priority: { correctsForm: true }
   agent:
     criteria: Asks to speak with a person, a representative, or an operator
     label: speak with someone
