@@ -35,7 +35,8 @@ export interface SlotState {
   /**
    * The nos the caller has said to the slot's own read-back in this form (a library slot's,
    * SlotSpec.readBackNo `ask`): kept when a no empties the slot, so a second no goes to a person while
-   * a miss on the question asked again walks the slot's ladder. Absent until the first no.
+   * a miss on the question asked again walks the slot's ladder. Absent until the first no, and gone
+   * when the form closes or another is entered, a slot the app carries included (setForm, closeForm).
    */
   readBackNos?: number;
 }
@@ -401,6 +402,8 @@ export function setForm(session: Session, form: FormId): Session {
   // The checks a form passed are its own: the new form runs its checks afresh.
   delete session.checked;
   delete session.checkReadBackNos;
+  // And the nos said to its slots' read-backs: a slot carried in is read back afresh.
+  for (const slot of Object.values(session.slots)) delete slot.readBackNos;
   // So are its offers (the caller's number, a value from the facts): the new form may offer again.
   delete session.callerOffered;
   return session;
@@ -416,7 +419,11 @@ export function closeForm(session: Session): Session {
   const app = appOf(session);
   if (session.form) {
     for (const id of formOf(app, session.form).slots) {
-      if (isCarried(app, id)) continue;
+      // A carried slot keeps its value, but not the nos said to its read-back in this form.
+      if (isCarried(app, id)) {
+        delete session.slots[id]!.readBackNos;
+        continue;
+      }
       session.slots[id] = emptySlot();
       // A value the caller agreed to goes with the slot: one said again in a later form is heard anew.
       if (session.agreed !== undefined) delete session.agreed[id];

@@ -9,7 +9,7 @@ import { choice, noul, score } from '../testing/answers';
 import { registerApp, resetAppsForTest } from './app/registry';
 import type { App } from './app/types';
 import { DEFAULT_THRESHOLDS } from './thresholds';
-import { newSession, setForm, type Session } from './session';
+import { closeForm, newSession, setForm, type Session } from './session';
 import { pendingAtSignIn, resolve, type TurnContext, type TurnResult } from './turn';
 import { silenceEvent, speechEvent } from '../channel/events';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
@@ -418,6 +418,14 @@ describe('a no with the right answer in the same breath', () => {
     expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_ownership' });
   });
 
+  it('the value not kept leaves no filled row in the trace or the debug table', async () => {
+    const t = resolve(await rentReadBack(), speechEvent('no', true), { ...no, ownership: choice({ rent: 0.95, none: 0.05 }) }, turnContext());
+    expect(t.fillEvents.filter((e) => e.slot === 'ownership')).toEqual([]);
+    expect(t.rows.filter((r) => r.gate === 'slot:ownership')).toEqual([]);
+    const taken = resolve(await rentReadBack(), speechEvent('no, I own it', true), { ...no, ownership: choice({ own: 0.95, none: 0.05 }) }, turnContext());
+    expect(taken.fillEvents.filter((e) => e.slot === 'ownership').map((e) => e.outcome.kind)).toEqual(['filled']);
+  });
+
   it('a bare no fills nothing', async () => {
     const t = resolve(await rentReadBack(), speechEvent('no', true), { ...no, ownership: choice({ none: 0.95, own: 0.05 }) }, turnContext());
     expect(t.session.slots.ownership!.value).toBeNull();
@@ -444,6 +452,24 @@ describe('a portal sign-in while a check\'s read-back is out', () => {
     expect(pendingAtSignIn(slot)).toBe(slot);
     expect(pendingAtSignIn({ target: 'transfer', attempts: 0, resume: slot })).toBe(slot);
     expect(pendingAtSignIn({ target: 'intent', intent: 'book_visit', answers: {}, text: 'x' })).toBeNull();
+  });
+});
+
+describe('the nos to a slot\'s read-back belong to the form', () => {
+  it('are cleared when the form closes, the slot carried or not, and when another form is entered', () => {
+    const carried: App = { ...confirming, carrySlots: ['ownership'] };
+    use(carried);
+    const s = newSession('nos', 0, VOICE_RELAY, ANONYMOUS, carried.id);
+    setForm(s, 'book_visit');
+    s.slots.ownership = { ...s.slots.ownership!, value: 'own', display: 'you own it', readBackNos: 1 };
+    s.slots.town = { ...s.slots.town!, value: 'ashford', display: 'Ashford', readBackNos: 1 };
+    closeForm(s);
+    expect(s.slots.ownership).toMatchObject({ value: 'own' });
+    expect(s.slots.ownership).not.toHaveProperty('readBackNos');
+    expect(s.slots.town).not.toHaveProperty('readBackNos');
+    s.slots.ownership = { ...s.slots.ownership!, readBackNos: 1 };
+    setForm(s, 'urgent');
+    expect(s.slots.ownership).not.toHaveProperty('readBackNos');
   });
 });
 

@@ -1194,17 +1194,23 @@ function emptyForReadBack(s: Session, id: SlotId): void {
 /**
  * What a no to a read-back said of the slots it emptied, as an ordinary fill of them: `taken` when it
  * gave one of them a value other than the one declined ("no, I own it"). Anything else it gave (the
- * value declined, heard again; a part of a date) is put back to empty, so a bare no fills nothing.
+ * value declined, heard again; a part of a date) is put back to empty, so a bare no fills nothing, and
+ * its fill events are dropped, so the trace and the debug table show no value the slot did not keep.
  */
 function sameBreath(s: Session, answers: AnswerMap, ctx: SlotContext, slots: readonly SlotId[], declined: Record<SlotId, string | null>, io: TurnIO): { taken: boolean; fill: FillResult } {
   const fill = fillSlots(s, answers, ctx, slots.map((id) => slotSpecOf(io.app, id)));
   let taken = false;
+  const undone = new Set<SlotId>();
   for (const id of slots) {
     const st = s.slots[id]!;
     if (st.value !== null && st.value !== declined[id]) taken = true;
-    else if (st.value !== null || st.window !== null) emptyForReadBack(s, id);
+    else if (st.value !== null || st.window !== null) {
+      emptyForReadBack(s, id);
+      undone.add(id);
+    }
   }
-  return { taken, fill: taken ? fill : { ...fill, acks: [], disambiguate: null } };
+  const events = fill.events.filter((e) => !undone.has(e.slot));
+  return { taken, fill: taken ? { ...fill, events } : { ...fill, events, acks: [], disambiguate: null } };
 }
 
 const ACK_DECLINED: Ack = { promptId: 'ack_declined', vars: {} };
