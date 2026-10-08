@@ -275,6 +275,12 @@ function scrubSay(action: unknown, scrub: Scrub): unknown {
   return { ...action, parts: action.parts.map((p: unknown) => (isObject(p) && typeof p.text === 'string' ? { ...p, text: scrub(p.text) } : p)) };
 }
 
+/** A slot that offers the caller's number (SlotSpec.callerNumber) and is redacted, whose rule masks the number; null when none is. */
+function callerNumberRule(app: Slots): string | null {
+  if (app === null) return null;
+  return Object.keys(app.slots).find((id) => app.slots[id]!.callerNumber !== undefined && app.slots[id]!.redact !== undefined) ?? null;
+}
+
 /**
  * Every place a record carries a redacted slot's value, masked; nothing else is changed. That
  * includes what the turn said aloud: the say actions' text, and the part of our line a caller's
@@ -287,6 +293,12 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
   // What an interruption heard of our line was cut off as it was said: a value's first digits are masked too.
   const cut = isObject(record.event) && record.event.type === 'user.interrupt' && typeof record.event.heard === 'string' ? recordScrubber(record, mode, app, { cutOff: true }) : null;
   if (cut !== null && record.event.type === 'user.interrupt') out.event = { ...record.event, heard: cut(record.event.heard) };
+  // The number the caller is calling from, on the session start (SessionStart.callerNumber): masked as
+  // the slot that offers it masks its value.
+  const offering = callerNumberRule(app);
+  if (isObject(record.event) && record.event.type === 'session.start' && typeof record.event.callerNumber === 'string' && offering !== null) {
+    out.event = { ...record.event, callerNumber: maskValue(app, offering, record.event.callerNumber, mode) ?? record.event.callerNumber };
+  }
   const pc = record.pendingConfirmation;
   if (pc && pc.target === 'slot') out.pendingConfirmation = { ...pc, value: maskValue(app, pc.slot, pc.value, mode) ?? pc.value, display: maskValue(app, pc.slot, pc.display, mode) ?? pc.display };
   out.decision = scrubVars(redactDecision(app, record.decision, mode), scrub);

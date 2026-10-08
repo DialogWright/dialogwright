@@ -739,6 +739,21 @@
               "none"
             ]
           },
+          "callerNumber": {
+            "description": "Offer the number the caller is calling from: when the form would ask this slot and the call has a number that fits it (its `countryCode`, `length` and `mask`), the line asks offer_<slot> (\"Is the number you're calling from, ending in {last4}, the best one to reach you?\") in place of ask_<slot>, and a yes fills the slot with that number. A no asks ask_<slot>, with no attempt counted, and a number said instead fills as said. A chat, or a call with the number withheld, is asked ask_<slot> as always. Never on an identity factor: a caller ID can be forged.",
+            "type": "object",
+            "properties": {
+              "countryCode": {
+                "type": "string",
+                "pattern": "^\\d{1,3}$",
+                "description": "The country calling code the carrier writes before the number (\"1\" for +1). It is taken off when what is left has the slot's `length`; a number from any other country is no number for the slot."
+              }
+            },
+            "required": [
+              "countryCode"
+            ],
+            "additionalProperties": false
+          },
           "handoff": {
             "default": "last4",
             "description": "What a transfer to a person hands over: its \"last4\", only whether the caller was \"verified\", or its \"display\" in full. app.yaml's handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.",

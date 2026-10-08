@@ -571,8 +571,9 @@ describe('the engine prompt list', () => {
       }
     }
     // enginePrompts requires each of these where the engine says it; disambiguate_<slot> only the
-    // slot's code can offer (two candidates from its fill), and handoff_<reason> is the reason's.
-    expect([...families].sort()).toEqual(['ack_<x>', 'ask_<x>', 'ask_<x>_dtmf', 'ask_<x>_retry', 'confirm_<x>', 'disambiguate_<x>', 'handoff_<x>']);
+    // slot's code can offer (two candidates from its fill), handoff_<reason> is the reason's, and
+    // offer_<slot> the line a slot that offers the caller's number declares (SlotSpec.prompts).
+    expect([...families].sort()).toEqual(['ack_<x>', 'ask_<x>', 'ask_<x>_dtmf', 'ask_<x>_retry', 'confirm_<x>', 'disambiguate_<x>', 'handoff_<x>', 'offer_<x>']);
   });
 
   it('the role-person reason check names is the gate\'s', async () => {

@@ -8,6 +8,7 @@ import type { TurnError, TurnResult } from '../core/turn';
 import type { Session } from '../core/session';
 import { appOf } from '../core/app/registry';
 import { recordedEffect } from '../core/recording';
+import { usesCallerNumber } from '../core/callerNumber';
 
 export class TraceWriter {
   constructor(private readonly path: string) {
@@ -87,6 +88,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     ...configHashOf(result.session),
     // Only on the session start, from a client that asks a model; every other record is as it was.
     ...(input.answeredBy ? { answeredBy: { ...input.answeredBy } } : {}),
+    // Only on the session start of an app with a slot that offers the caller's number; every other record is as it was.
+    ...(event.type === 'session.start' && usesCallerNumber(appOf(result.session)) ? { callerNumber: result.session.callerNumber !== undefined ? 'kept' as const : 'none' as const } : {}),
     screen: result.screen ? { ...result.screen } : null,
     quarantined: result.quarantined,
     // Added for the dashboard's stages, gate and source-of-truth cards: every gate

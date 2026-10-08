@@ -1,3 +1,4 @@
+import { lastFour } from './callerNumber';
 import type { App, SlotId } from './app/types';
 import { intentLabel } from './app/intents';
 import { appOf } from './app/registry';
@@ -44,6 +45,9 @@ function pendingState(app: App, pc: Session['pendingConfirmation']): TurnState['
   if (pc.target === 'intent') return { target: 'intent', value: intentLabel(app, pc.intent) };
   if (pc.target === 'form') return { target: 'form', value: intentLabel(app, pc.form) };
   if (pc.target === 'transfer') return { target: 'transfer', value: 'connect you to a person' };
+  // The caller's number offered (core/callerNumber.ts): the model is told what the caller heard of
+  // it, its last four, never the whole number.
+  if (pc.offered) return { target: pc.slot, value: `the number they are calling from, ending in ${lastFour(pc.value)}` };
   return { target: pc.slot, value: pc.display };
 }
 

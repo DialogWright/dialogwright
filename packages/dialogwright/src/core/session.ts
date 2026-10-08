@@ -66,7 +66,13 @@ export type PendingConfirmation =
        */
       nominated?: readonly Nomination[];
     }
-  | { target: 'slot'; slot: SlotId; value: string; display: string }
+  /**
+   * A slot's value read back for a yes. `offered`: the number the caller is calling from, offered
+   * for a slot that holds a phone number (SlotSpec.callerNumber, core/callerNumber.ts) before the slot
+   * was asked: the slot is still empty, a yes fills it with `value`, and a no asks the slot's own
+   * question with no attempt counted. Absent: a value the caller said, read back.
+   */
+  | { target: 'slot'; slot: SlotId; value: string; display: string; offered?: true }
   /**
    * the summary question; attempts counts unanswered turns and resets when a correction lands.
    * askedChange records that "What should I change?" has already been asked for this summary, so
@@ -145,6 +151,19 @@ export interface Session {
    * that declares locales has one; read it with localeOf, which gives the app's default otherwise.
    */
   locale?: string;
+  /**
+   * The number the caller is calling from, its digits (core/callerNumber.ts): kept at the session's
+   * start only for an app with a slot that offers it (SlotSpec.callerNumber), and only when the
+   * carrier sent a number such a slot can use. It is never identity, and nothing reads it but the
+   * offer. Absent otherwise, so every other session is as it was.
+   */
+  callerNumber?: string;
+  /**
+   * The slots the open form has offered the caller's number for (callerNumber), each once per form:
+   * a slot reopened later is asked its own question. Absent until an offer is made, and gone when the
+   * form closes or another is entered.
+   */
+  callerOffered?: SlotId[];
   /** Who the caller is proven to be. Written only from a verifier result or a portal sign-in (src/gate/types.ts Principal). */
   principal: Principal;
   facts: SessionFacts;
@@ -288,6 +307,7 @@ export function cloneSession(s: Session): Session {
     identityAttempts: { ...s.identityAttempts },
     pendingConfirmation: clonePending(s.pendingConfirmation),
     ...(s.checked ? { checked: { ...s.checked } } : {}),
+    ...(s.callerOffered ? { callerOffered: [...s.callerOffered] } : {}),
     queued: [...s.queued],
     completed: [...s.completed],
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
@@ -329,6 +349,8 @@ export function setForm(session: Session, form: FormId): Session {
   session.pendingHash = null;
   // The checks a form passed are its own: the new form runs its checks afresh.
   delete session.checked;
+  // So are the caller's number's offers: the new form may offer it again.
+  delete session.callerOffered;
   return session;
 }
 
@@ -351,6 +373,7 @@ export function closeForm(session: Session): Session {
   session.confirmedHash = null;
   session.pendingConfirmation = null;
   delete session.checked;
+  delete session.callerOffered;
   app.facts?.onFormClosed?.(session.facts);
   return session;
 }

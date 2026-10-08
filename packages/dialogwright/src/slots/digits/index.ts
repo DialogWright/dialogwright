@@ -1,4 +1,4 @@
-import type { SlotPrompt } from '../../core/slots/types';
+import type { SlotPrompt, SlotSpec } from '../../core/slots/types';
 import { examplesFrom } from '../parts/examples';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
@@ -23,7 +23,25 @@ function promptsOf(id: string, o: DigitsOptions): SlotPrompt[] {
   }
   if (o.confirm === 'by-confidence') prompts.push({ id: `ack_${id}`, why: `it acknowledges ${thing} it is less sure of`, vars: [id] });
   if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: `it asks for ${thing} on the keypad after spoken answers missed` });
+  if (o.callerNumber !== undefined) prompts.push({ id: `offer_${id}`, why: `it offers the number the caller is calling from for ${thing}, as a yes or no (callerNumber)`, vars: ['last4'] });
   return prompts;
+}
+
+/**
+ * The slot's value for the number the caller is calling from (its digits): the country code taken
+ * off when what is left has the slot's `length` (with no `length`, when what is left fits), then
+ * held to the slot's pattern as a spoken number is. Null when it does not fit.
+ */
+function callerNumberOf(o: DigitsOptions, display: (value: string, locale?: string) => string): NonNullable<SlotSpec['callerNumber']> {
+  const fits = digitsFit(o);
+  const code = o.callerNumber!.countryCode;
+  return {
+    take(digits, locale) {
+      const rest = digits.startsWith(code) ? digits.slice(code.length) : null;
+      const local = rest !== null && (o.length !== undefined ? rest.length === o.length : fits(rest)) ? rest : digits;
+      return fits(local) ? { value: local, display: display(local, locale) } : null;
+    },
+  };
 }
 
 /**
@@ -54,6 +72,7 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
       ...(o.keypad && o.length !== undefined
         ? { dtmf: { length: o.length, parse: (digits: string, ctx: { locale?: string }) => (fits(digits) ? { value: digits, display: display(digits, ctx.locale) } : null) } }
         : {}),
+      ...(o.callerNumber !== undefined ? { callerNumber: callerNumberOf(o, display) } : {}),
       display,
     };
   },

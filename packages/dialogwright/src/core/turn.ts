@@ -17,6 +17,7 @@ import { applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, s
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCode, awaitingSignIn, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type TurnOut } from './lifecycle';
 import { checkEnding, runChecks, type FormStopped } from './checks';
+import { callerCandidate, keptCallerNumber, lastFour } from './callerNumber';
 import type { Tools } from './tools';
 import { withAppThresholds, type Thresholds } from './thresholds';
 import type { ScreenResult } from './screen';
@@ -544,7 +545,7 @@ function reaskCurrent(s: Session, acks: Ack[]): Decision {
         if (s.lastPromptId === 'confirm_dtmf') return prompt('confirm_dtmf', 'confirm', {}, acks, ['1', '2']);
         return summaryPrompt(s, pc.form, acks);
       case 'slot':
-        return prompt(`confirm_${pc.slot}`, pc.slot, { [pc.slot]: pc.display }, acks, ['yes', 'no']);
+        return slotConfirmPrompt(pc, acks);
       case 'intent':
         return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(app, pc.intent) }, acks, ['yes', 'no']);
     }
@@ -703,7 +704,7 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
   const pc = s.pendingConfirmation!;
   if (pc.target === 'slot') {
     const st = s.slots[pc.slot]!;
-    if (!count) return prompt(`confirm_${pc.slot}`, pc.slot, { [pc.slot]: pc.display }, acks, ['yes', 'no']);
+    if (!count) return slotConfirmPrompt(pc, acks);
     const attempts = ++st.attempts;
     const step = rungFor(s, attempts, t);
     if (step === 'agent') { s.pendingConfirmation = null; return handoff(s, 'max-attempts', acks); }
@@ -712,9 +713,12 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
     if (step === 'dtmf') {
       s.pendingConfirmation = null;
       Object.assign(st, emptySlot(), { attempts });
+      // The caller's number offered and never answered: the slot's own ladder from here, its keypad
+      // where it has one, else its retry.
+      if (pc.offered && slotSpecOf(io.app, pc.slot).dtmf === undefined) return prompt(`ask_${pc.slot}_retry`, pc.slot, {}, acks);
       return prompt(`ask_${pc.slot}_dtmf`, pc.slot, {}, acks);
     }
-    return prompt(`confirm_${pc.slot}`, pc.slot, { [pc.slot]: pc.display }, acks, ['yes', 'no']);
+    return slotConfirmPrompt(pc, acks);
   }
   if (pc.target === 'transfer') {
     // Only silence gets here: the gate settles every spoken answer to the offer, as a transfer or
@@ -797,7 +801,39 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   // form actually owes wins, and the help decision is dropped along with it.
   if (help && next.kind === 'ask' && next.slot === help.slot) return { ...prompt(help.promptId, help.slot, {}, said), help };
   if (next.kind === 'complete') return askSummary(s, form, said, io);
+  if (next.window === null) {
+    const offer = offerCallerNumber(s, next.slot, said, io);
+    if (offer) return offer;
+  }
   return askSlot(s, next.slot, next.window, said);
+}
+
+/**
+ * The number the caller is calling from, offered as a yes or no in place of the slot's question
+ * (SlotSpec.callerNumber, core/callerNumber.ts): once per slot per form, on a slot not yet asked, when
+ * the session kept a number that fits it. Null when there is no offer to make, and the slot is asked
+ * as always. The slot stays empty until the yes.
+ */
+function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null {
+  // An offer still pending (kept through a detour) is asked again as it stands, not made a second time.
+  const pc = s.pendingConfirmation;
+  if (pc?.target === 'slot' && pc.offered && pc.slot === slot) return slotConfirmPrompt(pc, acks);
+  if (s.callerNumber === undefined || s.callerOffered?.includes(slot) || s.slots[slot]!.attempts > 0) return null;
+  const c = callerCandidate(io.app, slot, s.callerNumber, slotLocaleOf(s));
+  if (c === null) return null;
+  s.callerOffered = [...(s.callerOffered ?? []), slot];
+  s.pendingConfirmation = { target: 'slot', slot, value: c.value, display: c.display, offered: true };
+  return offerPrompt(slot, c.value, acks);
+}
+
+/** The offer's line: `offer_<slot>`, with the last four digits of the number. */
+function offerPrompt(slot: SlotId, value: string, acks: Ack[]): PromptDecision {
+  return prompt(`offer_${slot}`, slot, { last4: lastFour(value) }, acks, ['yes', 'no']);
+}
+
+/** A slot's pending read-back asked (again): its `confirm_<slot>`, or, for the caller's number offered, `offer_<slot>`. */
+function slotConfirmPrompt(pc: Extract<PendingConfirmation, { target: 'slot' }>, acks: Ack[]): PromptDecision {
+  return pc.offered ? offerPrompt(pc.slot, pc.value, acks) : prompt(`confirm_${pc.slot}`, pc.slot, { [pc.slot]: pc.display }, acks, ['yes', 'no']);
 }
 
 /** The form's checksPassed line, when this turn's checks passed the last of them (core/checks.ts). */
@@ -925,6 +961,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       const pc = s.pendingConfirmation!;
       s.pendingConfirmation = null;
       if (pc.target === 'slot') {
+        // The caller's number offered (callerNumber): the yes fills the slot with it, confirmed, as a
+        // keyed number is. The summary still reads it back whole.
+        if (pc.offered) Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
         // The stashed value and display go unread: the gate decided on this turn's yes
         // before any fill could run, so the slot still holds exactly what we read back.
         s.slots[pc.slot]!.confirmed = true;
@@ -993,6 +1032,13 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         const fill = fillSlots(s, answers, ctx, slotsToFill(s));
         return { decision: declineTransfer(s, io, pc, fill.acks), events: fill.events };
       }
+      if (pc.target === 'slot' && pc.offered) {
+        // The caller's number offered and declined: the slot's own question, with no attempt counted,
+        // since the caller answered what we asked. A number said with the no ("no, use 555 555 0199")
+        // fills as said, and the form goes on.
+        const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+        return { decision: continueForm(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };
+      }
       if (pc.target === 'slot') {
         // A declined readback means the spoken path failed; go straight to the keypad,
         // and let a second decline hand off rather than read a third value back.
@@ -1029,6 +1075,17 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         }
         if (move) return { decision: reaskConfirmation(s, io, [...acks, ...move.acks], acks.length === 0), events: fill.events };
         return { decision: reaskConfirmation(s, io, acks, acks.length === 0), events: fill.events };
+      }
+      if (pc?.target === 'slot' && pc.offered) {
+        // At the caller's number's offer, a number said with no yes or no ("my cell is 555 555 0199")
+        // answers the slot: it fills as said and the offer is closed. Anything else the turn filled
+        // stands, and the offer is asked again.
+        const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+        if (s.slots[pc.slot]!.value !== null) {
+          s.pendingConfirmation = null;
+          return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
+        }
+        return { decision: reaskConfirmation(s, io, [...acks, ...fill.acks], acks.length === 0 && !fill.progress), events: fill.events };
       }
       // Only a request that actually joined the queue buys the turn: asking for the same thing
       // twice is a turn spent, and must not hold the ladder at zero forever.
@@ -1279,6 +1336,9 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The locale the channel asks for, where the app speaks it; any other request leaves the
       // session in the app's default. An app without locales has no locale to set.
       if (event.locale !== undefined && io.app.locales) s.locale = matchLocale(io.app, event.locale) ?? io.app.locales.default;
+      // The number the caller is calling from, kept only where a slot can offer it (core/callerNumber.ts).
+      const caller = keptCallerNumber(io.app, event.callerNumber);
+      if (caller !== undefined) s.callerNumber = caller;
       const decision = greeting(s);
       bookkeep(s, decision, 'setup');
       return { ...base(), decision, actions: act(decision) };

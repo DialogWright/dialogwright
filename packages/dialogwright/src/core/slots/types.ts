@@ -163,6 +163,17 @@ export interface SlotSpec {
    * give the same outcome each time and keep no count or cache of its own.
    */
   fill(answers: AnswerMap, ctx: SlotContext): SlotOutcome;
+  /**
+   * The slot offers the number the caller is calling from (a `digits` slot's `callerNumber`,
+   * core/callerNumber.ts): when the form would ask it and the call has a number that fits, the engine
+   * asks `offer_<slot>` (a yes or no, with `{last4}`) in place of `ask_<slot>`. `take` turns the
+   * carrier's number (its digits, the engine's withheld placeholders already refused) into the slot's
+   * value and display, or null when it does not fit. Never on an identity factor: `dialogwright check`
+   * refuses it there, and the engine never offers one. Absent: the slot is asked as always.
+   */
+  callerNumber?: {
+    take(digits: string, locale?: string): SlotCandidate | null;
+  };
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no
    * keypad rung; its retry ladder is retry, retry, agent. */
   dtmf?: {

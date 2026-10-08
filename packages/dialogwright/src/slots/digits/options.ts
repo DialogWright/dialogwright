@@ -87,6 +87,15 @@ export const digitsOptions = z
       .optional()
       .describe('The prompt that re-asks, in place of the generic ask_<slot>_retry, when what the caller said is not a number of the right shape ("A card number has eight digits.").'),
     redact: z.enum(['last4', 'none']).default('last4').describe('How the value is masked wherever it leaves the turn (the trace, a tool call\'s param of the same name): "last4" ("...0417") or "none".'),
+    callerNumber: z
+      .strictObject({
+        countryCode: z
+          .string()
+          .regex(/^\d{1,3}$/, 'countryCode is one to three digits, such as "1"')
+          .describe('The country calling code the carrier writes before the number ("1" for +1). It is taken off when what is left has the slot\'s `length`; a number from any other country is no number for the slot.'),
+      })
+      .optional()
+      .describe('Offer the number the caller is calling from: when the form would ask this slot and the call has a number that fits it (its `countryCode`, `length` and `mask`), the line asks offer_<slot> ("Is the number you\'re calling from, ending in {last4}, the best one to reach you?") in place of ask_<slot>, and a yes fills the slot with that number. A no asks ask_<slot>, with no attempt counted, and a number said instead fills as said. A chat, or a call with the number withheld, is asked ask_<slot> as always. Never on an identity factor: a caller ID can be forged.'),
     handoff: z
       .enum(['last4', 'verified', 'display'])
       .default('last4')
