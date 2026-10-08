@@ -1,6 +1,6 @@
 # The app decides: proposals anywhere, checks that need identity (design)
 
-Date: 2026-10-08. Status: decided (decisions 2, 3, 9 and 10 of [2026-10-08-decisions.md](2026-10-08-decisions.md)), being built. Engine: DialogWright local `main`.
+Date: 2026-10-08. Status: decided (decisions 2, 3, 9 and 10 of [2026-10-08-decisions.md](2026-10-08-decisions.md)), built on the `app-decides` branch, except the greeting variables (see "As built"). Engine: DialogWright local `main`.
 
 ## At a glance
 
@@ -59,3 +59,20 @@ slots:
   - the lookup advice reworded.
 - Comments in core/app/types.ts.
 - The create-app skill gets a line on each, under its pattern sections. Item 7 covers the rest.
+
+## As built
+
+Where the build differs from the design above, or fills in what it left open:
+
+- **The greeting line before a proposal.** An app's greeting line usually ends on its open question ("How can I help?"), so it cannot also come before a proposal. A call that opens on a proposal says a new line, `greeting_offer` (the greeting without the question), then `offer_<slot>`. `pnpm check` needs `greeting_offer` and `greet_after_offer` for an app with an `offerAt: greeting` slot. There are no default prompts in the engine, so neither has one.
+- **Calls only.** A greeting proposal is made only on a channel with speech. A chat has no number, so no call-start lookup, and its greeting is as always; the slot proposes at the slot there.
+- **A slot some form asks.** Only an `offerAt: greeting` slot that some form lists is proposed at the greeting.
+- **At the slot as well.** An `offerAt: greeting` slot with no candidate at call start (or not the first) proposes at the slot as `offerAt: slot` does, where the facts have a candidate by then.
+- **How the value survives into the form.** A yes fills the session's slot, confirmed. A form's slots are emptied only when that form closes, so the value stays through any form without the slot, and the first form that has it does not ask it. On the yes turn, the request said with the yes opens its form without filling the slot again from the same words. `Session.greetingOffered` keeps the slot from being proposed again until the first form that has it closes.
+- **The request in the same breath.** The confirmation gate decides a yes or a no first. The turn's words are then read again as an opening turn (the gates once more, from the same answers, with the proposal settled). A request goes on as one. With none, what the words gave the call's own slots is kept, as on any turn that opens no form, and `greet_after_offer` is asked.
+- **Unanswered.** A silence or words that answer neither ask the proposal once more, then `greet_after_offer`, with no attempt counted on the slot or the intent. A proposal dropped that way writes an `offer` row with `none`. One dropped by a request, an informational question or a choice between two writes none, as at the slot.
+- **The read-back asks for no slot.** The pending read-back is marked `at: greeting`, and its prompt's target is `intent`, so no slot treats the answer as one to its own question and a key pressed there answers nothing.
+- **Greeting variables deferred.** `{facts.<key>}` in a greeting line is not built. Prompt variables are plain names (`segments.ts` VAR, `\{(\w+)\}`), and a dotted name would touch clip segmentation, the variable checks and the translation checks, with no declared fact keys to check against. It is left for its own design.
+- **A check's STEP_UP.** `lifecycle.ts stepUp` is the entry call's step-up, shared: `turn.ts stopForm` calls it for a check's STEP_UP in an app with identity. The step-up keeps the check's action with no params (it is never made again as it stands). `ensureEntry` goes on with a pending step-up before it asks whether the form is entered, so a check's step-up continues there, and once the caller is verified the form loop runs the check again (a check that has not passed is not in `Session.checked`). Factors already in hand and matching verify at once, and the form loop goes on.
+- **A check on an identity factor.** The factor need not be one of the form's slots (`validateApp` takes it), and a check's `confirm` never reads a factor back.
+
