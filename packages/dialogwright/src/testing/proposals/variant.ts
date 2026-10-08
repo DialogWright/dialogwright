@@ -92,3 +92,25 @@ export const laterCode: AppCode = {
     },
   },
 };
+
+/** The two lines the greeting variant adds to prompts.yaml: the greeting said before a proposal, and the open question after it. */
+export const GREETING_LINES = [
+  '  greeting_offer:',
+  '    text: Thanks for calling Example Service Desk.',
+  '    interruptible: true',
+  '  greet_after_offer:',
+  '    text: What can I help you with today?',
+  '    interruptible: true',
+  '',
+].join('\n');
+
+/**
+ * The greeting variant (design 2026-10-08-app-decides, item 1): the address proposes at the greeting
+ * (`offerAt: greeting`), so a call from a number on file opens on `greeting_offer` and `offer_place`,
+ * in place of the greeting's open question, and `greet_after_offer` asks it once the proposal is settled.
+ */
+export const GREETING: Record<string, (text: string) => string> = {
+  'app.yaml': replace('id: proposals', 'id: proposals-greeting'),
+  'slots.yaml': replace('  offer: facts\n', '  offer: facts\n  offerAt: greeting\n'),
+  'prompts.yaml': (t) => `${t}${GREETING_LINES}`,
+};

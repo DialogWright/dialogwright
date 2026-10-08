@@ -111,6 +111,12 @@ export type SlotListen = 'up-front' | 'form' | 'anywhere' | 'call';
 /** Every SlotListen value, in the order the docs list them. */
 export const SLOT_LISTEN_VALUES: readonly SlotListen[] = ['up-front', 'form', 'anywhere', 'call'];
 
+/** Where a slot that proposes a value from the facts proposes it (SlotSpec.offerAt). */
+export type SlotOfferAt = 'slot' | 'greeting';
+
+/** Every SlotOfferAt value, the default first. */
+export const SLOT_OFFER_AT_VALUES: readonly SlotOfferAt[] = ['slot', 'greeting'];
+
 export interface SlotSpec {
   id: SlotId;
   /**
@@ -204,7 +210,8 @@ export interface SlotSpec {
   };
   /**
    * `facts`: the slot proposes a value from the app's facts (FactsConfig.offers: e.g. a street the
-   * call-start lookup found for the number calling) as a yes or no, in place of its question: when
+   * call-start lookup found for the number calling, or one a form's entry call loaded after identity)
+   * as a yes or no, in place of its question: when
    * the form would ask it and the facts have a candidate for it, the engine asks `offer_<slot>` with
    * the candidate's display as `{<slot>}`, once per slot per form, the slot still empty. A yes fills
    * the slot with the candidate, confirmed, and nothing else: never the principal, the identity level
@@ -214,6 +221,16 @@ export interface SlotSpec {
    * `dialogwright check` refuses all three. Absent: the slot is asked as always.
    */
   offer?: 'facts';
+  /**
+   * Where a slot with `offer: facts` proposes (SlotOfferAt): `slot` (the default), when its form would
+   * ask it; `greeting`, at call start on a call, in place of the greeting's open question, when the
+   * facts have a candidate for it then (the call-start lookup's), and otherwise at the slot as `slot`
+   * does. One greeting proposal per call: the first such slot in slots.yaml order with a candidate. A
+   * yes there fills the slot, confirmed, for whichever form uses it later; a no, or a request with
+   * neither, leaves it to be asked, not proposed again, in that form. Only with `offer: facts`
+   * (`dialogwright check` refuses it otherwise). Absent: `slot`.
+   */
+  offerAt?: SlotOfferAt;
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no
    * keypad rung; its retry ladder is retry, retry, agent. */
   dtmf?: {

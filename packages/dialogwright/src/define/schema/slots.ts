@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SLOT_LISTEN_VALUES, type SlotListen } from '../../core/slots/types';
+import { SLOT_LISTEN_VALUES, SLOT_OFFER_AT_VALUES, type SlotListen, type SlotOfferAt } from '../../core/slots/types';
 import { identifier } from './common';
 
 /**
@@ -45,6 +45,18 @@ export const OFFER_DESCRIPTION =
 
 /** `offer:` on one slot: `facts`, or absent for none. */
 export const slotOfferSchema = z.enum(['facts']).describe(OFFER_DESCRIPTION);
+
+/** The option beside `offer` every library slot takes (SlotSpec.offerAt). A slot type may not have an option of this name. */
+export const OFFER_AT_OPTION = 'offerAt';
+
+/** What `offerAt:` means, as the JSON Schema, the slot pages and an editor say it. */
+export const OFFER_AT_DESCRIPTION =
+  'Where a slot with offer: facts proposes. "slot" (the default): when its form would ask it. "greeting": at call start, on a call, after the call-start lookup, in place of the greeting\'s open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. ' +
+  'A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. ' +
+  'Needs offer: facts, and greeting_offer and greet_after_offer in every locale.';
+
+/** `offerAt:` on one slot: `slot` or `greeting`, or absent for the default (`slot`). */
+export const slotOfferAtSchema = z.enum(SLOT_OFFER_AT_VALUES as readonly [SlotOfferAt, ...SlotOfferAt[]]).describe(OFFER_AT_DESCRIPTION);
 
 export const slotsSchema = z
   .record(

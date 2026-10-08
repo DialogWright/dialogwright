@@ -47,3 +47,13 @@ export function factsCandidate(app: App, slot: SlotId, facts: Readonly<SessionFa
   if (typeof c.value !== 'string' || typeof c.display !== 'string' || c.value.trim() === '' || c.display.trim() === '') return null;
   return { value: c.value, display: c.display };
 }
+
+/**
+ * The slots that propose at the greeting (`offerAt: greeting`, SlotSpec.offerAt), in slots.yaml order:
+ * those of factsOfferSlots that say so and that some form asks (a value no form uses is not worth the
+ * question). The engine makes at most one such proposal per call, at call start (core/turn.ts).
+ */
+export function greetingOfferSlots(app: App): SlotId[] {
+  const asked = new Set(Object.values(app.forms).flatMap((form) => form.slots));
+  return factsOfferSlots(app).filter((id) => app.slots[id]!.offerAt === 'greeting' && asked.has(id));
+}

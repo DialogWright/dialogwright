@@ -169,6 +169,10 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
     for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)`, ...(declared.vars && declared.vars.length > 0 ? { vars: declared.vars } : {}) });
     if (spec.offer === 'facts') needs.push({ id: `offer_${slot}`, why: `it proposes a value from the facts for the slot "${slot}", as a yes or no (its offer is "facts")`, vars: [slot] });
+    if (spec.offer === 'facts' && spec.offerAt === 'greeting') {
+      needs.push({ id: 'greeting_offer', why: `a call opens on a proposal for the slot "${slot}" (its offerAt is "greeting"), said in place of the greeting before offer_${slot}` });
+      needs.push({ id: 'greet_after_offer', why: `the proposal at the greeting for the slot "${slot}" is settled, and it asks the open question` });
+    }
   }
   for (const reason of personReasons(config.policy)) {
     needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (a role rule in policy.yaml) and the call goes to a person for the reason "${reason}"` });

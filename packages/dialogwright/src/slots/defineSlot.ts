@@ -3,8 +3,8 @@ import { z, type ZodIssue } from 'zod';
 import { clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from '../define/problems';
 import type { JsonSchema } from '../define/schema/json';
-import { LISTEN_DESCRIPTION, LISTEN_OPTION, OFFER_DESCRIPTION, OFFER_OPTION, slotListenSchema, slotOfferSchema } from '../define/schema/slots';
-import { SLOT_LISTEN_VALUES } from '../core/slots/types';
+import { LISTEN_DESCRIPTION, LISTEN_OPTION, OFFER_AT_DESCRIPTION, OFFER_AT_OPTION, OFFER_DESCRIPTION, OFFER_OPTION, slotListenSchema, slotOfferAtSchema, slotOfferSchema } from '../define/schema/slots';
+import { SLOT_LISTEN_VALUES, SLOT_OFFER_AT_VALUES } from '../core/slots/types';
 import { BUILT_IN_SLOT_TYPES } from './registry';
 import type { TopicCatalog } from '../kb/types';
 import type { LibrarySlotSpec, SlotBuildEnv, SlotType, SlotTypes } from './types';
@@ -124,16 +124,18 @@ export function buildSlot(id: string, config: unknown, options: BuildSlotOptions
     );
   }
   const type = types[name]!;
-  // `listen` and `offer` are every slot's, read here beside `type`; the rest are the type's own options.
-  const { type: _type, [LISTEN_OPTION]: listen, [OFFER_OPTION]: offer, ...rest } = config;
+  // `listen`, `offer` and `offerAt` are every slot's, read here beside `type`; the rest are the type's own options.
+  const { type: _type, [LISTEN_OPTION]: listen, [OFFER_OPTION]: offer, [OFFER_AT_OPTION]: offerAt, ...rest } = config;
   const parsed = type.options.safeParse(rest);
   const heard = listen === undefined ? null : slotListenSchema.safeParse(listen);
   const offered = offer === undefined ? null : slotOfferSchema.safeParse(offer);
-  if (!parsed.success || heard?.success === false || offered?.success === false) {
+  const offeredAt = offerAt === undefined ? null : slotOfferAtSchema.safeParse(offerAt);
+  if (!parsed.success || heard?.success === false || offered?.success === false || offeredAt?.success === false) {
     const raw = [
       ...(parsed.success ? [] : parsed.error.issues),
       ...(heard === null || heard.success ? [] : heard.error.issues.map((issue) => ({ ...issue, path: [LISTEN_OPTION, ...issue.path] }))),
       ...(offered === null || offered.success ? [] : offered.error.issues.map((issue) => ({ ...issue, path: [OFFER_OPTION, ...issue.path] }))),
+      ...(offeredAt === null || offeredAt.success ? [] : offeredAt.error.issues.map((issue) => ({ ...issue, path: [OFFER_AT_OPTION, ...issue.path] }))),
     ];
     const issues = raw.map((issue) => ({ ...issue, path: [...at, ...issue.path] }) as ZodIssue);
     const problems = problemsOfIssues(issues, { file: src.file, doc: src.doc, lines: src.lines, value: src.doc.toJS(), schema: nest(at, schemaOf(type)) });
@@ -155,7 +157,7 @@ export function buildSlot(id: string, config: unknown, options: BuildSlotOptions
   });
   if (clashes.length > 0) return { ok: false, problems: clashes };
 
-  const spec: LibrarySlotSpec = markBuilt({ ...built, type: name, config: Object.freeze(parsed.data), ...(heard?.success ? { listen: heard.data } : {}), ...(offered?.success ? { offer: offered.data } : {}) }, env);
+  const spec: LibrarySlotSpec = markBuilt({ ...built, type: name, config: Object.freeze(parsed.data), ...(heard?.success ? { listen: heard.data } : {}), ...(offered?.success ? { offer: offered.data } : {}), ...(offeredAt?.success ? { offerAt: offeredAt.data } : {}) }, env);
   if (options.wording === undefined || Object.keys(options.wording).length === 0) return { ok: true, spec };
   return applySlotWording({ spec, types, raw: options.wording, ...(options.wordingSources ? { sources: options.wordingSources } : {}) });
 }
@@ -183,6 +185,7 @@ function schemaOf(type: SlotType<any, any>): JsonSchema {
     ...((schema.properties as object | undefined) ?? {}),
     [LISTEN_OPTION]: { type: 'string', enum: [...SLOT_LISTEN_VALUES], default: 'up-front', description: LISTEN_DESCRIPTION },
     [OFFER_OPTION]: { type: 'string', enum: ['facts'], description: OFFER_DESCRIPTION },
+    [OFFER_AT_OPTION]: { type: 'string', enum: [...SLOT_OFFER_AT_VALUES], default: 'slot', description: OFFER_AT_DESCRIPTION },
   };
   schema = { ...schema, properties };
   SCHEMAS.set(type, schema);

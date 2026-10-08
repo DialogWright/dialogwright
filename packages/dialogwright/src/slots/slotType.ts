@@ -1,5 +1,5 @@
 import type { SlotType } from './types';
-import { LISTEN_OPTION, OFFER_OPTION } from '../define/schema/slots';
+import { LISTEN_OPTION, OFFER_AT_OPTION, OFFER_OPTION } from '../define/schema/slots';
 
 /** A type's name: what an app writes after `type:`. */
 export const SLOT_TYPE_NAME = /^[a-z][a-z0-9-]*$/;
@@ -24,6 +24,9 @@ export function defineSlotType<O, W = unknown>(def: SlotType<O, W>): SlotType<O,
   }
   if (!refusesUnknownKeys(def, OFFER_OPTION)) {
     throw new Error(`the "${def.type}" type has an option "${OFFER_OPTION}", which every slot takes beside its type's options (SlotSpec.offer): give the option another name`);
+  }
+  if (!refusesUnknownKeys(def, OFFER_AT_OPTION)) {
+    throw new Error(`the "${def.type}" type has an option "${OFFER_AT_OPTION}", which every slot takes beside its type's options (SlotSpec.offerAt): give the option another name`);
   }
   return def;
 }

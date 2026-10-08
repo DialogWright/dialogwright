@@ -575,6 +575,17 @@ export function crossLink(
   // lookup, a form's entry call after identity, a hook.
   for (const [id, spec] of Object.entries(linked.slots)) {
     const offer = spec?.offer;
+    // Where a proposal is made (SlotSpec.offerAt): only for a slot that makes one.
+    const offerAt = spec?.offerAt;
+    if (offerAt !== undefined) {
+      const where = (message: string, fix: string): void => {
+        if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'offerAt'], message, fix);
+        else inTs(['slots', id, 'offerAt'], message, fix);
+      };
+      const deleteAt = linked.library.has(id) ? 'delete "offerAt"' : `delete "offerAt" from ${inCode('slots', id)}`;
+      if (offerAt !== 'slot' && offerAt !== 'greeting') where(`the slot "${id}" says offerAt: ${JSON.stringify(offerAt)}, which is not "slot" or "greeting"`, `change it to "slot" or "greeting", or ${deleteAt}`);
+      else if (offer !== 'facts') where(`the slot "${id}" says offerAt: ${JSON.stringify(offerAt)}, but it proposes nothing (it has no offer: facts)`, `add "offer: facts", or ${deleteAt}`);
+    }
     if (offer === undefined) continue;
     const library = linked.library.has(id);
     const at = (message: string, fix: string): void => {

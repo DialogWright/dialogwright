@@ -85,9 +85,12 @@ export type PendingConfirmation =
    * attempt counted. By `from`: absent, the number the caller is calling from, offered for a slot
    * that holds a phone number (SlotSpec.callerNumber, core/callerNumber.ts); `facts`, a value the
    * app proposes from its facts (a slot's `offer: facts`, FactsConfig.offers: e.g. an address the
-   * call-start lookup found). Absent `offered`: a value the caller said, read back.
+   * call-start lookup found). Absent `offered`: a value the caller said, read back. `at: 'greeting'`:
+   * a proposal made at call start (a slot's `offerAt: greeting`), with no form open, asked in place of
+   * the greeting's open question; `attempts` counts its unanswered turns (once more, then the open
+   * question). Both absent on every other read-back.
    */
-  | { target: 'slot'; slot: SlotId; value: string; display: string; offered?: true; from?: 'facts' }
+  | { target: 'slot'; slot: SlotId; value: string; display: string; offered?: true; from?: 'facts'; at?: 'greeting'; attempts?: number }
   /**
    * the summary question; attempts counts unanswered turns and resets when a correction lands.
    * askedChange records that "What should I change?" has already been asked for this summary, so
@@ -198,6 +201,12 @@ export interface Session {
    * another is entered.
    */
   callerOffered?: SlotId[];
+  /**
+   * The slot proposed at the greeting (a slot's `offerAt: greeting`), whatever the caller answered: it
+   * is not proposed again in a form until the first form that has it closes (closeForm). Absent when
+   * no proposal was made at the greeting, so every other session is as it was.
+   */
+  greetingOffered?: SlotId;
   /** Who the caller is proven to be. Written only from a verifier result or a portal sign-in (src/gate/types.ts Principal). */
   principal: Principal;
   facts: SessionFacts;
@@ -418,6 +427,8 @@ export function setForm(session: Session, form: FormId): Session {
 export function closeForm(session: Session): Session {
   const app = appOf(session);
   if (session.form) {
+    // The greeting's proposal was for the slot this form had: a later form may propose at the slot again.
+    if (session.greetingOffered !== undefined && formOf(app, session.form).slots.includes(session.greetingOffered)) delete session.greetingOffered;
     for (const id of formOf(app, session.form).slots) {
       // A carried slot keeps its value, but not the nos said to its read-back in this form.
       if (isCarried(app, id)) {

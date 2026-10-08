@@ -15,7 +15,7 @@ import { compileGate } from '../gate/compiled';
 import { factsCandidate, factsOfferSlots } from './factsOffer';
 import { sessionRoundTrip } from '../testing/sessionRoundTrip';
 import { PROPOSALS_DIR, ProposalSystems, proposalsApp, type ProposalFacts } from '../testing/proposals/app';
-import { LATER, laterCode, proposalsVariants } from '../testing/proposals/variant';
+import { GREETING, LATER, laterCode, proposalsVariants } from '../testing/proposals/variant';
 import { textingApp } from '../testing/texting/app';
 import { callbackApp } from '../testing/callback/app';
 import { screenedApp } from '../testing/screened/app';
@@ -336,6 +336,113 @@ describe('a caller who had not finished, at the proposal', () => {
     expect(session.principal).toEqual({ kind: 'anonymous', level: 0 });
     const rows = runs.flatMap((r) => r.result.audit.filter((d) => d.type === 'offer').map((d) => d.detail.answer));
     expect(rows).toEqual(['yes', 'yes']);
+  });
+});
+
+describe('a proposal at the greeting (offerAt: greeting)', () => {
+  const variants = proposalsVariants();
+  afterAll(() => variants.remove());
+  const greeting = variants.variant(GREETING);
+  beforeEach(() => use(greeting));
+  const OPENING = `Thanks for calling Example Service Desk. ${OFFER}`;
+  const ASK = 'What can I help you with today?';
+  const heardIn = (t: TurnResult): string => spokenText(greeting, t.decision);
+
+  it('a call from a number on file opens on the proposal, in place of the open question', async () => {
+    const t = last(await call({ callerNumber: ON_FILE }));
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'offer_place', target: 'intent', vars: { place: '22 Alder Street' }, options: ['yes', 'no'] });
+    expect(heardIn(t)).toBe(OPENING);
+    expect(t.session.pendingConfirmation).toEqual({ target: 'slot', slot: 'place', value: '22 Alder Street', display: '22 Alder Street', offered: true, from: 'facts', at: 'greeting' });
+    expect(t.session.greetingOffered).toBe('place');
+    expect(t.session.slots.place!.value).toBeNull();
+  });
+
+  it('with nothing to propose, the greeting is as always: a number not on file, none, a chat', async () => {
+    for (const o of [{ callerNumber: NOT_ON_FILE }, {}, { as: 'web', callerNumber: ON_FILE }] as CallOptions[]) {
+      const t = last(await call(o));
+      expect(promptOf(t), JSON.stringify(o)).toMatch(/^greeting/);
+      expect(t.session.pendingConfirmation, JSON.stringify(o)).toBeNull();
+      expect(t.session.greetingOffered, JSON.stringify(o)).toBeUndefined();
+    }
+  });
+
+  it('a yes fills the slot, confirmed, asks the open question, and the form uses the value without asking', async () => {
+    const r = await call({ callerNumber: ON_FILE }, ...says('yes', REPORT));
+    const yes = r.runs[1]!.result;
+    expect(promptOf(yes)).toBe('greet_after_offer');
+    expect(heardIn(yes)).toBe(ASK);
+    expect(yes.session.slots.place).toMatchObject({ value: '22 Alder Street', display: '22 Alder Street', confirmed: true, attempts: 0 });
+    expect(yes.session.pendingConfirmation).toBeNull();
+    expect(yes.session.principal).toEqual({ kind: 'anonymous', level: 0 });
+    expect(offers(r)).toEqual([{ slot: 'place', source: 'facts', promptId: 'offer_place', said: OFFER, answer: 'yes', by: 'speech', locale: 'en-US' }]);
+    expect(prompts(r)).toEqual(['offer_place', 'greet_after_offer', 'ask_problem']);
+    expect(last(r).session.slots.place!.value).toBe('22 Alder Street');
+  });
+
+  it('a yes with a request fills the slot and takes the request as the opening one', async () => {
+    const t = last(await call({ callerNumber: ON_FILE }, ...says("yes, I'd like to report a problem")));
+    expect(promptOf(t)).toBe('ask_problem');
+    expect(heardIn(t)).toMatch(/^Sure, I can help you report a problem\. /);
+    expect(t.session.form).toBe('report_problem');
+    expect(t.session.slots.place).toMatchObject({ value: '22 Alder Street', confirmed: true });
+    const all = await call({ callerNumber: ON_FILE, tools: toolsOf() }, ...says("yes, I'd like to report a problem", 'nothing is working at all', 'yes, file it'));
+    expect(prompts(all)).toEqual(['offer_place', 'ask_problem', 'confirm_report_problem', 'anything_else']);
+  });
+
+  it('the value is kept through another form first, for the form that uses it later', async () => {
+    const r = await call({ callerNumber: ON_FILE }, ...says('yes', 'I want to check on my request', 'five five five zero one two three four', 'April twelfth nineteen eighty', REPORT));
+    expect(prompts(r)).toEqual(['offer_place', 'greet_after_offer', 'ask_accountId', 'ask_dob', 'anything_else', 'ask_problem']);
+    expect(last(r).session.slots.place).toMatchObject({ value: '22 Alder Street', confirmed: true });
+  });
+
+  it('a no records the no, asks the open question, and the slot is asked, not proposed, in its form', async () => {
+    const r = await call({ callerNumber: ON_FILE }, ...says('no', REPORT));
+    expect(prompts(r)).toEqual(['offer_place', 'greet_after_offer', 'ask_place']);
+    expect(r.runs[1]!.result.session.slots.place!.value).toBeNull();
+    expect(offers(r).map((d) => d.answer)).toEqual(['no']);
+    // A no with a request goes on to it, the slot asked there.
+    const withRequest = await call({ callerNumber: ON_FILE }, ...says("no, I'd like to report a problem"));
+    expect(prompts(withRequest)).toEqual(['offer_place', 'ask_place']);
+    expect(offers(withRequest).map((d) => d.answer)).toEqual(['no']);
+  });
+
+  it('a request with no yes or no is the opening request: the proposal is dropped, not repeated', async () => {
+    const r = await call({ callerNumber: ON_FILE }, ...says(REPORT));
+    expect(prompts(r)).toEqual(['offer_place', 'ask_place']);
+    expect(last(r).session.form).toBe('report_problem');
+    expect(offers(r)).toEqual([]);
+    const other = await call({ callerNumber: ON_FILE }, ...says('I want to check on my request'));
+    expect(promptOf(last(other))).toBe('ask_accountId');
+    expect(last(other).session.pendingConfirmation).toBeNull();
+  });
+
+  it('silence or words that answer nothing ask it once more, then the open question, with no attempt counted', async () => {
+    const r = await call({ callerNumber: ON_FILE }, { silence: true }, { silence: true });
+    expect(prompts(r)).toEqual(['offer_place', 'offer_place', 'greet_after_offer']);
+    expect(heardIn(r.runs[1]!.result)).toBe(`I didn't hear anything. ${OFFER}`);
+    expect(heardIn(last(r))).toBe(`I didn't hear anything. ${ASK}`);
+    expect(offers(r).map((d) => d.answer)).toEqual(['none']);
+    expect(last(r).session.intentAttempts).toBe(0);
+    expect(last(r).session.slots.place!.attempts).toBe(0);
+    const unclear = await call({ callerNumber: ON_FILE }, ...says('hmm, which account', 'hmm, which account'));
+    expect(prompts(unclear)).toEqual(['offer_place', 'offer_place', 'greet_after_offer']);
+  });
+
+  it('a key pressed at it answers nothing', async () => {
+    const r = await call({ callerNumber: ON_FILE }, { dtmf: '1' });
+    expect(last(r).decision.kind).toBe('ignore');
+    expect(last(r).session.pendingConfirmation).toMatchObject({ at: 'greeting' });
+  });
+
+  it('once the form that used it closes, a later form proposes at the slot again', async () => {
+    const r = await call({ callerNumber: ON_FILE, tools: toolsOf() }, ...says('no', REPORT, "It's 14 Birch Lane", 'nothing is working at all', 'yes, file it', REPORT));
+    expect(prompts(r).slice(-2)).toEqual(['anything_else', 'offer_place']);
+    expect(last(r).session.greetingOffered).toBeUndefined();
+  });
+
+  it('the session round-trips with the proposal pending', async () => {
+    const t = last(await call({ callerNumber: ON_FILE }));
+    expect(JSON.parse(JSON.stringify(t.session))).toEqual(t.session);
   });
 });
 

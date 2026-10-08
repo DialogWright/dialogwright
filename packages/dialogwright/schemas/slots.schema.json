@@ -182,6 +182,15 @@
               "facts"
             ],
             "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
           }
         },
         "additionalProperties": false,
@@ -449,6 +458,15 @@
               "facts"
             ],
             "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
           }
         },
         "required": [
@@ -672,6 +690,15 @@
               "facts"
             ],
             "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
           }
         },
         "required": [
@@ -885,6 +912,15 @@
               "facts"
             ],
             "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
           }
         },
         "additionalProperties": false,
@@ -1007,6 +1043,15 @@
               "facts"
             ],
             "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
           }
         },
         "additionalProperties": false,
@@ -1164,6 +1209,15 @@
               "facts"
             ],
             "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
           }
         },
         "additionalProperties": false,
@@ -1385,6 +1439,15 @@
               "facts"
             ],
             "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
           }
         },
         "additionalProperties": false,
@@ -1499,6 +1562,15 @@
               "facts"
             ],
             "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
           }
         },
         "additionalProperties": false,

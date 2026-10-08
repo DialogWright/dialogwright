@@ -8,6 +8,7 @@ import { formatProblem } from './problems';
 import type { AppCode } from './defineApp';
 import { defineSlot, SlotConfigError } from '../slots/defineSlot';
 import { PROPOSALS_DIR, proposalsCode } from '../testing/proposals/app';
+import { GREETING, GREETING_LINES } from '../testing/proposals/variant';
 
 /**
  * What `check` says of a slot that proposes a value from the facts (`offer: facts`): it needs
@@ -100,3 +101,31 @@ describe('offer: facts', () => {
     expect(problems.join('\n')).toContain('the slot "phone" offers both the number the caller is calling from (callerNumber) and a value from the facts (offer: facts)');
   });
 });
+
+describe('offerAt', () => {
+  const greeting = (): string => folder(GREETING);
+
+  it('greeting passes check with the two lines, and takes slot or greeting only', async () => {
+    expect(await checked(greeting())).toEqual({ problems: [], warnings: [] });
+    const { problems } = await checked(folder({ 'slots.yaml': replace('  offer: facts\n', '  offer: facts\n  offerAt: start\n') }));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('place.offerAt');
+    expect(defineSlot('place', { type: 'text', what: 'an address', offer: 'facts', offerAt: 'greeting' }).offerAt).toBe('greeting');
+    expect(defineSlot('place', { type: 'text', what: 'an address', offer: 'facts' }).offerAt).toBeUndefined();
+  });
+
+  it('greeting needs greeting_offer and greet_after_offer; slot needs neither', async () => {
+    const missing = await checked(folder({ ...GREETING, 'prompts.yaml': (t) => t }));
+    expect(missing.problems).toHaveLength(2);
+    expect(missing.problems.join('\n')).toContain('prompt "greeting_offer" is missing');
+    expect(missing.problems.join('\n')).toContain('prompt "greet_after_offer" is missing');
+    const atSlot = await checked(folder({ 'slots.yaml': replace('  offer: facts\n', '  offer: facts\n  offerAt: slot\n') }));
+    expect(atSlot).toEqual({ problems: [], warnings: [] });
+  });
+
+  it('is refused without offer: facts', async () => {
+    const { problems } = await checked(folder({ 'slots.yaml': replace('  offer: facts\n', '  offerAt: greeting\n'), 'prompts.yaml': (t) => `${t}${GREETING_LINES}` }));
+    expect(problems.join('\n')).toContain('the slot "place" says offerAt: "greeting", but it proposes nothing (it has no offer: facts)');
+  });
+});
+
