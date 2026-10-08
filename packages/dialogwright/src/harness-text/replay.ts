@@ -5,7 +5,8 @@ import { newSession, type Session } from '../core/session';
 import { CODE_DIGIT, type Arrival, type RunOptions, type TurnRun } from '../run/turn';
 import type { TraceRecord } from '../trace/types';
 import { frameToEvent } from '../channel/relay/map';
-import { serviceResultEvent, keyEvents, silenceEvent, type ServiceResult, type SessionEvent } from '../channel/events';
+import { serviceResultEvent, keyEvents, silenceEvent, withCallerNumber, type ServiceResult, type SessionEvent } from '../channel/events';
+import { standInCallerNumber } from '../core/callerNumber';
 import { VOICE_RELAY } from '../channel/caps';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { Continuation, MAX_CONTINUE_WITHIN_MS } from '../run/continuation';
@@ -140,6 +141,23 @@ function loggedContinueWithinMs(lines: readonly ReadFrameLogLine[]): number {
   return 0;
 }
 
+/**
+ * The last four digits of the caller's number the live session kept, from the adapter's
+ * `{ callerNumber: '…0142' }` log line (server/adapter.ts), or null for a call with none: a log of
+ * an app with no slot that offers the caller's number, a call whose number was withheld or did not
+ * fit, and a log written before the line.
+ */
+function loggedCallerLastFour(lines: readonly ReadFrameLogLine[]): string | null {
+  for (const line of lines) {
+    if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
+    const n = (line.msg as { callerNumber?: unknown }).callerNumber;
+    if (typeof n !== 'string') continue;
+    const digits = n.replace(/\D/g, '');
+    return digits.length === 4 ? digits : null;
+  }
+  return null;
+}
+
 /** A `{ callerResumed: { ... } }` log line (server/adapter.ts takeResumed): the prompt after it continues the one before. */
 function isCallerResumed(line: ReadFrameLogLine): boolean {
   if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) return false;
@@ -213,7 +231,9 @@ interface Pending {
  * through one Continuation with the window the log names (loggedContinueWithinMs), as the adapter ran
  * the live call's, so the final prompts of a caller who had not finished are joined where they were,
  * a reply held for one who went on included (heldAndJoined). An interrupt the adapter found spurious
- * (spuriousAt) runs no turn, as it ran none live.
+ * (spuriousAt) runs no turn, as it ran none live. A call whose session kept the caller's number
+ * (a slot's `callerNumber`) logged its last four only, so its setup carries a made-up number ending in
+ * them (loggedCallerLastFour, standInCallerNumber) and the replay makes the offer the call made.
  *
  * Each turn runs with the clock and default date the recording actually happened under: `now`
  * returns the frame line's own timestamp, and `todayIso` is the setup line's date unless the
@@ -310,6 +330,14 @@ export async function replayFrameLog(
       }
       setupDate = line.ts.slice(0, 10);
       session = newSession(frame.callSid, lineMs, VOICE_RELAY);
+      // The live session kept the caller's number: a made-up one ending in the same four digits makes the
+      // same offer (core/callerNumber.ts standInCallerNumber), as the log keeps no more of it.
+      const last4 = loggedCallerLastFour(lines);
+      if (last4 !== null) {
+        const standIn = standInCallerNumber(appOf(session), last4);
+        if (standIn !== undefined) event = withCallerNumber(event, standIn);
+        else skipped.push(`line ${lineNumber}: the caller's number the call kept has no stand-in this app's slot takes, so the replay makes no offer`);
+      }
     }
     if (!session) {
       skipped.push(`line ${lineNumber}: ${type} before setup`);

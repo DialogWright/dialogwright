@@ -1,5 +1,5 @@
 import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCallerOf, setupCallIdOf, textLastOf } from './voice/registry';
-import { usesCallerNumber } from '../core/callerNumber';
+import { keptCallerNumber, usesCallerNumber } from '../core/callerNumber';
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
@@ -1668,6 +1668,11 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     const within = continueWithinMsOf(appOf(entry.session));
     continuations.set(callId, new Continuation(within));
     if (within > 0) entry.frames.write('log', { continueWithinMs: within });
+    // That the session keeps the caller's number, by its last four only, for replay (harness-text/replay.ts),
+    // which stands a made-up number ending in them in for it and so makes the offer this call makes. Only
+    // for an app with a slot that offers it (core/callerNumber.ts), and only for a number it keeps.
+    const offers = usesCallerNumber(appOf(entry.session));
+    if (offers && keptCallerNumber(appOf(entry.session), caller ?? undefined) !== undefined) entry.frames.write('log', { callerNumber: maskNumber(caller) });
     // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
     publish(deps, {
       type: 'call_started', callSid: callId, at: Date.now(),
@@ -1687,7 +1692,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     }
     // The number the caller is calling from goes to the core only for an app with a slot that offers
     // it (core/callerNumber.ts); every other app's start event is as it was.
-    const start = withCallerNumber(frameToEvent(parsed), usesCallerNumber(appOf(entry.session)) ? caller : null);
+    const start = withCallerNumber(frameToEvent(parsed), offers ? caller : null);
     await enqueueUnsettled(deps, callId, async (e) => {
       await turn(deps, e, start);
     });

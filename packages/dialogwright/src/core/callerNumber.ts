@@ -88,6 +88,22 @@ export function keptCallerNumber(app: App, raw: string | undefined): string | un
   return callerNumberSlots(app).some((slot) => callerCandidate(app, slot, number) !== null) ? number : undefined;
 }
 
+/**
+ * A number to stand in for the caller's in a replayed call (harness-text/replay.ts). The frame log
+ * keeps only the last four digits of a number the live session kept (the adapter's
+ * `{ callerNumber: '…0142' }` line), which is all the offer said and all the model was told, so a
+ * made-up number (the 555 range) ending in them makes the same offer: the shortest such number the
+ * app keeps. Undefined when there is none, or `last4` is not four digits.
+ */
+export function standInCallerNumber(app: App, last4: string): string | undefined {
+  if (!/^\d{4}$/.test(last4)) return undefined;
+  for (let pad = 0; pad <= 11; pad++) {
+    const number = '5'.repeat(pad) + last4;
+    if (keptCallerNumber(app, number) !== undefined) return number;
+  }
+  return undefined;
+}
+
 /** The last four digits of a value, as the offer line says them ({last4}) and the console masks a number. */
 export function lastFour(value: string): string {
   return value.replace(/\D/g, '').slice(-4);
