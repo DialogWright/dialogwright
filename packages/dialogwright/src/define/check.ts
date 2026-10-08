@@ -346,7 +346,7 @@ function callerHintWarnings(config: LoadedConfig, slots: Readonly<Record<string,
   const lookup = block?.lookup;
   if (lookup !== undefined && Object.hasOwn(policy.actions, lookup)) {
     const level = policy.actions[lookup]!.level ?? DEFAULT_ACTION_LEVEL;
-    if (level > 0) report('policy.yaml', ['actions', lookup, ...(policy.actions[lookup]!.level !== undefined ? ['level'] : [])], `the action "${lookup}" is the call-start lookup (app.yaml's callerNumber.lookup), which runs before anyone is verified, but it needs level ${level}, so the gate always refuses it and nothing is looked up`, `set its level to 0, and return only what may be said before identity; or delete "lookup" and call it from a form after identity`);
+    if (level > 0) report('policy.yaml', ['actions', lookup, ...(policy.actions[lookup]!.level !== undefined ? ['level'] : [])], `the action "${lookup}" is the call-start lookup (app.yaml's callerNumber.lookup), which runs before anyone is verified, but it needs level ${level}, so the gate always refuses it and nothing is looked up`, `set its level to 0 (what it returns may be said to a caller not yet verified, so return what the app means to say then); or delete "lookup" and load the facts from a form's entry call after identity`);
   }
   if (lookup !== undefined && policy.audit?.callerNumber === 'keep') {
     report('policy.yaml', ['audit', 'callerNumber'], 'the call-start lookup\'s param, the number the caller is calling from, is recorded as it is (keep) in the trace, the console and the audit', 'write "callerNumber: last4" unless the whole number must be recorded');

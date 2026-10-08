@@ -392,11 +392,15 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
  * their own acks into it ("Thanks, Alex.", "Thank you, you're verified."), so the caller passes a
  * copy it means to speak from. While a step-up is pending the gate is not asked again: it said
  * what it needs when the step-up began, and the entry call is retried once the factors are verified.
+ * A step-up a check began (stepUp, from core/turn.ts stopForm) is pending with the form entered: it
+ * goes on here too, and once it is done the form loop runs the check again.
  */
 export function ensureEntry(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | Refused | null {
   const form = s.form;
-  if (form === null || s.entered === form) return null;
+  if (form === null) return null;
+  // A step-up waiting goes on first: the entry call's, or a check's once the form is entered (stepUp).
   if (s.stepUp) return nextFactor(s, tc, out, acks);
+  if (s.entered === form) return null;
   const app = appOf(s);
   const def = formOf(app, form);
   if (!def.entry) {
@@ -421,11 +425,7 @@ export function ensureEntry(s: Session, tc: TurnContext, out: TurnOut, acks: Ack
       s.entered = form;
       return null;
     case 'STEP_UP':
-      // An app without identity has no factors to ask: validateApp keeps every tool at level 0, so
-      // only an app's own rule can get here, and it fails closed, to a person.
-      if (!app.identity) return handoff(s, 'needs-human', acks);
-      s.stepUp = { call, need: decision.needLevel === 2 ? 2 : 1 };
-      return nextFactor(s, tc, out, acks);
+      return stepUp(s, call, decision, tc, out, acks);
     case 'BLOCK': {
       const ack = blockAck(s, decision.reason);
       if (!ack) return handoff(s, 'needs-human', acks);
@@ -434,6 +434,22 @@ export function ensureEntry(s: Session, tc: TurnContext, out: TurnOut, acks: Ack
     case 'NEEDS_HUMAN':
       return handoff(s, decision.reason === 'attempts' ? 'identity' : 'needs-human', acks);
   }
+}
+
+/**
+ * The gate said STEP_UP for `call`: the entry call of the open form (ensureEntry), or one of its checks
+ * (core/turn.ts stopForm). Identity is asked for (the next factor, their check, or the keypad code;
+ * on a web chat, the portal sign-in), and the form loop goes on once the caller is verified to the
+ * level the gate said: the entry call is made again, and a check runs again, since a check that has
+ * not passed is not in Session.checked. A check's call is kept without its params: it is never made
+ * again as it stands, but from what the slots then hold. An app without identity has no factors to
+ * ask: validateApp keeps every tool at level 0, so only an app's own rule can get here, and it fails
+ * closed, to a person.
+ */
+export function stepUp(s: Session, call: ToolCall, decision: GateDecision, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | Refused | null {
+  if (!appOf(s).identity) return handoff(s, 'needs-human', acks);
+  s.stepUp = { call, need: decision.needLevel === 2 ? 2 : 1 };
+  return nextFactor(s, tc, out, acks);
 }
 
 /**

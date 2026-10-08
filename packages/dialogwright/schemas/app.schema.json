@@ -911,7 +911,7 @@
           "type": "boolean"
         },
         "lookup": {
-          "description": "A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal or a failure is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides whether it runs; the tool returns only what may be said before identity, since nothing is withheld from a caller not yet proven. Default: none.",
+          "description": "A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal or a failure is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides whether it runs. Nothing is withheld from a caller not yet proven, so what the tool returns reaches the app whole: what to return, and what the lines say of it before identity, is the app's call. Default: none.",
           "type": "string",
           "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
         }

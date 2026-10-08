@@ -10,6 +10,8 @@ import { main, type Io } from './cli';
 import { defineApp, type AppCode } from './defineApp';
 import { validateApp } from '../core/app/validate';
 import { SCREENED_DIR, screenedApp, screenedCode } from '../testing/screened/app';
+import { PROPOSALS_DIR, proposalsCode } from '../testing/proposals/app';
+import { CHECKING } from '../testing/proposals/variant';
 
 /**
  * What `check` says of a form's checks (./formChecks.ts): the refusals, which defineApp makes too,
@@ -27,6 +29,15 @@ function folder(files: Record<string, (text: string) => string> = {}): string {
   const dir = mkdtempSync(join(tmpdir(), 'dialogwright-checks-'));
   scratch.push(dir);
   cpSync(SCREENED_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+  for (const [file, change] of Object.entries(files)) writeFileSync(join(dir, file), change(readFileSync(join(dir, file), 'utf8')));
+  return dir;
+}
+
+/** A copy of the proposals fixture's YAML (an app with identity), each file changed by its function. */
+function proposalsFolder(files: Record<string, (text: string) => string> = {}): string {
+  const dir = mkdtempSync(join(tmpdir(), 'dialogwright-checks-'));
+  scratch.push(dir);
+  cpSync(PROPOSALS_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
   for (const [file, change] of Object.entries(files)) writeFileSync(join(dir, file), change(readFileSync(join(dir, file), 'utf8')));
   return dir;
 }
@@ -77,13 +88,12 @@ describe('the refusals', () => {
     expect((await checked(dir)).problems).toContain('forms.yaml:20:16  forms.book_visit.checks[2].with[0]  check "checkArea" reads "tow", which is not one of form "book_visit"\'s slots  ->  rename it to "town", or add "tow" to the form\'s slots');
   });
 
-  it('a check action that runs the confirmed rule, or needs a level the form\'s entry does not prove', async () => {
+  it('a check action that runs the confirmed rule', async () => {
     const dir = folder({
-      'policy.yaml': (t) => replace('      - oneOf: { field: ownership, values: [own], reason: not-owner }\n  checkArea:', '      - oneOf: { field: ownership, values: [own], reason: not-owner }\n      - confirmed: [problem, ownership, town, howUrgent, visitDay, timeOfDay]\n  checkArea:')(t).replace('    say: check the home is in the area\n    check: true\n    level: 0', '    say: check the home is in the area\n    check: true\n    level: 1'),
+      'policy.yaml': replace('      - oneOf: { field: ownership, values: [own], reason: not-owner }\n  checkArea:', '      - oneOf: { field: ownership, values: [own], reason: not-owner }\n      - confirmed: [problem, ownership, town, howUrgent, visitDay, timeOfDay]\n  checkArea:'),
     });
     const { problems } = await checked(dir);
     expect(problems).toContain('policy.yaml:20:9  actions.checkOwner.rules[2]  check "checkOwner" runs the confirmed rule, but nothing is confirmed part-way through a form, so it would refuse every time  ->  delete the rule: the write the form makes at its completion holds what the caller confirmed');
-    expect(problems).toContain('policy.yaml:24:12  actions.checkArea.level  check "checkArea" of form "book_visit" needs identity level 1, which the form\'s entry does not prove first, so the check could only go to a person  ->  set it to 0, or give the form an entry call with a purpose of level 1 (policy.yaml purposes: book_visit: { level: 1 })');
   });
 
   it('a list rule of a check on a param no check of it sends, and a value a choice slot does not have', async () => {
@@ -176,6 +186,18 @@ describe('the refusals', () => {
 });
 
 describe('the warnings', () => {
+  it('a check above the level the form\'s entry proves, and a check on an identity factor: warned, never refused', async () => {
+    const dir = proposalsFolder(CHECKING);
+    const { problems, warnings } = await checked(dir, proposalsCode);
+    expect(problems).toEqual([]);
+    expect(warnings).toEqual([
+      'forms.yaml:15:16  forms.report_problem.checks[1].with[0]  check "checkAge" reads "dob", an identity factor; it holds a value only once the caller has given it during verification, so the check does not run before then  ->  nothing to do if that is meant (an age check on a date of birth); otherwise check one of the form\'s own slots',
+      'policy.yaml:36:12  actions.checkProblem.level  check "checkProblem" of form "report_problem" needs identity level 1, which the form\'s entry does not prove first; the caller will be asked to verify when the check runs  ->  nothing to do if that is meant; otherwise set it to 0, or give the form an entry call with a purpose of level 1 (policy.yaml purposes: report_problem: { level: 1 })',
+    ]);
+    // defineApp builds it, and validateApp takes a check that reads an identity factor the form does not list.
+    expect(defineApp(dir, proposalsCode).forms.report_problem!.checks!.map((c) => c.with)).toEqual([['problem'], ['dob']]);
+  });
+
   it('an `on` reason the check never refuses for, and a rule the write does not hold the caller to: printed, never counted', async () => {
     const dir = folder({
       'forms.yaml': replace('out-of-area: { say: decline_out_of_area, then: end }', 'out-of-town: { say: decline_out_of_area, then: end }'),

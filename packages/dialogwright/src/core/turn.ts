@@ -16,7 +16,7 @@ import { buildQuestions } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { appContext, askCode, awaitingSignIn, callTool, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
+import { appContext, askCode, awaitingSignIn, callTool, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, stepUp, takeSummaryHash, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo } from './callerNumber';
 import { factsCandidate, factsOfferSlots } from './factsOffer';
@@ -1057,8 +1057,24 @@ type CheckConfirmation = Extract<PendingConfirmation, { target: 'check' }>;
  * neither read back on its own and said yes to (SlotState.confirmed) nor among `agreed`, the slots the
  * caller said yes to as a summary read them. Then the form pauses on that yes or no (checkReadBack),
  * and nothing is recorded as stopped yet.
+ *
+ * A STEP_UP is no refusal of the form: the check needs a level the caller has not proven (a check above
+ * what the form's entry proves, which `pnpm check` warns of). Identity is asked for as for an entry
+ * call's STEP_UP (lifecycle.ts stepUp), and once the caller is verified the form loop runs the check
+ * again (continueForm); a failed or abandoned verification ends as the identity ladder ends. In an app
+ * without identity it goes to a person, as it always has.
  */
 function stopForm(s: Session, form: FormId, refused: Extract<ReturnType<typeof runChecks>, { kind: 'refused' }>, acks: Ack[], io: TurnIO, agreed: ReadonlySet<SlotId> = NONE_AGREED): Decision {
+  if (refused.decision.verdict === 'STEP_UP' && io.app.identity) {
+    const said = [...acks];
+    const next = stepUp(s, { tool: refused.check.action, params: {} }, refused.decision, io.tc, io.out, said);
+    // Null: the factors were already in hand ("my account is 5550 1234, born April 12th, 1980", said on
+    // the way) and matched, so the caller is verified now and the form loop runs the check again.
+    if (next === null) return continueForm(s, io, said, null);
+    // An identity question, or the person a step-up that cannot be finished goes to. A step-up made
+    // with the form entered asks the gate for no entry call, so nothing is refused here.
+    if (next.kind !== 'refused') return next;
+  }
   const readBack = checkReadBack(s, form, refused, acks, agreed);
   if (readBack !== null) return readBack;
   return endByCheck(s, form, refused.check, refused.decision, acks, io);
@@ -1097,13 +1113,15 @@ function endByCheck(s: Session, form: FormId, check: FormCheck, decision: Pick<G
  * rendered with the form's slot displays as `say` is, the check's refusal kept on the session as the
  * pending confirmation (Session.pendingConfirmation, target `check`). Null when the outcome has no
  * read-back, or every slot the check reads is confirmed already (a read-back of its own, or the
- * summary's yes: `agreed`), so a value is never read back twice.
+ * summary's yes: `agreed`) or is an identity factor, so a value is never read back twice.
  */
 function checkReadBack(s: Session, form: FormId, refused: Extract<ReturnType<typeof runChecks>, { kind: 'refused' }>, acks: Ack[], agreed: ReadonlySet<SlotId>): PromptDecision | null {
   const { check, decision } = refused;
   const outcome = outcomeOf(check, decision);
   if (outcome?.confirm === undefined || decision.reason === undefined) return null;
-  if (check.with.every((id) => s.slots[id]!.confirmed || agreed.has(id))) return null;
+  // An identity factor the check reads holds what the caller's verification matched: it is not read back.
+  const factors = identityOf(appOf(s)).factorSlots;
+  if (check.with.every((id) => s.slots[id]!.confirmed || agreed.has(id) || factors.includes(id))) return null;
   const pc: CheckConfirmation = { target: 'check', form, action: check.action, verdict: decision.verdict, reason: decision.reason, hash: refused.hash, attempts: 0 };
   s.pendingConfirmation = pc;
   return checkConfirmPrompt(s, pc, acks);

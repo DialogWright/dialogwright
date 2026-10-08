@@ -105,10 +105,10 @@
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                   },
-                  "description": "The form's slots the check reads, each sent as the param of the same name. The check runs once every one of them holds a value, and again whenever one of them changes."
+                  "description": "The form's slots the check reads, each sent as the param of the same name. The check runs once every one of them holds a value, and again whenever one of them changes. An identity factor may be named too (check warns): it holds a value only once the caller has given it during verification."
                 },
                 "on": {
-                  "description": "A refusal reason (the gate's reason) mapped to its line and how the form ends. A reason not listed gets the engine's refusal: a BLOCK with a line from the app's blockPromptId says it and the call carries on; anything else goes to a person. A STEP_UP always goes to a person.",
+                  "description": "A refusal reason (the gate's reason) mapped to its line and how the form ends. A reason not listed gets the engine's refusal: a BLOCK with a line from the app's blockPromptId says it and the call carries on; anything else goes to a person. A STEP_UP asks for identity, as an entry call's does, and the check runs again once the caller is verified (in an app without identity.yaml, it goes to a person).",
                   "type": "object",
                   "propertyNames": {
                     "type": "string",

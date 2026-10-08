@@ -57,11 +57,11 @@ const check = z
     action: identifier().describe('The action the gate decides on: an action in policy.yaml with check: true (no tool runs; the gate only answers).'),
     with: unique(identifier(), 'slot')
       .min(1, { error: 'must name at least one slot' })
-      .describe('The form\'s slots the check reads, each sent as the param of the same name. The check runs once every one of them holds a value, and again whenever one of them changes.'),
+      .describe('The form\'s slots the check reads, each sent as the param of the same name. The check runs once every one of them holds a value, and again whenever one of them changes. An identity factor may be named too (check warns): it holds a value only once the caller has given it during verification.'),
     on: z
       .record(name(), checkOutcome)
       .optional()
-      .describe('A refusal reason (the gate\'s reason) mapped to its line and how the form ends. A reason not listed gets the engine\'s refusal: a BLOCK with a line from the app\'s blockPromptId says it and the call carries on; anything else goes to a person. A STEP_UP always goes to a person.'),
+      .describe('A refusal reason (the gate\'s reason) mapped to its line and how the form ends. A reason not listed gets the engine\'s refusal: a BLOCK with a line from the app\'s blockPromptId says it and the call carries on; anything else goes to a person. A STEP_UP asks for identity, as an entry call\'s does, and the check runs again once the caller is verified (in an app without identity.yaml, it goes to a person).'),
   })
   .describe('One check: an action the gate decides on as soon as the slots it reads are filled.');
 

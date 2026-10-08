@@ -130,9 +130,10 @@ export type CheckEnding =
 /**
  * The ending a check's refusal maps to: the outcome `on` gives the gate's reason, or, for a reason it
  * does not list, what a completion's refusal gives (CompletionContext.refusal): a BLOCK with a line
- * from the app's blockPromptId says it and carries on, anything else goes to a person. A STEP_UP goes
- * to a person whatever `on` says: a check never asks for identity (the entry call does that first).
- * `vars` are the variables the outcome's line renders with: the form's slot displays.
+ * from the app's blockPromptId says it and carries on, anything else goes to a person. A STEP_UP gets
+ * here only in an app without identity, and goes to a person whatever `on` says: in an app with
+ * identity, a check's STEP_UP asks for it instead (turn.ts stopForm), and the check runs again once the
+ * caller is verified. `vars` are the variables the outcome's line renders with: the form's slot displays.
  */
 export function checkEnding(s: Session, check: FormCheck, decision: Pick<GateDecision, 'verdict' | 'reason'>, acks: Ack[], vars: Record<string, string>): CheckEnding {
   const reason = decision.reason;

@@ -230,14 +230,16 @@ export function validateApp(app: App): void {
   for (const id of Object.keys(app.forms)) {
     if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') fail(`form "${id}" has no form intent`);
   }
-  // A form's checks (FormDef.checks): each a check of the policy, reading the form's own slots, each
-  // outcome that ends the call with a line to end on.
+  // A form's checks (FormDef.checks): each a check of the policy, reading the form's own slots or an
+  // identity factor (which holds a value once the caller has given it), each outcome that ends the call
+  // with a line to end on.
   const checkSource = sourceOf(app.policy);
+  const checkFactors = app.identity?.factorSlots ?? [];
   for (const [id, form] of Object.entries(app.forms)) {
     for (const check of form.checks ?? []) {
       const action = checkSource && Object.hasOwn(checkSource.actions, check.action) ? checkSource.actions[check.action] : undefined;
       if (action?.check !== true) fail(`form "${id}" checks "${check.action}", which is not a check of the policy (check: true)`);
-      for (const slot of check.with) if (!form.slots.includes(slot)) fail(`form "${id}"'s check "${check.action}" reads "${slot}", which is not one of its slots`);
+      for (const slot of check.with) if (!form.slots.includes(slot) && !checkFactors.includes(slot)) fail(`form "${id}"'s check "${check.action}" reads "${slot}", which is not one of its slots`);
       if (check.with.length === 0) fail(`form "${id}"'s check "${check.action}" reads no slot`);
       for (const [reason, outcome] of Object.entries(check.on ?? {})) {
         if ((outcome.then === 'end' || outcome.then === 'anything-else') && outcome.say === undefined) fail(`form "${id}"'s check "${check.action}" ends with ${outcome.then} for "${reason}" and says no line`);

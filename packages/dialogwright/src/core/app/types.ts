@@ -583,19 +583,23 @@ export interface FactsConfig {
    * Applies the call-start lookup's result to the facts (app.yaml's `callerNumber.lookup`, as a
    * form's onEntry applies an entry result): called only when the gate allowed the call and the tool
    * returned a value, with that value whole: policy.yaml's `redact:` withholds fields only from a
-   * party acting for subjects, never from the anonymous caller the lookup is made as, so the tool
-   * itself must return only what may be said before identity. Keep only what the app needs, and
-   * clear it in onFormClosed where it goes stale. One that throws leaves the facts as they were, and
+   * party acting for subjects, never from the anonymous caller the lookup is made as. What the tool
+   * returns, and what the app's lines say of it to a caller not yet verified, is the app's call: the
+   * framework filters nothing. Returning only what the app means to say before identity is the usual
+   * advice. Keep only what the app needs, and clear it in onFormClosed where it goes stale. One that throws leaves the facts as they were, and
    * the call goes on. Without it, the result is not kept.
    */
   fromCallerLookup?(f: SessionFacts, value: unknown): void;
   /**
    * The values the facts propose, by slot, for the slots that offer them (a slot's `offer: facts`):
    * each a candidate (its value, and its display, which the offer line says as `{<slot>}`). Called
-   * only when such a slot is about to be asked; a slot with no candidate (none returned, or one
-   * with an empty value or display) is asked as always. What the display says is said to a caller
-   * who has proven nothing when the facts came from the call-start lookup: propose the least that
-   * works (a street, never a balance or a name). A yes fills the slot and nothing else. One that
+   * when such a slot is about to be asked, and at call start, after the call-start lookup, for a slot
+   * that proposes at the greeting (`offerAt: greeting`); a slot with no candidate (none returned, or
+   * one with an empty value or display) is asked as always. It reads whatever the facts hold then:
+   * the call-start lookup's, or what a form's entry call (onEntry) or a hook loaded after identity.
+   * What the display says may be said to a caller who has proven nothing: what to propose is the
+   * app's call (the least that works, a street rather than a balance or a name, is the usual advice).
+   * A yes fills the slot and nothing else. One that
    * throws proposes nothing, and the slot is asked as always. Without it, no slot is offered a value.
    */
   offers?(f: Readonly<SessionFacts>): Readonly<Partial<Record<SlotId, SlotCandidate>>>;

@@ -14,16 +14,20 @@ import { closest, type DataPath } from './problems';
  * warns of (checkWarnings, run by `dialogwright check`, never by defineApp).
  *
  * Refused: a check whose action is not an action of policy.yaml, or not one marked `check: true`; a
- * `with` slot that is not one of the form's slots, or is an identity factor; a check action that lists
- * a confirmed rule (nothing is confirmed part-way through a form), or needs a level above 0 the form's
- * entry does not prove (a form with an entry call whose purpose, policy.yaml `purposes`, needs that
- * level); a line a check says that prompts.yaml does not have (its read-back `confirm` and its `say`,
- * the handoff line, the form's checksPassed). A `check: true` action with a tool in the code, or no
- * form's checks naming it, is policyFile.ts's and reach's to report.
+ * `with` slot that is neither one of the form's slots nor an identity factor; a check action that
+ * lists a confirmed rule (nothing is confirmed part-way through a form); a line a check says that
+ * prompts.yaml does not have (its read-back `confirm` and its `say`, the handoff line, the form's
+ * checksPassed). A `check: true` action with a tool in the code, or no form's checks naming it, is
+ * policyFile.ts's and reach's to report.
  *
- * Warned: an `on` reason the action can never give (no rule of it refuses for that reason), so the
- * outcome never applies; and a rule of a check action that no action the form calls names, so the
- * write would not hold what the check held.
+ * Warned: a check action that needs a level above 0 the form's entry does not prove (a form with an
+ * entry call whose purpose, policy.yaml `purposes`, needs that level), so the caller is asked to verify
+ * when the check runs (core/turn.ts stopForm); a `with` slot that is an identity factor, which holds a
+ * value only once the caller has given it during verification; an `on` reason the action can never
+ * give (no rule of it refuses for that reason), so the outcome never applies; and a rule of a check
+ * action that no action the form calls names, so the write would not hold what the check held. Each
+ * is the app's call: the first two are how an age check on a date of birth, or a check only a
+ * verified caller may pass, is written.
  */
 
 /** What a form check problem is reported with: crossLink's own reporters. */
@@ -72,26 +76,10 @@ export function checkProblems(c: FormCheckInput): void {
         report('forms.yaml', [...at, 'action'], `form "${id}" checks "${check.action}", which is not an action in policy.yaml`, `${guess ? `rename it to "${guess}", or ` : ''}add "${check.action}:" under actions in policy.yaml with "check: true", its level and its rules`);
       } else if (action.check !== true) {
         report('forms.yaml', [...at, 'action'], `form "${id}" checks "${check.action}", which is an action with a tool, not a check`, `add "check: true" to actions.${check.action} in policy.yaml (and delete its tool from the code), or check an action that has it`);
-      } else {
-        const level = action.level ?? 2;
-        const purpose = config.policy.purposes[id]?.level ?? 0;
-        const proven = hooksOf(id).includes('entry') ? purpose : 0;
-        if (level > proven) {
-          report(
-            'policy.yaml',
-            action.level !== undefined ? ['actions', check.action, 'level'] : ['actions', check.action],
-            `check "${check.action}" of form "${id}" needs identity level ${level}, which the form's entry does not prove first, so the check could only go to a person`,
-            hooksOf(id).includes('entry')
-              ? `set it to ${proven}, or raise the form's purpose to level ${level} (policy.yaml purposes: ${id}: { level: ${level} })`
-              : `set it to 0, or give the form an entry call with a purpose of level ${level} (policy.yaml purposes: ${id}: { level: ${level} })`,
-            action.level === undefined,
-          );
-        }
       }
       check.with.forEach((slot, j) => {
-        if (factors.has(slot)) {
-          report('forms.yaml', [...at, 'with', j], `check "${check.action}" reads "${slot}", an identity factor`, 'check the form\'s own slots: identity is proven by the entry call, never by a check');
-        } else if (!form.slots.includes(slot)) {
+        // An identity factor is the app's to read (checkWarnings warns of it): it is not one of the form's slots.
+        if (!factors.has(slot) && !form.slots.includes(slot)) {
           report('forms.yaml', [...at, 'with', j], `check "${check.action}" reads "${slot}", which is not one of form "${id}"'s slots`, `${closest(slot, form.slots) ? `rename it to "${closest(slot, form.slots)}", or ` : ''}add "${slot}" to the form's slots`);
         }
       });
@@ -152,10 +140,32 @@ function reasonsOf(rules: readonly unknown[], customRules: Readonly<Record<strin
 export function checkWarnings(c: Omit<FormCheckInput, 'promptExists'>, customRules: Readonly<Record<string, unknown>>): void {
   const { config, report } = c;
   const actions = config.policy.actions;
+  const factors = new Set(config.identity?.levels[1].factors ?? []);
+  const hooksOf = (form: string): readonly string[] => config.forms.forms[form]?.hooks ?? [];
   for (const [id, form] of Object.entries(config.forms.forms)) {
     (form.checks ?? []).forEach((check, i) => {
+      check.with.forEach((slot, j) => {
+        if (!factors.has(slot)) return;
+        report('forms.yaml', ['forms', id, 'checks', i, 'with', j], `check "${check.action}" reads "${slot}", an identity factor; it holds a value only once the caller has given it during verification, so the check does not run before then`, 'nothing to do if that is meant (an age check on a date of birth); otherwise check one of the form\'s own slots');
+      });
       const action = Object.hasOwn(actions, check.action) ? actions[check.action]! : undefined;
       if (!action || action.check !== true) return;
+      // A check above the level the form's entry proves: at run time its STEP_UP asks for identity, as
+      // an entry call's does, and the check runs again once the caller is verified (core/turn.ts stopForm).
+      const level = action.level ?? 2;
+      const purpose = config.policy.purposes[id]?.level ?? 0;
+      const proven = hooksOf(id).includes('entry') ? purpose : 0;
+      if (level > proven) {
+        report(
+          'policy.yaml',
+          action.level !== undefined ? ['actions', check.action, 'level'] : ['actions', check.action],
+          `check "${check.action}" of form "${id}" needs identity level ${level}, which the form's entry does not prove first; the caller will be asked to verify when the check runs`,
+          hooksOf(id).includes('entry')
+            ? `nothing to do if that is meant; otherwise set it to ${proven}, or raise the form's purpose to level ${level} (policy.yaml purposes: ${id}: { level: ${level} })`
+            : `nothing to do if that is meant; otherwise set it to 0, or give the form an entry call with a purpose of level ${level} (policy.yaml purposes: ${id}: { level: ${level} })`,
+          action.level === undefined,
+        );
+      }
       const reasons = reasonsOf(action.rules, customRules);
       if (reasons !== null) {
         // Where the reason could come from: a custom rule's examples, or a list or range rule's own reason.

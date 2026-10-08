@@ -273,7 +273,7 @@ describe('each ending', () => {
     expect(t.stopped?.then).toBe('handoff');
   });
 
-  it('a STEP_UP from a check goes to a person, whatever `on` says', async () => {
+  it('a STEP_UP from a check, in an app without identity, goes to a person, whatever `on` says', async () => {
     const policy = loadAppFolder(SCREENED_DIR).config!.policy;
     const stepUp = (() => ({ result: { id: 'needs-more', description: 'needs a verified caller', compared: 'level 0 < 1', pass: false }, fail: { verdict: 'STEP_UP' as const, needLevel: 1 as const } }));
     const tables = compilePolicy(
