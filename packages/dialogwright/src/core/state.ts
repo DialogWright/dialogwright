@@ -33,8 +33,8 @@ export interface TurnState {
   caller: { verified: boolean; level: 0 | 1 | 2; priorCalls: number } & Readonly<Record<string, string | number | boolean>>;
   asr: { text: string; isFinal: boolean; bargeIn: boolean; dtmf: string | null };
   candidateSpans: string[];
-  /** the model sees 'intent', 'form', 'transfer', or the slot id */
-  pendingConfirmation: { target: 'intent' | 'form' | 'transfer' | SlotId; value: string } | null;
+  /** the model sees 'intent', 'form', 'transfer', 'consent' (the consent to text for the whole call), or the slot id */
+  pendingConfirmation: { target: 'intent' | 'form' | 'transfer' | 'consent' | SlotId; value: string } | null;
 }
 
 /**
@@ -48,6 +48,9 @@ function pendingState(app: App, session: Session): TurnState['pendingConfirmatio
   if (pc.target === 'form') return { target: 'form', value: intentLabel(app, pc.form) };
   if (pc.target === 'transfer') return { target: 'transfer', value: 'connect you to a person' };
   if (pc.target === 'check') return checkState(app, session, pc);
+  // The consent to text for the whole call (app.yaml's textConsent): what a yes agrees to, by the
+  // number's last four, never the whole number.
+  if (pc.consent === true) return { target: 'consent', value: `text them helpful links during this call, at the number they are calling from, ending in ${lastFour(pc.value)}` };
   // The caller's number offered (core/callerNumber.ts): the model is told what the caller heard of
   // it, its last four, never the whole number.
   if (pc.offered && pc.from !== 'facts') return { target: pc.slot, value: `the number they are calling from, ending in ${lastFour(pc.value)}` };

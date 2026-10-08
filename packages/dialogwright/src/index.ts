@@ -140,6 +140,9 @@ export type { Session, SessionFacts } from './core/session';
 // The numbers a call came with, for an app that keeps them (app.yaml's callerNumber): a hint, never identity on its own.
 export { callerOf, calledOf } from './core/callerNumber';
 export type { CallerNumber } from './core/callerNumber';
+// What the caller answered to consent to text for the whole call (app.yaml's textConsent), for app code that needs it.
+export { textConsentOf } from './core/textConsent';
+export type { TextConsentAnswer } from './core/session';
 export type { Tools, CodeVerifier } from './core/tools';
 export type { Thresholds, ThresholdName } from './core/thresholds';
 export { DEFAULT_THRESHOLDS, atLeast, THRESHOLD_EPSILON } from './core/thresholds';

@@ -6,7 +6,7 @@ import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/co
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, fixtures, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, fixtures, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -361,6 +361,14 @@ const callerNumber = z
   })
   .describe('The number the caller is calling from, kept for the app\'s code: a hint, never identity on its own (an app may let a caller-ID match identify an account, with a knowledge factor that verifies it: identity.yaml callerId). Without it, the number is kept only for a slot that offers it (a digits slot\'s callerNumber).');
 
+const textConsent = z
+  .strictObject({
+    covers: unique(identifier(), 'slot')
+      .min(1, { error: 'names no slot' })
+      .describe('The slots the consent stands in for: each offers the number the caller is calling from (a digits slot\'s callerNumber). Granted, each is filled with the caller\'s number, confirmed, with no question of its own, and an offer row (answer: consent) records each use; declined or not answered, each asks its own offer.'),
+  })
+  .describe('Consent to text for the whole call: asked once, on a call, right after the greeting (greeting_offer, then consent_texts with {last4}, then greet_after_offer), when the caller\'s number is kept and the app\'s callerOffer allows the first slot it covers. A yes is recorded as a consent row (scope: call); the slots it covers then use the caller\'s number without asking again. Never asked on a chat. Before a proposal at the greeting, after the caller-ID question at the greeting. Default: none, and every text offer is asked where it is.');
+
 export const appSchema = z
   .strictObject({
     id: matching(/^[a-z][a-z0-9_-]*$/, 'is not a valid app id: it must be lowercase, starting with a letter, with only letters, digits, hyphens and underscores', 'rename it, for example "my-app" or "parcels"')
@@ -401,6 +409,7 @@ export const appSchema = z
           'With repeat and opener a further silence walks the intent ladder as at the opening (the keypad menu, then a person). Default "repeat".',
       ),
     callerNumber: callerNumber.optional(),
+    textConsent: textConsent.optional(),
     fixtures: z
       .strictObject({
         dir: matching(

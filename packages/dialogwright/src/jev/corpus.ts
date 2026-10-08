@@ -15,6 +15,8 @@ export interface AnswerOverride {
  * The state an utterance is spoken in:
  * - `no_form`: the opener, nothing started and nobody verified; with `prompted` a slot that proposes at
  *   the greeting (`offerAt: greeting`) and `confirm`, the greeting's proposal just made (atGreetingOffer);
+ *   with `confirm` and no `prompted`, in an app with app.yaml's `textConsent`, the consent question just
+ *   asked (atTextConsent);
  * - a form in progress, with a verified (level 2) caller whose facts are loaded, unless `prompted`
  *   is an identity factor, which seeds an anonymous caller mid step-up instead;
  * - `confirm_<form>`: the summary of a form that has one (report_missing);
@@ -108,7 +110,8 @@ export interface CorpusEntry {
   /**
    * confirm_ and offer_transfer contexts only, the offer of the caller's number (a form context
    * whose `prompted` slot offers it, atCallerOffer), the proposal at the greeting (no_form with
-   * `prompted` a slot that proposes there, atGreetingOffer), and the caller-ID question (`prompted` the
+   * `prompted` a slot that proposes there, atGreetingOffer), the consent to text for the whole call
+   * (no_form with no `prompted`, atTextConsent), and the caller-ID question (`prompted` the
    * factor it asks for, atCallerMatch: `no` for "different account"): how the utterance answers the question
    */
   confirm?: 'yes' | 'no' | 'unanswered';
@@ -193,6 +196,16 @@ export function atCallerOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 
  */
 export function atGreetingOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: 'no_form' } {
   return entry.context === 'no_form' && entry.confirm !== undefined && entry.prompted !== undefined && greetingOfferSlots(app).includes(entry.prompted);
+}
+
+/**
+ * The consent to text for the whole call (app.yaml's `textConsent`): an entry in the `no_form` context
+ * that says how it answers (`confirm`) and names no `prompted`, in an app that asks it. Its state is the
+ * question just asked, `consent_texts` after the greeting's line, no form open: the entry answers it,
+ * with a yes, a no, or a request.
+ */
+export function atTextConsent(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: undefined; confirm: 'yes' | 'no' | 'unanswered'; context: 'no_form' } {
+  return entry.context === 'no_form' && entry.confirm !== undefined && entry.prompted === undefined && (app.textConsent?.covers.length ?? 0) > 0;
 }
 
 /**
@@ -341,7 +354,7 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     }
     if (entry.confirm !== undefined) {
       if (!['yes', 'no', 'unanswered'].includes(entry.confirm)) throw new Error(`corpus ${entry.id}: confirm must be yes, no, or unanswered`);
-      if (cf === null && !offering && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber), or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId)`);
+      if (cf === null && !offering && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app) && !atTextConsent(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber), or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId), or no_form with no prompted in an app that asks consent to text (app.yaml textConsent)`);
       if (atCallerMatch(entry, app) && entry.confirm === 'yes') throw new Error(`corpus ${entry.id}: the caller-ID question asks for a factor, not a yes: confirm no ("different account") or unanswered (the factor, or anything else)`);
     }
     if (entry.changeSlot !== undefined) {

@@ -7,13 +7,15 @@ import { checkAppFully } from './check';
 import { formatProblem } from './problems';
 import type { AppCode } from './defineApp';
 import { TEXTING_DIR, textingCode } from '../testing/texting/app';
-import { YES_NO } from '../testing/texting/variant';
+import { CONSENT, CONSENT_LINES, YES_NO } from '../testing/texting/variant';
 import { PROPOSALS_DIR, proposalsCode } from '../testing/proposals/app';
 
 /**
  * What `check` says of the answers an offer takes (design 2026-10-08-offer-answers-and-consent, item
  * 1): `callerNumber.answers` and `offerAnswers` take `yes-no-or-value` or `yes-no`, and `offerAnswers`
- * needs `offer: facts`.
+ * needs `offer: facts`. And of consent to text for the whole call (item 3, app.yaml's `textConsent`):
+ * each slot it covers offers the caller's number, it needs `consent_texts` (saying `{last4}` and
+ * nothing else), `greeting_offer` and `greet_after_offer`, and it warns when no form asks a slot it covers.
  */
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -66,5 +68,50 @@ describe('the answers an offer takes', () => {
     expect(caller.problems).toHaveLength(1);
     expect(caller.problems[0]).toContain('the offer of the caller\'s number takes callerNumber.answers');
     expect(caller.problems[0]).toContain('move it into callerNumber as "answers: yes-no"');
+  });
+});
+
+describe('textConsent', () => {
+  const consent = (files: Record<string, (text: string) => string> = {}): string => folder(TEXTING_DIR, { ...CONSENT, ...files });
+
+  it('the consent variant passes check with no problem and no warning', async () => {
+    expect(await checked(consent(), textingCode)).toEqual({ problems: [], warnings: [] });
+  });
+
+  it('each slot it covers is one, and offers the number the caller is calling from', async () => {
+    const unknown = await checked(consent({ 'app.yaml': (t) => CONSENT['app.yaml']!(t).replace('covers: [textTo, alertTo]', 'covers: [textTo, alertsTo]') }), textingCode);
+    expect(unknown.problems).toHaveLength(1);
+    expect(unknown.problems[0]).toContain('textConsent.covers[1]');
+    expect(unknown.problems[0]).toContain('slot "alertsTo" is not defined');
+    const noOffer = await checked(consent({ 'app.yaml': (t) => CONSENT['app.yaml']!(t).replace('covers: [textTo, alertTo]', 'covers: [textTo, topic]') }), textingCode);
+    expect(noOffer.problems).toHaveLength(1);
+    expect(noOffer.problems[0]).toContain('the slot "topic" is covered by textConsent, but it does not offer the number the caller is calling from (callerNumber)');
+    const empty = await checked(consent({ 'app.yaml': (t) => CONSENT['app.yaml']!(t).replace('covers: [textTo, alertTo]', 'covers: []') }), textingCode);
+    expect(empty.problems.join('\n')).toContain('textConsent.covers');
+  });
+
+  it('needs consent_texts, greeting_offer and greet_after_offer', async () => {
+    const missing = await checked(consent({ 'prompts.yaml': (t) => `${t}${CONSENT_LINES.split('  ask_alertTo:')[0]!.replace(/^  (greeting_offer|consent_texts|greet_after_offer):\n.*\n.*\n/gm, '')}  ask_alertTo:${CONSENT_LINES.split('  ask_alertTo:')[1]}` }), textingCode);
+    expect(missing.problems).toHaveLength(3);
+    expect(missing.problems.join('\n')).toContain('prompt "consent_texts" is missing');
+    expect(missing.problems.join('\n')).toContain('gives it {last4}');
+    expect(missing.problems.join('\n')).toContain('prompt "greeting_offer" is missing');
+    expect(missing.problems.join('\n')).toContain('prompt "greet_after_offer" is missing');
+  });
+
+  it('the consent line says {last4} and nothing else', async () => {
+    const unsaid = await checked(consent({ 'prompts.yaml': (t) => CONSENT['prompts.yaml']!(t).replace('at the number ending in {last4}?', 'at the number you\'re calling from?') }), textingCode);
+    expect(unsaid.problems).toHaveLength(1);
+    expect(unsaid.problems[0]).toContain('does not say which number ({last4})');
+    const extra = await checked(consent({ 'prompts.yaml': (t) => CONSENT['prompts.yaml']!(t).replace('during this call, at the number ending in {last4}?', 'during this call, at the number ending in {last4}, about {topic}?') }), textingCode);
+    expect(extra.problems).toHaveLength(1);
+    expect(extra.problems[0]).toContain('uses {topic}, which the engine does not give it');
+  });
+
+  it('warns when no form asks a slot it covers', async () => {
+    const { problems, warnings } = await checked(consent({ 'forms.yaml': (t) => t.replace('slots: [topic, textTo]', 'slots: [topic]') }), textingCode);
+    expect(problems).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('textConsent covers "textTo", "alertTo", but no form asks any of them');
   });
 });

@@ -16,10 +16,11 @@ import { buildQuestions, callerMatchAsked } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
+import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
+import { CONSENT_PROMPT, consentCovers, grantedFor } from './textConsent';
 import { recordedValue, recordingOf } from './recording';
 import type { Tools } from './tools';
 import { atLeast, withAppThresholds, type Thresholds } from './thresholds';
@@ -189,6 +190,10 @@ export interface TurnResult {
   reconfirmed?: CheckReconfirmed;
   /** the offer of the caller's number this turn settled; absent on every other turn */
   offer?: OfferSettled;
+  /** the slots this turn filled from the call's consent to text (app.yaml's textConsent), in order; absent on every other turn */
+  consented?: OfferSettled[];
+  /** the consent to text for the whole call, settled this turn; absent on every other turn */
+  consent?: ConsentSettled;
   /** what became of the caller-ID match this turn (identity.yaml's callerId), in order; absent on every other turn */
   callerMatch?: CallerMatchStep[];
   /** what the injection screen made of this turn's words; null when it was not asked (no model turn) */
@@ -921,6 +926,15 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
       ask = nextPrompt(s);
       continue;
     }
+    // Filled from the call's consent to text, with no question: the form's checks run on the value
+    // now, as on any fill, and the form goes on to the next.
+    if (offer === CONSENTED) {
+      const after = runChecks(s, form, io.tc, io.out);
+      if (after.kind !== 'passed') return stopForm(s, form, after, said, io);
+      said.push(...passedAcks(s, after));
+      ask = nextPrompt(s);
+      continue;
+    }
     if (offer) return offer;
     break;
   }
@@ -931,12 +945,15 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
 /** What makeOffer returns for a slot it left empty, declined (`ifNone: skip`): the form goes on to the next. */
 const DECLINED = 'declined' as const;
 
+/** What makeOffer returns for a slot it filled from the call's consent to text (app.yaml's textConsent): the form goes on to the next. */
+const CONSENTED = 'consented' as const;
+
 /**
  * The slot's offer, as a yes or no in place of its question: the number the caller is calling from
  * (offerCallerNumber), or a value proposed from the facts (offerFromFacts). An offer still pending
  * (kept through a detour) is asked again as it stands, not made a second time.
  */
-function makeOffer(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null | typeof DECLINED {
+function makeOffer(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null | typeof DECLINED | typeof CONSENTED {
   const pc = s.pendingConfirmation;
   if (pc?.target === 'slot' && pc.offered && pc.slot === slot) return slotConfirmPrompt(pc, acks);
   if (factsOfferSlots(io.app).includes(slot)) return offerFromFacts(s, slot, acks, io);
@@ -969,9 +986,11 @@ function offerFromFacts(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Prom
  * the session kept a number that fits it and the app does not refuse the offer (App.callerOffer, asked
  * once, only when an offer is about to be made). Null when there is no offer to make, and the slot is
  * asked as always; DECLINED when there is none and the slot skips (`ifNone: skip`), so it is left
- * empty and declined. The slot stays empty until the yes.
+ * empty and declined. The slot stays empty until the yes. With the call's consent to text granted
+ * for the slot (app.yaml's textConsent), the offer is not asked: the slot is filled with the number,
+ * confirmed, as a yes fills it, and CONSENTED says so (consentFill).
  */
-function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null | typeof DECLINED {
+function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null | typeof DECLINED | typeof CONSENTED {
   if (!callerNumberSlots(io.app).includes(slot) || s.callerOffered?.includes(slot) || s.slots[slot]!.attempts > 0) return null;
   let c = s.callerNumber === undefined ? null : callerCandidate(io.app, slot, s.callerNumber, slotLocaleOf(s));
   if (c !== null) {
@@ -984,9 +1003,26 @@ function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): D
     s.slots[slot]!.declined = true;
     return DECLINED;
   }
+  if (grantedFor(io.app, s, slot)) return consentFill(s, slot, c, io);
   const pc: Extract<PendingConfirmation, { target: 'slot' }> = { target: 'slot', slot, value: c.value, display: c.display, offered: true };
   s.pendingConfirmation = pc;
   return offerPrompt(pc, acks);
+}
+
+/**
+ * A slot the call's consent to text covers, granted (app.yaml's textConsent): filled with the caller's
+ * number, confirmed, as a yes to its offer fills it, with no question, and the use recorded
+ * (TurnOut.consented, an `offer` row with `answer: consent` and the consent question's line as said).
+ * Only once the number fits the slot and the app's callerOffer hook allows it (offerCallerNumber), as
+ * for an offer.
+ */
+function consentFill(s: Session, slot: SlotId, c: SlotCandidate, io: TurnIO): typeof CONSENTED {
+  Object.assign(s.slots[slot]!, { value: c.value, display: c.display, confirmed: true, window: null });
+  delete s.slots[slot]!.declined;
+  const last4 = lastFour(c.value);
+  const settled: OfferSettled = { slot, source: 'caller-number', promptId: CONSENT_PROMPT, said: promptText(io.app, CONSENT_PROMPT, { last4 }, s.locale), answer: 'consent', last4, locale: s.locale ?? defaultLocaleOf(io.app) };
+  io.out.consented = [...(io.out.consented ?? []), settled];
+  return CONSENTED;
 }
 
 /**
@@ -1019,6 +1055,7 @@ function callerOfferAllowed(s: Session, slot: SlotId, io: TurnIO): boolean {
  * `audit:`), so the audit holds no more of it than the slot's own rows do.
  */
 function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, answer: OfferSettled['answer']): void {
+  if (pc.consent === true) return consentSettled(s, io, pc, answer === 'yes' ? true : answer === 'no' ? false : null);
   const promptId = `offer_${pc.slot}`;
   const locale = s.locale ?? defaultLocaleOf(io.app);
   if (pc.from === 'facts') {
@@ -1028,6 +1065,18 @@ function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, {
   }
   const last4 = lastFour(pc.value);
   io.out.offer = { slot: pc.slot, source: 'caller-number', promptId, said: promptText(io.app, promptId, { last4 }, s.locale), answer, last4, locale };
+}
+
+/**
+ * The consent to text for the whole call settled (app.yaml's textConsent): granted (true), declined
+ * (false), or unknown (null: a request said instead, or no answer), kept on the session for the rest
+ * of the call (Session.textConsent), and recorded (TurnOut.consent, the audit's `consent` row) with the
+ * line as it was said.
+ */
+function consentSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, granted: boolean | null): void {
+  s.textConsent = granted === true ? 'granted' : granted === false ? 'declined' : 'unknown';
+  const last4 = lastFour(pc.value);
+  io.out.consent = { scope: 'call', granted, promptId: CONSENT_PROMPT, said: promptText(io.app, CONSENT_PROMPT, { last4 }, s.locale), last4, locale: s.locale ?? defaultLocaleOf(io.app) };
 }
 
 /**
@@ -1045,6 +1094,8 @@ function declineOnNo(s: Session, io: TurnIO, slot: SlotId): void {
  * question.
  */
 function offerPrompt(pc: Extract<PendingConfirmation, { target: 'slot' }>, acks: Ack[]): PromptDecision {
+  // The consent to text for the whole call (app.yaml's textConsent): its own line, by the last four.
+  if (pc.consent === true) return prompt(CONSENT_PROMPT, 'intent', { last4: lastFour(pc.value) }, acks, ['yes', 'no']);
   const vars = pc.from === 'facts' ? { [pc.slot]: pc.display } : { last4: lastFour(pc.value) };
   return prompt(`offer_${pc.slot}`, pc.at === 'greeting' ? 'intent' : pc.slot, vars, acks, ['yes', 'no']);
 }
@@ -1087,7 +1138,8 @@ function keyedAtOffer(s: Session, pc: OfferPending, digit: string, io: TurnIO): 
   if (digit !== '1' && digit !== '2') return reaskConfirmation(s, io);
   s.pendingConfirmation = null;
   const yes = digit === '1';
-  if (yes) Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
+  // The consent question's yes is the grant, and fills nothing: the slots it covers fill when asked.
+  if (yes && pc.consent !== true) Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
   offerSettled(s, io, pc, yes ? 'yes' : 'no');
   if (pc.at === 'greeting') return prompt(GREET_AFTER_OFFER, 'intent', {}, []);
   if (!yes) declineOnNo(s, io, pc.slot);
@@ -1911,6 +1963,25 @@ function callerLookup(s: Session, io: TurnIO): void {
 const GREET_AFTER_OFFER = 'greet_after_offer';
 
 /**
+ * The consent to text for the whole call (app.yaml's textConsent), asked at the greeting: on a call
+ * whose number the session kept, when the first slot it covers can take that number and the app's
+ * callerOffer hook allows it for that slot, `consent_texts` (with the last four) after the greeting's
+ * line before a proposal (`greeting_offer`), in place of the greeting and its open question. It is
+ * pending as the first covered slot's read-back `at: greeting` with `consent` (the greeting's
+ * proposal's machinery: its yes, no, request and silence, then `greet_after_offer`). Null when there
+ * is no consent to ask, on a chat, and for every app without it.
+ */
+function textConsentAtGreeting(s: Session, io: TurnIO): PromptDecision | null {
+  const [first] = consentCovers(io.app);
+  if (!s.caps.speech || first === undefined || s.textConsent !== undefined || s.callerNumber === undefined) return null;
+  const c = callerCandidate(io.app, first, s.callerNumber, slotLocaleOf(s));
+  if (c === null || !callerOfferAllowed(s, first, io)) return null;
+  const pc: Extract<PendingConfirmation, { target: 'slot' }> = { target: 'slot', slot: first, value: c.value, display: c.display, offered: true, at: 'greeting', consent: true };
+  s.pendingConfirmation = pc;
+  return offerPrompt(pc, [{ promptId: greetingOfferPromptId(io.app), vars: {} }]);
+}
+
+/**
  * The proposal at the greeting (a slot's `offerAt: greeting`): on a call, after the call-start lookup,
  * the first such slot in slots.yaml order the facts have a candidate for is proposed (`offer_<slot>`)
  * after `greeting_offer` (app.yaml's `prompts.greetings.offer`), in place of the greeting and its open question, and kept on the session
@@ -1971,7 +2042,8 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
     }
     case 'confirmed': {
       s.pendingConfirmation = null;
-      Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
+      // The consent question's yes is the grant, and fills nothing: the slots it covers fill when asked.
+      if (pc.consent !== true) Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
       offerSettled(s, io, pc, 'yes');
       io.kept = pc.slot;
       return openingAfterOffer(s, answers, ctx, io);
@@ -1991,6 +2063,8 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
     }
     default:
       s.pendingConfirmation = null;
+      // The consent question set aside for a request: unknown, recorded, and not asked again.
+      if (pc.consent === true) offerSettled(s, io, pc, 'none');
       return null;
   }
 }
@@ -2157,6 +2231,8 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
     ...(r.stopped ? { stopped: r.stopped } : {}),
     ...(r.reconfirmed ? { reconfirmed: r.reconfirmed } : {}),
     ...(r.offer ? { offer: r.offer } : {}),
+    ...(r.consented ? { consented: r.consented } : {}),
+    ...(r.consent ? { consent: r.consent } : {}),
     ...(r.callerMatch ? { callerMatch: r.callerMatch } : {}),
   });
   return { ...r, audit };
@@ -2194,9 +2270,11 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The app's lookup by that number, once, before the greeting, through the gate.
       if (caller !== undefined) callerLookup(s, io);
       // The caller-ID question at the greeting (identity.yaml's callerId, ask: greeting), with a match
-      // now; else a slot that proposes at the greeting (offerAt: greeting), with a candidate now: either
-      // in place of the open question. The caller-ID question wins: a proposal is then made at its slot.
-      const decision = callerMatchAtGreeting(s, io) ?? greetingProposal(s, io) ?? greeting(s);
+      // now; else the consent to text for the whole call (app.yaml's textConsent); else a slot that
+      // proposes at the greeting (offerAt: greeting), with a candidate now: one of them in place of the
+      // open question, in that order. A proposal not made here is made at its slot; consent not asked
+      // here is not asked, and each slot it covers asks its own offer.
+      const decision = callerMatchAtGreeting(s, io) ?? textConsentAtGreeting(s, io) ?? greetingProposal(s, io) ?? greeting(s);
       bookkeep(s, decision, 'setup');
       return { ...base(), decision, actions: act(decision) };
     }

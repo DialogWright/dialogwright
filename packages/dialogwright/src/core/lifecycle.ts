@@ -92,6 +92,13 @@ export interface TurnOut {
   stopped?: FormStopped;
   /** The offer of the caller's number this turn settled (core/turn.ts), for the audit's `offer` row. Absent on every other turn. */
   offer?: OfferSettled;
+  /**
+   * The slots this turn filled from the call's consent to text (app.yaml's `textConsent`, core/turn.ts),
+   * in order, each for an `offer` row with `answer: consent`. Absent on every other turn.
+   */
+  consented?: OfferSettled[];
+  /** The consent to text for the whole call, settled this turn (core/turn.ts), for the audit's `consent` row. Absent on every other turn. */
+  consent?: ConsentSettled;
   /** The check whose read-back the caller said no to this turn (core/turn.ts), for the audit's `check_reconfirmed` row. Absent on every other turn. */
   reconfirmed?: CheckReconfirmed;
   /**
@@ -115,10 +122,12 @@ export type CallerMatchOutcome = 'offered' | 'verified' | 'declined' | 'failed';
 /**
  * An offer settled: the number the caller is calling from (a slot's `callerNumber`), or a value
  * proposed from the facts (a slot's `offer: facts`). What was asked, as the line was said, and what
- * the caller answered. `yes`: the value offered; `no`: a no, with no value of their own; `other`: a
- * value of their own, said or keyed, with or without a no; `none`: no answer before the offer's retry
- * ladder ran out. The audit writes it as an `offer` row in the day's hash chain (core/audit.ts), with
- * how it was answered.
+ * the caller answered. `yes`: the value offered; `no`: a no, with no value of their own (or, at an
+ * offer that takes a yes or a no only, a value with no clear yes); `other`: a value of their own, said
+ * or keyed, with or without a no; `none`: no answer before the offer's retry ladder ran out;
+ * `consent`: no offer was asked, since the caller granted consent to text for the whole call
+ * (app.yaml's `textConsent`), and the line is that question's, as said. The audit writes it as an
+ * `offer` row in the day's hash chain (core/audit.ts), with how it was answered.
  */
 export interface OfferSettled {
   readonly slot: SlotId;
@@ -130,10 +139,26 @@ export interface OfferSettled {
    * facts is written into it as the slot's value is recorded (its redact, else policy.yaml's `audit:`).
    */
   readonly said: string;
-  readonly answer: 'yes' | 'no' | 'other' | 'none';
+  readonly answer: 'yes' | 'no' | 'other' | 'none' | 'consent';
   /** The last four digits of the number offered, as the line said them; absent for a value from the facts. */
   readonly last4?: string;
   /** The language the line was said in. */
+  readonly locale: string;
+}
+
+/**
+ * The consent to text for the whole call settled (app.yaml's `textConsent`, core/textConsent.ts): the
+ * line as it was said, and what the caller answered. `granted`: true for a yes, false for a no (or a
+ * value with no yes), null for a request said instead or no answer. The audit writes it as a `consent`
+ * row (`scope: call`) in the day's hash chain (core/audit.ts), with how it was answered.
+ */
+export interface ConsentSettled {
+  readonly scope: 'call';
+  readonly granted: boolean | null;
+  readonly promptId: string;
+  readonly said: string;
+  /** The last four digits of the number the line named. */
+  readonly last4: string;
   readonly locale: string;
 }
 

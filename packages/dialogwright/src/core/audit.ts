@@ -2,7 +2,7 @@ import type { AuditDraft } from '../audit/types';
 import { wordsOf, type SessionEvent } from '../channel/events';
 import { maskId } from '../gate/principal';
 import { isAnonymous, type ToolCall } from '../gate/types';
-import type { CallerMatchStep, GateEvent, KbSource, OfferSettled } from './lifecycle';
+import type { CallerMatchStep, ConsentSettled, GateEvent, KbSource, OfferSettled } from './lifecycle';
 import type { CheckReconfirmed, FormStopped } from './checks';
 import type { Decision } from './decision';
 import type { ScreenResult } from './screen';
@@ -40,6 +40,10 @@ export interface AuditInput {
   stopped?: FormStopped;
   /** The offer of the caller's number this turn settled (core/turn.ts): its `offer` row. */
   offer?: OfferSettled;
+  /** The slots this turn filled from the call's consent to text (core/turn.ts): an `offer` row for each, `answer: consent`. */
+  consented?: readonly OfferSettled[];
+  /** The consent to text for the whole call, settled this turn (core/turn.ts): its `consent` row. */
+  consent?: ConsentSettled;
   /** The check whose read-back the caller said no to this turn (core/turn.ts): its `check_reconfirmed` row. */
   reconfirmed?: CheckReconfirmed;
   /** What became of the caller-ID match this turn (lifecycle.ts TurnOut.callerMatch): an `identity_caller_match` row for each. */
@@ -126,9 +130,17 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // caller answered, and how (speech, the keypad, or no answer). Whether a yes is consent to anything
   // is the owner's question; the row records what was asked and answered. Before the turn's gate
   // rows: the answer came first, and a text it agreed to is sent after.
-  if (t.offer) {
-    const o = t.offer;
-    const by = o.answer === 'none' ? null : event.type === 'user.key' ? 'keypad' : 'speech';
+  const answeredBy = event.type === 'user.key' ? 'keypad' : 'speech';
+  // The consent to text for the whole call (app.yaml's textConsent): what was asked and answered, as
+  // for an offer, and before the offer rows: a slot it covers may be filled from it on the same turn.
+  if (t.consent) {
+    const c = t.consent;
+    const by = c.granted === null && event.type === 'user.silence' ? null : answeredBy;
+    drafts.push({ type: 'consent', detail: { scope: c.scope, granted: c.granted, promptId: c.promptId, said: c.said, last4: c.last4, by, locale: c.locale } });
+  }
+  for (const o of [...(t.offer ? [t.offer] : []), ...(t.consented ?? [])]) {
+    // A slot filled from the call's consent was asked nothing this turn: it was answered by no one now.
+    const by = o.answer === 'none' || o.answer === 'consent' ? null : answeredBy;
     drafts.push({ type: 'offer', detail: { slot: o.slot, source: o.source, promptId: o.promptId, said: o.said, answer: o.answer, by, ...(o.last4 !== undefined ? { last4: o.last4 } : {}), locale: o.locale } });
   }
   // A check's read-back the caller said no to: the deciding answer was corrected, and is asked again.

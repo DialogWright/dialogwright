@@ -57,6 +57,9 @@ export interface HistoryEntry {
  * What the tools returned about the verified caller, kept for the rest of the call. The app's
  * (App.facts makes, copies and clears them); the engine never reads one by name.
  */
+/** What the caller made of the consent to text for the whole call (Session.textConsent). */
+export type TextConsentAnswer = 'granted' | 'declined' | 'unknown';
+
 export interface SessionFacts {
   [key: string]: unknown;
 }
@@ -99,9 +102,12 @@ export type PendingConfirmation =
    * call-start lookup found). Absent `offered`: a value the caller said, read back. `at: 'greeting'`:
    * a proposal made at call start (a slot's `offerAt: greeting`), with no form open, asked in place of
    * the greeting's open question; `attempts` counts its unanswered turns (once more, then the open
-   * question). Both absent on every other read-back.
+   * question). Both absent on every other read-back. `consent`: the question of consent to text for the
+   * whole call (app.yaml's `textConsent`, core/textConsent.ts), asked `at: 'greeting'` with the first
+   * slot it covers as `slot` and the caller's number as that slot would hold it as `value`: a yes is the
+   * grant (Session.textConsent) and fills nothing; it takes a yes or a no only. Absent on every other.
    */
-  | { target: 'slot'; slot: SlotId; value: string; display: string; offered?: true; from?: 'facts'; at?: 'greeting'; attempts?: number }
+  | { target: 'slot'; slot: SlotId; value: string; display: string; offered?: true; from?: 'facts'; at?: 'greeting'; attempts?: number; consent?: true }
   /**
    * the summary question; attempts counts unanswered turns and resets when a correction lands.
    * askedChange records that "What should I change?" has already been asked for this summary, so
@@ -227,6 +233,14 @@ export interface Session {
    * first used (unused), so every other session is as it was. The match itself stays in the app's facts.
    */
   callerMatch?: 'offered' | 'declined' | 'failed' | 'verified';
+  /**
+   * Consent to text for the whole call (app.yaml's `textConsent`), as the caller answered it after the
+   * greeting: `granted`, a yes (the slots it covers fill with the caller's number without asking);
+   * `declined`, a no; `unknown`, a request said instead or no answer. It is asked once, so it never
+   * changes after. Absent when it was never asked (an app without it, a chat, a number withheld), so
+   * every other session is as it was. Read it with textConsentOf (core/textConsent.ts).
+   */
+  textConsent?: TextConsentAnswer;
   /** Who the caller is proven to be. Written only from a verifier result or a portal sign-in (src/gate/types.ts Principal). */
   principal: Principal;
   facts: SessionFacts;

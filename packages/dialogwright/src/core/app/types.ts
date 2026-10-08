@@ -640,6 +640,16 @@ export interface CallerNumberUse {
   readonly lookup?: ToolName;
 }
 
+/**
+ * Consent to text for the whole call (app.yaml's `textConsent`): asked once, on a call, right after
+ * the greeting (`consent_texts`, with `{last4}`). Granted, each slot in `covers` (each offers the
+ * number the caller is calling from, SlotSpec.callerNumber) is filled with that number, confirmed, with
+ * no question; declined or unknown, each asks its own offer (Session.textConsent, textConsentOf).
+ */
+export interface TextConsent {
+  readonly covers: readonly SlotId[];
+}
+
 /** What FactsConfig.forSlots gives the slot specs: one list (`records`), lists by name (`sources`), or both. Absent parts are empty. */
 export interface SlotRecords {
   records?: readonly unknown[];
@@ -1043,6 +1053,13 @@ export interface App {
    * the side effects it queued are dropped. Without it, every offer is made.
    */
   callerOffer?(ctx: AppContext, slot: SlotId): boolean;
+  /**
+   * Consent to text for the whole call (app.yaml's `textConsent`): asked once after the greeting on a
+   * call, when the session kept the caller's number, the first slot it covers can take it, and
+   * callerOffer allows that slot. Granted, the slots it covers fill with the number without asking;
+   * declined or unknown, each asks its own offer. Without it, every offer is asked where it is.
+   */
+  textConsent?: TextConsent;
   /**
    * Perception questions of the app's own, asked beside the engine's and the slots' on a spoken turn
    * (e.g. a part of the day the caller volunteers, or a move along what a summary offers). The app

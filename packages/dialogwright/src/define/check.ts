@@ -9,6 +9,7 @@ import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRu
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES, SLOTS_FILE } from './schema/index';
 import type { SlotSpec } from '../core/slots/types';
+import { CONSENT_PROMPT } from '../core/textConsent';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 import { withoutFallbackWarnings } from '../kb/fallback';
 import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProblems } from './knowledgeUse';
@@ -186,6 +187,13 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
       needs.push({ id: 'greet_after_offer', why: `the proposal at the greeting for the slot "${slot}" is settled, and it asks the open question` });
     }
   }
+  // Consent to text for the whole call (app.yaml's textConsent): asked after the greeting's line before
+  // a proposal, and the open question follows once it is settled, as for a proposal at the greeting.
+  if (config.app.textConsent !== undefined) {
+    needs.push({ id: greetings?.offer ?? 'greeting_offer', why: 'a call opens on the consent to text for the whole call (app.yaml textConsent), said in place of the greeting before consent_texts' });
+    needs.push({ id: CONSENT_PROMPT, why: 'it asks consent to text for the whole call (app.yaml textConsent), by the last four digits of the number calling', vars: ['last4'] });
+    needs.push({ id: 'greet_after_offer', why: 'the consent to text for the whole call is settled, and it asks the open question' });
+  }
   for (const reason of personReasons(config.policy)) {
     needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (a role rule in policy.yaml) and the call goes to a person for the reason "${reason}"` });
   }
@@ -297,6 +305,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     });
   }
+  textConsentWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   priorityHandoffWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -360,6 +372,18 @@ function callerNumberWarnings(config: LoadedConfig, slots: Readonly<Record<strin
       at(`the slot "${id}" offers the number the caller is calling from and is kept for the whole call, so it is offered once, in the first form that asks it; a later form uses the value kept`, `nothing to do if that is meant; otherwise give the slot listen: form or up-front`);
     }
   }
+}
+
+/**
+ * The warning for consent to text for the whole call (app.yaml's textConsent) that no form can use: no
+ * slot it covers is in a form, so it is asked and never stands in for an offer.
+ */
+function textConsentWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const covers = config.app.textConsent?.covers;
+  if (covers === undefined || covers.length === 0) return;
+  const asked = new Set(Object.values(config.forms.forms).flatMap((form) => form.slots));
+  if (covers.some((slot) => asked.has(slot))) return;
+  report('app.yaml', ['textConsent', 'covers'], `textConsent covers ${covers.map((slot) => `"${slot}"`).join(', ')}, but no form asks ${covers.length === 1 ? 'it' : 'any of them'}, so the caller is asked consent that nothing uses`, 'cover a slot a form asks (one that offers the number the caller is calling from), or delete "textConsent"');
 }
 
 /**
@@ -618,6 +642,7 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
     }
     problems.push(...checkSlotPromptVariables(config, locale, prompts, file, locate, code, codeFile));
     problems.push(...checkFactsOfferLines(config, locale, prompts, file, locate, code));
+    problems.push(...checkConsentLine(config, locale, prompts, file, locate));
     if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));
   }
   return problems;
@@ -652,6 +677,28 @@ function checkFactsOfferLines(
     if (extra.length > 0) {
       problems.push({ file, ...at, path, message: `${line} uses ${extra.map((name) => `{${name}}`).join(', ')}, which the engine does not give it (it gives a proposal only {${slot}}), so saying it would fail`, fix: `use only {${slot}} in this line` });
     }
+  }
+  return problems;
+}
+
+/**
+ * The consent question (app.yaml's textConsent, `consent_texts`), in each locale that has it: it says
+ * the last four digits of the number a grant is for, `{last4}`, so a yes is to a number the caller
+ * heard of, and it is given nothing else, so a line that uses another fails when it is said.
+ */
+function checkConsentLine(config: LoadedConfig, locale: string, prompts: LoadedConfig['prompts'][string], file: string, locate: LoadResult['locate']): Problem[] {
+  if (config.app.textConsent === undefined || !has(prompts, CONSENT_PROMPT)) return [];
+  const used = variablesOf(prompts[CONSENT_PROMPT]!.text);
+  const extra = used.filter((name) => name !== 'last4');
+  const line = locale === config.defaultLocale ? `the line "${CONSENT_PROMPT}"` : `the ${locale} line "${CONSENT_PROMPT}"`;
+  const at = locate(file, ['prompts', CONSENT_PROMPT, 'text']) ?? { line: 1, column: 1 };
+  const path = formatPath(['prompts', CONSENT_PROMPT, 'text']);
+  const problems: Problem[] = [];
+  if (!used.includes('last4')) {
+    problems.push({ file, ...at, path, message: `${line} asks consent to text for the whole call but does not say which number ({last4}), so a yes would be to a number the caller never heard of`, fix: 'say {last4} in the line ("Can I text you helpful links during this call, at the number ending in {last4}?")' });
+  }
+  if (extra.length > 0) {
+    problems.push({ file, ...at, path, message: `${line} uses ${extra.map((name) => `{${name}}`).join(', ')}, which the engine does not give it (it gives the consent question only {last4}), so saying it would fail`, fix: 'use only {last4} in this line' });
   }
   return problems;
 }

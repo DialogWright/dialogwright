@@ -177,13 +177,15 @@ export type OfferPending = Extract<PendingConfirmation, { target: 'slot' }> & { 
 /**
  * Whether `pc` is an offer that takes a yes or a no only (OfferAnswers `yes-no`): the caller's number's
  * offer whose slot says `callerNumber.answers: yes-no`, or a proposal from the facts whose slot says
- * `offerAnswers: yes-no`. The slot offered then takes no value from the turn at its offer (fia.ts
+ * `offerAnswers: yes-no`, and the consent to text for the whole call (core/textConsent.ts). The slot offered then takes no value from the turn at its offer (fia.ts
  * slotsToFill), a value said there with no clear yes is a no, and the keypad's 1 and 2 are a yes and
  * a no (core/turn.ts). False for every other confirmation, and for an offer that takes a value too
  * (the default), which is as it was.
  */
 export function yesNoOffer(app: App, pc: PendingConfirmation | null): pc is OfferPending {
   if (pc?.target !== 'slot' || pc.offered !== true) return false;
+  // The consent to text for the whole call (app.yaml's textConsent) is a yes or no question.
+  if (pc.consent === true) return true;
   const spec = app.slots[pc.slot];
   return pc.from === 'facts' ? spec?.offerAnswers === 'yes-no' : spec?.callerNumber?.answers === 'yes-no';
 }

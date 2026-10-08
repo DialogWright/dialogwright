@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { appTurnContext, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { atCallerMatch, atCallerOffer, atGreetingOffer, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
+import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
 import { JevClientError, type JevClient } from '../jev/types';
 import { promptText, spokenText as decisionText } from '../prompts/render';
 import { prompt, type Decision } from '../core/decision';
@@ -14,6 +14,7 @@ import type { App, Refused, SlotId } from '../core/app/types';
 import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
 import { keptCallerNumber, lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import { factsOfferSlots, greetingOfferPromptId } from '../core/factsOffer';
+import { CONSENT_PROMPT } from '../core/textConsent';
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
@@ -111,6 +112,7 @@ function fillPlaceholder(seed: Seed, session: Session, id: SlotId, confirmed: bo
  */
 export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: SeedOptions): Session {
   if (atGreetingOffer(entry, appOf(session))) return seedGreetingOffer(session, entry);
+  if (atTextConsent(entry, appOf(session))) return seedTextConsent(session, entry);
   if (atCallerMatch(entry, appOf(session))) return seedCallerMatch(session, entry, opts);
   if (entry.context === 'no_form') return session;
   const app = appOf(session);
@@ -232,6 +234,25 @@ function seedGreetingOffer(session: Session, entry: CorpusEntry & { prompted: Sl
 }
 
 /**
+ * The consent to text for the whole call just asked (atTextConsent): the app's placeholder for the first
+ * slot the consent covers stands in for the caller's number, `consent_texts` after the greeting's line,
+ * no form open, as core/turn.ts asks it.
+ */
+function seedTextConsent(session: Session, entry: CorpusEntry): Session {
+  const app = appOf(session);
+  const slot = app.textConsent!.covers[0]!;
+  const placeholder = app.testing?.seed?.placeholders && Object.hasOwn(app.testing.seed.placeholders, slot) ? app.testing.seed.placeholders[slot] : undefined;
+  if (!placeholder) throw new Error(`corpus ${entry.id}: no placeholder value for slot "${slot}", the first textConsent covers`);
+  session.pendingConfirmation = { target: 'slot', slot, value: placeholder.value, display: placeholder.display, offered: true, at: 'greeting', consent: true };
+  const said = prompt(CONSENT_PROMPT, 'intent', { last4: lastFour(placeholder.value) }, [{ promptId: greetingOfferPromptId(app), vars: {} }], ['yes', 'no']);
+  session.promptedFor = 'intent';
+  session.lastPromptId = said.promptId;
+  session.lastPromptText = decisionText(app, said, session.locale);
+  session.lastPromptOptions = ['yes', 'no'];
+  return session;
+}
+
+/**
  * The caller-ID question just asked (atCallerMatch), as the engine asks it: the call from the app's
  * seed number (App.testing.seed.callerNumber), its call-start lookup made through the gate and kept in
  * the facts as a call's is, an anonymous caller, the identified factors and the one asked empty, and
@@ -339,7 +360,7 @@ export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOption
   // One book of business per entry: what the entry's turn reads or files is its own.
   const o = { ...opts, tools: opts.tools ?? demoTools() };
   const start = seedCorpusSession(startSession(entry.id, nowOf(opts)(), entry.as), entry, o);
-  const asked = entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) && !atCallerMatch(entry, appOf(start)) ? null : seededPrompt(start);
+  const asked = entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) && !atCallerMatch(entry, appOf(start)) && !atTextConsent(entry, appOf(start)) ? null : seededPrompt(start);
   const turn = opts.turn ?? runTurn;
   const setup = await turn(start, startEvent(), o);
   // The greeting's own bookkeeping moves the prompt to the greeting, so put back the one the seed

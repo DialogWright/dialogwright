@@ -640,6 +640,18 @@ export function crossLink(
       yaml('prompts.yaml', ['prompts', summary, 'text'], `the summary of the form "${formId}" names {${id}}, but the slot may be left empty (its callerNumber says ${offer.onNo === 'skip' ? 'onNo' : 'ifNone'}: skip), so the line would read nothing there`, `take {${id}} out of "${summary}", and read it back from a line of its own when it is filled (the form's onSummaryRead hook can return that line's promptId)`);
     }
   }
+  // app.yaml's textConsent: each slot it covers is one, and offers the number the caller is calling
+  // from (SlotSpec.callerNumber), the number a grant fills it with.
+  app.textConsent?.covers.forEach((slot, i) => {
+    if (!linked.known.has(slot)) {
+      slotExists('app.yaml', ['textConsent', 'covers', i], slot);
+      return;
+    }
+    if (linked.slots[slot]?.callerNumber === undefined) {
+      const fix = linked.library.has(slot) ? `add "callerNumber: { countryCode: ... }" to the slot "${slot}" in slots.yaml (a digits slot), or take "${slot}" out of covers` : `give ${inCode('slots', slot)} a callerNumber, or take "${slot}" out of covers`;
+      yaml('app.yaml', ['textConsent', 'covers', i], `the slot "${slot}" is covered by textConsent, but it does not offer the number the caller is calling from (callerNumber), so a grant has no number to fill it with`, fix);
+    }
+  });
   // app.yaml's callerNumber: the call-start lookup is an action of the policy, a tool called with one
   // param, the number (lookup: its params are exactly [callerNumber]).
   const lookup = app.callerNumber?.lookup;
@@ -864,6 +876,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'callerState', code.callerState);
   put(app, 'callerNumber', a.callerNumber === undefined ? undefined : callerNumberOf(a.callerNumber));
   put(app, 'callerOffer', code.callerOffer);
+  put(app, 'textConsent', a.textConsent === undefined ? undefined : { covers: [...a.textConsent.covers] });
   put(app, 'questions', code.questions);
   put(app, 'brand', a.brand as AppBrand | undefined);
   put(app, 'console', a.console as ConsoleConfig | undefined);
