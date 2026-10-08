@@ -97,11 +97,19 @@ export const textOptions = z
     confirm: z
       .enum(['summary', 'always'])
       .optional()
-      .describe(`"summary" (the default): the words are neither acknowledged nor read back on their own; the form's final confirm covers them. ${alwaysConfirmText('what the caller said')}`),
+      .describe(`"summary" (the default): the words are neither acknowledged nor read back on their own; the form's final confirm covers them. ${alwaysConfirmText('what the caller said', false)}`),
     text: TEXT_PARTS.schema,
     ids: TEXT_QUESTIONS.schema,
   })
   .superRefine((o, ctx) => {
+    if (o.confirm === 'always' && o.say !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['confirm'],
+        message: `confirm "always" reads the slot back by its display, which is the stand-in "${o.say}", so the caller hears nothing they could correct`,
+        params: { fix: 'set say: null (with redact: none) to read the words back as said, or delete confirm' },
+      });
+    }
     const literal = o.text?.given !== undefined;
     if (!literal && o.what === undefined) {
       ctx.addIssue({

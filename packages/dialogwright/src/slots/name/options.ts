@@ -72,7 +72,7 @@ export const nameOptions = z.strictObject({
   confirm: z
     .enum(['summary', 'always'])
     .optional()
-    .describe(`"summary" (the default): a name is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('the name')}`),
+    .describe(`"summary" (the default): a name is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('the name', false)}`),
   text: NAME_PARTS.schema,
   ids: NAME_QUESTIONS.schema,
 });

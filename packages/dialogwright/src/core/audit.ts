@@ -113,6 +113,9 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
     const by = o.answer === 'none' ? null : event.type === 'user.key' ? 'keypad' : 'speech';
     drafts.push({ type: 'offer', detail: { slot: o.slot, source: o.source, promptId: o.promptId, said: o.said, answer: o.answer, by, ...(o.last4 !== undefined ? { last4: o.last4 } : {}), locale: o.locale } });
   }
+  // A check's read-back the caller said no to: the deciding answer was corrected, and is asked again.
+  // Before the turn's gate rows: the no came first, and the check may run again on the answer it gave.
+  if (t.reconfirmed) drafts.push({ type: 'check_reconfirmed', detail: { form: t.reconfirmed.form, action: t.reconfirmed.action, reason: t.reconfirmed.reason } });
   for (const e of t.gateEvents) {
     const { call, verdict, reason, needLevel } = e.decision;
     drafts.push({
@@ -130,8 +133,6 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // A form a check ended (core/checks.ts): which check, for what reason, and how the form ended.
   // `confirmed` only where the refusal was read back first and the caller said yes (the outcome's `confirm`).
   if (t.stopped) drafts.push({ type: 'form_stopped', detail: { form: t.stopped.form, action: t.stopped.action, reason: t.stopped.reason, then: t.stopped.then, ...(t.stopped.confirmed ? { confirmed: true } : {}) } });
-  // A check's read-back the caller said no to: the deciding answer was corrected, and is asked again.
-  if (t.reconfirmed) drafts.push({ type: 'check_reconfirmed', detail: { form: t.reconfirmed.form, action: t.reconfirmed.action, reason: t.reconfirmed.reason } });
   if (decision.kind === 'handoff') {
     // The slots the caller never confirmed, by id and never by value, for an app whose handoff marks
     // or leaves them out (HandoffData.unconfirmed): the note can say what to check with the caller.

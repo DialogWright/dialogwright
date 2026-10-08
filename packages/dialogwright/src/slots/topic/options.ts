@@ -69,7 +69,7 @@ export const topicOptions = z
     confirm: z
       .enum(['summary', 'always'])
       .optional()
-      .describe(`"summary" (the default): a topic is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('the topic')}`),
+      .describe(`"summary" (the default): a topic is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('the topic', false)}`),
     text: TOPIC_PARTS.schema,
     ids: TOPIC_QUESTIONS.schema.describe('Question ids in place of the default: `ids.choice` is the question\'s id (default: the slot\'s id followed by "Topic"), to keep the id an existing slot used.'),
   })

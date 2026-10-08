@@ -61,7 +61,7 @@ the question, sent to the model, is:
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `keypad`, `ask_<slot>_dtmf`. With `confirm: by-confidence`, `ack_<slot>` (given `{<slot>}`). With `confirm: always` or `confirmValues`, `confirm_<slot>` (given `{<slot>}`): a no to it empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` with `keypad`), and a second no goes to a person. With `disambiguate` or `hedge.byName`, `disambiguate_<slot>` (given `{a}` and `{b}`). With `help`, each label's `prompt`. The slot says nothing else, and declares each of these (`slot.prompts`); `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `keypad`, `ask_<slot>_dtmf`. With `confirm: by-confidence`, `ack_<slot>` (given `{<slot>}`). With `confirm: always` or `confirmValues`, `confirm_<slot>` (given `{<slot>}`): a no to it empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung with `keypad`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. With `disambiguate` or `hedge.byName`, `disambiguate_<slot>` (given `{a}` and `{b}`). With `help`, each label's `prompt`. The slot says nothing else, and declares each of these (`slot.prompts`); `dialogwright check` requires each in every locale.
 
 ## The advanced tier, written out
 

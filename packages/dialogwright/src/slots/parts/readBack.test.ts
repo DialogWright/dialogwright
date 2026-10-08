@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatProblem } from '../../define/problems';
-import { buildSlot, defineSlot } from '../defineSlot';
+import { buildSlot, defineSlot, slotTypeJsonSchema } from '../defineSlot';
+import { BUILT_IN_SLOT_TYPES } from '../registry';
 
 /**
  * `confirm: always` on every library slot type (slots.yaml): a value read back for a yes as soon as
@@ -10,7 +11,7 @@ import { buildSlot, defineSlot } from '../defineSlot';
 
 /** Each type, by a configuration it builds from, the read-back a choice slot has tested in its own file. */
 const TYPES: Record<string, Record<string, unknown>> = {
-  text: { type: 'text', what: 'a note for the visit' },
+  text: { type: 'text', what: 'a note for the visit', say: null, redact: 'none' },
   name: { type: 'name' },
   record: { type: 'record' },
   topic: { type: 'topic' },
@@ -42,5 +43,27 @@ describe('confirm: always, on every type', () => {
       '(code)  s.readBack  readBack "none" has no effect with confirm "always", which reads every spoken number back for a yes  ->  set confirm: by-confidence, or delete readBack',
     ]);
     expect(problems({ ...TYPES.date, confirm: 'always', readBack: 'below-fill' })).toHaveLength(1);
+  });
+});
+
+describe('what confirm: always says', () => {
+  const said = (type: string): string => {
+    const t = BUILT_IN_SLOT_TYPES[type]!;
+    return ((slotTypeJsonSchema(t).properties as Record<string, { description?: string }>).confirm?.description) ?? '';
+  };
+
+  it('names the keypad question only for a type that takes keys', () => {
+    for (const type of ['name', 'text', 'topic']) expect(said(type), type).not.toContain('ask_<slot>_dtmf');
+    for (const type of ['choice', 'digits', 'date', 'birthdate', 'record']) expect(said(type), type).toContain('ask_<slot>_dtmf');
+  });
+});
+
+describe('a text slot read back by a stand-in', () => {
+  it('is refused: the caller would hear "your description?", nothing they could correct', () => {
+    const r = buildSlot('note', { type: 'text', what: 'a note', confirm: 'always' });
+    expect(r.ok ? [] : r.problems.map(formatProblem)).toEqual([
+      '(code)  note.confirm  confirm "always" reads the slot back by its display, which is the stand-in "your description", so the caller hears nothing they could correct  ->  set say: null (with redact: none) to read the words back as said, or delete confirm',
+    ]);
+    expect(buildSlot('note', { type: 'text', what: 'a note', say: null, redact: 'none', confirm: 'always' }).ok).toBe(true);
   });
 });

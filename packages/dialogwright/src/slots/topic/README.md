@@ -45,7 +45,7 @@ and the instructions:
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for any slot; with `disambiguate`, `disambiguate_<slot>` with `{a}` and `{b}`, the two topics' titles ("Do you mean {a} or {b}?"). With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), and a second no goes to a person.
+`ask_<slot>` and `ask_<slot>_retry` as for any slot; with `disambiguate`, `disambiguate_<slot>` with `{a}` and `{b}`, the two topics' titles ("Do you mean {a} or {b}?"). With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person.
 
 ## Examples
 

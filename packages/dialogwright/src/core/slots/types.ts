@@ -149,12 +149,14 @@ export interface SlotSpec {
   confirmValues?: readonly string[];
   /**
    * What a no to the slot's own read-back (spokenConfirm `always`, or a value in confirmValues) does.
-   * `ask`: the slot is emptied and asked again, `ack_declined` then `ask_<slot>`, or its keypad
-   * question `ask_<slot>_dtmf` where the slot takes keys (dtmf) and the channel has a keypad; a
-   * read-back left unanswered to the keypad rung is asked the same way, by `ask_<slot>_retry` where
-   * it takes no keys. A second no goes to a person. Absent: the keypad, `ask_<slot>_dtmf`, which
-   * `dialogwright check` then requires (a slot written in code). Every library slot that reads back
-   * sets `ask`.
+   * `ask`: the slot is emptied and asked again, `ack_declined` then `ask_<slot>`, the no counted as
+   * one attempt on the slot's ladder (its keypad question `ask_<slot>_dtmf` at the keypad rung, where
+   * it takes keys and the channel has a keypad); a value the no itself gives ("no, I own it") is taken
+   * instead. The nos are counted apart (SlotState.readBackNos), and a second goes to a person. A
+   * read-back left unanswered to the keypad rung is asked by `ask_<slot>_retry` where the slot takes
+   * no keys, and a value such a slot reads back, given at a summary, is read back before the checks
+   * run. Absent: the keypad, `ask_<slot>_dtmf`, which `dialogwright check` then requires (a slot
+   * written in code), and nothing else of the above. Every library slot that reads back sets `ask`.
    */
   readBackNo?: 'ask';
   /**

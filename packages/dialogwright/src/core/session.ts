@@ -32,6 +32,12 @@ export interface SlotState {
    * session of an app without such a slot is as it was.
    */
   declined?: true;
+  /**
+   * The nos the caller has said to the slot's own read-back in this form (a library slot's,
+   * SlotSpec.readBackNo `ask`): kept when a no empties the slot, so a second no goes to a person while
+   * a miss on the question asked again walks the slot's ladder. Absent until the first no.
+   */
+  readBackNos?: number;
 }
 
 export interface HistoryEntry {
@@ -95,9 +101,11 @@ export type PendingConfirmation =
    * A form check's refusal read back before it acts (a check outcome's `confirm`, core/turn.ts
    * stopForm): the check by its action, and what the gate said (its verdict and reason), so a yes
    * acts on that refusal as written without asking the gate again, and a no empties the slots the
-   * check reads. `attempts` counts unanswered turns, as the summary's does.
+   * check reads. `hash` is of the params the gate refused (as Session.checked keeps a pass's): when
+   * the slots no longer hold them, the refusal is stale and the check runs again. `attempts` counts
+   * unanswered turns, as the summary's does.
    */
-  | { target: 'check'; form: FormId; action: ToolName; verdict: GateVerdict; reason: string; attempts: number }
+  | { target: 'check'; form: FormId; action: ToolName; verdict: GateVerdict; reason: string; hash: string; attempts: number }
   /**
    * The transfer offered to a frustrated caller. `attempts` counts silences
    * at the offer only: every spoken answer settles it, a yes as a transfer and anything else as a
@@ -203,6 +211,12 @@ export interface Session {
    * checks is as it was.
    */
   checked?: Record<string, string>;
+  /**
+   * The nos the caller has said to each of the open form's checks' read-backs (a check outcome's
+   * `confirm`), by action: a second no to one goes to a person. Absent until the first no, and gone
+   * when the form closes or another is entered, as `checked` is.
+   */
+  checkReadBackNos?: Record<string, number>;
   /**
    * The values the caller said yes to at a summary, by slot (HandoffData.unconfirmed): written at a
    * yes that changed nothing the summary read, and when a form with a summary completes on the
@@ -342,6 +356,7 @@ export function cloneSession(s: Session): Session {
     identityAttempts: { ...s.identityAttempts },
     pendingConfirmation: clonePending(s.pendingConfirmation),
     ...(s.checked ? { checked: { ...s.checked } } : {}),
+    ...(s.checkReadBackNos ? { checkReadBackNos: { ...s.checkReadBackNos } } : {}),
     ...(s.callerOffered ? { callerOffered: [...s.callerOffered] } : {}),
     ...(s.agreed ? { agreed: { ...s.agreed } } : {}),
     queued: [...s.queued],
@@ -385,6 +400,7 @@ export function setForm(session: Session, form: FormId): Session {
   session.pendingHash = null;
   // The checks a form passed are its own: the new form runs its checks afresh.
   delete session.checked;
+  delete session.checkReadBackNos;
   // So are its offers (the caller's number, a value from the facts): the new form may offer again.
   delete session.callerOffered;
   return session;
@@ -414,6 +430,7 @@ export function closeForm(session: Session): Session {
   session.confirmedHash = null;
   session.pendingConfirmation = null;
   delete session.checked;
+  delete session.checkReadBackNos;
   delete session.callerOffered;
   app.facts?.onFormClosed?.(session.facts);
   return session;

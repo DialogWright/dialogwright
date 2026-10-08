@@ -12,7 +12,7 @@ Reach for it for a value no list holds and no code can check. For a number, a da
 
 <!-- slot-docs:options -->
 
-The slot is `detect: true`, has no keypad rung, and says no line beyond its `ask_<slot>` and `ask_<slot>_retry`, but for `confirm_<slot>` with `confirm: always`. It is read back in the final summary and not on its own (`confirm: summary`, the default), since the stand-in says nothing a caller could correct; with `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), and a second no goes to a person.
+The slot is `detect: true`, has no keypad rung, and says no line beyond its `ask_<slot>` and `ask_<slot>_retry`, but for `confirm_<slot>` with `confirm: always`. It is read back in the final summary and not on its own (`confirm: summary`, the default), since the stand-in says nothing a caller could correct; with `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. A read-back says the display, so `confirm: always` needs `say: null` (with `redact: none`), the words themselves: with a stand-in the caller would hear "your description?", and `dialogwright check` refuses it.
 
 ## The question
 

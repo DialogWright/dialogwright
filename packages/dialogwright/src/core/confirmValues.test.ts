@@ -10,8 +10,8 @@ import { registerApp, resetAppsForTest } from './app/registry';
 import type { App } from './app/types';
 import { DEFAULT_THRESHOLDS } from './thresholds';
 import { newSession, setForm, type Session } from './session';
-import { resolve, type TurnContext, type TurnResult } from './turn';
-import { speechEvent } from '../channel/events';
+import { pendingAtSignIn, resolve, type TurnContext, type TurnResult } from './turn';
+import { silenceEvent, speechEvent } from '../channel/events';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { ANONYMOUS } from '../gate/principal';
 import { mockCodeVerifier } from './tools';
@@ -139,7 +139,7 @@ describe('a check\'s refusal read back (on.<reason>.confirm)', () => {
     expect(gates(t)).toEqual(['checkArea:BLOCK:out-of-area']);
     expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'check_area', target: 'confirm', options: ['yes', 'no'] });
     expect(heard(t)).toBe(AREA_READ_BACK);
-    expect(t.session.pendingConfirmation).toEqual({ target: 'check', form: 'book_visit', action: 'checkArea', verdict: 'BLOCK', reason: 'out-of-area', attempts: 0 });
+    expect(t.session.pendingConfirmation).toEqual({ target: 'check', form: 'book_visit', action: 'checkArea', verdict: 'BLOCK', reason: 'out-of-area', hash: expect.any(String), attempts: 0 });
     expect(t.stopped).toBeUndefined();
     expect(rows(t)).toEqual(['gate']);
     expect(t.session.form).toBe('book_visit');
@@ -274,13 +274,13 @@ describe('a no to a slot that takes keys', () => {
     'prompts.yaml': (t) => `${t}${CONFIRMING_LINES}  ask_ownership_dtmf:\n    text: Press 1 if you own the home, or 2 if you rent it.\n    interruptible: true\n`,
   });
 
-  /** A session of `keyed` on `channel`, "rent" heard and read back. */
-  function readingBack(channel: typeof VOICE_RELAY): Session {
+  /** A session of `keyed` on `channel`, "rent" heard and read back, after `misses` missed answers to the slot. */
+  function readingBack(channel: typeof VOICE_RELAY, misses = 0): Session {
     const s = newSession('keyed', 0, channel, ANONYMOUS, keyed.id);
     setForm(s, 'book_visit');
     s.entered = 'book_visit';
     s.slots.problem = { ...s.slots.problem!, value: 'leak', display: 'a leak' };
-    s.slots.ownership = { ...s.slots.ownership!, value: 'rent', display: 'you rent it' };
+    s.slots.ownership = { ...s.slots.ownership!, value: 'rent', display: 'you rent it', attempts: misses };
     s.pendingConfirmation = { target: 'slot', slot: 'ownership', value: 'rent', display: 'you rent it' };
     s.promptedFor = 'ownership';
     s.lastPromptId = 'confirm_ownership';
@@ -288,17 +288,162 @@ describe('a no to a slot that takes keys', () => {
   }
   const no = { ...PLAIN, confirmsYes: noul(0.02), confirmsNo: noul(0.95) };
 
-  it('on a call: asked again on the keypad', () => {
+  it('the no is one step on the slot\'s ladder: asked in words first, on the keypad once the ladder reaches it', () => {
     use(keyed);
-    const t = resolve(readingBack(VOICE_RELAY), speechEvent('no', true), no, turnContext());
-    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_ownership_dtmf', target: 'ownership' });
-    expect(ackIds(t)).toEqual(['ack_declined']);
+    const first = resolve(readingBack(VOICE_RELAY), speechEvent('no', true), no, turnContext());
+    expect(first.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_ownership', target: 'ownership' });
+    expect(ackIds(first)).toEqual(['ack_declined']);
+    expect(first.session.slots.ownership).toMatchObject({ value: null, attempts: 1, readBackNos: 1 });
+    const missed = resolve(readingBack(VOICE_RELAY, 1), speechEvent('no', true), no, turnContext());
+    expect(missed.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_ownership_dtmf', target: 'ownership' });
   });
 
   it('on a chat, which has no keypad: asked again in words', () => {
     use(keyed);
-    const t = resolve(readingBack(WEB_CHAT), speechEvent('no', true), no, turnContext());
+    const t = resolve(readingBack(WEB_CHAT, 1), speechEvent('no', true), no, turnContext());
     expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_ownership', target: 'ownership' });
+  });
+});
+
+describe('after a no, the question asked again walks its own ladder', () => {
+  it('a slot: a silence after the no is asked again, not a person', async () => {
+    const r = await call("there's water in my basement", 'I rent it', 'no', SILENCE);
+    expect(last(r).decision).toMatchObject({ kind: 'prompt', target: 'ownership' });
+    expect(ackIds(last(r))).toEqual(['no_input']);
+  });
+
+  it('a slot: an answer that misses after the no is retried, not a person', async () => {
+    const r = await call("there's water in my basement", 'I rent it', 'no', 'hello');
+    expect(last(r).decision).toMatchObject({ kind: 'prompt', promptId: 'ask_ownership_retry', target: 'ownership' });
+  });
+
+  it('a check: a silence after the no is asked again, not a person', async () => {
+    const r = await call('can someone come and look at a crack in my wall', 'yes, I own it', 'Lakeview', 'no', SILENCE);
+    expect(last(r).decision).toMatchObject({ kind: 'prompt', target: 'town' });
+    expect(ackIds(last(r))).toEqual(['no_input']);
+  });
+
+  it('a check: an answer that misses after the no is retried, not a person', async () => {
+    const r = await call('can someone come and look at a crack in my wall', 'yes, I own it', 'Lakeview', 'no', 'hello');
+    expect(last(r).decision).toMatchObject({ kind: 'prompt', promptId: 'ask_town_retry', target: 'town' });
+  });
+
+  it('a check: no, the slot filled again, and no again: a person', async () => {
+    const r = await call('can someone come and look at a crack in my wall', 'yes, I own it', 'Lakeview', 'no', 'Lakeview', 'no');
+    expect(turn(r, 5).decision).toMatchObject({ promptId: 'check_area' });
+    expect(last(r).decision).toMatchObject({ kind: 'handoff', reason: 'max-attempts' });
+    expect(last(r).session.checkReadBackNos).toEqual({ checkArea: 2 });
+  });
+});
+
+describe('a check\'s read-back whose slots changed while it was out', () => {
+  /** The read-back of the area check out, then the town changed by a fill the turn made (an informational answer's breath, say). */
+  async function changedUnderIt(): Promise<Session> {
+    const r = await call('can someone come and look at a crack in my wall', 'yes, I own it', 'Lakeview');
+    const s = last(r).session;
+    expect(s.pendingConfirmation).toMatchObject({ target: 'check', action: 'checkArea' });
+    s.slots.town = { ...s.slots.town!, value: 'cedar_falls', display: 'Cedar Falls' };
+    return s;
+  }
+
+  it('a yes does not act on the old refusal: the check runs again on what the slots hold now', async () => {
+    const s = await changedUnderIt();
+    const t = resolve(s, speechEvent('yes', true), { ...PLAIN, confirmsYes: noul(0.95), confirmsNo: noul(0.02) }, turnContext());
+    expect(gates(t)).toEqual(['checkArea:ALLOW']);
+    expect(t.stopped).toBeUndefined();
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_howUrgent' });
+  });
+
+  it('asked again (a silence) it is not: the check runs again', async () => {
+    const s = await changedUnderIt();
+    const t = resolve(s, silenceEvent(), null, turnContext());
+    expect(gates(t)).toEqual(['checkArea:ALLOW']);
+    expect(t.session.pendingConfirmation).toBeNull();
+  });
+});
+
+describe('a check no empties only what was not confirmed', () => {
+  it('a slot confirmed at its own read-back is kept; the unconfirmed one is asked again', () => {
+    const both: App = {
+      ...confirming,
+      forms: {
+        ...confirming.forms,
+        book_visit: { ...confirming.forms.book_visit!, checks: confirming.forms.book_visit!.checks!.map((c) => (c.action === 'checkArea' ? { ...c, with: ['ownership', 'town'] } : c)) },
+      },
+    };
+    use(both);
+    const s = newSession('both', 0, VOICE_RELAY, ANONYMOUS, both.id);
+    setForm(s, 'book_visit');
+    s.entered = 'book_visit';
+    s.slots.problem = { ...s.slots.problem!, value: 'leak', display: 'a leak' };
+    s.slots.ownership = { ...s.slots.ownership!, value: 'own', display: 'you own it', confirmed: true };
+    s.promptedFor = 'town';
+    const heardTown = resolve(s, speechEvent('Lakeview', true), { ...PLAIN, town: choice({ elsewhere: 0.95, none: 0.05 }) }, turnContext());
+    expect(heardTown.decision).toMatchObject({ promptId: 'check_area' });
+    const t = resolve(heardTown.session, speechEvent('no', true), { ...PLAIN, confirmsYes: noul(0.02), confirmsNo: noul(0.95) }, turnContext());
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_town' });
+    expect(t.session.slots.ownership).toMatchObject({ value: 'own', confirmed: true });
+    expect(t.session.slots.town!.value).toBeNull();
+  });
+});
+
+describe('a no with the right answer in the same breath', () => {
+  /** The read-back of "rent" out, as the call left it. */
+  async function rentReadBack(): Promise<Session> {
+    const r = await call("there's water in my basement", 'I rent it');
+    expect(last(r).decision).toMatchObject({ promptId: 'confirm_ownership' });
+    return last(r).session;
+  }
+  const no = { ...PLAIN, confirmsYes: noul(0.02), confirmsNo: noul(0.95) };
+
+  it('"no, I own it": the slot takes it, and the form goes on (the check runs on it)', async () => {
+    const t = resolve(await rentReadBack(), speechEvent('no, I own it', true), { ...no, ownership: choice({ own: 0.95, none: 0.05 }) }, turnContext());
+    expect(t.session.slots.ownership).toMatchObject({ value: 'own', confirmed: false });
+    expect(gates(t)).toEqual(['checkOwner:ALLOW']);
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_town' });
+    expect(ackIds(t)).toEqual(['ack_declined']);
+  });
+
+  it('a value it gives that is itself read back is read back', async () => {
+    const both: App = { ...confirming, slots: { ...confirming.slots, ownership: { ...confirming.slots.ownership!, confirmValues: ['own', 'rent'] } } };
+    use(both);
+    const t = resolve(await rentReadBack(), speechEvent('no, I own it', true), { ...no, ownership: choice({ own: 0.95, none: 0.05 }) }, turnContext());
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_ownership', vars: { ownership: 'you own it' } });
+    expect(t.gateEvents).toEqual([]);
+  });
+
+  it('the value just declined, heard again, is not taken: the slot is asked again', async () => {
+    const t = resolve(await rentReadBack(), speechEvent('no', true), { ...no, ownership: choice({ rent: 0.95, none: 0.05 }) }, turnContext());
+    expect(t.session.slots.ownership!.value).toBeNull();
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_ownership' });
+  });
+
+  it('a bare no fills nothing', async () => {
+    const t = resolve(await rentReadBack(), speechEvent('no', true), { ...no, ownership: choice({ none: 0.95, own: 0.05 }) }, turnContext());
+    expect(t.session.slots.ownership!.value).toBeNull();
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_ownership' });
+  });
+
+  it('a check: "no, it\'s in Ashford" fills the town, and the check runs again and passes', async () => {
+    const r = await call('can someone come and look at a crack in my wall', 'yes, I own it', 'Lakeview', "no, it's in Ashford");
+    const t = last(r);
+    expect(t.session.slots.town).toMatchObject({ value: 'ashford' });
+    expect(gates(t)).toEqual(['checkArea:ALLOW']);
+    expect(rows(t)).toEqual(['check_reconfirmed', 'gate']);
+    expect(heard(t)).toBe("Okay, let's keep going. How soon does it need looking at?");
+  });
+});
+
+describe('a portal sign-in while a check\'s read-back is out', () => {
+  const check = { target: 'check', form: 'book_visit', action: 'checkArea', verdict: 'BLOCK', reason: 'out-of-area', hash: 'h', attempts: 0 } as const;
+  it('drops it, whether it is pending or a transfer offer displaced it: the check runs again on the parked form', () => {
+    expect(pendingAtSignIn(check)).toBeNull();
+    expect(pendingAtSignIn({ target: 'transfer', attempts: 0, resume: check })).toBeNull();
+    // What it always kept, it keeps: a slot read-back, kept or restored.
+    const slot = { target: 'slot', slot: 'ownership', value: 'rent', display: 'you rent it' } as const;
+    expect(pendingAtSignIn(slot)).toBe(slot);
+    expect(pendingAtSignIn({ target: 'transfer', attempts: 0, resume: slot })).toBe(slot);
+    expect(pendingAtSignIn({ target: 'intent', intent: 'book_visit', answers: {}, text: 'x' })).toBeNull();
   });
 });
 

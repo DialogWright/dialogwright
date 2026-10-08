@@ -33,7 +33,7 @@ export type ChecksRun =
     /** The form's checksPassed line, when this run is the one that passed the last of its checks: said once per form. */
     passedPromptId: string | null;
   }
-  | { kind: 'refused'; check: FormCheck; decision: GateDecision };
+  | { kind: 'refused'; check: FormCheck; decision: GateDecision; hash: string };
 
 const NOTHING: ChecksRun = { kind: 'passed', passedPromptId: null };
 
@@ -46,6 +46,15 @@ function paramsOf(s: Session, check: FormCheck): Record<string, string> | null {
     params[id] = value;
   }
   return params;
+}
+
+/**
+ * The hash of the params `check` sends as the slots stand (what Session.checked keeps of a pass, and a
+ * check's pending read-back of its refusal), or null while one of the slots it reads is empty.
+ */
+export function checkHash(s: Session, check: FormCheck): string | null {
+  const params = paramsOf(s, check);
+  return params === null ? null : confirmationHash(params, check.with);
 }
 
 /** Whether every check of the form has passed, with whatever params (Session.checked). */
@@ -69,7 +78,7 @@ export function runChecks(s: Session, form: FormId, tc: TurnContext, out: TurnOu
     const hash = confirmationHash(params, check.with);
     if (s.checked?.[check.action] === hash) continue;
     const { decision } = callTool(s, { tool: check.action, params }, tc, out);
-    if (decision.verdict !== 'ALLOW') return { kind: 'refused', check, decision };
+    if (decision.verdict !== 'ALLOW') return { kind: 'refused', check, decision, hash };
     s.checked = { ...(s.checked ?? {}), [check.action]: hash };
   }
   const passedPromptId = def.checksPassed !== undefined && !before && allPassed(s, checks) ? def.checksPassed : null;

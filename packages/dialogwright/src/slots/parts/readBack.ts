@@ -15,10 +15,12 @@ export function readBackOf(confirm: SlotSpec['spokenConfirm'], confirmValues?: r
 
 /**
  * What `confirm: always` does, for an option's description: `what` is the value as the type names it
- * ("a spoken number").
+ * ("a spoken number"); `keys`, whether the type can take keys (a keypad option), so the keypad
+ * question is named only where there can be one.
  */
-export function alwaysConfirmText(what: string): string {
-  return `"always": ${what} is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf where the slot takes keys), and a second no goes to a person.`;
+export function alwaysConfirmText(what: string, keys = true): string {
+  const asked = keys ? 'ask_<slot>, or ask_<slot>_dtmf at the keypad rung where the slot takes keys' : 'ask_<slot>';
+  return `"always": ${what} is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ${asked}), a step on its ladder, and a second no goes to a person. The right answer said with the no ("no, it's ...") is taken.`;
 }
 
 /**
