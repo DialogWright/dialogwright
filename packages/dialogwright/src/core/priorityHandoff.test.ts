@@ -14,7 +14,7 @@ import { DEFAULT_THRESHOLDS } from './thresholds';
 import { closeForm, newSession, setForm, type Session } from './session';
 import { resolve, type TurnContext, type TurnResult } from './turn';
 import { handoff, unconfirmedSlots } from './decision';
-import { speechEvent } from '../channel/events';
+import { keyEvents, speechEvent } from '../channel/events';
 import { VOICE_RELAY } from '../channel/caps';
 import { ANONYMOUS } from '../gate/principal';
 import { mockCodeVerifier } from './tools';
@@ -431,3 +431,46 @@ describe('a priority intent checked first ("just to check, ..."), then confirmed
   });
 });
 
+describe('a completion that hands the call over right after the yes to its summary', () => {
+  // The booking's completion goes straight to a person, with no write and no "anything else?".
+  const handsOver = (data: HandoffData | undefined): App => variant(`screened-handsover-${data?.unconfirmed ?? 'none'}`, { correctsForm: true }, data, {
+    forms: { ...screenedApp.forms, book_visit: { ...screenedApp.forms.book_visit!, complete: (c) => ({ kind: 'decision', decision: handoff(c.s, 'live-agent', c.acks) }) } },
+  });
+  const YES = { ...PLAIN, confirmsYes: noul(0.95), confirmsNo: noul(0.02) };
+
+  async function atSummary(app: App): Promise<Session> {
+    use(app);
+    const t = last(await call(TO_SUMMARY));
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_book_visit' });
+    return t.session;
+  }
+
+  it('a plain yes: every value was agreed, so none is named', async () => {
+    const s = await atSummary(handsOver({ unconfirmed: 'mark' }));
+    const t = resolve(s, speechEvent('yes', true), YES, turnContext());
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent', unconfirmed: [] });
+    expect(t.session.agreed).toEqual({ problem: 'leak', ownership: 'own', town: 'cedar_falls', howUrgent: 'soon', visitDay: 'monday', timeOfDay: 'morning' });
+    expect(endData(t)).not.toHaveProperty('unconfirmed');
+  });
+
+  it('the keypad\'s 1 agrees the same', async () => {
+    const s = await atSummary(handsOver({ unconfirmed: 'mark' }));
+    const t = resolve(s, keyEvents('1')[0]!, null, turnContext());
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent', unconfirmed: [] });
+  });
+
+  it('a yes that changes a value agrees nothing: the caller never heard the new one read back', async () => {
+    const s = await atSummary(handsOver({ unconfirmed: 'mark' }));
+    const t = resolve(s, speechEvent('yes, but make it Wednesday', true), { ...YES, visitDay: choice({ wednesday: 0.93, none: 0.07 }) }, turnContext());
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent', unconfirmed: ALL, slots: { visitDay: 'Wednesday' } });
+    expect(t.session).not.toHaveProperty('agreed');
+  });
+
+  it('an app that sends every value writes no agreed', async () => {
+    const s = await atSummary(handsOver(undefined));
+    const t = resolve(s, speechEvent('yes', true), YES, turnContext());
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent' });
+    expect(t.decision).not.toHaveProperty('unconfirmed');
+    expect(t.session).not.toHaveProperty('agreed');
+  });
+});

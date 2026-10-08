@@ -1,4 +1,5 @@
 import { isAnonymous, isParty } from '../gate/types';
+import { confirmationHash } from '../gate/policy';
 import type { AnswerMap, QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
@@ -435,12 +436,32 @@ function agree(s: Session, form: FormId): void {
   const app = appOf(s);
   const def = formOf(app, form);
   if (handoffUnconfirmedOf(app) === 'send' || def.summaryPromptId === null) return;
+  // An identity factor, and a slot handed over only as `verified`, is never counted (unconfirmedSlots),
+  // so no copy of its value is kept.
+  const factors = identityOf(app).factorSlots;
   const agreed: Record<SlotId, string> = { ...(s.agreed ?? {}) };
   for (const id of def.slots) {
     const value = s.slots[id]!.value;
-    if (value !== null) agreed[id] = value;
+    if (value !== null && !factors.includes(id) && slotSpecOf(app, id).handoff !== 'verified') agreed[id] = value;
   }
   s.agreed = agreed;
+}
+
+/**
+ * The caller's yes to `form`'s summary, spoken or keyed, with the slots still holding what it read:
+ * the turn's own words changed none of them (`unchanged`), and, for a form whose write the summary
+ * arms (FormDef.confirmedParams), its hash is still the one taken as it was read. Agreed then
+ * (agree), before the completion runs, so a completion that hands the call to a person at once, or a
+ * check or the gate that ends the form, still counts what the caller said yes to as confirmed. A yes
+ * that changed a value ("yes, but it was Sunday") is agreed only if the form then completes
+ * (finishForm), as before.
+ */
+function agreeAsRead(s: Session, form: FormId, unchanged: boolean): void {
+  const app = appOf(s);
+  if (!unchanged || handoffUnconfirmedOf(app) === 'send') return;
+  const params = s.pendingHash !== null ? formOf(app, form).confirmedParams?.(s) : undefined;
+  if (params !== undefined && confirmationHash(params, app.policy.confirmedFields) !== s.pendingHash) return;
+  agree(s, form);
 }
 
 /**
@@ -1045,8 +1066,10 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // A yes that also changes a value ("yes, but it was Sunday") changes it. The write reads its
         // values from the slots, so the gate (the confirmed rule) refuses it against what the summary said, and the
         // summary is read again: what is filed is only ever what the caller heard and agreed to.
+        const read = summaryState(s);
         const fill = correctingFill(s, answers, ctx, pc.form);
         if (fill.disambiguate) return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
+        agreeAsRead(s, pc.form, summaryState(s) === read);
         return { decision: completeForm(s, pc.form, [...acks, ...fill.acks], io), events: fill.events };
       }
       // The offer was accepted: the transfer the caller was offered is the one they get. One made
@@ -1306,6 +1329,7 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     if (!advertised) return { decision: { kind: 'ignore' }, rows: [] };
     if (digit === '1') {
       s.pendingConfirmation = null;
+      agreeAsRead(s, pc.form, true);
       return { decision: completeForm(s, pc.form, [], io), rows: [] };
     }
     if (digit === '2') return { decision: askChange(pc, []), rows: [] };

@@ -180,9 +180,10 @@ export interface Session {
    */
   checked?: Record<string, string>;
   /**
-   * The values the caller said yes to at a summary, by slot (HandoffData.unconfirmed): written when a
-   * form with a summary completes on the caller's yes, for each of its filled slots, and only for an
-   * app whose handoff marks or leaves out the values never confirmed. A slot still holding its value
+   * The values the caller said yes to at a summary, by slot (HandoffData.unconfirmed): written at a
+   * yes that changed nothing the summary read, and when a form with a summary completes on the
+   * caller's yes, for each of its filled slots but the identity factors and a `verified` slot (never
+   * counted), and only for an app whose handoff marks or leaves out the values never confirmed. A slot still holding its value
    * here counts as confirmed in the handoff; one changed since does not. Kept for the slots that
    * outlast the form (carried), dropped for those its close empties. Absent for every other app, so
    * their sessions are as they were. Never in what the model is sent.
