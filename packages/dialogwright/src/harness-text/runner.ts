@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { appTurnContext, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
+import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
 import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
@@ -14,7 +14,6 @@ import type { App, Refused, SlotId } from '../core/app/types';
 import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
 import { keptCallerNumber, lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import { factsOfferSlots, greetingOfferPromptId } from '../core/factsOffer';
-import { CONSENT_PROMPT } from '../core/textConsent';
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
@@ -112,7 +111,7 @@ function fillPlaceholder(seed: Seed, session: Session, id: SlotId, confirmed: bo
  */
 export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: SeedOptions): Session {
   if (atGreetingOffer(entry, appOf(session))) return seedGreetingOffer(session, entry);
-  if (atTextConsent(entry, appOf(session))) return seedTextConsent(session, entry);
+  if (atTextConsent(entry, appOf(session))) return seedTextConsent(session, entry, opts);
   if (atCallerMatch(entry, appOf(session))) return seedCallerMatch(session, entry, opts);
   if (entry.context === 'no_form') return session;
   const app = appOf(session);
@@ -234,17 +233,29 @@ function seedGreetingOffer(session: Session, entry: CorpusEntry & { prompted: Sl
 }
 
 /**
- * The consent to text for the whole call just asked (atTextConsent): the app's placeholder for the first
- * slot the consent covers stands in for the caller's number, `consent_texts` after the greeting's line,
- * no form open, as core/turn.ts asks it.
+ * The consent to text for the whole call just asked (atTextConsent), as the engine asks it: the call from
+ * the app's seed number (App.testing.seed.callerNumber), its call-start lookup made through the gate and
+ * kept in the facts as a call's is, then the question for the slot a call would choose (the first covered
+ * slot that takes the number and that callerOffer allows), `consent_texts` after the greeting's line, no
+ * form open.
  */
-function seedTextConsent(session: Session, entry: CorpusEntry): Session {
+function seedTextConsent(session: Session, entry: CorpusEntry, opts: SeedOptions): Session {
   const app = appOf(session);
-  const slot = app.textConsent!.covers[0]!;
-  const placeholder = app.testing?.seed?.placeholders && Object.hasOwn(app.testing.seed.placeholders, slot) ? app.testing.seed.placeholders[slot] : undefined;
-  if (!placeholder) throw new Error(`corpus ${entry.id}: no placeholder value for slot "${slot}", the first textConsent covers`);
-  session.pendingConfirmation = { target: 'slot', slot, value: placeholder.value, display: placeholder.display, offered: true, at: 'greeting', consent: true };
-  const said = prompt(CONSENT_PROMPT, 'intent', { last4: lastFour(placeholder.value) }, [{ promptId: greetingOfferPromptId(app), vars: {} }], ['yes', 'no']);
+  const number = app.testing?.seed?.callerNumber;
+  if (number === undefined) throw new Error(`corpus ${entry.id}: app "${app.id}" seeds no consent question (App.testing.seed.callerNumber, the number calling)`);
+  const kept = keptCallerNumber(app, number);
+  if (kept === undefined) throw new Error(`corpus ${entry.id}: the seed number ${number} is not one the app keeps`);
+  session.callerNumber = kept;
+  const tc: TurnContext = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
+  // The call-start lookup, as a call makes it, so a callerOffer hook that reads what it found answers as on a call.
+  const lookup = app.callerNumber?.lookup;
+  if (lookup !== undefined) {
+    const looked = callTool(session, { tool: lookup, params: { callerNumber: kept }, purpose: CALLER_LOOKUP_PURPOSE }, tc, newTurnOut());
+    if (looked.decision.verdict === 'ALLOW' && looked.value != null) app.facts?.fromCallerLookup?.(session.facts, looked.value);
+  }
+  // The same choice of slot a call makes (core/turn.ts askTextConsent): the first covered slot that takes the number and that the hook allows.
+  const said = askTextConsent(session, tc, newTurnOut());
+  if (said === null) throw new Error(`corpus ${entry.id}: the seed number ${number} reaches no consent question (no covered slot takes it, or callerOffer allows none)`);
   session.promptedFor = 'intent';
   session.lastPromptId = said.promptId;
   session.lastPromptText = decisionText(app, said, session.locale);

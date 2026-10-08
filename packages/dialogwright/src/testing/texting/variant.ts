@@ -118,6 +118,8 @@ export const CONSENT_CORPUS = [
   '{"id":"tc-03","text":"sure, and I\'d like to open a request","intent":"open_request","context":"no_form","confirm":"yes"}',
   '{"id":"tc-04","text":"actually, I need to open a request about a bill","intent":"open_request","context":"no_form","confirm":"unanswered","slots":{"topic":"bill"}}',
   '{"id":"al-01","text":"yes, alerts too","intent":"none","context":"open_request","prompted":"alertTo","confirm":"yes"}',
+  '{"id":"tc-05","text":"yes, text five five five five five five zero one nine nine","intent":"none","context":"no_form","confirm":"yes","slots":{"textTo":{"span":"five five five five five five zero one nine nine","value":"5555550199"}}}',
+  '{"id":"tc-06","text":"yes, text five five five five five five zero one four two","intent":"none","context":"no_form","confirm":"yes","slots":{"textTo":{"span":"five five five five five five zero one four two","value":"5555550142"}}}',
   '',
 ].join('\n');
 
@@ -192,4 +194,39 @@ export const CONSENT_SPANISH: Record<string, (text: string) => string> = {
   'prompts.yaml': (t) => `${t}${CONSENT_LINES}${SWITCHED_LINE}`,
   'locale/es/prompts.yaml': () => `${readFileSync(join(TEXTING_DIR, 'prompts.yaml'), 'utf8')}${CONSENT_LINES.replace('Can I text you helpful links during this call, at the number ending in {last4}?', '¿Puedo enviarle enlaces útiles durante esta llamada al número que termina en {last4}?')}${SWITCHED_LINE}`,
   'fixtures/corpus.jsonl': (t) => `${t}${CONSENT_CORPUS}{"id":"es-01","text":"can we continue in Spanish","intent":"spanish","context":"no_form"}\n`,
+};
+
+/** The fixture's code with a callerOffer hook that refuses the number for `refused` (and a landline, as the fixture's does). */
+export const refusingCode = (refused: string): AppCode => ({
+  ...textingCode,
+  callerOffer: (ctx, slot) => slot !== refused && textingCode.callerOffer!(ctx, slot),
+});
+
+/**
+ * The consent variant with a second form that texts the caller (`get_updates`, its one slot `textTo`,
+ * no summary), so a call can reach a covered slot in two forms. Built with updatesCode.
+ */
+export const CONSENT_TWO_FORMS: Record<string, (text: string) => string> = {
+  ...CONSENT,
+  'app.yaml': both(replace('id: texting', 'id: texting-consent-two-forms'), (t) => `${t}\ntextConsent:\n  covers: [textTo, alertTo]\n`),
+  'intents.yaml': replace('  agent:\n', [
+    '  get_updates:',
+    '    criteria: Wants text updates about their account, with no request to open',
+    '    label: set up text updates',
+    '    kind: form',
+    '  agent:',
+    '',
+  ].join('\n')),
+  'forms.yaml': (t) => `${CONSENT['forms.yaml']!(t)}  # Text updates about the account, to the number the caller agrees to; nothing to read back.\n  get_updates:\n    slots: [textTo]\n    summaryPromptId: null\n    hooks: [complete]\n    calls: []\n`,
+  'prompts.yaml': (t) => `${t}${CONSENT_LINES}  updates_set:\n    text: Done, we'll text updates to {textTo}.\n    interruptible: false\n`,
+  'fixtures/corpus.jsonl': (t) => `${t}${CONSENT_CORPUS}{"id":"gu-01","text":"I want text updates about my account","intent":"get_updates","context":"no_form"}\n`,
+};
+
+/** The fixture's code with the second form's completion: it says the number the updates go to. */
+export const updatesCode: AppCode = {
+  ...textingCode,
+  forms: {
+    ...textingCode.forms,
+    get_updates: { complete: (c) => ({ kind: 'said', acks: [...c.acks, { promptId: 'updates_set', vars: { textTo: c.s.slots.textTo?.display ?? '' } }] }) },
+  },
 };

@@ -141,8 +141,8 @@ function readRequest(c: SummaryContext): SummaryRead | null {
  * type is the call-start lookup's, where it found the number; otherwise the gated line-type lookup's,
  * kept in the facts. A refused lookup, or a line it does not know, makes no offer.
  */
-function offerToMobile(ctx: AppContext, slot: string): boolean {
-  if (slot !== 'textTo') return true;
+function offerToMobile(ctx: AppContext, _slot: string): boolean {
+  // Every number the line texts is offered only for a mobile (textTo here; its variants text alertTo too).
   const facts = ctx.s.facts as TextingFacts;
   if (facts.lineType === undefined) {
     const caller = callerOf(ctx.s);
@@ -190,6 +190,8 @@ export const textingCode: AppCode = {
     heuristics: { intents: [['open_request', /\b(open a request|request|report)\b/]] },
     seed: {
       caller: () => ANONYMOUS,
+      // The number a seeded consent question is asked for (its variants' textConsent), as a carrier sends it.
+      callerNumber: '+15555550142',
       placeholders: {
         topic: { value: 'order', display: 'an order' },
         textTo: { value: '5555550142', display: '555 555 0142' },

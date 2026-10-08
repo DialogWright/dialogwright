@@ -13,7 +13,9 @@ import type { TurnResult } from './turn';
 import { textConsentOf } from '../index';
 import { sessionRoundTrip } from '../testing/sessionRoundTrip';
 import { TEXTING_DIR, textingApp } from '../testing/texting/app';
-import { CONSENT, CONSENT_AND_PROPOSAL, CONSENT_SPANISH, proposingCode, textingVariants } from '../testing/texting/variant';
+import { CONSENT, CONSENT_AND_PROPOSAL, CONSENT_SPANISH, CONSENT_TWO_FORMS, proposingCode, refusingCode, replace, textingVariants, updatesCode } from '../testing/texting/variant';
+import { GREETING as RECOGNIZED_GREETING, recognizedVariants } from '../testing/recognized/variant';
+import { runCorpusEntry } from '../harness-text/runner';
 import { callbackApp } from '../testing/callback/app';
 import { proposalsApp } from '../testing/proposals/app';
 import { screenedApp } from '../testing/screened/app';
@@ -35,10 +37,14 @@ const OPENER = ["I'd like to open a request", "it's about an order"] as const;
 const CONSENT_LINE = 'Can I text you helpful links during this call, at the number ending in 0142?';
 
 const variants = textingVariants();
-afterAll(() => variants.remove());
+const recognized = recognizedVariants();
+afterAll(() => {
+  variants.remove();
+  recognized.remove();
+});
 const consent = variants.variant(CONSENT);
 const withProposal = variants.variant(CONSENT_AND_PROPOSAL, proposingCode);
-const corpusOf = (app: App) => loadCorpus(join(app === textingApp ? TEXTING_DIR : variants.dirOf(app), 'fixtures', 'corpus.jsonl'), app);
+const corpusOf = (app: App) => loadCorpus(join(app === textingApp ? TEXTING_DIR : app.id.startsWith('recognized') ? recognized.dirOf(app) : variants.dirOf(app), 'fixtures', 'corpus.jsonl'), app);
 
 function stub(app: App, asked: JevRequest[] = []): JevClient {
   const inner = new FixtureStubClient(corpusOf(app), { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY }) });
@@ -215,6 +221,110 @@ describe('a covered text moment', () => {
     const r = await fromMobile(...says('sure, go ahead and text me', ...OPENER, 'no, the text number is wrong'));
     expect(promptOf(last(r))).toBe('ask_textTo');
     expect(last(r).session.slots.textTo!.value).toBeNull();
+  });
+});
+
+describe('which slot the question is for', () => {
+  it('is the first covered slot that takes the number and that callerOffer allows, on a call and in a seeded corpus line', async () => {
+    const refusesText = variants.variant({ ...CONSENT, 'app.yaml': (t) => CONSENT['app.yaml']!(t).replace('id: texting-consent', 'id: texting-consent-alerts') }, refusingCode('textTo'));
+    use(refusesText);
+    const r = await fromMobile(...says('sure, go ahead and text me', ...OPENER));
+    expect(r.runs[0]!.result.session.pendingConfirmation).toMatchObject({ slot: 'alertTo', consent: true });
+    expect(promptOf(r.runs[0]!.result)).toBe('consent_texts');
+    // Granted: the slot the hook refuses is not filled from it (ifNone: skip), the other is.
+    expect(last(r).session.slots.textTo).toMatchObject({ value: null, declined: true });
+    expect(last(r).session.slots.alertTo).toMatchObject({ value: '5555550142', confirmed: true });
+    expect(rows(r, 'offer').map((d) => [d.slot, d.answer])).toEqual([['alertTo', 'consent']]);
+    // The harness seeds the same question for a corpus line at it.
+    const entry = corpusOf(refusesText).find((e) => e.id === 'tc-01')!;
+    const seeded = await runCorpusEntry(entry, { client: stub(refusesText), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0 });
+    expect(seeded.setup.result.session.pendingConfirmation).toMatchObject({ slot: 'alertTo', consent: true });
+    expect(textConsentOf(seeded.run.result.session)).toBe('granted');
+  });
+
+  it('is not asked when the hook allows no covered slot', async () => {
+    use(variants.variant({ ...CONSENT, 'app.yaml': (t) => CONSENT['app.yaml']!(t).replace('id: texting-consent', 'id: texting-consent-none') }, { ...refusingCode('textTo'), callerOffer: () => false }));
+    expect(promptOf((await fromMobile()).runs[0]!.result)).toBe('greeting');
+  });
+
+  it('after a grant, the hook may still refuse a covered slot, which is then not filled', async () => {
+    use(variants.variant({ ...CONSENT, 'app.yaml': (t) => CONSENT['app.yaml']!(t).replace('id: texting-consent', 'id: texting-consent-no-alerts') }, refusingCode('alertTo')));
+    const r = await fromMobile(...says('sure, go ahead and text me', ...OPENER));
+    expect(r.runs[0]!.result.session.pendingConfirmation).toMatchObject({ slot: 'textTo' });
+    expect(last(r).session.slots.textTo).toMatchObject({ value: '5555550142', confirmed: true });
+    expect(last(r).session.slots.alertTo).toMatchObject({ value: null, declined: true });
+    expect(rows(r, 'offer').map((d) => [d.slot, d.answer])).toEqual([['textTo', 'consent']]);
+  });
+});
+
+describe('a yes that names another number', () => {
+  it('is no grant to the caller\'s own number: asked once more, and still ambiguous it is unknown', async () => {
+    const r = await fromMobile(...says('yes, text five five five five five five zero one nine nine', 'yes, text five five five five five five zero one nine nine', ...OPENER));
+    expect(prompts(r).slice(0, 3)).toEqual(['consent_texts', 'consent_texts', 'greet_after_offer']);
+    expect(rows(r, 'consent')).toMatchObject([{ granted: null }]);
+    expect(textConsentOf(last(r).session)).toBe('unknown');
+    // Each slot asks its own offer.
+    expect(promptOf(last(r))).toBe('offer_textTo');
+  });
+
+  it('a plain yes after it is the grant', async () => {
+    const r = await fromMobile(...says('yes, text five five five five five five zero one nine nine', 'sure, go ahead and text me'));
+    expect(prompts(r)).toEqual(['consent_texts', 'consent_texts', 'greet_after_offer']);
+    expect(textConsentOf(last(r).session)).toBe('granted');
+  });
+
+  it('a yes that names the caller\'s own number is the grant', async () => {
+    const r = await fromMobile(...says('yes, text five five five five five five zero one four two'));
+    expect(textConsentOf(last(r).session)).toBe('granted');
+  });
+});
+
+describe('a covered slot in two forms', () => {
+  it('is filled from the grant in each, and each use is recorded', async () => {
+    use(variants.variant(CONSENT_TWO_FORMS, updatesCode));
+    const r = await fromMobile(...says('sure, go ahead and text me', 'I want text updates about my account', ...OPENER));
+    expect(prompts(r)).toEqual(['consent_texts', 'greet_after_offer', 'anything_else', 'ask_topic', 'confirm_open_request_text']);
+    expect(heard(r.runs[2]!.result)).toContain("Done, we'll text updates to 555 555 0142.");
+    expect(rows(r, 'offer').map((d) => [d.slot, d.answer])).toEqual([['textTo', 'consent'], ['textTo', 'consent'], ['alertTo', 'consent']]);
+    expect(rows(r, 'consent')).toHaveLength(1);
+  });
+});
+
+describe('a person asked for at the consent question', () => {
+  it('is a handoff, with no consent row', async () => {
+    const r = await fromMobile(...says('can I talk to a person'));
+    expect(last(r).decision).toMatchObject({ kind: 'handoff', reason: 'live-agent' });
+    expect(rows(r, 'consent')).toEqual([]);
+    expect(textConsentOf(last(r).session)).toBeNull();
+  });
+});
+
+describe('the caller-ID question at the greeting', () => {
+  // The caller-ID fixture's greeting variant, with a number to text in its report and consent covering it.
+  const TEXT_SLOT = "textTo:\n  type: digits\n  noun: mobile number\n  length: 10\n  mask: '[2-9]\\d{9}'\n  keypad: true\n  callerNumber:\n    countryCode: '1'\n    onNo: skip\n    ifNone: skip\n";
+  const LINES = [
+    '  consent_texts:', '    text: Can I text you helpful links during this call, at the number ending in {last4}?', '    interruptible: true',
+    '  ask_textTo:', '    text: What mobile number should we text?', '    interruptible: true',
+    '  ask_textTo_retry:', '    text: Sorry, what is the mobile number?', '    interruptible: true',
+    '  ask_textTo_dtmf:', '    text: Please key in the mobile number.', '    interruptible: true',
+    '  offer_textTo:', '    text: Can I text you at the number ending in {last4}?', '    interruptible: true', '',
+  ].join('\n');
+  const app = (): App => recognized.variant({
+    ...RECOGNIZED_GREETING,
+    'app.yaml': (t) => `${RECOGNIZED_GREETING['app.yaml']!(t).replace('id: recognized-greeting', 'id: recognized-consent')}\ntextConsent:\n  covers: [textTo]\n`,
+    'slots.yaml': (t) => `${t}${TEXT_SLOT}`,
+    'forms.yaml': replace('slots: [problem]', 'slots: [problem, textTo]'),
+    'prompts.yaml': (t) => `${RECOGNIZED_GREETING['prompts.yaml']!(t)}${LINES}`,
+  });
+
+  it('comes first; with no match, consent is asked', async () => {
+    use(app());
+    const matched = (await call({ callerNumber: '+15555550142' })).runs[0]!.result;
+    expect(promptOf(matched)).toBe('identity_caller_match');
+    expect(textConsentOf(matched.session)).toBeNull();
+    expect(matched.session.pendingConfirmation).toBeNull();
+    const unmatched = (await call({ callerNumber: '+15555550199' })).runs[0]!.result;
+    expect(promptOf(unmatched)).toBe('consent_texts');
   });
 });
 

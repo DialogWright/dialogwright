@@ -14,7 +14,7 @@ import { closeForm, cloneSession, emptySlot, missingSlots, setForm, type Pending
 import { buildTurnState, type TurnState } from './state';
 import { buildQuestions, callerMatchAsked } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
-import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
+import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
@@ -1133,6 +1133,15 @@ function valueAtOffer(s: Session, pc: OfferPending, answers: AnswerMap, ctx: Slo
   return valuesGiven(s, answers, ctx, [slotSpecOf(appOf(s), pc.slot)]).size > 0;
 }
 
+/**
+ * Whether the turn's words gave the slot offered a value other than the one offered (read as its fill
+ * would read them, filled into nothing): another number, or a part of one, said with a yes.
+ */
+function otherValueAtOffer(s: Session, pc: Extract<PendingConfirmation, { target: 'slot' }>, answers: AnswerMap, ctx: SlotContext): boolean {
+  const o = slotSpecOf(appOf(s), pc.slot).fill(answers, slotCtx(s, ctx, pc.slot));
+  return (o.kind === 'filled' && o.value !== pc.value) || o.kind === 'window' || o.kind === 'disambiguate';
+}
+
 /** Whether the keys pressed now answer the pending offer `pc`: its own prompt is the one the caller is on. */
 function keyedAt(s: Session, pc: OfferPending): boolean {
   return s.promptedFor === (pc.at === 'greeting' ? 'intent' : pc.slot);
@@ -1995,21 +2004,35 @@ const GREET_AFTER_OFFER = 'greet_after_offer';
 
 /**
  * The consent to text for the whole call (app.yaml's textConsent), asked at the greeting: on a call
- * whose number the session kept, when the first slot it covers can take that number and the app's
- * callerOffer hook allows it for that slot, `consent_texts` (with the last four) after the greeting's
- * line before a proposal (`greeting_offer`), in place of the greeting and its open question. It is
- * pending as the first covered slot's read-back `at: greeting` with `consent` (the greeting's
- * proposal's machinery: its yes, no, request and silence, then `greet_after_offer`). Null when there
- * is no consent to ask, on a chat, and for every app without it.
+ * whose number the session kept, for the first slot it covers, in app.yaml's order, that can take that
+ * number and that the app's callerOffer hook allows (asked for each in turn until one is allowed),
+ * `consent_texts` (with the last four) after the greeting's line before a proposal (`greeting_offer`),
+ * in place of the greeting and its open question. It is pending as that slot's read-back `at: greeting`
+ * with `consent` (the greeting's proposal's machinery: its yes, no, request and silence, then
+ * `greet_after_offer`). Null when there is no consent to ask (no covered slot takes the number, or the
+ * hook allows none), on a chat, and for every app without it.
  */
 function textConsentAtGreeting(s: Session, io: TurnIO): PromptDecision | null {
-  const [first] = consentCovers(io.app);
-  if (!s.caps.speech || first === undefined || s.textConsent !== undefined || s.callerNumber === undefined) return null;
-  const c = callerCandidate(io.app, first, s.callerNumber, slotLocaleOf(s));
-  if (c === null || !callerOfferAllowed(s, first, io)) return null;
-  const pc: Extract<PendingConfirmation, { target: 'slot' }> = { target: 'slot', slot: first, value: c.value, display: c.display, offered: true, at: 'greeting', consent: true };
-  s.pendingConfirmation = pc;
-  return offerPrompt(pc, [{ promptId: greetingOfferPromptId(io.app), vars: {} }]);
+  const covers = consentCovers(io.app);
+  if (!s.caps.speech || covers.length === 0 || s.textConsent !== undefined || s.callerNumber === undefined) return null;
+  for (const slot of covers) {
+    const c = callerCandidate(io.app, slot, s.callerNumber, slotLocaleOf(s));
+    if (c === null || !callerOfferAllowed(s, slot, io)) continue;
+    const pc: Extract<PendingConfirmation, { target: 'slot' }> = { target: 'slot', slot, value: c.value, display: c.display, offered: true, at: 'greeting', consent: true };
+    s.pendingConfirmation = pc;
+    return offerPrompt(pc, [{ promptId: greetingOfferPromptId(io.app), vars: {} }]);
+  }
+  return null;
+}
+
+/**
+ * The consent question as a call asks it at the greeting (textConsentAtGreeting), for a harness that
+ * seeds it (harness-text/runner.ts seedTextConsent): the same choice of slot, the hook asked as on a
+ * call, the question left pending on `s`. Null when a call would not ask it.
+ */
+export function askTextConsent(s: Session, tc: TurnContext, out: TurnOut): PromptDecision | null {
+  const app = appOf(s);
+  return textConsentAtGreeting(s, { app, tc: appTurnContext(app, tc), out, prefix: [] });
 }
 
 /**
@@ -2072,6 +2095,9 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
       return { decision: prompt(GREET_AFTER_OFFER, 'intent', {}, own.acks), events: own.events };
     }
     case 'confirmed': {
+      // A yes to the consent question that names another number ("yes, text 555 555 0199") is no grant to
+      // the number the question named: asked once more, then unknown (reaskConfirmation at the greeting).
+      if (pc.consent === true && otherValueAtOffer(s, pc, answers, ctx)) return { decision: reaskConfirmation(s, io), events: [] };
       s.pendingConfirmation = null;
       // The consent question's yes is the grant, and fills nothing: the slots it covers fill when asked.
       if (pc.consent !== true) Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
