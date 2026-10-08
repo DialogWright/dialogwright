@@ -785,6 +785,66 @@ actions:
 - **The answer is recorded.** Every settled offer writes an `offer` row to the audit with the line as said and the answer (`yes`, `no`, `other`, `none`). Whether that yes is consent to be texted is the owner's legal question; the engine records what was asked and answered, and decides nothing.
 - Scripted calls: a yes, a no, a no with a number, no answer (two silences), a landline, a withheld number and the chat. Corpus lines at the offer: a yes, a bare no, "that's my landline" (`confirm: no`), a no with a number, a number alone (`confirm: unanswered`), and words that answer neither.
 
+## What an offer takes, whether it may be declined, and consent for the call
+
+Three choices about every offer, each with a default that is safe, and each the app's to make. Decide them from the paragraph, in this order.
+
+**1. What the offer takes: `answers` (or `offerAnswers` on a proposal).** Read the line as a caller hears it.
+
+- The line invites a number ("Shall I use the number you're calling from, or would you like to give me another?"): keep the default, `yes-no-or-value`. A yes takes the number offered; "no, use 555 555 0199" or the number alone fills as said.
+- The line asks a yes or no question ("Are you calling about the account ending in 1234?", "Is this about 22 Alder Street?"): `answers: yes-no` inside `callerNumber`, or `offerAnswers: yes-no` beside `offer: facts`. A value said there is not taken, and with no clear yes it is a no, so `onNo` decides what follows; on the keypad 1 is yes and 2 is no.
+
+```yaml
+# slots.yaml
+textTo:
+  type: digits
+  noun: mobile number
+  length: 10
+  mask: '[2-9]\d{9}'
+  callerNumber: { countryCode: '1', onNo: skip, ifNone: skip, answers: yes-no }
+place:
+  type: text
+  what: the street address where the problem is
+  say: null
+  redact: none
+  offer: facts
+  offerAnswers: yes-no
+```
+
+When unsure, keep the default: a value said at the offer is then taken as the caller meant it.
+
+**2. Required or optional: `onNo` and `ifNone`.** Ask what a no should mean.
+
+- **Required**: the form cannot finish without the value (the number to send a one-time code to, the callback number). Keep the defaults, `onNo: ask` and `ifNone: ask`: a no asks the slot's own question, and the slot's ladder ends at a person. Give the form a summary that reads the number back.
+- **Optional**: a no means "don't" (a reminder text, updates about a request). `onNo: skip` and `ifNone: skip`: a no, no answer, or no number leaves the slot empty and the form goes on. Never name it in the summary line; read it back from a line of its own.
+
+**3. Consent for the whole call: `textConsent`.** When the paragraph texts the caller at more than one moment ("we text them the link to the form, and a reminder the day before"), ask once, up front:
+
+```yaml
+# app.yaml
+textConsent:
+  covers: [linkTo, reminderTo]   # each a digits slot with callerNumber
+```
+
+```yaml
+# prompts.yaml (every locale)
+greeting_offer:
+  text: Thanks for calling Example Requests.
+  interruptible: true
+consent_texts:
+  text: Can I text you helpful links during this call, at the number ending in {last4}?
+  interruptible: true
+greet_after_offer:
+  text: What can I help you with today?
+  interruptible: true
+```
+
+- A yes fills every covered slot with the caller's number, confirmed, with no question when its form reaches it; a no, or a request instead, leaves each slot to ask its own offer (so write each `offer_<slot>` as well). Each covered slot keeps its own `onNo` and `ifNone` for that case.
+- It is asked only on a call, right after the greeting, with the caller's number kept; never on the chat. The caller-ID question at the greeting comes first and a proposal at the greeting after it: only one question follows the greeting.
+- Every grant is recorded: a `consent` row for the answer, and an `offer` row with `answer: consent` for each slot filled from it. App code reads the answer with `textConsentOf(s)`; a caller who later asks for no more texts is the app's own intent to handle.
+- With a single text moment, skip it: the slot's own offer is the question.
+- Corpus lines at the consent question: `no_form`, `confirm` (yes, no, unanswered), no `prompted`; write a yes, a yes with a request, a no and a request with neither. Scripted calls: granted (no offer asked after), declined (each offer asked), a request instead, a withheld number and the chat.
+
 ## Looking the caller up by number
 
 "If we know the number, start from their account": app.yaml's `callerNumber` keeps the number for the app's code, and may look the caller up once at call start.

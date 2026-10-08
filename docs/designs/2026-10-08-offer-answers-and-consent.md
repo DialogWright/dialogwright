@@ -1,6 +1,6 @@
 # An offer's answers, required offers, and consent for the whole call (design)
 
-Date: 2026-10-08. Status: decided (decisions 6, 7 and 8 of [2026-10-08-decisions.md](2026-10-08-decisions.md)), being built. Engine: DialogWright local `main`.
+Date: 2026-10-08. Status: decided (decisions 6, 7 and 8 of [2026-10-08-decisions.md](2026-10-08-decisions.md)), built on the `offer-consent` branch (see "As built"). Engine: DialogWright local `main`.
 
 ## At a glance
 
@@ -93,3 +93,22 @@ textConsent:
   - chat, not asked;
   - with a greeting proposal configured, consent wins and the proposal moves to its slot.
 - **`pnpm check`:** the three cases above.
+
+## As built
+
+Where the build differs from the design above, or fills in what it left open:
+
+- **How `yes-no` stops the slot taking a value.** The slot offered is left out of what the turn fills (`fia.ts slotsToFill`, while the offer is pending; the no's own fill leaves it out by name), not out of what the model is asked: its question is still sent at the offer, so the request at a `yes-no` offer is the same as at a default one, and the engine can tell a value from a plain yes or no. "A value" is what the slot's fill would read as a new value (`fia.ts valuesGiven`): a number of the wrong shape is not one, and words that answer neither ask the offer again, as before. The keys are 1 and 2; any other key asks the offer again, a turn on its ladder. `callerNumber.ts yesNoOffer` is the one predicate.
+- **At the greeting.** A proposal with `offerAnswers: yes-no` at the greeting takes a value said as a no: nothing is filled into the slot from that turn (`TurnIO.kept`), and the request said with it goes on, or `greet_after_offer` asks the open question.
+- **`offerAnswers` beside `callerNumber`.** It is refused there, with the fix to write `answers` inside `callerNumber`, and refused without `offer: facts`.
+- **The required offer's scripted call.** The callback fixture already had "a no, then a number" (`offer-no-then-said`). The new one, `offer-required-no-then-nothing`, is a no and then nothing said: the slot's ladder ends at a person and the form never reaches its summary, which is what makes the defaults a required offer.
+- **The consent question's state.** It is pending as the first covered slot's read-back `at: greeting` with `consent: true` (`Session.pendingConfirmation`), so it reuses the greeting proposal's machinery as designed, and the trace masks its value by that slot's `redact`. Its yes fills nothing. The model is told it as `target: consent`, by the last four only.
+- **A value said at the consent question is a no.** Consent is a yes or no question, so it takes `yes-no`'s rule: "text me at 555 555 0199 instead" declines it, and that number is not taken. The keypad's 1 and 2 grant and decline it.
+- **The hook at each covered slot.** A grant does not skip the app's `callerOffer`: it is asked at each covered slot before the slot is filled, as for an offer, so the app still decides per slot (a slot it refuses goes on as its `ifNone` says). The texting fixture's hook keeps the line type in the facts, so the gated lookup is not made twice.
+- **What a consent fill writes.** The `offer` row for a slot filled from the grant has `answer: consent`, `promptId: consent_texts` and the consent line as `said` (the line the caller said yes to), and `by: null`, since nothing was asked on that turn. Two covered slots filled on one turn write two rows (`TurnOut.consented`). The form's checks run on the value at once, as on any fill.
+- **The consent row** is `consent { scope: call, granted, promptId, said, last4, by, locale }`; `by` is null for a silence. It is written before the turn's offer rows.
+- **`textConsentOf(s)`** returns `granted`, `declined`, `unknown`, or null when it was never asked. `Session.textConsent` is optional, absent for every app without it, so `SESSION_SCHEMA` is unchanged, as for the earlier optional fields.
+- **`pnpm check`.** Besides the three cases designed: a slot in `covers` that is not one, `greeting_offer` and `greet_after_offer` (the greeting's machinery), and a `consent_texts` that must say `{last4}` and nothing else, so a grant is always to a number the caller heard named (the safer choice, as for a proposal's line). Every form has an intent, so "a form that can be reached" is a form that asks the slot.
+- **Corpus lines** at the consent question are `no_form` with `confirm` and no `prompted`; the harness seeds the first covered slot's placeholder as the number asked about (`runner.ts seedTextConsent`).
+- **Tests.** The texting fixture's variants are in `src/testing/texting/variant.ts` (`YES_NO`, `YES_NO_ASKS`, `CONSENT`, `CONSENT_AND_PROPOSAL`); the fixture itself is unchanged. The consent variant adds a second number to text, `alertTo`, in the same form, both covered.
+

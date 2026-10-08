@@ -129,6 +129,7 @@ prompts:
 - `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. The folder is relative to the app's package root, which is the folder its commands run in: the engine reads it from the working directory, and an app's `regress`, `cli` and `serve` scripts run in its package. It must stay inside the package, so an absolute path or one with `..` is refused. `check` then requires every intent to have examples there.
 - `prompts` holds what is said about prompts besides their text: which opening lines to use, which variables are always spoken by text to speech, the clips' vocabulary.
 - `callerNumber` keeps the number the caller is calling from for the app's own code, and may look the caller up by it once at call start: [The number the caller is calling from](#the-number-the-caller-is-calling-from-callernumber), below.
+- `textConsent: { covers: [textTo, ...] }` asks once, right after the greeting, for consent to text the caller during the call, and the text offers it covers then use the caller's number without asking again: [Consent to text for the whole call](#consent-to-text-for-the-whole-call-textconsent).
 
 #### The number the caller is calling from: `callerNumber`
 
@@ -1271,6 +1272,8 @@ When the form would ask `phone` and the call came with a number that fits the sl
 | Silence, or words that answer neither | The offer again, as any read-back is asked again: each counts a turn, and the slot's keypad rung (`ask_phone_dtmf`, or `ask_phone_retry` for a slot with no keypad) comes as it would. |
 | A number keyed | It fills as keyed. |
 
+That is the default, `answers: yes-no-or-value`: the offer takes a yes, a no, or a number. An offer whose line asks only a yes or no question takes `answers: yes-no` ([Yes or no only](#yes-or-no-only-answers), below).
+
 It is offered once per slot per form: a number reopened at the summary ("the number is wrong") is asked with `ask_phone`, not offered, whether or not it was offered before. A chat has no number, and neither does a call whose number is withheld or does not fit, so there the slot is asked as always ([13.13](#1313-the-number-the-caller-is-calling-from) says what counts as a number, and where each carrier puts it).
 
 What the option promises, and what it does not:
@@ -1315,6 +1318,39 @@ offer_textTo:
 - **`ifNone: skip`.** A call with nothing to offer (a chat, a withheld number, one that does not fit the slot, or one the app will not offer, below) leaves the slot empty. With `ask` the slot is asked as always.
 - **The summary.** A slot that may be left empty is never named in its form's summary line as `{<slot>}` (`pnpm check` refuses it: the line would read nothing there). Read it back from a line of its own when it is filled: the form's `onSummaryRead` hook returns that line's `promptId` ("That's a request about an order, with updates texted to 555 555 0142. Shall I open it?"), and the summary's yes, keypad and ladder work there as on the summary itself.
 
+**Required or optional.** An offer is required or optional by its `onNo` and `ifNone`, and nothing else is needed:
+
+- **A required offer** keeps the defaults, `onNo: ask` and `ifNone: ask`: the number to send a one-time code to, or to call back. A no asks the slot's own question; with no number to offer, the slot is asked; and the slot's ladder ends at a person, so the form never reaches its summary without a value. The callback fixture's `offer-required-no-then-nothing` call pins it: a no, then nothing said, ends at a person.
+- **An optional offer** says `onNo: skip` (and usually `ifNone: skip`): an appointment reminder, updates about a request. A no, or no answer, leaves the slot empty and the form goes on.
+
+#### Yes or no only: `answers`
+
+What an offer takes follows its question. "Shall I use the number you're calling from, or tell me another?" takes a yes, a no or a number: the default, `answers: yes-no-or-value`. "Are you calling from the phone on the account?" asks a yes or no question, and a number said there is more likely a slip than an answer: `answers: yes-no` takes a yes or a no only.
+
+```yaml
+textTo:
+  type: digits
+  noun: mobile number
+  length: 10
+  mask: '[2-9]\d{9}'
+  keypad: true
+  group: [3, 3, 4]
+  callerNumber:
+    countryCode: '1'
+    onNo: skip
+    answers: yes-no   # yes-no-or-value (default): a number said or keyed fills as said
+```
+
+With `yes-no`, at the offer:
+
+- the slot offered takes no value from the turn: "no, text my cell, 555 555 0199" is a no, and the number is not taken (the model is still asked the slot's question, as at a default offer, so the engine can tell a value was said);
+- a value said with no clear yes ("text 555 555 0199 instead") is a no as well, so `onNo` says what follows (`ask`: the slot's own question, which takes the number as always; `skip`: the slot is left empty), and the `offer` row's `answer` is `no`;
+- on the keypad, 1 is yes and 2 is no; any other key asks the offer again, a turn on its ladder;
+- the other slots of the form still listen as always ("yes, and it's about an order");
+- the line's options are yes and no, as before.
+
+A proposal from the facts takes the same choice as `offerAnswers` beside `offer: facts` ([below](#proposing-a-value-from-a-lookup-offer-facts)). The default changes nothing: an app that sets neither is as it was.
+
 **Refusing an offer: `App.callerOffer`.** A landline cannot take a text. The app's code may refuse an offer with `callerOffer(ctx, slot)`, called only when an offer is about to be made (the form would ask the slot, and the call has a number that fits it), once per slot per form. False makes no offer, and the slot goes on as `ifNone` says. It may read the facts (a line type the call-start lookup found), or call a gated tool through `ctx.callTool` (a line-type lookup, its param held to the caller's number by the `callerNumber` rule) and keep the answer in the facts. One that throws makes no offer, as false does: what it wrote to the facts is put back, the side effects it queued are dropped, and nothing of the error is kept. Without it, every offer is made.
 
 ```ts
@@ -1338,16 +1374,59 @@ export const code: AppCode = {
 type: offer
 detail: { slot: textTo, source: caller-number | facts, promptId: offer_textTo,
           said: "Can I text you updates at the number you're calling from, ending in 0142?",
-          answer: yes | no | other | none, by: speech | keypad | null, last4: "0142", locale: en-US }
+          answer: yes | no | other | none | consent, by: speech | keypad | null, last4: "0142", locale: en-US }
 ```
 
 (`last4` is the number's; a proposal from the facts has none.)
 
-`said` is the line as it was said, since the prompt manifest may change later. `answer` is `yes` (the number offered), `no` (a no with no number of the caller's own), `other` (a number of their own, said or keyed, with or without a no) or `none` (no answer before the ladder left the offer; `by` is then null). An offer asked again is not settled yet, and one dropped unanswered by a switch to another task or a handoff writes no row. A caller who had not finished ([13.8](#138-a-caller-who-had-not-finished-and-how-a-word-is-said)) can settle one offer twice, "yes" and then "yes, and it's about an order" joined: the fragment's row stays, and the joined turn's row follows it, so the last row for a slot in a call is the answer. The text tool's own row (its gate row, with the slot's param masked) follows when the form completes.
+`said` is the line as it was said, since the prompt manifest may change later. `answer` is `yes` (the number offered), `no` (a no with no number of the caller's own; at an offer that takes a yes or a no only, a number with no clear yes too), `other` (a number of their own, said or keyed, with or without a no), `none` (no answer before the ladder left the offer; `by` is then null) or `consent` (no offer was asked: the caller granted consent to text for the whole call, and `promptId` and `said` are that question's; `by` is null: [below](#consent-to-text-for-the-whole-call-textconsent)). An offer asked again is not settled yet, and one dropped unanswered by a switch to another task or a handoff writes no row. A caller who had not finished ([13.8](#138-a-caller-who-had-not-finished-and-how-a-word-is-said)) can settle one offer twice, "yes" and then "yes, and it's about an order" joined: the fragment's row stays, and the joined turn's row follows it, so the last row for a slot in a call is the answer. The text tool's own row (its gate row, with the slot's param masked) follows when the form completes.
 
 **Consent is the owner's question.** Whether a spoken yes on this line is consent to be texted, under the TCPA or any other law, is a legal question for the line's owner, and the answer differs between informational and marketing texts. The engine records what was asked, in the words said, and what was answered. It does not decide that the answer is consent, and it sends nothing on its own.
 
-Testing it: a corpus line at the offer has `confirm` `yes`, `no` or `unanswered` as for a callback number; write one for each answer a caller gives there, "that's my landline" among them. The engine's own fixture is `packages/dialogwright/src/testing/texting`.
+Testing it: a corpus line at the offer has `confirm` `yes`, `no` or `unanswered` as for a callback number; write one for each answer a caller gives there, "that's my landline" among them. The engine's own fixture is `packages/dialogwright/src/testing/texting`; its `variant.ts` builds the `answers: yes-no` variants.
+
+#### Consent to text for the whole call: `textConsent`
+
+A line that texts helpful links at several moments of a call can ask once, up front, rather than at each moment:
+
+```yaml
+# app.yaml
+textConsent:
+  covers: [textTo, reminderTo]   # slots that offer the caller's number (callerNumber), which the consent stands in for
+```
+
+```yaml
+# prompts.yaml (every locale)
+greeting_offer:
+  text: Thanks for calling Example Requests.
+  interruptible: true
+consent_texts:
+  text: Can I text you helpful links during this call, at the number ending in {last4}?
+  interruptible: true
+greet_after_offer:
+  text: What can I help you with today?
+  interruptible: true
+```
+
+- **When it is asked.** Once, on a call, right after the greeting's line (`greeting_offer`), in place of the open question, when the session kept the caller's number, the first slot `covers` names can take it (its `countryCode`, `length` and `mask`), and the app's `callerOffer` hook allows that slot. Never on a chat, and not on a call whose number is withheld, foreign or refused: each slot then asks its own offer as without it. Only one question follows the greeting, in this order: the caller-ID question (identity.yaml's `callerId` with `ask: greeting`), then consent, then a proposal at the greeting (`offerAt: greeting`). One not asked at the greeting is asked where it would be anyway: a proposal at its slot, identity when it is needed; consent not asked at the greeting is not asked, and each slot asks its own offer.
+- **A yes** (or the keypad's 1) is the grant: `greet_after_offer` asks the open question, or a request said with the yes goes on. From then on, each slot it covers, when its form would offer the caller's number, is filled with that number, confirmed, with no question (the `callerOffer` hook is still asked for it, so a slot it refuses is not filled), and the form goes on: the form's checks run on the value, and its summary reads it back whole, as after a yes to the slot's own offer. The gate's `callerNumber` rule passes it as the caller's own number. A slot reopened at the summary ("the text number is wrong") is asked its own question, not filled again; a later form fills it again.
+- **A no**, a number with no yes, or the keypad's 2, declines it, and each slot asks its own offer, accepted or declined as always (its `onNo` and `ifNone` as written).
+- **A request said instead, or no answer** (asked once more, then the open question): consent is unknown, not asked again, and each slot asks its own offer.
+- **Recorded every time it is granted.** The answer is a `consent` row in the audit's hash chain:
+
+  ```
+  type: consent
+  detail: { scope: call, granted: true | false | null, promptId: consent_texts,
+            said: "Can I text you helpful links during this call, at the number ending in 0142?",
+            last4: "0142", by: speech | keypad | null, locale: en-US }
+  ```
+
+  and each slot filled from the grant writes an `offer` row with `answer: consent`, the consent question's line as `said`. A yes at a slot's own offer is recorded by its `offer` row, as always.
+- **Reading it.** App code reads the answer with `textConsentOf(s)` (from `'dialogwright'`): `granted`, `declined`, `unknown`, or null when it was never asked. A caller who later says "stop texting me" is the app's to handle, with an intent of its own; the engine does not withdraw the grant.
+
+The consent is a yes or no question: a value said with it is not taken (as `answers: yes-no`). Whether a yes on this line is consent under any law is the line's owner's question, as for a single text offer ([above](#a-text-offer-onno-and-ifnone)). `pnpm check` refuses a slot in `covers` that is not one or does not offer the caller's number, needs `greeting_offer`, `consent_texts` (saying `{last4}` and nothing else) and `greet_after_offer` in every locale, and warns when no form asks a slot `covers` names.
+
+Testing it: a corpus line at the consent question is in the `no_form` context with `confirm` and no `prompted`, seeded with the first covered slot's placeholder as the number asked about: write a yes, a yes with a request, a no and a request with neither. The engine's fixture is the consent variant of `packages/dialogwright/src/testing/texting` (`variant.ts`: two numbers to text, both covered).
 
 ### Proposing a value from a lookup: `offer: facts`
 
@@ -1391,6 +1470,8 @@ When the form would ask `place` and `facts.offers` has a candidate for it, the l
 | A no | `ask_place`, with no attempt counted. |
 | Another value, with the no or without it ("no, I'm at my mother's, 7 Birch Lane") | It fills as said, and the form goes on. |
 | Silence, or words that answer neither | The offer again; each counts a turn, and the slot's ladder (its keypad rung, or `ask_place_retry`) comes as it would. |
+
+A proposal whose line asks only a yes or no question ("Are you calling about the account ending in 1234?") takes `offerAnswers: yes-no` beside `offer: facts`: another value said at it is not taken, and with no clear yes it is a no (`ask_place`); on the keypad 1 is yes and 2 is no; at the greeting, a value said is a no and the open question follows. The default, `yes-no-or-value`, is the table above ([Yes or no only](#yes-or-no-only-answers)).
 
 It is offered once per slot per form: a slot reopened at the summary ("the address is wrong") is asked, never proposed again. With no candidate (the lookup found nothing, was refused or failed, a withheld number, a chat, a value already said with the request) the slot is asked as always.
 
@@ -1825,7 +1906,7 @@ At the repository root, `pnpm check` finds every folder under `apps/` that has a
 It checks, in one pass:
 
 1. **Each file against its schema.** Unknown keys, wrong types, a missing required file, a YAML syntax error. A misspelt name offers the near match, and a top-level key that belongs in another file names that file (`purposes` in identity.yaml: `move "purposes" and what is under it to policy.yaml`).
-2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every form's `calls` names tools the code defines, and, when forms declare `calls`, every action is reached by a form or the identity flow; every form's `checks` names a `check: true` action and the form's own slots or an identity factor (which it warns of), each check action is named by a form, has no tool in the code, no `confirmed` rule and a `level` written out when the highest is more than the form's entry proves (a level written out above it is warned of), and every line a check says is in prompts.yaml; app.yaml's `callerNumber.lookup` is an action whose tool takes `callerNumber` alone, reached at call start, and a slot that may be left empty (`onNo` or `ifNone: skip`) is not named in its form's summary line; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
+2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every form's `calls` names tools the code defines, and, when forms declare `calls`, every action is reached by a form or the identity flow; every form's `checks` names a `check: true` action and the form's own slots or an identity factor (which it warns of), each check action is named by a form, has no tool in the code, no `confirmed` rule and a `level` written out when the highest is more than the form's entry proves (a level written out above it is warned of), and every line a check says is in prompts.yaml; app.yaml's `callerNumber.lookup` is an action whose tool takes `callerNumber` alone, reached at call start, and a slot that may be left empty (`onNo` or `ifNone: skip`) is not named in its form's summary line; every slot app.yaml's `textConsent` covers exists and offers the caller's number (`callerNumber`), and `offerAnswers` is beside `offer: facts`; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
 3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for a role rule's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`. A missing line's message says when the engine says it and, when it gives the line variables, which ones (`..., and gives it {first}  ->  add "signin_thanks:" with its text (it may use {first}) and interruptible to prompts.yaml`).
 4. **The keypad menu**: every key names a form intent, an informational intent or `agent`; a key for another control intent is refused, since the engine ignores it.
 5. **A caller who is done**: an app that says `anything_else` ("Is there anything else I can help with?") has a `done` intent, so "no, that's all" ends the call with the goodbye rather than the no-match line (section 2, intents.yaml). The fix is the intent, ready to paste.
@@ -2570,6 +2651,9 @@ The same app answers on the phone, through Twilio, Telnyx or both, and on the we
 | Offering the number the caller is calling from | `callerNumber` on a `digits` slot (slots.yaml), with an `offer_<slot>` line | not offered: the slot is asked | For a callback number: the line asks whether the number the call came from is the best one, by its last four ([A callback number](#a-callback-number-callernumber), [13.13](#1313-the-number-the-caller-is-calling-from)). Never for an identity factor. |
 | A caller-ID match as the identifier | `callerId` on identity.yaml's level 1: `identifies` (factors), `ask` (`on-need` or `greeting`); the code's `facts.callerMatch` | off: every factor is asked | On a line where most callers call from the number on file: the match stands in for the account number and the caller gives only the knowledge factor ([A caller-ID match as the identifier](#a-caller-id-match-as-the-identifier-callerid)). |
 | Where a value from the facts is proposed | `offerAt` on a slot with `offer: facts` (slots.yaml): `slot` or `greeting` | `slot`: when its form would ask it | `greeting` to propose what the call-start lookup found as the call opens, in place of the open question ([At the greeting](#at-the-greeting-offerat-greeting)). |
+| What an offer takes | `answers` in a slot's `callerNumber`, `offerAnswers` beside `offer: facts` (slots.yaml): `yes-no-or-value` or `yes-no` | `yes-no-or-value`: a yes, a no, or a value of the caller's own | `yes-no` where the line asks only a yes or no question: a value said there is a no, and the keypad's 1 and 2 are yes and no ([Yes or no only](#yes-or-no-only-answers)). |
+| Whether an offer may be declined | `onNo` and `ifNone` in a slot's `callerNumber` (slots.yaml): `ask` or `skip` | `ask`: a required offer, the slot's own question after a no | `skip` for an optional one (a reminder text): a no leaves the slot empty ([A text offer](#a-text-offer-onno-and-ifnone)). |
+| Consent to text for the whole call | `textConsent: { covers }` (app.yaml), with `consent_texts` | none: each text offer is asked where it is | To ask once, after the greeting, and fill the covered offers with the caller's number on a yes ([Consent to text for the whole call](#consent-to-text-for-the-whole-call-textconsent)). |
 | What a transfer hands the carrier | `handoff.data` (app.yaml): `slots` (`all`, `none` or a list), `send` by slot (`omit`, `masked`, `as-is`) | no identity factor; a redacted slot masked; any other slot as it is | When the person taking the call needs a value in the clear (name it `as-is`), or fewer values on the carrier. |
 | Values the caller never confirmed, in a transfer | `handoff.data.unconfirmed` (app.yaml): `send`, `mark` or `omit` | `send`: sent as any other, nothing named | `mark` when the person should know which values to check with the caller (the end frame's `unconfirmed`, the console's "(not confirmed)", the audit's handoff row); `omit` to send only what the caller agreed to ([app.yaml](#appyaml)). |
 | The language a call starts in | `voice.numbers` (app.yaml): number called to locale | the app's default locale | A number per language. |
