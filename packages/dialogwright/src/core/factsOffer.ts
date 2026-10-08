@@ -57,3 +57,8 @@ export function greetingOfferSlots(app: App): SlotId[] {
   const asked = new Set(Object.values(app.forms).flatMap((form) => form.slots));
   return factsOfferSlots(app).filter((id) => app.slots[id]!.offerAt === 'greeting' && asked.has(id));
 }
+
+/** The line said before a proposal at the greeting: app.yaml's `prompts.greetings.offer`, else `greeting_offer`. */
+export function greetingOfferPromptId(app: App): string {
+  return app.prompts.greetings?.offer ?? 'greeting_offer';
+}

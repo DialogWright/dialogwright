@@ -125,6 +125,27 @@ describe('offerAt', () => {
     expect(atSlot).toEqual({ problems: [], warnings: [] });
   });
 
+  it('warns at the greeting with no call-start lookup, since nothing could have loaded the facts by then', async () => {
+    const { problems, warnings } = await checked(folder({ ...GREETING, 'app.yaml': (t) => GREETING['app.yaml']!(t).replace('  lookup: findAccountByPhone\n', '') }));
+    expect(problems.join('\n')).not.toContain('offerAt');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('slots.yaml');
+    expect(warnings[0]).toContain('the slot "place" proposes at the greeting (offerAt: greeting), but app.yaml has no callerNumber lookup');
+  });
+
+  it('the greeting\'s line before a proposal named in app.yaml is the one needed', async () => {
+    const named = {
+      ...GREETING,
+      'app.yaml': (t: string) => `${GREETING['app.yaml']!(t)}\nprompts:\n  greetings:\n    offer: greeting_known\n`,
+      'prompts.yaml': (t: string) => GREETING['prompts.yaml']!(t).replace('  greeting_offer:\n', '  greeting_known:\n'),
+    };
+    expect(await checked(folder(named))).toEqual({ problems: [], warnings: [] });
+    const missing = await checked(folder({ ...named, 'prompts.yaml': GREETING['prompts.yaml']! }));
+    expect(missing.problems).toHaveLength(1);
+    expect(missing.problems[0]).toContain('prompts.greetings.offer');
+    expect(missing.problems[0]).toContain('greeting_known');
+  });
+
   it('is refused without offer: facts', async () => {
     const { problems } = await checked(folder({ 'slots.yaml': replace('  offer: facts\n', '  offerAt: greeting\n'), 'prompts.yaml': (t) => `${t}${GREETING_LINES}` }));
     expect(problems.join('\n')).toContain('the slot "place" says offerAt: "greeting", but it proposes nothing (it has no offer: facts)');

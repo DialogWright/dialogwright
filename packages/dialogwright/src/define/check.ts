@@ -170,7 +170,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)`, ...(declared.vars && declared.vars.length > 0 ? { vars: declared.vars } : {}) });
     if (spec.offer === 'facts') needs.push({ id: `offer_${slot}`, why: `it proposes a value from the facts for the slot "${slot}", as a yes or no (its offer is "facts")`, vars: [slot] });
     if (spec.offer === 'facts' && spec.offerAt === 'greeting') {
-      needs.push({ id: 'greeting_offer', why: `a call opens on a proposal for the slot "${slot}" (its offerAt is "greeting"), said in place of the greeting before offer_${slot}` });
+      needs.push({ id: greetings?.offer ?? 'greeting_offer', why: `a call opens on a proposal for the slot "${slot}" (its offerAt is "greeting"), said in place of the greeting before offer_${slot}` });
       needs.push({ id: 'greet_after_offer', why: `the proposal at the greeting for the slot "${slot}" is settled, and it asks the open question` });
     }
   }
@@ -266,6 +266,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       const at = locate(file, path) ?? { line: 1, column: 1 };
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     }, codeFile);
+    greetingOfferWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    }, codeFile);
     callerHintWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
       const at = locate(file, path) ?? { line: 1, column: 1 };
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -333,6 +337,23 @@ function callerNumberWarnings(config: LoadedConfig, slots: Readonly<Record<strin
     if (spec.listen === 'call' || (config.app.carrySlots ?? []).includes(id)) {
       at(`the slot "${id}" offers the number the caller is calling from and is kept for the whole call, so it is offered once, in the first form that asks it; a later form uses the value kept`, `nothing to do if that is meant; otherwise give the slot listen: form or up-front`);
     }
+  }
+}
+
+/**
+ * The warning for a slot that proposes at the greeting (`offerAt: greeting`) in an app with no
+ * call-start lookup (app.yaml's `callerNumber.lookup`): the greeting comes before anything else could
+ * load the facts, so nothing is proposed there, and the slot proposes at the slot instead.
+ */
+function greetingOfferWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void, codeFile: string): void {
+  if (config.app.callerNumber?.lookup !== undefined) return;
+  for (const [id, spec] of Object.entries(slots)) {
+    if (spec?.offer !== 'facts' || spec.offerAt !== 'greeting') continue;
+    const library = config.slots !== null && Object.hasOwn(config.slots, id);
+    const message = `the slot "${id}" proposes at the greeting (offerAt: greeting), but app.yaml has no callerNumber lookup, so nothing has loaded the facts by then and it is proposed at the slot instead`;
+    const fix = 'add "callerNumber: { use: hint, lookup: <tool> }" to app.yaml, or delete "offerAt"';
+    if (library) report(SLOTS_FILE, [id, 'offerAt'], message, fix);
+    else report(codeFile, ['slots', id, 'offerAt'], message, fix);
   }
 }
 

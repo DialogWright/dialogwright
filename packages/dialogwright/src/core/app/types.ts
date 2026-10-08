@@ -1077,10 +1077,12 @@ export interface App {
     /**
      * The opening line's prompt ids by case. `voice`: any channel that speaks. On a text channel:
      * `chat` for an anonymous visitor, `chatSignedIn` (with `{first}`) for a signed-in subject,
-     * `chatDelegate` (with `{first}`) for a signed-in delegate. Each defaults to `greeting`,
-     * `greeting_chat`, `greeting_chat_signed_in`, `greeting_chat_delegate` respectively.
+     * `chatDelegate` (with `{first}`) for a signed-in delegate. `offer`: on a call that opens on a
+     * proposal (a slot's `offerAt: greeting`), the line said before it, in place of the greeting and
+     * its open question. Each defaults to `greeting`, `greeting_chat`, `greeting_chat_signed_in`,
+     * `greeting_chat_delegate`, `greeting_offer` respectively.
      */
-    greetings?: { voice?: string; chat?: string; chatSignedIn?: string; chatDelegate?: string };
+    greetings?: { voice?: string; chat?: string; chatSignedIn?: string; chatDelegate?: string; offer?: string };
   };
   /**
    * The languages the app speaks. A session speaks one of them (Session.locale): the default, or the

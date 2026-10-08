@@ -963,6 +963,11 @@
               "description": "The opening line on a text channel for a signed-in delegate (with {first}). Default \"greeting_chat_delegate\".",
               "type": "string",
               "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "offer": {
+              "description": "On a call that opens on a proposal (a slot's offerAt: greeting), the line said before it, in place of the greeting and its open question. Default \"greeting_offer\".",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
             }
           },
           "additionalProperties": false

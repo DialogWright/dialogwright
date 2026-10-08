@@ -214,4 +214,18 @@ export const GREETING: Record<string, (text: string) => string> = {
   'app.yaml': replace('id: proposals', 'id: proposals-greeting'),
   'slots.yaml': replace('  offer: facts\n', '  offer: facts\n  offerAt: greeting\n'),
   'prompts.yaml': (t) => `${t}${GREETING_LINES}`,
+  'fixtures/corpus.jsonl': (t) => `${t}${GREETING_CORPUS}`,
 };
+
+/**
+ * Corpus lines at the greeting's proposal (no_form, `prompted` the slot that proposes there, with
+ * `confirm`): a yes, a yes with a request, a no, and a request with neither, each seeded with the
+ * slot's placeholder proposed (harness-text/runner.ts seedCorpusSession).
+ */
+export const GREETING_CORPUS = [
+  '{"id":"go-01","text":"yes, that\'s the one","intent":"none","context":"no_form","prompted":"place","confirm":"yes"}',
+  '{"id":"go-02","text":"yes, and I want to report a problem","intent":"report_problem","context":"no_form","prompted":"place","confirm":"yes"}',
+  '{"id":"go-03","text":"no, that\'s a different place","intent":"none","context":"no_form","prompted":"place","confirm":"no"}',
+  '{"id":"go-04","text":"I need to check on my request","intent":"check_status","context":"no_form","prompted":"place","confirm":"unanswered"}',
+  '',
+].join('\n');

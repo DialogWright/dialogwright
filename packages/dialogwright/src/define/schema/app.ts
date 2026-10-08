@@ -338,6 +338,7 @@ const promptSettings = z
         chat: identifier().optional().describe('The opening line on a text channel for an anonymous visitor. Default "greeting_chat".'),
         chatSignedIn: identifier().optional().describe('The opening line on a text channel for a signed-in subject (with {first}). Default "greeting_chat_signed_in".'),
         chatDelegate: identifier().optional().describe('The opening line on a text channel for a signed-in delegate (with {first}). Default "greeting_chat_delegate".'),
+        offer: identifier().optional().describe('On a call that opens on a proposal (a slot\'s offerAt: greeting), the line said before it, in place of the greeting and its open question. Default "greeting_offer".'),
       })
       .optional()
       .describe("The opening line's prompt ids by case. Each prompt must exist in prompts.yaml."),

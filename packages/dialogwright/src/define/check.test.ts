@@ -591,7 +591,8 @@ describe('the engine prompt list', () => {
   it('names every prompt id the engine says as a literal, or says why not', () => {
     const named = new Set([...Object.keys(ENGINE_PROMPTS), 'greeting', 'greeting_chat', 'nomatch_dtmf_menu', ...IDENTITY_PROMPTS.map((p) => p.id), ...CODE_PROMPTS.map((p) => p.id), ...PORTAL_PROMPTS.map((p) => p.id)]);
     // The ones an app writes or that depend on the app's own code, never the same in two apps.
-    const elsewhere = new Set(['identity_failed', 'handoff_identity']);
+    // greeting_offer is needed only for a slot that proposes at the greeting, and may be named in app.yaml.
+    const elsewhere = new Set(['identity_failed', 'handoff_identity', 'greeting_offer']);
     expect(literals().size).toBeGreaterThan(30);
     const unlisted = [...literals()].filter((id) => !named.has(id) && !elsewhere.has(id));
     expect(unlisted).toEqual([]);

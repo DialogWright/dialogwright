@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { appTurnContext, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
 import { callTool, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { atCallerOffer, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
+import { atCallerOffer, atGreetingOffer, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
 import { JevClientError, type JevClient } from '../jev/types';
-import { promptText } from '../prompts/render';
+import { promptText, spokenText as decisionText } from '../prompts/render';
 import { prompt } from '../core/decision';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { formOf, identityOf } from '../core/app/lookup';
@@ -13,7 +13,7 @@ import { delegateProblem, subjectProblem } from '../core/app/principals';
 import type { App, SlotId } from '../core/app/types';
 import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
 import { lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
-import { factsOfferSlots } from '../core/factsOffer';
+import { factsOfferSlots, greetingOfferPromptId } from '../core/factsOffer';
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
@@ -110,6 +110,7 @@ function fillPlaceholder(seed: Seed, session: Session, id: SlotId, confirmed: bo
  * exactly what a call would have; its gate events are the seed's, not the entry's.
  */
 export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: SeedOptions): Session {
+  if (atGreetingOffer(entry, appOf(session))) return seedGreetingOffer(session, entry);
   if (entry.context === 'no_form') return session;
   const app = appOf(session);
   const seed = app.testing?.seed;
@@ -209,6 +210,26 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   return session;
 }
 
+/**
+ * The proposal at the greeting (atGreetingOffer): the app's placeholder for the prompted slot proposed
+ * as a call opens (`offerAt: greeting`), as the engine makes it (core/turn.ts greetingProposal): no form
+ * open, the slot still empty, `offer_<slot>` after the greeting's line, asked for no slot.
+ */
+function seedGreetingOffer(session: Session, entry: CorpusEntry & { prompted: SlotId }): Session {
+  const app = appOf(session);
+  const slot = entry.prompted;
+  const placeholder = app.testing?.seed?.placeholders && Object.hasOwn(app.testing.seed.placeholders, slot) ? app.testing.seed.placeholders[slot] : undefined;
+  if (!placeholder) throw new Error(`corpus ${entry.id}: no placeholder value for slot "${slot}"`);
+  session.pendingConfirmation = { target: 'slot', slot, value: placeholder.value, display: placeholder.display, offered: true, from: 'facts', at: 'greeting' };
+  session.greetingOffered = slot;
+  const said = prompt(`offer_${slot}`, 'intent', { [slot]: placeholder.display }, [{ promptId: greetingOfferPromptId(app), vars: {} }], ['yes', 'no']);
+  session.promptedFor = 'intent';
+  session.lastPromptId = said.promptId;
+  session.lastPromptText = decisionText(app, said, session.locale);
+  session.lastPromptOptions = ['yes', 'no'];
+  return session;
+}
+
 /** `as` for a scenario that is the subjects' web chat, anonymous until a `signIn` step. */
 export const WEB_VISITOR = 'web';
 
@@ -279,7 +300,7 @@ export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOption
   // One book of business per entry: what the entry's turn reads or files is its own.
   const o = { ...opts, tools: opts.tools ?? demoTools() };
   const start = seedCorpusSession(startSession(entry.id, nowOf(opts)(), entry.as), entry, o);
-  const asked = entry.context === 'no_form' ? null : seededPrompt(start);
+  const asked = entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) ? null : seededPrompt(start);
   const turn = opts.turn ?? runTurn;
   const setup = await turn(start, startEvent(), o);
   // The greeting's own bookkeeping moves the prompt to the greeting, so put back the one the seed

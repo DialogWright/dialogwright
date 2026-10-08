@@ -19,7 +19,7 @@ import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type De
 import { appContext, askCode, awaitingSignIn, callTool, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, stepUp, takeSummaryHash, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo } from './callerNumber';
-import { factsCandidate, factsOfferSlots, greetingOfferSlots } from './factsOffer';
+import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { recordedValue, recordingOf } from './recording';
 import type { Tools } from './tools';
 import { withAppThresholds, type Thresholds } from './thresholds';
@@ -151,8 +151,10 @@ interface TurnIO {
   prefix: Action[];
   /** A words turn's state, as the gates read it: a turn at the greeting's proposal reads the request again from it (openingAfterOffer). */
   turnState?: TurnState;
-  /** The slot this turn's yes to the greeting's proposal filled: the request said with the yes opens its form without filling it again. */
+  /** The slot this turn's answer to the greeting's proposal filled: the request said with it opens its form without filling it again. */
   kept?: SlotId;
+  /** The gates' rows when a turn at the greeting's proposal read its words again as an opening turn (openingAfterOffer), for the debug table. */
+  openingRows?: GateRow[];
 }
 
 export interface Plan {
@@ -1857,15 +1859,13 @@ function callerLookup(s: Session, io: TurnIO): void {
   }
 }
 
-/** The greeting said before a proposal (offerAt: greeting), in place of the greeting with its open question. */
-const GREETING_OFFER = 'greeting_offer';
 /** The open question, asked once the greeting's proposal is settled. */
 const GREET_AFTER_OFFER = 'greet_after_offer';
 
 /**
  * The proposal at the greeting (a slot's `offerAt: greeting`): on a call, after the call-start lookup,
  * the first such slot in slots.yaml order the facts have a candidate for is proposed (`offer_<slot>`)
- * after `greeting_offer`, in place of the greeting and its open question, and kept on the session
+ * after `greeting_offer` (app.yaml's `prompts.greetings.offer`), in place of the greeting and its open question, and kept on the session
  * (greetingOffered) so its form does not propose it again. Null when there is none: a chat (no number
  * was looked up), no such slot, or no candidate; the greeting is then as always.
  */
@@ -1877,16 +1877,18 @@ function greetingProposal(s: Session, io: TurnIO): PromptDecision | null {
     s.greetingOffered = slot;
     const pc: Extract<PendingConfirmation, { target: 'slot' }> = { target: 'slot', slot, value: c.value, display: c.display, offered: true, from: 'facts', at: 'greeting' };
     s.pendingConfirmation = pc;
-    return offerPrompt(pc, [{ promptId: GREETING_OFFER, vars: {} }]);
+    return offerPrompt(pc, [{ promptId: greetingOfferPromptId(io.app), vars: {} }]);
   }
   return null;
 }
 
 /**
  * A turn at the greeting's proposal (the pending read-back `at: greeting`): what it settles, or null
- * for the turn's own path. A yes fills the slot, confirmed, and a no fills nothing; either way the
- * `offer` audit row is written, and the request said in the same breath, if any, is the opening request
- * (openingAfterOffer). A turn that asks for something else (a request, an informational question, a
+ * for the turn's own path. A yes fills the slot, confirmed; a no fills it only with a value of the
+ * caller's own said with it ("no, it's 14 Birch Lane"), as does such a value said with neither, whatever
+ * the slot listens for (ownAnswer). Either way the `offer` audit row is written, and the request said in
+ * the same breath, if any, is the opening request (openingAfterOffer). A priority intent in the same
+ * breath takes the turn before any of this (the gates), so a yes said with one is not kept. A turn that asks for something else (a request, an informational question, a
  * choice between two) drops the proposal, unanswered and not repeated, and goes on as the opening turn
  * it is. Words that answer neither, a silence or words not made out are asked again on the ladder of
  * reaskConfirmation; a handoff, a replay and a held or ignored turn are what they always are.
@@ -1901,8 +1903,15 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
     case 'handoff':
     case 'replay':
       return null;
-    case 'confirm_unanswered':
-      return { decision: reaskConfirmation(s, io), events: [] };
+    case 'confirm_unanswered': {
+      // A value of the caller's own with no yes or no ("it's at 7 Birch Lane") answers the question
+      // asked: the slot takes it, whatever it listens for, and the open question follows.
+      const own = ownAnswer(s, pc, answers, ctx, io);
+      if (s.slots[pc.slot]!.value === null) return { decision: reaskConfirmation(s, io), events: [] };
+      s.pendingConfirmation = null;
+      offerSettled(s, io, pc, 'other');
+      return { decision: prompt(GREET_AFTER_OFFER, 'intent', {}, own.acks), events: own.events };
+    }
     case 'confirmed': {
       s.pendingConfirmation = null;
       Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
@@ -1912,9 +1921,10 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
     }
     case 'rejected': {
       s.pendingConfirmation = null;
-      const opened = openingAfterOffer(s, answers, ctx, io);
+      // "No, it's 14 Birch Lane" answers the question asked: the slot takes it, whatever it listens for.
+      const own = ownAnswer(s, pc, answers, ctx, io);
       offerSettled(s, io, pc, s.slots[pc.slot]!.value !== null ? 'other' : 'no');
-      return opened;
+      return openingAfterOffer(s, answers, ctx, io, own);
     }
     default:
       s.pendingConfirmation = null;
@@ -1928,11 +1938,27 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
  * I'd like to report a problem"); with none, what the words gave the call's own slots is kept (as on
  * any turn that opens no form) and the open question is asked (`greet_after_offer`).
  */
-function openingAfterOffer(s: Session, answers: AnswerMap, ctx: SlotContext, io: TurnIO): { decision: Decision; events: FillEvent[] } {
-  const { verdict } = evaluateGates(s, io.turnState!, answers, io.tc.thresholds);
-  if (verdict.kind !== 'intent_failed' && verdict.kind !== 'replay') return handleVerdict(s, verdict, answers, ctx, io);
+function openingAfterOffer(s: Session, answers: AnswerMap, ctx: SlotContext, io: TurnIO, own: Pick<FillResult, 'acks' | 'events'> = { acks: [], events: [] }): { decision: Decision; events: FillEvent[] } {
+  const { rows, verdict } = evaluateGates(s, io.turnState!, answers, io.tc.thresholds);
+  // Shown beside the turn's own rows, never credited with deciding it: the proposal's answer did.
+  io.openingRows = rows.map((r) => ({ ...r, gate: `opening:${r.gate}`, decided: false }));
+  if (verdict.kind !== 'intent_failed' && verdict.kind !== 'replay') {
+    const opened = handleVerdict(s, verdict, answers, ctx, io);
+    return { decision: opened.decision, events: [...own.events, ...opened.events] };
+  }
   const fill = fillSlots(s, answers, ctx, slotsToFill(s).filter((spec) => spec.id !== io.kept));
-  return { decision: prompt(GREET_AFTER_OFFER, 'intent', {}, fill.acks), events: fill.events };
+  return { decision: prompt(GREET_AFTER_OFFER, 'intent', {}, [...own.acks, ...fill.acks]), events: [...own.events, ...fill.events] };
+}
+
+/**
+ * What a turn at the greeting's proposal said for the slot proposed, filled into it alone, whatever
+ * the slot listens for: the question asked was about it. A value it took is kept from being filled
+ * again by the rest of the turn (TurnIO.kept).
+ */
+function ownAnswer(s: Session, pc: Extract<PendingConfirmation, { target: 'slot' }>, answers: AnswerMap, ctx: SlotContext, io: TurnIO): FillResult {
+  const fill = fillSlots(s, answers, ctx, [slotSpecOf(io.app, pc.slot)]);
+  if (s.slots[pc.slot]!.value !== null) io.kept = pc.slot;
+  return fill;
 }
 
 /**
@@ -2104,7 +2130,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       if (rung !== undefined) s.frustratedTurns += 1;
       const { decision: resolved, events } = handleVerdict(s, verdict, answers, ctx, io);
       const decision = readSummary(s, escalate(s, resolved, rung), io);
-      rows.push(...slotRows(io.app, events, tc.thresholds));
+      rows.push(...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds));
       bookkeep(s, decision, verdict.kind);
       // The barge-in has now been reported to the model; it does not carry into the next turn.
       s.lastInterrupt = null;

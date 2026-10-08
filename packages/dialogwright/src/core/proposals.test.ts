@@ -15,7 +15,9 @@ import { compileGate } from '../gate/compiled';
 import { factsCandidate, factsOfferSlots } from './factsOffer';
 import { sessionRoundTrip } from '../testing/sessionRoundTrip';
 import { PROPOSALS_DIR, ProposalSystems, proposalsApp, type ProposalFacts } from '../testing/proposals/app';
-import { GREETING, LATER, laterCode, proposalsVariants } from '../testing/proposals/variant';
+import { GREETING, LATER, laterCode, proposalsVariants, replace as replacing } from '../testing/proposals/variant';
+import { runCorpusEntry } from '../harness-text/runner';
+import { proposalsCode } from '../testing/proposals/app';
 import { textingApp } from '../testing/texting/app';
 import { callbackApp } from '../testing/callback/app';
 import { screenedApp } from '../testing/screened/app';
@@ -438,6 +440,89 @@ describe('a proposal at the greeting (offerAt: greeting)', () => {
     const r = await call({ callerNumber: ON_FILE, tools: toolsOf() }, ...says('no', REPORT, "It's 14 Birch Lane", 'nothing is working at all', 'yes, file it', REPORT));
     expect(prompts(r).slice(-2)).toEqual(['anything_else', 'offer_place']);
     expect(last(r).session.greetingOffered).toBeUndefined();
+  });
+
+  it('a value of the caller\'s own, with a no or without one, fills the slot whatever it listens for, and is not asked again', async () => {
+    for (const app of [greeting, variants.variant({ ...GREETING, 'app.yaml': replacing('id: proposals', 'id: proposals-greeting-anywhere'), 'slots.yaml': (t) => GREETING['slots.yaml']!(t).replace('  offerAt: greeting\n', '  offerAt: greeting\n  listen: anywhere\n') })]) {
+      use(app);
+      for (const said of ["no, I'm at my mother's, 7 Birch Lane", "it's at 7 Birch Lane"]) {
+        const r = await call({ callerNumber: ON_FILE }, ...says(said, REPORT));
+        expect(prompts(r), `${app.id} ${said}`).toEqual(['offer_place', 'greet_after_offer', 'ask_problem']);
+        expect(r.runs[1]!.result.session.slots.place, `${app.id} ${said}`).toMatchObject({ value: '7 Birch Lane' });
+        expect(offers(r).map((d) => d.answer), `${app.id} ${said}`).toEqual(['other']);
+      }
+    }
+  });
+
+  it('a priority intent wins over a yes in the same breath: the yes is not kept, and the slot is asked in its form', async () => {
+    use(variants.variant({ ...GREETING, 'app.yaml': replacing('id: proposals', 'id: proposals-greeting-priority'), 'intents.yaml': replacing('    label: check on a request\n    kind: form\n', '    label: check on a request\n    kind: form\n    priority: true\n') }));
+    const r = await call({ callerNumber: ON_FILE }, ...says('yes, I want to check on my request'));
+    const t = last(r);
+    expect(promptOf(t)).toBe('ask_accountId');
+    expect(t.session.form).toBe('check_status');
+    expect(t.session.slots.place!.value).toBeNull();
+    expect(t.session.pendingConfirmation).toBeNull();
+    expect(offers(r)).toEqual([]);
+  });
+
+  it('an informational question drops the proposal: its line is said, then the open question', async () => {
+    const hours = variants.variant(
+      {
+        ...GREETING,
+        'app.yaml': replacing('id: proposals', 'id: proposals-greeting-hours'),
+        'intents.yaml': replacing('  agent:\n', '  hours:\n    criteria: Asks when the service desk is open\n    label: hear our hours\n    kind: informational\n    promptId: hours_line\n  agent:\n'),
+        'prompts.yaml': (t) => `${GREETING['prompts.yaml']!(t)}  hours_line:\n    text: We're open around the clock.\n    interruptible: false\n`,
+      },
+      { ...proposalsCode, testing: { ...proposalsCode.testing!, heuristics: { intents: [['hours', /\bhours\b/], ...proposalsCode.testing!.heuristics!.intents!] } } },
+    );
+    use(hours);
+    const t = last(await call({ callerNumber: ON_FILE }, ...says('what are your hours')));
+    expect(promptOf(t)).toBe('ask_intent');
+    expect('acks' in t.decision ? t.decision.acks.map((a) => a.promptId) : []).toEqual(['hours_line']);
+    expect(t.session.pendingConfirmation).toBeNull();
+    expect(t.session.greetingOffered).toBe('place');
+  });
+
+  it('the debug table keeps the request read again, never credited with the turn', async () => {
+    const t = last(await call({ callerNumber: ON_FILE }, ...says("yes, I'd like to report a problem")));
+    const opening = t.rows.filter((r) => r.gate.startsWith('opening:'));
+    expect(opening.map((r) => r.gate)).toContain('opening:intent');
+    expect(opening.some((r) => r.decided)).toBe(false);
+    expect(t.rows.find((r) => r.decided)?.gate).toBe('confirmation');
+  });
+
+  it('the trace and the console mask a redacted slot proposed at the greeting', async () => {
+    for (const redact of ['mask', 'last4'] as const) {
+      use({ ...greeting, id: `proposals-greeting-trace-${redact}`, slots: { ...greeting.slots, place: { ...greeting.slots.place!, redact } } } as App);
+      for (const answer of ['yes', 'no']) {
+        const r = await call({ callerNumber: ON_FILE }, { silence: true }, { say: answer });
+        expect(JSON.stringify(r.runs.map((x) => x.record)), `${redact} ${answer}`).toContain('22 Alder Street');
+        for (const run of r.runs) {
+          expect(JSON.stringify(redactRecordSlots(run.record, 'length')), `${redact} ${answer}`).not.toContain('Alder');
+          expect(JSON.stringify(redactRecord(run.record)), `${redact} ${answer}`).not.toContain('Alder');
+        }
+      }
+    }
+  });
+
+  it('the greeting\'s line before a proposal may be named in app.yaml (prompts.greetings.offer)', async () => {
+    use(variants.variant({
+      ...GREETING,
+      'app.yaml': (t) => `${replacing('id: proposals', 'id: proposals-greeting-named')(t)}\nprompts:\n  greetings:\n    offer: greeting_known\n`,
+      'prompts.yaml': (t) => `${GREETING['prompts.yaml']!(t)}  greeting_known:\n    text: Welcome back to Example Service Desk.\n    interruptible: true\n`,
+    }));
+    const t = last(await call({ callerNumber: ON_FILE }));
+    expect('acks' in t.decision ? t.decision.acks.map((a) => a.promptId) : []).toEqual(['greeting_known']);
+  });
+
+  it('corpus lines at the proposal are seeded with it, and replay the yes, the no and the request', async () => {
+    const lines = loadCorpus(join(variants.dirOf(greeting), 'fixtures', 'corpus.jsonl'), greeting);
+    const client = new FixtureStubClient(lines, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY }) });
+    const outcome = async (id: string) => (await runCorpusEntry(lines.find((e) => e.id === id)!, { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0 })).outcome;
+    expect(await outcome('go-01')).toMatchObject({ promptId: 'greet_after_offer', form: null, slots: { place: '22 Alder Street' }, decidedGate: 'confirmation' });
+    expect(await outcome('go-02')).toMatchObject({ promptId: 'ask_problem', form: 'report_problem', slots: { place: '22 Alder Street' } });
+    expect(await outcome('go-03')).toMatchObject({ promptId: 'greet_after_offer', form: null, slots: { place: null } });
+    expect(await outcome('go-04')).toMatchObject({ promptId: 'ask_accountId', form: 'check_status', slots: { place: null } });
   });
 
   it('the session round-trips with the proposal pending', async () => {
