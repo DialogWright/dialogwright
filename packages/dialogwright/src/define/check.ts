@@ -7,7 +7,8 @@ import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, type A
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { DEFAULT_ROLE_PERSON_REASON, personReasons } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
-import { FILE_NAMES, FOLDER_FILES } from './schema/index';
+import { FILE_NAMES, FOLDER_FILES, SLOTS_FILE } from './schema/index';
+import type { SlotSpec } from '../core/slots/types';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 import { withoutFallbackWarnings } from '../kb/fallback';
 import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProblems } from './knowledgeUse';
@@ -250,6 +251,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     // The checks below read the slots' specs: the folder's library slots count as the code's.
     code = { ...found.code, slots: linkSlots(config, found.code, loaded.document, codeFile).slots };
     linked = true;
+    callerNumberWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    }, codeFile);
   }
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
@@ -266,6 +271,31 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   const result: CheckResult = { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
   if (warnings.length > 0) result.warnings = sortProblems(warnings, codeFile);
   return result;
+}
+
+/**
+ * The warnings for a slot that offers the number the caller is calling from (SlotSpec.callerNumber):
+ * a form with the slot and no summary, where a yes would fill a number the caller never heard whole;
+ * and a slot that listens for the call or is carried, which is offered once per form and, once
+ * filled, not offered again.
+ */
+function callerNumberWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void, codeFile: string): void {
+  for (const [id, spec] of Object.entries(slots)) {
+    if (spec?.callerNumber === undefined) continue;
+    const library = config.slots !== null && Object.hasOwn(config.slots, id);
+    const at = (message: string, fix: string): void => {
+      if (library) report(SLOTS_FILE, [id, 'callerNumber'], message, fix);
+      else report(codeFile, ['slots', id, 'callerNumber'], message, fix);
+    };
+    const forms = Object.entries(config.forms.forms).filter(([, form]) => form.slots.includes(id));
+    const unread = forms.filter(([, form]) => form.summaryPromptId === null).map(([form]) => form);
+    if (unread.length > 0) {
+      at(`the slot "${id}" offers the number the caller is calling from, but ${unread.length === 1 ? 'the form' : 'the forms'} ${unread.map((f) => `"${f}"`).join(', ')} ${unread.length === 1 ? 'has' : 'have'} no summary, so a yes fills a number the caller only heard the last four digits of`, `give ${unread.length === 1 ? 'the form' : 'each form'} a summaryPromptId that reads {${id}} back, or delete "callerNumber"`);
+    }
+    if (spec.listen === 'call' || (config.app.carrySlots ?? []).includes(id)) {
+      at(`the slot "${id}" offers the number the caller is calling from and is kept for the whole call, so it is offered once, in the first form that asks it; a later form uses the value kept`, `nothing to do if that is meant; otherwise give the slot listen: form or up-front`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

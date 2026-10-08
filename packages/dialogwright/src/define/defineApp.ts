@@ -557,6 +557,14 @@ export function crossLink(
       at(`the slot "${id}" is in app.yaml's carrySlots, which keeps it for the whole call (listen: call), but it says listen: ${listen}`, `${deleteIt} (carrySlots already makes it call), or take "${id}" out of carrySlots in app.yaml`);
     }
   }
+  // A slot that offers the number the caller is calling from (SlotSpec.callerNumber, a digits slot's
+  // `callerNumber`) is never an identity factor: a caller ID can be forged, so it proves no one.
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    if (spec?.callerNumber === undefined || !factors.includes(id)) continue;
+    const message = `the slot "${id}" is an identity factor (identity.yaml), but it offers the number the caller is calling from (callerNumber): a caller ID can be forged, so it must never stand in for proving who the caller is`;
+    if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'callerNumber'], message, `delete "callerNumber" here, or use a slot of its own for a callback number`);
+    else inTs(['slots', id, 'callerNumber'], message, `delete callerNumber from ${inCode('slots', id)}, or use a slot of its own for a callback number`);
+  }
   for (const name of Object.keys(app.thresholds ?? {})) {
     if (has(DEFAULT_THRESHOLDS, name)) yaml('app.yaml', ['thresholds', name], `threshold "${name}" is one of the engine's own`, `rename it: an app's thresholds need names of their own (the engine's are set with --threshold ${name}=VALUE on a run)`);
   }
