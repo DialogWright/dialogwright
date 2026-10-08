@@ -124,6 +124,15 @@ describe('the console\'s call_started', () => {
     expect(JSON.stringify(events)).not.toContain('5555550110');
   });
 
+  it('keeps a Telnyx caller\'s number out of the frame log, which masks its custom parameters by name', async () => {
+    const { d, callId } = await setUp('testkit', 'telnyx', telnyxSetup('+15555550110'));
+    const log = readFileSync(join(d.dir, `${callId}.frames.jsonl`), 'utf8');
+    expect(log).toContain('"telnyx_call_from":"…0110"');
+    expect(log).toContain('"telnyx_call_to":"…0111"');
+    expect(log).not.toContain('5555550110');
+    expect(log).not.toContain('5555550111');
+  });
+
   it('shows "unknown" for a Telnyx call with no number, and a Twilio caller as before', async () => {
     expect((await setUp('testkit', 'telnyx', telnyxSetup())).events.find((e) => e.type === 'call_started')).toMatchObject({ from: 'unknown' });
     expect((await setUp('testkit', 'twilio', TWILIO_SETUP)).events.find((e) => e.type === 'call_started')).toMatchObject({ from: '…0199' });
