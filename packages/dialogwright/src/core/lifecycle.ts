@@ -425,7 +425,7 @@ export function ensureEntry(s: Session, tc: TurnContext, out: TurnOut, acks: Ack
       s.entered = form;
       return null;
     case 'STEP_UP':
-      return stepUp(s, call, decision, tc, out, acks);
+      return stepUp(s, call, decision.needLevel === 2 ? 2 : 1, tc, out, acks);
     case 'BLOCK': {
       const ack = blockAck(s, decision.reason);
       if (!ack) return handoff(s, 'needs-human', acks);
@@ -437,8 +437,9 @@ export function ensureEntry(s: Session, tc: TurnContext, out: TurnOut, acks: Ack
 }
 
 /**
- * The gate said STEP_UP for `call`: the entry call of the open form (ensureEntry), or one of its checks
- * (core/turn.ts stopForm). Identity is asked for (the next factor, their check, or the keypad code;
+ * The gate said STEP_UP for `call`, to level `need`: the entry call of the open form (ensureEntry), or
+ * one of its checks (core/turn.ts stopForm, which also asks for level 1 for a check that waits on an
+ * identity factor). Identity is asked for (the next factor, their check, or the keypad code;
  * on a web chat, the portal sign-in), and the form loop goes on once the caller is verified to the
  * level the gate said: the entry call is made again, and a check runs again, since a check that has
  * not passed is not in Session.checked. A check's call is kept without its params: it is never made
@@ -446,9 +447,9 @@ export function ensureEntry(s: Session, tc: TurnContext, out: TurnOut, acks: Ack
  * ask: validateApp keeps every tool at level 0, so only an app's own rule can get here, and it fails
  * closed, to a person.
  */
-export function stepUp(s: Session, call: ToolCall, decision: GateDecision, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | Refused | null {
+export function stepUp(s: Session, call: ToolCall, need: 1 | 2, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | Refused | null {
   if (!appOf(s).identity) return handoff(s, 'needs-human', acks);
-  s.stepUp = { call, need: decision.needLevel === 2 ? 2 : 1 };
+  s.stepUp = { call, need };
   return nextFactor(s, tc, out, acks);
 }
 

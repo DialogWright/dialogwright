@@ -1,6 +1,6 @@
 import { confirmationHash } from '../gate/policy';
 import type { GateDecision } from '../gate/types';
-import { formOf } from './app/lookup';
+import { formOf, identityOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { CheckOutcome, FormCheck, FormId, ToolName } from './app/types';
 import { blockAck, callTool, type TurnOut } from './lifecycle';
@@ -33,7 +33,13 @@ export type ChecksRun =
     /** The form's checksPassed line, when this run is the one that passed the last of its checks: said once per form. */
     passedPromptId: string | null;
   }
-  | { kind: 'refused'; check: FormCheck; decision: GateDecision; hash: string };
+  | { kind: 'refused'; check: FormCheck; decision: GateDecision; hash: string }
+  /**
+   * A check that waits on nothing but an identity factor it reads (`with: [dob]`), empty until the
+   * caller is verified: the form loop asks for identity for it (turn.ts stopForm), so a form never
+   * completes with a check that never ran.
+   */
+  | { kind: 'identity'; check: FormCheck };
 
 const NOTHING: ChecksRun = { kind: 'passed', passedPromptId: null };
 
@@ -57,6 +63,17 @@ export function checkHash(s: Session, check: FormCheck): string | null {
   return params === null ? null : confirmationHash(params, check.with);
 }
 
+/**
+ * Whether `check` is not ready only because an identity factor it reads is empty: every other slot
+ * it reads holds a value. It is never ready until the caller is verified (the factors are filled by
+ * verification), so it must not be left to wait.
+ */
+function waitsOnIdentity(s: Session, check: FormCheck): boolean {
+  const factors = identityOf(appOf(s)).factorSlots;
+  const empty = check.with.filter((id) => (s.slots[id]?.value ?? null) === null);
+  return empty.length > 0 && empty.every((id) => factors.includes(id));
+}
+
 /** Whether every check of the form has passed, with whatever params (Session.checked). */
 function allPassed(s: Session, checks: readonly FormCheck[]): boolean {
   return checks.every((c) => s.checked !== undefined && Object.hasOwn(s.checked, c.action));
@@ -64,23 +81,29 @@ function allPassed(s: Session, checks: readonly FormCheck[]): boolean {
 
 /**
  * Runs the open form's ready checks whose params changed since they last passed, in order, through
- * the gate. Each that passes is kept (Session.checked); the first refusal stops the run. A form
- * without checks runs nothing and changes nothing.
+ * the gate. Each that passes is kept (Session.checked); the first refusal stops the run. With none
+ * refused, the first check that waits only on an identity factor (waitsOnIdentity) is returned for the
+ * form loop to ask for identity. A form without checks runs nothing and changes nothing.
  */
 export function runChecks(s: Session, form: FormId, tc: TurnContext, out: TurnOut): ChecksRun {
   const def = formOf(appOf(s), form);
   const checks = def.checks ?? [];
   if (checks.length === 0) return NOTHING;
   const before = allPassed(s, checks);
+  let waiting: FormCheck | null = null;
   for (const check of checks) {
     const params = paramsOf(s, check);
-    if (params === null) continue;
+    if (params === null) {
+      if (waiting === null && waitsOnIdentity(s, check)) waiting = check;
+      continue;
+    }
     const hash = confirmationHash(params, check.with);
     if (s.checked?.[check.action] === hash) continue;
     const { decision } = callTool(s, { tool: check.action, params }, tc, out);
     if (decision.verdict !== 'ALLOW') return { kind: 'refused', check, decision, hash };
     s.checked = { ...(s.checked ?? {}), [check.action]: hash };
   }
+  if (waiting !== null) return { kind: 'identity', check: waiting };
   const passedPromptId = def.checksPassed !== undefined && !before && allPassed(s, checks) ? def.checksPassed : null;
   return { kind: 'passed', passedPromptId };
 }

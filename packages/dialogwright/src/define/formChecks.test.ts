@@ -11,7 +11,7 @@ import { defineApp, type AppCode } from './defineApp';
 import { validateApp } from '../core/app/validate';
 import { SCREENED_DIR, screenedApp, screenedCode } from '../testing/screened/app';
 import { PROPOSALS_DIR, proposalsCode } from '../testing/proposals/app';
-import { CHECKING } from '../testing/proposals/variant';
+import { AGE_CHECK, CHECKING, CODE_CHECK, both, codeCode, replace as replacing } from '../testing/proposals/variant';
 
 /**
  * What `check` says of a form's checks (./formChecks.ts): the refusals, which defineApp makes too,
@@ -187,15 +187,27 @@ describe('the refusals', () => {
 
 describe('the warnings', () => {
   it('a check above the level the form\'s entry proves, and a check on an identity factor: warned, never refused', async () => {
-    const dir = proposalsFolder(CHECKING);
-    const { problems, warnings } = await checked(dir, proposalsCode);
-    expect(problems).toEqual([]);
-    expect(warnings).toEqual([
-      'forms.yaml:15:16  forms.report_problem.checks[1].with[0]  check "checkAge" reads "dob", an identity factor; it holds a value only once the caller has given it during verification, so the check does not run before then  ->  nothing to do if that is meant (an age check on a date of birth); otherwise check one of the form\'s own slots',
-      'policy.yaml:36:12  actions.checkProblem.level  check "checkProblem" of form "report_problem" needs identity level 1, which the form\'s entry does not prove first; the caller will be asked to verify when the check runs  ->  nothing to do if that is meant; otherwise set it to 0, or give the form an entry call with a purpose of level 1 (policy.yaml purposes: report_problem: { level: 1 })',
+    const level = await checked(proposalsFolder(CHECKING), proposalsCode);
+    expect(level.problems).toEqual([]);
+    expect(level.warnings).toEqual([
+      'policy.yaml:36:12  actions.checkProblem.level  check "checkProblem" of form "report_problem" needs identity level 1, which the form\'s entry does not prove first; the caller is asked to verify when the check runs, and the check runs again once they are  ->  nothing to do if that is meant; otherwise set it to 0, or give the form an entry call with a purpose of level 1 (policy.yaml purposes: report_problem: { level: 1 })',
     ]);
-    // defineApp builds it, and validateApp takes a check that reads an identity factor the form does not list.
-    expect(defineApp(dir, proposalsCode).forms.report_problem!.checks!.map((c) => c.with)).toEqual([['problem'], ['dob']]);
+    const factor = await checked(proposalsFolder(AGE_CHECK), proposalsCode);
+    expect(factor.problems).toEqual([]);
+    expect(factor.warnings.filter((w) => w.includes('identity factor'))).toEqual([
+      'forms.yaml:13:16  forms.report_problem.checks[0].with[0]  check "checkAge" reads "dob", an identity factor, which holds a value only once the caller is verified; the caller is asked to verify as soon as the check waits on nothing else (on a web chat, which takes no factor, the form goes to a person)  ->  nothing to do if that is meant (an age check on a date of birth); otherwise check one of the form\'s own slots',
+    ]);
+  });
+
+  it('a check with no level is refused: it needs the highest, so every caller would verify part-way', async () => {
+    const dir = proposalsFolder({ ...CODE_CHECK, 'policy.yaml': both(CODE_CHECK['policy.yaml']!, replacing('    check: true\n    level: 2\n', '    check: true\n')) });
+    const { problems, warnings } = await checked(dir, codeCode);
+    expect(problems).toEqual([
+      'policy.yaml:33:3  actions.checkProblem  check "checkProblem" of form "report_problem" has no level, so it needs the highest (2), and every caller would be asked to verify part-way through the form  ->  set "level:" on it: 0 for a check anyone may pass, or the level it is meant to need',
+    ]);
+    expect(warnings.join('\n')).not.toContain('needs identity level');
+    // Written out, the same level is the app's call: a warning.
+    expect((await checked(proposalsFolder(CODE_CHECK), codeCode)).problems).toEqual([]);
   });
 
   it('an `on` reason the check never refuses for, and a rule the write does not hold the caller to: printed, never counted', async () => {

@@ -4,7 +4,7 @@ import { isDefinedRule } from '../gate/defineRule';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import { handoffPromptId } from '../prompts/render';
 import type { LoadedConfig } from './load';
-import { readRule } from './policyFile';
+import { DEFAULT_ACTION_LEVEL, readRule } from './policyFile';
 import { ruleKey } from './schema/policy';
 import { closest, type DataPath } from './problems';
 
@@ -14,16 +14,19 @@ import { closest, type DataPath } from './problems';
  * warns of (checkWarnings, run by `dialogwright check`, never by defineApp).
  *
  * Refused: a check whose action is not an action of policy.yaml, or not one marked `check: true`; a
- * `with` slot that is neither one of the form's slots nor an identity factor; a check action that
- * lists a confirmed rule (nothing is confirmed part-way through a form); a line a check says that
+ * check action with no level, which needs the highest, above what the form's entry proves (a forgotten
+ * `level: 0` would ask every caller to verify part-way); a `with` slot that is neither one of the
+ * form's slots nor an identity factor; a check action that lists a confirmed rule (nothing is
+ * confirmed part-way through a form); a line a check says that
  * prompts.yaml does not have (its read-back `confirm` and its `say`, the handoff line, the form's
  * checksPassed). A `check: true` action with a tool in the code, or no form's checks naming it, is
  * policyFile.ts's and reach's to report.
  *
- * Warned: a check action that needs a level above 0 the form's entry does not prove (a form with an
- * entry call whose purpose, policy.yaml `purposes`, needs that level), so the caller is asked to verify
- * when the check runs (core/turn.ts stopForm); a `with` slot that is an identity factor, which holds a
- * value only once the caller has given it during verification; an `on` reason the action can never
+ * Warned: a check action whose level, written out, is above what the form's entry proves (a form with
+ * an entry call whose purpose, policy.yaml `purposes`, needs that level), so the caller is asked to
+ * verify when the check runs (core/turn.ts stopForm); a `with` slot that is an identity factor, which
+ * holds a value only once the caller is verified, so the caller is asked to verify as soon as the check
+ * waits on nothing else, and on a web chat (no factor is taken) the form goes to a person; an `on` reason the action can never
  * give (no rule of it refuses for that reason), so the outcome never applies; and a rule of a check
  * action that no action the form calls names, so the write would not hold what the check held. Each
  * is the app's call: the first two are how an age check on a date of birth, or a check only a
@@ -76,6 +79,10 @@ export function checkProblems(c: FormCheckInput): void {
         report('forms.yaml', [...at, 'action'], `form "${id}" checks "${check.action}", which is not an action in policy.yaml`, `${guess ? `rename it to "${guess}", or ` : ''}add "${check.action}:" under actions in policy.yaml with "check: true", its level and its rules`);
       } else if (action.check !== true) {
         report('forms.yaml', [...at, 'action'], `form "${id}" checks "${check.action}", which is an action with a tool, not a check`, `add "check: true" to actions.${check.action} in policy.yaml (and delete its tool from the code), or check an action that has it`);
+      } else if (action.level === undefined && DEFAULT_ACTION_LEVEL > provenLevel(config, id)) {
+        // A level left out is the highest (fails closed): a forgotten `level: 0` would ask every caller to
+        // verify part-way through the form. Only a level written out is the app's call (checkWarnings).
+        report('policy.yaml', ['actions', check.action], `check "${check.action}" of form "${id}" has no level, so it needs the highest (${DEFAULT_ACTION_LEVEL}), and every caller would be asked to verify part-way through the form`, 'set "level:" on it: 0 for a check anyone may pass, or the level it is meant to need', true);
       }
       check.with.forEach((slot, j) => {
         // An identity factor is the app's to read (checkWarnings warns of it): it is not one of the form's slots.
@@ -103,6 +110,11 @@ export function checkProblems(c: FormCheckInput): void {
     });
   }
   for (const ref of checkPromptReferences(config)) c.promptExists(ref.file, ref.path, ref.id);
+}
+
+/** The level a form's entry call proves before its checks run: its purpose's (policy.yaml `purposes`), for a form with an `entry` hook; 0 otherwise. */
+function provenLevel(config: LoadedConfig, form: string): number {
+  return config.forms.forms[form]?.hooks?.includes('entry') ? (config.policy.purposes[form]?.level ?? 0) : 0;
 }
 
 /**
@@ -146,24 +158,23 @@ export function checkWarnings(c: Omit<FormCheckInput, 'promptExists'>, customRul
     (form.checks ?? []).forEach((check, i) => {
       check.with.forEach((slot, j) => {
         if (!factors.has(slot)) return;
-        report('forms.yaml', ['forms', id, 'checks', i, 'with', j], `check "${check.action}" reads "${slot}", an identity factor; it holds a value only once the caller has given it during verification, so the check does not run before then`, 'nothing to do if that is meant (an age check on a date of birth); otherwise check one of the form\'s own slots');
+        report('forms.yaml', ['forms', id, 'checks', i, 'with', j], `check "${check.action}" reads "${slot}", an identity factor, which holds a value only once the caller is verified; the caller is asked to verify as soon as the check waits on nothing else (on a web chat, which takes no factor, the form goes to a person)`, 'nothing to do if that is meant (an age check on a date of birth); otherwise check one of the form\'s own slots');
       });
       const action = Object.hasOwn(actions, check.action) ? actions[check.action]! : undefined;
       if (!action || action.check !== true) return;
-      // A check above the level the form's entry proves: at run time its STEP_UP asks for identity, as
-      // an entry call's does, and the check runs again once the caller is verified (core/turn.ts stopForm).
-      const level = action.level ?? 2;
-      const purpose = config.policy.purposes[id]?.level ?? 0;
-      const proven = hooksOf(id).includes('entry') ? purpose : 0;
-      if (level > proven) {
+      // A check above the level the form's entry proves, written out: at run time its STEP_UP asks for
+      // identity, as an entry call's does, and the check runs again once the caller is verified
+      // (core/turn.ts stopForm). A level left out is refused instead (checkProblems).
+      const level = action.level;
+      const proven = provenLevel(config, id);
+      if (level !== undefined && level > proven) {
         report(
           'policy.yaml',
-          action.level !== undefined ? ['actions', check.action, 'level'] : ['actions', check.action],
-          `check "${check.action}" of form "${id}" needs identity level ${level}, which the form's entry does not prove first; the caller will be asked to verify when the check runs`,
+          ['actions', check.action, 'level'],
+          `check "${check.action}" of form "${id}" needs identity level ${level}, which the form's entry does not prove first; the caller is asked to verify when the check runs, and the check runs again once they are`,
           hooksOf(id).includes('entry')
             ? `nothing to do if that is meant; otherwise set it to ${proven}, or raise the form's purpose to level ${level} (policy.yaml purposes: ${id}: { level: ${level} })`
             : `nothing to do if that is meant; otherwise set it to 0, or give the form an entry call with a purpose of level ${level} (policy.yaml purposes: ${id}: { level: ${level} })`,
-          action.level === undefined,
         );
       }
       const reasons = reasonsOf(action.rules, customRules);

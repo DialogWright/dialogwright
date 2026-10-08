@@ -434,7 +434,7 @@ function completeForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, agreed:
   // The form's checks first: a yes that changed what one reads ("yes, but I rent") is refused here,
   // with the check's own line, and the write is never attempted.
   const checks = runChecks(s, form, io.tc, io.out);
-  if (checks.kind === 'refused') return stopForm(s, form, checks, acks, io, agreed);
+  if (checks.kind !== 'passed') return stopForm(s, form, checks, acks, io, agreed);
   const c = completion(s, form, [...acks, ...passedAcks(s, checks)], io.tc, io.out);
   switch (c.kind) {
     case 'said':
@@ -899,7 +899,7 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   // The form's checks, once its entry is through: an answer that rules the caller out ends the form
   // here, before the next question (core/checks.ts).
   const checks = runChecks(s, form, io.tc, io.out);
-  if (checks.kind === 'refused') return stopForm(s, form, checks, said, io);
+  if (checks.kind !== 'passed') return stopForm(s, form, checks, said, io);
   said.push(...passedAcks(s, checks));
   const next = nextPrompt(s);
   // The caller said whether they know the answer rather than answering: the slot's help prompt
@@ -1069,6 +1069,41 @@ function passedAcks(s: Session, checks: Extract<ReturnType<typeof runChecks>, { 
 
 type CheckConfirmation = Extract<PendingConfirmation, { target: 'check' }>;
 
+/** What a form's checks made of a turn when it was not that all of them that were ready passed. */
+type ChecksStopped = Exclude<ReturnType<typeof runChecks>, { kind: 'passed' }>;
+
+/**
+ * Identity asked for a check (lifecycle.ts stepUp, as for an entry call's STEP_UP), to level `need`.
+ * Null when it cannot be: an app without identity, or a caller already at that level (a rule of the
+ * app's own that says STEP_UP whatever the level would only ask again, round the code), so the check's
+ * refusal goes on as it always has, to a person. Factors already in hand that match verify at once
+ * ("my account is 5550 1234, born April 12th, 1980", said on the way), and the form loop then runs the
+ * check again.
+ */
+function checkStepUp(s: Session, check: FormCheck, need: 1 | 2, acks: Ack[], io: TurnIO): Decision | null {
+  if (!io.app.identity) return null;
+  if (!isAnonymous(s.principal) && s.principal.level >= need) return null;
+  const said = [...acks];
+  const next = stepUp(s, { tool: check.action, params: {} }, need, io.tc, io.out, said);
+  if (next === null) return continueForm(s, io, said, null);
+  // A step-up made with the form entered asks the gate for no entry call, so nothing is refused here.
+  return next.kind === 'refused' ? null : next;
+}
+
+/**
+ * A check that waits only on an identity factor it reads (core/checks.ts, `identity`): the factor is
+ * filled only by verifying, so identity is asked for now, to level 1, and the check runs once it is
+ * given. The factors are taken only from an anonymous caller on a channel that asks for them (fia.ts
+ * activeSlots); anywhere else (a web chat, whose callers sign in and never type a factor; a caller
+ * verified some other way) the check can never run, and the form goes to a person (`form_stopped`,
+ * with no reason) rather than complete with it unrun.
+ */
+function awaitFactors(s: Session, form: FormId, check: FormCheck, acks: Ack[], io: TurnIO): Decision {
+  const collects = isAnonymous(s.principal) && !s.caps.signIn;
+  const asked = collects ? checkStepUp(s, check, 1, acks, io) : null;
+  return asked ?? endByCheck(s, form, check, { verdict: 'NEEDS_HUMAN' }, acks, io);
+}
+
 /**
  * A check refused (core/checks.ts): the form ends as its reason's outcome says (endByCheck), unless the
  * outcome reads the refusal back first (its `confirm`) and a slot the check reads is not confirmed:
@@ -1078,20 +1113,17 @@ type CheckConfirmation = Extract<PendingConfirmation, { target: 'check' }>;
  *
  * A STEP_UP is no refusal of the form: the check needs a level the caller has not proven (a check above
  * what the form's entry proves, which `pnpm check` warns of). Identity is asked for as for an entry
- * call's STEP_UP (lifecycle.ts stepUp), and once the caller is verified the form loop runs the check
- * again (continueForm); a failed or abandoned verification ends as the identity ladder ends. In an app
- * without identity it goes to a person, as it always has.
+ * call's STEP_UP (checkStepUp), and once the caller is verified the form loop runs the check again
+ * (continueForm); a failed verification ends as the identity ladder ends. In an app without identity,
+ * or for a caller already at the level asked for, it goes to a person, as it always has. A check that
+ * waits only on an identity factor is no refusal either (awaitFactors).
  */
-function stopForm(s: Session, form: FormId, refused: Extract<ReturnType<typeof runChecks>, { kind: 'refused' }>, acks: Ack[], io: TurnIO, agreed: ReadonlySet<SlotId> = NONE_AGREED): Decision {
-  if (refused.decision.verdict === 'STEP_UP' && io.app.identity) {
-    const said = [...acks];
-    const next = stepUp(s, { tool: refused.check.action, params: {} }, refused.decision, io.tc, io.out, said);
-    // Null: the factors were already in hand ("my account is 5550 1234, born April 12th, 1980", said on
-    // the way) and matched, so the caller is verified now and the form loop runs the check again.
-    if (next === null) return continueForm(s, io, said, null);
-    // An identity question, or the person a step-up that cannot be finished goes to. A step-up made
-    // with the form entered asks the gate for no entry call, so nothing is refused here.
-    if (next.kind !== 'refused') return next;
+function stopForm(s: Session, form: FormId, stopped: ChecksStopped, acks: Ack[], io: TurnIO, agreed: ReadonlySet<SlotId> = NONE_AGREED): Decision {
+  if (stopped.kind === 'identity') return awaitFactors(s, form, stopped.check, acks, io);
+  const refused = stopped;
+  if (refused.decision.verdict === 'STEP_UP') {
+    const asked = checkStepUp(s, refused.check, refused.decision.needLevel === 2 ? 2 : 1, acks, io);
+    if (asked !== null) return asked;
   }
   const readBack = checkReadBack(s, form, refused, acks, agreed);
   if (readBack !== null) return readBack;
@@ -1622,7 +1654,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // as the form loop does, before any check reads it; the reopened slot is asked after.
         if (libraryReadBackOwed(s)) return { decision: continueForm(s, io, said, null), events: fill.events };
         const checks = runChecks(s, form, io.tc, io.out);
-        if (checks.kind === 'refused') return { decision: stopForm(s, form, checks, said, io), events: fill.events };
+        if (checks.kind !== 'passed') return { decision: stopForm(s, form, checks, said, io), events: fill.events };
         said.push(...passedAcks(s, checks));
       }
       return { decision: askSlot(s, verdict.slot, null, said), events: fill?.events ?? [] };

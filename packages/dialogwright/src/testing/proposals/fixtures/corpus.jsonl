@@ -13,6 +13,7 @@
 {"id":"pr-02","text":"only part of it works","intent":"none","context":"report_problem","prompted":"problem","labels":{"problem":"partial"}}
 {"id":"sm-01","text":"yes, file it","intent":"none","context":"confirm_report_problem","confirm":"yes"}
 {"id":"sm-02","text":"no, the address is wrong","intent":"none","context":"confirm_report_problem","confirm":"no","changeSlot":"place"}
+{"id":"sm-03","text":"yes, but only part of it works","intent":"none","context":"confirm_report_problem","confirm":"yes","labels":{"problem":"partial"}}
 {"id":"id-01","text":"five five five zero one two three four","intent":"none","context":"check_status","prompted":"accountId","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero one two three four","accountIdComplete":true}}
 {"id":"id-02","text":"April twelfth nineteen eighty","intent":"none","context":"check_status","prompted":"dob","labels":{"dobGiven":true,"dobMonth":"april","dobDay":"12","dobYear":"nineteen eighty"}}
 {"id":"ag-01","text":"can I talk to a person","intent":"agent","context":"no_form"}
