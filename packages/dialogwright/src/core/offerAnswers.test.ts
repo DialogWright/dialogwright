@@ -69,6 +69,7 @@ const text = (...steps: Scenario['steps']): Promise<ScenarioRun> => call(MOBILE,
 const last = (r: ScenarioRun): TurnResult => r.runs.at(-1)!.result;
 const promptOf = (t: TurnResult): string | undefined => ('promptId' in t.decision ? t.decision.promptId : undefined);
 const prompts = (r: ScenarioRun): (string | undefined)[] => r.runs.map((x) => promptOf(x.result));
+const gates = (r: ScenarioRun): string[] => r.runs.flatMap((x) => x.result.gateEvents.map((e) => `${e.decision.call.tool}:${e.decision.verdict}`));
 const offers = (r: ScenarioRun) => r.runs.flatMap((x) => x.result.audit.filter((d) => d.type === 'offer').map((d) => d.detail));
 
 describe('answers on the caller\'s number\'s offer', () => {
@@ -132,21 +133,44 @@ describe('answers on the caller\'s number\'s offer', () => {
     expect(t.session.slots.textTo).toMatchObject({ value: '5555550199' });
   });
 
-  it('on the keypad, 1 is yes and 2 is no; any other key asks the offer again', async () => {
-    const one = await text(...says(...OPENER), { dtmf: '1' });
-    expect(last(one).session.slots.textTo).toMatchObject({ value: '5555550142', confirmed: true });
-    expect(promptOf(last(one))).toBe('confirm_open_request_text');
-    expect(offers(one)).toMatchObject([{ answer: 'yes', by: 'keypad' }]);
-    const two = await text(...says(...OPENER), { dtmf: '2' });
+  it('on the keypad, a 1 alone is yes and a 2 alone is no, once the keys stop or with #', async () => {
+    // Each key is its own turn: the first is held, and nothing is settled until the keys stop (the
+    // no-input wait, shortened after a key: a silence turn) or # ends them.
+    for (const keys of [[{ dtmf: '1' }, { silence: true }], [{ dtmf: '1#' }]] as Scenario['steps'][]) {
+      const one = await text(...says(...OPENER), ...keys);
+      expect(prompts(one).slice(3), JSON.stringify(keys)).toEqual([undefined, 'confirm_open_request_text']);
+      expect(last(one).session.slots.textTo).toMatchObject({ value: '5555550142', confirmed: true });
+      expect(offers(one)).toMatchObject([{ answer: 'yes', by: 'keypad' }]);
+      expect(gates(one)).toEqual(['findCallerByPhone:ALLOW']);
+    }
+    const two = await text(...says(...OPENER), { dtmf: '2' }, { silence: true });
+    expect(prompts(two).slice(3)).toEqual([undefined, 'confirm_open_request']);
     expect(last(two).session.slots.textTo).toMatchObject({ value: null, declined: true });
-    expect(promptOf(last(two))).toBe('confirm_open_request');
     expect(offers(two)).toMatchObject([{ answer: 'no', by: 'keypad' }]);
-    const five = await text(...says(...OPENER), { dtmf: '5' });
-    expect(promptOf(last(five))).toBe('offer_textTo');
+    expect(gates(two)).toEqual(['findCallerByPhone:ALLOW']);
+    const five = await text(...says(...OPENER), { dtmf: '5' }, { silence: true });
+    expect(prompts(five).slice(3)).toEqual([undefined, 'offer_textTo']);
     expect(last(five).session.slots.textTo).toMatchObject({ value: null, attempts: 1 });
     expect(offers(five)).toEqual([]);
-    // A number keyed is still not taken: its first key asks the offer again.
-    expect(last(await text(...says(...OPENER), { dtmf: '5555550199' })).session.slots.textTo!.value).toBeNull();
+  });
+
+  it('a number keyed at the offer is one answer to neither: asked again once, nothing recorded, and no key spills into the next question', async () => {
+    for (const keys of [[{ dtmf: '2125550199' }, { silence: true }], [{ dtmf: '2125550199#' }]] as Scenario['steps'][]) {
+      const r = await text(...says(...OPENER), ...keys);
+      const keyed = r.runs.slice(3);
+      // Every key but the last turn is held; the last turn asks the offer once more.
+      expect(keyed.slice(0, -1).every((x) => x.result.decision.kind === 'ignore'), JSON.stringify(keys)).toBe(true);
+      expect(promptOf(last(r)), JSON.stringify(keys)).toBe('offer_textTo');
+      expect(last(r).session.slots.textTo).toMatchObject({ value: null, attempts: 1 });
+      expect(last(r).session.dtmfBuffer).toBe('');
+      expect(offers(r)).toEqual([]);
+      expect(gates(r)).toEqual(['findCallerByPhone:ALLOW']);
+      expect(r.runs.flatMap((x) => x.result.audit.map((d) => d.type))).not.toContain('offer');
+    }
+    // The offer asked again takes its answer as before.
+    const then = await text(...says(...OPENER), { dtmf: '2125550199' }, { silence: true }, { dtmf: '1' }, { silence: true });
+    expect(promptOf(last(then))).toBe('confirm_open_request_text');
+    expect(offers(then)).toMatchObject([{ answer: 'yes', by: 'keypad' }]);
   });
 
   it('the default takes a number said or keyed at the offer, as before', async () => {
@@ -193,12 +217,12 @@ describe('offerAnswers on a proposal from the facts', () => {
     const no = await call(ON_FILE, greetingCorpus, says("no, I'm at my mother's, 7 Birch Lane"));
     expect(last(no).session.slots.place!.value).toBeNull();
     expect(offers(no).map((d) => d.answer)).toEqual(['no']);
-    const one = await call(ON_FILE, greetingCorpus, [{ dtmf: '1' }]);
-    expect(prompts(one)).toEqual(['offer_place', 'greet_after_offer']);
+    const one = await call(ON_FILE, greetingCorpus, [{ dtmf: '1' }, { silence: true }]);
+    expect(prompts(one)).toEqual(['offer_place', undefined, 'greet_after_offer']);
     expect(last(one).session.slots.place).toMatchObject({ value: '22 Alder Street', confirmed: true });
     expect(offers(one)).toMatchObject([{ answer: 'yes', by: 'keypad' }]);
-    const two = await call(ON_FILE, greetingCorpus, [{ dtmf: '2' }]);
-    expect(prompts(two)).toEqual(['offer_place', 'greet_after_offer']);
+    const two = await call(ON_FILE, greetingCorpus, [{ dtmf: '2#' }]);
+    expect(prompts(two)).toEqual(['offer_place', undefined, 'greet_after_offer']);
     expect(offers(two)).toMatchObject([{ answer: 'no', by: 'keypad' }]);
   });
 });

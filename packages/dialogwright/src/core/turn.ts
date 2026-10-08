@@ -871,6 +871,9 @@ const NO_INPUT_ACK: Ack = { promptId: 'no_input', vars: {} };
  */
 function handleSilence(s: Session, io: TurnIO): Decision {
   if (s.promptedFor === null) return { kind: 'ignore' };
+  // Keys held at an offer that takes a yes or a no only: the keys have stopped, so they are settled.
+  const offered = s.pendingConfirmation;
+  if (s.dtmfBuffer !== '' && yesNoOffer(io.app, offered) && keyedAt(s, offered)) return settleKeys(s, offered, io);
   s.dtmfBuffer = '';
   if (s.pendingConfirmation) return reaskConfirmation(s, io, [NO_INPUT_ACK]);
   if (s.promptedFor === 'intent' && s.lastPromptId === 'anything_else') {
@@ -1019,8 +1022,9 @@ function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): D
 function consentFill(s: Session, slot: SlotId, c: SlotCandidate, io: TurnIO): typeof CONSENTED {
   Object.assign(s.slots[slot]!, { value: c.value, display: c.display, confirmed: true, window: null });
   delete s.slots[slot]!.declined;
-  const last4 = lastFour(c.value);
-  const settled: OfferSettled = { slot, source: 'caller-number', promptId: CONSENT_PROMPT, said: promptText(io.app, CONSENT_PROMPT, { last4 }, s.locale), answer: 'consent', last4, locale: s.locale ?? defaultLocaleOf(io.app) };
+  // The line the caller said yes to, as it was said and in the language it was said in.
+  const grant = s.textConsent!;
+  const settled: OfferSettled = { slot, source: 'caller-number', promptId: CONSENT_PROMPT, said: grant.said, answer: 'consent', last4: lastFour(c.value), locale: grant.locale };
   io.out.consented = [...(io.out.consented ?? []), settled];
   return CONSENTED;
 }
@@ -1054,17 +1058,17 @@ function callerOfferAllowed(s: Session, slot: SlotId, io: TurnIO): boolean {
  * into the line as the slot's value is recorded (recordingOf: its redact, else policy.yaml's
  * `audit:`), so the audit holds no more of it than the slot's own rows do.
  */
-function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, answer: OfferSettled['answer']): void {
-  if (pc.consent === true) return consentSettled(s, io, pc, answer === 'yes' ? true : answer === 'no' ? false : null);
+function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, answer: OfferSettled['answer'], keyed = false): void {
+  if (pc.consent === true) return consentSettled(s, io, pc, answer === 'yes' ? true : answer === 'no' ? false : null, keyed);
   const promptId = `offer_${pc.slot}`;
   const locale = s.locale ?? defaultLocaleOf(io.app);
   if (pc.from === 'facts') {
     const shown = recordedValue(recordingOf(io.app, pc.slot), pc.display) ?? '•';
-    io.out.offer = { slot: pc.slot, source: 'facts', promptId, said: promptText(io.app, promptId, { [pc.slot]: shown }, s.locale), answer, locale };
+    io.out.offer = { slot: pc.slot, source: 'facts', promptId, said: promptText(io.app, promptId, { [pc.slot]: shown }, s.locale), answer, locale, ...(keyed ? { keyed: true as const } : {}) };
     return;
   }
   const last4 = lastFour(pc.value);
-  io.out.offer = { slot: pc.slot, source: 'caller-number', promptId, said: promptText(io.app, promptId, { last4 }, s.locale), answer, last4, locale };
+  io.out.offer = { slot: pc.slot, source: 'caller-number', promptId, said: promptText(io.app, promptId, { last4 }, s.locale), answer, last4, locale, ...(keyed ? { keyed: true as const } : {}) };
 }
 
 /**
@@ -1073,10 +1077,12 @@ function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, {
  * of the call (Session.textConsent), and recorded (TurnOut.consent, the audit's `consent` row) with the
  * line as it was said.
  */
-function consentSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, granted: boolean | null): void {
-  s.textConsent = granted === true ? 'granted' : granted === false ? 'declined' : 'unknown';
+function consentSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, granted: boolean | null, keyed = false): void {
   const last4 = lastFour(pc.value);
-  io.out.consent = { scope: 'call', granted, promptId: CONSENT_PROMPT, said: promptText(io.app, CONSENT_PROMPT, { last4 }, s.locale), last4, locale: s.locale ?? defaultLocaleOf(io.app) };
+  const said = promptText(io.app, CONSENT_PROMPT, { last4 }, s.locale);
+  const locale = s.locale ?? defaultLocaleOf(io.app);
+  s.textConsent = { answer: granted === true ? 'granted' : granted === false ? 'declined' : 'unknown', said, locale };
+  io.out.consent = { scope: 'call', granted, promptId: CONSENT_PROMPT, said, last4, locale, ...(keyed ? { keyed: true as const } : {}) };
 }
 
 /**
@@ -1127,20 +1133,40 @@ function valueAtOffer(s: Session, pc: OfferPending, answers: AnswerMap, ctx: Slo
   return valuesGiven(s, answers, ctx, [slotSpecOf(appOf(s), pc.slot)]).size > 0;
 }
 
+/** Whether the keys pressed now answer the pending offer `pc`: its own prompt is the one the caller is on. */
+function keyedAt(s: Session, pc: OfferPending): boolean {
+  return s.promptedFor === (pc.at === 'greeting' ? 'intent' : pc.slot);
+}
+
 /**
- * A key pressed at an offer that takes a yes or a no only (yesNoOffer): 1 is a yes and 2 is a no, as
- * the spoken answers are; any other key is an answer to neither, and the offer is asked again on its
- * ladder. At the greeting's proposal the open question follows a yes or a no (`greet_after_offer`);
- * at a slot, the form goes on.
+ * Whether keys pressed at an offer that takes a yes or a no only (yesNoOffer; the consent question
+ * too) are being held, not yet settled: a burst of keys is one answer, settled when the keys stop (a
+ * silence turn: the server runs one soon after a key while this holds, KEY_WAIT_MS) or with `#`
+ * (settleKeys). The server reads it to shorten the no-input wait and to pass a `#` on; replay reads it
+ * to pass the same `#` on. False on every other turn, and for every app with no such offer.
  */
-function keyedAtOffer(s: Session, pc: OfferPending, digit: string, io: TurnIO): Decision {
+export function keyBurstPending(s: Session): boolean {
+  const pc = s.pendingConfirmation;
+  return s.dtmfBuffer !== '' && yesNoOffer(appOf(s), pc) && keyedAt(s, pc);
+}
+
+/**
+ * The keys pressed at an offer that takes a yes or a no only, settled once they stop or with `#`
+ * (keyBurstPending): a 1 alone is a yes and a 2 alone a no, as the spoken answers are. Anything else
+ * (another key, two keys, a number keyed in full) is one answer to neither: the offer is asked again,
+ * once, a turn on its ladder, and nothing is recorded of the keys. At the greeting's proposal and the
+ * consent question the open question follows a yes or a no (`greet_after_offer`); at a slot, the form
+ * goes on.
+ */
+function settleKeys(s: Session, pc: OfferPending, io: TurnIO): Decision {
+  const keys = s.dtmfBuffer;
   s.dtmfBuffer = '';
-  if (digit !== '1' && digit !== '2') return reaskConfirmation(s, io);
+  if (keys !== '1' && keys !== '2') return reaskConfirmation(s, io);
   s.pendingConfirmation = null;
-  const yes = digit === '1';
+  const yes = keys === '1';
   // The consent question's yes is the grant, and fills nothing: the slots it covers fill when asked.
   if (yes && pc.consent !== true) Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
-  offerSettled(s, io, pc, yes ? 'yes' : 'no');
+  offerSettled(s, io, pc, yes ? 'yes' : 'no', true);
   if (pc.at === 'greeting') return prompt(GREET_AFTER_OFFER, 'intent', {}, []);
   if (!yes) declineOnNo(s, io, pc.slot);
   return continueForm(s, io, [], null);
@@ -1817,9 +1843,14 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     const decision = handleCodeDigit(s, digit, tc, io.out, acks);
     return { decision: decision ?? continueForm(s, io, acks, null), rows: [] };
   }
-  // An offer that takes a yes or a no only (`answers: yes-no`): its keys are 1 and 2, never the slot's digits.
+  // An offer that takes a yes or a no only (`answers: yes-no`, the consent question): its keys are held
+  // as one answer until they stop or `#` ends them (settleKeys), never keyed into the slot or the menu.
   const offered = s.pendingConfirmation;
-  if (yesNoOffer(io.app, offered) && s.promptedFor === (offered.at === 'greeting' ? 'intent' : offered.slot)) return { decision: keyedAtOffer(s, offered, digit, io), rows: [] };
+  if (yesNoOffer(io.app, offered) && keyedAt(s, offered)) {
+    if (digit === '#') return { decision: s.dtmfBuffer === '' ? { kind: 'ignore' } : settleKeys(s, offered, io), rows: [] };
+    s.dtmfBuffer += digit;
+    return { decision: { kind: 'ignore' }, rows: [] };
+  }
   s.dtmfBuffer += digit;
   if (s.menuActive) {
     const option = io.app.menu.find((m) => m.digit === digit);

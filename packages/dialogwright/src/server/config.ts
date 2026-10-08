@@ -5,7 +5,7 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
-  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
+  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
   type BargeIn, type EndAfterPlayback,
 } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
@@ -158,6 +158,13 @@ export interface ServerConfig {
    * existed (absent reads as the default).
    */
   noInputAfterSpeechMs?: number;
+  /**
+   * KEY_WAIT_MS, default 2000 (DEFAULT_KEY_WAIT_MS): after a key at an offer that takes a yes or a no only
+   * (`answers: yes-no`, the consent to text for the whole call), how long the server waits for another
+   * key before it takes the keys as one answer; `#` ends them at once. Optional in the type only, for a
+   * config made by hand before it existed (absent reads as the default).
+   */
+  keyWaitMs?: number;
   /**
    * RESUME_AFTER_PAUSE_MS, 0 to 10000, default 2000 (DEFAULT_RESUME_AFTER_PAUSE_MS), and
    * RESUME_INTO_REPLY_MS, 0 to 5000, default 1000 (DEFAULT_RESUME_INTO_REPLY_MS). On a carrier that reports
@@ -510,6 +517,7 @@ export function loadConfig(env: Env): ServerConfig {
     ...endAfterPlaybackOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     noInputAfterSpeechMs: integer(env, 'NO_INPUT_AFTER_SPEECH_MS', DEFAULT_NO_INPUT_AFTER_SPEECH_MS),
+    keyWaitMs: integer(env, 'KEY_WAIT_MS', DEFAULT_KEY_WAIT_MS),
     ...resumeOf(env),
     ...spuriousOf(env),
     ...incompleteWaitOf(env),

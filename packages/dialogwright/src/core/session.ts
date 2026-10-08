@@ -60,6 +60,17 @@ export interface HistoryEntry {
 /** What the caller made of the consent to text for the whole call (Session.textConsent). */
 export type TextConsentAnswer = 'granted' | 'declined' | 'unknown';
 
+/**
+ * The consent to text for the whole call as it was settled (Session.textConsent): the answer, and the
+ * question's line as it was said then, in the language it was said in, so a slot later filled from a
+ * grant records the line the caller heard, whatever language the call has moved to since.
+ */
+export interface TextConsentRecord {
+  readonly answer: TextConsentAnswer;
+  readonly said: string;
+  readonly locale: string;
+}
+
 export interface SessionFacts {
   [key: string]: unknown;
 }
@@ -238,9 +249,10 @@ export interface Session {
    * greeting: `granted`, a yes (the slots it covers fill with the caller's number without asking);
    * `declined`, a no; `unknown`, a request said instead or no answer. It is asked once, so it never
    * changes after. Absent when it was never asked (an app without it, a chat, a number withheld), so
-   * every other session is as it was. Read it with textConsentOf (core/textConsent.ts).
+   * every other session is as it was. Read it with textConsentOf (core/textConsent.ts). With the answer,
+   * the line as it was said and its language, which each fill from a grant records.
    */
-  textConsent?: TextConsentAnswer;
+  textConsent?: TextConsentRecord;
   /** Who the caller is proven to be. Written only from a verifier result or a portal sign-in (src/gate/types.ts Principal). */
   principal: Principal;
   facts: SessionFacts;

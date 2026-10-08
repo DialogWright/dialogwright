@@ -1,6 +1,6 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { defineApp, type AppCode } from '../../define/defineApp';
 import type { App } from '../../core/app/types';
 import { TEXTING_DIR, textingCode, type TextingFacts } from './app';
@@ -16,7 +16,12 @@ export function textingVariants(): { variant(files: Record<string, (text: string
     variant(files, code = textingCode) {
       const dir = mkdtempSync(join(tmpdir(), 'dialogwright-texting-'));
       cpSync(TEXTING_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
-      for (const [file, change] of Object.entries(files)) writeFileSync(join(dir, file), change(readFileSync(join(dir, file), 'utf8')));
+      // A file the fixture does not have (a locale's prompts, say) starts empty.
+      for (const [file, change] of Object.entries(files)) {
+        const path = join(dir, file);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, change(existsSync(path) ? readFileSync(path, 'utf8') : ''));
+      }
       const app = defineApp(dir, code);
       dirs.set(app.id, dir);
       return app;
@@ -160,4 +165,31 @@ export const proposingCode: AppCode = {
     ...textingCode.facts!,
     offers: (f) => ((f as TextingFacts).lineType === 'mobile' ? { topic: { value: 'order', display: 'an order' } } : {}),
   },
+};
+
+/** The line said when the call switches to Spanish, in both locales. */
+const SWITCHED_LINE = ['  switched_to_spanish:', '    text: Claro, seguimos en español.', '    interruptible: false', ''].join('\n');
+
+/**
+ * The consent variant with a Spanish locale and an informational intent that switches to it: the call
+ * can move to Spanish after the grant, and a slot filled from it still records the line as it was said,
+ * in English. Its Spanish prompts are the English ones but for the consent question and the switch.
+ */
+export const CONSENT_SPANISH: Record<string, (text: string) => string> = {
+  ...CONSENT,
+  'app.yaml': both(replace('id: texting', 'id: texting-consent-es'), (t) => `${t}\ntextConsent:\n  covers: [textTo, alertTo]\n`),
+  'intents.yaml': replace('\nmenu:\n', [
+    '  spanish:',
+    '    kind: informational',
+    '    label: continue in Spanish',
+    '    criteria: The caller asks to continue in Spanish, or says they speak Spanish',
+    '    locale: es',
+    '    promptId: switched_to_spanish',
+    '',
+    'menu:',
+    '',
+  ].join('\n')),
+  'prompts.yaml': (t) => `${t}${CONSENT_LINES}${SWITCHED_LINE}`,
+  'locale/es/prompts.yaml': () => `${readFileSync(join(TEXTING_DIR, 'prompts.yaml'), 'utf8')}${CONSENT_LINES.replace('Can I text you helpful links during this call, at the number ending in {last4}?', '¿Puedo enviarle enlaces útiles durante esta llamada al número que termina en {last4}?')}${SWITCHED_LINE}`,
+  'fixtures/corpus.jsonl': (t) => `${t}${CONSENT_CORPUS}{"id":"es-01","text":"can we continue in Spanish","intent":"spanish","context":"no_form"}\n`,
 };

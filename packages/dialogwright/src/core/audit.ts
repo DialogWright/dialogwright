@@ -135,12 +135,12 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // for an offer, and before the offer rows: a slot it covers may be filled from it on the same turn.
   if (t.consent) {
     const c = t.consent;
-    const by = c.granted === null && event.type === 'user.silence' ? null : answeredBy;
+    const by = c.keyed === true ? 'keypad' : c.granted === null && event.type === 'user.silence' ? null : answeredBy;
     drafts.push({ type: 'consent', detail: { scope: c.scope, granted: c.granted, promptId: c.promptId, said: c.said, last4: c.last4, by, locale: c.locale } });
   }
   for (const o of [...(t.offer ? [t.offer] : []), ...(t.consented ?? [])]) {
     // A slot filled from the call's consent was asked nothing this turn: it was answered by no one now.
-    const by = o.answer === 'none' || o.answer === 'consent' ? null : answeredBy;
+    const by = o.keyed === true ? 'keypad' : o.answer === 'none' || o.answer === 'consent' ? null : answeredBy;
     drafts.push({ type: 'offer', detail: { slot: o.slot, source: o.source, promptId: o.promptId, said: o.said, answer: o.answer, by, ...(o.last4 !== undefined ? { last4: o.last4 } : {}), locale: o.locale } });
   }
   // A check's read-back the caller said no to: the deciding answer was corrected, and is asked again.

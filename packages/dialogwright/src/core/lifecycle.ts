@@ -144,6 +144,8 @@ export interface OfferSettled {
   readonly last4?: string;
   /** The language the line was said in. */
   readonly locale: string;
+  /** Answered on the keypad, though the turn that settled it was the keys' end (a silence turn): the audit's `by` is `keypad`. */
+  readonly keyed?: true;
 }
 
 /**
@@ -160,6 +162,8 @@ export interface ConsentSettled {
   /** The last four digits of the number the line named. */
   readonly last4: string;
   readonly locale: string;
+  /** Answered on the keypad (OfferSettled.keyed). */
+  readonly keyed?: true;
 }
 
 export function newTurnOut(): TurnOut {

@@ -1,5 +1,5 @@
 import { readFrameLog, type ReadFrameLogLine } from '../server/frameLog';
-import { promptEpoch, sensitiveDigitAt } from '../core/turn';
+import { keyBurstPending, promptEpoch, sensitiveDigitAt } from '../core/turn';
 import { parseInbound } from '../channel/relay/wire';
 import { newSession, type Session } from '../core/session';
 import { CODE_DIGIT, type Arrival, type RunOptions, type TurnRun } from '../run/turn';
@@ -347,9 +347,11 @@ export async function replayFrameLog(
     // The adapter logs every inbound frame before deciding to ignore it; `#`/`*` digits are
     // dropped there without ever reaching runTurn, so replay must drop them too.
     // It ends a caller's unfinished words there too (the adapter resets its Continuation behind the turns before it).
+    // A `#` that ends keys held at an offer that takes a yes or a no only (keyBurstPending) is passed on,
+    // as the adapter passes it on, decided from the session as its queue found it.
     if (event.type === 'user.key' && (event.digit === '#' || event.digit === '*')) {
       continuation.reset();
-      continue;
+      if (!(event.digit === '#' && keyBurstPending(session))) continue;
     }
     // The adapter logs a non-final prompt and waits for the final one rather than running a turn
     // on half an utterance; replaying it would invent a turn the call never had.

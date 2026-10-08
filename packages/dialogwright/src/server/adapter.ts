@@ -3,16 +3,16 @@ import { keptCallerNumber, usesCalledNumber, usesCallerNumber } from '../core/ca
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
-import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
+import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
-import { serviceResultEvent, silenceEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
+import { keyEvents, serviceResultEvent, silenceEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
 import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun } from '../run/continuation';
 import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
 import { localeOf } from '../core/locale';
-import { digitAtRun, promptEpoch, sensitiveDigit, type ArrivalDigit, type TurnResult } from '../core/turn';
+import { digitAtRun, keyBurstPending, promptEpoch, sensitiveDigit, type ArrivalDigit, type TurnResult } from '../core/turn';
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
 import type { Session } from '../core/session';
@@ -87,7 +87,7 @@ interface NoInput {
 }
 const noInputTimers = new Map<string, NoInput>();
 
-export { DEFAULT_NO_INPUT_AFTER_SPEECH_MS };
+export { DEFAULT_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS };
 
 /**
  * The longest a no-input wait is held for a caller the carrier reports speaking with no report that they
@@ -284,6 +284,19 @@ function armNoInput(deps: AdapterDeps, entry: CallEntry, frames: readonly Outbou
   // Only for a re-arm that had something to say. Partials arrive several times a second while the
   // caller speaks, and a line each would drown the frame log in bookkeeping.
   if (frames.length > 0) entry.frames.write('log', { noInputArmedMs: delay });
+}
+
+/**
+ * Keys held at an offer that takes a yes or a no only (core/turn.ts keyBurstPending): the silence turn
+ * that settles them comes KEY_WAIT_MS after the last key (deps.keyWaitMs), not a whole no-input wait
+ * later, so a caller who pressed 1 is answered soon. It runs whether or not the no-input wait is on: the
+ * keys are an answer, and only their end settles it.
+ */
+function armKeyWait(deps: AdapterDeps, entry: CallEntry): void {
+  clearNoInput(entry.callSid);
+  const delay = deps.keyWaitMs ?? DEFAULT_KEY_WAIT_MS;
+  scheduleNoInput(deps, entry, delay);
+  entry.frames.write('log', { keyWaitMs: delay });
 }
 
 /** Start the no-input timer: a silence turn `delay` ms from now, unless a turn or a clear gets in first. */
@@ -1102,6 +1115,8 @@ export interface AdapterDeps {
    * DEFAULT_NO_INPUT_AFTER_SPEECH_MS.
    */
   noInputAfterSpeechMs?: number;
+  /** KEY_WAIT_MS: how long after a key held at a yes-or-no offer its keys are settled (armKeyWait). Absent: DEFAULT_KEY_WAIT_MS. */
+  keyWaitMs?: number;
   /**
    * RESUME_AFTER_PAUSE_MS and RESUME_INTO_REPLY_MS: on a carrier that reports the caller's voice, how soon
    * after their own pause, and after the reply going out, a caller coming back in had not finished
@@ -1466,6 +1481,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
       // A reply held and not said: the prompt that went on arms the wait in its own turn; a caller only
       // heard going on is asked again soon after they stop, should no prompt come (holdReply).
       if (held === 'speech') armDue(deps, entry);
+      // Keys held at a yes-or-no offer are settled soon after the last of them, not a no-input wait later.
+      else if (keyBurstPending(entry.session)) armKeyWait(deps, entry);
       else if (said) armNoInput(deps, entry, sent);
     }
     return true;
@@ -1763,14 +1780,24 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // Whether it was the caller's is decided below (a spurious interrupt), and is a fact of its own.
     publish(deps, { type: 'delivery', callSid: ctx.callSid, at: Date.now(), fact: interruptFact(frame.durationUntilInterruptMs) });
   }
-  // The slots have fixed digit lengths, so the keypad terminators carry no meaning yet.
+  // The slots have fixed digit lengths, so the keypad terminators carry no meaning for them. A `#` ends
+  // the keys held at an offer that takes a yes or a no only (core/turn.ts keyBurstPending): decided in the
+  // queue, after the key turns before it, and passed on as a turn only then (replay decides the same).
   if (frame.type === 'dtmf' && (frame.digit === '#' || frame.digit === '*')) {
-    entry.frames.write('log', { ignoredDigit: frame.digit });
+    const ending = frame.digit === '#' && keyBurstPending(entry.session);
+    entry.frames.write('log', ending ? { keysEnded: '#' } : { ignoredDigit: frame.digit });
     // A key pressed ends a caller's unfinished words: through the queue, after the turns before it.
-    void deps.store.enqueue(ctx.callSid, async () => continuations.get(ctx.callSid!)?.reset());
+    const callSid = ctx.callSid;
+    const run = async (e: CallEntry): Promise<void> => {
+      continuations.get(callSid)?.reset();
+      if (frame.digit === '#' && !e.ended && keyBurstPending(e.session)) await turn(deps, e, keyEvents('#')[0]!);
+    };
+    // A `#` that ends held keys is a turn that can move the prompt: a digit keyed behind it is keyed ahead.
+    void (ending ? enqueueUnsettled(deps, callSid, run) : deps.store.enqueue(callSid, run)).catch((err: unknown) => deps.log(`${callSid}: the keys' # failed: ${describe(err).message}`));
     // No turn runs, so nothing downstream would restart the wait the digit just cancelled -- unless
-    // a downstream service's answer is awaited, whose own turn arms it.
-    if (entry.session.pendingService === null) armNoInput(deps, entry, []);
+    // a downstream service's answer is awaited, whose own turn arms it, or the `#` ends held keys,
+    // whose turn arms it.
+    if (entry.session.pendingService === null && !ending) armNoInput(deps, entry, []);
     return;
   }
   // Partial prompts are on in the TwiML so the no-input wait can be cancelled at the caller's

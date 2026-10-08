@@ -13,7 +13,7 @@ import type { TurnResult } from './turn';
 import { textConsentOf } from '../index';
 import { sessionRoundTrip } from '../testing/sessionRoundTrip';
 import { TEXTING_DIR, textingApp } from '../testing/texting/app';
-import { CONSENT, CONSENT_AND_PROPOSAL, proposingCode, textingVariants } from '../testing/texting/variant';
+import { CONSENT, CONSENT_AND_PROPOSAL, CONSENT_SPANISH, proposingCode, textingVariants } from '../testing/texting/variant';
 import { callbackApp } from '../testing/callback/app';
 import { proposalsApp } from '../testing/proposals/app';
 import { screenedApp } from '../testing/screened/app';
@@ -125,12 +125,31 @@ describe('the consent question', () => {
     expect(rows(r, 'consent')).toMatchObject([{ granted: null, by: null }]);
   });
 
-  it('takes 1 and 2 on the keypad', async () => {
-    const one = await fromMobile({ dtmf: '1' });
+  it('takes a 1 alone and a 2 alone on the keypad, once the keys stop or with #', async () => {
+    const one = await fromMobile({ dtmf: '1' }, { silence: true });
+    expect(prompts(one)).toEqual(['consent_texts', undefined, 'greet_after_offer']);
     expect(textConsentOf(last(one).session)).toBe('granted');
     expect(rows(one, 'consent')).toMatchObject([{ granted: true, by: 'keypad' }]);
-    const two = await fromMobile({ dtmf: '2' });
+    expect(gates(one)).toEqual(['findCallerByPhone:ALLOW']);
+    const two = await fromMobile({ dtmf: '2#' });
+    expect(prompts(two)).toEqual(['consent_texts', undefined, 'greet_after_offer']);
     expect(textConsentOf(last(two).session)).toBe('declined');
+    expect(rows(two, 'consent')).toMatchObject([{ granted: false, by: 'keypad' }]);
+  });
+
+  it('a number keyed at it is asked again once, nothing recorded, and no key reaches the menu', async () => {
+    for (const keys of [[{ dtmf: '2125550199' }, { silence: true }], [{ dtmf: '2125550199#' }]] as Scenario['steps'][]) {
+      const r = await fromMobile(...keys);
+      expect(r.runs.slice(1, -1).every((x) => x.result.decision.kind === 'ignore'), JSON.stringify(keys)).toBe(true);
+      expect(promptOf(last(r)), JSON.stringify(keys)).toBe('consent_texts');
+      expect(textConsentOf(last(r).session)).toBeNull();
+      expect(last(r).session.menuActive).toBe(false);
+      expect(rows(r, 'consent')).toEqual([]);
+      expect(gates(r)).toEqual(['findCallerByPhone:ALLOW']);
+    }
+    const then = await fromMobile({ dtmf: '2125550199' }, { silence: true }, { dtmf: '1' }, { silence: true });
+    expect(textConsentOf(last(then).session)).toBe('granted');
+    expect(rows(then, 'consent')).toMatchObject([{ granted: true, by: 'keypad' }]);
   });
 
   it('is not asked with the number withheld, on a call with none, from a number the app will not offer, nor on a chat', async () => {
@@ -175,6 +194,15 @@ describe('a covered text moment', () => {
     expect(gates(r)).toEqual(['findCallerByPhone:ALLOW', 'openRequest:ALLOW', 'sendUpdates:ALLOW']);
     const send = r.runs.flatMap((x) => x.result.gateEvents).find((e) => e.decision.call.tool === 'sendUpdates')!;
     expect(send.decision.rules.find((x) => x.id === 'callerNumber')).toMatchObject({ pass: true, compared: 'textTo is the caller\'s number' });
+  });
+
+  it('records the line the caller said yes to, as said then, after the call moves to another language', async () => {
+    use(variants.variant(CONSENT_SPANISH));
+    const r = await fromMobile(...says('sure, go ahead and text me', 'can we continue in Spanish', ...OPENER));
+    expect(last(r).session.locale).toBe('es');
+    expect(promptOf(last(r))).toBe('confirm_open_request_text');
+    expect(rows(r, 'offer').map((d) => [d.slot, d.said, d.locale])).toEqual([['textTo', CONSENT_LINE, 'en-US'], ['alertTo', CONSENT_LINE, 'en-US']]);
+    expect(rows(r, 'consent')).toMatchObject([{ said: CONSENT_LINE, locale: 'en-US' }]);
   });
 
   it('declined: each slot asks its own offer, accepted or declined as always', async () => {

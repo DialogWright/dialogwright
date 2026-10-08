@@ -325,6 +325,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     {
       store, tokens, log, endCloseGraceMs: overrides.endCloseGraceMs, noInputMs, clipDurations: durations, bus,
       ...(config.noInputAfterSpeechMs !== undefined ? { noInputAfterSpeechMs: config.noInputAfterSpeechMs } : {}),
+      ...(config.keyWaitMs !== undefined ? { keyWaitMs: config.keyWaitMs } : {}),
       ...(config.resumeAfterPauseMs !== undefined ? { resumeAfterPauseMs: config.resumeAfterPauseMs } : {}),
       ...(config.resumeIntoReplyMs !== undefined ? { resumeIntoReplyMs: config.resumeIntoReplyMs } : {}),
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,

@@ -25,7 +25,7 @@ export const CONSENT_PROMPT = 'consent_texts';
 
 /** What the caller answered to the consent to text for the whole call, or null when it was never asked. */
 export function textConsentOf(s: Session): TextConsentAnswer | null {
-  return s.textConsent ?? null;
+  return s.textConsent?.answer ?? null;
 }
 
 /** The slots the app's consent covers, in app.yaml's order; none for an app without it. */
@@ -35,5 +35,5 @@ export function consentCovers(app: App): readonly SlotId[] {
 
 /** Whether the caller granted the consent, and it covers `slot`: the slot is filled with the caller's number without asking. */
 export function grantedFor(app: App, s: Session, slot: SlotId): boolean {
-  return s.textConsent === 'granted' && consentCovers(app).includes(slot);
+  return s.textConsent?.answer === 'granted' && consentCovers(app).includes(slot);
 }
