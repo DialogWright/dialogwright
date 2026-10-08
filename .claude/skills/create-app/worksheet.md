@@ -27,6 +27,10 @@ Does any answer rule the caller out before you collect the rest (a renter, a hom
 
 Does a form take a callback number? <no, or the slot: on a phone call, the line can offer the number the caller is calling from as a yes or no (`callerNumber`, [patterns.md](patterns.md#a-callback-number-callernumber)); the form then needs a summary that reads it back, and it is never an identity factor>
 
+Offer to text them? <no, or the slot and what the text is: an offer the caller may decline (`onNo: skip`, `ifNone: skip`), a landline refused in code (`callerOffer`), and the send held by the `callerNumber` rule ([patterns.md](patterns.md#texting-the-caller-onno-ifnone-and-the-callernumber-rule))>
+
+Look the caller up by number? What may the line say before they verify? <no, or the lookup (app.yaml's `callerNumber.lookup`), what it returns, and why each part of it is safe to say to someone who has proven nothing ([patterns.md](patterns.md#looking-the-caller-up-by-number)); never to verify>
+
 Do callers often give details for a later step in their first sentence ("book me in for a Saturday morning")? <no, or which: put those slots in the same form as the step they open, so the opener fills them>
 
 ## Actions

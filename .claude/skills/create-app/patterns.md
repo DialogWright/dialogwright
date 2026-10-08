@@ -2,7 +2,7 @@
 
 The YAML and TypeScript for what a paragraph usually asks for. Each was built and run in an app scaffolded by `pnpm create-app --identity` (check, type check, tests and regression), with the scaffold's names (`accountId`, `dob`, `verifyCustomer`, `findAccount`, `Systems`, `ACCOUNTS`, `accountIdOf`); use your own. Imports are from `'dialogwright'` unless shown. The reference for every field is [docs/authoring-an-app.md](../../../docs/authoring-an-app.md); the engine's own test app, [the testkit](../../../packages/dialogwright/src/testing/testkit/README.md), uses every hook and is worth reading for a feature these patterns leave out (it is a test fixture, not a model of design).
 
-Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [An intent's criteria](#an-intents-criteria) · [Informational answers](#informational-answers) · [Something that must never wait](#something-that-must-never-wait) · [Keypad entry](#keypad-entry) · [A callback number](#a-callback-number-callernumber) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
+Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [An intent's criteria](#an-intents-criteria) · [Informational answers](#informational-answers) · [Something that must never wait](#something-that-must-never-wait) · [Keypad entry](#keypad-entry) · [A callback number](#a-callback-number-callernumber) · [Texting the caller](#texting-the-caller-onno-ifnone-and-the-callernumber-rule) · [Looking the caller up by number](#looking-the-caller-up-by-number) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
 
 ## Verification (level 1)
 
@@ -679,9 +679,89 @@ confirm_request_callback:
 
 - When the form reaches `phone` on a call whose number fits the slot, the line says `offer_phone` in place of `ask_phone`. A yes fills the slot; a no asks `ask_phone` with no attempt counted; "no, use my cell, 555 555 0199" fills the number said. A chat, or a withheld number, is asked `ask_phone` as always.
 - **Give the form a summary that reads `{phone}` back.** The offer says only the last four, so the summary is where the caller hears the whole number; `pnpm check` warns when a form with the slot has none.
-- **Never use the number to verify anyone.** A caller ID can be forged. `pnpm check` refuses `callerNumber` on an identity factor; never compare it with a record in a tool or a rule. It is a callback number the caller said yes to, nothing more.
+- **Never use the number to verify anyone.** A caller ID can be forged. `pnpm check` refuses `callerNumber` on an identity factor; the number is never used to verify, though a gated lookup may propose ([Looking the caller up by number](#looking-the-caller-up-by-number)). Here it is a callback number the caller said yes to, nothing more.
 - The number is masked as the slot is (`redact: last4`, the default), so the tool param named `phone` is recorded by its last four and needs no `audit` line.
 - A scripted call from a number: `"callerNumber": "+15555550142"` beside `steps` (a withheld one as `"+7378742833"`, Twilio's RESTRICTED); add one with a yes, one with a no and a number said, one withheld, and the chat. A corpus line at the offer: `{"id":"of-01","text":"yes, that's fine","intent":"none","context":"request_callback","prompted":"phone","confirm":"yes"}`.
+
+## Texting the caller: `onNo`, `ifNone` and the `callerNumber` rule
+
+"Offer to text them updates": the same offer, for a slot the caller may turn down. A no means no text, so the slot is left empty and the form goes on.
+
+```yaml
+# slots.yaml
+textTo:
+  type: digits
+  noun: mobile number
+  length: 10
+  mask: '[2-9]\d{9}'
+  keypad: true
+  group: [3, 3, 4]
+  callerNumber:
+    countryCode: '1'
+    onNo: skip      # a no, or no answer, leaves the slot empty
+    ifNone: skip    # no number to offer (a chat, withheld, a landline) leaves it empty too
+```
+
+```yaml
+# prompts.yaml (every locale)
+offer_textTo:
+  text: Can I text you updates at the number you're calling from, ending in {last4}?
+  interruptible: true
+ask_textTo:
+  text: What mobile number should we text updates to?
+  interruptible: true
+confirm_open_request:
+  text: That's a request about {topic}, with no texts. Shall I open it?
+  interruptible: true
+confirm_open_request_text:
+  text: That's a request about {topic}, with updates texted to {textTo}. Shall I open it?
+  interruptible: true
+```
+
+```yaml
+# policy.yaml
+actions:
+  sendUpdates:
+    say: text updates about a request
+    level: 0
+    rules:
+      - identity
+      - callerNumber: { field: textTo, else: confirmed }
+      - confirmed: [topic, textTo]
+```
+
+- A no, the end of the offer's retry ladder, or no number to offer leaves `textTo` empty (declined), and the summary is read next. "No, text my cell, 555 555 0199" fills the number said.
+- **Never name a skippable slot in the summary line.** It may be empty, and `pnpm check` refuses `{textTo}` there. Read it back from a line of its own: the form's `onSummaryRead` hook returns `{ promptId: 'confirm_open_request_text' }` when the slot holds a number.
+- **Refuse a landline in code.** `callerOffer(ctx, slot)` in the app's code returns false to make no offer (the slot then follows `ifNone`); it may read the facts or call a gated line-type lookup through `ctx.callTool`. Without it, every offer is made.
+- **Send only where the caller agreed.** The completion sends the text through its own tool, only when the slot holds a number, and the `callerNumber` rule holds that number to the caller's own (`else: refuse`, the default) or to one they heard read back and said yes to (`else: confirmed`, which needs the field in the action's `confirmed` rule).
+- **The answer is recorded.** Every settled offer writes an `offer` row to the audit with the line as said and the answer (`yes`, `no`, `other`, `none`). Whether that yes is consent to be texted is the owner's legal question; the engine records what was asked and answered, and decides nothing.
+- Scripted calls: a yes, a no, a no with a number, no answer (two silences), a landline, a withheld number and the chat. Corpus lines at the offer: a yes, a bare no, "that's my landline" (`confirm: no`), a no with a number, a number alone (`confirm: unanswered`), and words that answer neither.
+
+## Looking the caller up by number
+
+"If we know the number, start from their account": app.yaml's `callerNumber` keeps the number for the app's code, and may look the caller up once at call start.
+
+```yaml
+# app.yaml
+callerNumber: { use: hint, lookup: findAccountByPhone }
+```
+
+```yaml
+# policy.yaml
+actions:
+  findAccountByPhone:
+    say: find the service address for the number calling
+    level: 0
+    rules:
+      - identity
+      - callerNumber: { field: callerNumber }
+audit:
+  callerNumber: last4
+```
+
+- The tool lists one param, `callerNumber`, and returns the least that works (a line type, an address to propose), never a balance, a claim or a name: whatever it returns may be said to someone who has proven nothing, since a caller ID can be forged. Its result goes to the facts through `facts.fromCallerLookup` in the app's code; a refusal is silent.
+- App code reads the numbers with `callerOf(s)` and `calledOf(s)` (`called: true` keeps the number called). Both are null on a chat and with no number.
+- **Never to verify; a gated lookup may propose.** A match changes neither who the caller is nor their level. A factor slot never takes the number, and a form that needs identity still asks for the factors.
 
 ## What is recorded: `params` and `audit`
 
@@ -709,7 +789,7 @@ audit:
 - The rule lines and the tool's summary are masked the same way. A custom rule still writes only what may be recorded.
 - A param no tool lists, or a listed param nothing declares, is a `pnpm check` problem whose fix names both ways out. A `confirmed` field is always a slot or declared. The confirmed list's fields that an action sends empty (the union list, above) are listed too.
 - The policy card has the "What is recorded" table: read it against the worksheet.
-- Write `passed(decision, 'role')` (from `'dialogwright/policy'`) to ask whether a rule passed, by its name; rule lines are recorded under names (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`, `oneOf`, `noneOf`, a custom rule's own id).
+- Write `passed(decision, 'role')` (from `'dialogwright/policy'`) to ask whether a rule passed, by its name; rule lines are recorded under names (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`, `oneOf`, `noneOf`, `callerNumber`, a custom rule's own id).
 
 ## Values with no slot type
 

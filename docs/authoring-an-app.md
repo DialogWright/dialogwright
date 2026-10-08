@@ -12,10 +12,10 @@ Two apps in this repository are the examples, and the snippets below are copied 
 The guide is long, too long to read in one go: read it a section at a time, from the list below. Building an app with the [create-app skill](../.claude/skills/create-app/SKILL.md), read only the sections each of its steps names. `grep -n '^##' docs/authoring-an-app.md` lists every heading with its line.
 
 1. [The folder](#1-the-folder)
-2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml) (with [checks](#checks-ending-a-form-part-way)), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
+2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml) (with [`callerNumber`](#the-number-the-caller-is-calling-from-callernumber)), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml) (with [checks](#checks-ending-a-form-part-way)), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
 3. [Policy and identity](#3-policy-and-identity) (its own list of thirteen subsections is at its head)
 4. [What stays in TypeScript, and why](#4-what-stays-in-typescript-and-why)
-5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [A callback number](#a-callback-number-callernumber), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
+5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [A callback number](#a-callback-number-callernumber), [A text offer](#a-text-offer-onno-and-ifnone), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
 6. [The form hooks](#6-the-form-hooks)
 7. [Checking an app: `pnpm check`](#7-checking-an-app-pnpm-check)
 8. [Locales](#8-locales)
@@ -128,6 +128,27 @@ prompts:
   ```
 - `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. The folder is relative to the app's package root, which is the folder its commands run in: the engine reads it from the working directory, and an app's `regress`, `cli` and `serve` scripts run in its package. It must stay inside the package, so an absolute path or one with `..` is refused. `check` then requires every intent to have examples there.
 - `prompts` holds what is said about prompts besides their text: which opening lines to use, which variables are always spoken by text to speech, the clips' vocabulary.
+- `callerNumber` keeps the number the caller is calling from for the app's own code, and may look the caller up by it once at call start: [The number the caller is calling from](#the-number-the-caller-is-calling-from-callernumber), below.
+
+#### The number the caller is calling from: `callerNumber`
+
+On a phone call the carrier sends the number the caller is calling from, and often the number they called. An app may use them, as a hint: to look something up by, to propose a value from, to offer to text the caller. Never as identity: a caller ID is set by the calling side and can be forged, so it proves no one. An app says what it uses in app.yaml, off by default:
+
+```yaml
+callerNumber:
+  use: hint                   # keep the caller's number for the app's code
+  called: true                # keep the number called (the DNIS) too; default false
+  lookup: findAccountByPhone  # optional: called once at call start, through the gate
+```
+
+- **Keeping.** With `use: hint` the session keeps any usable number the call came with ([13.13](#1313-the-number-the-caller-is-calling-from) says what counts: digits as a carrier writes them, and not a withheld placeholder), whether or not a slot offers it. `called: true` keeps the number called as well. A chat has neither. Without the block, the number is kept only for a slot that offers it ([A callback number](#a-callback-number-callernumber)), as before.
+- **Reading.** App code reads them with `callerOf(s)`, `{ number: '+15555550142', last4: '0142' }` or null, and `calledOf(s)`, the number called or null, both from `'dialogwright'`. Each is null on a chat, on a call with no number, and for an app that did not opt in, so code written against them is safe anywhere.
+- **The call-start lookup.** `lookup` names a tool the engine calls once, right after the call starts and before the greeting: `{ tool, params: { callerNumber }, purpose: 'caller-lookup' }`, through the gate as the caller not yet proven, like any other call. The tool lists exactly one param, `callerNumber` (`pnpm check` refuses any other), and has an action in policy.yaml whose level, rules and `audit:` masking are the owner's; give it level 0, since it runs before anyone is verified (`check` warns otherwise: it would always be refused), and `audit: callerNumber: last4` (`check` warns on `keep`). Hold its param to the number calling with the `callerNumber` rule ([3.3](#33-the-built-in-rules)) so the tool can only ever look up the caller's own. A refusal is silent: nothing is said, nothing is kept, and the call goes on as one without a number. An allowed result goes to the app's facts through `FactsConfig.fromCallerLookup(f, value)`, as a form's `onEntry` applies its entry's result. The lookup is a gate event and a tool result in the trace, the console and the audit, its param masked as policy.yaml says.
+- **What the lookup may return.** Whatever it returns may end up said to a caller who has proven nothing: anyone holding, or forging, the number. Return the least that works (a line type, a street to propose), never a balance, a claim or a name, and let the action's policy decide it, as for any level 0 read. A match is never verification: the principal, the identity level and the identity attempts do not change, and an identity factor slot never takes the number.
+- **Rules.** The gate learns the number through `GateFacts.callerNumber` (and `callerNumberAs`, the number as each slot that offers it holds it), set only for a session that kept one. The built-in `callerNumber` rule reads it; a rule of your own may too.
+- **Privacy.** The numbers are masked as a start event's number is: by their last four on the console and in the frame log, and in the trace file by the slot that offers the number where there is one, else by their last four. The trace's start record says `callerNumber: kept` or `none`. The number goes to the app's tool and nowhere else; it never enters the model's turn state, and a call with a number sends the model exactly what a call with none sends, but where an offer line says its last four.
+
+Testing it: a scripted call takes `"callerNumber"` and `"calledNumber"`; the text CLI takes `--caller-number` and `--called-number`. Replaying a logged call stands a made-up number in for the caller's, ending in the last four the frame log kept (`555555` and the four, for an app with no slot that offers it), so key a lookup fixture by the last four. The engine's own fixture is `packages/dialogwright/src/testing/texting`: a call-start lookup of the line type, a text offer, and the rule on both.
 
 ### intents.yaml
 
@@ -538,6 +559,7 @@ actions:
 | `limit` | `limit: { field: amount, max: 500 }` | the number is within its limits | `BLOCK` or `NEEDS_HUMAN`, by reason |
 | `oneOf` | `oneOf: { field: town, values: [millbrook, ashford], reason: out-of-area }` | the value is one of those listed | `BLOCK` (or `NEEDS_HUMAN`) with the rule's `reason`, `not-one-of` if none; `BLOCK` `value-missing` with no value |
 | `noneOf` | `noneOf: { field: howUrgent, values: [emergency], verdict: NEEDS_HUMAN }` | the value is none of those listed | `BLOCK` (or `NEEDS_HUMAN`) with the rule's `reason`, `one-of` if none; `BLOCK` `value-missing` with no value |
+| `callerNumber` | `callerNumber: { field: textTo, else: confirmed }` | the number is the one the caller is calling from, or with `else: confirmed` one the caller confirmed at the summary | `BLOCK` `not-caller-number`, or `no-caller-number` on a call with no number; `BLOCK` `value-missing` with no value |
 | `custom` | `custom: not-delivered-that-day` | the app's own rule says so (section 3.4) | the rule's own verdict and reason |
 
 Every rule fails closed: a param that is missing, a record that does not exist or a lookup that throws is a refusal, never a pass.
@@ -638,6 +660,35 @@ actions:
 - `reason` names the reason a refusal gives, for a check's `on:`, the app's refusal lines (`blockPromptId`) and handoff lines (`handoff_<reason>`). Without it, `not-one-of` for `oneOf` and `one-of` for `noneOf`. `verdict` is `BLOCK` (the default) or `NEEDS_HUMAN`, for a person to take the call (an emergency).
 - They fail closed. A value that is missing or empty BLOCKs with the reason `value-missing`, whatever `verdict` says, for `noneOf` too: a call that says nothing is not "none of these". A check never sends an empty value (it runs once its slots are filled), so `value-missing` is what a write without the param gets.
 - Each records itself under its name (`oneOf`, `noneOf`) with lines like `town one of [millbrook, cedar_falls, ashford, riverton]` (a `oneOf` that passes), `town not one of [...]` (one that refuses) and `howUrgent none of [emergency]` (a `noneOf` that passes): the param's name and the list, never the call's value. The policy card says it in words, with a choice option's own words: "town must be one of Millbrook, Cedar Falls, Ashford or Riverton: any other is refused (`out-of-area`), and a missing value is refused".
+
+**`callerNumber`.** A rule that holds a param to the number the caller is calling from, so a text the app sends goes only to the caller's own phone, or to a number the caller heard read back whole and said yes to:
+
+```yaml
+actions:
+  sendUpdates:
+    say: text updates about a request
+    level: 0
+    rules:
+      - identity
+      - callerNumber: { field: textTo, else: confirmed }
+      - confirmed: [topic, textTo]
+  findAccountByPhone:
+    say: find the service address for the number calling
+    level: 0
+    rules:
+      - identity
+      - callerNumber: { field: callerNumber }
+audit:
+  callerNumber: last4
+  topic: keep
+```
+
+- `callerNumber: { field, else? }`. `field` is a param the action sends. It is compared as the slot of the same name holds the caller's number (its `callerNumber` offer's `take`: `5555550142` for `+15555550142`); a param named `callerNumber` is the number as the session keeps it (the call-start lookup's param); any other is compared digit for digit with the number as kept, and `check` warns.
+- `else: refuse`, the default: any other number BLOCKs with `not-caller-number`, and on a call with no number kept (a chat, a withheld number) every number BLOCKs with `no-caller-number`. `else: confirmed`: another number passes only when the caller confirmed the call's values at the summary (the action's `confirmed` rule, hashed as the summary hashed them), so the caller heard it whole and said yes; `check` requires the field in the action's `confirmed` rule.
+- It fails closed: a missing or empty value BLOCKs with `value-missing`. The number is a hint, never identity: the rule says where a call may send something, never whose record it reads, so never use it in place of `scope`.
+- It records itself under its name with lines like `textTo is the caller's number`, `textTo is not the caller's number, but a number the caller confirmed` and `textTo with no caller's number`: never a number, the call's or the caller's. `check` warns of the rule in an app that keeps no caller's number (no `callerNumber` in app.yaml and no slot that offers it), where it refuses every call. The policy matrix of an app whose policy matrix names a `callerNumber` runs every call with that number kept and with none (its `caller` axis), and the invariants hold the rule with the list rules' (`one-of`).
+
+`oneOf` cannot do this: its values are fixed in the policy, not the call's. A rule of your own could, reading `GateFacts.callerNumber`, but this one is common enough to be built in.
 
 ### 3.4 Rules of your own: `defineRule`
 
@@ -1154,14 +1205,77 @@ It is offered once per slot per form: a number reopened at the summary ("the num
 
 What the option promises, and what it does not:
 
-- **It is never identity.** A caller ID can be forged. `pnpm check` refuses `callerNumber` on an identity factor, and the number is never compared with a record to verify anyone: it only fills a callback number the caller said yes to.
+- **It is never identity.** A caller ID can be forged. `pnpm check` refuses `callerNumber` on an identity factor, and the number is never compared with a record to verify anyone: it only fills a callback number the caller said yes to. (A gated lookup by it may propose a value, never verify: [The number the caller is calling from](#the-number-the-caller-is-calling-from-callernumber).)
 - **It is never used silently.** Only the caller's yes fills the slot. A switchboard, a shared line or someone else's phone is the caller's to correct, which is why the line asks.
 - **It is said in part.** The offer says the last four digits, and the model is told no more ("the number they are calling from, ending in 0142"). The whole number is said only where the form's summary reads the slot back, so `pnpm check` warns when a form with the slot has no summary.
 - **It is masked as the slot is.** Once filled, it is the slot's value: a `digits` slot's default `redact: last4` masks it in the trace, the gate events and the audit, and a transfer hands it over by its last four. The start event's number (`SessionStart.callerNumber`) is masked on the console and in the frame log, and in the trace file as the slot masks its value, as is the setup's own copy of it in the start event's provider details (Twilio's `from`, Telnyx's `param.telnyx_call_from`) when the session kept it. A number not kept (withheld, or not one the slot can use) is no value of the slot's, and the trace file's provider details keep it as the carrier sent it, as for every app. Nothing else of the app's sessions changes: a session keeps the number only when the app has such a slot, and the trace's first record says `callerNumber: kept` or `none`, so a builder can see why no offer was made.
 
 A slot kept for the call (`listen: call`, or app.yaml's `carrySlots`) is offered in the first form that asks it and, once filled, keeps its value: `pnpm check` warns so that it is meant.
 
+Every offer the caller settles writes an `offer` row to the audit ([A text offer](#a-text-offer-onno-and-ifnone), below, says what it holds).
+
 Testing it: a scripted call takes `"callerNumber": "+15555550142"` as a carrier sends it (a withheld one as the carrier writes it), which reaches the call only for an app with such a slot, never a chat; the text CLI takes `--caller-number`. A corpus line at the offer is in the form's context, `prompted` the slot, with `confirm` (`yes`, `no` or `unanswered`), as a summary's line is. Turning it on changes the model's request on the offer turn (the pending read-back is in its turn state), so a recorded cassette misses there until it is recorded again. The frame log keeps only the number's last four, on a line of its own (`{"callerNumber": "…0142"}`, written only when the session kept the number), and replaying a logged call stands a made-up number ending in those four in for it (the shortest in the 555 range the slot takes), so the replay makes the offer the call made, with the same line and the same request to the model; after a yes the slot holds the stand-in, which the trace masks to the same last four, so a later turn's request, which shows the model the slot, is not the call's. A log written before that line replays with no offer. The engine's own fixture is `packages/dialogwright/src/testing/callback`.
+
+### A text offer: `onNo` and `ifNone`
+
+A callback number is a slot the form needs: a no to the offer asks for another. An offer to text the caller ("Can I text you updates at the number you're calling from?") is one the caller may turn down, and a no means no text. Two options of the `callerNumber` offer say so:
+
+```yaml
+textTo:
+  type: digits
+  noun: mobile number
+  length: 10
+  mask: '[2-9]\d{9}'
+  keypad: true
+  group: [3, 3, 4]
+  callerNumber:
+    countryCode: '1'
+    onNo: skip      # ask (default): a no asks ask_<slot>. skip: a no leaves the slot empty.
+    ifNone: skip    # ask (default): no number to offer asks ask_<slot>. skip: the slot is left empty.
+```
+
+```yaml
+offer_textTo:
+  text: Can I text you updates at the number you're calling from, ending in {last4}?
+  interruptible: true
+```
+
+- **A skipped slot is declined**: empty, but answered, so the form does not ask it and goes on (`SlotState.declined`). Its completion sees no value and sends nothing. A number said instead ("no, text my cell, 555 555 0199") still fills the slot as said, as does a number keyed; a declined slot reopened at the summary ("the text number is wrong") is asked, never offered.
+- **`onNo: skip`.** A no, and the end of the offer's retry ladder (silence, or answers that are neither yes nor no, until the ladder would leave the offer), leave the slot empty: a text nobody agreed to is not worth a person. With `ask`, a no asks `ask_<slot>` with no attempt counted, and the ladder goes on to the slot's own rungs, as for a callback number.
+- **`ifNone: skip`.** A call with nothing to offer (a chat, a withheld number, one that does not fit the slot, or one the app will not offer, below) leaves the slot empty. With `ask` the slot is asked as always.
+- **The summary.** A slot that may be left empty is never named in its form's summary line as `{<slot>}` (`pnpm check` refuses it: the line would read nothing there). Read it back from a line of its own when it is filled: the form's `onSummaryRead` hook returns that line's `promptId` ("That's a request about an order, with updates texted to 555 555 0142. Shall I open it?"), and the summary's yes, keypad and ladder work there as on the summary itself.
+
+**Refusing an offer: `App.callerOffer`.** A landline cannot take a text. The app's code may refuse an offer with `callerOffer(ctx, slot)`, called only when an offer is about to be made (the form would ask the slot, and the call has a number that fits it), once per slot per form. False makes no offer, and the slot goes on as `ifNone` says. It may read the facts (a line type the call-start lookup found), or call a gated tool through `ctx.callTool` (a line-type lookup, its param held to the caller's number by the `callerNumber` rule) and keep the answer in the facts. Without it, every offer is made.
+
+```ts
+export const code: AppCode = {
+  // ...
+  callerOffer(ctx, slot) {
+    if (slot !== 'textTo') return true;
+    const caller = callerOf(ctx.s);
+    if (caller === null) return false;
+    const { decision, value } = ctx.callTool({ tool: 'lineType', params: { callerNumber: caller.number } });
+    return decision.verdict === 'ALLOW' && (value as { lineType?: string } | null)?.lineType === 'mobile';
+  },
+};
+```
+
+**Sending the text.** The app's own tool sends it, from the form's completion, with the slot's value as its param, and only when the slot holds one. Hold that param with the `callerNumber` rule ([3.3](#33-the-built-in-rules)): `callerNumber: { field: textTo }` sends only to the caller's own number; `else: confirmed` sends to a number the caller confirmed at the summary too.
+
+**What is recorded: the `offer` row.** Every offer the caller settles, a callback number's, a text's, writes one row to the audit, in the day's hash chain, so `pnpm audit:verify` covers it:
+
+```
+type: offer
+detail: { slot: textTo, source: caller-number, promptId: offer_textTo,
+          said: "Can I text you updates at the number you're calling from, ending in 0142?",
+          answer: yes | no | other | none, by: speech | keypad | null, last4: "0142", locale: en-US }
+```
+
+`said` is the line as it was said, since the prompt manifest may change later. `answer` is `yes` (the number offered), `no` (a no with no number of the caller's own), `other` (a number of their own, said or keyed, with or without a no) or `none` (no answer before the ladder left the offer; `by` is then null). An offer asked again is not settled yet, and one dropped unanswered by a switch to another task or a handoff writes no row. The text tool's own row (its gate row, with the slot's param masked) follows when the form completes.
+
+**Consent is the owner's question.** Whether a spoken yes on this line is consent to be texted, under the TCPA or any other law, is a legal question for the line's owner, and the answer differs between informational and marketing texts. The engine records what was asked, in the words said, and what was answered. It does not decide that the answer is consent, and it sends nothing on its own.
+
+Testing it: a corpus line at the offer has `confirm` `yes`, `no` or `unanswered` as for a callback number; write one for each answer a caller gives there, "that's my landline" among them. The engine's own fixture is `packages/dialogwright/src/testing/texting`.
 
 ### Thresholds
 
@@ -1534,7 +1648,7 @@ At the repository root, `pnpm check` finds every folder under `apps/` that has a
 It checks, in one pass:
 
 1. **Each file against its schema.** Unknown keys, wrong types, a missing required file, a YAML syntax error. A misspelt name offers the near match, and a top-level key that belongs in another file names that file (`purposes` in identity.yaml: `move "purposes" and what is under it to policy.yaml`).
-2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every form's `calls` names tools the code defines, and, when forms declare `calls`, every action is reached by a form or the identity flow; every form's `checks` names a `check: true` action and the form's own slots (not an identity factor), each check action is named by a form, has no tool in the code and no `confirmed` rule, and needs no level the form's entry does not prove, and every line a check says is in prompts.yaml; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
+2. **The folder against the code**: every slot, tool, hook and custom rule the YAML names exists in the code; every hook the code writes is listed in forms.yaml; every tool in the code has an action in policy.yaml and every action is a tool; every custom rule the code defines is named by a `custom:` rule; every prompt the YAML names is in prompts.yaml; the identity tools, factor slots and carried slots exist; what the console names (form and slot labels, the slot order, question prefixes, a lookup fact's tool) and the clips name (a voice tag's clip, a clip's variables) exists; an action that runs the `confirmed` rule has a form with `confirmedParams` to confirm it; every form's `calls` names tools the code defines, and, when forms declare `calls`, every action is reached by a form or the identity flow; every form's `checks` names a `check: true` action and the form's own slots (not an identity factor), each check action is named by a form, has no tool in the code and no `confirmed` rule, and needs no level the form's entry does not prove, and every line a check says is in prompts.yaml; app.yaml's `callerNumber.lookup` is an action whose tool takes `callerNumber` alone, reached at call start, and a slot that may be left empty (`onNo` or `ifNone: skip`) is not named in its form's summary line; every threshold a slot's options name (a `hedge.threshold`) is one of the engine's or one under `thresholds:` in app.yaml; and the whole app passes the engine's own `validateApp`.
 3. **The engine's own lines in every locale**: every line the engine says by name, and the lines it builds for each slot and for a role rule's reason (section 2, prompts.yaml), exists in prompts.yaml and in each `locale/<tag>/prompts.yaml`. A missing line's message says when the engine says it and, when it gives the line variables, which ones (`..., and gives it {first}  ->  add "signin_thanks:" with its text (it may use {first}) and interruptible to prompts.yaml`).
 4. **The keypad menu**: every key names a form intent, an informational intent or `agent`; a key for another control intent is refused, since the engine ignores it.
 5. **A caller who is done**: an app that says `anything_else` ("Is there anything else I can help with?") has a `done` intent, so "no, that's all" ends the call with the goodbye rather than the no-match line (section 2, intents.yaml). The fix is the intent, ready to paste.
@@ -1543,14 +1657,14 @@ It checks, in one pass:
 
 The format is one line per problem, `file:line:column  path  message  ->  fix`, and then a summary line (`N problems in <folder>`, or `<folder>: ok`). A problem in the code has no YAML line, so it reads `app.ts` (or `src/app.ts`) and a code path such as `code.forms.renew_loan.entry`.
 
-A warning is a line that starts `warning: ` in the same format. It is printed and never counted: the exit code is the problems'. Under `--json` the warnings go to stderr and the JSON is the problems. Two things are warnings, both about a form's checks: an `on` reason the check's rules never refuse for (the outcome would never apply; a custom rule's reasons are the ones its examples expect), and a rule a check holds the caller to that no action in the form's `calls` runs (the write would not hold what the check held).
+A warning is a line that starts `warning: ` in the same format. It is printed and never counted: the exit code is the problems'. Under `--json` the warnings go to stderr and the JSON is the problems. Two things are warnings about a form's checks: an `on` reason the check's rules never refuse for (the outcome would never apply; a custom rule's reasons are the ones its examples expect), and a rule a check holds the caller to that no action in the form's `calls` runs (the write would not hold what the check held). Others are about the number the caller is calling from: a form with a slot that offers it and no summary, a call-start lookup above level 0 or with its number recorded with `keep`, a `callerNumber` rule in an app that keeps no number, and one on a param no slot that offers the number holds ([The number the caller is calling from](#the-number-the-caller-is-calling-from-callernumber), [3.3](#33-the-built-in-rules)).
 
 When a schema problem is found, the cross-checks against the code do not run until it is fixed, because a file that does not parse cannot be linked. Fix the schema problems first, then run it again. Any other problem does not hold the rest back: an app module that builds the app with `defineApp` throws when the folder and the code disagree, and `check` still reads the code that `defineApp` was given, so the lines the code needs (a keypad slot's `ask_<slot>_dtmf`, a portal's sign-in lines) are reported in the same run as the problem that made it throw.
 
 These are real messages. The folder was a copy of the library fixture, with these edits: an unknown key `colour: blue` in app.yaml, `level: three` for `renewLoan` in policy.yaml. The first run:
 
 ```
-app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, fixtures, prompts
+app.yaml:5:1  colour  unknown key "colour" in this file  ->  delete "colour"; the keys allowed in this file are id, locale, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, fixtures, prompts
 policy.yaml:4:12  actions.renewLoan.level  "level" is "three", which is not allowed here; it must be one of 0, 1, 2  ->  use one of 0, 1, 2
 2 problems in broken-library
 ```
@@ -2559,7 +2673,14 @@ Each carrier's setup frame carries the number the call came from, in its own pla
 | Twilio | the setup's `from`, in E.164 (`+15555550142`) | as documented |
 | Telnyx | `customParameters.telnyx_call_from`; the setup's `from`, `to` and `direction` are null | on live calls, 2026-10-05 |
 
-The console's `call_started` shows it by its last four on either carrier ("unknown" when the setup carries none). It goes to the core only for an app with a slot that offers it ([A callback number](#a-callback-number-callernumber)), as the start event's `callerNumber`, and the session keeps it only when it is a number such a slot can use:
+The number called (the DNIS), for an app that keeps it (app.yaml's `callerNumber: { use: hint, called: true }`), is read the same way (`VoiceProvider.setupCalledOf`):
+
+| Carrier | Where the number called is | Seen |
+|---|---|---|
+| Twilio | the setup's `to`, in E.164 | as documented |
+| Telnyx | `customParameters.telnyx_call_to` | in a live call's setup frame, 2026-10-05; its use by an app is not yet checked on a live call ([live-checks.md](live-checks.md)) |
+
+The console's `call_started` shows it by its last four on either carrier ("unknown" when the setup carries none). It goes to the core only for an app with a slot that offers it ([A callback number](#a-callback-number-callernumber)) or that keeps it for its code ([The number the caller is calling from](#the-number-the-caller-is-calling-from-callernumber)), as the start event's `callerNumber`. An app that keeps it for its code keeps any number that passes steps 1 and 2 below; for a slot, the session keeps it only when it is a number such a slot can use:
 
 1. Digits as a carrier writes them: a leading `+`, spaces, dashes, dots or brackets. A word (`anonymous`, `unknown`), a SIP address, a client name or anything else is no number.
 2. Not one of Twilio's placeholders for a withheld caller ID, the keypad spellings of ANONYMOUS (266696687), RESTRICTED (7378742833), UNAVAILABLE (86282452253) and BLOCKED (2562533), with or without a country code. RESTRICTED has ten digits and fits a ten-digit phone mask, so the mask alone would not refuse it.

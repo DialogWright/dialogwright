@@ -155,7 +155,7 @@ describe('the policy and identity YAML in the docs', () => {
         for (const entry of isMap(action) && Array.isArray(action.rules) ? action.rules : []) rules.add(typeof entry === 'string' ? entry : Object.keys(entry as object)[0]!);
       }
     }
-    expect([...rules].sort()).toEqual(['attempts', 'confirmed', 'custom', 'dateInRange', 'fields', 'identity', 'limit', 'noneOf', 'oneOf', 'role', 'scope']);
+    expect([...rules].sort()).toEqual(['attempts', 'callerNumber', 'confirmed', 'custom', 'dateInRange', 'fields', 'identity', 'limit', 'noneOf', 'oneOf', 'role', 'scope']);
     // The sections the docs teach: purposes, wording, redact and audit.
     for (const key of ['purposes', 'wording', 'redact', 'audit']) expect(blocks.some((b) => b.kind === 'policy' && key in b.value), key).toBe(true);
   });

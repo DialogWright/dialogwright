@@ -184,6 +184,18 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** For each carrier, what a withheld setup carries, and whether an offer was made. A Telnyx placeholder made of digits goes into `WITHHELD_PLACEHOLDERS` (`core/callerNumber.ts`) with a test, and into the guide's 13.13.
 
+## 10. The number called, and the caller's number for an app, on Twilio and on Telnyx
+
+**Why.** An app that keeps the numbers for its code (app.yaml's `callerNumber: { use: hint, called: true }`, the guide's [13.13](authoring-an-app.md#1313-the-number-the-caller-is-calling-from)) reads the number called from Twilio's `to` and from Telnyx's `customParameters.telnyx_call_to`. Telnyx's is seen in a live setup frame, never yet read by an app on a live call; and the call-start lookup, the text offer and its `offer` audit row have run only in the harness.
+
+**Set.** A scratch copy of the engine's fixture `packages/dialogwright/src/testing/texting` (its lookup, its `textTo` offer and its `sendUpdates` held by the `callerNumber` rule), or your own app with the block. Add the number you will call from to the fixture's records in the copy, as a mobile. The carrier's settings from check 1 or 2.
+
+**Do.** On each carrier, call from that phone with its caller ID shown: open a request, say yes to the text offer, and yes at the summary. Call again and say no to the offer. Then once withheld.
+
+**Look for.** The trace file's first record: `"callerNumber": "kept"`, the event's `callerNumber` and `calledNumber` masked to their last four, and one gate event, `findCallerByPhone` with purpose `caller-lookup` and its param masked. The offer said by the last four, and `sendUpdates` allowed after the yes with its `callerNumber` line `textTo is the caller's number`. The day's audit file: one `offer` row per call with the line as said and the answer (`yes`, then `no`), and `pnpm audit:verify` passes. Withheld: no gate event at the start, no offer, and the summary read with no texts. The console's `call_started` and the frame log show neither number whole.
+
+**Record.** For each carrier, whether the number called arrived and where, and anything masked whole that should not be, or shown whole that should be masked. A number called in another place is a provider change (`setupCalledOf`) with a test, and a line in the guide's 13.13.
+
 ## Results log
 
 One row per check run. Keep earlier rows.
