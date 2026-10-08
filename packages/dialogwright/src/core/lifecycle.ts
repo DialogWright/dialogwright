@@ -196,6 +196,15 @@ function evaluate(s: Session, call: ToolCall, tc: TurnContext): GateDecision {
  */
 export const RESULT_UNREDACTABLE = 'result-unredactable';
 
+/** How a call to a tool is made (callTool). */
+export interface CallOptions {
+  /** A tool that throws fails the call, recorded with TOOL_FAILED_SUMMARY, not the turn. Default false. */
+  readonly failSoft?: boolean;
+}
+
+/** The summary recorded for a call made with `failSoft` whose tool threw: the error itself is never recorded. */
+export const TOOL_FAILED_SUMMARY = 'the tool failed: nothing was returned';
+
 /**
  * The only way a turn reaches a tool: evaluate the gate, and on ALLOW run the tool, withhold from
  * its result what the policy keeps from this caller (policy.yaml `redact:`), and record a summary
@@ -213,8 +222,14 @@ export const RESULT_UNREDACTABLE = 'result-unredactable';
  *
  * `code` is the keypad one-time code for verifyCode. It travels beside the call, never in its
  * params, so it reaches neither the gate event nor the trace.
+ *
+ * `opts.failSoft`: a tool that throws as it runs fails the call, not the turn (the call-start lookup,
+ * core/turn.ts callerLookup, which must never keep the greeting from being said). The call is
+ * recorded as allowed, with TOOL_FAILED_SUMMARY and nothing of the error (its message may hold a
+ * param's raw value), the side effects it queued before it threw are dropped, and its value is null.
+ * Without it, a throw goes up to the turn, as it always has.
  */
-export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code?: string): ToolOutcome {
+export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code?: string, opts: CallOptions = {}): ToolOutcome {
   // Nothing past this line holds the raw call: the event, the trace and the audit see the redacted one.
   const decision = evaluate(s, call, tc);
   // A form's check (policy.yaml `check: true`) has no tool: like a probe, the gate's answer is all there is.
@@ -224,7 +239,15 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
   }
   // The side effects the tool queues as it runs: recorded with the call's scrub (recordedEffect), sent as they are.
   const effectsBefore = out.effects.length;
-  const ran = runTool(s, call, tc, out, code);
+  let ran: ReturnType<typeof runTool>;
+  try {
+    ran = runTool(s, call, tc, out, code);
+  } catch (err) {
+    if (opts.failSoft !== true) throw err;
+    out.effects.length = effectsBefore;
+    out.gateEvents.push({ decision, summary: TOOL_FAILED_SUMMARY });
+    return { decision, value: null };
+  }
   // Redaction per principal, the one place it happens: nothing past this line holds the whole
   // result. The hooks, the facts and the lines get the stripped value; the event (so the trace, the
   // console and the audit) gets the summary with what was withheld.

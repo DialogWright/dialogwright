@@ -356,7 +356,7 @@ const callerNumber = z
     called: z.boolean().optional().describe('Keep the number the caller called (the DNIS) too, for the app\'s code (calledOf(s)). Default false.'),
     lookup: identifier()
       .optional()
-      .describe('A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides what it may return at level 0. Default: none.'),
+      .describe('A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal or a failure is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides whether it runs; the tool returns only what may be said before identity, since nothing is withheld from a caller not yet proven. Default: none.'),
   })
   .describe('The number the caller is calling from, kept for the app\'s code: a hint, never identity. Without it, the number is kept only for a slot that offers it (a digits slot\'s callerNumber).');
 

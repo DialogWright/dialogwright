@@ -1478,15 +1478,25 @@ export const CALLER_LOOKUP_PURPOSE = 'caller-lookup';
  * (lifecycle.ts callTool), as the caller not yet proven, with the number kept as its one param. Its
  * gate decision is recorded like every other (the trace, the console, the audit, the param masked as
  * policy.yaml's `audit:` says). A refusal is silent: nothing is said or kept, and the call goes on as
- * without a number. An allowed result goes to the app's facts (FactsConfig.fromCallerLookup). Only
- * for a session that kept the caller's number, an anonymous caller (a call; a chat has no number)
- * and an app that names a lookup.
+ * without a number. So is a failure: a tool that throws is recorded as failed (callTool's
+ * `failSoft`), and a result the facts hook throws on leaves the facts as they were, so neither keeps
+ * the greeting from being said. An allowed result goes to the app's facts
+ * (FactsConfig.fromCallerLookup). Only for a session that kept the caller's number, an anonymous
+ * caller (a call; a chat has no number) and an app that names a lookup. Tools are synchronous
+ * (ToolDef.run), so the greeting waits for nothing but the tool's own run: there is no wait to bound.
  */
 function callerLookup(s: Session, io: TurnIO): void {
   const tool = io.app.callerNumber?.lookup;
   if (tool === undefined || !hintsCallerNumber(io.app) || s.callerNumber === undefined || !isAnonymous(s.principal)) return;
-  const { decision, value } = callTool(s, { tool, params: { callerNumber: s.callerNumber }, purpose: CALLER_LOOKUP_PURPOSE }, io.tc, io.out);
-  if (decision.verdict === 'ALLOW' && value !== null && value !== undefined) io.app.facts?.fromCallerLookup?.(s.facts, value);
+  const { decision, value } = callTool(s, { tool, params: { callerNumber: s.callerNumber }, purpose: CALLER_LOOKUP_PURPOSE }, io.tc, io.out, undefined, { failSoft: true });
+  const facts = io.app.facts;
+  if (decision.verdict !== 'ALLOW' || value === null || value === undefined || facts?.fromCallerLookup === undefined) return;
+  const before = facts.clone(s.facts);
+  try {
+    facts.fromCallerLookup(s.facts, value);
+  } catch {
+    s.facts = before;
+  }
 }
 
 /**

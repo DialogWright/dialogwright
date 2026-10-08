@@ -579,9 +579,11 @@ export interface FactsConfig {
   /**
    * Applies the call-start lookup's result to the facts (app.yaml's `callerNumber.lookup`, as a
    * form's onEntry applies an entry result): called only when the gate allowed the call and the tool
-   * returned a value, with that value as the policy left it for an anonymous caller (policy.yaml
-   * `redact:`). Keep only what the app needs, and clear it in onFormClosed where it goes stale.
-   * Without it, the result is not kept.
+   * returned a value, with that value whole: policy.yaml's `redact:` withholds fields only from a
+   * party acting for subjects, never from the anonymous caller the lookup is made as, so the tool
+   * itself must return only what may be said before identity. Keep only what the app needs, and
+   * clear it in onFormClosed where it goes stale. One that throws leaves the facts as they were, and
+   * the call goes on. Without it, the result is not kept.
    */
   fromCallerLookup?(f: SessionFacts, value: unknown): void;
 }
@@ -986,7 +988,7 @@ export interface App {
    * or not a slot can offer it, and the number called too when `called` is true; app code reads them
    * through `callerOf(s)` and `calledOf(s)`. `lookup` names a tool the engine calls once at call
    * start, before the greeting, through the gate as the anonymous caller, with the number as its one
-   * param (`callerNumber`); a refusal is silent, and an allowed result goes to the facts
+   * param (`callerNumber`); a refusal, or a tool that throws, is silent, and an allowed result goes to the facts
    * (FactsConfig.fromCallerLookup). Without it, the number is kept only for a slot that offers it,
    * as before (SlotSpec.callerNumber), and nothing is looked up.
    */

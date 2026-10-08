@@ -17,6 +17,7 @@ import { resolve, CALLER_LOOKUP_PURPOSE, type TurnContext, type TurnResult } fro
 import { startEvent, withCalledNumber, withCallerNumber } from '../channel/events';
 import { VOICE_RELAY } from '../channel/caps';
 import { mockCodeVerifier } from './tools';
+import { TOOL_FAILED_SUMMARY } from './lifecycle';
 import { compileGate } from '../gate/compiled';
 import { AuditLog } from '../audit/log';
 import { verifyChain } from '../audit/verify';
@@ -226,6 +227,38 @@ describe('the call-start lookup', () => {
     expect(start.session.ended).toBe(false);
     // With no line type kept, the offer asks the line-type lookup instead.
     expect(gates(r)).toContain('lineType:ALLOW');
+  });
+
+  it('a failure is silent: a tool that throws is recorded as failed, its error and what it queued dropped, and the greeting is said', async () => {
+    const thrown = `no line for ${MOBILE}`;
+    const throwing: App['tools'][string] = {
+      ...textingApp.tools.findCallerByPhone!,
+      run(_call, _sys, ctx) {
+        ctx.out.effects.push({ kind: 'service', service: 'notice', params: { to: MOBILE } });
+        throw new Error(thrown);
+      },
+    };
+    use(variant('texting-lookup-throws', (app) => ({ tools: { ...app.tools, findCallerByPhone: throwing } })));
+    const r = await call({ callerNumber: MOBILE }, ...says(...OPENER));
+    const start = r.runs[0]!.result;
+    expect(promptOf(start)).toBe('greeting');
+    expect(start.gateEvents.map((e) => [e.decision.verdict, e.summary])).toEqual([['ALLOW', TOOL_FAILED_SUMMARY]]);
+    expect(start.effects).toEqual([]);
+    expect(start.session.facts).toEqual({});
+    expect(JSON.stringify(start.audit)).not.toContain('5555550142');
+    expect(JSON.stringify(start.audit)).not.toContain(thrown);
+    // The call goes on as one whose number was not found: the offer asks the line-type lookup.
+    expect(gates(r)).toContain('lineType:ALLOW');
+  });
+
+  it('a facts hook that throws on the result leaves the facts as they were, and the greeting is said', async () => {
+    const facts = textingApp.facts!;
+    use(variant('texting-facts-throw', () => ({
+      facts: { ...facts, fromCallerLookup(f) { (f as TextingFacts).lineType = 'landline'; throw new Error('cannot take it'); } },
+    })));
+    const start = (await call({ callerNumber: MOBILE })).runs[0]!.result;
+    expect(promptOf(start)).toBe('greeting');
+    expect(start.session.facts).toEqual({});
   });
 
   it('is not made on a call with no usable number, nor on a chat', async () => {
