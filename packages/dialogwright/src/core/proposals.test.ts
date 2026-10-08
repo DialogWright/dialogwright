@@ -20,6 +20,13 @@ import { callbackApp } from '../testing/callback/app';
 import { screenedApp } from '../testing/screened/app';
 import { testkitApp } from '../testing/testkit';
 import { mockCodeVerifier } from './tools';
+import { Continuation } from '../run/continuation';
+import { newSession, type Session } from './session';
+import { VOICE_RELAY } from '../channel/caps';
+import { ANONYMOUS } from '../gate/principal';
+import { redactRecordSlots } from '../trace/redact';
+import { redactRecord } from '../server/dashboard/events';
+import { interruptEvent, speechEvent, startEvent, withCallerNumber, type SessionEvent } from '../channel/events';
 
 /**
  * A slot that proposes a value from the facts (`offer: facts`, FactsConfig.offers): the street the
@@ -159,6 +166,16 @@ describe('the proposal: the worked example', () => {
     expect(offers(unanswered)).toMatchObject([{ answer: 'none', by: null }]);
   });
 
+  it('a key pressed at it answers nothing (the slot has no keypad): the proposal stands, and a yes still takes it', async () => {
+    const r = await call({ callerNumber: ON_FILE }, ...says(REPORT), { dtmf: '1' });
+    expect(last(r).decision.kind).toBe('ignore');
+    expect(last(r).session.pendingConfirmation).toMatchObject({ target: 'slot', slot: 'place', offered: true, from: 'facts' });
+    expect(offers(r)).toEqual([]);
+    const yes = await call({ callerNumber: ON_FILE }, ...says(REPORT), { dtmf: '1' }, { say: 'yes' });
+    expect(last(yes).session.slots.place).toMatchObject({ value: '22 Alder Street', confirmed: true });
+    expect(offers(yes)).toMatchObject([{ answer: 'yes', by: 'speech' }]);
+  });
+
   it('words that answer neither ask it again, and settle nothing', async () => {
     const r = await call({ callerNumber: ON_FILE }, ...says(REPORT, 'hmm, which account'));
     expect(promptOf(last(r))).toBe('offer_place');
@@ -183,6 +200,16 @@ describe('offered once per slot per form', () => {
     // A silence at the reopened question is the question again, never the proposal.
     const quiet = await call({ callerNumber: ON_FILE }, ...says(REPORT, 'no'), { silence: true });
     expect(prompts(quiet)).toEqual(['greeting', 'offer_place', 'ask_place', 'ask_place']);
+  });
+
+  it('the slot reopened at the summary is asked, never proposed, whichever way the app reads a change', async () => {
+    for (const mode of ['set-aside', 'decides'] as const) {
+      use(variant(`proposals-change-${mode}`, () => ({ changeSlotWithValue: mode })));
+      const r = await call({ callerNumber: ON_FILE }, ...says(REPORT, 'yes', 'nothing is working at all', 'no, the address is wrong'), { silence: true });
+      expect(prompts(r).slice(-2), mode).toEqual(['ask_place', 'ask_place']);
+      expect(last(r).session.slots.place!.value, mode).toBeNull();
+      expect(offers(r).map((d) => d.answer), mode).toEqual(['yes']);
+    }
   });
 
   it('a second report on the call is a new form, and proposes again', async () => {
@@ -260,6 +287,57 @@ describe('no proposal', () => {
   });
 });
 
+describe('beside an offer of the caller\'s number on the same form', () => {
+  /** The fixture with a callback number (the callback fixture's phone, callerNumber) asked between the address and the problem. */
+  const withCallback = (): App => variant('proposals-callback', (app) => {
+    const lines = Object.fromEntries(Object.entries(callbackApp.prompts.manifest).filter(([id]) => /^(ask|offer|confirm|ack)_phone/.test(id)));
+    const form = app.forms.report_problem!;
+    return {
+      slots: { ...app.slots, phone: callbackApp.slots.phone! },
+      forms: { ...app.forms, report_problem: { ...form, slots: ['place', 'phone', 'problem'] } },
+      prompts: { ...app.prompts, manifest: { ...app.prompts.manifest, ...lines } },
+    };
+  });
+
+  it('each slot makes its own offer once, and each settled offer is its own row', async () => {
+    use(withCallback());
+    const r = await call({ callerNumber: ON_FILE }, ...says(REPORT, 'yes', 'yes'));
+    expect(prompts(r)).toEqual(['greeting', 'offer_place', 'offer_phone', 'ask_problem']);
+    const t = last(r);
+    expect(t.session.slots.place).toMatchObject({ value: '22 Alder Street', confirmed: true });
+    expect(t.session.slots.phone).toMatchObject({ value: '5555550142', confirmed: true });
+    expect(t.session.callerOffered).toEqual(['place', 'phone']);
+    expect(offers(r).map((d) => [d.slot, d.source, d.answer, d.last4])).toEqual([['place', 'facts', 'yes', undefined], ['phone', 'caller-number', 'yes', '0142']]);
+    expect(t.session.principal).toEqual({ kind: 'anonymous', level: 0 });
+  });
+
+  it('a no to the proposal leaves the number\'s offer to come', async () => {
+    use(withCallback());
+    const r = await call({ callerNumber: ON_FILE }, ...says(REPORT, 'no', "It's 14 Birch Lane"));
+    expect(prompts(r)).toEqual(['greeting', 'offer_place', 'ask_place', 'offer_phone']);
+  });
+});
+
+describe('a caller who had not finished, at the proposal', () => {
+  it('a yes whose reply was cut off at once is joined to what came next: the fragment\'s row stays, and the joined turn\'s follows it', async () => {
+    const c = new Continuation(300);
+    const o = { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools: toolsOf() };
+    let session: Session = newSession('p1', 0, VOICE_RELAY, ANONYMOUS, proposalsApp.id);
+    const runs: Awaited<ReturnType<Continuation['run']>>[] = [];
+    const events: SessionEvent[] = [withCallerNumber(startEvent(), ON_FILE), speechEvent(REPORT), speechEvent('yes'), interruptEvent('What are', 120), speechEvent('and nothing is working at all')];
+    for (const e of events) {
+      const r = await c.run(session, e, o);
+      session = r.result.session;
+      runs.push(r);
+    }
+    expect(runs.at(-1)!.joined).toEqual(['yes', 'and nothing is working at all']);
+    expect(session.slots.place).toMatchObject({ value: '22 Alder Street', confirmed: true });
+    expect(session.principal).toEqual({ kind: 'anonymous', level: 0 });
+    const rows = runs.flatMap((r) => r.result.audit.filter((d) => d.type === 'offer').map((d) => d.detail.answer));
+    expect(rows).toEqual(['yes', 'yes']);
+  });
+});
+
 describe('identity after a yes', () => {
   it('a protected action still asks for the factors, and the proposal is no factor', async () => {
     const r = await call({ callerNumber: ON_FILE }, ...says(REPORT, 'yes', 'nothing is working at all', 'yes, file it', 'and can you check on my request'));
@@ -332,6 +410,24 @@ describe('the offer audit row', () => {
     const r = await call({ callerNumber: ON_FILE }, ...says(REPORT));
     expect(promptOf(last(r))).toBe('ask_place');
     expect(offers(r)).toEqual([]);
+  });
+});
+
+describe('the trace and the console', () => {
+  it('mask the value proposed as they mask the slot\'s own value: in the line said, its vars, the pending read-back and the next turn\'s line just played', async () => {
+    const spec = proposalsApp.slots.place!;
+    for (const redact of ['mask', 'last4'] as const) {
+      use(variant(`proposals-trace-${redact}`, (app) => ({ slots: { ...app.slots, place: { ...spec, redact } } })));
+      // A yes (the slot then holds it), and a no (the slot then empty: only the model's read-back had it).
+      for (const answer of ['yes', 'no']) {
+        const r = await call({ callerNumber: ON_FILE }, ...says(REPORT), { silence: true }, { say: answer });
+        expect(JSON.stringify(r.runs.map((x) => x.record)), `${redact} ${answer}`).toContain('22 Alder Street');
+        for (const run of r.runs) {
+          expect(JSON.stringify(redactRecordSlots(run.record, 'length')), `${redact} ${answer}`).not.toContain('Alder');
+          expect(JSON.stringify(redactRecord(run.record)), `${redact} ${answer}`).not.toContain('Alder');
+        }
+      }
+    }
   });
 });
 
