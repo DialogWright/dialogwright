@@ -10,6 +10,7 @@ import {
   checkPolicyInvariants, formatPolicyInvariantViolations, INVARIANTS, policyInvariants, PolicyInvariantError, type InvariantName,
 } from './policyInvariants';
 import { screenedApp } from './screened/app';
+import { textingApp } from './texting/app';
 import { testkitApp } from './testkit';
 
 /**
@@ -201,6 +202,34 @@ describe('the policy invariants catch a broken gate (anti-tautology)', () => {
     const g = compileGate({ ...screened.source, actions, customRules: { ...screened.source.customRules, [RULE_ID.oneOf]: loose } }, screened.tables, screened.subjectKind, screened.identityTools);
     return (call, p, facts, lk) => g.evaluate(call, p, facts, lk);
   })();
+
+  // The callerNumber rule, folded into the same invariant, on the texting fixture (its lookups and its text hold to the caller's number).
+  const texting = gateOf(textingApp);
+  /** The texting gate with every callerNumber rule letting any number through, as long as there is one. */
+  const looseCallerNumber: GateEvaluate = (() => {
+    const actions = Object.fromEntries(Object.entries(texting.source.actions).map(([tool, action]) => [tool, {
+      ...action,
+      rules: action.rules.map((r): Rule => (r.rule === 'callerNumber' ? { rule: 'custom', id: RULE_ID.callerNumber } : r)),
+    }]));
+    const loose = (c: RuleContext): RuleOutcome => {
+      const rule = texting.source.actions[c.call.tool]!.rules.find((r) => r.rule === 'callerNumber');
+      const value = rule?.rule === 'callerNumber' ? c.call.params[rule.field] ?? '' : '';
+      return value !== '' ? line(true) : line(false, { verdict: 'BLOCK', reason: 'value-missing' });
+    };
+    const g = compileGate({ ...texting.source, actions, customRules: { ...texting.source.customRules, [RULE_ID.callerNumber]: loose } }, texting.tables, texting.subjectKind, texting.identityTools);
+    return (call, p, facts, lk) => g.evaluate(call, p, facts, lk);
+  })();
+
+  it('one-of: a callerNumber rule lets through a number that is not the caller\'s', () => {
+    expect(policyInvariants(textingApp).violations).toEqual([]);
+    const { violations } = checkPolicyInvariants(textingApp, { evaluate: looseCallerNumber });
+    const caught = violations.filter((v) => v.invariant === 'one-of');
+    expect(caught.length).toBeGreaterThan(0);
+    expect(new Set(violations.map((v) => v.invariant))).toEqual(new Set(['one-of']));
+    expect(formatPolicyInvariantViolations(caught, 1)).toContain(`[one-of] ${caught[0]!.key}: callerNumber: `);
+    expect(caught.some((v) => v.detail.includes('not the caller\'s number'))).toBe(true);
+    expect(caught.some((v) => v.detail.includes('no caller\'s number'))).toBe(true);
+  });
 
   it('one-of: a oneOf rule lets through a value it does not list', () => {
     const { violations } = checkPolicyInvariants(screenedApp, { evaluate: looseOneOf });

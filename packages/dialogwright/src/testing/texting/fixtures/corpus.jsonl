@@ -1,0 +1,17 @@
+{"id":"or-01","text":"I'd like to open a request","intent":"open_request","context":"no_form"}
+{"id":"or-02","text":"I need to open a request about a bill","intent":"open_request","context":"no_form","slots":{"topic":"bill"}}
+{"id":"tp-01","text":"it's about an order","intent":"none","context":"open_request","prompted":"topic","slots":{"topic":"order"}}
+{"id":"of-01","text":"yes, please text me","intent":"none","context":"open_request","prompted":"textTo","confirm":"yes"}
+{"id":"of-02","text":"no thanks","intent":"none","context":"open_request","prompted":"textTo","confirm":"no"}
+{"id":"of-03","text":"no, text my cell, five five five five five five zero one nine nine","intent":"none","context":"open_request","prompted":"textTo","confirm":"no","slots":{"textTo":{"span":"five five five five five five zero one nine nine","value":"5555550199"}}}
+{"id":"of-04","text":"that's my landline","intent":"none","context":"open_request","prompted":"textTo","confirm":"no"}
+{"id":"of-05","text":"hmm, which one","intent":"none","context":"open_request","prompted":"textTo","confirm":"unanswered"}
+{"id":"of-06","text":"text five five five five five five zero one nine nine instead","intent":"none","context":"open_request","prompted":"textTo","confirm":"unanswered","slots":{"textTo":{"span":"five five five five five five zero one nine nine","value":"5555550199"}}}
+{"id":"tt-01","text":"five five five five five five zero one nine nine","intent":"none","context":"open_request","prompted":"textTo","slots":{"textTo":{"span":"five five five five five five zero one nine nine","value":"5555550199"}}}
+{"id":"sm-01","text":"yes, open it","intent":"none","context":"confirm_open_request","confirm":"yes"}
+{"id":"sm-02","text":"no, the text number is wrong","intent":"none","context":"confirm_open_request","confirm":"no","changeSlot":"textTo"}
+{"id":"ag-01","text":"can I talk to a person","intent":"agent","context":"no_form"}
+{"id":"rp-01","text":"can you say that again","intent":"repeat_prompt","context":"no_form"}
+{"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}
+{"id":"no-01","text":"hello","intent":"none","context":"no_form"}
+{"id":"dn-01","text":"that's all, thanks","intent":"done","context":"anything_else"}

@@ -1,0 +1,56 @@
+# policy.matrix: what the gate of "texting" decides, for every action and every kind of caller.
+# Written by `pnpm policy:matrix` from the compiled policy (policy.yaml, identity.yaml) and the
+# app's policy matrix (TestingHooks.policyMatrix); a test fails when it differs. Never edit it by
+# hand: a difference here is a change in what the agent may do, to be reviewed as the policy is.
+#
+# Under each action (its level and its rules as the file writes them), a row per kind of caller.
+# A row with one verdict holds for every call that caller can make; otherwise its lines split it
+# by what the call carries, a|b meaning either value. "as <caller>" repeats that caller's verdicts.
+#
+# callers
+#   anonymous      no one proven (level 0)
+#   subject@1      customer, level 1
+#   subject@2      customer, level 2
+#   unlisted-role  staff, role assistant, level 2 (a role the policy does not name)
+#   roleless       staff with no role, level 2
+#   other-party    visitor, level 2 (neither a subject nor of a delegate kind)
+# what a call carries
+#   purpose     none; entry-check, retry-check (the lifecycle's probes); a form's purpose
+#   subject     own; inScope (a subject the delegates act for); outOfScope; unknown; empty
+#   fields      exact; extra (one field more); missing (one field less: the subject's own when it is the only one)
+#   confirmed   none; match (the caller confirmed exactly these values); mismatch
+#   attempts    0; 3 (the maximum)
+#   params      the policy matrix's named sets of values for the action
+#   caller      kept (the call came from the matrix's caller number); none
+# verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>
+
+purposes: none
+
+findCallerByPhone · level 0 · identity, callerNumber(callerNumber)
+  every caller   fields exact|extra, params own, caller kept    ALLOW
+                 fields exact|extra, params other, caller kept  BLOCK not-caller-number
+                 fields exact|extra, caller none                BLOCK no-caller-number
+                 fields missing                                 BLOCK value-missing
+
+lineType · level 0 · identity, callerNumber(callerNumber)
+  every caller   fields exact|extra, params own, caller kept    ALLOW
+                 fields exact|extra, params other, caller kept  BLOCK not-caller-number
+                 fields exact|extra, caller none                BLOCK no-caller-number
+                 fields missing                                 BLOCK value-missing
+
+openRequest · level 0 · identity, confirmed(topic, textTo)
+  every caller   fields exact, confirmed none|mismatch  BLOCK confirmation
+                 fields exact, confirmed match          ALLOW
+                 fields extra|missing                   BLOCK confirmation
+
+sendUpdates · level 0 · identity, callerNumber(textTo, else confirmed), confirmed(topic, textTo)
+  every caller   fields exact|extra, confirmed none|mismatch, params own, caller kept    BLOCK confirmation
+                 fields exact|extra, confirmed none|mismatch, params other, caller kept  BLOCK not-caller-number
+                 fields exact|extra, confirmed none|mismatch, caller none                BLOCK no-caller-number
+                 fields missing, confirmed none|mismatch                                 BLOCK value-missing
+                 fields exact, confirmed match                                           ALLOW
+                 fields extra, confirmed match                                           BLOCK confirmation
+                 fields missing, confirmed match                                         BLOCK value-missing
+
+(unlisted) · not in the policy
+  every caller   BLOCK unknown-tool

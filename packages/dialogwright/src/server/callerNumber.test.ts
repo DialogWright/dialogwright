@@ -23,7 +23,8 @@ import { useTestkit } from '../testing/apps';
 import { defaultCorpusFile } from '../run/fixtures';
 import { VOICE_RELAY } from '../channel/caps';
 import { callbackApp } from '../testing/callback/app';
-import { setupCallerOf } from './voice/registry';
+import { setupCalledOf, setupCallerOf } from './voice/registry';
+import { textingApp } from '../testing/texting/app';
 import { twilioProvider } from './voice/twilio';
 import { telnyxProvider } from './voice/telnyx';
 import type { SetupFrame } from '../channel/relay/frames';
@@ -74,6 +75,17 @@ describe('the caller\'s number on a setup frame', () => {
     expect(setupCallerOf('acme', TWILIO_SETUP)).toBe('+15555550199');
     expect(setupCallerOf(undefined, TWILIO_SETUP)).toBe('+15555550199');
     expect(setupCallerOf('acme', { ...TWILIO_SETUP, from: '' })).toBeNull();
+  });
+
+  it('and the number called: Twilio\'s to, Telnyx\'s telnyx_call_to, the setup\'s to for a provider without the method', () => {
+    expect(twilioProvider.setupCalledOf!(TWILIO_SETUP)).toBe('+15555550100');
+    expect(twilioProvider.setupCalledOf!({ ...TWILIO_SETUP, to: '' })).toBeNull();
+    expect(telnyxProvider.setupCalledOf!(telnyxSetup('+15555550110'))).toBe('+15555550111');
+    expect(telnyxProvider.setupCalledOf!({ ...telnyxSetup(), customParameters: {} })).toBeNull();
+    expect(setupCalledOf('telnyx', telnyxSetup())).toBe('+15555550111');
+    expect(setupCalledOf('acme', TWILIO_SETUP)).toBe('+15555550100');
+    expect(setupCalledOf(undefined, { ...TWILIO_SETUP, to: '' })).toBeNull();
+    expect(redactDeep({ type: 'session.start', provider: {}, calledNumber: '+15555550100' })).toEqual({ type: 'session.start', provider: {}, calledNumber: '…0100' });
   });
 
   it('is masked by key on the console and in the frame log, as a start event carries it', () => {
@@ -169,6 +181,29 @@ describe('the start event', () => {
     const { traced, d, callId } = await setUp('callback', 'twilio', { ...TWILIO_SETUP, from: '+15555550142' });
     expect(traced.event).toMatchObject({ provider: { from: '...0142', to: '+15555550100' }, callerNumber: '...0142' });
     expect(readFileSync(join(d.dir, `${callId}.jsonl`), 'utf8')).not.toContain('5555550142');
+  });
+
+  it('carries both numbers for an app that keeps them for its code (app.yaml callerNumber), each masked in the trace file and on the console', async () => {
+    resetAppsForTest();
+    registerApp(textingApp);
+    registerApp(testkitApp);
+    for (const [provider, setup] of [['twilio', { ...TWILIO_SETUP, from: '+15555550142', to: '+15555550100' }], ['telnyx', { ...telnyxSetup('+15555550142'), customParameters: { telnyx_call_from: '+15555550142', telnyx_call_to: '+15555550100' } }]] as const) {
+      const { traced, d, callId, events } = await setUp('texting', provider, setup);
+      expect(d.store.get(callId)!.session).toMatchObject({ callerNumber: '+15555550142', calledNumber: '+15555550100' });
+      expect(traced.callerNumber).toBe('kept');
+      expect(traced.event).toMatchObject({ type: 'session.start', callerNumber: '...0142', calledNumber: '...0100' });
+      // The call-start lookup's gate event, its param masked as policy.yaml's audit: says.
+      expect(traced.gateEvents?.map((e) => e.decision.call)).toEqual([{ tool: 'findCallerByPhone', params: { callerNumber: '...0142' }, purpose: 'caller-lookup' }]);
+      expect(readFileSync(join(d.dir, `${callId}.jsonl`), 'utf8')).not.toContain('5555550142');
+      expect(readFileSync(join(d.dir, `${callId}.frames.jsonl`), 'utf8')).not.toMatch(/5555550142|5555550100/);
+      expect(JSON.stringify(events)).not.toMatch(/5555550142|5555550100/);
+    }
+  });
+
+  it('carries no number called for an app that does not keep it', async () => {
+    useApps('callback');
+    const { traced } = await setUp('callback', 'twilio', { ...TWILIO_SETUP, from: '+15555550142' });
+    expect(traced.event).not.toHaveProperty('calledNumber');
   });
 
   it('a withheld number is no number: nothing kept, and the trace says so', async () => {
