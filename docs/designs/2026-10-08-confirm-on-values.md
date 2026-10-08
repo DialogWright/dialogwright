@@ -32,9 +32,12 @@ slots:
     confirm: always              # read back as soon as it fills
 ```
 
-- `confirm: always` is added to the library types that lack it. It needs a `confirm_<slot>` prompt, which renders with the slot's display as `{<slot>}`, as the summary does. `pnpm check` asks for it.
+- `confirm: always` is added to the library types that lack it. It needs a `confirm_<slot>` prompt, which renders with the slot's display as `{<slot>}`, as the summary does. `pnpm check` asks for it. On a `text` slot whose display is a stand-in (`say`, "your description") the read-back would say nothing the caller could correct, so `pnpm check` refuses it there: such a slot reads back its words (`say: null`).
 - `confirmValues` (choice only) lists option keys. Each must be a key of `options`, which `pnpm check` verifies. When the slot fills with one of them, it reads back as an `always` slot would; any other value follows `confirm`. A `confirm_<slot>` prompt is required when `confirmValues` is set.
-- **A no** to a library slot's read-back empties the slot and asks it again: `ack_declined`, then `ask_<slot>` (the keypad form `ask_<slot>_dtmf` when the app has one and the slot takes keys). A second no follows the existing ladder to a person. A code slot's existing `always` behaviour is unchanged.
+- **A no** to a library slot's read-back empties the slot and asks it again: `ack_declined`, then `ask_<slot>`. The no is one attempt on the slot's own ladder, so a silence or a miss on the question asked again is asked again as any is (the keypad form `ask_<slot>_dtmf` at the keypad rung, where the slot takes keys). The nos to the read-back are counted apart, and a second one goes to a person.
+- **The right answer in the same breath:** "no, I own it" fills the slot with "own", which goes on as any fill does (read back in its turn if it is itself a read-back value). The value just declined, heard again, is not taken, and a bare "no" fills nothing.
+- A value a library slot reads back, given with the summary's yes ("yes, but I rent") or with a detail named as wrong, is read back before any check reads it.
+- A code slot's existing `always` behaviour is unchanged: its no goes to the keypad, and its new value at the summary goes to the checks and the completion, as before.
 - A keyed value is confirmed already, as today. A slot confirmed at its read-back is not asked again at the summary's yes.
 
 ## 3. The check option
@@ -50,7 +53,9 @@ checks:
 - `confirm` names a yes/no prompt that renders with the form's slot displays, as `say` does. It is allowed with every `then`.
 - On a refusal with `confirm` and any `with` slot unconfirmed, the form pauses on the read-back. The pending confirmation targets the check and records the action and reason. The read-back is not counted as the form's end, and no `form_stopped` row is written yet.
 - **Yes:** the `with` slots are marked confirmed and the refusal acts as written: `say`, then `then`. The `form_stopped` row gets `confirmed: true`.
-- **No:** the `with` slots are emptied, and so is the check's `checked` entry. The engine says `ack_declined`, and the form asks the first emptied slot. When they fill again the check runs again, and its read-back is asked again only if it refuses again.
+- **No:** the `with` slots not yet confirmed are emptied (one confirmed at its own read-back is not the answer misheard), and so is the check's `checked` entry. The engine says `ack_declined`, and the form asks the first emptied slot, a step on its own ladder as for a slot's no. "No, it's in Cedar Falls" fills the town instead, and the check runs again on it. When they fill again the check runs again, and its read-back is asked again only if it refuses again. A second no to the same check's read-back goes to a person.
+- **Stale:** the pending confirmation keeps the hash of the params the gate refused. A turn that changed them while the read-back was out (the breath of an informational answer, say) does not have the old refusal asked again or acted on: the check runs again through the gate.
+- A portal sign-in drops a pending check read-back, as it does an intent confirmation: the parked form runs its checks again.
 - **No clear answer:** the existing confirmation ladder applies (re-ask, then a person). The refusal never acts on silence.
 - A refusal at completion, after the summary's yes, has every slot confirmed, so it acts directly. The read-back is never asked twice for one value.
 
