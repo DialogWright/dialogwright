@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../../schemas/forms.schema.json
+forms:
+  # Anyone may report a problem (level 0): no identity is asked for, whatever the number calling. The
+  # summary reads the problem back, and a yes files the report (a confirmed write).
+  report_problem:
+    slots: [problem]
+    summaryPromptId: confirm_report_problem
+    hooks: [confirmedParams, complete]
+    calls: [reportProblem]
+
+  # The status of the latest request: the entry call needs level 1, so a caller not yet verified is
+  # asked for identity first: on a call matched to one account, the date of birth alone.
+  check_status:
+    slots: []
+    summaryPromptId: null
+    hooks: [entry, complete]
+    calls: [findAccount, readStatus]

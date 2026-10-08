@@ -7,7 +7,10 @@ export interface AuditDraft {
    * the reason and how it ended, and `confirmed` when its refusal was read back first and the caller
    * said yes), check_reconfirmed (a check's read-back the caller said no to: the form, the action and
    * the reason, the slots it reads emptied to be asked again), offer (an offer settled, of the number the caller is calling from or
-   * of a value proposed from the facts: the slot, the line as said, the answer and how it was given), handoff, handoff_summary, call_ended. An app's tools and services add their own
+   * of a value proposed from the facts: the slot, the line as said, the answer and how it was given),
+   * identity_caller_match (the caller-ID match of identity.yaml's callerId: its outcome, offered,
+   * verified, declined or failed, and the number calling as policy.yaml's audit: records it, never the
+   * identifier), handoff, handoff_summary, call_ended. An app's tools and services add their own
    * (ToolDef.audit, ServiceDef.audit; e.g. report_created, a2a), and kb_answer for an answer read
    * from the knowledge base (kb/record.ts kbAuditRow).
    */

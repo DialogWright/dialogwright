@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# The lookup by the number calling holds its param to it and returns only the accounts on file for it;
+# the report is exactly what the summary read back; the status needs level 1, by the factors said or
+# by the caller-ID match and the date of birth.
+actions:
+  findAccountByPhone:
+    say: find the accounts on file for the number calling
+    level: 0
+    rules:
+      - identity
+      - callerNumber: { field: callerNumber }
+  verifyCustomer:
+    say: check the account number and date of birth
+    level: 0
+    rules: [attempts]
+  findAccount:
+    say: look up the account
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  readStatus:
+    say: read the status of the latest request on the account
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  reportProblem:
+    say: report a problem
+    level: 0
+    rules:
+      - identity
+      - confirmed: [problem]
+
+audit:
+  callerNumber: last4
+  problem: keep

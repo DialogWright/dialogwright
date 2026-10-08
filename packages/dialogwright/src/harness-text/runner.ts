@@ -1,18 +1,18 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { appTurnContext, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
+import { appTurnContext, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
-import { callTool, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { atCallerOffer, atGreetingOffer, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
+import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
+import { atCallerMatch, atCallerOffer, atGreetingOffer, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
 import { JevClientError, type JevClient } from '../jev/types';
 import { promptText, spokenText as decisionText } from '../prompts/render';
-import { prompt } from '../core/decision';
+import { prompt, type Decision } from '../core/decision';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { formOf, identityOf } from '../core/app/lookup';
 import { delegateProblem, subjectProblem } from '../core/app/principals';
-import type { App, SlotId } from '../core/app/types';
+import type { App, Refused, SlotId } from '../core/app/types';
 import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
-import { lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
+import { keptCallerNumber, lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import { factsOfferSlots, greetingOfferPromptId } from '../core/factsOffer';
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
@@ -111,6 +111,7 @@ function fillPlaceholder(seed: Seed, session: Session, id: SlotId, confirmed: bo
  */
 export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: SeedOptions): Session {
   if (atGreetingOffer(entry, appOf(session))) return seedGreetingOffer(session, entry);
+  if (atCallerMatch(entry, appOf(session))) return seedCallerMatch(session, entry, opts);
   if (entry.context === 'no_form') return session;
   const app = appOf(session);
   const seed = app.testing?.seed;
@@ -230,6 +231,44 @@ function seedGreetingOffer(session: Session, entry: CorpusEntry & { prompted: Sl
   return session;
 }
 
+/**
+ * The caller-ID question just asked (atCallerMatch), as the engine asks it: the call from the app's
+ * seed number (App.testing.seed.callerNumber), its call-start lookup made through the gate and kept in
+ * the facts as a call's is, an anonymous caller, the identified factors and the one asked empty, and
+ * `identity_caller_match` the prompt the entry answers. In a form's context, the form's entry call
+ * through the gate (its step-up, which asks the question); in `no_form`, at the greeting (the step-up
+ * `at: greeting`, after the greeting's line before a proposal).
+ */
+function seedCallerMatch(session: Session, entry: CorpusEntry & { prompted: SlotId }, opts: SeedOptions): Session {
+  const app = appOf(session);
+  const number = app.testing?.seed?.callerNumber;
+  if (number === undefined) throw new Error(`corpus ${entry.id}: app "${app.id}" seeds no caller-ID question (App.testing.seed.callerNumber)`);
+  const tc: TurnContext = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
+  const kept = keptCallerNumber(app, number);
+  const lookup = app.callerNumber?.lookup;
+  if (kept === undefined || lookup === undefined) throw new Error(`corpus ${entry.id}: app "${app.id}" keeps no number to look up for the caller-ID question`);
+  session.callerNumber = kept;
+  const looked = callTool(session, { tool: lookup, params: { callerNumber: kept }, purpose: CALLER_LOOKUP_PURPOSE }, tc, newTurnOut());
+  if (looked.decision.verdict === 'ALLOW' && looked.value != null) app.facts?.fromCallerLookup?.(session.facts, looked.value);
+  const out = newTurnOut();
+  let asked: Decision | Refused | null;
+  if (entry.context === 'no_form') {
+    const identity = identityOf(app);
+    session.stepUp = { call: { tool: identity.verifyTool, params: {} }, need: 1, at: 'greeting' };
+    asked = continueIdentity(session, tc, out, [{ promptId: greetingOfferPromptId(app), vars: {} }]);
+  } else {
+    setForm(session, contextForm(entry.context, app)!);
+    session.entered = null;
+    asked = ensureEntry(session, tc, out, []);
+  }
+  if (asked?.kind !== 'prompt' || asked.promptId !== CALLER_MATCH_PROMPT) throw new Error(`corpus ${entry.id}: the seed number ${number} does not reach the caller-ID question (the lookup found no single match)`);
+  session.promptedFor = asked.target;
+  session.lastPromptId = asked.promptId;
+  session.lastPromptText = decisionText(app, asked, session.locale);
+  session.lastPromptOptions = [];
+  return session;
+}
+
 /** `as` for a scenario that is the subjects' web chat, anonymous until a `signIn` step. */
 export const WEB_VISITOR = 'web';
 
@@ -300,7 +339,7 @@ export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOption
   // One book of business per entry: what the entry's turn reads or files is its own.
   const o = { ...opts, tools: opts.tools ?? demoTools() };
   const start = seedCorpusSession(startSession(entry.id, nowOf(opts)(), entry.as), entry, o);
-  const asked = entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) ? null : seededPrompt(start);
+  const asked = entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) && !atCallerMatch(entry, appOf(start)) ? null : seededPrompt(start);
   const turn = opts.turn ?? runTurn;
   const setup = await turn(start, startEvent(), o);
   // The greeting's own bookkeeping moves the prompt to the greeting, so put back the one the seed

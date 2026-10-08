@@ -39,6 +39,12 @@ export interface SlotState {
    * when the form closes or another is entered, a slot the app carries included (setForm, closeForm).
    */
   readBackNos?: number;
+  /**
+   * `caller-id`: a factor the caller-ID match identifies (identity.yaml's `callerId`), filled from the
+   * match just before the check rather than said, with a value and no display. Absent on every other
+   * slot, and gone when the slot is emptied.
+   */
+  by?: 'caller-id';
 }
 
 export interface HistoryEntry {
@@ -55,10 +61,15 @@ export interface SessionFacts {
   [key: string]: unknown;
 }
 
-/** The entry call waiting on identity, and the level the gate said it needs. */
+/**
+ * The entry call waiting on identity, and the level the gate said it needs. `at: 'greeting'`: identity
+ * asked for at the greeting, with no form open (identity.yaml's `callerId` with `ask: greeting`), whose
+ * call is the verify tool's; absent on every other step-up.
+ */
 export interface StepUp {
   call: ToolCall;
   need: 1 | 2;
+  at?: 'greeting';
 }
 
 export type PendingConfirmation =
@@ -183,9 +194,11 @@ export interface Session {
    * international form (core/callerNumber.ts callerNumberOf): kept at the session's start for an
    * app with a slot that offers it (SlotSpec.callerNumber), when the carrier sent a number such a
    * slot can use, and for an app that keeps it for its code (app.yaml `callerNumber: { use: hint }`,
-   * App.callerNumber), when the carrier sent any usable number. It is never identity: the offer, the
-   * call-start lookup, the gate's callerNumber rule (GateFacts.callerNumber) and app code through
-   * callerOf read it. Absent otherwise, so every other session is as it was.
+   * App.callerNumber), when the carrier sent any usable number. It is never identity on its own: the
+   * offer, the call-start lookup, the gate's callerNumber rule (GateFacts.callerNumber) and app code
+   * through callerOf read it, and an app may let a caller-ID match identify an account, with a
+   * knowledge factor that verifies it (identity.yaml `callerId`). Absent otherwise, so every other
+   * session is as it was.
    */
   callerNumber?: string;
   /**
@@ -207,6 +220,13 @@ export interface Session {
    * no proposal was made at the greeting, so every other session is as it was.
    */
   greetingOffered?: SlotId;
+  /**
+   * The caller-ID match (identity.yaml's `callerId`): `offered`, asked or in use; `declined`, a no or
+   * "different account"; `failed`, the check did not match; `verified`, the caller verified with it.
+   * Once declined or failed it is set aside for the call, and every factor is asked. Absent until it is
+   * first used (unused), so every other session is as it was. The match itself stays in the app's facts.
+   */
+  callerMatch?: 'offered' | 'declined' | 'failed' | 'verified';
   /** Who the caller is proven to be. Written only from a verifier result or a portal sign-in (src/gate/types.ts Principal). */
   principal: Principal;
   facts: SessionFacts;

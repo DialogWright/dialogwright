@@ -107,8 +107,9 @@ export interface CorpusEntry {
   change?: 'adding' | 'replacing';
   /**
    * confirm_ and offer_transfer contexts only, the offer of the caller's number (a form context
-   * whose `prompted` slot offers it, atCallerOffer), and the proposal at the greeting (no_form with
-   * `prompted` a slot that proposes there, atGreetingOffer): how the utterance answers the question
+   * whose `prompted` slot offers it, atCallerOffer), the proposal at the greeting (no_form with
+   * `prompted` a slot that proposes there, atGreetingOffer), and the caller-ID question (`prompted` the
+   * factor it asks for, atCallerMatch: `no` for "different account"): how the utterance answers the question
    */
   confirm?: 'yes' | 'no' | 'unanswered';
   /**
@@ -192,6 +193,23 @@ export function atCallerOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 
  */
 export function atGreetingOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: 'no_form' } {
   return entry.context === 'no_form' && entry.confirm !== undefined && entry.prompted !== undefined && greetingOfferSlots(app).includes(entry.prompted);
+}
+
+/**
+ * The caller-ID question (identity.yaml's `callerId`): an entry whose `prompted` is the first factor
+ * the match leaves to ask (the date of birth, say) and that says how it answers it (`confirm`: `no` for
+ * "different account" or a no, `unanswered` for the factor or anything else). Its state is the question
+ * just asked, the match in use and the identified factors empty: in a form's context, on a step-up for
+ * the form's entry call; in `no_form`, at the greeting, for an app that asks it there (`ask: greeting`).
+ * `yes` is no answer to it: the question asks for a factor, not a yes.
+ */
+export function atCallerMatch(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: CorpusContext } {
+  const callerId = app.identity?.callerId;
+  if (callerId === undefined || entry.confirm === undefined || entry.prompted === undefined) return false;
+  const first = identityOf(app).factorSlots.find((id) => !callerId.identifies.includes(id));
+  if (entry.prompted !== first) return false;
+  if (entry.context === 'no_form') return callerId.ask === 'greeting';
+  return contextForm(entry.context, app) !== null && confirmForm(entry.context, app) === null && !offerTransfer(entry.context);
 }
 
 export function promptsIdentity(entry: Pick<CorpusEntry, 'prompted'>, app: App = corpusApp()): entry is { prompted: IdentityPrompt } {
@@ -301,7 +319,7 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     // prompted names a slot on a form already in progress (for the offer, the question the caller
     // was on when it was made), or an identity factor a step-up is asking for in any form; a
     // summary has no "prompted slot" of its own.
-    if (entry.prompted !== undefined && !atGreetingOffer(entry, app)) {
+    if (entry.prompted !== undefined && !atGreetingOffer(entry, app) && !(entry.context === 'no_form' && atCallerMatch(entry, app))) {
       if (cf !== null || form === null) throw new Error(`corpus ${entry.id}: prompted needs a form context, not ${entry.context}`);
       const identity = promptsIdentity(entry, app);
       if (identity && offering) throw new Error(`corpus ${entry.id}: prompted ${entry.prompted} needs a form context, not ${entry.context}`);
@@ -323,7 +341,8 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     }
     if (entry.confirm !== undefined) {
       if (!['yes', 'no', 'unanswered'].includes(entry.confirm)) throw new Error(`corpus ${entry.id}: confirm must be yes, no, or unanswered`);
-      if (cf === null && !offering && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber), or no_form with prompted a slot that proposes at the greeting (offerAt: greeting)`);
+      if (cf === null && !offering && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber), or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId)`);
+      if (atCallerMatch(entry, app) && entry.confirm === 'yes') throw new Error(`corpus ${entry.id}: the caller-ID question asks for a factor, not a yes: confirm no ("different account") or unanswered (the factor, or anything else)`);
     }
     if (entry.changeSlot !== undefined) {
       if (cf === null) throw new Error(`corpus ${entry.id}: changeSlot needs a confirm_ context`);

@@ -18,7 +18,8 @@ import { identityOf } from './app/lookup';
 
 /**
  * The slots that propose a value from the facts: those whose spec has `offer: facts`, but never an
- * identity factor, a slot that offers the caller's number, or a statement (redact: length), whose
+ * identity factor (a value offered for a yes is no verification; a caller-ID match identifies one
+ * silently instead, identity.yaml `callerId`), a slot that offers the caller's number, or a statement (redact: length), whose
  * words are never said back and whose display the trace keeps as a stand-in.
  */
 export function factsOfferSlots(app: App): SlotId[] {

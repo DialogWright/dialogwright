@@ -353,13 +353,13 @@ const callerNumber = z
   .strictObject({
     use: z
       .literal('hint')
-      .describe('"hint": keep the number the caller is calling from for the app\'s code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling.'),
+      .describe('"hint": keep the number the caller is calling from for the app\'s code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling on its own (identity.yaml\'s callerId lets a caller-ID match identify an account, with a knowledge factor that verifies it).'),
     called: z.boolean().optional().describe('Keep the number the caller called (the DNIS) too, for the app\'s code (calledOf(s)). Default false.'),
     lookup: identifier()
       .optional()
       .describe('A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal or a failure is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides whether it runs. Nothing is withheld from a caller not yet proven, so what the tool returns reaches the app whole: what to return, and what the lines say of it before identity, is the app\'s call. Default: none.'),
   })
-  .describe('The number the caller is calling from, kept for the app\'s code: a hint, never identity. Without it, the number is kept only for a slot that offers it (a digits slot\'s callerNumber).');
+  .describe('The number the caller is calling from, kept for the app\'s code: a hint, never identity on its own (an app may let a caller-ID match identify an account, with a knowledge factor that verifies it: identity.yaml callerId). Without it, the number is kept only for a slot that offers it (a digits slot\'s callerNumber).');
 
 export const appSchema = z
   .strictObject({

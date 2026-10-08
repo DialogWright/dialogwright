@@ -2,7 +2,7 @@ import type { AuditDraft } from '../audit/types';
 import { wordsOf, type SessionEvent } from '../channel/events';
 import { maskId } from '../gate/principal';
 import { isAnonymous, type ToolCall } from '../gate/types';
-import type { GateEvent, KbSource, OfferSettled } from './lifecycle';
+import type { CallerMatchOutcome, GateEvent, KbSource, OfferSettled } from './lifecycle';
 import type { CheckReconfirmed, FormStopped } from './checks';
 import type { Decision } from './decision';
 import type { ScreenResult } from './screen';
@@ -12,7 +12,7 @@ import { appOf } from './app/registry';
 import { identityOf } from './app/lookup';
 import type { App } from './app/types';
 import { configAuditDetail } from './app/configHash';
-import { scrubbedDrafts, scrubberOf } from './recording';
+import { recordedValue, recordingOf, scrubbedDrafts, scrubberOf } from './recording';
 import { kbAuditRow } from '../kb/record';
 
 /**
@@ -42,6 +42,8 @@ export interface AuditInput {
   offer?: OfferSettled;
   /** The check whose read-back the caller said no to this turn (core/turn.ts): its `check_reconfirmed` row. */
   reconfirmed?: CheckReconfirmed;
+  /** What became of the caller-ID match this turn (lifecycle.ts TurnOut.callerMatch): an `identity_caller_match` row for each. */
+  callerMatch?: readonly CallerMatchOutcome[];
 }
 
 /** A redacted call as one line: "createReport(accountId=...1234, missingNote=<38 chars>, expectedDate=2026-09-15)". */
@@ -126,6 +128,14 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
       },
     });
     drafts.push(...ranDrafts(app, e, after, t.kb));
+  }
+  // The caller-ID match (identity.yaml's callerId): asked, then verified, turned down or failed. Never
+  // the identifier it holds, only the number calling as policy.yaml's `audit:` records it (its last
+  // four, say). After the gate rows: the step-up that asked it, and the check it took part in, came first.
+  for (const outcome of t.callerMatch ?? []) {
+    const number = after.callerNumber;
+    const shown = number === undefined ? null : recordedValue(recordingOf(app, 'callerNumber'), number);
+    drafts.push({ type: 'identity_caller_match', detail: { outcome, ...(shown !== null ? { callerNumber: shown } : {}) } });
   }
   // An answer read from the knowledge base that no tool's audit hook recorded (an informational
   // intent's passage, said with no gated read): the engine records it, as kbAnswerTool's hook would.

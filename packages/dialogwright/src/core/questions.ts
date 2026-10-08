@@ -222,6 +222,37 @@ function menu(app: App): QuestionMap {
   };
 }
 
+/**
+ * Whether the caller turned down the caller-ID match (identity.yaml's `callerId`): a no, "different
+ * account" or "that's not me" at the caller-ID question, or at a factor asked while the match stands.
+ * Asked only then (callerMatchAsked), so it changes no request of any other app, nor of this one
+ * anywhere else.
+ */
+function callerMatch(): QuestionMap {
+  return {
+    callerMatchDeclined: {
+      type: 'noul',
+      instructions: 'Read asr.text and node.promptJustPlayed. The system found an account for the number the caller is calling from and asked for a detail to access it, or to say different account. Does the caller turn that account down?',
+      criteria: {
+        true: 'The caller says no, different account, another account, that is not me, that is not my account, or that they want to give another account number',
+        false: 'The caller gives the detail asked for, such as a date, agrees, asks for something else, or says nothing about which account',
+      },
+    },
+  };
+}
+
+/**
+ * The caller is answering the caller-ID question, or a factor asked while the match stands: the match
+ * is in use (Session.callerMatch `offered`), the caller is not yet verified, and the prompt asked for a
+ * factor the match does not identify.
+ */
+export function callerMatchAsked(session: Session): boolean {
+  const identity = appOf(session).identity;
+  const asked = session.promptedFor;
+  if (session.callerMatch !== 'offered' || identity?.callerId === undefined || session.principal.level !== 0 || asked === null) return false;
+  return identity.factorSlots.includes(asked) && !identity.callerId.identifies.includes(asked);
+}
+
 export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap {
   const app = appOf(session);
   const q: QuestionMap = { ...alwaysOn(app) };
@@ -246,6 +277,7 @@ export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap 
   if (session.pendingConfirmation) Object.assign(q, confirmation(app));
   if (session.pendingConfirmation?.target === 'form') Object.assign(q, formConfirmation(app, session.pendingConfirmation.form));
   if (session.menuActive) Object.assign(q, menu(app));
+  if (callerMatchAsked(session)) Object.assign(q, callerMatch());
   // The app's own, last, and only where it has any: an app without them asks exactly the above.
   const own = app.questions?.(session, ctx);
   if (own) {

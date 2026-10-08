@@ -137,7 +137,7 @@ export type { CompiledPolicy } from './gate/compiled';
 
 // A few engine types an app's launcher and tests name.
 export type { Session, SessionFacts } from './core/session';
-// The numbers a call came with, for an app that keeps them (app.yaml's callerNumber): a hint, never identity.
+// The numbers a call came with, for an app that keeps them (app.yaml's callerNumber): a hint, never identity on its own.
 export { callerOf, calledOf } from './core/callerNumber';
 export type { CallerNumber } from './core/callerNumber';
 export type { Tools, CodeVerifier } from './core/tools';

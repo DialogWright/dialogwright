@@ -27,6 +27,12 @@ export interface Party {
   readonly role?: string;
   readonly contact?: { readonly phoneLast4?: string };
   readonly attrs?: Readonly<Record<string, string>>;
+  /**
+   * How the party was verified, where it was not by every factor said: `caller-id`, a caller-ID match
+   * standing in for the factors it identifies, verified by the others (identity.yaml's `callerId`).
+   * Written by the engine, never by a verify tool; absent on every other principal.
+   */
+  readonly via?: 'caller-id';
 }
 
 export type Principal = Anonymous | Party;

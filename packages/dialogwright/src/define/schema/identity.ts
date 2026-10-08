@@ -60,6 +60,21 @@ const otpFactor = z
   })
   .describe('The one-time code factor.');
 
+/** When the caller-ID question is asked (callerId.ask). */
+export const CALLER_ID_ASK = ['on-need', 'greeting'] as const;
+
+const callerId = z
+  .strictObject({
+    identifies: unique(identifier(), 'factor slot')
+      .min(1, { error: 'must name at least one factor' })
+      .describe('The factors of this level the caller-ID match stands in for (for example accountId): filled from the match (the code\'s facts.callerMatch), never asked while it stands. The other factors are what the caller is asked, and they verify it. It may not name every factor.'),
+    ask: z.enum(CALLER_ID_ASK)
+      .optional()
+      .describe('When the caller-ID question is asked: "on-need" (the default), when something first needs level 1; "greeting", right after the greeting, before the open question (in place of a greeting proposal, which is then made at its slot).'),
+  })
+  .optional()
+  .describe('A caller-ID match as the identifier: on a call from a number the call-start lookup matched to one account, the caller is asked only for the other factors ("I see an account associated with the number you\'re calling from. To access it, please tell me your date of birth, or say different account."). Never identity on its own: the other factors verify it. Needs app.yaml\'s callerNumber lookup and the code\'s facts.callerMatch. A no, "different account" or a failed check falls back to asking every factor.');
+
 const level1 = z
   .strictObject({
     name: text().describe('What the level is called, as the policy card says it (for example "verified"). A label: the engine records the number.'),
@@ -68,6 +83,7 @@ const level1 = z
       .describe('The slots asked for a step-up to this level (for example accountId, dob), in this order. Each slot id is also the name of the verify tool\'s param that carries its value.'),
     verify: identifier().describe('The tool that checks the factors (for example verifyCustomer). Its action in policy.yaml runs only the attempts rule.'),
     failedPrompt: identifier().optional().describe('The prompt said before the factors are asked again after a failed match. Default "identity_failed".'),
+    callerId,
   })
   .describe('Level 1: the factors matched.');
 

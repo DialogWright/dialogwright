@@ -347,6 +347,7 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
   }
   if (options.sendCodeParams !== undefined) identity.sendCodeParams = options.sendCodeParams;
   if (one.failedPrompt !== undefined) identity.failedPromptId = one.failedPrompt;
+  if (one.callerId !== undefined) identity.callerId = Object.freeze({ identifies: Object.freeze([...one.callerId.identifies]), ask: one.callerId.ask ?? 'on-need' });
   if (two) identity.codeLength = two.factors[0]?.otp.length ?? DEFAULT_CODE_LENGTH;
   identity.levelNames = Object.freeze(two ? { 1: one.name, 2: two.name } : { 1: one.name });
   if (file.signIn) identity.signInLevel = file.signIn.level;

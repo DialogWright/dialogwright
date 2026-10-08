@@ -296,6 +296,14 @@ function identitySection(app: App, source: PolicySource): string[] {
   out.push(`- Each level includes the one below it. A ${identity.subjectKind} below an action's level is asked for what the next level needs; any other caller is refused.`);
   out.push(`- The identity checks (${identityToolsOf(identity).map((t) => `${actionLabel(source, t)}, ${code(t)}`).join('; ')}) are for ${identity.subjectKind}s only: a caller not yet verified may use them, and any other party (one who acts for ${identity.subjectKind}s, or anyone else) is refused them before their rules run.`);
   if (top === 2) out.push('- The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.');
+  // A caller-ID match as the identifier (identity.yaml's callerId): another way to give level 1's
+  // factors, checked by the same check. Only for an app that sets it, so every other card is as it was.
+  const callerId = identity.callerId;
+  if (callerId !== undefined) {
+    const asked = identity.factorSlots.filter((id) => !callerId.identifies.includes(id));
+    const when = callerId.ask === 'greeting' ? 'right after the greeting' : 'when an action first needs level 1';
+    out.push(`- On a call from a number the call-start lookup matched to one ${identity.subjectKind}'s account, the ${slotsInWords(app, callerId.identifies)} is taken from the match, never said, and the caller is asked ${when} only for their ${slotsInWords(app, asked)}, checked by the same check (${code(identity.verifyTool)}): the caller ID never verifies on its own. "Different account", a no or a failed check (one try) sets the match aside for the call, and the caller gives their ${factors}.`);
+  }
   out.push(identity.signInLevel === undefined
     ? '- The app takes no portal sign-in: every caller proves who they are on the call, and a caller on a channel that signs callers in (a web chat) whose request needs identity goes to a person.'
     : `- A sign-in through a portal proves level ${identity.signInLevel} ('${levelName(app, identity.signInLevel)}'), so a signed-in caller starts there.`);
@@ -315,6 +323,11 @@ function ladderDiagram(app: App, source: PolicySource): string[] {
   const out = ['flowchart LR'];
   for (const level of ladderLevels(app)) out.push(`  L${level}(${mermaidLabel(`Level ${level}`, levelName(app, level))})`);
   out.push(`  L0 -->|${mermaidLabel(`gives ${slotsInWords(app, identity.factorSlots)}`, `checked by: ${actionLabel(source, identity.verifyTool)}`)}| L1`);
+  const callerId = identity.callerId;
+  if (callerId !== undefined) {
+    const asked = identity.factorSlots.filter((id) => !callerId.identifies.includes(id));
+    out.push(`  L0 -->|${mermaidLabel(`caller ID matched, gives ${slotsInWords(app, asked)}`, `checked by: ${actionLabel(source, identity.verifyTool)}`)}| L1`);
+  }
   if (top === 2) {
     out.push(`  L1 -->|${mermaidLabel(`gives a ${identity.codeLength ?? 6}-digit one-time code`, `sent by: ${actionLabel(source, identity.sendCodeTool!)}`, `checked by: ${actionLabel(source, identity.codeTool!)}`)}| L2`);
   }

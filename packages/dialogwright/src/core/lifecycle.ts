@@ -94,7 +94,16 @@ export interface TurnOut {
   offer?: OfferSettled;
   /** The check whose read-back the caller said no to this turn (core/turn.ts), for the audit's `check_reconfirmed` row. Absent on every other turn. */
   reconfirmed?: CheckReconfirmed;
+  /**
+   * What became of the caller-ID match this turn (identity.yaml's `callerId`), in order, for the
+   * audit's `identity_caller_match` rows: asked (`offered`), then `verified`, `declined` or `failed`.
+   * Absent on every other turn.
+   */
+  callerMatch?: CallerMatchOutcome[];
 }
+
+/** One step of the caller-ID match (TurnOut.callerMatch, Session.callerMatch). */
+export type CallerMatchOutcome = 'offered' | 'verified' | 'declined' | 'failed';
 
 /**
  * An offer settled: the number the caller is calling from (a slot's `callerNumber`), or a value
@@ -363,9 +372,75 @@ function signInImpossible(s: Session): boolean {
   return s.caps.signIn && identityOf(appOf(s)).signInLevel === undefined && isAnonymous(s.principal) && s.stepUp !== null;
 }
 
+/** The caller-ID question (identity.yaml's `callerId`), said in place of the first factor it leaves to ask. */
+export const CALLER_MATCH_PROMPT = 'identity_caller_match';
+
+/**
+ * The caller-ID match in force (identity.yaml's level 1 `callerId`, FactsConfig.callerMatch): the
+ * value of each factor it identifies, or null when there is none to use. None for an app without
+ * `callerId`, a caller already verified, a session with no number, a match set aside on this call
+ * (a no or "different account", a failed check) or already used, one whose identifier the caller
+ * said themselves, and when the app's hook finds no
+ * single match: it returns null, leaves out a factor or gives one that is not a string with something
+ * in it, or throws. Nothing of an error is kept, since its message may hold what the facts hold.
+ */
+export function callerMatchOf(s: Session): Readonly<Record<SlotId, string>> | null {
+  const app = appOf(s);
+  const callerId = app.identity?.callerId;
+  const hook = app.facts?.callerMatch;
+  if (callerId === undefined || hook === undefined || !isAnonymous(s.principal) || s.callerNumber === undefined) return null;
+  if (s.callerMatch !== undefined && s.callerMatch !== 'offered') return null;
+  // An identifier the caller said themselves ("my account is ...") is theirs to verify: the match does not replace it.
+  if (callerId.identifies.some((id) => s.slots[id]?.value != null && s.slots[id]!.by !== 'caller-id')) return null;
+  let found: Readonly<Record<SlotId, string>> | null;
+  try {
+    found = hook(s.facts);
+  } catch {
+    return null;
+  }
+  if (found === null || typeof found !== 'object') return null;
+  const values: Record<SlotId, string> = {};
+  for (const id of callerId.identifies) {
+    const v: unknown = Object.hasOwn(found, id) ? found[id] : undefined;
+    if (typeof v !== 'string' || v.trim() === '') return null;
+    values[id] = v;
+  }
+  return values;
+}
+
+/** Records a step of the caller-ID match: on the session (Session.callerMatch) and for the turn's audit rows (TurnOut.callerMatch). */
+export function noteCallerMatch(s: Session, out: TurnOut, outcome: CallerMatchOutcome): void {
+  s.callerMatch = outcome;
+  out.callerMatch = [...(out.callerMatch ?? []), outcome];
+}
+
+/**
+ * The factors a step-up asks the caller for: every factor, or, with a caller-ID match in force
+ * (callerMatchOf), those the match does not identify.
+ */
+function askedFactors(s: Session, match: Readonly<Record<SlotId, string>> | null): SlotId[] {
+  const factors = identityOf(appOf(s)).factorSlots;
+  return match === null ? [...factors] : factors.filter((id) => !Object.hasOwn(match, id));
+}
+
+/**
+ * The caller-ID question: "I see an account associated with the number you're calling from. To
+ * access it, please tell me your date of birth, or say different account." Asked for the first factor
+ * the match leaves to ask, which reads the answer as its own, with no variables: the match is never
+ * said. The first time it is asked on the call, the audit's `offered` row is written.
+ */
+export function askCallerMatch(s: Session, slot: SlotId, out: TurnOut, acks: Ack[]): PromptDecision {
+  if (s.callerMatch !== 'offered') noteCallerMatch(s, out, 'offered');
+  return prompt(CALLER_MATCH_PROMPT, slot, {}, acks);
+}
+
 /**
  * The next thing a step-up needs: an identity factor still missing, their check once both are in,
  * or, at level 1 with level 2 needed, the keypad code. On a web chat, the portal sign-in instead.
+ * With a caller-ID match in force (identity.yaml's `callerId`), the factors it identifies are not
+ * asked: the first factor left to ask is asked with the caller-ID question in place of its own
+ * (unless it holds part of a value already), and once those are in, the identified ones are filled
+ * from the match and the check runs as for factors said.
  */
 function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | Refused | null {
   if (awaitingSignIn(s)) {
@@ -374,12 +449,40 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
   }
   if (signInImpossible(s)) return handoff(s, 'needs-human', acks);
   if (isAnonymous(s.principal)) {
-    const missing = identityOf(appOf(s)).factorSlots.find((id) => s.slots[id]!.value === null);
-    if (missing) return askSlot(s, missing, s.slots[missing]!.window, acks);
+    const match = callerMatchOf(s);
+    const missing = askedFactors(s, match).find((id) => s.slots[id]!.value === null);
+    if (missing) {
+      const window = s.slots[missing]!.window;
+      if (match !== null && window === null) return askCallerMatch(s, missing, out, acks);
+      return askSlot(s, missing, window, acks);
+    }
+    if (match !== null) fillFromCallerMatch(s, match);
     // Verified to the level needed: the entry call is retried, now with the customer's own ID.
     return verifyFactors(s, tc, out, acks) ?? ensureEntry(s, tc, out, acks);
   }
   return sendCodeAndAsk(s, tc, out, acks);
+}
+
+/**
+ * The factors the caller-ID match identifies, filled from it just before the check (SlotState.by
+ * `caller-id`): the value only, never a display, so no line, prompt variable or model request says it,
+ * and the trace masks the value as the slot's redact says, as it masks one said. The match is in use
+ * (Session.callerMatch `offered`) whether or not the question was asked: a caller who gave the other
+ * factors on the way in ("check my request, my birthday is ...") is checked with it.
+ */
+function fillFromCallerMatch(s: Session, match: Readonly<Record<SlotId, string>>): void {
+  for (const [id, value] of Object.entries(match)) Object.assign(s.slots[id]!, { value, display: null, confirmed: false, window: null, by: 'caller-id' });
+  s.callerMatch = 'offered';
+}
+
+/**
+ * Identity asked for at the greeting (identity.yaml's `callerId` with `ask: greeting`), and what follows
+ * it there with no form open: the next factor or the check, as a step-up would. Null once the caller is
+ * verified (the open question follows); a request said instead ends it (core/turn.ts), and the factors
+ * are asked again, if at all, when something needs them.
+ */
+export function continueIdentity(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | null {
+  return nextFactor(s, tc, out, acks) as Decision | null;
 }
 
 /**
@@ -470,17 +573,26 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
     // tool that says otherwise (or hands back something that is not a proven party) is not believed,
     // and the caller goes to a person.
     if (!isParty(value.principal) || value.principal.kind !== subjectKind || value.principal.level !== 1) return handoff(s, 'needs-human', acks);
-    s.principal = value.principal;
+    // Verified with the caller-ID match standing in for the factors it identifies: the principal
+    // says so (via), for the app's audit row and its own decisions. Every other principal is as the tool made it.
+    const byCallerId = s.callerMatch === 'offered';
+    const { via: _via, ...proven } = value.principal;
+    s.principal = byCallerId ? { ...proven, via: 'caller-id' } : _via === undefined ? value.principal : proven;
+    if (byCallerId) noteCallerMatch(s, out, 'verified');
     acks.push({ promptId: 'identity_verified', vars: { first: value.principal.first } });
     if (s.stepUp?.need === 2) return sendCodeAndAsk(s, tc, out, acks);
     s.stepUp = null;
     return null;
   }
-  // No match: every factor is asked again from the first, keeping what each has cost.
+  // No match: every factor is asked again from the first, keeping what each has cost. A caller-ID
+  // match that took part is set aside for the call: the caller may be someone else on a shared phone,
+  // and every factor lets them identify their own account.
   s.identityAttempts.factors += 1;
+  if (s.callerMatch === 'offered') noteCallerMatch(s, out, 'failed');
   for (const id of factorSlots) {
     const st = s.slots[id]!;
     Object.assign(st, emptySlot(), { attempts: st.attempts });
+    delete st.by;
   }
   if (!retryAllowed(s, verifyTool, tc, out)) return handoff(s, 'identity', acks);
   return askSlot(s, factorSlots[0]!, null, [...acks, { promptId: failedPromptId ?? 'identity_failed', vars: {} }]);

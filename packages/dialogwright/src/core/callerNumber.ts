@@ -10,10 +10,12 @@ import { appOf } from './app/registry';
  * `callerNumber: { use: hint }`, App.callerNumber). The carrier's setup gives it
  * (VoiceProvider.setupCallerOf, server/voice), the start event carries it (SessionStart.callerNumber)
  * only for an app with such a slot or such a block, and the session keeps it (Session.callerNumber)
- * only when the app can use it. It is never identity: a caller ID can be forged, so `pnpm check`
- * refuses the option on an identity factor and the engine never offers one; the number fills a slot
- * only after the caller's yes, and app code reads it (callerOf) to look something up or to propose,
- * never to verify.
+ * only when the app can use it. It is never identity on its own: a caller ID can be forged, so
+ * `pnpm check` refuses the option on an identity factor and the engine never offers one; the number
+ * fills a slot only after the caller's yes, and app code reads it (callerOf) to look something up or
+ * to propose. An app may let a caller-ID match identify an account, with a knowledge factor that
+ * verifies it (identity.yaml `callerId`): the match fills the identifier silently, never offered for
+ * a yes, and the factor the caller gives verifies it.
  */
 
 /**

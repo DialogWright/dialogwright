@@ -67,13 +67,26 @@ export function activeSlots(session: Session): SlotSpec[] {
   // there may be the code read aloud, and no slot may keep any part of it.
   if (session.promptedFor === 'otp') return [];
   const app = appOf(session);
-  const factorSlots = identityOf(app).factorSlots;
+  const factorSlots = listeningFactors(session);
   const collectsIdentity = isAnonymous(session.principal) && !session.caps.signIn;
   if (session.form) {
     const form = formOf(app, session.form).slots.map((id) => slotSpecOf(app, id));
-    return collectsIdentity ? [...factorSlots.map((id) => slotSpecOf(app, id)), ...form.filter((spec) => !factorSlots.includes(spec.id))] : form;
+    return collectsIdentity ? [...factorSlots.map((id) => slotSpecOf(app, id)), ...form.filter((spec) => !identityOf(app).factorSlots.includes(spec.id))] : form;
   }
-  return Object.values(app.slots).filter((spec) => (factorSlots.includes(spec.id) ? collectsIdentity : listenOf(app, spec.id) !== 'form'));
+  return Object.values(app.slots).filter((spec) => (identityOf(app).factorSlots.includes(spec.id) ? collectsIdentity && factorSlots.includes(spec.id) : listenOf(app, spec.id) !== 'form'));
+}
+
+/**
+ * The identity factors a turn listens for while the caller is still to be verified: every factor,
+ * but those a caller-ID match in use identifies (Session.callerMatch `offered`, identity.yaml's
+ * `callerId`), which are filled from the match and never asked while it stands. A digit string said
+ * for the date of birth is then never taken for the account number. Once the match is set aside,
+ * every factor listens again.
+ */
+function listeningFactors(session: Session): readonly SlotId[] {
+  const identity = identityOf(appOf(session));
+  const identified = session.callerMatch === 'offered' ? identity.callerId?.identifies : undefined;
+  return identified === undefined ? identity.factorSlots : identity.factorSlots.filter((id) => !identified.includes(id));
 }
 
 /**

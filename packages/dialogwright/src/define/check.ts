@@ -102,6 +102,18 @@ export const IDENTITY_PROMPTS: readonly EngineNeed[] = [
   { id: 'handoff_identity', why: 'a caller who could not be verified is handed to a person' },
   { id: 'identity_verified', why: 'the caller was verified', vars: ['first'] },
 ];
+/**
+ * The caller-ID question's lines (identity.yaml's level 1 `callerId`): the question, said in place of
+ * the first factor asked, which is given nothing (the match is never said). `identity_caller_declined`,
+ * said before the factors are asked after a no or "different account", is optional: said where
+ * prompts.yaml has it.
+ */
+export const CALLER_ID_PROMPTS: readonly EngineNeed[] = [
+  { id: 'identity_caller_match', why: 'a call from a number matched to one account asks for the factors that verify it (identity.yaml callerId)' },
+];
+/** The optional line before the factors are asked, after a no or "different account" to the caller-ID question. */
+export const CALLER_ID_DECLINED_PROMPT = 'identity_caller_declined';
+
 /** The one-time code's lines: only for a ladder with level 2 (a ladder of one rung has no code). */
 export const CODE_PROMPTS: readonly EngineNeed[] = [
   { id: 'ask_otp', why: 'it asks for the one-time code', vars: ['phoneLast4'] },
@@ -182,6 +194,16 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     needs.push(...IDENTITY_PROMPTS);
     if (identity.code) needs.push(...CODE_PROMPTS);
     needs.push({ id: identity.failedPromptId ?? 'identity_failed', why: 'the identity factors did not match' });
+    const callerId = config.identity?.levels[1].callerId;
+    if (callerId !== undefined) {
+      needs.push(...CALLER_ID_PROMPTS);
+      // Asked at the greeting, it is said after the greeting's line before a proposal, and the open
+      // question follows once it is settled, as for a proposal at the greeting.
+      if (callerId.ask === 'greeting') {
+        needs.push({ id: greetings?.offer ?? 'greeting_offer', why: 'a call opens on the caller-ID question (identity.yaml callerId ask: greeting), said in place of the greeting before identity_caller_match' });
+        needs.push({ id: 'greet_after_offer', why: 'the caller-ID question at the greeting is settled, and it asks the open question' });
+      }
+    }
   }
   if (code?.portal) needs.push(...PORTAL_PROMPTS);
   const seen = new Set<string>();

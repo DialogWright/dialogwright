@@ -1,6 +1,6 @@
 import { isAnonymous, isParty, type GateDecision } from '../gate/types';
 import { confirmationHash } from '../gate/policy';
-import type { AnswerMap, QuestionMap } from '../jev/types';
+import { noulValue, type AnswerMap, type QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
@@ -12,17 +12,17 @@ import type { App, CheckOutcome, Completion, FormCheck, FormId, SlotId, SummaryM
 import { candidateSpans, candidateWordSpans } from './spans';
 import { closeForm, cloneSession, emptySlot, missingSlots, setForm, type PendingConfirmation, type Session } from './session';
 import { buildTurnState, type TurnState } from './state';
-import { buildQuestions } from './questions';
+import { buildQuestions, callerMatchAsked } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { appContext, askCode, awaitingSignIn, callTool, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, stepUp, takeSummaryHash, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
+import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchOutcome, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo } from './callerNumber';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { recordedValue, recordingOf } from './recording';
 import type { Tools } from './tools';
-import { withAppThresholds, type Thresholds } from './thresholds';
+import { atLeast, withAppThresholds, type Thresholds } from './thresholds';
 import type { ScreenResult } from './screen';
 import { auditDrafts } from './audit';
 import type { AuditDraft } from '../audit/types';
@@ -189,6 +189,8 @@ export interface TurnResult {
   reconfirmed?: CheckReconfirmed;
   /** the offer of the caller's number this turn settled; absent on every other turn */
   offer?: OfferSettled;
+  /** what became of the caller-ID match this turn (identity.yaml's callerId), in order; absent on every other turn */
+  callerMatch?: CallerMatchOutcome[];
   /** what the injection screen made of this turn's words; null when it was not asked (no model turn) */
   screen: ScreenResult | null;
   /** the screen fired: perception's answers were discarded and nothing was filled, gated or called */
@@ -588,7 +590,7 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   // "next week. Which day works for you?" is what the caller failed to answer.
   const window = s.slots[target]!.window;
   if (step === 'open' && window) return askSlot(s, target, window, acks);
-  if (step === 'open' && plain) return askSlot(s, target, null, acks);
+  if (step === 'open' && plain) return askedAgain(s, target, acks);
   // The slot said why the answer could not be its value, and the generic retry would misstate it.
   if (step === 'open' && retryPromptId !== null) return prompt(retryPromptId, target, {}, acks);
   // A slot with no keypad rung stays on the retry text through the dtmf rung too.
@@ -634,7 +636,7 @@ function reaskCurrent(s: Session, acks: Ack[]): Decision {
   }
   if (asked !== null && asked !== 'intent' && asked !== 'confirm') {
     if (s.lastPromptId === `ask_${asked}_dtmf`) return prompt(s.lastPromptId, asked, {}, acks);
-    return askSlot(s, asked, s.slots[asked]!.window, acks);
+    return s.slots[asked]!.window === null ? askedAgain(s, asked, acks) : askSlot(s, asked, s.slots[asked]!.window, acks);
   }
   // Parked for the portal sign-in with nothing else open, the question the customer is on is the
   // sign-in. After the confirmations: one left open is still the question, and is asked again.
@@ -709,7 +711,8 @@ function switchLocale(s: Session, io: TurnIO, target: string): void {
   const locale = slotLocaleOf(s);
   const formatted = (id: SlotId): boolean => Object.hasOwn(io.app.slots, id) && slotSpecOf(io.app, id).displayFrom !== 'said';
   const shown = (id: SlotId, value: string): string => slotSpecOf(io.app, id).display(value, locale);
-  for (const [id, slot] of Object.entries(s.slots)) if (slot.value !== null && formatted(id)) slot.display = shown(id, slot.value);
+  // A factor filled from the caller-ID match has no display: it is never said, in any language.
+  for (const [id, slot] of Object.entries(s.slots)) if (slot.value !== null && slot.by !== 'caller-id' && formatted(id)) slot.display = shown(id, slot.value);
   const pc = s.pendingConfirmation;
   if (pc?.target === 'slot' && formatted(pc.slot)) pc.display = shown(pc.slot, pc.value);
 }
@@ -1411,6 +1414,10 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
   if (s.form !== null && verdict.kind !== 'ignore' && verdict.kind !== 'hold' && verdict.kind !== 'nomatch') formHeard(s, s.form, answers, io);
   const greeted = atGreetingOffer(s, verdict, answers, ctx, io);
   if (greeted !== null) return greeted;
+  const identifying = atGreetingIdentity(s, verdict, answers, ctx, io);
+  if (identifying !== null) return identifying;
+  const declined = atCallerMatch(s, verdict, answers, ctx, io);
+  if (declined !== null) return declined;
   switch (verdict.kind) {
     case 'ignore':
       return { decision: { kind: 'ignore' }, events: [] };
@@ -1774,7 +1781,7 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
       const pc = s.pendingConfirmation;
       if (pc?.target === 'slot' && pc.offered && pc.slot === result.slot) offerSettled(s, io, pc, 'other');
       s.pendingConfirmation = null;
-      return { decision: continueForm(s, io, [], null), rows: [dtmfRow(result.slot)] };
+      return { decision: identityAtGreeting(s) ? identifyAtGreeting(s, io, []) : continueForm(s, io, [], null), rows: [dtmfRow(result.slot)] };
     }
   }
 }
@@ -1962,6 +1969,109 @@ function ownAnswer(s: Session, pc: Extract<PendingConfirmation, { target: 'slot'
 }
 
 /**
+ * The caller-ID question at the greeting (identity.yaml's `callerId` with `ask: greeting`): on a call
+ * whose number the call-start lookup matched to one account (callerMatchOf), `identity_caller_match`
+ * after the greeting's line before a proposal (`greeting_offer`, as for a proposal at the greeting), in
+ * place of the greeting and its open question. Identity is then under way with no form open (a step-up
+ * `at: greeting`, whose call is the verify tool's). Null when there is no match, on a chat, and for
+ * every app without it; the greeting, or a proposal at the greeting, is then as always.
+ */
+function callerMatchAtGreeting(s: Session, io: TurnIO): PromptDecision | null {
+  const identity = io.app.identity;
+  if (!s.caps.speech || identity?.callerId?.ask !== 'greeting') return null;
+  const match = callerMatchOf(s);
+  const slot = match === null ? undefined : identity.factorSlots.find((id) => !Object.hasOwn(match, id));
+  if (slot === undefined) return null;
+  s.stepUp = { call: { tool: identity.verifyTool, params: {} }, need: 1, at: 'greeting' };
+  return askCallerMatch(s, slot, io.out, [{ promptId: greetingOfferPromptId(io.app), vars: {} }]);
+}
+
+/** Identity under way at the greeting, with no form open (a step-up `at: greeting`, callerMatchAtGreeting). */
+function identityAtGreeting(s: Session): boolean {
+  return s.form === null && s.stepUp?.at === 'greeting' && isAnonymous(s.principal);
+}
+
+/**
+ * Identity asked for at the greeting goes on: the next factor, or the check once the factors are in
+ * (lifecycle.ts continueIdentity). Once the caller is verified, the open question (`greet_after_offer`),
+ * after "Thank you, Avery. You're verified."
+ */
+function identifyAtGreeting(s: Session, io: TurnIO, acks: Ack[]): Decision {
+  const said = [...acks];
+  return continueIdentity(s, io.tc, io.out, said) ?? prompt(GREET_AFTER_OFFER, 'intent', {}, said);
+}
+
+/**
+ * A turn while identity is under way at the greeting (identityAtGreeting): what it settles, or null
+ * for the turn's own path. A factor said fills, and the next is asked or the check runs; "different
+ * account" or a no to the caller-ID question sets the match aside and asks every factor at once, from
+ * the first (with `identity_caller_declined` first, where prompts.yaml has it); words that give no
+ * factor walk the asked slot's own ladder. A request said instead (a form, an informational question,
+ * a choice between two) ends it: the request goes on, and the match, if it was not turned down, is
+ * kept for when identity is needed. Side speech, a held partial, words not made out, a handoff and a
+ * replay are what they always are.
+ */
+function atGreetingIdentity(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO): { decision: Decision; events: FillEvent[] } | null {
+  if (!identityAtGreeting(s)) return null;
+  if (verdict.kind === 'route' || verdict.kind === 'disambiguate_intent' || verdict.kind === 'inform') {
+    s.stepUp = null;
+    if (s.callerMatch === 'offered') delete s.callerMatch;
+    return null;
+  }
+  if (verdict.kind !== 'intent_failed' && verdict.kind !== 'proceed') return null;
+  const declined = callerMatchDeclined(s, answers, io);
+  const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+  const acks: Ack[] = [];
+  if (declined) {
+    noteCallerMatch(s, io.out, 'declined');
+    acks.push(...declinedAck(io.app));
+  } else if (!fill.progress) {
+    const target = promptedTarget(s);
+    const invalid = fill.events.find((e) => e.slot === target && e.outcome.kind === 'invalid')?.outcome;
+    const retry = invalid?.kind === 'invalid' ? (invalid.retryPromptId ?? null) : null;
+    return { decision: failAttempt(s, target, io, [], false, retry), events: fill.events };
+  }
+  if (fill.disambiguate) {
+    const d = fill.disambiguate;
+    return { decision: prompt(`disambiguate_${d.slot}`, d.slot, { a: d.a.display, b: d.b.display }, [...acks, ...fill.acks], [d.a.display, d.b.display]), events: fill.events };
+  }
+  return { decision: identifyAtGreeting(s, io, [...acks, ...fill.acks]), events: fill.events };
+}
+
+/**
+ * Inside a form, a no or "different account" at the caller-ID question (or at a factor asked while
+ * the match stands): the match is set aside for the call, and every factor is asked, from the first
+ * (with `identity_caller_declined` first, where prompts.yaml has it). What else the turn said fills as
+ * on any turn. Null for every other turn.
+ */
+function atCallerMatch(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO): { decision: Decision; events: FillEvent[] } | null {
+  if (s.form === null || verdict.kind !== 'proceed' || s.pendingConfirmation !== null || !callerMatchDeclined(s, answers, io)) return null;
+  const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+  noteCallerMatch(s, io.out, 'declined');
+  return { decision: continueForm(s, io, [...declinedAck(io.app), ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
+}
+
+/** The caller turned the caller-ID match down (questions.ts callerMatchDeclined, read as a no to a confirmation is). */
+function callerMatchDeclined(s: Session, answers: AnswerMap, io: TurnIO): boolean {
+  return callerMatchAsked(s) && atLeast(noulValue(answers, 'callerMatchDeclined'), io.tc.thresholds.CONFIRM_NO);
+}
+
+/** The line said before every factor is asked after the caller-ID match is turned down: `identity_caller_declined`, where prompts.yaml has it. */
+function declinedAck(app: App): Ack[] {
+  return Object.hasOwn(app.prompts.manifest, CALLER_DECLINED_PROMPT) ? [{ promptId: CALLER_DECLINED_PROMPT, vars: {} }] : [];
+}
+const CALLER_DECLINED_PROMPT = 'identity_caller_declined';
+
+/**
+ * A slot's question asked again as it was first asked: the caller-ID question where that was it (the
+ * match still standing), else the slot's own.
+ */
+function askedAgain(s: Session, slot: SlotId, acks: Ack[]): PromptDecision {
+  if (s.lastPromptId === CALLER_MATCH_PROMPT && callerMatchAsked(s)) return prompt(CALLER_MATCH_PROMPT, slot, {}, acks);
+  return askSlot(s, slot, null, acks);
+}
+
+/**
  * The opening line: the voice greeting, or on chat someone acting for the app's subjects or a
  * signed-in subject by name, or the web visitor's.
  */
@@ -1991,6 +2101,7 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
     ...(r.stopped ? { stopped: r.stopped } : {}),
     ...(r.reconfirmed ? { reconfirmed: r.reconfirmed } : {}),
     ...(r.offer ? { offer: r.offer } : {}),
+    ...(r.callerMatch ? { callerMatch: r.callerMatch } : {}),
   });
   return { ...r, audit };
 }
@@ -2026,8 +2137,10 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       if (called !== undefined) s.calledNumber = called;
       // The app's lookup by that number, once, before the greeting, through the gate.
       if (caller !== undefined) callerLookup(s, io);
-      // A slot that proposes at the greeting (offerAt: greeting), with a candidate now: its proposal in place of the open question.
-      const decision = greetingProposal(s, io) ?? greeting(s);
+      // The caller-ID question at the greeting (identity.yaml's callerId, ask: greeting), with a match
+      // now; else a slot that proposes at the greeting (offerAt: greeting), with a candidate now: either
+      // in place of the open question. The caller-ID question wins: a proposal is then made at its slot.
+      const decision = callerMatchAtGreeting(s, io) ?? greetingProposal(s, io) ?? greeting(s);
       bookkeep(s, decision, 'setup');
       return { ...base(), decision, actions: act(decision) };
     }

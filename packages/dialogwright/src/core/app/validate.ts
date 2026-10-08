@@ -337,6 +337,17 @@ export function validateApp(app: App): void {
     // identity.yaml's attempts are the attempts rule's: a policy compiled without them would hold the checks to another number.
     if (maxAttempts !== undefined && app.policy.maxAttempts !== maxAttempts) fail(`policy's maxAttempts (${app.policy.maxAttempts}) is not identity.yaml's attempts (${maxAttempts}); compile the policy with the identity (definePolicy's identity option)`);
     for (const problem of principalProblems(app)) fail(problem);
+    // A caller-ID match as the identifier (callerId): factors of level 1 it stands in for, never all
+    // of them (the match alone would verify), on a call the start-of-call lookup matched, read by the
+    // app's facts.callerMatch.
+    const callerId = identity.callerId;
+    if (callerId !== undefined) {
+      for (const slot of callerId.identifies) if (!identity.factorSlots.includes(slot)) fail(`identity callerId identifies "${slot}", which is not a factor of level 1`);
+      if (identity.factorSlots.every((slot) => callerId.identifies.includes(slot))) fail('identity callerId identifies every factor of level 1, so the caller-ID match alone would verify; leave at least one factor to be asked');
+      if (callerId.ask !== 'on-need' && callerId.ask !== 'greeting') fail(`identity callerId ask "${String(callerId.ask)}" is not "on-need" or "greeting"`);
+      if (app.callerNumber?.lookup === undefined) fail('identity callerId needs a call-start lookup (app.yaml callerNumber: { use: hint, lookup })');
+      if (typeof app.facts?.callerMatch !== 'function') fail('identity callerId needs facts.callerMatch, which reads the match from what the lookup kept');
+    }
   }
   for (const tool of Object.keys(toolLevel)) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has a level for tool "${tool}", which has no rules`);
   const seenLinks = new Set<string>();

@@ -69,6 +69,33 @@
               "description": "The prompt said before the factors are asked again after a failed match. Default \"identity_failed\".",
               "type": "string",
               "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "callerId": {
+              "description": "A caller-ID match as the identifier: on a call from a number the call-start lookup matched to one account, the caller is asked only for the other factors (\"I see an account associated with the number you're calling from. To access it, please tell me your date of birth, or say different account.\"). Never identity on its own: the other factors verify it. Needs app.yaml's callerNumber lookup and the code's facts.callerMatch. A no, \"different account\" or a failed check falls back to asking every factor.",
+              "type": "object",
+              "properties": {
+                "identifies": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "description": "The factors of this level the caller-ID match stands in for (for example accountId): filled from the match (the code's facts.callerMatch), never asked while it stands. The other factors are what the caller is asked, and they verify it. It may not name every factor."
+                },
+                "ask": {
+                  "description": "When the caller-ID question is asked: \"on-need\" (the default), when something first needs level 1; \"greeting\", right after the greeting, before the open question (in place of a greeting proposal, which is then made at its slot).",
+                  "type": "string",
+                  "enum": [
+                    "on-need",
+                    "greeting"
+                  ]
+                }
+              },
+              "required": [
+                "identifies"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

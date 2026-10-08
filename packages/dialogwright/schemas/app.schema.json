@@ -904,7 +904,7 @@
         "use": {
           "type": "string",
           "const": "hint",
-          "description": "\"hint\": keep the number the caller is calling from for the app's code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling."
+          "description": "\"hint\": keep the number the caller is calling from for the app's code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling on its own (identity.yaml's callerId lets a caller-ID match identify an account, with a knowledge factor that verifies it)."
         },
         "called": {
           "description": "Keep the number the caller called (the DNIS) too, for the app's code (calledOf(s)). Default false.",
@@ -920,7 +920,7 @@
         "use"
       ],
       "additionalProperties": false,
-      "description": "The number the caller is calling from, kept for the app's code: a hint, never identity. Without it, the number is kept only for a slot that offers it (a digits slot's callerNumber)."
+      "description": "The number the caller is calling from, kept for the app's code: a hint, never identity on its own (an app may let a caller-ID match identify an account, with a knowledge factor that verifies it: identity.yaml callerId). Without it, the number is kept only for a slot that offers it (a digits slot's callerNumber)."
     },
     "fixtures": {
       "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",

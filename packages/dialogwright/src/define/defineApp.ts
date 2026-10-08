@@ -643,6 +643,28 @@ export function crossLink(
       inTs(['tools', lookup, 'params'], `the tool "${lookup}" is the call-start lookup (app.yaml's callerNumber.lookup), which is called with one param, callerNumber, but it lists ${params.length === 0 ? 'none' : params.join(', ')}`, `make ${inCode('tools', lookup, 'params')} ["callerNumber"]`);
     }
   }
+  // identity.yaml's callerId: a caller-ID match as the identifier, with the other factors asked to
+  // verify it. It names factors of level 1, never all of them (the match alone would then verify, which
+  // an app should not reach by accident), and needs the call-start lookup that finds the match and the
+  // code that reads it (facts.callerMatch).
+  const callerId = config.identity?.levels[1].callerId;
+  if (callerId !== undefined) {
+    const one = config.identity!.levels[1];
+    callerId.identifies.forEach((slot, i) => {
+      if (!one.factors.includes(slot)) yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies', i], `"${slot}" is not one of level 1's factors (${one.factors.join(', ')}), so the caller-ID match has nothing of it to stand in for`, `${renameHint(slot, one.factors)}name a factor of level 1, such as the account number`);
+    });
+    if (one.factors.every((slot) => callerId.identifies.includes(slot))) {
+      yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies'], 'callerId identifies every factor of level 1, so the caller-ID match alone would verify the caller, and a caller ID can be forged', 'leave at least one factor to be asked (such as the date of birth); an app that means to take the match alone writes a verify tool that ignores a factor');
+    }
+    if (lookup === undefined) {
+      yaml('identity.yaml', ['levels', '1', 'callerId'], 'callerId takes the match from the call-start lookup, but app.yaml has no callerNumber lookup, so there is never a match', 'add "callerNumber: { use: hint, lookup: <tool> }" to app.yaml, or delete "callerId"');
+    }
+    if (code.facts?.callerMatch === undefined) {
+      yaml('identity.yaml', ['levels', '1', 'callerId'], 'callerId takes the match from the facts, but the code has no facts.callerMatch, so there is never a match', `add callerMatch(f) to ${inCode('facts')}, returning { ${callerId.identifies.join(', ')} } from what the lookup kept (null for no single match), or delete "callerId"`);
+    } else if (typeof code.facts.callerMatch !== 'function') {
+      inTs(['facts', 'callerMatch'], 'facts.callerMatch is not a function', `make ${inCode('facts', 'callerMatch')} a function of the facts`);
+    }
+  }
   for (const name of Object.keys(app.thresholds ?? {})) {
     if (has(DEFAULT_THRESHOLDS, name)) yaml('app.yaml', ['thresholds', name], `threshold "${name}" is one of the engine's own`, `rename it: an app's thresholds need names of their own (the engine's are set with --threshold ${name}=VALUE on a run)`);
   }

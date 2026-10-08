@@ -330,6 +330,16 @@ export interface IdentityConfig {
   /** The line said before the factors are asked again after a failed match. Without it, 'identity_failed'. */
   failedPromptId?: string;
   /**
+   * A caller-ID match as the identifier (identity.yaml's level 1 `callerId`): `identifies` are the
+   * factors the match stands in for (e.g. accountId), filled from FactsConfig.callerMatch and never
+   * asked while it stands; the other factors are asked (`identity_caller_match` in place of the first
+   * of them) and verify it through the verify tool, exactly as if the caller had said every factor.
+   * `ask`: when the question is asked, on a step-up (`on-need`) or right after the greeting
+   * (`greeting`). A no, "different account" or a failed check sets the match aside for the call, and
+   * every factor is asked. Without it, every factor is always asked.
+   */
+  callerId?: { readonly identifies: readonly SlotId[]; readonly ask: 'on-need' | 'greeting' };
+  /**
    * What each level of the ladder is called (identity.yaml's `name`, e.g. 1: "verified"): labels for
    * the console and the policy card. The engine records and decides on the numbers; a name never
    * reaches the session, the model, an outcome or an audit row.
@@ -603,6 +613,18 @@ export interface FactsConfig {
    * throws proposes nothing, and the slot is asked as always. Without it, no slot is offered a value.
    */
   offers?(f: Readonly<SessionFacts>): Readonly<Partial<Record<SlotId, SlotCandidate>>>;
+  /**
+   * The caller-ID match (identity.yaml's level 1 `callerId`): the values of the factors it
+   * identifies (`identifies`, e.g. `{ accountId: '55501234' }`), read from what the call-start lookup
+   * kept, or null when the number calling matches no single account (none, or one shared by two:
+   * the app's call). The engine never says these values and never puts them in a prompt variable:
+   * they go to the verify tool's params, with the factors the caller gave, where policy.yaml's
+   * `redact:` applies as it does to a spoken one. A value that is not a string with something in it,
+   * a missing factor, or a hook that throws is no match, and every factor is asked. Called when
+   * identity is needed, and at call start with `ask: greeting`. Without it (and without `callerId`),
+   * there is no match.
+   */
+  callerMatch?(f: Readonly<SessionFacts>): Readonly<Record<SlotId, string>> | null;
 }
 
 /**
@@ -610,7 +632,7 @@ export interface FactsConfig {
  * and the lookup made with the caller's at call start.
  */
 export interface CallerNumberUse {
-  /** `hint`: the number is kept for the app's code, never as identity. */
+  /** `hint`: the number is kept for the app's code, never as identity on its own (a caller-ID match may identify an account that a knowledge factor verifies: identity.yaml `callerId`). */
   readonly use: 'hint';
   /** Keep the number called (Session.calledNumber) too. Default false. */
   readonly called?: boolean;
@@ -1001,7 +1023,8 @@ export interface App {
   callerState?(s: Session): Readonly<Record<string, string | number | boolean>>;
   /**
    * The number the caller is calling from, kept for the app's own code (app.yaml's `callerNumber`):
-   * a hint, never identity. With it, the session keeps any usable number the call came with, whether
+   * a hint, never identity on its own (an app may let a caller-ID match identify an account, with a
+   * knowledge factor that verifies it: identity.yaml `callerId`). With it, the session keeps any usable number the call came with, whether
    * or not a slot can offer it, and the number called too when `called` is true; app code reads them
    * through `callerOf(s)` and `calledOf(s)`. `lookup` names a tool the engine calls once at call
    * start, before the greeting, through the gate as the anonymous caller, with the number as its one
@@ -1276,6 +1299,12 @@ export interface TestingHooks {
      * a corpus entry in that context throws.
      */
     anythingElse?(): { form: FormId; call?: ToolCall };
+    /**
+     * For a corpus entry at the caller-ID question (identity.yaml's `callerId`): the number the seeded
+     * call comes from, one the call-start lookup matches to an account, as a carrier sends it. The seed
+     * makes the lookup through the gate with it, as a call would. Without it, such an entry throws.
+     */
+    callerNumber?: string;
   };
   /** The heuristic stub's domain answers (src/jev/heuristicStub.ts; the building blocks are src/jev/heuristicKit.ts). */
   heuristics?: {

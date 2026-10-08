@@ -12,8 +12,10 @@ import type { RuleContext, RuleOutcome, ToolCall } from './types';
  *   - callerNumber: { field: textTo, else: confirmed } # or a number confirmed at the summary
  *
  * The caller's number is the gate's fact (GateFacts.callerNumber), as the session kept it; it is a
- * hint, never proof of who is calling, so the rule is about where a call sends something, never about
- * whose record it reads. The param is compared as the slot of the same name holds the caller's number
+ * hint, never proof of who is calling on its own (an app may let a caller-ID match identify an
+ * account, with a knowledge factor that verifies it: identity.yaml `callerId`, through the verify
+ * tool, not this rule), so the rule is about where a call sends something, never about whose record
+ * it reads. The param is compared as the slot of the same name holds the caller's number
  * (GateFacts.callerNumberAs, from the slot's `callerNumber.take`: `5555550142` for `+15555550142`);
  * a field that is no such slot is compared digit for digit with the number as kept.
  *
