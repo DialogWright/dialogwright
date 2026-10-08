@@ -11,13 +11,18 @@ import { identityOf } from './app/lookup';
  * (core/turn.ts). A proposal, never verification: a yes fills that slot and nothing else, so the
  * principal, the identity level and the identity attempts stay as they were, and an action that
  * needs identity still asks for it. Never on an identity factor (`pnpm check` refuses it there, and
- * the engine never offers one), and never on a slot that offers the caller's number.
+ * the engine never offers one), never on a slot that offers the caller's number, and never on a
+ * statement (redact: length), which never says its words back.
  */
 
-/** The slots that propose a value from the facts: those whose spec has `offer: facts`, but never an identity factor nor a slot that offers the caller's number. */
+/**
+ * The slots that propose a value from the facts: those whose spec has `offer: facts`, but never an
+ * identity factor, a slot that offers the caller's number, or a statement (redact: length), whose
+ * words are never said back and whose display the trace keeps as a stand-in.
+ */
 export function factsOfferSlots(app: App): SlotId[] {
   const factors = identityOf(app).factorSlots;
-  return Object.values(app.slots).filter((spec) => spec.offer === 'facts' && spec.callerNumber === undefined && !factors.includes(spec.id)).map((spec) => spec.id);
+  return Object.values(app.slots).filter((spec) => spec.offer === 'facts' && spec.callerNumber === undefined && spec.redact !== 'length' && !factors.includes(spec.id)).map((spec) => spec.id);
 }
 
 /**

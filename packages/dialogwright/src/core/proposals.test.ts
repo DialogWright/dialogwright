@@ -323,9 +323,15 @@ describe('the offer audit row', () => {
 
   it('writes the value proposed as the slot\'s value is recorded', async () => {
     const spec = proposalsApp.slots.place!;
-    use(variant('proposals-masked', (app) => ({ slots: { ...app.slots, place: { ...spec, redact: 'length' } } })));
+    use(variant('proposals-masked', (app) => ({ slots: { ...app.slots, place: { ...spec, redact: 'mask' } } })));
     const [row] = offers(await call({ callerNumber: ON_FILE }, ...says(REPORT, 'yes')));
-    expect(row!.said).toBe("I see an account for the number you're calling from. Is this about <15 chars>?");
+    expect(row!.said).toBe("I see an account for the number you're calling from. Is this about •?");
+    // A statement (redact: length) never says its words back, so it never proposes (check refuses it too).
+    use(variant('proposals-statement', (app) => ({ slots: { ...app.slots, place: { ...spec, redact: 'length' } } })));
+    expect(factsOfferSlots(proposalsApp)).toEqual(['place']);
+    const r = await call({ callerNumber: ON_FILE }, ...says(REPORT));
+    expect(promptOf(last(r))).toBe('ask_place');
+    expect(offers(r)).toEqual([]);
   });
 });
 

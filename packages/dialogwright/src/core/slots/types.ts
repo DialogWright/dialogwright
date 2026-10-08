@@ -191,7 +191,8 @@ export interface SlotSpec {
    * the slot with the candidate, confirmed, and nothing else: never the principal, the identity level
    * or the attempts. A no asks `ask_<slot>` with no attempt counted, and a value said instead fills as
    * said, as for the caller's number's offer (callerNumber). Never on an identity factor, and never
-   * beside `callerNumber`: `dialogwright check` refuses both. Absent: the slot is asked as always.
+   * beside `callerNumber`, and never on a slot redacted by its length (its words are never said back):
+   * `dialogwright check` refuses all three. Absent: the slot is asked as always.
    */
   offer?: 'facts';
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no

@@ -789,7 +789,7 @@ offers: (f) => (f.serviceAddress ? { place: { value: f.serviceAddress, display: 
 ```
 
 - **Say as little as works.** The line is said to whoever holds, or forges, the number, before they prove anything: it may name only what the lookup's level 0 action returns, and the lookup returns the least that works (a street, never a balance, a claim or a name). The line says "an account", never whose.
-- **A yes fills that slot and nothing else.** Not the principal, the level or the attempts: a form that needs identity still asks for the factors. `pnpm check` refuses `offer: facts` on a factor, and beside `callerNumber`.
+- **A yes fills that slot and nothing else.** Not the principal, the level or the attempts: a form that needs identity still asks for the factors. `pnpm check` refuses `offer: facts` on a factor, beside `callerNumber`, and on a slot redacted by its length (a text slot that proposes takes `say: null` and `redact: none`).
 - A no asks the slot's question with no attempt counted; another value said ("no, 7 Birch Lane") fills as said; it is offered once per slot per form, and a slot reopened at the summary is asked. No candidate (nothing found, a withheld number, a chat): the slot is asked as always.
 - `pnpm check` needs the `callerNumber` block with a `lookup`, `facts.offers`, and `offer_<slot>` saying `{<slot>}` and nothing else. Every settled proposal writes an `offer` row (`source: facts`).
 - Scripted calls: a number on file with a yes, a no, another address and silence; a number not on file; a withheld number; the chat; and a yes followed by a request that needs identity. Corpus lines at the offer as for a callback number: a yes, a bare no, a no with another value, another value alone, words that answer neither.

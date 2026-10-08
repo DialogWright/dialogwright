@@ -593,6 +593,13 @@ export function crossLink(
     if (spec?.callerNumber !== undefined) {
       at(`the slot "${id}" offers both the number the caller is calling from (callerNumber) and a value from the facts (offer: facts), but a slot makes one offer`, `${deleteIt}, or delete "callerNumber"`);
     }
+    // A statement (redact: length) is never said back: its display is a stand-in ("your note"), and the
+    // trace and the console keep its display as one. A proposal says its value aloud and makes it the
+    // display, so it would put the words where the slot keeps only their length.
+    if (spec?.redact === 'length') {
+      const fix = library ? 'set "redact: none" (with "say: null" for a text slot, so the value is read back as said)' : `give ${inCode('slots', id)} another redact`;
+      at(`the slot "${id}" is redacted by its length (redact: length), so its words are never said back, but it proposes a value from the facts (offer: facts), which says the value aloud and makes it what the slot shows`, `${fix}, or ${deleteIt}`);
+    }
     if (app.callerNumber?.use !== 'hint' || app.callerNumber.lookup === undefined) {
       at(`the slot "${id}" proposes a value from the facts (offer: facts), but app.yaml has no callerNumber with a lookup, so nothing looks the caller up to propose from`, `add "callerNumber: { use: hint, lookup: <tool> }" to app.yaml, with the lookup's action in policy.yaml, or ${deleteIt}`);
     }

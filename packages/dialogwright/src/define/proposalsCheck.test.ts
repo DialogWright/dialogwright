@@ -90,6 +90,11 @@ describe('offer: facts', () => {
     expect(problems.join('\n')).toContain('the slot "accountId" is an identity factor (identity.yaml), but it proposes a value from the facts (offer: facts)');
   });
 
+  it('is refused on a slot redacted by its length, whose words are never said back', async () => {
+    const { problems } = await checked(folder({ 'slots.yaml': replace('  say: null\n  redact: none\n', '  say: the address\n') }));
+    expect(problems.join('\n')).toContain('the slot "place" is redacted by its length (redact: length), so its words are never said back, but it proposes a value from the facts (offer: facts)');
+  });
+
   it('is refused beside callerNumber on one slot', async () => {
     const slots = (text: string): string => `${text}phone:\n  type: digits\n  noun: phone\n  length: 10\n  callerNumber:\n    countryCode: '1'\n  offer: facts\n`;
     const { problems } = await checked(folder({ 'slots.yaml': slots }));
