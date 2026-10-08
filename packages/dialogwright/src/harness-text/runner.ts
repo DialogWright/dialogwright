@@ -13,6 +13,7 @@ import { delegateProblem, subjectProblem } from '../core/app/principals';
 import type { App, SlotId } from '../core/app/types';
 import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
 import { lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
+import { factsOfferSlots } from '../core/factsOffer';
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
@@ -187,15 +188,17 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   }
   if (atCallerOffer(entry, app)) {
     // The number the caller is calling from has been offered for the prompted slot (SlotSpec.callerNumber),
-    // the app's placeholder for it as the number, and the slot is still empty: the entry answers the offer.
+    // or a value proposed from the facts (`offer: facts`), the app's placeholder for the slot as the
+    // value, and the slot is still empty: the entry answers the offer.
     const slot = entry.prompted;
     const placeholder = Object.hasOwn(seed.placeholders, slot) ? seed.placeholders[slot] : undefined;
     if (!placeholder) throw new Error(`no placeholder value for slot "${slot}"`);
-    session.pendingConfirmation = { target: 'slot', slot, value: placeholder.value, display: placeholder.display, offered: true };
+    const facts = factsOfferSlots(app).includes(slot);
+    session.pendingConfirmation = { target: 'slot', slot, value: placeholder.value, display: placeholder.display, offered: true, ...(facts ? { from: 'facts' as const } : {}) };
     session.callerOffered = [slot];
     session.promptedFor = slot;
     session.lastPromptId = `offer_${slot}`;
-    session.lastPromptText = promptText(app, `offer_${slot}`, { last4: lastFour(placeholder.value) }, session.locale);
+    session.lastPromptText = promptText(app, `offer_${slot}`, facts ? { [slot]: placeholder.display } : { last4: lastFour(placeholder.value) }, session.locale);
     session.lastPromptOptions = ['yes', 'no'];
     return session;
   }

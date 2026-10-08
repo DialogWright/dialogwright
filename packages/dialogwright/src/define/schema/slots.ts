@@ -34,6 +34,18 @@ export const LISTEN_DESCRIPTION =
 /** `listen:` on one slot: one of the values, or absent for the default (`up-front`). */
 export const slotListenSchema = z.enum(SLOT_LISTEN_VALUES as readonly [SlotListen, ...SlotListen[]]).describe(LISTEN_DESCRIPTION);
 
+/** The other option every library slot takes beside its type's own (SlotSpec.offer). A slot type may not have an option of this name. */
+export const OFFER_OPTION = 'offer';
+
+/** What `offer:` means, as the JSON Schema, the slot pages and an editor say it. */
+export const OFFER_DESCRIPTION =
+  'Propose a value in place of the question. "facts": when the form would ask the slot and the app\'s facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling), the line asks offer_<slot> as a yes or no, with the value as {<slot>} ("Is this about 22 Alder Street?"), once per slot per form. ' +
+  'A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. ' +
+  'Needs app.yaml\'s callerNumber with a lookup, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber.';
+
+/** `offer:` on one slot: `facts`, or absent for none. */
+export const slotOfferSchema = z.enum(['facts']).describe(OFFER_DESCRIPTION);
+
 export const slotsSchema = z
   .record(
     identifier(),

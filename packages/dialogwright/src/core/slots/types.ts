@@ -183,6 +183,17 @@ export interface SlotSpec {
     onNo?: 'skip';
     ifNone?: 'skip';
   };
+  /**
+   * `facts`: the slot proposes a value from the app's facts (FactsConfig.offers: e.g. a street the
+   * call-start lookup found for the number calling) as a yes or no, in place of its question: when
+   * the form would ask it and the facts have a candidate for it, the engine asks `offer_<slot>` with
+   * the candidate's display as `{<slot>}`, once per slot per form, the slot still empty. A yes fills
+   * the slot with the candidate, confirmed, and nothing else: never the principal, the identity level
+   * or the attempts. A no asks `ask_<slot>` with no attempt counted, and a value said instead fills as
+   * said, as for the caller's number's offer (callerNumber). Never on an identity factor, and never
+   * beside `callerNumber`: `dialogwright check` refuses both. Absent: the slot is asked as always.
+   */
+  offer?: 'facts';
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no
    * keypad rung; its retry ladder is retry, retry, agent. */
   dtmf?: {

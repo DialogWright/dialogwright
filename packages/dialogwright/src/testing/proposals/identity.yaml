@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../../../schemas/identity.schema.json
+# How a caller proves who they are. Level 1 is the account number and the date of birth, checked by
+# verifyCustomer. The number calling is never a factor: a caller ID can be forged.
+principals:
+  subject: customer
+levels:
+  1: { name: verified, factors: [accountId, dob], verify: verifyCustomer, failedPrompt: identity_failed }
+# Three failed tries at the factors, and a person takes the call.
+attempts: 3

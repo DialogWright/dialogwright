@@ -334,7 +334,7 @@ describe('the docs', () => {
   it('the docs page names every option and every text part', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/birthdate.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(birthdateType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['confirm', 'handoff', 'ids', 'keypad', 'listen', 'minYear', 'notThisDate', 'redact', 'text', 'wholePrompt', 'yearPrompt']);
+    expect(options.sort()).toEqual(['confirm', 'handoff', 'ids', 'keypad', 'listen', 'minYear', 'notThisDate', 'offer', 'redact', 'text', 'wholePrompt', 'yearPrompt']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
     for (const part of ['given', 'givenTrue', 'givenFalse', 'month', 'monthHint', 'day', 'dayHint', 'year', 'yearAsked', 'yearNone']) expect(readme, part).toContain(`\`text.${part}\``);
   });

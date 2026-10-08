@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../../schemas/intents.schema.json
+intents:
+  report_problem:
+    criteria: Wants to report a problem with the service at an address, such as it not working at all or only in part
+    label: report a problem
+    kind: form
+  check_status:
+    criteria: Wants to hear the status of a request already open on their account
+    label: check on a request
+    kind: form
+  agent:
+    criteria: Asks to speak with a person, a representative, or an operator
+    label: speak with someone
+    kind: control
+  repeat_prompt:
+    criteria: Asks the system to repeat what it just said
+    label: hear that again
+    kind: control
+  done:
+    criteria: Says they are finished and need nothing more, as in no thanks, that's all, I'm all set, nothing else, I don't need anything else, or goodbye, including a bare no when just asked whether there is anything else
+    label: finish up
+    kind: control
+  other:
+    criteria: A request this line does not handle
+    label: something else
+    kind: control
+  none:
+    criteria: No request is expressed; the caller is only answering a question or saying something incidental
+    label: nothing
+    kind: control
+
+menu:
+  - digit: "1"
+    intent: report_problem
+  - digit: "2"
+    intent: check_status
+  - digit: "0"
+    intent: agent

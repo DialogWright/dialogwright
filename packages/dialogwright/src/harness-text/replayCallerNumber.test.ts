@@ -19,6 +19,7 @@ import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import { CALLBACK_DIR, callbackApp } from '../testing/callback/app';
 import { TEXTING_DIR, textingApp } from '../testing/texting/app';
+import { PROPOSALS_DIR, proposalsApp } from '../testing/proposals/app';
 import { standInCallerNumber } from '../core/callerNumber';
 import { registerTestkit } from '../testing/testkit';
 import type { App } from '../core/app/types';
@@ -34,6 +35,7 @@ resetAppsForTest();
 registerApp(callbackApp);
 const corpus = loadCorpus(join(CALLBACK_DIR, 'fixtures', 'corpus.jsonl'), callbackApp);
 const textingCorpus = loadCorpus(join(TEXTING_DIR, 'fixtures', 'corpus.jsonl'), textingApp);
+const proposalsCorpus = loadCorpus(join(PROPOSALS_DIR, 'fixtures', 'corpus.jsonl'), proposalsApp);
 let corpusInUse = corpus;
 const client = () => new FixtureStubClient(corpusInUse, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: '2026-10-07' }) });
 
@@ -139,6 +141,29 @@ describe('the caller\'s number of an app that keeps it for its code, live and re
     expect(replayed.records.map(shape)).toEqual(live.map(shape));
     expect(replayed.runs[0]!.result.session.callerNumber).toBe('+15555550142');
     expect(replayed.runs[0]!.result.session.facts).toEqual({ lineType: 'mobile' });
+  });
+});
+
+describe('a value proposed from the call-start lookup, live and replayed', () => {
+  it('replays the proposal as it ran: the lookup by the stand-in finds the same street, and the model is sent the same', async () => {
+    // The proposals fixture is the replayed session's app: the first registered.
+    resetAppsForTest();
+    registerApp(proposalsApp);
+    corpusInUse = proposalsCorpus;
+    const call = liveCall('twilio', '+15555550142', proposalsApp.id);
+    await call.start();
+    for (const t of ["I'd like to report a problem", 'yes', 'nothing is working at all', 'yes, file it']) await call.say(t);
+    const live = call.records();
+    expect(live.map((r) => (r.decision as { promptId?: string }).promptId)).toEqual(['greeting', 'offer_place', 'ask_problem', 'confirm_report_problem', 'anything_else']);
+    expect(readFileSync(call.framesPath, 'utf8')).not.toContain('5555550142');
+
+    const replayed = await call.replay();
+    expect(replayed.skipped).toEqual([]);
+    expect(replayed.records.map(shape)).toEqual(live.map(shape));
+    expect(replayed.runs[0]!.result.session.facts).toEqual({ serviceAddress: '22 Alder Street' });
+    // The turn that answered the proposal: the same state sent to the model, its pending read-back the street.
+    expect(JSON.stringify(replayed.records[2]!.turnState)).toBe(JSON.stringify(live[2]!.turnState));
+    expect(live[2]!.turnState).toMatchObject({ pendingConfirmation: { target: 'place', value: '22 Alder Street' } });
   });
 });
 

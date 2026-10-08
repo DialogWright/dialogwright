@@ -73,12 +73,14 @@ export type PendingConfirmation =
       nominated?: readonly Nomination[];
     }
   /**
-   * A slot's value read back for a yes. `offered`: the number the caller is calling from, offered
-   * for a slot that holds a phone number (SlotSpec.callerNumber, core/callerNumber.ts) before the slot
-   * was asked: the slot is still empty, a yes fills it with `value`, and a no asks the slot's own
-   * question with no attempt counted. Absent: a value the caller said, read back.
+   * A slot's value read back for a yes. `offered`: a value offered before the slot was asked, the
+   * slot still empty: a yes fills it with `value`, and a no asks the slot's own question with no
+   * attempt counted. By `from`: absent, the number the caller is calling from, offered for a slot
+   * that holds a phone number (SlotSpec.callerNumber, core/callerNumber.ts); `facts`, a value the
+   * app proposes from its facts (a slot's `offer: facts`, FactsConfig.offers: e.g. an address the
+   * call-start lookup found). Absent `offered`: a value the caller said, read back.
    */
-  | { target: 'slot'; slot: SlotId; value: string; display: string; offered?: true }
+  | { target: 'slot'; slot: SlotId; value: string; display: string; offered?: true; from?: 'facts' }
   /**
    * the summary question; attempts counts unanswered turns and resets when a correction lands.
    * askedChange records that "What should I change?" has already been asked for this summary, so
@@ -174,9 +176,10 @@ export interface Session {
    */
   calledNumber?: string;
   /**
-   * The slots the open form has offered the caller's number for (callerNumber), each once per form:
-   * a slot reopened later is asked its own question. Absent until an offer is made, and gone when the
-   * form closes or another is entered.
+   * The slots the open form has made an offer for, each once per form: the caller's number
+   * (callerNumber), or a value proposed from the facts (a slot's `offer: facts`). A slot reopened
+   * later is asked its own question. Absent until an offer is made, and gone when the form closes or
+   * another is entered.
    */
   callerOffered?: SlotId[];
   /** Who the caller is proven to be. Written only from a verifier result or a portal sign-in (src/gate/types.ts Principal). */
@@ -375,7 +378,7 @@ export function setForm(session: Session, form: FormId): Session {
   session.pendingHash = null;
   // The checks a form passed are its own: the new form runs its checks afresh.
   delete session.checked;
-  // So are the caller's number's offers: the new form may offer it again.
+  // So are its offers (the caller's number, a value from the facts): the new form may offer again.
   delete session.callerOffered;
   return session;
 }

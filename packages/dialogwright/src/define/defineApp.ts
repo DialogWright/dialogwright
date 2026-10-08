@@ -569,6 +569,37 @@ export function crossLink(
     if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'callerNumber'], message, `delete "callerNumber" here, or use a slot of its own for a callback number`);
     else inTs(['slots', id, 'callerNumber'], message, `delete callerNumber from ${inCode('slots', id)}, or use a slot of its own for a callback number`);
   }
+  // A slot that proposes a value from the facts (SlotSpec.offer `facts`): never an identity factor
+  // (a proposal is no proof), never beside the caller's number's offer on one slot, and only with
+  // the call-start lookup that feeds it (app.yaml's callerNumber with a lookup) and the code that
+  // proposes (code.facts.offers).
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    const offer = spec?.offer;
+    if (offer === undefined) continue;
+    const library = linked.library.has(id);
+    const at = (message: string, fix: string): void => {
+      if (library) yaml(SLOTS_FILE, [id, 'offer'], message, fix);
+      else inTs(['slots', id, 'offer'], message, fix);
+    };
+    const deleteIt = library ? 'delete "offer"' : `delete "offer" from ${inCode('slots', id)}`;
+    if (offer !== 'facts') {
+      at(`the slot "${id}" says offer: ${JSON.stringify(offer)}, which is not "facts"`, `change it to "facts", or ${deleteIt}`);
+      continue;
+    }
+    if (factors.includes(id)) {
+      at(`the slot "${id}" is an identity factor (identity.yaml), but it proposes a value from the facts (offer: facts): a proposal from a lookup by the number calling proves no one, so it must never stand in for a factor`, `${deleteIt}; the factors are always asked`);
+      continue;
+    }
+    if (spec?.callerNumber !== undefined) {
+      at(`the slot "${id}" offers both the number the caller is calling from (callerNumber) and a value from the facts (offer: facts), but a slot makes one offer`, `${deleteIt}, or delete "callerNumber"`);
+    }
+    if (app.callerNumber?.use !== 'hint' || app.callerNumber.lookup === undefined) {
+      at(`the slot "${id}" proposes a value from the facts (offer: facts), but app.yaml has no callerNumber with a lookup, so nothing looks the caller up to propose from`, `add "callerNumber: { use: hint, lookup: <tool> }" to app.yaml, with the lookup's action in policy.yaml, or ${deleteIt}`);
+    }
+    if (code.facts?.offers === undefined) {
+      at(`the slot "${id}" proposes a value from the facts (offer: facts), but the code has no facts.offers, so it never has a value to propose`, `add offers(f) to ${inCode('facts')}, returning { ${id}: { value, display } } from what the lookup kept, or ${deleteIt}`);
+    }
+  }
   // A slot that may be left empty (a callerNumber offer with onNo or ifNone: skip, SlotState.declined)
   // is never named in its form's summary line: the line would read an empty value. A form's summary
   // hook (onSummaryRead) may read another line that names it when it is filled.

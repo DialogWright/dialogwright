@@ -95,22 +95,26 @@ export interface TurnOut {
 }
 
 /**
- * An offer of the number the caller is calling from, settled (a slot's `callerNumber`): what was
- * asked, as the line was said, and what the caller answered. `yes`: the number offered; `no`: a no,
- * with no number of their own; `other`: a number of their own, said or keyed, with or without a no;
- * `none`: no answer before the offer's retry ladder ran out. The audit writes it as an `offer` row in
- * the day's hash chain (core/audit.ts), with how it was answered.
+ * An offer settled: the number the caller is calling from (a slot's `callerNumber`), or a value
+ * proposed from the facts (a slot's `offer: facts`). What was asked, as the line was said, and what
+ * the caller answered. `yes`: the value offered; `no`: a no, with no value of their own; `other`: a
+ * value of their own, said or keyed, with or without a no; `none`: no answer before the offer's retry
+ * ladder ran out. The audit writes it as an `offer` row in the day's hash chain (core/audit.ts), with
+ * how it was answered.
  */
 export interface OfferSettled {
   readonly slot: SlotId;
-  /** Where the value offered came from: the number the caller is calling from. */
-  readonly source: 'caller-number';
+  /** Where the value offered came from: the number the caller is calling from, or the app's facts. */
+  readonly source: 'caller-number' | 'facts';
   readonly promptId: string;
-  /** The offer's line as rendered (the prompt manifest may change later). */
+  /**
+   * The offer's line as rendered (the prompt manifest may change later). A value proposed from the
+   * facts is written into it as the slot's value is recorded (its redact, else policy.yaml's `audit:`).
+   */
   readonly said: string;
   readonly answer: 'yes' | 'no' | 'other' | 'none';
-  /** The last four digits of the number offered, as the line said them. */
-  readonly last4: string;
+  /** The last four digits of the number offered, as the line said them; absent for a value from the facts. */
+  readonly last4?: string;
   /** The language the line was said in. */
   readonly locale: string;
 }

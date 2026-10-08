@@ -19,6 +19,8 @@ import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type De
 import { appContext, askCode, awaitingSignIn, callTool, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, runChecks, type FormStopped } from './checks';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo } from './callerNumber';
+import { factsCandidate, factsOfferSlots } from './factsOffer';
+import { recordedValue, recordingOf } from './recording';
 import type { Tools } from './tools';
 import { withAppThresholds, type Thresholds } from './thresholds';
 import type { ScreenResult } from './screen';
@@ -857,11 +859,12 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   // takes the question's place this once, and the attempt count does not move, but only when the form would still ask that slot next; otherwise the question the
   // form actually owes wins, and the help decision is dropped along with it.
   if (help && next.kind === 'ask' && next.slot === help.slot) return { ...prompt(help.promptId, help.slot, {}, said), help };
-  // A slot that offers the caller's number is offered rather than asked, or, with nothing to offer
-  // and `ifNone: skip`, left empty (declined) for the next.
+  // A slot that offers the caller's number, or proposes a value from the facts (`offer: facts`), is
+  // offered rather than asked, or, with nothing to offer and `ifNone: skip`, left empty (declined)
+  // for the next.
   let ask = next;
   while (ask.kind === 'ask' && ask.window === null) {
-    const offer = offerCallerNumber(s, ask.slot, said, io);
+    const offer = makeOffer(s, ask.slot, said, io);
     if (offer === DECLINED) {
       ask = nextPrompt(s);
       continue;
@@ -873,8 +876,38 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   return askSlot(s, ask.slot, ask.window, said);
 }
 
-/** What offerCallerNumber returns for a slot it left empty, declined (`ifNone: skip`): the form goes on to the next. */
+/** What makeOffer returns for a slot it left empty, declined (`ifNone: skip`): the form goes on to the next. */
 const DECLINED = 'declined' as const;
+
+/**
+ * The slot's offer, as a yes or no in place of its question: the number the caller is calling from
+ * (offerCallerNumber), or a value proposed from the facts (offerFromFacts). An offer still pending
+ * (kept through a detour) is asked again as it stands, not made a second time.
+ */
+function makeOffer(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null | typeof DECLINED {
+  const pc = s.pendingConfirmation;
+  if (pc?.target === 'slot' && pc.offered && pc.slot === slot) return slotConfirmPrompt(pc, acks);
+  if (factsOfferSlots(io.app).includes(slot)) return offerFromFacts(s, slot, acks, io);
+  return offerCallerNumber(s, slot, acks, io);
+}
+
+/**
+ * A value the app's facts propose for the slot (a slot's `offer: facts`, FactsConfig.offers; e.g. the
+ * street the call-start lookup found), offered as a yes or no in place of the slot's question: once
+ * per slot per form, on a slot not yet asked, when the facts have a candidate for it. The line says
+ * the candidate's display and nothing more, and the model is told only that (core/state.ts). Null
+ * when there is none, and the slot is asked as always. The slot stays empty until the yes, and the
+ * yes fills it alone: who the caller is, their level and their attempts are not touched.
+ */
+function offerFromFacts(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): PromptDecision | null {
+  if (s.callerOffered?.includes(slot) || s.slots[slot]!.attempts > 0) return null;
+  const c = factsCandidate(io.app, slot, s.facts);
+  if (c === null) return null;
+  s.callerOffered = [...(s.callerOffered ?? []), slot];
+  const pc: Extract<PendingConfirmation, { target: 'slot' }> = { target: 'slot', slot, value: c.value, display: c.display, offered: true, from: 'facts' };
+  s.pendingConfirmation = pc;
+  return offerPrompt(pc, acks);
+}
 
 /**
  * The number the caller is calling from, offered as a yes or no in place of the slot's question
@@ -885,9 +918,6 @@ const DECLINED = 'declined' as const;
  * empty and declined. The slot stays empty until the yes.
  */
 function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null | typeof DECLINED {
-  // An offer still pending (kept through a detour) is asked again as it stands, not made a second time.
-  const pc = s.pendingConfirmation;
-  if (pc?.target === 'slot' && pc.offered && pc.slot === slot) return slotConfirmPrompt(pc, acks);
   if (!callerNumberSlots(io.app).includes(slot) || s.callerOffered?.includes(slot) || s.slots[slot]!.attempts > 0) return null;
   let c = s.callerNumber === undefined ? null : callerCandidate(io.app, slot, s.callerNumber, slotLocaleOf(s));
   if (c !== null) {
@@ -901,18 +931,26 @@ function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): D
     s.slots[slot]!.declined = true;
     return DECLINED;
   }
-  s.pendingConfirmation = { target: 'slot', slot, value: c.value, display: c.display, offered: true };
-  return offerPrompt(slot, c.value, acks);
+  const pc: Extract<PendingConfirmation, { target: 'slot' }> = { target: 'slot', slot, value: c.value, display: c.display, offered: true };
+  s.pendingConfirmation = pc;
+  return offerPrompt(pc, acks);
 }
 
 /**
- * The offer of the caller's number settled this turn (TurnOut.offer, the audit's `offer` row): the
- * line as it was said, in the session's language, and what the caller answered.
+ * The offer settled this turn (TurnOut.offer, the audit's `offer` row): the line as it was said, in
+ * the session's language, and what the caller answered. A value proposed from the facts is written
+ * into the line as the slot's value is recorded (recordingOf: its redact, else policy.yaml's
+ * `audit:`), so the audit holds no more of it than the slot's own rows do.
  */
 function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, answer: OfferSettled['answer']): void {
   const promptId = `offer_${pc.slot}`;
-  const last4 = lastFour(pc.value);
   const locale = s.locale ?? defaultLocaleOf(io.app);
+  if (pc.from === 'facts') {
+    const shown = recordedValue(recordingOf(io.app, pc.slot), pc.display) ?? '•';
+    io.out.offer = { slot: pc.slot, source: 'facts', promptId, said: promptText(io.app, promptId, { [pc.slot]: shown }, s.locale), answer, locale };
+    return;
+  }
+  const last4 = lastFour(pc.value);
   io.out.offer = { slot: pc.slot, source: 'caller-number', promptId, said: promptText(io.app, promptId, { last4 }, s.locale), answer, last4, locale };
 }
 
@@ -924,14 +962,18 @@ function declineOnNo(s: Session, io: TurnIO, slot: SlotId): void {
   if (skipsOnNo(io.app, slot) && s.slots[slot]!.value === null) s.slots[slot]!.declined = true;
 }
 
-/** The offer's line: `offer_<slot>`, with the last four digits of the number. */
-function offerPrompt(slot: SlotId, value: string, acks: Ack[]): PromptDecision {
-  return prompt(`offer_${slot}`, slot, { last4: lastFour(value) }, acks, ['yes', 'no']);
+/**
+ * The offer's line: `offer_<slot>`, with the last four digits of the number offered, or, for a value
+ * proposed from the facts, its display as `{<slot>}`.
+ */
+function offerPrompt(pc: Extract<PendingConfirmation, { target: 'slot' }>, acks: Ack[]): PromptDecision {
+  const vars = pc.from === 'facts' ? { [pc.slot]: pc.display } : { last4: lastFour(pc.value) };
+  return prompt(`offer_${pc.slot}`, pc.slot, vars, acks, ['yes', 'no']);
 }
 
-/** A slot's pending read-back asked (again): its `confirm_<slot>`, or, for the caller's number offered, `offer_<slot>`. */
+/** A slot's pending read-back asked (again): its `confirm_<slot>`, or, for a value offered, `offer_<slot>`. */
 function slotConfirmPrompt(pc: Extract<PendingConfirmation, { target: 'slot' }>, acks: Ack[]): PromptDecision {
-  return pc.offered ? offerPrompt(pc.slot, pc.value, acks) : prompt(`confirm_${pc.slot}`, pc.slot, { [pc.slot]: pc.display }, acks, ['yes', 'no']);
+  return pc.offered ? offerPrompt(pc, acks) : prompt(`confirm_${pc.slot}`, pc.slot, { [pc.slot]: pc.display }, acks, ['yes', 'no']);
 }
 
 /**
@@ -1101,8 +1143,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       const pc = s.pendingConfirmation!;
       s.pendingConfirmation = null;
       if (pc.target === 'slot' && pc.offered) {
-        // The caller's number offered (callerNumber): the yes fills the slot with it, confirmed, as a
-        // keyed number is. The summary still reads it back whole. The offer is the slot's first
+        // The caller's number offered (callerNumber), or a value from the facts (`offer: facts`): the
+        // yes fills the slot with it, confirmed, as a keyed number is, and nothing else: who the
+        // caller is, their level and their attempts stay as they were. The summary still reads it back whole. The offer is the slot's first
         // question, so what else the yes carried ("yes, and it's about an order") fills the form's
         // other slots, as a no's does; the offered slot holds the number the yes was to.
         Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
@@ -1289,7 +1332,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // A slot that offers the caller's number, reopened, is asked its own question from here on,
       // whether or not its number was offered before (offered once per form, callerOffered), and
       // whether or not there was a number to offer (one that skips with none, `ifNone: skip`, is asked).
-      if ((s.callerNumber !== undefined || skipsIfNone(io.app, verdict.slot)) && callerNumberSlots(io.app).includes(verdict.slot) && !(s.callerOffered ?? []).includes(verdict.slot)) s.callerOffered = [...(s.callerOffered ?? []), verdict.slot];
+      // So is one that proposes a value from the facts (`offer: facts`): the caller said it is wrong.
+      const offering = ((s.callerNumber !== undefined || skipsIfNone(io.app, verdict.slot)) && callerNumberSlots(io.app).includes(verdict.slot)) || factsOfferSlots(io.app).includes(verdict.slot);
+      if (offering && !(s.callerOffered ?? []).includes(verdict.slot)) s.callerOffered = [...(s.callerOffered ?? []), verdict.slot];
       const said = [...acks, ...(fill?.acks ?? [])];
       // What else the breath changed ("the town's wrong, and I rent it", where the naming decides)
       // goes through the form's checks now, as any fill does in continueForm, rather than waiting

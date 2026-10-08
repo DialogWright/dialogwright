@@ -586,6 +586,16 @@ export interface FactsConfig {
    * the call goes on. Without it, the result is not kept.
    */
   fromCallerLookup?(f: SessionFacts, value: unknown): void;
+  /**
+   * The values the facts propose, by slot, for the slots that offer them (a slot's `offer: facts`):
+   * each a candidate (its value, and its display, which the offer line says as `{<slot>}`). Called
+   * only when such a slot is about to be asked; a slot with no candidate (none returned, or one
+   * with an empty value or display) is asked as always. What the display says is said to a caller
+   * who has proven nothing when the facts came from the call-start lookup: propose the least that
+   * works (a street, never a balance or a name). A yes fills the slot and nothing else. Without it,
+   * no slot is offered a value.
+   */
+  offers?(f: Readonly<SessionFacts>): Readonly<Partial<Record<SlotId, SlotCandidate>>>;
 }
 
 /**

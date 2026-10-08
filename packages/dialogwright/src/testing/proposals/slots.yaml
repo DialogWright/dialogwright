@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../schemas/slots.schema.json
+# The address of the problem. A text slot keeps the caller's words, read back as said (say: null,
+# which needs redact: none). On a call from a number on file, the street the call-start lookup found
+# is proposed as a yes or no in place of the question (offer: facts, facts.offers in app.ts): a yes
+# fills the slot, a no asks the question, and an address said instead fills as said.
+place:
+  type: text
+  what: the street address where the problem is
+  instructions: Count a street address, a building name or a cross street, even when it comes with a request.
+  say: null
+  redact: none
+  maxLength: 200
+  pick: { what: the street address }
+  offer: facts
+
+# What the caller is seeing.
+problem:
+  type: choice
+  keypad: true
+  options:
+    out:
+      say: nothing working at all
+      means: The caller says nothing works at all, it is completely out
+    partial:
+      say: working only in part
+      means: The caller says it works only in part, or only some of it works
+  text:
+    instructions: Read asr.text. What does the caller say the problem is?
+
+# The identity factors (identity.yaml): an account number and a date of birth.
+accountId:
+  type: digits
+  noun: account
+  length: 8
+  group: [4, 4]
+  keypad: true
+dob:
+  type: birthdate
+  keypad: true

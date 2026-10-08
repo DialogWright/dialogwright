@@ -47,7 +47,9 @@ function pendingState(app: App, pc: Session['pendingConfirmation']): TurnState['
   if (pc.target === 'transfer') return { target: 'transfer', value: 'connect you to a person' };
   // The caller's number offered (core/callerNumber.ts): the model is told what the caller heard of
   // it, its last four, never the whole number.
-  if (pc.offered) return { target: pc.slot, value: `the number they are calling from, ending in ${lastFour(pc.value)}` };
+  if (pc.offered && pc.from !== 'facts') return { target: pc.slot, value: `the number they are calling from, ending in ${lastFour(pc.value)}` };
+  // A value read back, or proposed from the facts (`offer: facts`): what the line said of it, its
+  // display, and nothing more of what the facts hold.
   return { target: pc.slot, value: pc.display };
 }
 

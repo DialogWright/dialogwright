@@ -102,14 +102,14 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
     // Masked as the effect that asked was recorded (core/recording.ts carryScrub), where the answer carries its scrub.
     if (row) drafts.push(...scrubbedDrafts([row], scrubberOf(event)));
   }
-  // An offer of the caller's number, settled: what was asked, as the line was said, and what the
+  // An offer settled (the caller's number, or a value from the facts): what was asked, as the line was said, and what the
   // caller answered, and how (speech, the keypad, or no answer). Whether a yes is consent to anything
   // is the owner's question; the row records what was asked and answered. Before the turn's gate
   // rows: the answer came first, and a text it agreed to is sent after.
   if (t.offer) {
     const o = t.offer;
     const by = o.answer === 'none' ? null : event.type === 'user.key' ? 'keypad' : 'speech';
-    drafts.push({ type: 'offer', detail: { slot: o.slot, source: o.source, promptId: o.promptId, said: o.said, answer: o.answer, by, last4: o.last4, locale: o.locale } });
+    drafts.push({ type: 'offer', detail: { slot: o.slot, source: o.source, promptId: o.promptId, said: o.said, answer: o.answer, by, ...(o.last4 !== undefined ? { last4: o.last4 } : {}), locale: o.locale } });
   }
   for (const e of t.gateEvents) {
     const { call, verdict, reason, needLevel } = e.decision;

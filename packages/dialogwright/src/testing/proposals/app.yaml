@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=../../../schemas/app.schema.json
+# Example Service Desk: a fictional line that takes a report of a problem at an address and reads the
+# status of a request to a verified caller. The engine's fixture for a slot that proposes a value
+# from the call-start lookup (a slot's offer: facts): the number calling is looked up once, before the
+# greeting, through the gate, and the street on file is proposed for the report as a yes or no. A
+# proposal, never identity: the status still needs the account number and the date of birth.
+id: proposals
+locale: en-US
+
+brand:
+  name: Example Service Desk
+  mark: SD
+
+console:
+  formLabels:
+    report_problem: Report a problem
+    check_status: Check on a request
+  slotLabels:
+    place: Address
+    problem: Problem
+
+wording:
+  addressee: the Example Service Desk line
+
+# The number the caller is calling from, kept for the app's code. The lookup finds the street on file
+# for it, before the greeting, through the gate, and nothing else of the account.
+callerNumber:
+  use: hint
+  lookup: findAccountByPhone
+
+fixtures:
+  dir: src/testing/proposals/fixtures

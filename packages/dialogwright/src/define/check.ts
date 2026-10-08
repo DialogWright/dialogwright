@@ -164,6 +164,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     if (spec.spokenConfirm === 'by-confidence') needs.push({ id: `ack_${slot}`, why: `it acknowledges a value it heard for the slot "${slot}" (its slot spec's spokenConfirm is "by-confidence")`, vars: [slot] });
     if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
     for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)`, ...(declared.vars && declared.vars.length > 0 ? { vars: declared.vars } : {}) });
+    if (spec.offer === 'facts') needs.push({ id: `offer_${slot}`, why: `it proposes a value from the facts for the slot "${slot}", as a yes or no (its offer is "facts")`, vars: [slot] });
   }
   for (const reason of personReasons(config.policy)) {
     needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (a role rule in policy.yaml) and the call goes to a person for the reason "${reason}"` });
@@ -565,7 +566,41 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
       if (!has(prompts, id) && !reported.has(id)) missing(id, `the engine says it when ${why}`, vars);
     }
     problems.push(...checkSlotPromptVariables(config, locale, prompts, file, locate, code, codeFile));
+    problems.push(...checkFactsOfferLines(config, locale, prompts, file, locate, code));
     if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));
+  }
+  return problems;
+}
+
+/**
+ * The line of a slot that proposes a value from the facts (`offer_<slot>`, its offer `facts`), in
+ * each locale that has it: it says the value proposed, `{<slot>}`, so a yes is to a value the caller
+ * heard, and it is given nothing else, so a line that uses another fails when it is said.
+ */
+function checkFactsOfferLines(
+  config: LoadedConfig,
+  locale: string,
+  prompts: LoadedConfig['prompts'][string],
+  file: string,
+  locate: LoadResult['locate'],
+  code: AppCode | undefined,
+): Problem[] {
+  const problems: Problem[] = [];
+  for (const slot of askedSlots(config)) {
+    const spec = code?.slots && Object.hasOwn(code.slots, slot) ? code.slots[slot] : undefined;
+    const id = `offer_${slot}`;
+    if (spec?.offer !== 'facts' || !has(prompts, id)) continue;
+    const used = variablesOf(prompts[id]!.text);
+    const extra = used.filter((name) => name !== slot);
+    const line = locale === config.defaultLocale ? `the line "${id}"` : `the ${locale} line "${id}"`;
+    const at = locate(file, ['prompts', id, 'text']) ?? { line: 1, column: 1 };
+    const path = formatPath(['prompts', id, 'text']);
+    if (!used.includes(slot)) {
+      problems.push({ file, ...at, path, message: `${line} proposes a value for the slot "${slot}" but does not say it ({${slot}}), so a yes would fill a value the caller never heard`, fix: `say {${slot}} in the line ("Is this about {${slot}}?")` });
+    }
+    if (extra.length > 0) {
+      problems.push({ file, ...at, path, message: `${line} uses ${extra.map((name) => `{${name}}`).join(', ')}, which the engine does not give it (it gives a proposal only {${slot}}), so saying it would fail`, fix: `use only {${slot}} in this line` });
+    }
   }
   return problems;
 }

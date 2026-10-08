@@ -1,0 +1,306 @@
+[
+  {
+    "id": "propose-yes",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "yes"
+      },
+      {
+        "say": "nothing is working at all"
+      },
+      {
+        "say": "yes, file it"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "form": null,
+      "principalLevel": 0,
+      "gate": "reportProblem:ALLOW",
+      "text": "Your report number is P201"
+    }
+  },
+  {
+    "id": "propose-yes-with-more",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "yes, and nothing is working at all"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_problem",
+      "form": "report_problem",
+      "principalLevel": 0,
+      "slots": {
+        "place": "22 Alder Street",
+        "problem": "out"
+      },
+      "text": "at this address: 22 Alder Street"
+    }
+  },
+  {
+    "id": "propose-no-asks",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "no"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "nothing is working at all"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_problem",
+      "form": "report_problem",
+      "principalLevel": 0,
+      "slots": {
+        "place": "14 Birch Lane",
+        "problem": "out"
+      },
+      "text": "at this address: 14 Birch Lane"
+    }
+  },
+  {
+    "id": "propose-another-address",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "no, I'm at my mother's, 7 Birch Lane"
+      },
+      {
+        "say": "nothing is working at all"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_problem",
+      "form": "report_problem",
+      "principalLevel": 0,
+      "slots": {
+        "place": "7 Birch Lane",
+        "problem": "out"
+      },
+      "text": "at this address: 7 Birch Lane"
+    }
+  },
+  {
+    "id": "propose-unanswered-then-yes",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "silence": true
+      },
+      {
+        "say": "yes"
+      },
+      {
+        "say": "nothing is working at all"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_problem",
+      "form": "report_problem",
+      "principalLevel": 0,
+      "slots": {
+        "place": "22 Alder Street",
+        "problem": "out"
+      },
+      "text": "at this address: 22 Alder Street"
+    }
+  },
+  {
+    "id": "propose-address-reopened",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "yes"
+      },
+      {
+        "say": "nothing is working at all"
+      },
+      {
+        "say": "no, the address is wrong"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_problem",
+      "form": "report_problem",
+      "principalLevel": 0,
+      "slots": {
+        "place": "14 Birch Lane",
+        "problem": "out"
+      },
+      "text": "at this address: 14 Birch Lane"
+    }
+  },
+  {
+    "id": "no-proposal-not-on-file",
+    "callerNumber": "+15555550199",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "nothing is working at all"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_problem",
+      "form": "report_problem",
+      "principalLevel": 0,
+      "slots": {
+        "place": "14 Birch Lane",
+        "problem": "out"
+      },
+      "text": "at this address: 14 Birch Lane"
+    }
+  },
+  {
+    "id": "no-proposal-withheld",
+    "callerNumber": "anonymous",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "nothing is working at all"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_problem",
+      "form": "report_problem",
+      "principalLevel": 0,
+      "slots": {
+        "place": "14 Birch Lane",
+        "problem": "out"
+      },
+      "text": "at this address: 14 Birch Lane"
+    }
+  },
+  {
+    "id": "no-proposal-chat",
+    "as": "web",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "It's 14 Birch Lane"
+      },
+      {
+        "say": "nothing is working at all"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report_problem",
+      "form": "report_problem",
+      "principalLevel": 0,
+      "slots": {
+        "place": "14 Birch Lane",
+        "problem": "out"
+      },
+      "text": "at this address: 14 Birch Lane"
+    }
+  },
+  {
+    "id": "propose-yes-then-status-asks-identity",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "yes"
+      },
+      {
+        "say": "nothing is working at all"
+      },
+      {
+        "say": "yes, file it"
+      },
+      {
+        "say": "and can you check on my request"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_accountId",
+      "principalLevel": 0,
+      "gate": "findAccount:STEP_UP"
+    }
+  },
+  {
+    "id": "propose-yes-then-status-verified",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "I'd like to report a problem"
+      },
+      {
+        "say": "yes"
+      },
+      {
+        "say": "nothing is working at all"
+      },
+      {
+        "say": "yes, file it"
+      },
+      {
+        "say": "and can you check on my request"
+      },
+      {
+        "say": "five five five zero one two three four"
+      },
+      {
+        "say": "April twelfth nineteen eighty"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "readStatus:ALLOW",
+      "text": "Your latest request, P100, is open."
+    }
+  }
+]

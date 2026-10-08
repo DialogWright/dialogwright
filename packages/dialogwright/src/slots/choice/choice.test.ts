@@ -492,7 +492,7 @@ describe('the docs', () => {
   it('the docs page names every option', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/choice.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(choiceType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['confirm', 'disambiguate', 'fillAt', 'hedge', 'help', 'ids', 'keypad', 'listen', 'means', 'options', 'readBack', 'text']);
+    expect(options.sort()).toEqual(['confirm', 'disambiguate', 'fillAt', 'hedge', 'help', 'ids', 'keypad', 'listen', 'means', 'offer', 'options', 'readBack', 'text']);
     for (const option of [...options, 'text.instructions', 'text.none', 'ids.choice', 'hedge.byName', 'help.labels', 'help.labels.<key>.prompt', 'hedge.text', 'help.text', 'hedge.threshold', 'help.threshold', 'ids.hedge', 'ids.help']) {
       expect(readme, option).toContain(`\`${option}\``);
     }

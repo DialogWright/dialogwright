@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { defaultAppId, getApp } from '../core/app/registry';
 import { identityOf } from '../core/app/lookup';
 import { callerNumberSlots } from '../core/callerNumber';
+import { factsOfferSlots } from '../core/factsOffer';
 import type { App, CorpusSlotLabels, FormId, Intent, SlotId } from '../core/app/types';
 import { ENGINE_QUESTION_IDS } from '../core/questions';
 
@@ -171,13 +172,14 @@ export function contextForm(context: CorpusContext, app: App = corpusApp()): For
 
 /** true for an identity factor named as the prompt: the entry seeds a step-up rather than a verified caller */
 /**
- * The offer of the number the caller is calling from (SlotSpec.callerNumber): an entry in a form's
- * context whose `prompted` slot offers it and that says how it answers (`confirm`). Its state is the
- * offer made, `offer_<slot>` just asked, the slot still empty.
+ * An offer: of the number the caller is calling from (SlotSpec.callerNumber), or of a value proposed
+ * from the facts (a slot's `offer: facts`). An entry in a form's context whose `prompted` slot makes
+ * one and that says how it answers (`confirm`). Its state is the offer made, `offer_<slot>` just
+ * asked, the slot still empty.
  */
 export function atCallerOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: CorpusContext } {
   return entry.confirm !== undefined && entry.prompted !== undefined && contextForm(entry.context, app) !== null && confirmForm(entry.context, app) === null
-    && !offerTransfer(entry.context) && callerNumberSlots(app).includes(entry.prompted);
+    && !offerTransfer(entry.context) && (callerNumberSlots(app).includes(entry.prompted) || factsOfferSlots(app).includes(entry.prompted));
 }
 
 export function promptsIdentity(entry: Pick<CorpusEntry, 'prompted'>, app: App = corpusApp()): entry is { prompted: IdentityPrompt } {
