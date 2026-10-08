@@ -10,7 +10,7 @@ import type { App } from './app/types';
 import { DEFAULT_THRESHOLDS } from './thresholds';
 import type { TurnResult } from './turn';
 import { PROPOSALS_DIR, ProposalSystems, proposalsApp } from '../testing/proposals/app';
-import { AGE_CHECK, CHECKING, CODE_CHECK, codeCode, proposalsVariants } from '../testing/proposals/variant';
+import { AGE_CHECK, CHECKING, CODE_CHECK, both, codeCode, proposalsVariants, replace as replacing } from '../testing/proposals/variant';
 import { mockCodeVerifier } from './tools';
 import { compilePolicy } from '../define/policyFile';
 import { loadAppFolder } from '../define/load';
@@ -180,6 +180,15 @@ describe('a check on an identity factor', () => {
     expect(gates(last(out))).toEqual(['verifyCustomer:ALLOW', 'checkAge:BLOCK']);
     expect(last(out).decision).toMatchObject({ kind: 'handoff', reason: 'needs-human' });
     expect(last(out).session.completed).toEqual([]);
+  });
+
+  it('a second report on the call runs the check again on the factor kept, without asking for identity again', async () => {
+    const passing = variants.variant({ ...AGE_CHECK, 'app.yaml': replacing('id: proposals', 'id: proposals-age-pass'), 'policy.yaml': both(AGE_CHECK['policy.yaml']!, replacing("- oneOf: { field: dob, values: ['1900-01-01'], reason: too-young }", "- noneOf: { field: dob, values: ['1900-01-01'], reason: too-young }")) });
+    use(passing);
+    const r = await call(toolsOf(), REPORT, ACCOUNT, DOB, "It's 14 Birch Lane", 'nothing is working at all', 'yes, file it', REPORT);
+    expect(prompts(r).slice(1)).toEqual(['ask_accountId', 'ask_dob', 'ask_place', 'ask_problem', 'confirm_report_problem', 'anything_else', 'ask_place']);
+    expect(gates(last(r))).toEqual(['checkAge:ALLOW']);
+    expect(last(r).session.slots.dob!.value).toBe('1980-04-12');
   });
 
   it('on a web chat, where no factor is ever taken, the form goes to a person rather than complete unchecked', async () => {

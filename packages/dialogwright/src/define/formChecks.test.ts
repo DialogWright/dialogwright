@@ -195,8 +195,17 @@ describe('the warnings', () => {
     const factor = await checked(proposalsFolder(AGE_CHECK), proposalsCode);
     expect(factor.problems).toEqual([]);
     expect(factor.warnings.filter((w) => w.includes('identity factor'))).toEqual([
-      'forms.yaml:13:16  forms.report_problem.checks[0].with[0]  check "checkAge" reads "dob", an identity factor, which holds a value only once the caller is verified; the caller is asked to verify as soon as the check waits on nothing else (on a web chat, which takes no factor, the form goes to a person)  ->  nothing to do if that is meant (an age check on a date of birth); otherwise check one of the form\'s own slots',
+      'forms.yaml:13:16  forms.report_problem.checks[0].with[0]  check "checkAge" reads "dob", an identity factor: the caller is asked to verify as soon as the check waits on nothing else (on a web chat, which takes no factor, the form goes to a person), but a value said on the way, before verification, is checked as said  ->  nothing to do if that is meant (an age check on a date of birth); give the check level: 1 when the value must be verified; otherwise check one of the form\'s own slots',
     ]);
+  });
+
+  it('a check on an identity factor the form also lists in its slots is refused: the form would empty it while the caller stays verified', async () => {
+    const dir = proposalsFolder({ ...AGE_CHECK, 'forms.yaml': both(AGE_CHECK['forms.yaml']!, replacing('slots: [place, problem]', 'slots: [place, problem, dob]')) });
+    const { problems } = await checked(dir, proposalsCode);
+    expect(problems).toEqual([
+      'forms.yaml:13:16  forms.report_problem.checks[0].with[0]  check "checkAge" reads "dob", an identity factor that is also one of form "report_problem"\'s slots, so the form empties it when it closes while the caller stays verified, and a later form\'s check could never run  ->  leave "dob" out of the form\'s slots: identity asks it',
+    ]);
+    expect(() => defineApp(dir, proposalsCode)).toThrow(/an identity factor that is also one of form "report_problem"'s slots/);
   });
 
   it('a check with no level is refused: it needs the highest, so every caller would verify part-way', async () => {
