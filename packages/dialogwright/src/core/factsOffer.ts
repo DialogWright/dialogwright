@@ -6,7 +6,8 @@ import { identityOf } from './app/lookup';
 /**
  * A value proposed from the app's facts (a slot's `offer: facts`, SlotSpec.offer): when the form would
  * ask the slot and the facts have a candidate for it (FactsConfig.offers: e.g. the street the
- * call-start lookup found for the number calling), the slot asks `offer_<slot>` ("Is this about
+ * call-start lookup found for the number calling, or one a form's entry call loaded once the caller
+ * was verified: whatever the facts hold when the slot is asked), the slot asks `offer_<slot>` ("Is this about
  * 22 Alder Street?") in place of `ask_<slot>`, with the same offer machinery as the caller's number's
  * (core/turn.ts). A proposal, never verification: a yes fills that slot and nothing else, so the
  * principal, the identity level and the identity attempts stay as they were, and an action that

@@ -57,12 +57,11 @@ describe('offer: facts', () => {
     expect(defineSlot('place', { type: 'text', what: 'an address' }).offer).toBeUndefined();
   });
 
-  it('needs app.yaml\'s callerNumber with a lookup', async () => {
+  it('does not need app.yaml\'s callerNumber with a lookup: facts loaded after identity can be proposed', async () => {
     const noLookup = await checked(folder({ 'app.yaml': replace('  lookup: findAccountByPhone\n', '') }));
-    expect(noLookup.problems.join('\n')).toContain('slots.yaml');
-    expect(noLookup.problems.join('\n')).toContain('the slot "place" proposes a value from the facts (offer: facts), but app.yaml has no callerNumber with a lookup');
+    expect(noLookup.problems.join('\n')).not.toContain('proposes a value from the facts');
     const noBlock = await checked(folder({ 'app.yaml': replace('callerNumber:\n  use: hint\n  lookup: findAccountByPhone\n', '') }));
-    expect(noBlock.problems.join('\n')).toContain('app.yaml has no callerNumber with a lookup');
+    expect(noBlock.problems.join('\n')).not.toContain('proposes a value from the facts');
   });
 
   it('needs the code\'s facts.offers', async () => {

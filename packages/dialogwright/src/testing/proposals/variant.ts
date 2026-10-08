@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineApp, type AppCode } from '../../define/defineApp';
 import type { App } from '../../core/app/types';
-import { PROPOSALS_DIR, proposalsCode } from './app';
+import type { Session } from '../../core/session';
+import { ACCOUNTS, PROPOSALS_DIR, proposalsCode, type ProposalFacts } from './app';
 
 /**
  * Variants of the fixture for the engine's tests: a copy of its YAML, each file changed by its
@@ -50,4 +51,44 @@ export const CHECKING: Record<string, (text: string) => string> = {
     '\naudit:',
     '  checkProblem:\n    say: check the problem is one a report is taken for\n    check: true\n    level: 1\n    rules: [identity]\n  checkAge:\n    say: check the caller is old enough to report\n    check: true\n    level: 0\n    rules: [identity]\n\naudit:',
   ),
+};
+
+/**
+ * The later-facts variant (design 2026-10-08-app-decides, item 2): the report has an entry call that
+ * needs identity (`findAccount`, level 1), and its result loads the street on file into the facts
+ * (onEntry), so the address is proposed from facts loaded after identity rather than by the call-start
+ * lookup. Built with laterCode.
+ */
+export const LATER: Record<string, (text: string) => string> = {
+  'app.yaml': replace('id: proposals', 'id: proposals-later'),
+  'forms.yaml': replace(REPORT_FORM, '    hooks: [entry, onEntry, confirmedParams, complete]\n    calls: [findAccount, reportProblem]\n'),
+};
+
+/** The account the caller verified as: the principal's. */
+const verifiedAs = (s: Session): string => (s.principal.kind === 'customer' ? s.principal.id : '');
+
+/** The fixture's code with the report's entry call: the account, read once the caller is verified, and its street kept in the facts. */
+export const laterCode: AppCode = {
+  ...proposalsCode,
+  tools: {
+    ...proposalsCode.tools,
+    findAccount: {
+      params: ['accountId'],
+      run(call) {
+        const account = ACCOUNTS.find((a) => a.accountId === call.params.accountId);
+        return { value: account ? { first: account.first, serviceAddress: account.serviceAddress } : null, summary: account ? 'account found' : 'no account' };
+      },
+    },
+  },
+  forms: {
+    ...proposalsCode.forms,
+    report_problem: {
+      ...proposalsCode.forms!.report_problem!,
+      entry: (s) => ({ tool: 'findAccount', params: { accountId: verifiedAs(s) } }),
+      onEntry(s, value) {
+        const street = (value as { serviceAddress?: unknown } | null)?.serviceAddress;
+        if (typeof street === 'string' && street !== '') (s.facts as ProposalFacts).serviceAddress = street;
+      },
+    },
+  },
 };

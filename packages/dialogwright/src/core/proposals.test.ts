@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { loadScenarios, runScenario, type Scenario, type ScenarioRun } from '../harness-text/runner';
 import { loadCorpus } from '../jev/corpus';
@@ -15,6 +15,7 @@ import { compileGate } from '../gate/compiled';
 import { factsCandidate, factsOfferSlots } from './factsOffer';
 import { sessionRoundTrip } from '../testing/sessionRoundTrip';
 import { PROPOSALS_DIR, ProposalSystems, proposalsApp, type ProposalFacts } from '../testing/proposals/app';
+import { LATER, laterCode, proposalsVariants } from '../testing/proposals/variant';
 import { textingApp } from '../testing/texting/app';
 import { callbackApp } from '../testing/callback/app';
 import { screenedApp } from '../testing/screened/app';
@@ -335,6 +336,35 @@ describe('a caller who had not finished, at the proposal', () => {
     expect(session.principal).toEqual({ kind: 'anonymous', level: 0 });
     const rows = runs.flatMap((r) => r.result.audit.filter((d) => d.type === 'offer').map((d) => d.detail.answer));
     expect(rows).toEqual(['yes', 'yes']);
+  });
+});
+
+describe('a proposal from facts loaded after identity', () => {
+  const variants = proposalsVariants();
+  afterAll(() => variants.remove());
+  const later = variants.variant(LATER, laterCode);
+
+  it('the report\'s entry call loads the street once the caller is verified, and the address is proposed from it', async () => {
+    use(later);
+    const r = await call({ callerNumber: NOT_ON_FILE }, ...says(REPORT, 'five five five zero one two three four', 'April twelfth nineteen eighty'));
+    // Nothing found at call start: the facts are empty until the entry call.
+    expect(r.runs[0]!.result.session.facts).toEqual({});
+    expect(prompts(r)).toEqual(['greeting', 'ask_accountId', 'ask_dob', 'offer_place']);
+    const t = last(r);
+    expect(gates(r)).toEqual(['findAccountByPhone:ALLOW', 'findAccount:STEP_UP', 'verifyCustomer:ALLOW', 'findAccount:ALLOW']);
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'offer_place', vars: { place: '22 Alder Street' } });
+    expect((t.session.facts as ProposalFacts).serviceAddress).toBe('22 Alder Street');
+    const yes = last(await call({ callerNumber: NOT_ON_FILE }, ...says(REPORT, 'five five five zero one two three four', 'April twelfth nineteen eighty', 'yes')));
+    expect(yes.session.slots.place).toMatchObject({ value: '22 Alder Street', confirmed: true });
+    expect(promptOf(yes)).toBe('ask_problem');
+  });
+
+  it('the fixture with no call-start lookup at all proposes the same way', async () => {
+    const { callerNumber: _callerNumber, ...rest } = later;
+    use({ ...rest, id: 'proposals-later-no-lookup' } as App);
+    const r = await call({ callerNumber: ON_FILE }, ...says(REPORT, 'five five five zero one two three four', 'April twelfth nineteen eighty'));
+    expect(gates(r)[0]).toBe('findAccount:STEP_UP');
+    expect(promptOf(last(r))).toBe('offer_place');
   });
 });
 

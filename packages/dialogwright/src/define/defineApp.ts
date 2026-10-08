@@ -571,8 +571,8 @@ export function crossLink(
   }
   // A slot that proposes a value from the facts (SlotSpec.offer `facts`): never an identity factor
   // (a proposal is no proof), never beside the caller's number's offer on one slot, and only with
-  // the call-start lookup that feeds it (app.yaml's callerNumber with a lookup) and the code that
-  // proposes (code.facts.offers).
+  // the code that proposes (code.facts.offers). What feeds the facts is the app's: the call-start
+  // lookup, a form's entry call after identity, a hook.
   for (const [id, spec] of Object.entries(linked.slots)) {
     const offer = spec?.offer;
     if (offer === undefined) continue;
@@ -599,9 +599,6 @@ export function crossLink(
     if (spec?.redact === 'length') {
       const fix = library ? 'set "redact: none" (with "say: null" for a text slot, so the value is read back as said)' : `give ${inCode('slots', id)} another redact`;
       at(`the slot "${id}" is redacted by its length (redact: length), so its words are never said back, but it proposes a value from the facts (offer: facts), which says the value aloud and makes it what the slot shows`, `${fix}, or ${deleteIt}`);
-    }
-    if (app.callerNumber?.use !== 'hint' || app.callerNumber.lookup === undefined) {
-      at(`the slot "${id}" proposes a value from the facts (offer: facts), but app.yaml has no callerNumber with a lookup, so nothing looks the caller up to propose from`, `add "callerNumber: { use: hint, lookup: <tool> }" to app.yaml, with the lookup's action in policy.yaml, or ${deleteIt}`);
     }
     if (code.facts?.offers === undefined) {
       at(`the slot "${id}" proposes a value from the facts (offer: facts), but the code has no facts.offers, so it never has a value to propose`, `add offers(f) to ${inCode('facts')}, returning { ${id}: { value, display } } from what the lookup kept, or ${deleteIt}`);
