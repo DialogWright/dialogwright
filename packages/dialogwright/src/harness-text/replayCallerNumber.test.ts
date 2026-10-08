@@ -18,6 +18,7 @@ import { loadCorpus } from '../jev/corpus';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import { CALLBACK_DIR, callbackApp } from '../testing/callback/app';
+import { TEXTING_DIR, textingApp } from '../testing/texting/app';
 import { standInCallerNumber } from '../core/callerNumber';
 import { registerTestkit } from '../testing/testkit';
 import type { App } from '../core/app/types';
@@ -32,10 +33,13 @@ import type { App } from '../core/app/types';
 resetAppsForTest();
 registerApp(callbackApp);
 const corpus = loadCorpus(join(CALLBACK_DIR, 'fixtures', 'corpus.jsonl'), callbackApp);
-const client = () => new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: '2026-10-07' }) });
+const textingCorpus = loadCorpus(join(TEXTING_DIR, 'fixtures', 'corpus.jsonl'), textingApp);
+let corpusInUse = corpus;
+const client = () => new FixtureStubClient(corpusInUse, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: '2026-10-07' }) });
 
 // A replayed session is the default app's (the first registered): the callback app.
 beforeEach(() => {
+  corpusInUse = corpus;
   resetAppsForTest();
   registerApp(callbackApp);
   registerTestkit();
@@ -115,6 +119,29 @@ describe('the caller\'s number, live and replayed', () => {
   });
 });
 
+describe('the caller\'s number of an app that keeps it for its code, live and replayed', () => {
+  it('replays the call-start lookup as it ran: the stand-in is in the international form the carrier sent', async () => {
+    // The texting fixture is the replayed session's app: the first registered.
+    resetAppsForTest();
+    registerApp(textingApp);
+    corpusInUse = textingCorpus;
+    const call = liveCall('twilio', '+15555550142', textingApp.id);
+    await call.start();
+    for (const t of ["I'd like to open a request", "it's about an order", 'yes, please text me', 'yes, open it']) await call.say(t);
+    const live = call.records();
+    // The number is on file as a mobile: the call-start lookup found it, and the offer was made with no line-type lookup.
+    expect(live.map((r) => (r.decision as { promptId?: string }).promptId)).toContain('offer_textTo');
+    expect(live.flatMap((r) => (r.gateEvents ?? []).map((e) => e.decision.call.tool))).not.toContain('lineType');
+    expect(readFileSync(call.framesPath, 'utf8')).not.toContain('5555550142');
+
+    const replayed = await call.replay();
+    expect(replayed.skipped).toEqual([]);
+    expect(replayed.records.map(shape)).toEqual(live.map(shape));
+    expect(replayed.runs[0]!.result.session.callerNumber).toBe('+15555550142');
+    expect(replayed.runs[0]!.result.session.facts).toEqual({ lineType: 'mobile' });
+  });
+});
+
 describe('the stand-in', () => {
   it('is the shortest made-up number ending in the four digits that the app keeps', () => {
     expect(standInCallerNumber(callbackApp, '0142')).toBe('5555550142');
@@ -122,5 +149,14 @@ describe('the stand-in', () => {
     expect(standInCallerNumber(callbackApp, 'abcd')).toBeUndefined();
     const noOffer: App = { ...callbackApp, id: 'callback-none', slots: { ...callbackApp.slots, phone: { ...callbackApp.slots.phone!, callerNumber: undefined } } } as App;
     expect(standInCallerNumber(noOffer, '0142')).toBeUndefined();
+  });
+
+  it('is in international form for an app that keeps the number for its code, where its slot takes that too', () => {
+    expect(standInCallerNumber(textingApp, '0142')).toBe('+15555550142');
+    const hintOnly: App = { ...textingApp, id: 'texting-hint-only', slots: { ...textingApp.slots, textTo: { ...textingApp.slots.textTo!, callerNumber: undefined } } } as App;
+    expect(standInCallerNumber(hintOnly, '0142')).toBe('+15555550142');
+    // A slot that takes no +1 number: the slot's own stand-in, so the replay still makes its offer.
+    const foreignSlot: App = { ...callbackApp, id: 'callback-hint', callerNumber: { use: 'hint' }, slots: { ...callbackApp.slots, phone: { ...callbackApp.slots.phone!, callerNumber: { take: (n: string) => (n.startsWith('+') ? null : { value: n, display: n }) } } } } as App;
+    expect(standInCallerNumber(foreignSlot, '0142')).toBe('0142');
   });
 });

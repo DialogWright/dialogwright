@@ -174,17 +174,21 @@ export function skipsIfNone(app: App, slot: SlotId): boolean {
  * keeps only the last four digits of a number the live session kept (the adapter's
  * `{ callerNumber: '…0142' }` line), which is all the offer said and all the model was told, so a
  * made-up number (the 555 range) ending in them makes the same offer: the shortest such number a
- * slot of the app takes. An app that keeps the number for its code only (app.yaml's callerNumber,
- * with no slot that offers it) is given a ten-digit one, 555555 and the last four, so a lookup fixture
- * keyed by the last four answers its call-start lookup as the live call's was answered. Undefined when
- * the app keeps no number, or `last4` is not four digits.
+ * slot of the app takes. An app that keeps the number for its code (app.yaml's callerNumber) is given
+ * one in the international form carriers send (Twilio and Telnyx both write E.164), +1 555 555 and
+ * the last four, so its code and its call-start lookup see the number in the form the live call's
+ * had, and a lookup fixture keyed by the last four answers as the live lookup was answered; for an
+ * app with a slot that offers it, only when that slot takes it too, else the slot's number as above.
+ * Undefined when the app keeps no number, or `last4` is not four digits.
  */
 export function standInCallerNumber(app: App, last4: string): string | undefined {
   if (!/^\d{4}$/.test(last4)) return undefined;
   const slots = callerNumberSlots(app);
-  // An app that keeps the number for its code only takes any number: a ten-digit one in the 555
-  // range, which a lookup fixture keyed by the last four answers as the live lookup did.
-  if (slots.length === 0) return hintsCallerNumber(app) ? `555555${last4}` : undefined;
+  if (hintsCallerNumber(app)) {
+    const international = `+1555555${last4}`;
+    if (slots.length === 0 || slots.some((slot) => callerCandidate(app, slot, international) !== null)) return international;
+  }
+  if (slots.length === 0) return undefined;
   for (let pad = 0; pad <= 11; pad++) {
     const number = '5'.repeat(pad) + last4;
     if (slots.some((slot) => callerCandidate(app, slot, number) !== null)) return number;

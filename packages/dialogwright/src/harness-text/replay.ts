@@ -232,8 +232,9 @@ interface Pending {
  * the live call's, so the final prompts of a caller who had not finished are joined where they were,
  * a reply held for one who went on included (heldAndJoined). An interrupt the adapter found spurious
  * (spuriousAt) runs no turn, as it ran none live. A call whose session kept the caller's number
- * (a slot's `callerNumber`) logged its last four only, so its setup carries a made-up number ending in
- * them (loggedCallerLastFour, standInCallerNumber) and the replay makes the offer the call made.
+ * (a slot's `callerNumber`, or app.yaml's) logged its last four only, so its setup carries a made-up
+ * number ending in them (loggedCallerLastFour, standInCallerNumber) and the replay makes the offer and
+ * the call-start lookup the call made. The number called is not logged, so a replayed call has none.
  *
  * Each turn runs with the clock and default date the recording actually happened under: `now`
  * returns the frame line's own timestamp, and `todayIso` is the setup line's date unless the

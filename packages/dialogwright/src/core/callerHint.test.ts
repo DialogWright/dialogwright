@@ -451,10 +451,10 @@ describe('the trace and the console', () => {
     expect(redactDeep({ calledNumber: CALLED })).toEqual({ calledNumber: '…0100' });
   });
 
-  it('replay stands a ten-digit number in for an app that keeps the number for its code only', () => {
+  it('replay stands a number in the international form carriers send in for an app that keeps the number for its code', () => {
     const hintOnly = variant('texting-hint-replay', (app) => ({ callerNumber: { use: 'hint' }, slots: { ...app.slots, textTo: { ...app.slots.textTo!, callerNumber: undefined } } }));
-    expect(standInCallerNumber(hintOnly, '0142')).toBe('5555550142');
-    expect(standInCallerNumber(textingApp, '0142')).toBe('5555550142');
+    expect(standInCallerNumber(hintOnly, '0142')).toBe('+15555550142');
+    expect(standInCallerNumber(textingApp, '0142')).toBe('+15555550142');
     expect(standInCallerNumber(screenedApp, '0142')).toBeUndefined();
   });
 });
