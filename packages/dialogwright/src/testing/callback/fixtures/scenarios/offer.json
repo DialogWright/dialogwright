@@ -1,0 +1,85 @@
+[
+  {
+    "id": "offer-yes",
+    "callerNumber": "+15555550142",
+    "steps": [
+      { "say": "can someone call me back" },
+      { "say": "Jordan Avery" },
+      { "say": "yes, that's fine" },
+      { "say": "it's about an order" },
+      { "say": "yes, please" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "callback_booked",
+      "form": "request_callback",
+      "slots": { "caller": "jordan avery", "phone": "5555550142", "reason": "order" },
+      "text": "at 555 555 0142",
+      "gate": "requestCallback:ALLOW"
+    }
+  },
+  {
+    "id": "offer-no-then-said",
+    "callerNumber": "+15555550142",
+    "steps": [
+      { "say": "can someone call me back" },
+      { "say": "Jordan Avery" },
+      { "say": "no" },
+      { "say": "five five five five five five zero one nine nine" },
+      { "say": "it's about an order" },
+      { "say": "yes, please" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "callback_booked",
+      "form": "request_callback",
+      "slots": { "phone": "5555550199" },
+      "gate": "requestCallback:ALLOW"
+    }
+  },
+  {
+    "id": "offer-no-with-a-number",
+    "callerNumber": "+15555550142",
+    "steps": [
+      { "say": "can someone call me back" },
+      { "say": "Jordan Avery" },
+      { "say": "no, use my cell, five five five five five five zero one nine nine" },
+      { "say": "it's about an order" },
+      { "say": "yes, please" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "callback_booked",
+      "form": "request_callback",
+      "slots": { "phone": "5555550199" },
+      "gate": "requestCallback:ALLOW"
+    }
+  },
+  {
+    "id": "withheld-number-asks",
+    "callerNumber": "+7378742833",
+    "steps": [
+      { "say": "can someone call me back" },
+      { "say": "Jordan Avery" }
+    ],
+    "expect": { "decision": "prompt", "promptId": "ask_phone", "form": "request_callback" }
+  },
+  {
+    "id": "no-number-asks",
+    "steps": [
+      { "say": "can someone call me back" },
+      { "say": "Jordan Avery" }
+    ],
+    "expect": { "decision": "prompt", "promptId": "ask_phone", "form": "request_callback" }
+  },
+  {
+    "id": "chat-asks",
+    "as": "web",
+    "callerNumber": "+15555550142",
+    "steps": [
+      { "say": "can someone call me back" },
+      { "say": "Jordan Avery" }
+    ],
+    "expect": { "decision": "prompt", "promptId": "ask_phone", "form": "request_callback" }
+  }
+]

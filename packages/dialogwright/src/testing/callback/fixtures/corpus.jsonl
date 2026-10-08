@@ -1,0 +1,17 @@
+{"id":"cb-01","text":"can someone call me back","intent":"request_callback","context":"no_form"}
+{"id":"cb-02","text":"I'd like a callback please, it's Jordan Avery","intent":"request_callback","context":"no_form","slots":{"caller":"Jordan Avery"}}
+{"id":"nm-01","text":"Jordan Avery","intent":"none","context":"request_callback","prompted":"caller","slots":{"caller":"Jordan Avery"}}
+{"id":"of-01","text":"yes, that's fine","intent":"none","context":"request_callback","prompted":"phone","confirm":"yes"}
+{"id":"of-02","text":"no","intent":"none","context":"request_callback","prompted":"phone","confirm":"no"}
+{"id":"of-03","text":"no, use my cell, five five five five five five zero one nine nine","intent":"none","context":"request_callback","prompted":"phone","confirm":"no","slots":{"phone":{"span":"five five five five five five zero one nine nine","value":"5555550199"}}}
+{"id":"of-04","text":"my cell is five five five five five five zero one nine nine","intent":"none","context":"request_callback","prompted":"phone","confirm":"unanswered","slots":{"phone":{"span":"five five five five five five zero one nine nine","value":"5555550199"}}}
+{"id":"of-05","text":"hmm, which one","intent":"none","context":"request_callback","prompted":"phone","confirm":"unanswered"}
+{"id":"ph-01","text":"five five five five five five zero one nine nine","intent":"none","context":"request_callback","prompted":"phone","slots":{"phone":{"span":"five five five five five five zero one nine nine","value":"5555550199"}}}
+{"id":"rs-01","text":"it's about an order","intent":"none","context":"request_callback","prompted":"reason","slots":{"reason":"order"}}
+{"id":"sm-01","text":"yes, please","intent":"none","context":"confirm_request_callback","confirm":"yes"}
+{"id":"sm-02","text":"no, the number is wrong","intent":"none","context":"confirm_request_callback","confirm":"no","changeSlot":"phone"}
+{"id":"ag-01","text":"can I talk to a person","intent":"agent","context":"no_form"}
+{"id":"rp-01","text":"can you say that again","intent":"repeat_prompt","context":"no_form"}
+{"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}
+{"id":"no-01","text":"hello","intent":"none","context":"no_form"}
+{"id":"dn-01","text":"that's all, thanks","intent":"done","context":"anything_else"}

@@ -1,0 +1,132 @@
+# yaml-language-server: $schema=../../../schemas/prompts.schema.json
+# Every line a caller can hear, word for word. The agent says exactly these and never composes its
+# own. Braces are filled in by the engine ({intentLabel}) or by the code ({ref}); `interruptible`
+# says whether a caller may talk over it. `pnpm check` lists any line the engine needs that is
+# missing here.
+prompts:
+  # The opening lines and the engine's own lines
+  greeting:
+    text: Thanks for calling Example Callbacks. I can set up a callback. How can I help?
+    interruptible: true
+  greeting_chat:
+    text: Hi, this is Example Callbacks. I can set up a callback. What can I help with?
+    interruptible: true
+  ask_intent:
+    text: How can I help you today?
+    interruptible: true
+  nomatch_open:
+    text: Sorry, I didn't catch that. You can ask for a callback.
+    interruptible: true
+  nomatch_dtmf_menu:
+    text: Let's try the keypad. To ask for a callback press 1. To speak with someone press 0.
+    interruptible: true
+  no_input:
+    text: I didn't hear anything.
+    interruptible: false
+  ack_intent:
+    text: Sure, I can help you {intentLabel}.
+    interruptible: false
+  confirm_intent_explicit:
+    text: Just to check, do you want to {intentLabel}? Yes or no.
+    interruptible: false
+  disambiguate_intent:
+    text: Do you want to {a}, or {b}?
+    interruptible: true
+  ack_intent_then:
+    text: Sure, I can help you {a}, and then {b}.
+    interruptible: false
+  ack_queued:
+    text: Sure, we'll {intentLabel} after this.
+    interruptible: false
+  bridge_next:
+    text: Now, let's {intentLabel}.
+    interruptible: false
+  ack_frustration:
+    text: I understand, let's get this sorted.
+    interruptible: false
+  offer_transfer:
+    text: Would you like me to connect you to a person, or keep going?
+    interruptible: true
+  ack_declined:
+    text: Okay, let's keep going.
+    interruptible: false
+  system_slow_dtmf_hint:
+    text: Sorry for the delay. You can also use your keypad.
+    interruptible: true
+  system_slow_chat:
+    text: Sorry, I'm having trouble on my end. Please send that again.
+    interruptible: true
+  ask_change:
+    text: What should I change?
+    interruptible: true
+  confirm_dtmf:
+    text: Press 1 to confirm, or 2 to change something.
+    interruptible: false
+  anything_else:
+    text: Is there anything else I can help with?
+    interruptible: true
+  goodbye:
+    text: Goodbye.
+    interruptible: false
+  goodbye_chat:
+    text: Thanks for chatting with Example Callbacks. Goodbye.
+    interruptible: false
+  screen_reprompt:
+    text: I can help you set up a callback.
+    interruptible: true
+  screen_reprompt_form:
+    text: Let's keep going.
+    interruptible: true
+  handoff_live_agent:
+    text: One moment while I connect you to a person.
+    interruptible: false
+  handoff_frustrated:
+    text: Let me get you to someone who can help.
+    interruptible: false
+  handoff_max_attempts:
+    text: Let me get someone to help you with that.
+    interruptible: false
+  handoff_system_failure:
+    text: I'm having trouble right now. Let me connect you to someone.
+    interruptible: false
+  handoff_needs_human:
+    text: This one needs a person. Let me connect you to someone.
+    interruptible: false
+  handoff_security:
+    text: Let me connect you to someone who can help.
+    interruptible: false
+
+  # The slots: ask_<slot> and ask_<slot>_retry for each, plus whatever lines its type needs
+  ask_caller:
+    text: Who should we ask for when we call?
+    interruptible: true
+  ask_caller_retry:
+    text: Sorry, what name should we ask for?
+    interruptible: true
+  ask_phone:
+    text: What's the best number to reach you?
+    interruptible: true
+  ask_phone_retry:
+    text: Sorry, what's the ten-digit number we should call?
+    interruptible: true
+  ask_phone_dtmf:
+    text: Please key in the ten-digit number on your keypad.
+    interruptible: true
+  # The number the caller is calling from, offered for the phone slot (callerNumber in slots.yaml).
+  offer_phone:
+    text: Is the number you're calling from, ending in {last4}, the best one to reach you?
+    interruptible: true
+  ask_reason:
+    text: And what is the call about, an order, a bill, or something else?
+    interruptible: true
+  ask_reason_retry:
+    text: Sorry, is it about an order, a bill, or something else?
+    interruptible: true
+
+  # The form: the summary read back for a yes, and the line the form says when it completes
+  confirm_request_callback:
+    text: I have {caller}, at {phone}, about {reason}. Shall I set up the callback?
+    interruptible: true
+  callback_booked:
+    text: Done. We'll call {caller} back at {phone}. Your reference is {ref}.
+    interruptible: false

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { appTurnContext, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
 import { callTool, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
+import { atCallerOffer, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
 import { JevClientError, type JevClient } from '../jev/types';
 import { promptText } from '../prompts/render';
 import { prompt } from '../core/decision';
@@ -11,7 +11,8 @@ import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { formOf, identityOf } from '../core/app/lookup';
 import { delegateProblem, subjectProblem } from '../core/app/principals';
 import type { App, SlotId } from '../core/app/types';
-import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, type SessionEvent } from '../channel/events';
+import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCallerNumber, type SessionEvent } from '../channel/events';
+import { lastFour, usesCallerNumber } from '../core/callerNumber';
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
@@ -184,6 +185,20 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     session.frustratedTurns = 2;
     return session;
   }
+  if (atCallerOffer(entry, app)) {
+    // The number the caller is calling from has been offered for the prompted slot (SlotSpec.callerNumber),
+    // the app's placeholder for it as the number, and the slot is still empty: the entry answers the offer.
+    const slot = entry.prompted;
+    const placeholder = Object.hasOwn(seed.placeholders, slot) ? seed.placeholders[slot] : undefined;
+    if (!placeholder) throw new Error(`no placeholder value for slot "${slot}"`);
+    session.pendingConfirmation = { target: 'slot', slot, value: placeholder.value, display: placeholder.display, offered: true };
+    session.callerOffered = [slot];
+    session.promptedFor = slot;
+    session.lastPromptId = `offer_${slot}`;
+    session.lastPromptText = promptText(app, `offer_${slot}`, { last4: lastFour(placeholder.value) }, session.locale);
+    session.lastPromptOptions = ['yes', 'no'];
+    return session;
+  }
   const slot = identity ? entry.prompted! : stopAt ?? null;
   session.promptedFor = slot;
   session.lastPromptId = slot ? `ask_${slot}` : null;
@@ -307,6 +322,13 @@ export interface Scenario {
    * scenario starts in the app's default, as it always has.
    */
   locale?: string;
+  /**
+   * The number the call comes from, as a carrier sends it (e.g. "+15555550142"; a withheld one as
+   * the carrier writes it): the start event carries it (SessionStart.callerNumber) when the app has a
+   * slot that offers the caller's number (SlotSpec.callerNumber). Without it, and on a chat, the
+   * call has no number, as it always has.
+   */
+  callerNumber?: string;
   steps: ScenarioStep[];
   expect: ScenarioExpectation;
   /**
@@ -362,7 +384,9 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(opts)(), scenario.as);
   const turn = opts.turn ?? runTurn;
-  const setup = await turn(session, startEvent({}, scenario.locale), o);
+  // A call's number only: a chat has none (SessionStart.callerNumber).
+  const start = withCallerNumber(startEvent({}, scenario.locale), session.caps.speech && usesCallerNumber(appOf(session)) ? scenario.callerNumber : undefined);
+  const setup = await turn(session, start, o);
   runs.push(setup);
   stepOf.push(-1);
   session = setup.result.session;
@@ -432,6 +456,7 @@ function isValidScenario(s: unknown): s is Scenario {
     Array.isArray((s as Scenario).steps) &&
     typeof (s as Scenario).expect === 'object' && (s as Scenario).expect !== null &&
     ((s as Scenario).locale === undefined || (typeof (s as Scenario).locale === 'string' && (s as Scenario).locale !== '')) &&
+    ((s as Scenario).callerNumber === undefined || typeof (s as Scenario).callerNumber === 'string') &&
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null)
   );
 }
@@ -443,7 +468,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber that is not a string, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       seen.add(s.id);
       out.push(s);

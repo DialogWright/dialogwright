@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../../../schemas/forms.schema.json
+forms:
+  # The caller's name, the number to call, and what it is about; the summary reads the number back
+  # whole, however it was filled.
+  request_callback:
+    slots: [caller, phone, reason]
+    summaryPromptId: confirm_request_callback
+    hooks: [confirmedParams, complete]
+    calls: [requestCallback]

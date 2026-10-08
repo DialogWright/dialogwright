@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../../schemas/app.schema.json
+# Example Callbacks: a fictional line that sets up a callback, the engine's fixture for a slot that
+# offers the number the caller is calling from (a digits slot's callerNumber). A caller whose number
+# came with the call is asked whether it is the best one to reach them, rather than to say it.
+id: callback
+locale: en-US
+
+brand:
+  name: Example Callbacks
+  mark: CB
+
+console:
+  formLabels:
+    request_callback: Request a callback
+  slotLabels:
+    caller: Name
+    phone: Callback number
+    reason: About
+
+wording:
+  addressee: the Example Callbacks line
+
+fixtures:
+  dir: src/testing/callback/fixtures

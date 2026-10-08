@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# The one write: a callback set up, with exactly what the summary read back.
+actions:
+  requestCallback:
+    say: set up a callback
+    level: 0
+    rules:
+      - identity
+      - confirmed: [caller, phone, reason]
+
+audit:
+  caller: length
+  reason: keep

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { defaultAppId, getApp } from '../core/app/registry';
 import { identityOf } from '../core/app/lookup';
+import { callerNumberSlots } from '../core/callerNumber';
 import type { App, CorpusSlotLabels, FormId, Intent, SlotId } from '../core/app/types';
 import { ENGINE_QUESTION_IDS } from '../core/questions';
 
@@ -102,7 +103,10 @@ export interface CorpusEntry {
   tentative?: boolean;
   /** in-form only: the utterance adds a task or replaces the current one; absent means answering */
   change?: 'adding' | 'replacing';
-  /** confirm_ and offer_transfer contexts only: how the utterance answers the question */
+  /**
+   * confirm_ and offer_transfer contexts only, and the offer of the caller's number (a form context
+   * whose `prompted` slot offers it, atCallerOffer): how the utterance answers the question
+   */
   confirm?: 'yes' | 'no' | 'unanswered';
   /**
    * confirm_ contexts only: the detail the caller names when asked what to change, without its new
@@ -166,6 +170,16 @@ export function contextForm(context: CorpusContext, app: App = corpusApp()): For
 }
 
 /** true for an identity factor named as the prompt: the entry seeds a step-up rather than a verified caller */
+/**
+ * The offer of the number the caller is calling from (SlotSpec.callerNumber): an entry in a form's
+ * context whose `prompted` slot offers it and that says how it answers (`confirm`). Its state is the
+ * offer made, `offer_<slot>` just asked, the slot still empty.
+ */
+export function atCallerOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: CorpusContext } {
+  return entry.confirm !== undefined && entry.prompted !== undefined && contextForm(entry.context, app) !== null && confirmForm(entry.context, app) === null
+    && !offerTransfer(entry.context) && callerNumberSlots(app).includes(entry.prompted);
+}
+
 export function promptsIdentity(entry: Pick<CorpusEntry, 'prompted'>, app: App = corpusApp()): entry is { prompted: IdentityPrompt } {
   return entry.prompted !== undefined && identityOf(app).factorSlots.includes(entry.prompted);
 }
@@ -295,7 +309,7 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     }
     if (entry.confirm !== undefined) {
       if (!['yes', 'no', 'unanswered'].includes(entry.confirm)) throw new Error(`corpus ${entry.id}: confirm must be yes, no, or unanswered`);
-      if (cf === null && !offering) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context`);
+      if (cf === null && !offering && !atCallerOffer(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber)`);
     }
     if (entry.changeSlot !== undefined) {
       if (cf === null) throw new Error(`corpus ${entry.id}: changeSlot needs a confirm_ context`);

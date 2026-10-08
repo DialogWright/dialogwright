@@ -72,9 +72,10 @@ export function maskNumber(n: string | undefined | null): string {
  * Caller identity travels under a handful of names that Twilio spells differently per surface --
  * `from`/`to` on the setup frame, `From`/`To`/`Caller`/`Called` on the `/cr-action` form post --
  * and the dashboard route is unauthenticated, so redaction works by key name on any object rather
- * than by frame type. These are matched case-insensitively.
+ * than by frame type. These are matched case-insensitively. `callerNumber` is a session start's
+ * (SessionStart.callerNumber), for an app with a slot that offers the caller's number.
  */
-const MASK_KEYS = new Set(['from', 'to', 'caller', 'called', 'forwardedfrom']);
+const MASK_KEYS = new Set(['from', 'to', 'caller', 'called', 'forwardedfrom', 'callernumber']);
 /** Masked to a fixed string rather than to digits: a name has nothing worth keeping. */
 const NAME_KEYS = new Set(['callername']);
 /** Dropped outright; the account id identifies the Twilio account, not the call. */
