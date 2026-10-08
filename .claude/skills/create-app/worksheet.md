@@ -29,7 +29,8 @@ Does a form take a callback number? <no, or the slot: on a phone call, the line 
 
 Offer to text them? <no, or the slot and what the text is: an offer the caller may decline (`onNo: skip`, `ifNone: skip`), a landline refused in code (`callerOffer`), and the send held by the `callerNumber` rule ([patterns.md](patterns.md#texting-the-caller-onno-ifnone-and-the-callernumber-rule))>
 
-Look the caller up by number? What may the line say before they verify? <no, or the lookup (app.yaml's `callerNumber.lookup`), what it returns, and why each part of it is safe to say to someone who has proven nothing ([patterns.md](patterns.md#looking-the-caller-up-by-number)); never to verify>
+Look the caller up by number? What may the line say before they verify? <no, or the lookup (app.yaml's `callerNumber.lookup`), what it returns, and why each part of it is safe to say to someone who has proven nothing ([patterns.md](patterns.md#looking-the-caller-up-by-number)); never to verify on its own>
+Verify by caller ID? <no, or which factor the match stands in for (the account number) and which the caller still gives (the date of birth), asked on need or at the greeting, and what a shared number does ([patterns.md](patterns.md#verified-by-caller-id-callerid)); asked before the account number, in its place>
 
 Propose a value from what the lookup found? <no, or the slot (`offer: facts`) and its line ("Is this about {place}?"), saying as little as works ([patterns.md](patterns.md#looking-the-caller-up-by-number))>
 

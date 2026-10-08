@@ -86,6 +86,52 @@ entry: (s) => ({ tool: 'findAccount', params: { accountId: accountIdOf(s) }, pur
 
 Set `testing.seed.caller` to a level 2 principal: corpus lines spoken inside a form are seeded with that caller, and a level 1 caller in a level 2 form hears `ask_otp` on every one of them.
 
+## Verified by caller ID: `callerId`
+
+"If they call from the number on file, ask only for their date of birth": a caller-ID match stands in for the account number, and the date of birth verifies it. Use it when most callers call from the number on the account and the paragraph asks for the usual "I see an account associated with the number you're calling from" opening; leave it out when one number often serves several accounts and the line cannot tell them apart, or when the paragraph says every caller gives the account number. It is asked before the account number, in its place, never after it.
+
+```yaml
+# identity.yaml
+levels:
+  1:
+    name: verified
+    factors: [accountId, dob]
+    verify: verifyCustomer
+    failedPrompt: identity_failed
+    callerId:
+      identifies: [accountId]   # taken from the match, never asked while it stands
+      ask: on-need              # or greeting: right after the greeting, before the open question
+```
+
+```yaml
+# app.yaml: the lookup that finds the match
+callerNumber: { use: hint, lookup: findAccountByPhone }
+```
+
+```yaml
+# prompts.yaml (every locale)
+identity_caller_match:
+  text: I see an account associated with the number you're calling from. To access it, please tell me your date of birth, or say different account.
+  interruptible: true
+identity_caller_declined:        # optional: said before the account number after "different account"
+  text: Okay, let's find your account.
+  interruptible: false
+```
+
+```ts
+// src/app.ts, code.facts
+fromCallerLookup(f, value) { /* keep the account ids the lookup returned for the number */ },
+// One account on the number: the match. None, or a number two accounts share: null, and both factors are asked.
+callerMatch: (f) => (f.phoneAccounts?.length === 1 ? { accountId: f.phoneAccounts[0] } : null),
+```
+
+- **Never the match alone.** `identifies` leaves at least one factor to ask (`pnpm check` refuses it covering every factor). The verify tool gets the matched account number and the date of birth said, as if the caller had said both; the gate and the attempts are unchanged, and it reaches level 1, so a level 2 action still sends the code.
+- **"Different account", a no, or a wrong date** asks the account number and the date of birth, as on any call, and the match is not used again on the call. A wrong date counts one try.
+- **Nothing of the account is said.** The line names no account number, name or street, and the engine never puts the match in a line or a variable. The lookup's tool returns the account ids for the number; keep it to that.
+- **Read the account from the principal**, not the slot (`accountIdOf` above), and the code's `sendCodeParams` too: the principal is the verified one, however it was verified. `after.principal.via` is `caller-id` when the match took part: write it in the verify tool's audit row.
+- **`ask: greeting`** opens the call on `greeting_offer` and `identity_caller_match` (write both greeting lines, `greeting_offer` and `greet_after_offer`); a request said instead goes on, and the question comes back when identity is needed. It wins over a slot's `offerAt: greeting`, which is then proposed at its slot.
+- Scripted calls: a matched number with the right date, with "different account", with a wrong date; a number not on file; a withheld number; a shared number. Corpus lines at the question: a form's context (or `no_form` with `ask: greeting`), `prompted: dob`, with `confirm: no` for "different account" and "no, that's not me", and `confirm: unanswered` for a date (labelled) and words that answer neither; set `testing.seed.callerNumber` to a number the lookup matches. The engine's fixture is `packages/dialogwright/src/testing/recognized` ([authoring guide](../../../docs/authoring-an-app.md#a-caller-id-match-as-the-identifier-callerid)).
+
 ## Phone and chat
 
 The same app answers a phone line and a web chat, and they verify differently:
@@ -681,7 +727,7 @@ confirm_request_callback:
 
 - When the form reaches `phone` on a call whose number fits the slot, the line says `offer_phone` in place of `ask_phone`. A yes fills the slot; a no asks `ask_phone` with no attempt counted; "no, use my cell, 555 555 0199" fills the number said. A chat, or a withheld number, is asked `ask_phone` as always.
 - **Give the form a summary that reads `{phone}` back.** The offer says only the last four, so the summary is where the caller hears the whole number; `pnpm check` warns when a form with the slot has none.
-- **Never use the number to verify anyone.** A caller ID can be forged. `pnpm check` refuses `callerNumber` on an identity factor; the number is never used to verify, though a gated lookup may propose ([Looking the caller up by number](#looking-the-caller-up-by-number)). Here it is a callback number the caller said yes to, nothing more.
+- **Never use the number to verify anyone on its own.** A caller ID can be forged. `pnpm check` refuses `callerNumber` on an identity factor; a gated lookup may propose ([Looking the caller up by number](#looking-the-caller-up-by-number)), and a match may stand in for the account number that a date of birth verifies ([Verified by caller ID](#verified-by-caller-id-callerid)). Here it is a callback number the caller said yes to, nothing more.
 - The number is masked as the slot is (`redact: last4`, the default), so the tool param named `phone` is recorded by its last four and needs no `audit` line.
 - A scripted call from a number: `"callerNumber": "+15555550142"` beside `steps` (a withheld one as `"+7378742833"`, Twilio's RESTRICTED); add one with a yes, one with a no and a number said, one withheld, and the chat. A corpus line at the offer: `{"id":"of-01","text":"yes, that's fine","intent":"none","context":"request_callback","prompted":"phone","confirm":"yes"}`.
 
@@ -763,7 +809,7 @@ audit:
 
 - The tool lists one param, `callerNumber`, and returns the least that works (a line type, an address to propose), never a balance, a claim or a name: whatever it returns may be said to someone who has proven nothing, since a caller ID can be forged. Its result goes to the facts through `facts.fromCallerLookup` in the app's code; a refusal is silent.
 - App code reads the numbers with `callerOf(s)` and `calledOf(s)` (`called: true` keeps the number called). Both are null on a chat and with no number.
-- **Never to verify; a gated lookup may propose.** A match changes neither who the caller is nor their level. A factor slot never takes the number, and a form that needs identity still asks for the factors.
+- **Never to verify on its own; a gated lookup may propose.** A match changes neither who the caller is nor their level. A factor slot never takes the number, and a form that needs identity still asks for the factors, unless identity.yaml lets the match stand in for the account number, verified by the date of birth ([Verified by caller ID](#verified-by-caller-id-callerid)).
 
 **Proposing what the lookup found.** "If we know their address, ask whether it's that one": the slot proposes it as a yes or no, at the slot, inside the form (or at the greeting, with `offerAt: greeting`, below).
 
