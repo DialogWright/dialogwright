@@ -942,8 +942,8 @@ function makeOffer(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision 
  * A value the app's facts propose for the slot (a slot's `offer: facts`, FactsConfig.offers; e.g. the
  * street the call-start lookup found), offered as a yes or no in place of the slot's question: once
  * per slot per form, on a slot not yet asked and not proposed at the greeting, when the facts have a
- * candidate for it. The line says
- * the candidate's display and nothing more, and the model is told only that (core/state.ts). Null
+ * candidate for it. The line says the candidate's display and nothing more, and the model is told
+ * only that (core/state.ts). Null
  * when there is none, and the slot is asked as always. The slot stays empty until the yes, and the
  * yes fills it alone: who the caller is, their level and their attempts are not touched.
  */

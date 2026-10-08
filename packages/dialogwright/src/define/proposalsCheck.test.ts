@@ -11,9 +11,11 @@ import { PROPOSALS_DIR, proposalsCode } from '../testing/proposals/app';
 import { GREETING, GREETING_LINES } from '../testing/proposals/variant';
 
 /**
- * What `check` says of a slot that proposes a value from the facts (`offer: facts`): it needs
- * app.yaml's callerNumber with a lookup and the code's facts.offers, an `offer_<slot>` line that
- * says `{<slot>}` and nothing else, and it is never an identity factor nor beside callerNumber.
+ * What `check` says of a slot that proposes a value from the facts (`offer: facts`): it needs the
+ * code's facts.offers (not a call-start lookup: the facts may be loaded later), an `offer_<slot>` line
+ * that says `{<slot>}` and nothing else, and it is never an identity factor nor beside callerNumber.
+ * Where it proposes (`offerAt`): `greeting` needs `greeting_offer` and `greet_after_offer`, and
+ * `offerAt` needs `offer: facts`.
  */
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');

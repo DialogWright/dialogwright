@@ -1765,7 +1765,7 @@ A library type's own tests (the conformance kit and its unit tests) cover its pa
 
 The clinic's reschedule form has six: `[onSummaryRead, onAnswers, onSummaryAnswer, keepsSlot, confirmedParams, complete]`. The library's check_hold has one. Start with `complete` and add a hook only when the form needs it.
 
-Where they run in a turn: the turn fills slots (speech, the keypad, a correction at the summary), then the form loop asks a disambiguation or a slot read-back if one is due, makes the `entry` call if the form has not passed it, runs the form's `checks` ([forms.yaml, Checks](#checks-ending-a-form-part-way)), and asks the next slot or reads the summary. A yes at the summary runs the checks once more, then `complete`. A form that rules a caller out on an answer needs no hook for it: write a check, not a `complete` that turns the caller away after the rest was asked, and never write `s.queued` from a hook to chain a second form.
+Where they run in a turn: the turn fills slots (speech, the keypad, a correction at the summary), then the form loop asks a disambiguation or a slot read-back if one is due, makes the `entry` call if the form has not passed it, runs the form's `checks` ([forms.yaml, Checks](#checks-ending-a-form-part-way)), and asks the next slot or reads the summary. A `STEP_UP` from the entry call or from a check asks for identity first, and the loop comes back to the same place once the caller is verified. A yes at the summary runs the checks once more, then `complete`. A form that rules a caller out on an answer needs no hook for it: write a check, not a `complete` that turns the caller away after the rest was asked, and never write `s.queued` from a hook to chain a second form.
 
 ## 7. Checking an app: `pnpm check`
 
