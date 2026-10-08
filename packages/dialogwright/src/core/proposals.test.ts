@@ -233,6 +233,22 @@ describe('no proposal', () => {
     expect(promptOf(last(await call({ callerNumber: ON_FILE }, ...says(REPORT))))).toBe('ask_place');
   });
 
+  it('when the app\'s offers throws: the slot is asked as always, the turn goes on, and nothing of the error is kept', async () => {
+    const facts = proposalsApp.facts!;
+    const secret = 'a message holding 22 Alder Street';
+    use(variant('proposals-throws', () => ({ facts: { ...facts, offers: () => { throw new Error(secret); } } })));
+    const r = await call({ callerNumber: ON_FILE }, ...says(REPORT, "It's 14 Birch Lane"));
+    expect(prompts(r)).toEqual(['greeting', 'ask_place', 'ask_problem']);
+    expect(last(r).session.slots.place!.value).toBe('14 Birch Lane');
+    expect(offers(r)).toEqual([]);
+    expect(JSON.stringify(r.runs.map((x) => x.record))).not.toContain(secret);
+    // An answer that is no map of candidates proposes nothing either.
+    for (const odd of [null, 'place', { place: 'ok' }]) {
+      use(variant('proposals-odd', () => ({ facts: { ...facts, offers: () => odd as never } })));
+      expect(promptOf(last(await call({ callerNumber: ON_FILE }, ...says(REPORT)))), JSON.stringify(odd)).toBe('ask_place');
+    }
+  });
+
   it('never on an identity factor, even when the app\'s facts name one', () => {
     const spec = proposalsApp.slots.accountId!;
     const app = variant('proposals-factor', (a) => ({

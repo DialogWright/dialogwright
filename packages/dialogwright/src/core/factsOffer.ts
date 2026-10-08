@@ -23,13 +23,21 @@ export function factsOfferSlots(app: App): SlotId[] {
 /**
  * The facts' candidate for the slot (FactsConfig.offers), or null when the slot proposes none, the
  * app has no `offers`, or the candidate is not one to say: no candidate, or one whose value or
- * display is not a string with something in it.
+ * display is not a string with something in it. A hook that throws proposes nothing, and the slot is
+ * asked as always: a proposal is a convenience, never a reason to lose the turn. Nothing of the error
+ * is kept or logged, since its message may hold what the facts hold.
  */
 export function factsCandidate(app: App, slot: SlotId, facts: Readonly<SessionFacts>): SlotCandidate | null {
   const offers = app.facts?.offers;
   if (offers === undefined || !factsOfferSlots(app).includes(slot)) return null;
-  const c = offers(facts)[slot];
-  if (c === undefined || c === null) return null;
+  let proposed: ReturnType<typeof offers> | null | undefined;
+  try {
+    proposed = offers(facts);
+  } catch {
+    return null;
+  }
+  const c = proposed !== null && typeof proposed === 'object' && Object.hasOwn(proposed, slot) ? proposed[slot] : undefined;
+  if (c === undefined || c === null || typeof c !== 'object') return null;
   if (typeof c.value !== 'string' || typeof c.display !== 'string' || c.value.trim() === '' || c.display.trim() === '') return null;
   return { value: c.value, display: c.display };
 }

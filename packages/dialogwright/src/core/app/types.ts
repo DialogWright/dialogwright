@@ -592,8 +592,8 @@ export interface FactsConfig {
    * only when such a slot is about to be asked; a slot with no candidate (none returned, or one
    * with an empty value or display) is asked as always. What the display says is said to a caller
    * who has proven nothing when the facts came from the call-start lookup: propose the least that
-   * works (a street, never a balance or a name). A yes fills the slot and nothing else. Without it,
-   * no slot is offered a value.
+   * works (a street, never a balance or a name). A yes fills the slot and nothing else. One that
+   * throws proposes nothing, and the slot is asked as always. Without it, no slot is offered a value.
    */
   offers?(f: Readonly<SessionFacts>): Readonly<Partial<Record<SlotId, SlotCandidate>>>;
 }
@@ -1009,7 +1009,8 @@ export interface App {
    * the call has a number that fits it), once per slot per form. False makes no offer, and the slot
    * goes on as for a call with no number (its `ifNone`: asked, or left empty). It may read the facts,
    * or call a gated tool (a line-type lookup, say) through ctx.callTool and keep the answer in the
-   * facts. Without it, every offer is made.
+   * facts. One that throws makes no offer, as false does: what it wrote to the facts is put back and
+   * the side effects it queued are dropped. Without it, every offer is made.
    */
   callerOffer?(ctx: AppContext, slot: SlotId): boolean;
   /**

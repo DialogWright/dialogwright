@@ -923,8 +923,7 @@ function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): D
   if (c !== null) {
     // Asked once per slot per form, whatever it says: the slot is not offered again.
     s.callerOffered = [...(s.callerOffered ?? []), slot];
-    const offers = io.app.callerOffer;
-    if (offers !== undefined && offers(appContext(s, io.tc, io.out), slot) !== true) c = null;
+    if (!callerOfferAllowed(s, slot, io)) c = null;
   }
   if (c === null) {
     if (!skipsIfNone(io.app, slot)) return null;
@@ -934,6 +933,29 @@ function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): D
   const pc: Extract<PendingConfirmation, { target: 'slot' }> = { target: 'slot', slot, value: c.value, display: c.display, offered: true };
   s.pendingConfirmation = pc;
   return offerPrompt(pc, acks);
+}
+
+/**
+ * Whether the app lets the caller's number be offered for `slot` (App.callerOffer); true without the
+ * hook. A hook that throws makes no offer, and the slot goes on as for a call with no number (its
+ * `ifNone`): an offer is a convenience, never a reason to lose the turn. What the hook wrote to the
+ * facts is put back and the side effects queued since it began are dropped, as for a tool that throws
+ * (lifecycle.ts callTool `failSoft`); the gate's records of the calls it made stay, since those calls
+ * were made. Nothing of the error is kept or logged, since its message may hold the number.
+ */
+function callerOfferAllowed(s: Session, slot: SlotId, io: TurnIO): boolean {
+  const hook = io.app.callerOffer;
+  if (hook === undefined) return true;
+  const effectsBefore = io.out.effects.length;
+  let before: Session['facts'] | undefined;
+  try {
+    before = io.app.facts?.clone(s.facts);
+    return hook(appContext(s, io.tc, io.out), slot) === true;
+  } catch {
+    if (before !== undefined) s.facts = before;
+    io.out.effects.length = effectsBefore;
+    return false;
+  }
 }
 
 /**

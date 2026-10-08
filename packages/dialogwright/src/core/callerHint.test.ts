@@ -353,6 +353,32 @@ describe('the text offer', () => {
     expect(lineType.decision.call.params).toEqual({ callerNumber: '...0144' });
   });
 
+  it('a hook that throws makes no offer, as a refusal does, and the turn goes on: the facts it wrote are put back', async () => {
+    const secret = 'a message holding +15555550144';
+    const throwing = (id: string, options: { onNo?: 'skip'; ifNone?: 'skip' }): App => {
+      const base = withOffer(id, options);
+      return { ...base, callerOffer: (ctx) => {
+        (ctx.s.facts as TextingFacts).lineType = 'mobile';
+        ctx.callTool({ tool: 'lineType', params: { callerNumber: callerOf(ctx.s)!.number } });
+        throw new Error(secret);
+      } } as App;
+    };
+    // ifNone: skip, the fixture's: the slot is left empty, as for a landline.
+    use(throwing('texting-hook-throws-skip', { onNo: 'skip', ifNone: 'skip' }));
+    const r = await call({ callerNumber: LOOKED_UP_MOBILE }, ...says(...OPENER));
+    const t = last(r);
+    expect(r.runs.map((x) => promptOf(x.result))).not.toContain('offer_textTo');
+    expect(t.session.slots.textTo).toMatchObject({ value: null, declined: true });
+    expect(promptOf(t)).toBe('confirm_open_request');
+    expect((t.session.facts as TextingFacts).lineType).toBeUndefined();
+    // The lookup the hook made before it threw was made: its gate record stays.
+    expect(gates(r)).toEqual(['findCallerByPhone:ALLOW', 'lineType:ALLOW']);
+    expect(JSON.stringify(r.runs.map((x) => x.record))).not.toContain(secret);
+    // ifNone ask: the slot is asked its own question.
+    use(throwing('texting-hook-throws-ask', { onNo: 'skip' }));
+    expect(promptOf(last(await call({ callerNumber: LOOKED_UP_MOBILE }, ...says(...OPENER))))).toBe('ask_textTo');
+  });
+
   it('a hook that refuses with ifNone ask leaves the slot to be asked', async () => {
     use(withOffer('texting-landline-ask', { onNo: 'skip' }));
     const t = last(await call({ callerNumber: LANDLINE }, ...says(...OPENER)));
