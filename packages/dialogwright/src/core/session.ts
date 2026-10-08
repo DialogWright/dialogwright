@@ -426,6 +426,8 @@ export function setForm(session: Session, form: FormId): Session {
   session.menuActive = false;
   // A step-up belongs to the entry call of the form it was raised for; the new form asks the gate afresh.
   session.stepUp = null;
+  // So does a caller-ID match it was using: unused again, it is read afresh when identity is next needed.
+  if (session.callerMatch === 'offered') delete session.callerMatch;
   session.codeReasks = 0;
   session.pendingHash = null;
   // The checks a form passed are its own: the new form runs its checks afresh.
@@ -463,6 +465,7 @@ export function closeForm(session: Session): Session {
   session.form = null;
   session.entered = null;
   session.stepUp = null;
+  if (session.callerMatch === 'offered') delete session.callerMatch;
   session.codeReasks = 0;
   session.pendingHash = null;
   session.confirmedHash = null;

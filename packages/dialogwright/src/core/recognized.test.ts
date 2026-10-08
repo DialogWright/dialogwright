@@ -1,6 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { join } from 'node:path';
-import { loadScenarios, runCorpusEntry, runScenario, type Scenario, type ScenarioRun } from '../harness-text/runner';
+import { loadScenarios, runCorpusEntry, runScenario, saidEvent, type Scenario, type ScenarioRun } from '../harness-text/runner';
+import { runTurn } from '../run/turn';
+import { callerMatchOf } from './lifecycle';
 import { loadCorpus, parseCorpus } from '../jev/corpus';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
@@ -134,6 +136,28 @@ describe('the caller-ID question: the worked example', () => {
     expect(types.indexOf('identity')).toBeLessThan(types.indexOf('identity_caller_match'));
   });
 
+  it('records the number calling by its last four unless policy.yaml\'s audit: says otherwise', async () => {
+    const variants = recognizedVariants();
+    try {
+      for (const [how, shown] of [['keep', { callerNumber: '+15555550142' }], ['secret', {}], ['last4', { callerNumber: '...0142' }]] as const) {
+        use(variants.variant({ 'app.yaml': replace('id: recognized', `id: recognized-${how}`), 'policy.yaml': replace('  callerNumber: last4\n', `  callerNumber: ${how}\n`) }));
+        expect(rows(await call({ callerNumber: AVERY }, ...says(STATUS)), 'identity_caller_match'), how).toEqual([{ outcome: 'offered', ...shown }]);
+      }
+      // A policy that says nothing of it is refused (validateApp, check: the lookup's param must be
+      // declared), so the row's default, its last four, is never reached by a valid app.
+    } finally {
+      variants.remove();
+    }
+  });
+
+  it('writes each row where it happened among the turn\'s gate rows', async () => {
+    const order = (r: ScenarioRun) => last(r).audit.map((d) => (d.type === 'gate' ? `gate:${d.detail.tool}${d.detail.purpose === 'retry-check' ? ':retry' : ''}` : d.type === 'identity_caller_match' ? `match:${d.detail.outcome}` : d.type)).filter((x) => x.startsWith('gate') || x.startsWith('match') || x === 'identity');
+    expect(order(await call({ callerNumber: AVERY }, ...says(STATUS)))).toEqual(['gate:findAccount', 'match:offered']);
+    expect(order(await call({ callerNumber: AVERY }, ...says(STATUS, AVERY_DOB)))).toEqual(['gate:verifyCustomer', 'identity', 'match:verified', 'gate:findAccount', 'gate:readStatus']);
+    expect(order(await call({ callerNumber: AVERY }, ...says(STATUS, 'different account')))).toEqual(['match:declined']);
+    expect(order(await call({ callerNumber: AVERY }, ...says(STATUS, WRONG_DOB)))).toEqual(['gate:verifyCustomer', 'identity', 'match:failed']);
+  });
+
   it('a date given on the way in verifies with the match, with no question asked', async () => {
     const r = await call({ callerNumber: AVERY }, ...says('I want to check on my request, my birthday is April twelfth nineteen eighty'));
     expect(last(r).session.principal).toMatchObject({ level: 1, id: '55501234', via: 'caller-id' });
@@ -222,6 +246,24 @@ describe('no match: the normal ladder', () => {
       expect(last(r).session.callerMatch, JSON.stringify(o)).toBeUndefined();
       expect(rows(r, 'identity_caller_match'), JSON.stringify(o)).toEqual([]);
     }
+    // A chat has no number, so no match: a chat caller whose request needs identity in an app with no
+    // sign-in goes to a person, as on any chat.
+    const chat = await call({ as: 'web', callerNumber: AVERY }, ...says(STATUS));
+    expect(last(chat).session.callerNumber).toBeUndefined();
+    expect(last(chat).session.callerMatch).toBeUndefined();
+    expect(last(chat).decision).toMatchObject({ kind: 'handoff', reason: 'needs-human' });
+    expect(rows(chat, 'identity_caller_match')).toEqual([]);
+  });
+
+  it('a caller already verified, or a party who acts for subjects, has no match to use', async () => {
+    const r = await call({ callerNumber: AVERY }, ...says(STATUS));
+    const s = last(r).session;
+    expect(callerMatchOf(s)).toEqual({ accountId: '55501234' });
+    expect(callerMatchOf({ ...s, principal: { kind: 'customer', level: 1, id: '55501234', first: 'Avery' } })).toBeNull();
+    expect(callerMatchOf({ ...s, principal: { kind: 'agent', level: 1, id: 'A-1', first: 'Quinn', role: 'viewer' } })).toBeNull();
+    // Nor is the question asked of one.
+    const delegate = { ...s, principal: { kind: 'agent', level: 1, id: 'A-1', first: 'Quinn' } as const };
+    expect(Object.keys(buildQuestions(delegate, slotContext(delegate, '', appTurnContext(recognizedApp, { nowMs: 0, todayIso: TODAY, thresholds: { ...DEFAULT_THRESHOLDS }, tools: { ...recognizedApp.systems(), codes: mockCodeVerifier } }))))).not.toContain('callerMatchDeclined');
   });
 
   it('a hook that throws, or a match that is not a string, is no match', async () => {
@@ -242,14 +284,22 @@ describe('no match: the normal ladder', () => {
 });
 
 describe('the model request', () => {
-  it('asks whether the caller turned the match down only at the question, and never asks for the account number there', async () => {
+  it('asks whether the caller turned the match down only while it stands, with the account number\'s questions beside it', async () => {
     const asked: JevRequest[] = [];
     await call({ callerNumber: AVERY, asked }, ...says(STATUS, AVERY_DOB));
     const [opening, answer] = asked;
     expect(Object.keys(opening!.questions)).not.toContain('callerMatchDeclined');
     expect(Object.keys(answer!.questions)).toContain('callerMatchDeclined');
-    expect(Object.keys(answer!.questions).some((id) => id.startsWith('accountId'))).toBe(false);
+    // Asked so "different account, it's ..." keeps the number; heard only when the turn declined the match.
+    expect(Object.keys(answer!.questions).some((id) => id.startsWith('accountId'))).toBe(true);
     expect(Object.keys(answer!.questions).some((id) => id.startsWith('dob'))).toBe(true);
+  });
+
+  it('an app question that takes its id is refused, naming it', () => {
+    const app = { ...recognizedApp, id: 'recognized-clash', questions: () => ({ callerMatchDeclined: { type: 'noul' as const, instructions: 'Read asr.text.' } }) } as App;
+    use(app);
+    const s = newSession('q', 0, VOICE_RELAY, undefined, app.id);
+    expect(() => buildQuestions(s, slotContext(s, '', appTurnContext(app, { nowMs: 0, todayIso: TODAY, thresholds: { ...DEFAULT_THRESHOLDS }, tools: { ...app.systems(), codes: mockCodeVerifier } })))).toThrow('app "recognized-clash": its question "callerMatchDeclined" is one the engine or a slot asks');
   });
 
   it('after "different account", every factor listens again and the question is not asked', async () => {
@@ -277,6 +327,55 @@ describe('the model request', () => {
       expect(app.identity?.callerId, app.id).toBeUndefined();
       expect(app.facts?.callerMatch, app.id).toBeUndefined();
     }
+  });
+});
+
+describe('a match that goes away', () => {
+  it('a step-up left for another form sets the match aside, and a later one with no match hears the account number', async () => {
+    // The app clears what the lookup kept when a form closes, so the match is gone by the second step-up.
+    const facts = { ...recognizedCode.facts!, onFormClosed: (f: object) => { delete (f as { phoneAccounts?: string[] }).phoneAccounts; } };
+    use({ ...recognizedApp, id: 'recognized-clears', facts } as App);
+    const r = await call({ callerNumber: AVERY }, ...says(STATUS, 'actually I just want to report a problem', 'nothing is working at all', 'yes, file it', 'and can you check on my request', MORGAN_ID, MORGAN_DOB));
+    expect(prompts(r)).toEqual(['greeting', 'identity_caller_match', 'ask_problem', 'confirm_report_problem', 'anything_else', 'ask_accountId', 'ask_dob', 'anything_else']);
+    expect(r.runs[2]!.result.session.callerMatch).toBeUndefined();
+    expect(last(r).session.principal).toEqual({ kind: 'customer', level: 1, id: '55505678', first: 'Morgan' });
+  });
+
+  it('a hook whose answer changes between calls: the account number listens, and the caller is verified by what they said', async () => {
+    let calls = 0;
+    const facts = { ...recognizedCode.facts!, callerMatch: () => (++calls === 1 ? { accountId: '55501234' } : null) };
+    use({ ...recognizedApp, id: 'recognized-fickle', facts } as App);
+    const r = await call({ callerNumber: AVERY }, ...says(STATUS, MORGAN_DOB, MORGAN_ID));
+    expect(prompts(r)).toEqual(['greeting', 'identity_caller_match', 'ask_accountId', 'anything_else']);
+    expect(r.runs[2]!.result.session.callerMatch).toBeUndefined();
+    expect(last(r).session.principal).toEqual({ kind: 'customer', level: 1, id: '55505678', first: 'Morgan' });
+  });
+});
+
+describe('"different account" with the number in the same breath', () => {
+  it('keeps the number said, and asks the date of birth', async () => {
+    const r = await call({ callerNumber: AVERY }, ...says(STATUS, "different account, it's five five five zero five six seven eight", MORGAN_DOB));
+    expect(prompts(r)).toEqual(['greeting', 'identity_caller_match', 'ask_dob', 'anything_else']);
+    expect(r.runs[2]!.result.session.slots.accountId).toMatchObject({ value: '55505678' });
+    expect(last(r).session.principal).toMatchObject({ id: '55505678' });
+  });
+
+  it('a date that answers the question leaves the account number to the match, whatever the model heard for it', async () => {
+    const r = await call({ callerNumber: AVERY }, ...says(STATUS, "no wait, it's April twelfth nineteen eighty"));
+    expect(last(r).session.principal).toMatchObject({ id: '55501234', via: 'caller-id' });
+  });
+});
+
+describe('attempts and handoffs with the match in use', () => {
+  it('attempts already spent: a person takes the call, and the handoff carries no identifier the caller never said', async () => {
+    const opts = { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools: { ...recognizedApp.systems(), codes: mockCodeVerifier } };
+    const asked = last(await call({ callerNumber: AVERY }, ...says(STATUS)));
+    const s = { ...asked.session, identityAttempts: { factors: 3, code: 0 } };
+    const t = (await runTurn(s, saidEvent(s, AVERY_DOB), opts)).result;
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'identity' });
+    expect(t.session.principal).toEqual({ kind: 'anonymous', level: 0 });
+    expect(t.decision.kind === 'handoff' && t.decision.slots).toEqual({ dob: 'April 12th, 1980' });
+    expect(JSON.stringify(t.actions)).not.toContain('1234');
   });
 });
 
@@ -427,7 +526,7 @@ describe('level 2 still needs the code', () => {
     const r = await call({ callerNumber: AVERY }, ...says(STATUS, AVERY_DOB));
     const t = last(r);
     expect(promptOf(t)).toBe('ask_otp');
-    expect(heard(t, withCode)).toMatch(/^Thank you, Avery\. You're verified\. I've texted a six-digit code to the phone ending in/);
+    expect(heard(t, withCode)).toBe("Thank you, Avery. You're verified. I've texted a six-digit code to the phone ending in 0142. Please key it in.");
     expect(t.session.principal).toMatchObject({ level: 1, via: 'caller-id' });
     expect(r.runs.flatMap((x) => x.result.gateEvents.map((e) => `${e.decision.call.tool}:${e.decision.verdict}`))).toContain('sendCode:ALLOW');
   });
@@ -450,6 +549,13 @@ describe('the fixture\'s corpus at the question', () => {
     expect(await outcome('cm-03')).toMatchObject({ promptId: 'ask_accountId', principalLevel: 0 });
     expect(await outcome('cm-04')).toMatchObject({ promptId: 'ask_accountId', principalLevel: 0 });
     expect(await outcome('cm-05')).toMatchObject({ promptId: 'ask_dob_retry', principalLevel: 0 });
+    // The lines a recorded run checks a real model against: a filler no with the right date, a bare
+    // "that's not me", a no with the number, a caller who does not know the date, and a request instead.
+    expect(await outcome('cm-06')).toMatchObject({ promptId: 'anything_else', principalLevel: 1 });
+    expect(await outcome('cm-07')).toMatchObject({ promptId: 'ask_accountId', principalLevel: 0 });
+    expect(await outcome('cm-08')).toMatchObject({ promptId: 'ask_dob', principalLevel: 0, slots: { accountId: '55505678' } });
+    expect(await outcome('cm-09')).toMatchObject({ promptId: 'ask_dob_retry', principalLevel: 0 });
+    expect(await outcome('cm-10')).toMatchObject({ promptId: 'ask_problem', form: 'report_problem', principalLevel: 0 });
   });
 
   it('refuses a yes there: the question asks for a factor', () => {

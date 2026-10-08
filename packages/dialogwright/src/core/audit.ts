@@ -2,7 +2,7 @@ import type { AuditDraft } from '../audit/types';
 import { wordsOf, type SessionEvent } from '../channel/events';
 import { maskId } from '../gate/principal';
 import { isAnonymous, type ToolCall } from '../gate/types';
-import type { CallerMatchOutcome, GateEvent, KbSource, OfferSettled } from './lifecycle';
+import type { CallerMatchStep, GateEvent, KbSource, OfferSettled } from './lifecycle';
 import type { CheckReconfirmed, FormStopped } from './checks';
 import type { Decision } from './decision';
 import type { ScreenResult } from './screen';
@@ -12,7 +12,7 @@ import { appOf } from './app/registry';
 import { identityOf } from './app/lookup';
 import type { App } from './app/types';
 import { configAuditDetail } from './app/configHash';
-import { recordedValue, recordingOf, scrubbedDrafts, scrubberOf } from './recording';
+import { recordedValue, scrubbedDrafts, scrubberOf } from './recording';
 import { kbAuditRow } from '../kb/record';
 
 /**
@@ -43,7 +43,7 @@ export interface AuditInput {
   /** The check whose read-back the caller said no to this turn (core/turn.ts): its `check_reconfirmed` row. */
   reconfirmed?: CheckReconfirmed;
   /** What became of the caller-ID match this turn (lifecycle.ts TurnOut.callerMatch): an `identity_caller_match` row for each. */
-  callerMatch?: readonly CallerMatchOutcome[];
+  callerMatch?: readonly CallerMatchStep[];
 }
 
 /** A redacted call as one line: "createReport(accountId=...1234, missingNote=<38 chars>, expectedDate=2026-09-15)". */
@@ -68,6 +68,19 @@ function ranDrafts(app: App, e: GateEvent, after: Session, kb: KbSource | null):
   const audit = app.tools[call.tool]?.audit;
   if (audit) return scrubbedDrafts(audit({ call, summary: e.summary, ...(e.ref !== undefined ? { ref: e.ref } : {}), after, kb }), scrubberOf(e.decision));
   return [{ type: 'tool_result', detail: { tool: call.tool, summary: e.summary } }];
+}
+
+/**
+ * The `identity_caller_match` rows (identity.yaml's callerId) for the steps noted with `from` to `to`
+ * gate events before them: the outcome, and the number calling by its last four, or as policy.yaml's
+ * `audit: callerNumber` says where it says (`keep`, `secret`, ...). Never the identifier the match holds.
+ */
+function callerMatchRows(app: App, after: Session, steps: readonly CallerMatchStep[] | undefined, from: number, to: number): AuditDraft[] {
+  const number = after.callerNumber;
+  const audit = app.policy.audit;
+  const how = audit !== undefined && Object.hasOwn(audit, 'callerNumber') ? audit.callerNumber! : 'last4';
+  const shown = number === undefined ? null : recordedValue(how, number);
+  return (steps ?? []).filter((step) => step.at >= from && step.at <= to).map((step) => ({ type: 'identity_caller_match', detail: { outcome: step.outcome, ...(shown !== null ? { callerNumber: shown } : {}) } }));
 }
 
 export function auditDrafts(t: AuditInput): AuditDraft[] {
@@ -118,7 +131,10 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // A check's read-back the caller said no to: the deciding answer was corrected, and is asked again.
   // Before the turn's gate rows: the no came first, and the check may run again on the answer it gave.
   if (t.reconfirmed) drafts.push({ type: 'check_reconfirmed', detail: { form: t.reconfirmed.form, action: t.reconfirmed.action, reason: t.reconfirmed.reason } });
-  for (const e of t.gateEvents) {
+  for (const [i, e] of t.gateEvents.entries()) {
+    // The caller-ID match's steps noted before this gate event, where they happened among the turn's
+    // rows: a no before the step-up asks again, a failed check before the retry probe it led to.
+    drafts.push(...callerMatchRows(app, after, t.callerMatch, i, i));
     const { call, verdict, reason, needLevel } = e.decision;
     drafts.push({
       type: 'gate',
@@ -129,14 +145,8 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
     });
     drafts.push(...ranDrafts(app, e, after, t.kb));
   }
-  // The caller-ID match (identity.yaml's callerId): asked, then verified, turned down or failed. Never
-  // the identifier it holds, only the number calling as policy.yaml's `audit:` records it (its last
-  // four, say). After the gate rows: the step-up that asked it, and the check it took part in, came first.
-  for (const outcome of t.callerMatch ?? []) {
-    const number = after.callerNumber;
-    const shown = number === undefined ? null : recordedValue(recordingOf(app, 'callerNumber'), number);
-    drafts.push({ type: 'identity_caller_match', detail: { outcome, ...(shown !== null ? { callerNumber: shown } : {}) } });
-  }
+  // The caller-ID match's rows still to come, after the last gate event: those it was noted after.
+  drafts.push(...callerMatchRows(app, after, t.callerMatch, t.gateEvents.length, Infinity));
   // An answer read from the knowledge base that no tool's audit hook recorded (an informational
   // intent's passage, said with no gated read): the engine records it, as kbAnswerTool's hook would.
   if (t.kb !== null && !drafts.some((d) => d.type === 'kb_answer')) drafts.push(kbAuditRow(t.kb));

@@ -79,9 +79,10 @@ export function activeSlots(session: Session): SlotSpec[] {
 /**
  * The identity factors a turn listens for while the caller is still to be verified: every factor,
  * but those a caller-ID match in use identifies (Session.callerMatch `offered`, identity.yaml's
- * `callerId`), which are filled from the match and never asked while it stands. A digit string said
- * for the date of birth is then never taken for the account number. Once the match is set aside,
- * every factor listens again.
+ * `callerId`), which are filled from the match while it stands. A digit string said for the date of
+ * birth is then never taken for the account number; the model is asked about them only beside the
+ * caller-ID question's decline question (questions.ts), and a turn that declines fills them. Once the
+ * match is set aside, every factor listens again.
  */
 function listeningFactors(session: Session): readonly SlotId[] {
   const identity = identityOf(appOf(session));

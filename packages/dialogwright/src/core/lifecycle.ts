@@ -96,10 +96,17 @@ export interface TurnOut {
   reconfirmed?: CheckReconfirmed;
   /**
    * What became of the caller-ID match this turn (identity.yaml's `callerId`), in order, for the
-   * audit's `identity_caller_match` rows: asked (`offered`), then `verified`, `declined` or `failed`.
-   * Absent on every other turn.
+   * audit's `identity_caller_match` rows: asked (`offered`), then `verified`, `declined` or `failed`,
+   * each with `at`, the number of the turn's gate events before it, so its row sits where it happened
+   * among theirs. Absent on every other turn.
    */
-  callerMatch?: CallerMatchOutcome[];
+  callerMatch?: CallerMatchStep[];
+}
+
+/** One step of the caller-ID match this turn, and how many of the turn's gate events came before it. */
+export interface CallerMatchStep {
+  readonly outcome: CallerMatchOutcome;
+  readonly at: number;
 }
 
 /** One step of the caller-ID match (TurnOut.callerMatch, Session.callerMatch). */
@@ -411,7 +418,7 @@ export function callerMatchOf(s: Session): Readonly<Record<SlotId, string>> | nu
 /** Records a step of the caller-ID match: on the session (Session.callerMatch) and for the turn's audit rows (TurnOut.callerMatch). */
 export function noteCallerMatch(s: Session, out: TurnOut, outcome: CallerMatchOutcome): void {
   s.callerMatch = outcome;
-  out.callerMatch = [...(out.callerMatch ?? []), outcome];
+  out.callerMatch = [...(out.callerMatch ?? []), { outcome, at: out.gateEvents.length }];
 }
 
 /**
@@ -450,6 +457,9 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
   if (signInImpossible(s)) return handoff(s, 'needs-human', acks);
   if (isAnonymous(s.principal)) {
     const match = callerMatchOf(s);
+    // A match in use that is gone now (the app's facts changed, or the caller said an identifier of
+    // their own) is unused again: every factor is asked, and every factor listens.
+    if (match === null && s.callerMatch === 'offered') delete s.callerMatch;
     const missing = askedFactors(s, match).find((id) => s.slots[id]!.value === null);
     if (missing) {
       const window = s.slots[missing]!.window;
@@ -473,6 +483,11 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
 function fillFromCallerMatch(s: Session, match: Readonly<Record<SlotId, string>>): void {
   for (const [id, value] of Object.entries(match)) Object.assign(s.slots[id]!, { value, display: null, confirmed: false, window: null, by: 'caller-id' });
   s.callerMatch = 'offered';
+}
+
+/** Whether the check about to run, or just run, has factors the caller-ID match filled (SlotState.by `caller-id`). */
+function identifiedByCallerId(s: Session): boolean {
+  return identityOf(appOf(s)).factorSlots.some((id) => s.slots[id]?.by === 'caller-id');
 }
 
 /**
@@ -575,7 +590,7 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
     if (!isParty(value.principal) || value.principal.kind !== subjectKind || value.principal.level !== 1) return handoff(s, 'needs-human', acks);
     // Verified with the caller-ID match standing in for the factors it identifies: the principal
     // says so (via), for the app's audit row and its own decisions. Every other principal is as the tool made it.
-    const byCallerId = s.callerMatch === 'offered';
+    const byCallerId = identifiedByCallerId(s);
     const { via: _via, ...proven } = value.principal;
     s.principal = byCallerId ? { ...proven, via: 'caller-id' } : _via === undefined ? value.principal : proven;
     if (byCallerId) noteCallerMatch(s, out, 'verified');
@@ -588,7 +603,7 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
   // match that took part is set aside for the call: the caller may be someone else on a shared phone,
   // and every factor lets them identify their own account.
   s.identityAttempts.factors += 1;
-  if (s.callerMatch === 'offered') noteCallerMatch(s, out, 'failed');
+  if (identifiedByCallerId(s)) noteCallerMatch(s, out, 'failed');
   for (const id of factorSlots) {
     const st = s.slots[id]!;
     Object.assign(st, emptySlot(), { attempts: st.attempts });

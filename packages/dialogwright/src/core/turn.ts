@@ -16,7 +16,7 @@ import { buildQuestions, callerMatchAsked } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchOutcome, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
+import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo } from './callerNumber';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
@@ -190,7 +190,7 @@ export interface TurnResult {
   /** the offer of the caller's number this turn settled; absent on every other turn */
   offer?: OfferSettled;
   /** what became of the caller-ID match this turn (identity.yaml's callerId), in order; absent on every other turn */
-  callerMatch?: CallerMatchOutcome[];
+  callerMatch?: CallerMatchStep[];
   /** what the injection screen made of this turn's words; null when it was not asked (no model turn) */
   screen: ScreenResult | null;
   /** the screen fired: perception's answers were discarded and nothing was filled, gated or called */
@@ -2019,13 +2019,12 @@ function atGreetingIdentity(s: Session, verdict: Verdict, answers: AnswerMap, ct
     return null;
   }
   if (verdict.kind !== 'intent_failed' && verdict.kind !== 'proceed') return null;
+  // Turned down, the match is set aside first, so what the same breath said for the account number fills.
   const declined = callerMatchDeclined(s, answers, io);
+  if (declined) noteCallerMatch(s, io.out, 'declined');
   const fill = fillSlots(s, answers, ctx, slotsToFill(s));
-  const acks: Ack[] = [];
-  if (declined) {
-    noteCallerMatch(s, io.out, 'declined');
-    acks.push(...declinedAck(io.app));
-  } else if (!fill.progress) {
+  const acks: Ack[] = declined ? declinedAck(io.app) : [];
+  if (!declined && !fill.progress) {
     const target = promptedTarget(s);
     const invalid = fill.events.find((e) => e.slot === target && e.outcome.kind === 'invalid')?.outcome;
     const retry = invalid?.kind === 'invalid' ? (invalid.retryPromptId ?? null) : null;
@@ -2046,8 +2045,9 @@ function atGreetingIdentity(s: Session, verdict: Verdict, answers: AnswerMap, ct
  */
 function atCallerMatch(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO): { decision: Decision; events: FillEvent[] } | null {
   if (s.form === null || verdict.kind !== 'proceed' || s.pendingConfirmation !== null || !callerMatchDeclined(s, answers, io)) return null;
-  const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+  // Set aside first, so the account number listens again and "different account, it's ..." keeps it.
   noteCallerMatch(s, io.out, 'declined');
+  const fill = fillSlots(s, answers, ctx, slotsToFill(s));
   return { decision: continueForm(s, io, [...declinedAck(io.app), ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
 }
 

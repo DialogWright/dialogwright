@@ -4,6 +4,7 @@ import { appOf } from './app/registry';
 import type { FormId, SlotId } from './app/types';
 import { handoffPromptId } from '../prompts/render';
 import { maskId } from '../gate/principal';
+import { isAnonymous } from '../gate/types';
 import type { Ack } from './fia';
 import type { Session } from './session';
 import { slotLocaleOf } from './locale';
@@ -87,6 +88,9 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
   for (const [id, spec] of Object.entries(app.slots)) {
     const slot = s.slots[id]!;
     if (slot.value === null) continue;
+    // A factor the caller-ID match filled, for a caller it did not verify: it came from the number,
+    // not from the caller, so the person taking the call is not handed it as if the caller had said it.
+    if (slot.by === 'caller-id' && isAnonymous(s.principal)) continue;
     if (spec.handoff === 'last4') slots[id] = maskId(slot.value.replace(/\D/g, ''));
     else if (spec.handoff === 'verified') slots[id] = s.principal.kind === identityOf(app).subjectKind ? IDENTITY_VERIFIED : IDENTITY_UNVERIFIED;
     else if (spec.displayFrom === 'said') slots[id] = slot.value;

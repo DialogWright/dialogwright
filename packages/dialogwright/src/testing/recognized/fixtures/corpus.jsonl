@@ -10,6 +10,11 @@
 {"id":"cm-03","text":"no, that's not me","intent":"none","context":"check_status","prompted":"dob","confirm":"no"}
 {"id":"cm-04","text":"June first nineteen ninety","intent":"none","context":"check_status","prompted":"dob","confirm":"unanswered","labels":{"dobGiven":true,"dobMonth":"june","dobDay":"1","dobYear":"nineteen ninety"}}
 {"id":"cm-05","text":"hmm, which account is that","intent":"none","context":"check_status","prompted":"dob","confirm":"unanswered"}
+{"id":"cm-06","text":"no wait, it's April twelfth nineteen eighty","intent":"none","context":"check_status","prompted":"dob","confirm":"unanswered","labels":{"dobGiven":true,"dobMonth":"april","dobDay":"12","dobYear":"nineteen eighty"}}
+{"id":"cm-07","text":"that's not me","intent":"none","context":"check_status","prompted":"dob","confirm":"no"}
+{"id":"cm-08","text":"different account, it's five five five zero five six seven eight","intent":"none","context":"check_status","prompted":"dob","confirm":"no","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero five six seven eight","accountIdComplete":true}}
+{"id":"cm-09","text":"I don't know my birthday","intent":"none","context":"check_status","prompted":"dob","confirm":"unanswered"}
+{"id":"cm-10","text":"actually I just want to report a problem","intent":"report_problem","context":"check_status","prompted":"dob","confirm":"unanswered","change":"replacing"}
 {"id":"id-01","text":"five five five zero five six seven eight","intent":"none","context":"check_status","prompted":"accountId","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero five six seven eight","accountIdComplete":true}}
 {"id":"id-02","text":"June fourteenth nineteen seventy five","intent":"none","context":"check_status","prompted":"dob","labels":{"dobGiven":true,"dobMonth":"june","dobDay":"14","dobYear":"nineteen seventy five"}}
 {"id":"id-03","text":"five five five zero one two three four","intent":"none","context":"check_status","prompted":"accountId","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero one two three four","accountIdComplete":true}}

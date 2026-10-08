@@ -2,7 +2,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineApp, type AppCode } from '../../define/defineApp';
-import type { App } from '../../core/app/types';
+import type { App, VerifyOutcome } from '../../core/app/types';
 import type { Session } from '../../core/session';
 import { ACCOUNTS, RECOGNIZED_DIR, recognizedCode } from './app';
 
@@ -131,6 +131,17 @@ export const codeCode: AppCode = {
   ...recognizedCode,
   tools: {
     ...recognizedCode.tools,
+    // The principal it proves carries the phone on file's last four, which the code's line says.
+    verifyCustomer: {
+      ...recognizedCode.tools!.verifyCustomer!,
+      run(call) {
+        const account = ACCOUNTS.find((a) => a.accountId === call.params.accountId && a.dob === call.params.dob);
+        const value: VerifyOutcome = account
+          ? { ok: true, principal: { kind: 'customer', level: 1, id: account.accountId, first: account.first, contact: { phoneLast4: account.phone.slice(-4) } } }
+          : { ok: false };
+        return { value, summary: account ? 'verified' : 'no match' };
+      },
+    },
     verifyCode: {
       params: [],
       run(_call, _sys, { tc, code }) {
