@@ -81,5 +81,18 @@
       { "say": "Jordan Avery" }
     ],
     "expect": { "decision": "prompt", "promptId": "ask_phone", "form": "request_callback" }
+  },
+  {
+    "id": "offer-required-no-then-nothing",
+    "callerNumber": "+15555550142",
+    "steps": [
+      { "say": "can someone call me back" },
+      { "say": "Jordan Avery" },
+      { "say": "no" },
+      { "silence": true },
+      { "silence": true },
+      { "silence": true }
+    ],
+    "expect": { "decision": "handoff", "reason": "max-attempts", "form": "request_callback" }
   }
 ]

@@ -324,7 +324,13 @@ describe('an app without the option', () => {
 describe('the fixture\'s scripted calls', () => {
   const scenarios: Scenario[] = loadScenarios(join(FIXTURES, 'scenarios'));
   it('has one for each case', () => {
-    expect(scenarios.map((s) => s.id)).toEqual(['offer-yes', 'offer-no-then-said', 'offer-no-with-a-number', 'withheld-number-asks', 'no-number-asks', 'chat-asks']);
+    expect(scenarios.map((s) => s.id)).toEqual(['offer-yes', 'offer-no-then-said', 'offer-no-with-a-number', 'withheld-number-asks', 'no-number-asks', 'chat-asks', 'offer-required-no-then-nothing']);
+  });
+  it('a required offer (the defaults, onNo and ifNone ask): a no asks the slot, and with no number its ladder ends at a person, never the summary', async () => {
+    const required = scenarios.find((s) => s.id === 'offer-required-no-then-nothing')!;
+    const r = await runScenario(required, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0 });
+    expect(r.runs.map((x) => ('promptId' in x.result.decision ? x.result.decision.promptId : x.result.decision.kind))).toEqual(['greeting', 'ask_caller', 'offer_phone', 'ask_phone', 'ask_phone', 'ask_phone_dtmf', 'handoff_max_attempts']);
+    expect(r.runs.flatMap((x) => x.result.gateEvents)).toEqual([]);
   });
   for (const scenario of scenarios) {
     it(`${scenario.id} meets its expectation`, async () => {
