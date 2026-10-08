@@ -117,6 +117,17 @@ export type SlotOfferAt = 'slot' | 'greeting';
 /** Every SlotOfferAt value, the default first. */
 export const SLOT_OFFER_AT_VALUES: readonly SlotOfferAt[] = ['slot', 'greeting'];
 
+/**
+ * The answers an offer takes (a slot's `offerAnswers`, a `callerNumber`'s `answers`):
+ * `yes-no-or-value` (the default), a yes, a no, or a value of the caller's own, which fills the slot
+ * as said; `yes-no`, a yes or a no only: the slot offered takes no value from the turn at its offer, a
+ * value said there with no clear yes is a no, and on the keypad 1 is yes and 2 is no.
+ */
+export type OfferAnswers = 'yes-no-or-value' | 'yes-no';
+
+/** Every OfferAnswers value, the default first. */
+export const OFFER_ANSWERS_VALUES: readonly OfferAnswers[] = ['yes-no-or-value', 'yes-no'];
+
 export interface SlotSpec {
   id: SlotId;
   /**
@@ -201,12 +212,15 @@ export interface SlotSpec {
    * `declined`, SlotState.declined), as does the end of the offer's retry ladder; absent, a no asks
    * `ask_<slot>`. `ifNone: 'skip'`: a call with no number that fits, or one the app will not offer
    * (App.callerOffer), leaves the slot empty the same way; absent, the slot is asked. A number said
-   * in place of a yes or no fills the slot as said either way.
+   * in place of a yes or no fills the slot as said either way, unless `answers` is `yes-no`: the offer
+   * then takes a yes or a no only (OfferAnswers), a number said there is not taken, and with no clear
+   * yes it is a no. Absent, the default (`yes-no-or-value`).
    */
   callerNumber?: {
     take(number: string, locale?: string): SlotCandidate | null;
     onNo?: 'skip';
     ifNone?: 'skip';
+    answers?: 'yes-no';
   };
   /**
    * `facts`: the slot proposes a value from the app's facts (FactsConfig.offers: e.g. a street the
@@ -231,6 +245,13 @@ export interface SlotSpec {
    * (`dialogwright check` refuses it otherwise). Absent: `slot`.
    */
   offerAt?: SlotOfferAt;
+  /**
+   * The answers a slot with `offer: facts` takes at its proposal (OfferAnswers): `yes-no-or-value`
+   * (the default), where a value said instead fills as said; `yes-no`, where it is not taken, and with
+   * no clear yes it is a no (the slot's question is then asked). Only with `offer: facts`
+   * (`dialogwright check` refuses it otherwise). Absent: the default.
+   */
+  offerAnswers?: OfferAnswers;
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no
    * keypad rung; its retry ladder is retry, retry, agent. */
   dtmf?: {

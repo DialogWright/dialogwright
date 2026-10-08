@@ -102,6 +102,10 @@ export const digitsOptions = z
           .enum(['ask', 'skip'])
           .default('ask')
           .describe('What a call with no number to offer does (a chat, a withheld number, one that does not fit, or one the app\'s callerOffer hook refuses): "ask" (default) asks ask_<slot> as always; "skip" leaves the slot empty and the form goes on.'),
+        answers: z
+          .enum(['yes-no-or-value', 'yes-no'])
+          .default('yes-no-or-value')
+          .describe('What the offer takes: "yes-no-or-value" (default), a yes, a no, or a number of the caller\'s own, said or keyed, which fills the slot as said; "yes-no", a yes or a no only: a number said at the offer is not taken, and with no clear yes it is a no (onNo then says what follows), and on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question.'),
       })
       .optional()
       .describe('Offer the number the caller is calling from: when the form would ask this slot and the call has a number that fits it (its `countryCode`, `length` and `mask`), the line asks offer_<slot> ("Is the number you\'re calling from, ending in {last4}, the best one to reach you?") in place of ask_<slot>, and a yes fills the slot with that number. A no asks ask_<slot>, with no attempt counted, and a number said instead fills as said. A chat, or a call with the number withheld, is asked ask_<slot> as always. Never on an identity factor: a caller ID can be forged.'),

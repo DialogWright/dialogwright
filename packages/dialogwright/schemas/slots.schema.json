@@ -191,6 +191,15 @@
             ],
             "default": "slot",
             "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -467,6 +476,15 @@
             ],
             "default": "slot",
             "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "required": [
@@ -699,6 +717,15 @@
             ],
             "default": "slot",
             "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "required": [
@@ -825,6 +852,15 @@
                   "ask",
                   "skip"
                 ]
+              },
+              "answers": {
+                "default": "yes-no-or-value",
+                "description": "What the offer takes: \"yes-no-or-value\" (default), a yes, a no, or a number of the caller's own, said or keyed, which fills the slot as said; \"yes-no\", a yes or a no only: a number said at the offer is not taken, and with no clear yes it is a no (onNo then says what follows), and on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question.",
+                "type": "string",
+                "enum": [
+                  "yes-no-or-value",
+                  "yes-no"
+                ]
               }
             },
             "required": [
@@ -921,6 +957,15 @@
             ],
             "default": "slot",
             "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -1052,6 +1097,15 @@
             ],
             "default": "slot",
             "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -1218,6 +1272,15 @@
             ],
             "default": "slot",
             "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -1448,6 +1511,15 @@
             ],
             "default": "slot",
             "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -1571,6 +1643,15 @@
             ],
             "default": "slot",
             "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,

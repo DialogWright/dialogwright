@@ -2,7 +2,7 @@ import type {
   App, AppBrand, AppLocales, CheckOutcome, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
   PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse,
 } from '../core/app/types';
-import { SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
+import { OFFER_ANSWERS_VALUES, SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { askedQuestionIds, probeContexts } from '../core/app/probeQuestions';
@@ -585,6 +585,18 @@ export function crossLink(
       const deleteAt = linked.library.has(id) ? 'delete "offerAt"' : `delete "offerAt" from ${inCode('slots', id)}`;
       if (offerAt !== 'slot' && offerAt !== 'greeting') where(`the slot "${id}" says offerAt: ${JSON.stringify(offerAt)}, which is not "slot" or "greeting"`, `change it to "slot" or "greeting", or ${deleteAt}`);
       else if (offer !== 'facts') where(`the slot "${id}" says offerAt: ${JSON.stringify(offerAt)}, but it proposes nothing (it has no offer: facts)`, `add "offer: facts", or ${deleteAt}`);
+    }
+    // The answers a proposal takes (SlotSpec.offerAnswers): only for a slot that makes one.
+    const offerAnswers = spec?.offerAnswers;
+    if (offerAnswers !== undefined) {
+      const where = (message: string, fix: string): void => {
+        if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'offerAnswers'], message, fix);
+        else inTs(['slots', id, 'offerAnswers'], message, fix);
+      };
+      const deleteAnswers = linked.library.has(id) ? 'delete "offerAnswers"' : `delete "offerAnswers" from ${inCode('slots', id)}`;
+      const ofCaller = spec?.callerNumber !== undefined;
+      if (!OFFER_ANSWERS_VALUES.includes(offerAnswers)) where(`the slot "${id}" says offerAnswers: ${JSON.stringify(offerAnswers)}, which is not "yes-no-or-value" or "yes-no"`, `change it to "yes-no" or "yes-no-or-value", or ${deleteAnswers}`);
+      else if (offer !== 'facts') where(`the slot "${id}" says offerAnswers: ${JSON.stringify(offerAnswers)}, but it proposes nothing (it has no offer: facts)${ofCaller ? '; the offer of the caller\'s number takes callerNumber.answers' : ''}`, ofCaller ? `move it into callerNumber as "answers: ${offerAnswers}", or ${deleteAnswers}` : `add "offer: facts", or ${deleteAnswers}`);
     }
     if (offer === undefined) continue;
     const library = linked.library.has(id);

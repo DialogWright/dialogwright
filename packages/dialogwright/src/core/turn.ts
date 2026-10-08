@@ -18,7 +18,7 @@ import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation,
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
-import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo } from './callerNumber';
+import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { recordedValue, recordingOf } from './recording';
 import type { Tools } from './tools';
@@ -1067,6 +1067,33 @@ function offeredSlotMissed(s: Session, io: TurnIO, slot: SlotId, fill: FillResul
   return failAttempt(s, slot, io, [...acks, ...fill.acks], false, invalid.retryPromptId ?? null);
 }
 
+/**
+ * At an offer that takes a yes or a no only (yesNoOffer), whether the turn's words gave the slot
+ * offered a value of the caller's own: read as its fill would read them, and filled into nothing.
+ * With no clear yes, such a turn is a no.
+ */
+function valueAtOffer(s: Session, pc: OfferPending, answers: AnswerMap, ctx: SlotContext): boolean {
+  return valuesGiven(s, answers, ctx, [slotSpecOf(appOf(s), pc.slot)]).size > 0;
+}
+
+/**
+ * A key pressed at an offer that takes a yes or a no only (yesNoOffer): 1 is a yes and 2 is a no, as
+ * the spoken answers are; any other key is an answer to neither, and the offer is asked again on its
+ * ladder. At the greeting's proposal the open question follows a yes or a no (`greet_after_offer`);
+ * at a slot, the form goes on.
+ */
+function keyedAtOffer(s: Session, pc: OfferPending, digit: string, io: TurnIO): Decision {
+  s.dtmfBuffer = '';
+  if (digit !== '1' && digit !== '2') return reaskConfirmation(s, io);
+  s.pendingConfirmation = null;
+  const yes = digit === '1';
+  if (yes) Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
+  offerSettled(s, io, pc, yes ? 'yes' : 'no');
+  if (pc.at === 'greeting') return prompt(GREET_AFTER_OFFER, 'intent', {}, []);
+  if (!yes) declineOnNo(s, io, pc.slot);
+  return continueForm(s, io, [], null);
+}
+
 /** The form's checksPassed line, when this turn's checks passed the last of them (core/checks.ts). */
 function passedAcks(s: Session, checks: Extract<ReturnType<typeof runChecks>, { kind: 'passed' }>): Ack[] {
   return checks.passedPromptId === null ? [] : [{ promptId: checks.passedPromptId, vars: summaryVars(s) }];
@@ -1554,7 +1581,10 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // fills as said, and the form goes on; one that is not a number of the slot's shape is a
         // missed answer to the slot's question, and is retried as one.
         // With `onNo: skip`, a no with no number leaves the slot empty, declined, and the form goes on.
-        const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+        // An offer that takes a yes or a no only (`answers: yes-no`) takes no number with the no: the
+        // no is a no, and onNo says what follows.
+        const yesNo = yesNoOffer(io.app, pc);
+        const fill = fillSlots(s, answers, ctx, slotsToFill(s).filter((spec) => !yesNo || spec.id !== pc.slot));
         const missed = offeredSlotMissed(s, io, pc.slot, fill, []);
         offerSettled(s, io, pc, missed || s.slots[pc.slot]!.value !== null ? 'other' : 'no');
         if (missed) return { decision: missed, events: fill.events };
@@ -1607,6 +1637,14 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // answers the slot: it fills as said and the offer is closed. Anything else the turn filled
         // stands, and the offer is asked again.
         const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+        // An offer that takes a yes or a no only (`answers: yes-no`) took no value for the slot: a
+        // value said with no clear yes is a no, and onNo says what follows.
+        if (yesNoOffer(io.app, pc) && valueAtOffer(s, pc, answers, ctx)) {
+          s.pendingConfirmation = null;
+          offerSettled(s, io, pc, 'no');
+          declineOnNo(s, io, pc.slot);
+          return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
+        }
         if (s.slots[pc.slot]!.value !== null) {
           s.pendingConfirmation = null;
           offerSettled(s, io, pc, 'other');
@@ -1727,6 +1765,9 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     const decision = handleCodeDigit(s, digit, tc, io.out, acks);
     return { decision: decision ?? continueForm(s, io, acks, null), rows: [] };
   }
+  // An offer that takes a yes or a no only (`answers: yes-no`): its keys are 1 and 2, never the slot's digits.
+  const offered = s.pendingConfirmation;
+  if (yesNoOffer(io.app, offered) && s.promptedFor === (offered.at === 'greeting' ? 'intent' : offered.slot)) return { decision: keyedAtOffer(s, offered, digit, io), rows: [] };
   s.dtmfBuffer += digit;
   if (s.menuActive) {
     const option = io.app.menu.find((m) => m.digit === digit);
@@ -1911,6 +1952,15 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
     case 'replay':
       return null;
     case 'confirm_unanswered': {
+      // A proposal that takes a yes or a no only (`offerAnswers: yes-no`): a value with no clear yes is
+      // a no, and the slot takes nothing from the turn; words that answer neither are asked again.
+      if (yesNoOffer(io.app, pc)) {
+        if (!valueAtOffer(s, pc, answers, ctx)) return { decision: reaskConfirmation(s, io), events: [] };
+        s.pendingConfirmation = null;
+        offerSettled(s, io, pc, 'no');
+        io.kept = pc.slot;
+        return openingAfterOffer(s, answers, ctx, io);
+      }
       // A value of the caller's own with no yes or no ("it's at 7 Birch Lane") answers the question
       // asked: the slot takes it, whatever it listens for, and the open question follows.
       const own = ownAnswer(s, pc, answers, ctx, io);
@@ -1928,6 +1978,12 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
     }
     case 'rejected': {
       s.pendingConfirmation = null;
+      // A proposal that takes a yes or a no only: the no is a no, and the slot takes nothing from the turn.
+      if (yesNoOffer(io.app, pc)) {
+        offerSettled(s, io, pc, 'no');
+        io.kept = pc.slot;
+        return openingAfterOffer(s, answers, ctx, io);
+      }
       // "No, it's 14 Birch Lane" answers the question asked: the slot takes it, whatever it listens for.
       const own = ownAnswer(s, pc, answers, ctx, io);
       offerSettled(s, io, pc, s.slots[pc.slot]!.value !== null ? 'other' : 'no');

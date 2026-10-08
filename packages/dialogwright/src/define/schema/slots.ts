@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SLOT_LISTEN_VALUES, SLOT_OFFER_AT_VALUES, type SlotListen, type SlotOfferAt } from '../../core/slots/types';
+import { OFFER_ANSWERS_VALUES, SLOT_LISTEN_VALUES, SLOT_OFFER_AT_VALUES, type OfferAnswers, type SlotListen, type SlotOfferAt } from '../../core/slots/types';
 import { identifier } from './common';
 
 /**
@@ -57,6 +57,18 @@ export const OFFER_AT_DESCRIPTION =
 
 /** `offerAt:` on one slot: `slot` or `greeting`, or absent for the default (`slot`). */
 export const slotOfferAtSchema = z.enum(SLOT_OFFER_AT_VALUES as readonly [SlotOfferAt, ...SlotOfferAt[]]).describe(OFFER_AT_DESCRIPTION);
+
+/** The option beside `offer` every library slot takes (SlotSpec.offerAnswers). A slot type may not have an option of this name. */
+export const OFFER_ANSWERS_OPTION = 'offerAnswers';
+
+/** What `offerAnswers:` means, as the JSON Schema, the slot pages and an editor say it. */
+export const OFFER_ANSWERS_DESCRIPTION =
+  'What a slot with offer: facts takes at its proposal. "yes-no-or-value" (the default): a yes, a no, or a value of the caller\'s own, which fills the slot as said. ' +
+  '"yes-no": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot\'s question is then asked); on the keypad 1 is yes and 2 is no. ' +
+  'Use yes-no where the line asks only a yes or no question ("Are you calling about the account ending in 1234?"). Needs offer: facts.';
+
+/** `offerAnswers:` on one slot: `yes-no-or-value` or `yes-no`, or absent for the default (`yes-no-or-value`). */
+export const slotOfferAnswersSchema = z.enum(OFFER_ANSWERS_VALUES as readonly [OfferAnswers, ...OfferAnswers[]]).describe(OFFER_ANSWERS_DESCRIPTION);
 
 export const slotsSchema = z
   .record(

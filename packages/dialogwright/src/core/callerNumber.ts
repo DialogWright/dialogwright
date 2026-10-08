@@ -1,6 +1,6 @@
 import type { App, SlotId } from './app/types';
 import type { SlotCandidate } from './slots/types';
-import type { Session } from './session';
+import type { PendingConfirmation, Session } from './session';
 import { identityOf } from './app/lookup';
 import { appOf } from './app/registry';
 
@@ -169,6 +169,23 @@ export function skipsOnNo(app: App, slot: SlotId): boolean {
 /** The slot's callerNumber option, when it skips with no number to offer (`ifNone: skip`). */
 export function skipsIfNone(app: App, slot: SlotId): boolean {
   return app.slots[slot]?.callerNumber?.ifNone === 'skip';
+}
+
+/** A slot's value offered for a yes (the caller's number, or a value proposed from the facts), pending. */
+export type OfferPending = Extract<PendingConfirmation, { target: 'slot' }> & { offered: true };
+
+/**
+ * Whether `pc` is an offer that takes a yes or a no only (OfferAnswers `yes-no`): the caller's number's
+ * offer whose slot says `callerNumber.answers: yes-no`, or a proposal from the facts whose slot says
+ * `offerAnswers: yes-no`. The slot offered then takes no value from the turn at its offer (fia.ts
+ * slotsToFill), a value said there with no clear yes is a no, and the keypad's 1 and 2 are a yes and
+ * a no (core/turn.ts). False for every other confirmation, and for an offer that takes a value too
+ * (the default), which is as it was.
+ */
+export function yesNoOffer(app: App, pc: PendingConfirmation | null): pc is OfferPending {
+  if (pc?.target !== 'slot' || pc.offered !== true) return false;
+  const spec = app.slots[pc.slot];
+  return pc.from === 'facts' ? spec?.offerAnswers === 'yes-no' : spec?.callerNumber?.answers === 'yes-no';
 }
 
 /**

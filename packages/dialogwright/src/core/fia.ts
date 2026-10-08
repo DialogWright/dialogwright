@@ -5,6 +5,7 @@ import { formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { SlotId } from './app/types';
 import { missingSlots, requiredSlots, type PendingConfirmation, type Session } from './session';
+import { yesNoOffer } from './callerNumber';
 import type { Thresholds } from './thresholds';
 
 export type RetryStep = 'open' | 'dtmf' | 'agent';
@@ -104,9 +105,12 @@ function listeningFactors(session: Session): readonly SlotId[] {
  * Saturday"). Left filled, a form asked for later would skip its question and read that value back
  * as the caller's answer. A form starts from what is said once it is asked for, unless the slot
  * says it keeps a value said anywhere.
+ *
+ * At an offer that takes a yes or a no only (callerNumber.ts yesNoOffer), the slot offered is left
+ * out: the turn takes no value for it, though its question is asked (activeSlots).
  */
 export function slotsToFill(session: Session): SlotSpec[] {
-  const listening = activeSlots(session);
+  const listening = withoutYesNoOffered(session, activeSlots(session));
   if (session.form) return listening;
   const app = appOf(session);
   const callSlots = new Set<SlotId>([...identityOf(app).factorSlots, ...(app.carrySlots ?? [])]);
@@ -115,6 +119,17 @@ export function slotsToFill(session: Session): SlotSpec[] {
     const listen = listenOf(app, spec.id);
     return listen === 'anywhere' || listen === 'call';
   });
+}
+
+/**
+ * `specs` but the slot of a pending offer that takes a yes or a no only (callerNumber.ts yesNoOffer):
+ * its question is still asked, so a value said at the offer can be told from a plain yes or no, but the
+ * turn fills nothing into it. `specs` itself on every other turn.
+ */
+function withoutYesNoOffered(session: Session, specs: SlotSpec[]): SlotSpec[] {
+  const pc = session.pendingConfirmation;
+  if (!yesNoOffer(appOf(session), pc)) return specs;
+  return specs.filter((spec) => spec.id !== pc.slot);
 }
 
 /**

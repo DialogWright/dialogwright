@@ -53,6 +53,8 @@ function callerNumberOf(o: DigitsOptions, display: (value: string, locale?: stri
     // Only when they skip: a slot that asks on a no and with no number is as it was.
     ...(o.callerNumber!.onNo === 'skip' ? { onNo: 'skip' as const } : {}),
     ...(o.callerNumber!.ifNone === 'skip' ? { ifNone: 'skip' as const } : {}),
+    // Only when it takes a yes or a no alone: an offer that takes a number too is as it was.
+    ...(o.callerNumber!.answers === 'yes-no' ? { answers: 'yes-no' as const } : {}),
   };
 }
 
