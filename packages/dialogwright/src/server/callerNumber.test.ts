@@ -147,14 +147,27 @@ describe('the start event', () => {
     expect(d.store.get(callId)!.session.callerNumber).toBe('+15555550142');
     expect(traced.callerNumber).toBe('kept');
     expect(traced.event).toMatchObject({ type: 'session.start', callerNumber: '...0142' });
+    // The setup's own copy of the number, in the event's provider details, is masked as the slot masks it.
+    expect(traced.event).toMatchObject({ provider: { 'param.telnyx_call_from': '...0142', 'param.telnyx_call_to': '+15555550111' } });
+    expect(readFileSync(join(d.dir, `${callId}.jsonl`), 'utf8')).not.toContain('5555550142');
     const turn = events.find((e) => e.type === 'turn') as Extract<DashboardEvent, { type: 'turn' }>;
     expect(turn.record.event).toMatchObject({ callerNumber: '…0142' });
     expect(JSON.stringify(events)).not.toContain('5555550142');
   });
 
+  it('masks a Twilio caller\'s kept number in the trace file, its from included', async () => {
+    useApps('callback');
+    const { traced, d, callId } = await setUp('callback', 'twilio', { ...TWILIO_SETUP, from: '+15555550142' });
+    expect(traced.event).toMatchObject({ provider: { from: '...0142', to: '+15555550100' }, callerNumber: '...0142' });
+    expect(readFileSync(join(d.dir, `${callId}.jsonl`), 'utf8')).not.toContain('5555550142');
+  });
+
   it('a withheld number is no number: nothing kept, and the trace says so', async () => {
+    useApps('callback');
     const { traced, d, callId } = await setUp('callback', 'twilio', { ...TWILIO_SETUP, from: '+7378742833' });
     expect(d.store.get(callId)!.session).not.toHaveProperty('callerNumber');
     expect(traced.callerNumber).toBe('none');
+    // No value of the slot's: the setup's details keep what the carrier sent, for a builder to read (docs/live-checks.md).
+    expect(traced.event).toMatchObject({ provider: { from: '+7378742833' } });
   });
 });

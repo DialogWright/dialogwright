@@ -294,10 +294,18 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
   const cut = isObject(record.event) && record.event.type === 'user.interrupt' && typeof record.event.heard === 'string' ? recordScrubber(record, mode, app, { cutOff: true }) : null;
   if (cut !== null && record.event.type === 'user.interrupt') out.event = { ...record.event, heard: cut(record.event.heard) };
   // The number the caller is calling from, on the session start (SessionStart.callerNumber): masked as
-  // the slot that offers it masks its value.
+  // the slot that offers it masks its value. A number the session kept is the slot's value to be, so
+  // the setup's own copies of it in the event's provider details (Twilio's `from`, Telnyx's
+  // `param.telnyx_call_from`) are masked the same. One not kept (withheld, or not one the slot can
+  // use) is no value of the slot's, and the provider details keep it as sent, as on every app.
   const offering = callerNumberRule(app);
   if (isObject(record.event) && record.event.type === 'session.start' && typeof record.event.callerNumber === 'string' && offering !== null) {
-    out.event = { ...record.event, callerNumber: maskValue(app, offering, record.event.callerNumber, mode) ?? record.event.callerNumber };
+    const raw = record.event.callerNumber;
+    const mask = (v: string): string => maskValue(app, offering, v, mode) ?? v;
+    const provider = record.callerNumber === 'kept' && isObject(record.event.provider)
+      ? Object.fromEntries(Object.entries(record.event.provider).map(([k, v]) => [k, v === raw ? mask(v) : v]))
+      : record.event.provider;
+    out.event = { ...record.event, provider, callerNumber: mask(raw) };
   }
   const pc = record.pendingConfirmation;
   if (pc && pc.target === 'slot') out.pendingConfirmation = { ...pc, value: maskValue(app, pc.slot, pc.value, mode) ?? pc.value, display: maskValue(app, pc.slot, pc.display, mode) ?? pc.display };
