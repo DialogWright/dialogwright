@@ -102,6 +102,8 @@ A line whose context is a form (or a summary) is run in a session seeded as thou
 - `seed.placeholders` gives a stand-in value for every slot (factors included), used for the slots the form has already collected. Give one for every slot you add, in the slot's own value format (an ISO date for a date, an option key for a choice).
 - A line at `anything_else` needs `seed.anythingElse`: the form just answered, and the call that answered it through the gate (`{ form, call }`), or the form alone (`{ form }`) when its answer was its own line or a write already made. The `done` lines belong there ("no, that's all", "I'm all set", "nothing else", "I don't need anything else", a bare "no" if no other line has it), with one or two at `no_form` too. A line at `offer_transfer` needs `testing.offerTransferForm`. Leave that context out unless you add it.
 
+A slot that offers the number the caller is calling from (`callerNumber`) has its offer answered too: a line in the form's context, `prompted` that slot, with `confirm`, is seeded with the offer just made (the slot's placeholder as the number). Write a yes ("yes, that's fine", "that's the one"), a bare no, a no with a number ("no, use my cell, five five five five five five zero one nine nine", labelled with the number), a number with no yes or no ("my cell is ...", `confirm: unanswered`), "that's my work phone" (labelled as the paragraph means it: a yes when a work phone will do), and something that answers neither (`confirm: unanswered`).
+
 ## Scripted calls
 
 `fixtures/scenarios/*.json`: a list of calls, each run from the start, each with what it must end at.
@@ -130,6 +132,7 @@ A line whose context is a form (or a summary) is run in a session seeded as thou
 ]
 ```
 
+- `callerNumber`: the number a phone call comes from, as a carrier sends it (`"+15555550142"`), for an app with a slot that offers it ([patterns.md](patterns.md#a-callback-number-callernumber)); absent, the call has no number. A chat never has one.
 - `as`: absent for a phone call from an anonymous caller; a delegate id for a delegate's signed-in chat; `"web"` for a subject's chat, anonymous until a `{ "signIn": "<subject id>" }` step.
 - Steps: `{ "say": "..." }` (its words must be a corpus line's text: the stub regression refuses to run a step whose words no line has, and lists every one, since the stub would answer it with nothing; a run against a model, live or replayed, does not), `{ "dtmf": "..." }` (keys; the one-time code passes when its last digit is even), `{ "silence": true }`, `{ "signIn": "<id>" }`.
 - `expect` is checked on the last turn: `decision` (`prompt`, `handoff`, `complete`, ...), and any of `promptId`, `reason` (a handoff's: `live-agent`, `identity`, `role-person`, `needs-human`, ...), `form`, `slots` (values by slot id), `principalLevel`, `gate` (the last gate decision, `"<tool>:<VERDICT>"`), `text` (words the last turn's lines contain).

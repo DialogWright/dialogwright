@@ -172,6 +172,18 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** The phone's kind and browser (not its owner), whether the preview used the code, the address the access log recorded, and anything the narrow layout got wrong. A preview that uses the code, or an address that is the tunnel's own, is a code change with a test.
 
+## 9. A withheld caller ID, on Twilio and on Telnyx
+
+**Why.** A slot that offers the number the caller is calling from (a digits slot's `callerNumber`, the guide's [13.13](authoring-an-app.md#1313-the-number-the-caller-is-calling-from)) must make no offer when the number is withheld. Twilio's placeholders for a withheld caller ID are known (the keypad spellings of ANONYMOUS, RESTRICTED, UNAVAILABLE and BLOCKED), and the engine refuses them. How Telnyx writes a withheld number in its setup frame's `customParameters.telnyx_call_from` (absent, empty, a word, or a placeholder of its own) is not yet seen, and a placeholder made of ten digits would be offered as a number.
+
+**Set.** An app with such a slot: the engine's fixture `packages/dialogwright/src/testing/callback` shows the shape (a `phone` slot with `callerNumber: { countryCode: '1' }` and an `offer_phone` line); add the same to a scratch copy of the utility example's form that asks for a number, or to your own app. The carrier's settings from check 1 or 2.
+
+**Do.** On each carrier, call twice from a phone you own: once with its caller ID shown, and once withheld (`*67` before the number in the US, or the phone's own setting). Reach the form's number question each time.
+
+**Look for.** With the caller ID shown: the line offers the number by its last four, and a yes fills it; the console's `call_started` shows the last four on both carriers (Telnyx's showed "unknown" before). Withheld: the line asks the slot's question with no offer, and the trace's first record has `"callerNumber": "none"`. Note what the carrier put where the number would be. The frame log masks it (Twilio's `from` to its last four, every Telnyx custom parameter to `redacted`), so read it in the trace file's first record, whose `event.provider` keeps the setup's details as sent: Twilio's `from`, Telnyx's `param.telnyx_call_from`. Say whether it was absent, empty, a word or digits; for digits, what they spell on a keypad.
+
+**Record.** For each carrier, what a withheld setup carries, and whether an offer was made. A Telnyx placeholder made of digits goes into `WITHHELD_PLACEHOLDERS` (`core/callerNumber.ts`) with a test, and into the guide's 13.13.
+
 ## Results log
 
 One row per check run. Keep earlier rows.

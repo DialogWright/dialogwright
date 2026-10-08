@@ -15,7 +15,7 @@ The guide is long, too long to read in one go: read it a section at a time, from
 2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml) (with [checks](#checks-ending-a-form-part-way)), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
 3. [Policy and identity](#3-policy-and-identity) (its own list of thirteen subsections is at its head)
 4. [What stays in TypeScript, and why](#4-what-stays-in-typescript-and-why)
-5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
+5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [A callback number](#a-callback-number-callernumber), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
 6. [The form hooks](#6-the-form-hooks)
 7. [Checking an app: `pnpm check`](#7-checking-an-app-pnpm-check)
 8. [Locales](#8-locales)
@@ -1094,6 +1094,53 @@ When to choose each:
 An identity factor (identity.yaml) listens as identity says: while an anonymous caller is still to be verified, inside a form and out, and it stays for the call. `listen` does not apply to it, and `check` refuses it there. An unknown value is refused with the near one (`change it to "anywhere"`).
 
 Any value but the default changes what the model is sent: `form` takes the slot's questions out of every turn outside a form, and `anywhere` and `call` keep values that then show in the turn state of later turns. A recorded cassette misses where they differ, so choose one with a deliberate re-record.
+
+### A callback number: `callerNumber`
+
+On a phone call the carrier almost always sends the number the caller is calling from, and ten digits is the most fragile answer a caller gives. A `digits` slot that holds a phone number can offer that number as a yes or no rather than ask for it:
+
+```yaml
+phone:
+  type: digits
+  noun: phone
+  length: 10
+  mask: '[2-9]\d{9}'
+  keypad: true
+  group: [3, 3, 4]
+  callerNumber:
+    countryCode: '1'        # +15555550142 becomes 5555550142; a number from another country is no number
+```
+
+and its line in prompts.yaml, in every locale (`pnpm check` requires it):
+
+```yaml
+offer_phone:
+  text: Is the number you're calling from, ending in {last4}, the best one to reach you?
+  interruptible: true
+```
+
+When the form would ask `phone` and the call came with a number that fits the slot, the line says `offer_phone` in place of `ask_phone`. `{last4}` is the number's last four digits, the only variable the line is given (it may leave it out: "Is the number you're calling from the best one to reach you?"). The offer is the slot's read-back, with the slot still empty:
+
+| The caller | What happens |
+|---|---|
+| A yes ("yes, that's fine") | The slot holds the number, confirmed, as a keyed number is, and the form goes on. |
+| A no | `ask_phone`, with no attempt counted: the caller answered what was asked. |
+| A number, with the no or without it ("no, use my cell, 555 555 0199") | The number fills as said, and the form goes on. |
+| Silence, or words that answer neither | The offer again, as any read-back is asked again: each counts a turn, and the slot's keypad rung (`ask_phone_dtmf`, or `ask_phone_retry` for a slot with no keypad) comes as it would. |
+| A number keyed | It fills as keyed. |
+
+It is offered once per slot per form: a number reopened at the summary ("the number is wrong") is asked with `ask_phone`, not offered again. A chat has no number, and neither does a call whose number is withheld or does not fit, so there the slot is asked as always ([13.13](#1313-the-number-the-caller-is-calling-from) says what counts as a number, and where each carrier puts it).
+
+What the option promises, and what it does not:
+
+- **It is never identity.** A caller ID can be forged. `pnpm check` refuses `callerNumber` on an identity factor, and the number is never compared with a record to verify anyone: it only fills a callback number the caller said yes to.
+- **It is never used silently.** Only the caller's yes fills the slot. A switchboard, a shared line or someone else's phone is the caller's to correct, which is why the line asks.
+- **It is said in part.** The offer says the last four digits, and the model is told no more ("the number they are calling from, ending in 0142"). The whole number is said only where the form's summary reads the slot back, so `pnpm check` warns when a form with the slot has no summary.
+- **It is masked as the slot is.** Once filled, it is the slot's value: a `digits` slot's default `redact: last4` masks it in the trace, the gate events and the audit, and a transfer hands it over by its last four. The start event's number (`SessionStart.callerNumber`) is masked on the console and in the frame log, and in the trace file as the slot masks its value. Nothing else of the app's sessions changes: a session keeps the number only when the app has such a slot, and the trace's first record says `callerNumber: kept` or `none`, so a builder can see why no offer was made.
+
+A slot kept for the call (`listen: call`, or app.yaml's `carrySlots`) is offered in the first form that asks it and, once filled, keeps its value: `pnpm check` warns so that it is meant.
+
+Testing it: a scripted call takes `"callerNumber": "+15555550142"` as a carrier sends it (a withheld one as the carrier writes it), which reaches the call only for an app with such a slot, never a chat; the text CLI takes `--caller-number`. A corpus line at the offer is in the form's context, `prompted` the slot, with `confirm` (`yes`, `no` or `unanswered`), as a summary's line is. Turning it on changes the model's request on the offer turn (the pending read-back is in its turn state), so a recorded cassette misses there until it is recorded again. The frame log keeps only the number's last four, so replaying a logged call makes no offer. The engine's own fixture is `packages/dialogwright/src/testing/callback`.
 
 ### Thresholds
 
@@ -2208,6 +2255,7 @@ The same app answers on the phone, through Twilio, Telnyx or both, and on the we
 | The no-input wait | `NO_INPUT_MS` (env); `NO_INPUT_AFTER_SPEECH_MS` (env) | `7000`: after a question has played (by its estimated length), 7 s of silence runs a silence turn ("I didn't hear anything." and the question again); `2500`: on a carrier that reports the caller speaking (Telnyx with `TELNYX_EVENTS` speaker-events), the wait is held while they speak and runs at least 2.5 s after they stop | `0` turns the wait off. A longer `NO_INPUT_AFTER_SPEECH_MS` if a silence turn still comes just before a transcript; shorter if callers wait too long after a cough ([13.11](#1311-the-no-input-wait-and-a-caller-heard-speaking)). |
 | Who may talk over a line | `BARGE_IN` (env): `any`, `speech`, `dtmf` or `none` | `any`: speech or a keypress cuts a line off, as the engine always connected | When a carrier's barge-in stops the agent's speech on noise or echo (`speech` keeps a keypress, `dtmf` or `none` stop speech cutting a line); or to rule barge-in in or out when callers report not hearing replies (try `none`, and see whether they hear the whole reply). It is the relay element's `interruptible` on every carrier (both take all four values; a value a listed carrier does not take is refused at startup). With `dtmf` or `none` the lines the engine sends say `interruptible: false` as well, so no line offers what the setting forbids; with `any` or `speech` each line keeps the `interruptible` its prompt has. |
 | Reconnects after a dropped relay | `RECONNECT_LIMIT` (env) | `2` | Fewer to hand a troubled call to a person sooner. |
+| Offering the number the caller is calling from | `callerNumber` on a `digits` slot (slots.yaml), with an `offer_<slot>` line | not offered: the slot is asked | For a callback number: the line asks whether the number the call came from is the best one, by its last four ([A callback number](#a-callback-number-callernumber), [13.13](#1313-the-number-the-caller-is-calling-from)). Never for an identity factor. |
 | What a transfer hands the carrier | `handoff.data` (app.yaml): `slots` (`all`, `none` or a list), `send` by slot (`omit`, `masked`, `as-is`) | no identity factor; a redacted slot masked; any other slot as it is | When the person taking the call needs a value in the clear (name it `as-is`), or fewer values on the carrier. |
 | The language a call starts in | `voice.numbers` (app.yaml): number called to locale | the app's default locale | A number per language. |
 | A locale's languages on the phone | `voice.locales.<tag>.tts`, `.transcription` (app.yaml) | the locale's tag | When the carrier needs a regional tag (`es` spoken as `es-US`, heard as `es-MX`). |
@@ -2479,6 +2527,24 @@ A no-input silence is a turn of its own and shows as before: `silence · 12 s` u
 The adapter hands each note to the console as it writes the frame-log line (a `delivery` event on the live feed), and a replay of a past call reads the same facts back from the frame log (`/dashboard/traces/<call>` answers them as `deliveries`), so a reloaded call shows the notes the live one did; nothing is added to the trace. A note carries timings and short codes only, never the caller's words or ours.
 
 To note something new, add one line to `DELIVERY_NOTES` in `packages/dialogwright/src/server/dashboard/view.js` (its kind, the line it goes under, and its sentence from the fact's fields; optionally the kinds of an earlier note it takes the place of, and whether the line was never said), and have the adapter write the frame-log line through its `logDelivery` helper instead of writing it directly. A kind's frame-log line is read as a fact by its key: `{ replyHeld: { ms, outcome } }` is the fact `{ kind: 'replyHeld', ms, outcome }`, and a fact that names a `turn` goes under that turn's line.
+
+### 13.13 The number the caller is calling from
+
+Each carrier's setup frame carries the number the call came from, in its own place, and its voice provider reads it (`VoiceProvider.setupCallerOf`):
+
+| Carrier | Where the number is | Seen |
+|---|---|---|
+| Twilio | the setup's `from`, in E.164 (`+15555550142`) | as documented |
+| Telnyx | `customParameters.telnyx_call_from`; the setup's `from`, `to` and `direction` are null | on live calls, 2026-10-05 |
+
+The console's `call_started` shows it by its last four on either carrier ("unknown" when the setup carries none). It goes to the core only for an app with a slot that offers it ([A callback number](#a-callback-number-callernumber)), as the start event's `callerNumber`, and the session keeps it only when it is a number such a slot can use:
+
+1. Digits as a carrier writes them: a leading `+`, spaces, dashes, dots or brackets. A word (`anonymous`, `unknown`), a SIP address, a client name or anything else is no number.
+2. Not one of Twilio's placeholders for a withheld caller ID, the keypad spellings of ANONYMOUS (266696687), RESTRICTED (7378742833), UNAVAILABLE (86282452253) and BLOCKED (2562533), with or without a country code. RESTRICTED has ten digits and fits a ten-digit phone mask, so the mask alone would not refuse it.
+3. The slot's `countryCode` taken off when what is left has the slot's `length`; otherwise the number must have the length already.
+4. What is left matches the slot's `mask`.
+
+How Telnyx writes a withheld number is not yet seen: until a live call shows it ([live-checks.md](live-checks.md)), anything that is not a number by the rules above makes no offer, and a placeholder of Telnyx's own made of ten digits would be offered as a number. A web chat has no number at all.
 
 ## 14. Running it
 

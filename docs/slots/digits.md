@@ -80,7 +80,7 @@ The span question's choices are the spans the engine found in the caller's words
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `keypad`, `ask_<slot>_dtmf`. With `lengthRetryPromptId`, that line. With `confirm: by-confidence`, `ack_<slot>`, given `{<slot>}` set to the display. `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `keypad`, `ask_<slot>_dtmf`. With `lengthRetryPromptId`, that line. With `confirm: by-confidence`, `ack_<slot>`, given `{<slot>}` set to the display. With `callerNumber`, `offer_<slot>`, given `{last4}`, the last four digits of the number the caller is calling from. `dialogwright check` requires each in every locale.
 
 ## Examples
 
@@ -249,4 +249,5 @@ reference:
 - The value is masked by its last four digits by default, in the trace and in a transfer's handoff. Turn that off (`redact: none`, `handoff: display`) only for a number that is no one's secret, such as a tracking number. Whether a transfer sends it at all is app.yaml's `handoff.data`: by default an identity factor is left out, and a redacted number goes by its last four.
 - In a Spanish session (`es`, `es-*`) the spans offered are Spanish number words, and a span is read as Spanish: "cinco cinco cinco dos cero cuatro uno siete" and "cincuenta y cinco cincuenta y dos cero cuatro diecisiete" are both 55520417. The questions and the display are the same in every locale.
 - `mask` is matched against the whole of the digits, as if written `^(?:mask)$`, so `5\d{3}` and `^5\d{3}$` are the same pattern; a mask written with `^` and `$` already means what it always did. A group that repeats a repeat, such as `(\d+)+`, is refused when the slot is defined, since such a pattern can take minutes to refuse a number that almost matches.
+- `callerNumber` offers the number the caller is calling from, for a callback number: the line asks `offer_<slot>` ("Is the number you're calling from, ending in {last4}, the best one to reach you?") in place of `ask_<slot>`, once per form, and only on a call whose number fits the slot. A yes fills the slot with it, confirmed; a no asks `ask_<slot>` with no attempt counted; a number said instead fills as said. It is never identity: `dialogwright check` refuses it on an identity factor. The guide's "A callback number" has the whole of it.
 - Run its checks with `pnpm --filter dialogwright test slots/digits`.

@@ -2,7 +2,7 @@
 
 The YAML and TypeScript for what a paragraph usually asks for. Each was built and run in an app scaffolded by `pnpm create-app --identity` (check, type check, tests and regression), with the scaffold's names (`accountId`, `dob`, `verifyCustomer`, `findAccount`, `Systems`, `ACCOUNTS`, `accountIdOf`); use your own. Imports are from `'dialogwright'` unless shown. The reference for every field is [docs/authoring-an-app.md](../../../docs/authoring-an-app.md); the engine's own test app, [the testkit](../../../packages/dialogwright/src/testing/testkit/README.md), uses every hook and is worth reading for a feature these patterns leave out (it is a test fixture, not a model of design).
 
-Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [An intent's criteria](#an-intents-criteria) · [Informational answers](#informational-answers) · [Something that must never wait](#something-that-must-never-wait) · [Keypad entry](#keypad-entry) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
+Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [An intent's criteria](#an-intents-criteria) · [Informational answers](#informational-answers) · [Something that must never wait](#something-that-must-never-wait) · [Keypad entry](#keypad-entry) · [A callback number](#a-callback-number-callernumber) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
 
 ## Verification (level 1)
 
@@ -629,6 +629,48 @@ getFees: {
 - The one-time code is always keyed.
 - A scripted call's keypad step is `{ "dtmf": "55501234" }`.
 - **The keypad menu** (`menu:` in intents.yaml) listens only once it has been offered: on a call with a keypad (a phone call, never the chat), the second missed answer to "what can I help you with" (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the next turn's keys are menu keys. A third miss goes to a person (`max-attempts`). A key pressed before that, at the greeting for instance, is ignored and the caller hears nothing. After an informational key the menu is offered again, so it keeps listening. A scripted call for a menu key misses twice first, with two silences: `[{ "silence": true }, { "silence": true }, { "dtmf": "4" }]`. A silence is a miss with no model call, so no recording can change the path. Do not open with words: a filler like "um" is read as addressed to the line at about the threshold, so on a recording it is sometimes ignored rather than missed and the menu is never offered (seen on three apps' first recordings), and any word the model reads can move a call whose subject is the keypad. (The clinic's and the utility's older calls open with "okay"; keep theirs as they are, since changing them re-keys their cassettes.)
+
+## A callback number: `callerNumber`
+
+"Take their name and a good callback number": on a phone call the carrier already knows the number, so the line offers it as a yes or no instead of asking for ten digits.
+
+```yaml
+# slots.yaml
+phone:
+  type: digits
+  noun: phone
+  length: 10
+  mask: '[2-9]\d{9}'
+  keypad: true
+  group: [3, 3, 4]
+  callerNumber:
+    countryCode: '1'        # +15555550142 is offered as 555 555 0142; another country's number is not offered
+```
+
+```yaml
+# prompts.yaml (every locale)
+ask_phone:
+  text: What's the best number to reach you?
+  interruptible: true
+ask_phone_retry:
+  text: Sorry, what's the ten-digit number we should call?
+  interruptible: true
+ask_phone_dtmf:
+  text: Please key in the ten-digit number on your keypad.
+  interruptible: true
+offer_phone:
+  text: Is the number you're calling from, ending in {last4}, the best one to reach you?
+  interruptible: true
+confirm_request_callback:
+  text: I have {caller}, at {phone}, about {reason}. Shall I set up the callback?
+  interruptible: true
+```
+
+- When the form reaches `phone` on a call whose number fits the slot, the line says `offer_phone` in place of `ask_phone`. A yes fills the slot; a no asks `ask_phone` with no attempt counted; "no, use my cell, 555 555 0199" fills the number said. A chat, or a withheld number, is asked `ask_phone` as always.
+- **Give the form a summary that reads `{phone}` back.** The offer says only the last four, so the summary is where the caller hears the whole number; `pnpm check` warns when a form with the slot has none.
+- **Never use the number to verify anyone.** A caller ID can be forged. `pnpm check` refuses `callerNumber` on an identity factor; never compare it with a record in a tool or a rule. It is a callback number the caller said yes to, nothing more.
+- The number is masked as the slot is (`redact: last4`, the default), so the tool param named `phone` is recorded by its last four and needs no `audit` line.
+- A scripted call from a number: `"callerNumber": "+15555550142"` beside `steps` (a withheld one as `"+7378742833"`, Twilio's RESTRICTED); add one with a yes, one with a no and a number said, one withheld, and the chat. A corpus line at the offer: `{"id":"of-01","text":"yes, that's fine","intent":"none","context":"request_callback","prompted":"phone","confirm":"yes"}`.
 
 ## What is recorded: `params` and `audit`
 
