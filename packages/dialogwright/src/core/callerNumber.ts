@@ -39,6 +39,17 @@ export function callerDigits(raw: string | null | undefined): string | null {
   return digits;
 }
 
+/**
+ * The number a carrier sent as the session keeps it (Session.callerNumber): its digits, with a
+ * leading `+` when the carrier wrote it in international form (E.164, as Twilio and Telnyx do), so a
+ * slot can tell a number that names its country from one that does not; null as for callerDigits.
+ */
+export function callerNumberOf(raw: string | null | undefined): string | null {
+  const digits = callerDigits(raw);
+  if (digits === null) return null;
+  return raw!.trim().startsWith('+') ? `+${digits}` : digits;
+}
+
 /** Whether the digits are a withheld placeholder, as sent or with a one-digit country code before it. */
 function isPlaceholder(digits: string): boolean {
   return WITHHELD_PLACEHOLDERS.includes(digits) || WITHHELD_PLACEHOLDERS.includes(digits.slice(1));
@@ -56,24 +67,25 @@ export function usesCallerNumber(app: App): boolean {
 }
 
 /**
- * The slot's value and display for the caller's number (Session.callerNumber, digits only), or null
- * when the slot does not offer it or the number does not fit it (its `countryCode`, `length` and
- * `mask`). A value that is a withheld placeholder is never one.
+ * The slot's value and display for the caller's number (Session.callerNumber: its digits, `+` first
+ * when it came in international form), or null when the slot does not offer it or the number does
+ * not fit it (its `countryCode`, `length` and `mask`). A value that is a withheld placeholder is never one.
  */
-export function callerCandidate(app: App, slot: SlotId, digits: string | undefined, locale?: string): SlotCandidate | null {
-  if (digits === undefined || !callerNumberSlots(app).includes(slot)) return null;
-  const c = app.slots[slot]!.callerNumber!.take(digits, locale);
+export function callerCandidate(app: App, slot: SlotId, number: string | undefined, locale?: string): SlotCandidate | null {
+  if (number === undefined || !callerNumberSlots(app).includes(slot)) return null;
+  const c = app.slots[slot]!.callerNumber!.take(number, locale);
   return c === null || isPlaceholder(c.value) ? null : c;
 }
 
 /**
- * What the session keeps of the number a start event carried: its digits, when a slot of the app
- * can use them, otherwise nothing (undefined). An app with no such slot keeps nothing.
+ * What the session keeps of the number a start event carried (callerNumberOf: its digits, `+` first
+ * when it came in international form), when a slot of the app can use it, otherwise nothing
+ * (undefined). An app with no such slot keeps nothing.
  */
 export function keptCallerNumber(app: App, raw: string | undefined): string | undefined {
-  const digits = callerDigits(raw);
-  if (digits === null) return undefined;
-  return callerNumberSlots(app).some((slot) => callerCandidate(app, slot, digits) !== null) ? digits : undefined;
+  const number = callerNumberOf(raw);
+  if (number === null) return undefined;
+  return callerNumberSlots(app).some((slot) => callerCandidate(app, slot, number) !== null) ? number : undefined;
 }
 
 /** The last four digits of a value, as the offer line says them ({last4}) and the console masks a number. */

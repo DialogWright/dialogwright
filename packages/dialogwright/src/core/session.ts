@@ -152,7 +152,8 @@ export interface Session {
    */
   locale?: string;
   /**
-   * The number the caller is calling from, its digits (core/callerNumber.ts): kept at the session's
+   * The number the caller is calling from, its digits, `+` first when the carrier wrote it in
+   * international form (core/callerNumber.ts callerNumberOf): kept at the session's
    * start only for an app with a slot that offers it (SlotSpec.callerNumber), and only when the
    * carrier sent a number such a slot can use. It is never identity, and nothing reads it but the
    * offer. Absent otherwise, so every other session is as it was.

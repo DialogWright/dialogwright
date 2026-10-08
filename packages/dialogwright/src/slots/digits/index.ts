@@ -28,18 +28,25 @@ function promptsOf(id: string, o: DigitsOptions): SlotPrompt[] {
 }
 
 /**
- * The slot's value for the number the caller is calling from (its digits): the country code taken
- * off when what is left has the slot's `length` (with no `length`, when what is left fits), then
- * held to the slot's pattern as a spoken number is. Null when it does not fit.
+ * The slot's value for the number the caller is calling from (its digits, `+` first when the carrier
+ * wrote it in international form): held to the slot's pattern as a spoken number is, null when it
+ * does not fit. A number in international form names its country, so it must begin with the slot's
+ * country code, which is taken off ("+15555550142" is 5555550142; "+3545550142", ten digits from
+ * another country, is no number for the slot). One with no `+` has the country code taken off when
+ * what is left has the slot's `length` (with no `length`, when what is left fits); otherwise it is
+ * taken as it is.
  */
 function callerNumberOf(o: DigitsOptions, display: (value: string, locale?: string) => string): NonNullable<SlotSpec['callerNumber']> {
   const fits = digitsFit(o);
   const code = o.callerNumber!.countryCode;
   return {
-    take(digits, locale) {
+    take(number, locale) {
+      const international = number.startsWith('+');
+      const digits = international ? number.slice(1) : number;
       const rest = digits.startsWith(code) ? digits.slice(code.length) : null;
-      const local = rest !== null && (o.length !== undefined ? rest.length === o.length : fits(rest)) ? rest : digits;
-      return fits(local) ? { value: local, display: display(local, locale) } : null;
+      const local = international ? rest
+        : rest !== null && (o.length !== undefined ? rest.length === o.length : fits(rest)) ? rest : digits;
+      return local !== null && fits(local) ? { value: local, display: display(local, locale) } : null;
     },
   };
 }

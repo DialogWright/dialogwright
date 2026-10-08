@@ -2541,7 +2541,7 @@ The console's `call_started` shows it by its last four on either carrier ("unkno
 
 1. Digits as a carrier writes them: a leading `+`, spaces, dashes, dots or brackets. A word (`anonymous`, `unknown`), a SIP address, a client name or anything else is no number.
 2. Not one of Twilio's placeholders for a withheld caller ID, the keypad spellings of ANONYMOUS (266696687), RESTRICTED (7378742833), UNAVAILABLE (86282452253) and BLOCKED (2562533), with or without a country code. RESTRICTED has ten digits and fits a ten-digit phone mask, so the mask alone would not refuse it.
-3. The slot's `countryCode` taken off when what is left has the slot's `length`; otherwise the number must have the length already.
+3. The slot's `countryCode`: a number in international form (`+15555550142`, as both carriers send it) must begin with it, and it is taken off, so ten digits from another country (`+3545550142`) are no number for the slot. A number with no `+` has it taken off when what is left has the slot's `length`; otherwise it must have the length already.
 4. What is left matches the slot's `mask`.
 
 How Telnyx writes a withheld number is not yet seen: until a live call shows it ([live-checks.md](live-checks.md)), anything that is not a number by the rules above makes no offer, and a placeholder of Telnyx's own made of ten digits would be offered as a number. A web chat has no number at all.

@@ -16,7 +16,7 @@ import { VOICE_RELAY } from '../channel/caps';
 import { mockCodeVerifier } from './tools';
 import { CALLBACK_DIR, callbackApp } from '../testing/callback/app';
 import { SCREENED_DIR, ScreenedSystems, screenedApp } from '../testing/screened/app';
-import { callerCandidate, callerDigits, keptCallerNumber, lastFour, usesCallerNumber, WITHHELD_PLACEHOLDERS } from './callerNumber';
+import { callerCandidate, callerDigits, callerNumberOf, keptCallerNumber, lastFour, usesCallerNumber, WITHHELD_PLACEHOLDERS } from './callerNumber';
 import { redactRecordSlots } from '../trace/redact';
 import { redactRecord } from '../server/dashboard/events';
 
@@ -96,6 +96,22 @@ describe('the number a carrier sends', () => {
     expect(callerCandidate(callbackApp, 'reason', '15555550142')).toBeNull();
   });
 
+  it('holds a number in international form to the slot\'s country code: another country\'s is no number, whatever its length', () => {
+    expect(callerNumberOf('+15555550142')).toBe('+15555550142');
+    expect(callerNumberOf(' +1 (555) 555-0142 ')).toBe('+15555550142');
+    expect(callerNumberOf('5555550142')).toBe('5555550142');
+    expect(callerNumberOf('anonymous')).toBeNull();
+    expect(callerCandidate(callbackApp, 'phone', '+15555550142')).toEqual({ value: '5555550142', display: '555 555 0142' });
+    // Ten digits from another country (+354, seven digits after it): with no + they would fit the
+    // mask; in international form they are no number for a slot whose country code is 1.
+    expect(callerCandidate(callbackApp, 'phone', '+3545550142')).toBeNull();
+    expect(callerCandidate(callbackApp, 'phone', '3545550142')).toEqual({ value: '3545550142', display: '354 555 0142' });
+    expect(keptCallerNumber(callbackApp, '+3545550142')).toBeUndefined();
+    // A +1 number with a digit too many or too few.
+    expect(callerCandidate(callbackApp, 'phone', '+155555501420')).toBeNull();
+    expect(callerCandidate(callbackApp, 'phone', '+1555555014')).toBeNull();
+  });
+
   it('refuses RESTRICTED, which fits a ten-digit phone mask, by the placeholder list and not by the mask', () => {
     // The mask alone would take it: ten digits, the first 2 to 9.
     expect(/^[2-9]\d{9}$/.test('7378742833')).toBe(true);
@@ -107,7 +123,7 @@ describe('the number a carrier sends', () => {
   it('is kept only by an app with a slot that offers it, and only when a slot can use it', () => {
     expect(usesCallerNumber(callbackApp)).toBe(true);
     expect(usesCallerNumber(screenedApp)).toBe(false);
-    expect(keptCallerNumber(callbackApp, CALLING_FROM)).toBe('15555550142');
+    expect(keptCallerNumber(callbackApp, CALLING_FROM)).toBe('+15555550142');
     expect(keptCallerNumber(screenedApp, CALLING_FROM)).toBeUndefined();
     expect(keptCallerNumber(callbackApp, '+445555550142')).toBeUndefined();
     expect(keptCallerNumber(callbackApp, undefined)).toBeUndefined();
@@ -211,7 +227,7 @@ describe('no offer', () => {
   });
 
   it('when the number is withheld, or does not fit the slot', async () => {
-    for (const from of ['+7378742833', '+266696687', 'anonymous', '', '+445555550142', 'sip:caller@example.com']) {
+    for (const from of ['+7378742833', '+266696687', 'anonymous', 'Restricted', '+', '', '+445555550142', '+3545550142', 'sip:caller@example.com']) {
       const t = last(await call(from, ...OPENER));
       expect(heard(t), from).toBe(ASK_PHONE);
       expect(t.session.callerNumber, from).toBeUndefined();

@@ -144,7 +144,7 @@ describe('the start event', () => {
     // The app the server runs is its default: the trace file masks by its slots.
     useApps('callback');
     const { traced, d, callId, events } = await setUp('callback', 'telnyx', telnyxSetup('+15555550142'));
-    expect(d.store.get(callId)!.session.callerNumber).toBe('15555550142');
+    expect(d.store.get(callId)!.session.callerNumber).toBe('+15555550142');
     expect(traced.callerNumber).toBe('kept');
     expect(traced.event).toMatchObject({ type: 'session.start', callerNumber: '...0142' });
     const turn = events.find((e) => e.type === 'turn') as Extract<DashboardEvent, { type: 'turn' }>;

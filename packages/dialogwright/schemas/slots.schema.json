@@ -746,7 +746,7 @@
               "countryCode": {
                 "type": "string",
                 "pattern": "^\\d{1,3}$",
-                "description": "The country calling code the carrier writes before the number (\"1\" for +1). It is taken off when what is left has the slot's `length`; a number from any other country is no number for the slot."
+                "description": "The country calling code the carrier writes before the number (\"1\" for +1). A number in international form (+15555550142, as carriers send it) must begin with it, and it is taken off; one from any other country is no number for the slot. A number with no + has it taken off when what is left has the slot's `length`."
               }
             },
             "required": [
