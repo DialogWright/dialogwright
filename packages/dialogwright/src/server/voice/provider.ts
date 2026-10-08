@@ -141,6 +141,14 @@ export interface VoiceProvider {
    */
   setupCallId?(setup: SetupFrame): string;
   /**
+   * The number the caller is calling from, as the setup frame carries it, or null when it carries
+   * none: what the console's call_started shows masked, and what a slot that offers the caller's
+   * number reads (SessionStart.callerNumber, core/callerNumber.ts, which refuses a withheld one).
+   * Absent: the setup's `from`. Telnyx's setup has `from` null and the number in its custom
+   * parameters, as `telnyx_call_from`.
+   */
+  setupCallerOf?(setup: SetupFrame): string | null;
+  /**
    * Which text frames of one turn carry `last: true`. `each` (absent): every one, as Twilio speaks them
    * all. `final`: only the turn's last text frame, the others `last: false`; a carrier that ends the
    * reply at the first `last: true` and drops what follows needs it (Telnyx, seen on a live call).

@@ -119,6 +119,9 @@ function parse(req: WebhookRequest): CallbackParams | null {
  */
 export const twilioProvider: VoiceProvider = {
   id: 'twilio',
+  // The setup frame's `from`, in E.164; a withheld caller ID comes as one of Twilio's placeholders
+  // (core/callerNumber.ts WITHHELD_PLACEHOLDERS), which the engine refuses.
+  setupCallerOf: (setup) => (typeof setup.from === 'string' && setup.from !== '' ? setup.from : null),
   contentType: 'text/xml',
   verify: (req, secret, publicHost) =>
     validateTwilioSignature(`https://${publicHost}${req.url}`, formFields(req.rawBody), req.headers['x-twilio-signature'], secret),

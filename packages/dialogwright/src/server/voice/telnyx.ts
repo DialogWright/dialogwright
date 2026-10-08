@@ -229,6 +229,12 @@ export const telnyxProvider: VoiceProvider = {
   // Seen on a live call (2026-10-05): the setup's callSid is a 36-character id, and the webhook's CallSid
   // (a v3: id) arrives as callControlId.
   setupCallId: (setup) => setup.callControlId ?? setup.callSid,
+  // Seen on a live call (2026-10-05): the setup's `from` is null, and the caller's number comes in
+  // customParameters as telnyx_call_from. How Telnyx writes a withheld number is not yet seen (docs/live-checks.md).
+  setupCallerOf: (setup) => {
+    const from = setup.customParameters?.telnyx_call_from;
+    return typeof from === 'string' && from !== '' ? from : null;
+  },
   // Seen on a live call (2026-10-05): after a text frame with last: true, Telnyx drops the turn's next one.
   textLast: 'final',
   // Seen on a live call (2026-10-05): Telnyx acts on `end` at once and drops the speech it has not yet played.

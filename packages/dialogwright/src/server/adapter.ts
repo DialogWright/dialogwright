@@ -1,11 +1,12 @@
-import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCallIdOf, textLastOf } from './voice/registry';
+import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCallerOf, setupCallIdOf, textLastOf } from './voice/registry';
+import { usesCallerNumber } from '../core/callerNumber';
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
 import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
-import { serviceResultEvent, silenceEvent, type SessionEvent } from '../channel/events';
+import { serviceResultEvent, silenceEvent, withCallerNumber, type SessionEvent } from '../channel/events';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
 import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun } from '../run/continuation';
@@ -1661,6 +1662,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     }
     const entry = deps.store.create(callId, socket, ctx.provider);
     entry.frames.write('in', redactDeep(parsed));
+    const caller = setupCallerOf(ctx.provider, parsed);
     // The call's window for a caller who had not finished, once, for replay (harness-text/replay.ts),
     // which joins where this call does by it; a log without the line is one that never joined.
     const within = continueWithinMsOf(appOf(entry.session));
@@ -1669,7 +1671,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
     publish(deps, {
       type: 'call_started', callSid: callId, at: Date.now(),
-      from: maskNumber(parsed.from), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
+      // The caller's number where this carrier's setup carries it (Telnyx's is in its custom parameters), masked.
+      from: maskNumber(caller), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
       // Voice only, here, with the carrier it came in on; an app's chat (an AppRoute,
       // src/server/appRoutes.ts) is the other publisher of this event, and there `caller` names who is chatting.
       channel: 'voice', provider: ctx.provider, caller: null,
@@ -1682,7 +1685,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     } catch {
       // A client whose warm throws synchronously is no reason to drop the call.
     }
-    const start = frameToEvent(parsed);
+    // The number the caller is calling from goes to the core only for an app with a slot that offers
+    // it (core/callerNumber.ts); every other app's start event is as it was.
+    const start = withCallerNumber(frameToEvent(parsed), usesCallerNumber(appOf(entry.session)) ? caller : null);
     await enqueueUnsettled(deps, callId, async (e) => {
       await turn(deps, e, start);
     });
