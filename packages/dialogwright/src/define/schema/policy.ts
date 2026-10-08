@@ -51,7 +51,9 @@ import type { AuditMask } from '../../core/app/types';
  * The range rules' bounds (dateInRange, limit) are literals (for a date, also `today`, `today+N` or
  * `today-N`) or references to the app's lookups, `<lookup>(<param>)` or `<lookup>(<param>).<field>`
  * (../../gate/bounded.ts), read here, never run. The list rules' values (oneOf, noneOf;
- * ../../gate/listed.ts) are the param's values as a slot holds them, matched exactly.
+ * ../../gate/listed.ts) are the param's values as a slot holds them, matched exactly. The
+ * callerNumber rule (../../gate/callerNumber.ts) holds a param to the number the caller is calling
+ * from, or with `else: confirmed` to one the caller confirmed at the summary.
  *
  * `redact:` names, by who asks (a delegate kind, or `<kind>.<role>` for one role's own list), the
  * fields of an action's result withheld from a party who acts for subjects; the tool declares the
@@ -107,9 +109,9 @@ export const policyWording = z
 /** The rules written by their bare name: they take no parameters. */
 export const BARE_RULES = ['identity', 'attempts'] as const;
 /** The rules written as a map of the name to their parameters. */
-export const PARAM_RULES = ['scope', 'role', 'confirmed', 'fields', 'dateInRange', 'limit', 'oneOf', 'noneOf', 'custom'] as const;
+export const PARAM_RULES = ['scope', 'role', 'confirmed', 'fields', 'dateInRange', 'limit', 'oneOf', 'noneOf', 'callerNumber', 'custom'] as const;
 /** Every rule name, in the order the docs list them. */
-export const RULE_NAMES = ['identity', 'scope', 'role', 'confirmed', 'attempts', 'fields', 'dateInRange', 'limit', 'oneOf', 'noneOf', 'custom'] as const;
+export const RULE_NAMES = ['identity', 'scope', 'role', 'confirmed', 'attempts', 'fields', 'dateInRange', 'limit', 'oneOf', 'noneOf', 'callerNumber', 'custom'] as const;
 export type BareRule = (typeof BARE_RULES)[number];
 export type ParamRule = (typeof PARAM_RULES)[number];
 export type RuleName = (typeof RULE_NAMES)[number];
@@ -265,7 +267,18 @@ const listRule = (which: 'oneOf' | 'noneOf') =>
 const oneOfRule = listRule('oneOf');
 const noneOfRule = listRule('noneOf');
 
-const RULE_PARAMS: Record<ParamRule, z.ZodType> = { scope: scopeRule, role: roleRule, confirmed: confirmedRule, fields: fieldsRule, dateInRange: dateInRangeRule, limit: limitRule, oneOf: oneOfRule, noneOf: noneOfRule, custom: customRule };
+// The callerNumber rule (../../gate/callerNumber.ts): a param held to the number the caller is calling from.
+const callerNumberRule = z
+  .strictObject({
+    field: identifier().describe('The action\'s param that holds the number (for a text, the slot a text offer filled: it is compared as that slot holds the caller\'s number). A value that is missing or empty BLOCKs, reason "value-missing".'),
+    else: z
+      .enum(['refuse', 'confirmed'])
+      .optional()
+      .describe('What a number that is not the caller\'s gets: "refuse" (default), BLOCK "not-caller-number" (or "no-caller-number" when the call kept none), or "confirmed": it passes when the caller heard the call\'s values read back at the summary and said yes, which needs the field in the action\'s confirmed rule.'),
+  })
+  .describe('callerNumber: the action\'s param is the number the caller is calling from, or with else: confirmed one they confirmed at the summary. Caller ID is a hint, never identity: the rule says where a call may send something, never whose record it reads.');
+
+const RULE_PARAMS: Record<ParamRule, z.ZodType> = { scope: scopeRule, role: roleRule, confirmed: confirmedRule, fields: fieldsRule, dateInRange: dateInRangeRule, limit: limitRule, oneOf: oneOfRule, noneOf: noneOfRule, callerNumber: callerNumberRule, custom: customRule };
 
 /** An example of each rule with parameters, for a fix. */
 const RULE_EXAMPLES: Record<ParamRule, string> = {
@@ -277,6 +290,7 @@ const RULE_EXAMPLES: Record<ParamRule, string> = {
   limit: 'limit: { field: amount, max: orderTotal(orderId) }',
   oneOf: 'oneOf: { field: town, values: [millbrook, ashford] }',
   noneOf: 'noneOf: { field: howUrgent, values: [emergency], verdict: NEEDS_HUMAN }',
+  callerNumber: 'callerNumber: { field: textTo }',
   custom: 'custom: <the rule\'s id in code.customRules>',
 };
 
@@ -309,6 +323,12 @@ export interface ListYaml {
   verdict?: 'BLOCK' | 'NEEDS_HUMAN';
 }
 
+/** The parameters of a callerNumber rule, as written. */
+export interface CallerNumberYaml {
+  field: string;
+  else?: 'refuse' | 'confirmed';
+}
+
 /** One entry of an action's rules, as written: a bare rule's name, or a map of one rule's name to its parameters. */
 export type RuleEntryYaml =
   | BareRule
@@ -320,6 +340,7 @@ export type RuleEntryYaml =
   | { limit: LimitYaml }
   | { oneOf: ListYaml }
   | { noneOf: ListYaml }
+  | { callerNumber: CallerNumberYaml }
   | { custom: string };
 
 /** The JSON Schema of one rule entry, for an editor: the bare names, and each rule with its parameters. */
@@ -403,7 +424,7 @@ const ruleEntry = z
       ctx.addIssue({ ...(inner as unknown as z.core.$ZodRawIssue), path: [rule, ...inner.path] } as z.core.$ZodRawIssue);
     }
   }))
-  .meta({ ...ruleEntryJson, description: 'One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, dateInRange, limit, oneOf, noneOf, custom).' }) as unknown as z.ZodType<RuleEntryYaml>;
+  .meta({ ...ruleEntryJson, description: 'One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, dateInRange, limit, oneOf, noneOf, callerNumber, custom).' }) as unknown as z.ZodType<RuleEntryYaml>;
 
 /** What makes two rules of an action the same rule: its name, and for a custom rule its id, for a range or list rule its field. Null for an entry that is no rule (its own problem says why). */
 export function ruleKey(entry: unknown): string | null {
@@ -414,7 +435,7 @@ export function ruleKey(entry: unknown): string | null {
   const rule = keys[0]!;
   if (rule === 'custom') return `custom: ${String(entry.custom)}`;
   // A range or list rule holds one param: an action may hold two params (a start and an end date) with one each.
-  if (rule === 'dateInRange' || rule === 'limit' || rule === 'oneOf' || rule === 'noneOf') {
+  if (rule === 'dateInRange' || rule === 'limit' || rule === 'oneOf' || rule === 'noneOf' || rule === 'callerNumber') {
     const params = entry[rule];
     return isMap(params) && typeof params.field === 'string' ? `${rule}: ${params.field}` : null;
   }

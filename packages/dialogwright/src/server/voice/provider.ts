@@ -149,6 +149,13 @@ export interface VoiceProvider {
    */
   setupCallerOf?(setup: SetupFrame): string | null;
   /**
+   * The number the caller called (the DNIS), as the setup frame carries it, or null when it carries
+   * none: what an app that keeps it reads (SessionStart.calledNumber, App.callerNumber `called`).
+   * Absent: the setup's `to`. Telnyx's setup has `to` null and the number in its custom parameters,
+   * as `telnyx_call_to`.
+   */
+  setupCalledOf?(setup: SetupFrame): string | null;
+  /**
    * Which text frames of one turn carry `last: true`. `each` (absent): every one, as Twilio speaks them
    * all. `final`: only the turn's last text frame, the others `last: false`; a carrier that ends the
    * reply at the first `last: true` and drops what follows needs it (Telnyx, seen on a live call).

@@ -235,6 +235,12 @@ export const telnyxProvider: VoiceProvider = {
     const from = setup.customParameters?.telnyx_call_from;
     return typeof from === 'string' && from !== '' ? from : null;
   },
+  // As the caller's: the setup's `to` is null, and the number called comes in customParameters as
+  // telnyx_call_to (seen on a live call's setup, 2026-10-05; its use for an app is in docs/live-checks.md).
+  setupCalledOf: (setup) => {
+    const to = setup.customParameters?.telnyx_call_to;
+    return typeof to === 'string' && to !== '' ? to : null;
+  },
   // Seen on a live call (2026-10-05): after a text frame with last: true, Telnyx drops the turn's next one.
   textLast: 'final',
   // Seen on a live call (2026-10-05): Telnyx acts on `end` at once and drops the speech it has not yet played.

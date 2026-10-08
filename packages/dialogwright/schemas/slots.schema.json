@@ -747,6 +747,24 @@
                 "type": "string",
                 "pattern": "^\\d{1,3}$",
                 "description": "The country calling code the carrier writes before the number (\"1\" for +1). A number in international form (+15555550142, as carriers send it) must begin with it, and it is taken off; one from any other country is no number for the slot. A number with no + has it taken off when what is left has the slot's `length`."
+              },
+              "onNo": {
+                "default": "ask",
+                "description": "What a no to the offer does: \"ask\" (default) asks ask_<slot>, with no attempt counted; \"skip\" leaves the slot empty and the form goes on (an offer to text, say, where a no means no text). The end of the offer's retry ladder (no answer) does the same. A number said with the no fills the slot as said either way.",
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "skip"
+                ]
+              },
+              "ifNone": {
+                "default": "ask",
+                "description": "What a call with no number to offer does (a chat, a withheld number, one that does not fit, or one the app's callerOffer hook refuses): \"ask\" (default) asks ask_<slot> as always; \"skip\" leaves the slot empty and the form goes on.",
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "skip"
+                ]
               }
             },
             "required": [

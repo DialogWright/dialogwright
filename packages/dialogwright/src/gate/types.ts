@@ -107,6 +107,19 @@ export interface GateFacts {
   readonly confirmedHash: string | null;
   /** Today's date, ISO yyyy-mm-dd, as the call session knows it. A rule that checks a date compares it against this, never the wall clock. */
   readonly todayIso: string;
+  /**
+   * The number the caller is calling from, as the session kept it (Session.callerNumber: its digits,
+   * `+` first in international form), what the callerNumber rule holds a param to. Absent when the
+   * session kept none (a chat, a withheld number, an app that keeps none). It is a hint, never proof
+   * of who is calling: compare a number the call will send to with it, never a record's owner.
+   */
+  readonly callerNumber?: string;
+  /**
+   * The same number as each slot that offers it holds it (its `callerNumber.take`: e.g. `phone`
+   * 5555550142 for +15555550142), by slot id; only the slots it fits. Absent with callerNumber, and
+   * when no slot takes it.
+   */
+  readonly callerNumberAs?: Readonly<Record<string, string>>;
 }
 
 /**

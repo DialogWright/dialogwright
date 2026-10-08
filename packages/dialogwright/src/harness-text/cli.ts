@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
-import { keyEvents, silenceEvent, startEvent, withCallerNumber, type SessionEvent } from '../channel/events';
-import { usesCallerNumber } from '../core/callerNumber';
+import { keyEvents, silenceEvent, startEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
+import { usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import { appOf } from '../core/app/registry';
 import { demoTools } from '../core/tools';
 import { newSession, type Session } from '../core/session';
@@ -35,8 +35,10 @@ function parseCliArgs() {
       'corpus-file': { type: 'string' },
       // Where the injection screen is asked: inline (default) or separate (core/screen.ts ScreenMode).
       screen: { type: 'string' },
-      // The number the REPL's call comes from (SessionStart.callerNumber), for an app with a slot that offers it.
+      // The number the REPL's call comes from (SessionStart.callerNumber), for an app with a slot that offers it or that keeps it.
       'caller-number': { type: 'string' },
+      // The number the REPL's call is to (SessionStart.calledNumber), for an app that keeps it (app.yaml callerNumber.called).
+      'called-number': { type: 'string' },
     },
   }).values;
 }
@@ -77,7 +79,7 @@ function printRun(run: TurnRun, quiet: boolean): void {
   console.log('');
 }
 
-async function repl(opts: RunOptions, quiet: boolean, callerNumber?: string): Promise<TraceRecord[]> {
+async function repl(opts: RunOptions, quiet: boolean, callerNumber?: string, calledNumber?: string): Promise<TraceRecord[]> {
   const records: TraceRecord[] = [];
   // One book of business for the whole session, so a record created on one call is there on the next.
   const o: RunOptions = { ...opts, tools: opts.tools ?? demoTools() };
@@ -92,8 +94,9 @@ async function repl(opts: RunOptions, quiet: boolean, callerNumber?: string): Pr
       if (show(r)) printRun(r, quiet);
     }
   };
-  // The call's number, for an app with a slot that offers it (--caller-number); every other app's start is as it was.
-  const start = () => turn(withCallerNumber(startEvent(), usesCallerNumber(appOf(session)) ? callerNumber : undefined));
+  // The call's number, for an app with a slot that offers it or that keeps it (--caller-number), and the
+  // number called, for an app that keeps it (--called-number); every other app's start is as it was.
+  const start = () => turn(withCalledNumber(withCallerNumber(startEvent(), usesCallerNumber(appOf(session)) ? callerNumber : undefined), usesCalledNumber(appOf(session)) ? calledNumber : undefined));
   await start();
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: 'caller> ' });
   rl.prompt();
@@ -170,7 +173,7 @@ async function run(): Promise<void> {
   }
 
   if (!args.corpus && !args.scenarios && !args.replay) {
-    records.push(...(await repl(opts, args.quiet!, args['caller-number'])));
+    records.push(...(await repl(opts, args.quiet!, args['caller-number'], args['called-number'])));
   }
 
   if (records.length) {

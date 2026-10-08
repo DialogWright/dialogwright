@@ -263,6 +263,8 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         slot.display = outcome.display;
         slot.confirmed = keepConfirmed || (policy === 'by-confidence' && outcome.confirm === 'none');
         slot.window = null;
+        // A slot the caller declined (SlotState.declined) that they now give a value is filled, no longer declined.
+        delete slot.declined;
         if (policy === 'by-confidence' && outcome.confirm === 'implicit') acks.push({ promptId: `ack_${spec.id}`, vars: { [spec.id]: outcome.display } });
         if (isNew) progress = true;
         break;
@@ -341,5 +343,6 @@ export function applyDtmf(session: Session, buffer: string, ctx: SlotContext): D
   slot.display = parsed.display;
   slot.confirmed = true;
   slot.window = null;
+  delete slot.declined;
   return { kind: 'filled', slot: target, display: parsed.display };
 }

@@ -3,7 +3,7 @@ import { raise } from '../gate/principal';
 import { isAnonymous, isParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
 import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
+import type { AppContext, Completion, CompletionContext, FormId, Refused, SlotId, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
 import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack } from './fia';
@@ -11,6 +11,7 @@ import type { TurnContext } from './turn';
 import type { FormStopped } from './checks';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { idempotencyKey } from './idempotency';
+import { callerGateFacts } from './callerNumber';
 import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
 
 export { redactCall };
@@ -89,6 +90,29 @@ export interface TurnOut {
   effects: Effect[];
   /** The form a check ended this turn (core/checks.ts), for the audit's `form_stopped` row. Absent on every other turn. */
   stopped?: FormStopped;
+  /** The offer of the caller's number this turn settled (core/turn.ts), for the audit's `offer` row. Absent on every other turn. */
+  offer?: OfferSettled;
+}
+
+/**
+ * An offer of the number the caller is calling from, settled (a slot's `callerNumber`): what was
+ * asked, as the line was said, and what the caller answered. `yes`: the number offered; `no`: a no,
+ * with no number of their own; `other`: a number of their own, said or keyed, with or without a no;
+ * `none`: no answer before the offer's retry ladder ran out. The audit writes it as an `offer` row in
+ * the day's hash chain (core/audit.ts), with how it was answered.
+ */
+export interface OfferSettled {
+  readonly slot: SlotId;
+  /** Where the value offered came from: the number the caller is calling from. */
+  readonly source: 'caller-number';
+  readonly promptId: string;
+  /** The offer's line as rendered (the prompt manifest may change later). */
+  readonly said: string;
+  readonly answer: 'yes' | 'no' | 'other' | 'none';
+  /** The last four digits of the number offered, as the line said them. */
+  readonly last4: string;
+  /** The language the line was said in. */
+  readonly locale: string;
 }
 
 export function newTurnOut(): TurnOut {
@@ -121,11 +145,16 @@ function isOtherParty(s: Session, subjectKind: string): boolean {
 /**
  * What the gate may know of the session for this call. The attempts are the ones the call's own
  * identity check has failed: the one-time code's for the app's code tool, the factors' for anything
- * else (the attempts rule runs only for the identity tools the app's rulesFor gives it to).
+ * else (the attempts rule runs only for the identity tools the app's rulesFor gives it to). The
+ * caller's number, where the session kept one, for the callerNumber rule (GateFacts.callerNumber).
  */
 function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
-  const attempts = call.tool === identityOf(appOf(s)).codeTool ? s.identityAttempts.code : s.identityAttempts.factors;
-  return { attempts, confirmedHash: s.confirmedHash, todayIso: tc.todayIso };
+  const app = appOf(s);
+  const attempts = call.tool === identityOf(app).codeTool ? s.identityAttempts.code : s.identityAttempts.factors;
+  const facts = { attempts, confirmedHash: s.confirmedHash, todayIso: tc.todayIso };
+  // The caller's number, only for a session that kept one (core/callerNumber.ts): every other
+  // session's facts are as they were.
+  return s.callerNumber === undefined ? facts : { ...facts, ...callerGateFacts(app, s.callerNumber) };
 }
 
 /**

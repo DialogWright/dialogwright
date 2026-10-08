@@ -1,14 +1,19 @@
 import type { App, SlotId } from './app/types';
 import type { SlotCandidate } from './slots/types';
+import type { Session } from './session';
 import { identityOf } from './app/lookup';
+import { appOf } from './app/registry';
 
 /**
  * The number the caller is calling from, as an offer for a slot that holds a phone number (a `digits`
- * slot's `callerNumber`, SlotSpec.callerNumber). The carrier's setup gives it (VoiceProvider.setupCallerOf,
- * server/voice), the start event carries it (SessionStart.callerNumber) only for an app with such a
- * slot, and the session keeps it (Session.callerNumber) only when a slot can use it. It is never
- * identity: a caller ID can be forged, so `pnpm check` refuses the option on an identity factor and
- * the engine never offers one; the number is used only after the caller's yes.
+ * slot's `callerNumber`, SlotSpec.callerNumber), and as a hint for the app's own code (app.yaml's
+ * `callerNumber: { use: hint }`, App.callerNumber). The carrier's setup gives it
+ * (VoiceProvider.setupCallerOf, server/voice), the start event carries it (SessionStart.callerNumber)
+ * only for an app with such a slot or such a block, and the session keeps it (Session.callerNumber)
+ * only when the app can use it. It is never identity: a caller ID can be forged, so `pnpm check`
+ * refuses the option on an identity factor and the engine never offers one; the number fills a slot
+ * only after the caller's yes, and app code reads it (callerOf) to look something up or to propose,
+ * never to verify.
  */
 
 /**
@@ -61,9 +66,22 @@ export function callerNumberSlots(app: App): SlotId[] {
   return Object.values(app.slots).filter((spec) => spec.callerNumber !== undefined && !factors.includes(spec.id)).map((spec) => spec.id);
 }
 
-/** Whether the app has a slot that offers the caller's number: only then does a start event carry it. */
+/** Whether the app keeps the caller's number for its own code (app.yaml's `callerNumber: { use: hint }`). */
+export function hintsCallerNumber(app: App): boolean {
+  return app.callerNumber?.use === 'hint';
+}
+
+/**
+ * Whether the app has a slot that offers the caller's number, or keeps it for its code
+ * (hintsCallerNumber): only then does a start event carry it.
+ */
 export function usesCallerNumber(app: App): boolean {
-  return callerNumberSlots(app).length > 0;
+  return callerNumberSlots(app).length > 0 || hintsCallerNumber(app);
+}
+
+/** Whether the app keeps the number called (app.yaml's `callerNumber: { use: hint, called: true }`): only then does a start event carry it. */
+export function usesCalledNumber(app: App): boolean {
+  return hintsCallerNumber(app) && app.callerNumber?.called === true;
 }
 
 /**
@@ -79,27 +97,97 @@ export function callerCandidate(app: App, slot: SlotId, number: string | undefin
 
 /**
  * What the session keeps of the number a start event carried (callerNumberOf: its digits, `+` first
- * when it came in international form), when a slot of the app can use it, otherwise nothing
- * (undefined). An app with no such slot keeps nothing.
+ * when it came in international form): for an app that keeps it for its code (hintsCallerNumber),
+ * any usable number; otherwise only one a slot of the app can use. Nothing (undefined) when there is
+ * none, and for an app with neither such a slot nor the block.
  */
 export function keptCallerNumber(app: App, raw: string | undefined): string | undefined {
   const number = callerNumberOf(raw);
   if (number === null) return undefined;
+  if (hintsCallerNumber(app)) return number;
   return callerNumberSlots(app).some((slot) => callerCandidate(app, slot, number) !== null) ? number : undefined;
+}
+
+/**
+ * What the session keeps of the number called (Session.calledNumber): its digits, `+` first when it
+ * came in international form, only for an app that keeps it (usesCalledNumber); otherwise nothing.
+ */
+export function keptCalledNumber(app: App, raw: string | undefined): string | undefined {
+  if (!usesCalledNumber(app)) return undefined;
+  return callerNumberOf(raw) ?? undefined;
+}
+
+/** The caller's number as app code reads it (callerOf): as the session keeps it, and its last four digits. */
+export interface CallerNumber {
+  /** Its digits, `+` first when the carrier wrote it in international form ("+15555550142"). */
+  readonly number: string;
+  /** Its last four digits, as a line may say them ("0142"). */
+  readonly last4: string;
+}
+
+/**
+ * The number the caller is calling from, for the app's code: a hint to look something up by or to
+ * propose a value from, never proof of who is calling. Null on a chat, on a call with no usable
+ * number, and for an app that does not keep it for its code (app.yaml's `callerNumber: { use: hint }`),
+ * so code written against it is safe anywhere.
+ */
+export function callerOf(s: Session): CallerNumber | null {
+  if (s.callerNumber === undefined || !hintsCallerNumber(appOf(s))) return null;
+  return { number: s.callerNumber, last4: lastFour(s.callerNumber) };
+}
+
+/**
+ * The number the caller called (the DNIS), for the app's code: its digits, `+` first when the carrier
+ * wrote it in international form. Null on a chat, when the carrier sent none, and for an app that
+ * does not keep it (app.yaml's `callerNumber: { use: hint, called: true }`).
+ */
+export function calledOf(s: Session): string | null {
+  if (s.calledNumber === undefined || !usesCalledNumber(appOf(s))) return null;
+  return s.calledNumber;
+}
+
+/**
+ * What the gate knows of the caller's number (GateFacts.callerNumber and callerNumberAs), for a
+ * session that kept one: the number as kept, and as each slot that offers it would hold it (its
+ * `callerNumber.take`), so the callerNumber rule compares a slot's param as the slot holds it.
+ */
+export function callerGateFacts(app: App, number: string): { callerNumber: string; callerNumberAs?: Readonly<Record<SlotId, string>> } {
+  const as = Object.fromEntries(callerNumberSlots(app).flatMap((slot) => {
+    const c = callerCandidate(app, slot, number);
+    return c === null ? [] : [[slot, c.value] as const];
+  }));
+  return Object.keys(as).length > 0 ? { callerNumber: number, callerNumberAs: as } : { callerNumber: number };
+}
+
+/** The slot's callerNumber option, when it skips on a no (`onNo: skip`). */
+export function skipsOnNo(app: App, slot: SlotId): boolean {
+  return app.slots[slot]?.callerNumber?.onNo === 'skip';
+}
+
+/** The slot's callerNumber option, when it skips with no number to offer (`ifNone: skip`). */
+export function skipsIfNone(app: App, slot: SlotId): boolean {
+  return app.slots[slot]?.callerNumber?.ifNone === 'skip';
 }
 
 /**
  * A number to stand in for the caller's in a replayed call (harness-text/replay.ts). The frame log
  * keeps only the last four digits of a number the live session kept (the adapter's
  * `{ callerNumber: '…0142' }` line), which is all the offer said and all the model was told, so a
- * made-up number (the 555 range) ending in them makes the same offer: the shortest such number the
- * app keeps. Undefined when there is none, or `last4` is not four digits.
+ * made-up number (the 555 range) ending in them makes the same offer: the shortest such number a
+ * slot of the app takes. An app that keeps the number for its code only (app.yaml's callerNumber,
+ * with no slot that offers it) is given a ten-digit one, 555555 and the last four, so a lookup fixture
+ * keyed by the last four answers its call-start lookup as the live call's was answered. Undefined when
+ * the app keeps no number, or `last4` is not four digits.
  */
 export function standInCallerNumber(app: App, last4: string): string | undefined {
   if (!/^\d{4}$/.test(last4)) return undefined;
+  const slots = callerNumberSlots(app);
+  // An app that keeps the number for its code only takes any number: a ten-digit one in the 555
+  // range, which a lookup fixture keyed by the last four answers as the live lookup did.
+  if (slots.length === 0) return hintsCallerNumber(app) ? `555555${last4}` : undefined;
   for (let pad = 0; pad <= 11; pad++) {
     const number = '5'.repeat(pad) + last4;
-    if (keptCallerNumber(app, number) !== undefined) return number;
+    if (slots.some((slot) => callerCandidate(app, slot, number) !== null)) return number;
   }
   return undefined;
 }

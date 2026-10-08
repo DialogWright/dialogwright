@@ -1,12 +1,12 @@
-import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCallerOf, setupCallIdOf, textLastOf } from './voice/registry';
-import { keptCallerNumber, usesCallerNumber } from '../core/callerNumber';
+import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCalledOf, setupCallerOf, setupCallIdOf, textLastOf } from './voice/registry';
+import { keptCallerNumber, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
 import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
-import { serviceResultEvent, silenceEvent, withCallerNumber, type SessionEvent } from '../channel/events';
+import { serviceResultEvent, silenceEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
 import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun } from '../run/continuation';
@@ -1669,8 +1669,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     continuations.set(callId, new Continuation(within));
     if (within > 0) entry.frames.write('log', { continueWithinMs: within });
     // That the session keeps the caller's number, by its last four only, for replay (harness-text/replay.ts),
-    // which stands a made-up number ending in them in for it and so makes the offer this call makes. Only
-    // for an app with a slot that offers it (core/callerNumber.ts), and only for a number it keeps.
+    // which stands a made-up number ending in them in for it and so makes the offer (or the lookup) this
+    // call makes. Only for an app with a slot that offers it or that keeps it for its code
+    // (core/callerNumber.ts), and only for a number it keeps.
     const offers = usesCallerNumber(appOf(entry.session));
     if (offers && keptCallerNumber(appOf(entry.session), caller ?? undefined) !== undefined) entry.frames.write('log', { callerNumber: maskNumber(caller) });
     // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
@@ -1691,8 +1692,10 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       // A client whose warm throws synchronously is no reason to drop the call.
     }
     // The number the caller is calling from goes to the core only for an app with a slot that offers
-    // it (core/callerNumber.ts); every other app's start event is as it was.
-    const start = withCallerNumber(frameToEvent(parsed), offers ? caller : null);
+    // it or that keeps it for its code, and the number called only for an app that keeps it
+    // (core/callerNumber.ts); every other app's start event is as it was.
+    const called = usesCalledNumber(appOf(entry.session)) ? setupCalledOf(ctx.provider, parsed) : null;
+    const start = withCalledNumber(withCallerNumber(frameToEvent(parsed), offers ? caller : null), called);
     await enqueueUnsettled(deps, callId, async (e) => {
       await turn(deps, e, start);
     });

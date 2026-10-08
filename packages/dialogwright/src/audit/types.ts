@@ -4,7 +4,8 @@ export interface AuditDraft {
    * The engine's own rows: call_started, screen_fired, screen_error, identity, gate, tool_result,
    * code_spoken (a one-time code said aloud at the code prompt: masked on arrival, and a new code
    * sent), form_stopped (a form's check refused and ended the form: the form, the check's action,
-   * the reason and how it ended), handoff, handoff_summary, call_ended. An app's tools and services add their own
+   * the reason and how it ended), offer (an offer of the number the caller is calling from, settled:
+   * the slot, the line as said, the answer and how it was given), handoff, handoff_summary, call_ended. An app's tools and services add their own
    * (ToolDef.audit, ServiceDef.audit; e.g. report_created, a2a), and kb_answer for an answer read
    * from the knowledge base (kb/record.ts kbAuditRow).
    */

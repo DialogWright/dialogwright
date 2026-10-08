@@ -171,9 +171,17 @@ export interface SlotSpec {
    * the engine's withheld placeholders already refused) into the slot's value and display, or null
    * when it does not fit. Never on an identity factor: `dialogwright check`
    * refuses it there, and the engine never offers one. Absent: the slot is asked as always.
+   *
+   * `onNo: 'skip'`: a no to the offer leaves the slot empty and the form goes on (the slot is
+   * `declined`, SlotState.declined), as does the end of the offer's retry ladder; absent, a no asks
+   * `ask_<slot>`. `ifNone: 'skip'`: a call with no number that fits, or one the app will not offer
+   * (App.callerOffer), leaves the slot empty the same way; absent, the slot is asked. A number said
+   * in place of a yes or no fills the slot as said either way.
    */
   callerNumber?: {
     take(number: string, locale?: string): SlotCandidate | null;
+    onNo?: 'skip';
+    ifNone?: 'skip';
   };
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no
    * keypad rung; its retry ladder is retry, retry, agent. */

@@ -29,7 +29,7 @@ import type { TraceRecord } from './types';
 export type StatementMode = 'length' | 'keep';
 
 /** The app whose slots (and, for a side effect's params, policy.yaml's `audit:`) say what is masked. */
-type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'> }) | null;
+type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber'] }) | null;
 
 function ruleOf(app: Slots, slot: string): SlotSpec['redact'] {
   return app !== null && Object.hasOwn(app.slots, slot) ? app.slots[slot]!.redact : undefined;
@@ -297,15 +297,20 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
   // the slot that offers it masks its value. A number the session kept is the slot's value to be, so
   // the setup's own copies of it in the event's provider details (Twilio's `from`, Telnyx's
   // `param.telnyx_call_from`) are masked the same. One not kept (withheld, or not one the slot can
-  // use) is no value of the slot's, and the provider details keep it as sent, as on every app.
+  // use) is no value of the slot's, and the provider details keep it as sent, as on every app. An
+  // app that keeps the number for its code (app.yaml's callerNumber: { use: hint }) and has no such
+  // slot masks it, and the number called (SessionStart.calledNumber), to the last four digits.
   const offering = callerNumberRule(app);
-  if (isObject(record.event) && record.event.type === 'session.start' && typeof record.event.callerNumber === 'string' && offering !== null) {
-    const raw = record.event.callerNumber;
-    const mask = (v: string): string => maskValue(app, offering, v, mode) ?? v;
-    const provider = record.callerNumber === 'kept' && isObject(record.event.provider)
-      ? Object.fromEntries(Object.entries(record.event.provider).map(([k, v]) => [k, v === raw ? mask(v) : v]))
-      : record.event.provider;
-    out.event = { ...record.event, provider, callerNumber: mask(raw) };
+  const hinted = app?.callerNumber?.use === 'hint';
+  if (isObject(record.event) && record.event.type === 'session.start' && (offering !== null || hinted)) {
+    const start = record.event;
+    const raw = typeof start.callerNumber === 'string' ? start.callerNumber : null;
+    const mask = (v: string): string => (offering !== null ? maskValue(app, offering, v, mode) ?? v : maskLast4(v));
+    const provider = raw !== null && record.callerNumber === 'kept' && isObject(start.provider)
+      ? Object.fromEntries(Object.entries(start.provider).map(([k, v]) => [k, v === raw ? mask(v) : v]))
+      : start.provider;
+    const masked = { ...start, provider, ...(raw !== null ? { callerNumber: mask(raw) } : {}), ...(typeof start.calledNumber === 'string' ? { calledNumber: maskLast4(start.calledNumber) } : {}) };
+    if (raw !== null || typeof start.calledNumber === 'string') out.event = masked;
   }
   const pc = record.pendingConfirmation;
   if (pc && pc.target === 'slot') out.pendingConfirmation = { ...pc, value: maskValue(app, pc.slot, pc.value, mode) ?? pc.value, display: maskValue(app, pc.slot, pc.display, mode) ?? pc.display };

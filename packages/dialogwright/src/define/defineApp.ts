@@ -1,6 +1,6 @@
 import type {
   App, AppBrand, AppLocales, CheckOutcome, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
-  PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale,
+  PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse,
 } from '../core/app/types';
 import { SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
@@ -91,6 +91,8 @@ export interface AppCode {
   facts?: App['facts'];
   questions?: App['questions'];
   callerState?: App['callerState'];
+  /** Whether the caller's number may be offered for a slot (App.callerOffer). */
+  callerOffer?: App['callerOffer'];
   blockPromptId?: App['blockPromptId'];
   onServiceResult?: App['onServiceResult'];
   testing?: App['testing'];
@@ -435,7 +437,9 @@ export function crossLink(
   }
   const flow = config.identity ? { verifyTool: config.identity.levels[1].verify, ...(config.identity.levels[2] ? { codeTool: config.identity.levels[2].verify, sendCodeTool: config.identity.levels[2].send } : {}) } : undefined;
   // A check no form names is formChecks.ts's to report, in its own words.
-  for (const tool of unreachedActions(Object.keys(policy.actions).filter((t) => policy.actions[t]!.check !== true), forms, flow)) {
+  // The call-start lookup (app.yaml's callerNumber.lookup) is reached at call start, by no form.
+  const startLookup = config.app.callerNumber?.lookup;
+  for (const tool of unreachedActions(Object.keys(policy.actions).filter((t) => policy.actions[t]!.check !== true && t !== startLookup), forms, flow)) {
     yaml('policy.yaml', ['actions', tool], `action "${tool}" is reached by no form: no form's calls list it, and the identity flow does not call it`, `add "${tool}" to the calls of the form whose hooks call it in forms.yaml, or delete the action from policy.yaml and the tool from ${inCode('tools', tool)}`, true);
   }
 
@@ -564,6 +568,34 @@ export function crossLink(
     const message = `the slot "${id}" is an identity factor (identity.yaml), but it offers the number the caller is calling from (callerNumber): a caller ID can be forged, so it must never stand in for proving who the caller is`;
     if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'callerNumber'], message, `delete "callerNumber" here, or use a slot of its own for a callback number`);
     else inTs(['slots', id, 'callerNumber'], message, `delete callerNumber from ${inCode('slots', id)}, or use a slot of its own for a callback number`);
+  }
+  // A slot that may be left empty (a callerNumber offer with onNo or ifNone: skip, SlotState.declined)
+  // is never named in its form's summary line: the line would read an empty value. A form's summary
+  // hook (onSummaryRead) may read another line that names it when it is filled.
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    const offer = spec?.callerNumber;
+    if (offer === undefined || (offer.onNo !== 'skip' && offer.ifNone !== 'skip')) continue;
+    for (const [formId, form] of Object.entries(forms)) {
+      const summary = form.summaryPromptId;
+      if (!form.slots.includes(id) || summary === null || !has(prompts, summary)) continue;
+      if (!prompts[summary]!.text.includes(`{${id}}`)) continue;
+      yaml('prompts.yaml', ['prompts', summary, 'text'], `the summary of the form "${formId}" names {${id}}, but the slot may be left empty (its callerNumber says ${offer.onNo === 'skip' ? 'onNo' : 'ifNone'}: skip), so the line would read nothing there`, `take {${id}} out of "${summary}", and read it back from a line of its own when it is filled (the form's onSummaryRead hook can return that line's promptId)`);
+    }
+  }
+  // app.yaml's callerNumber: the call-start lookup is an action of the policy, a tool called with one
+  // param, the number (lookup: its params are exactly [callerNumber]).
+  const lookup = app.callerNumber?.lookup;
+  if (lookup !== undefined) {
+    const actions = Object.keys(policy.actions);
+    if (!has(policy.actions, lookup)) {
+      yaml('app.yaml', ['callerNumber', 'lookup'], `the call-start lookup "${lookup}" is not an action in policy.yaml`, `${renameHint(lookup, actions)}add "${lookup}:" under actions in policy.yaml with its level and rules, and the tool to ${inCode('tools', lookup)}`);
+    } else if (policy.actions[lookup]!.check === true) {
+      yaml('app.yaml', ['callerNumber', 'lookup'], `the call-start lookup "${lookup}" is a check (check: true in policy.yaml), which runs nothing, so it returns nothing to look up`, `name an action with a tool, or delete "lookup"`);
+    }
+    const params = has(code.tools, lookup) ? code.tools[lookup]!.params : undefined;
+    if (params !== undefined && !(params.length === 1 && params[0] === 'callerNumber')) {
+      inTs(['tools', lookup, 'params'], `the tool "${lookup}" is the call-start lookup (app.yaml's callerNumber.lookup), which is called with one param, callerNumber, but it lists ${params.length === 0 ? 'none' : params.join(', ')}`, `make ${inCode('tools', lookup, 'params')} ["callerNumber"]`);
+    }
   }
   for (const name of Object.keys(app.thresholds ?? {})) {
     if (has(DEFAULT_THRESHOLDS, name)) yaml('app.yaml', ['thresholds', name], `threshold "${name}" is one of the engine's own`, `rename it: an app's thresholds need names of their own (the engine's are set with --threshold ${name}=VALUE on a run)`);
@@ -750,6 +782,8 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'anythingElseSilence', a.anythingElseSilence);
   put(app, 'thresholds', a.thresholds);
   put(app, 'callerState', code.callerState);
+  put(app, 'callerNumber', a.callerNumber === undefined ? undefined : callerNumberOf(a.callerNumber));
+  put(app, 'callerOffer', code.callerOffer);
   put(app, 'questions', code.questions);
   put(app, 'brand', a.brand as AppBrand | undefined);
   put(app, 'console', a.console as ConsoleConfig | undefined);
@@ -771,6 +805,11 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   // The folder's content hashes: what the engine records on each call (call_started, the trace).
   app.configHashes = config.hashes;
   return app as App;
+}
+
+/** app.yaml's callerNumber as App.callerNumber carries it: `called` only when true. */
+function callerNumberOf(c: NonNullable<AppYaml['callerNumber']>): CallerNumberUse {
+  return { use: c.use, ...(c.called === true ? { called: true } : {}), ...(c.lookup !== undefined ? { lookup: c.lookup } : {}) };
 }
 
 function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {

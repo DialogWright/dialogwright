@@ -122,6 +122,8 @@ export const twilioProvider: VoiceProvider = {
   // The setup frame's `from`, in E.164; a withheld caller ID comes as one of Twilio's placeholders
   // (core/callerNumber.ts WITHHELD_PLACEHOLDERS), which the engine refuses.
   setupCallerOf: (setup) => (typeof setup.from === 'string' && setup.from !== '' ? setup.from : null),
+  // The setup frame's `to`, the number called, in E.164.
+  setupCalledOf: (setup) => (typeof setup.to === 'string' && setup.to !== '' ? setup.to : null),
   contentType: 'text/xml',
   verify: (req, secret, publicHost) =>
     validateTwilioSignature(`https://${publicHost}${req.url}`, formFields(req.rawBody), req.headers['x-twilio-signature'], secret),

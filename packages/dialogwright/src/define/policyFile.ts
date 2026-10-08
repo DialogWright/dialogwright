@@ -92,6 +92,10 @@ export function readRule(entry: RuleEntryYaml): Rule {
     const { field, values, reason, verdict } = 'oneOf' in entry ? entry.oneOf : entry.noneOf;
     return { rule: which, field, values: Object.freeze([...values]), ...(reason !== undefined ? { reason } : {}), ...(verdict !== undefined ? { verdict } : {}) };
   }
+  if ('callerNumber' in entry) {
+    const { field, else: otherwise } = entry.callerNumber;
+    return { rule: 'callerNumber', field, ...(otherwise !== undefined ? { else: otherwise } : {}) };
+  }
   return { rule: 'custom', id: entry.custom };
 }
 
@@ -566,6 +570,21 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
               if (options.includes(value)) return;
               at(P, [...rulePath, 'values', j], `"${value}" is not an option of the choice slot "${rule.field}" (${options.join(', ')}), so the param never carries it`, `${renameHint(value, options)}list the option's id as slots.yaml has it, or add "${value}" to the slot's options`);
             });
+          }
+          break;
+        }
+        case 'callerNumber': {
+          const rulePath: DataPath = [...path, 'callerNumber'];
+          const read = action.rules.map(readRule);
+          const { sent, lists, addTo } = sentBy(tool, read);
+          const unsent = sent !== null && !sent.params.includes(rule.field);
+          if (unsent) at(P, [...rulePath, 'field'], `"${rule.field}" is not a param "${tool}" sends (${lists})`, `${renameHint(rule.field, sent.params)}name one of those, or ${addTo(rule.field)}`);
+          // A number other than the caller's passes only once the caller heard it whole and said yes:
+          // the action's confirmed rule must cover it, or nothing is ever confirmed for it.
+          if (rule.else === 'confirmed' && !unsent) {
+            const confirmedRule = read.find((r): r is Extract<Rule, { rule: 'confirmed' }> => r.rule === 'confirmed');
+            if (confirmedRule === undefined) at(P, [...rulePath, 'else'], `the callerNumber rule of "${tool}" passes a number the caller confirmed, but the action has no confirmed rule, so no number but the caller's own ever passes`, `add "- confirmed: [..., ${rule.field}]" to the action, with the fields its summary reads back, or delete "else: confirmed"`);
+            else if (!confirmedRule.fields.includes(rule.field)) at(P, [...rulePath, 'else'], `the callerNumber rule of "${tool}" passes a number the caller confirmed, but its confirmed rule does not name "${rule.field}", so the caller never confirmed it`, `add "${rule.field}" to the action's confirmed rule (and to the form's confirmedParams, with a summary that reads {${rule.field}} back), or delete "else: confirmed"`);
           }
           break;
         }

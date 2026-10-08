@@ -11,8 +11,8 @@ import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { formOf, identityOf } from '../core/app/lookup';
 import { delegateProblem, subjectProblem } from '../core/app/principals';
 import type { App, SlotId } from '../core/app/types';
-import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCallerNumber, type SessionEvent } from '../channel/events';
-import { lastFour, usesCallerNumber } from '../core/callerNumber';
+import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
+import { lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
@@ -325,10 +325,16 @@ export interface Scenario {
   /**
    * The number the call comes from, as a carrier sends it (e.g. "+15555550142"; a withheld one as
    * the carrier writes it): the start event carries it (SessionStart.callerNumber) when the app has a
-   * slot that offers the caller's number (SlotSpec.callerNumber). Without it, and on a chat, the
-   * call has no number, as it always has.
+   * slot that offers the caller's number (SlotSpec.callerNumber) or keeps it for its code
+   * (App.callerNumber). Without it, and on a chat, the call has no number, as it always has.
    */
   callerNumber?: string;
+  /**
+   * The number the call is to (e.g. "+15555550100"): the start event carries it
+   * (SessionStart.calledNumber) when the app keeps it (app.yaml's callerNumber `called: true`).
+   * Without it, and on a chat, the call has none.
+   */
+  calledNumber?: string;
   steps: ScenarioStep[];
   expect: ScenarioExpectation;
   /**
@@ -384,8 +390,9 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(opts)(), scenario.as);
   const turn = opts.turn ?? runTurn;
-  // A call's number only: a chat has none (SessionStart.callerNumber).
-  const start = withCallerNumber(startEvent({}, scenario.locale), session.caps.speech && usesCallerNumber(appOf(session)) ? scenario.callerNumber : undefined);
+  // A call's numbers only: a chat has none (SessionStart.callerNumber, calledNumber).
+  const calling = withCallerNumber(startEvent({}, scenario.locale), session.caps.speech && usesCallerNumber(appOf(session)) ? scenario.callerNumber : undefined);
+  const start = withCalledNumber(calling, session.caps.speech && usesCalledNumber(appOf(session)) ? scenario.calledNumber : undefined);
   const setup = await turn(session, start, o);
   runs.push(setup);
   stepOf.push(-1);
@@ -457,6 +464,7 @@ function isValidScenario(s: unknown): s is Scenario {
     typeof (s as Scenario).expect === 'object' && (s as Scenario).expect !== null &&
     ((s as Scenario).locale === undefined || (typeof (s as Scenario).locale === 'string' && (s as Scenario).locale !== '')) &&
     ((s as Scenario).callerNumber === undefined || typeof (s as Scenario).callerNumber === 'string') &&
+    ((s as Scenario).calledNumber === undefined || typeof (s as Scenario).calledNumber === 'string') &&
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null)
   );
 }
@@ -468,7 +476,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber that is not a string, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       seen.add(s.id);
       out.push(s);

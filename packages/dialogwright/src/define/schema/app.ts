@@ -6,7 +6,7 @@ import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/co
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, fixtures, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, fixtures, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -348,6 +348,18 @@ const promptSettings = z
   })
   .describe('What the app says about its prompts besides their text (which is in prompts.yaml): the opening lines, the variables the clip generator must treat specially, and the clips\' vocabulary and voice tags.');
 
+const callerNumber = z
+  .strictObject({
+    use: z
+      .literal('hint')
+      .describe('"hint": keep the number the caller is calling from for the app\'s code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling.'),
+    called: z.boolean().optional().describe('Keep the number the caller called (the DNIS) too, for the app\'s code (calledOf(s)). Default false.'),
+    lookup: identifier()
+      .optional()
+      .describe('A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides what it may return at level 0. Default: none.'),
+  })
+  .describe('The number the caller is calling from, kept for the app\'s code: a hint, never identity. Without it, the number is kept only for a slot that offers it (a digits slot\'s callerNumber).');
+
 export const appSchema = z
   .strictObject({
     id: matching(/^[a-z][a-z0-9_-]*$/, 'is not a valid app id: it must be lowercase, starting with a letter, with only letters, digits, hyphens and underscores', 'rename it, for example "my-app" or "parcels"')
@@ -387,6 +399,7 @@ export const appSchema = z
           '"repeat": the no_input line and "anything else?" again. "opener": the no_input line and the opening question (ask_intent). "goodbye": the no_input line and the goodbye, ending the call as done does. ' +
           'With repeat and opener a further silence walks the intent ladder as at the opening (the keypad menu, then a person). Default "repeat".',
       ),
+    callerNumber: callerNumber.optional(),
     fixtures: z
       .strictObject({
         dir: matching(

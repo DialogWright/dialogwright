@@ -576,6 +576,27 @@ export interface FactsConfig {
    * (SlotContext.sources: a `record` slot's `from`). Without it, none.
    */
   forSlots?(f: Readonly<SessionFacts>): SlotRecords;
+  /**
+   * Applies the call-start lookup's result to the facts (app.yaml's `callerNumber.lookup`, as a
+   * form's onEntry applies an entry result): called only when the gate allowed the call and the tool
+   * returned a value, with that value as the policy left it for an anonymous caller (policy.yaml
+   * `redact:`). Keep only what the app needs, and clear it in onFormClosed where it goes stale.
+   * Without it, the result is not kept.
+   */
+  fromCallerLookup?(f: SessionFacts, value: unknown): void;
+}
+
+/**
+ * app.yaml's `callerNumber` (App.callerNumber): what the app keeps of the numbers a call came with,
+ * and the lookup made with the caller's at call start.
+ */
+export interface CallerNumberUse {
+  /** `hint`: the number is kept for the app's code, never as identity. */
+  readonly use: 'hint';
+  /** Keep the number called (Session.calledNumber) too. Default false. */
+  readonly called?: boolean;
+  /** A tool called once at call start, through the gate, with `{ callerNumber }` as its params. Absent: none. */
+  readonly lookup?: ToolName;
 }
 
 /** What FactsConfig.forSlots gives the slot specs: one list (`records`), lists by name (`sources`), or both. Absent parts are empty. */
@@ -960,6 +981,26 @@ export interface App {
    */
   callerState?(s: Session): Readonly<Record<string, string | number | boolean>>;
   /**
+   * The number the caller is calling from, kept for the app's own code (app.yaml's `callerNumber`):
+   * a hint, never identity. With it, the session keeps any usable number the call came with, whether
+   * or not a slot can offer it, and the number called too when `called` is true; app code reads them
+   * through `callerOf(s)` and `calledOf(s)`. `lookup` names a tool the engine calls once at call
+   * start, before the greeting, through the gate as the anonymous caller, with the number as its one
+   * param (`callerNumber`); a refusal is silent, and an allowed result goes to the facts
+   * (FactsConfig.fromCallerLookup). Without it, the number is kept only for a slot that offers it,
+   * as before (SlotSpec.callerNumber), and nothing is looked up.
+   */
+  callerNumber?: CallerNumberUse;
+  /**
+   * Whether the number the caller is calling from may be offered for `slot` (a slot's
+   * `callerNumber`): called only when an offer is about to be made (the form would ask the slot and
+   * the call has a number that fits it), once per slot per form. False makes no offer, and the slot
+   * goes on as for a call with no number (its `ifNone`: asked, or left empty). It may read the facts,
+   * or call a gated tool (a line-type lookup, say) through ctx.callTool and keep the answer in the
+   * facts. Without it, every offer is made.
+   */
+  callerOffer?(ctx: AppContext, slot: SlotId): boolean;
+  /**
    * Perception questions of the app's own, asked beside the engine's and the slots' on a spoken turn
    * (e.g. a part of the day the caller volunteers, or a move along what a summary offers). The app
    * decides when each is asked, from the session (s.form, s.pendingConfirmation, s.menuActive); an
@@ -1315,6 +1356,13 @@ export interface PolicyMatrix {
   readonly values?: Readonly<Record<string, string>>;
   /** The day the grid's facts carry (GateFacts.todayIso). Default 2026-09-18, the regression's day. */
   readonly todayIso?: string;
+  /**
+   * The number the grid's caller is calling from, as a session keeps it (e.g. '+15555550142'), for a
+   * policy with a callerNumber rule: every case is then run with it kept (GateFacts.callerNumber, as
+   * each slot that offers it holds it) and with none, the `caller` axis. Without it, no case carries a
+   * caller's number, and a callerNumber rule never passes on the grid.
+   */
+  readonly callerNumber?: string;
   /**
    * The lookups the grid evaluates against. Default: a fresh copy of the app's (App.systems). An app
    * whose seed data has no record outside every principal's scope may add one here, over its own.

@@ -93,6 +93,14 @@ export const digitsOptions = z
           .string()
           .regex(/^\d{1,3}$/, 'countryCode is one to three digits, such as "1"')
           .describe('The country calling code the carrier writes before the number ("1" for +1). A number in international form (+15555550142, as carriers send it) must begin with it, and it is taken off; one from any other country is no number for the slot. A number with no + has it taken off when what is left has the slot\'s `length`.'),
+        onNo: z
+          .enum(['ask', 'skip'])
+          .default('ask')
+          .describe('What a no to the offer does: "ask" (default) asks ask_<slot>, with no attempt counted; "skip" leaves the slot empty and the form goes on (an offer to text, say, where a no means no text). The end of the offer\'s retry ladder (no answer) does the same. A number said with the no fills the slot as said either way.'),
+        ifNone: z
+          .enum(['ask', 'skip'])
+          .default('ask')
+          .describe('What a call with no number to offer does (a chat, a withheld number, one that does not fit, or one the app\'s callerOffer hook refuses): "ask" (default) asks ask_<slot> as always; "skip" leaves the slot empty and the form goes on.'),
       })
       .optional()
       .describe('Offer the number the caller is calling from: when the form would ask this slot and the call has a number that fits it (its `countryCode`, `length` and `mask`), the line asks offer_<slot> ("Is the number you\'re calling from, ending in {last4}, the best one to reach you?") in place of ask_<slot>, and a yes fills the slot with that number. A no asks ask_<slot>, with no attempt counted, and a number said instead fills as said. A chat, or a call with the number withheld, is asked ask_<slot> as always. Never on an identity factor: a caller ID can be forged.'),

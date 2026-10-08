@@ -11,7 +11,7 @@ import { gateGridCases, gateGridInput, type GateEvaluate, type GateGridCase, typ
  * Test support: the policy's invariants, read from the file. `policyInvariants(app)` puts the app's
  * gate through the gate grid (gateGrid.ts) and holds every decision to what the policy's named rules
  * say, whatever order they are written in: an action not listed is blocked for everyone; an identity
- * tool is never allowed for a party who is not a subject; a caller below an action's level is never allowed; scope, confirmed, role, fields, attempts and the list rules (oneOf, noneOf) each refuse
+ * tool is never allowed for a party who is not a subject; a caller below an action's level is never allowed; scope, confirmed, role, fields, attempts, the list rules (oneOf, noneOf) and callerNumber each refuse
  * what they exist to refuse; an allowed call ran every rule its action lists, and each passed;
  * raising a caller's level never turns an allow into a refusal; and the scope rule's answer does not
  * move with conversation state. Each failure names the invariant, the grid case and the rule.
@@ -36,7 +36,7 @@ export const INVARIANT_ABOUT: Readonly<Record<InvariantName, string>> = {
   role: 'with role, a role the rule refuses or sends to a person, and a party acting for subjects with no role, is never allowed',
   fields: 'with fields, a call that sends a field beyond the list is never allowed',
   attempts: 'with attempts, a call is never allowed at the maximum of failed attempts',
-  'one-of': 'with oneOf or noneOf, a call whose value is missing or empty, not listed (oneOf) or listed (noneOf) is never allowed',
+  'one-of': 'with oneOf, noneOf or callerNumber, a call whose value is missing or empty, not listed (oneOf), listed (noneOf), or neither the caller\'s number nor, with else: confirmed, one the caller confirmed (callerNumber) is never allowed',
   'all-rules-passed': 'an allowed call ran every rule its action lists, and each passed',
   monotonic: 'raising the caller\'s level never turns an allow into a refusal',
   'scope-stable': 'the scope rule\'s answer does not move with conversation state: the other params, the purpose, the facts, or anything the gate is not given',
@@ -215,6 +215,23 @@ export function checkPolicyInvariants(app: App, options: PolicyInvariantOptions 
           if (value !== '' && (rule.rule === 'oneOf' ? listed : !listed)) break;
           applied['one-of'] += 1;
           if (allowed) broke('one-of', ruleLabel(rule), `ALLOW, but ${rule.field} is ${value === '' ? 'missing or empty' : listed ? 'one of' : 'none of'} [${rule.values.join(', ')}]`);
+          break;
+        }
+        case 'callerNumber': {
+          // A value held to a list of one, the caller's number (as the slot of the field's name holds
+          // it, else digit for digit), or, with else: confirmed, a value the caller confirmed over the
+          // action's confirmed fields. Folded into one-of: the same refusal, of a value not allowed.
+          const value = has(c.call.params, rule.field) ? c.call.params[rule.field]! : '';
+          const kept = c.facts.callerNumber ?? '';
+          const as = c.facts.callerNumberAs;
+          const digits = (v: string): string => v.replace(/\D/g, '');
+          const own = value !== '' && kept !== '' && (as !== undefined && has(as, rule.field) ? as[rule.field] === value : digits(value) !== '' && digits(value) === digits(kept));
+          const confirmedRule = action.rules.find((r): r is Extract<Rule, { rule: 'confirmed' }> => r.rule === 'confirmed');
+          const confirmed = rule.else === 'confirmed' && confirmedRule !== undefined && confirmedRule.fields.includes(rule.field)
+            && c.facts.confirmedHash !== null && c.facts.confirmedHash === confirmationHash(c.call.params, confirmedRule.fields);
+          if (value !== '' && (own || confirmed)) break;
+          applied['one-of'] += 1;
+          if (allowed) broke('one-of', ruleLabel(rule), `ALLOW, but ${rule.field} is ${value === '' ? 'missing or empty' : kept === '' ? 'a number on a call with no caller\'s number' : 'not the caller\'s number'}${rule.else === 'confirmed' ? ', and not confirmed' : ''}`);
           break;
         }
         case 'attempts': {

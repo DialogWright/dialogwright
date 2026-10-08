@@ -5,7 +5,7 @@ import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
 import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, type AppCode } from './defineApp';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
-import { DEFAULT_ROLE_PERSON_REASON, personReasons } from './policyFile';
+import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRule } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES, SLOTS_FILE } from './schema/index';
 import type { SlotSpec } from '../core/slots/types';
@@ -257,6 +257,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       const at = locate(file, path) ?? { line: 1, column: 1 };
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     }, codeFile);
+    callerHintWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    });
   }
   priorityHandoffWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
@@ -320,6 +324,41 @@ function callerNumberWarnings(config: LoadedConfig, slots: Readonly<Record<strin
     if (spec.listen === 'call' || (config.app.carrySlots ?? []).includes(id)) {
       at(`the slot "${id}" offers the number the caller is calling from and is kept for the whole call, so it is offered once, in the first form that asks it; a later form uses the value kept`, `nothing to do if that is meant; otherwise give the slot listen: form or up-front`);
     }
+  }
+}
+
+/**
+ * The warnings for the number the caller is calling from as the app's code and its policy use it
+ * (app.yaml's `callerNumber`, policy.yaml's callerNumber rule): a call-start lookup above level 0,
+ * which the caller not yet proven can never run, so it is always refused; the lookup's param recorded
+ * as it is (`audit: callerNumber: keep`); a callerNumber rule (else refuse) in an app that keeps no
+ * caller's number, which then refuses every call; and a rule on a param that is no slot offering the
+ * number and not `callerNumber` (the number as kept), which is compared digit for digit.
+ */
+function callerHintWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const policy = config.policy;
+  const block = config.app.callerNumber;
+  const lookup = block?.lookup;
+  if (lookup !== undefined && Object.hasOwn(policy.actions, lookup)) {
+    const level = policy.actions[lookup]!.level ?? DEFAULT_ACTION_LEVEL;
+    if (level > 0) report('policy.yaml', ['actions', lookup, ...(policy.actions[lookup]!.level !== undefined ? ['level'] : [])], `the action "${lookup}" is the call-start lookup (app.yaml's callerNumber.lookup), which runs before anyone is verified, but it needs level ${level}, so the gate always refuses it and nothing is looked up`, `set its level to 0, and return only what may be said before identity; or delete "lookup" and call it from a form after identity`);
+  }
+  if (lookup !== undefined && policy.audit?.callerNumber === 'keep') {
+    report('policy.yaml', ['audit', 'callerNumber'], 'the call-start lookup\'s param, the number the caller is calling from, is recorded as it is (keep) in the trace, the console and the audit', 'write "callerNumber: last4" unless the whole number must be recorded');
+  }
+  const factors: readonly string[] = config.identity?.levels[1].factors ?? [];
+  const offering = Object.entries(slots).filter(([id, spec]) => spec?.callerNumber !== undefined && !factors.includes(id)).map(([id]) => id);
+  const keeps = block?.use === 'hint' || offering.length > 0;
+  for (const [tool, action] of Object.entries(policy.actions)) {
+    action.rules.forEach((entry, i) => {
+      if (typeof entry !== 'object' || entry === null || !('callerNumber' in entry)) return;
+      const rule = readRule(entry);
+      if (rule.rule !== 'callerNumber') return;
+      const path: DataPath = ['actions', tool, 'rules', i, 'callerNumber'];
+      if (!keeps && rule.else !== 'confirmed') report('policy.yaml', path, `the callerNumber rule of "${tool}" holds "${rule.field}" to the number the caller is calling from, but the app keeps no caller's number (no callerNumber in app.yaml, and no slot that offers it), so the rule refuses every call`, 'add "callerNumber: { use: hint }" to app.yaml, or give the slot that takes the number a callerNumber offer');
+      // A param named callerNumber is the number as the session keeps it (the lookup's param, callerOf(s).number): compared as it is meant to be.
+      else if (keeps && !offering.includes(rule.field) && rule.field !== 'callerNumber') report('policy.yaml', [...path, 'field'], `"${rule.field}" is no slot that offers the caller's number, so the rule compares it with the number as the carrier sent it, digit for digit (+15555550142 is not 5555550142)`, `name the slot that offers the number (its value is the number as the slot holds it), or pass the number in that form`);
+    });
   }
 }
 

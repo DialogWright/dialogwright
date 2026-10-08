@@ -16,17 +16,17 @@ import { buildQuestions } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { appContext, askCode, awaitingSignIn, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type TurnOut } from './lifecycle';
+import { appContext, askCode, awaitingSignIn, callTool, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, runChecks, type FormStopped } from './checks';
-import { callerCandidate, callerNumberSlots, keptCallerNumber, lastFour } from './callerNumber';
+import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo } from './callerNumber';
 import type { Tools } from './tools';
 import { withAppThresholds, type Thresholds } from './thresholds';
 import type { ScreenResult } from './screen';
 import { auditDrafts } from './audit';
 import type { AuditDraft } from '../audit/types';
-import { decisionToActions, spokenText, type RenderContext } from '../prompts/render';
+import { decisionToActions, promptText, spokenText, type RenderContext } from '../prompts/render';
 import { saidCode } from './spokenCode';
-import { matchLocale, slotLocaleOf, speechLanguagesOf } from './locale';
+import { defaultLocaleOf, matchLocale, slotLocaleOf, speechLanguagesOf } from './locale';
 import type { TurnKnowledge } from './knowledge';
 import type { Nomination } from '../kb/types';
 
@@ -177,6 +177,8 @@ export interface TurnResult {
   effects: Effect[];
   /** the form a check ended this turn (core/checks.ts); absent on every other turn */
   stopped?: FormStopped;
+  /** the offer of the caller's number this turn settled; absent on every other turn */
+  offer?: OfferSettled;
   /** what the injection screen made of this turn's words; null when it was not asked (no model turn) */
   screen: ScreenResult | null;
   /** the screen fired: perception's answers were discarded and nothing was filled, gated or called */
@@ -751,6 +753,17 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
     if (!count) return slotConfirmPrompt(pc, acks);
     const attempts = ++st.attempts;
     const step = rungFor(s, attempts, t);
+    // The caller's number offered and never answered: the offer is closed at the end of its ladder.
+    // A slot that skips on a no (`onNo: skip`) is left empty, declined, and the form goes on: an
+    // offer nobody answered is not worth a person.
+    if (pc.offered && (step === 'agent' || step === 'dtmf')) {
+      offerSettled(s, io, pc, 'none');
+      if (skipsOnNo(io.app, pc.slot)) {
+        s.pendingConfirmation = null;
+        Object.assign(st, emptySlot(), { attempts, declined: true });
+        return continueForm(s, io, acks, null);
+      }
+    }
     if (step === 'agent') { s.pendingConfirmation = null; return handoff(s, 'max-attempts', acks); }
     // A readback the caller never answers burns the same attempts as a wrong value, so it
     // lands on the keypad rather than looping on a value we still cannot vouch for.
@@ -844,30 +857,71 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   // takes the question's place this once, and the attempt count does not move, but only when the form would still ask that slot next; otherwise the question the
   // form actually owes wins, and the help decision is dropped along with it.
   if (help && next.kind === 'ask' && next.slot === help.slot) return { ...prompt(help.promptId, help.slot, {}, said), help };
-  if (next.kind === 'complete') return askSummary(s, form, said, io);
-  if (next.window === null) {
-    const offer = offerCallerNumber(s, next.slot, said, io);
+  // A slot that offers the caller's number is offered rather than asked, or, with nothing to offer
+  // and `ifNone: skip`, left empty (declined) for the next.
+  let ask = next;
+  while (ask.kind === 'ask' && ask.window === null) {
+    const offer = offerCallerNumber(s, ask.slot, said, io);
+    if (offer === DECLINED) {
+      ask = nextPrompt(s);
+      continue;
+    }
     if (offer) return offer;
+    break;
   }
-  return askSlot(s, next.slot, next.window, said);
+  if (ask.kind === 'complete') return askSummary(s, form, said, io);
+  return askSlot(s, ask.slot, ask.window, said);
 }
+
+/** What offerCallerNumber returns for a slot it left empty, declined (`ifNone: skip`): the form goes on to the next. */
+const DECLINED = 'declined' as const;
 
 /**
  * The number the caller is calling from, offered as a yes or no in place of the slot's question
  * (SlotSpec.callerNumber, core/callerNumber.ts): once per slot per form, on a slot not yet asked, when
- * the session kept a number that fits it. Null when there is no offer to make, and the slot is asked
- * as always. The slot stays empty until the yes.
+ * the session kept a number that fits it and the app does not refuse the offer (App.callerOffer, asked
+ * once, only when an offer is about to be made). Null when there is no offer to make, and the slot is
+ * asked as always; DECLINED when there is none and the slot skips (`ifNone: skip`), so it is left
+ * empty and declined. The slot stays empty until the yes.
  */
-function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null {
+function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null | typeof DECLINED {
   // An offer still pending (kept through a detour) is asked again as it stands, not made a second time.
   const pc = s.pendingConfirmation;
   if (pc?.target === 'slot' && pc.offered && pc.slot === slot) return slotConfirmPrompt(pc, acks);
-  if (s.callerNumber === undefined || s.callerOffered?.includes(slot) || s.slots[slot]!.attempts > 0) return null;
-  const c = callerCandidate(io.app, slot, s.callerNumber, slotLocaleOf(s));
-  if (c === null) return null;
-  s.callerOffered = [...(s.callerOffered ?? []), slot];
+  if (!callerNumberSlots(io.app).includes(slot) || s.callerOffered?.includes(slot) || s.slots[slot]!.attempts > 0) return null;
+  let c = s.callerNumber === undefined ? null : callerCandidate(io.app, slot, s.callerNumber, slotLocaleOf(s));
+  if (c !== null) {
+    // Asked once per slot per form, whatever it says: the slot is not offered again.
+    s.callerOffered = [...(s.callerOffered ?? []), slot];
+    const offers = io.app.callerOffer;
+    if (offers !== undefined && offers(appContext(s, io.tc, io.out), slot) !== true) c = null;
+  }
+  if (c === null) {
+    if (!skipsIfNone(io.app, slot)) return null;
+    s.slots[slot]!.declined = true;
+    return DECLINED;
+  }
   s.pendingConfirmation = { target: 'slot', slot, value: c.value, display: c.display, offered: true };
   return offerPrompt(slot, c.value, acks);
+}
+
+/**
+ * The offer of the caller's number settled this turn (TurnOut.offer, the audit's `offer` row): the
+ * line as it was said, in the session's language, and what the caller answered.
+ */
+function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, answer: OfferSettled['answer']): void {
+  const promptId = `offer_${pc.slot}`;
+  const last4 = lastFour(pc.value);
+  const locale = s.locale ?? defaultLocaleOf(io.app);
+  io.out.offer = { slot: pc.slot, source: 'caller-number', promptId, said: promptText(io.app, promptId, { last4 }, s.locale), answer, last4, locale };
+}
+
+/**
+ * The offer's answer gave the slot no value (a no, or no answer at all): with `onNo: skip` the slot
+ * is left empty, declined, and the form goes on to the next; otherwise it is asked as always.
+ */
+function declineOnNo(s: Session, io: TurnIO, slot: SlotId): void {
+  if (skipsOnNo(io.app, slot) && s.slots[slot]!.value === null) s.slots[slot]!.declined = true;
 }
 
 /** The offer's line: `offer_<slot>`, with the last four digits of the number. */
@@ -1052,6 +1106,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // question, so what else the yes carried ("yes, and it's about an order") fills the form's
         // other slots, as a no's does; the offered slot holds the number the yes was to.
         Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
+        offerSettled(s, io, pc, 'yes');
         const fill = fillSlots(s, answers, ctx, slotsToFill(s).filter((spec) => spec.id !== pc.slot));
         return { decision: continueForm(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };
       }
@@ -1140,9 +1195,12 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // since the caller answered what we asked. A number said with the no ("no, use 555 555 0199")
         // fills as said, and the form goes on; one that is not a number of the slot's shape is a
         // missed answer to the slot's question, and is retried as one.
+        // With `onNo: skip`, a no with no number leaves the slot empty, declined, and the form goes on.
         const fill = fillSlots(s, answers, ctx, slotsToFill(s));
         const missed = offeredSlotMissed(s, io, pc.slot, fill, []);
+        offerSettled(s, io, pc, missed || s.slots[pc.slot]!.value !== null ? 'other' : 'no');
         if (missed) return { decision: missed, events: fill.events };
+        declineOnNo(s, io, pc.slot);
         return { decision: continueForm(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };
       }
       if (pc.target === 'slot') {
@@ -1189,11 +1247,13 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         const fill = fillSlots(s, answers, ctx, slotsToFill(s));
         if (s.slots[pc.slot]!.value !== null) {
           s.pendingConfirmation = null;
+          offerSettled(s, io, pc, 'other');
           return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
         }
         // A number of the wrong shape ("use five five five") is not the number offered, nor a number
         // the slot takes: the offer is closed, and the slot's question retried as for a missed answer.
         const missed = offeredSlotMissed(s, io, pc.slot, fill, acks);
+        if (missed) offerSettled(s, io, pc, 'other');
         if (missed) return { decision: missed, events: fill.events };
         return { decision: reaskConfirmation(s, io, [...acks, ...fill.acks], acks.length === 0 && !fill.progress), events: fill.events };
       }
@@ -1224,9 +1284,12 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // same breath filled is kept, and acked on the way into the question.
       const st = s.slots[verdict.slot]!;
       Object.assign(st, emptySlot(), { attempts: st.attempts });
+      // Reopened, a slot the caller declined is theirs to answer again.
+      delete st.declined;
       // A slot that offers the caller's number, reopened, is asked its own question from here on,
-      // whether or not its number was offered before (offered once per form, callerOffered).
-      if (s.callerNumber !== undefined && callerNumberSlots(io.app).includes(verdict.slot) && !(s.callerOffered ?? []).includes(verdict.slot)) s.callerOffered = [...(s.callerOffered ?? []), verdict.slot];
+      // whether or not its number was offered before (offered once per form, callerOffered), and
+      // whether or not there was a number to offer (one that skips with none, `ifNone: skip`, is asked).
+      if ((s.callerNumber !== undefined || skipsIfNone(io.app, verdict.slot)) && callerNumberSlots(io.app).includes(verdict.slot) && !(s.callerOffered ?? []).includes(verdict.slot)) s.callerOffered = [...(s.callerOffered ?? []), verdict.slot];
       const said = [...acks, ...(fill?.acks ?? [])];
       // What else the breath changed ("the town's wrong, and I rent it", where the naming decides)
       // goes through the form's checks now, as any fill does in continueForm, rather than waiting
@@ -1345,10 +1408,14 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     case 'invalid':
       s.dtmfBuffer = '';
       return { decision: failAttempt(s, result.slot, io), rows: [] };
-    case 'filled':
+    case 'filled': {
       s.dtmfBuffer = '';
+      // A number keyed at the offer of the caller's number is the caller's own answer to it.
+      const pc = s.pendingConfirmation;
+      if (pc?.target === 'slot' && pc.offered && pc.slot === result.slot) offerSettled(s, io, pc, 'other');
       s.pendingConfirmation = null;
       return { decision: continueForm(s, io, [], null), rows: [dtmfRow(result.slot)] };
+    }
   }
 }
 
@@ -1403,6 +1470,25 @@ function bookkeep(s: Session, decision: Decision, verdictLabel: string): void {
   }
 }
 
+/** The purpose the call-start lookup is made with (app.yaml's `callerNumber.lookup`): a gate decision and the audit say what it was. */
+export const CALLER_LOOKUP_PURPOSE = 'caller-lookup';
+
+/**
+ * The call-start lookup (app.yaml's `callerNumber: { use: hint, lookup }`): one call, through the gate
+ * (lifecycle.ts callTool), as the caller not yet proven, with the number kept as its one param. Its
+ * gate decision is recorded like every other (the trace, the console, the audit, the param masked as
+ * policy.yaml's `audit:` says). A refusal is silent: nothing is said or kept, and the call goes on as
+ * without a number. An allowed result goes to the app's facts (FactsConfig.fromCallerLookup). Only
+ * for a session that kept the caller's number, an anonymous caller (a call; a chat has no number)
+ * and an app that names a lookup.
+ */
+function callerLookup(s: Session, io: TurnIO): void {
+  const tool = io.app.callerNumber?.lookup;
+  if (tool === undefined || !hintsCallerNumber(io.app) || s.callerNumber === undefined || !isAnonymous(s.principal)) return;
+  const { decision, value } = callTool(s, { tool, params: { callerNumber: s.callerNumber }, purpose: CALLER_LOOKUP_PURPOSE }, io.tc, io.out);
+  if (decision.verdict === 'ALLOW' && value !== null && value !== undefined) io.app.facts?.fromCallerLookup?.(s.facts, value);
+}
+
 /**
  * The opening line: the voice greeting, or on chat someone acting for the app's subjects or a
  * signed-in subject by name, or the web visitor's.
@@ -1431,6 +1517,7 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
   const audit = auditDrafts({
     before: session, after: r.session, event, decision: r.decision, gateEvents: r.gateEvents, kb: r.kb, screen: r.screen, quarantined: r.quarantined,
     ...(r.stopped ? { stopped: r.stopped } : {}),
+    ...(r.offer ? { offer: r.offer } : {}),
   });
   return { ...r, audit };
 }
@@ -1458,9 +1545,14 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The locale the channel asks for, where the app speaks it; any other request leaves the
       // session in the app's default. An app without locales has no locale to set.
       if (event.locale !== undefined && io.app.locales) s.locale = matchLocale(io.app, event.locale) ?? io.app.locales.default;
-      // The number the caller is calling from, kept only where a slot can offer it (core/callerNumber.ts).
+      // The number the caller is calling from, kept only where a slot can offer it or the app keeps it
+      // for its code, and the number called only where the app keeps it (core/callerNumber.ts).
       const caller = keptCallerNumber(io.app, event.callerNumber);
       if (caller !== undefined) s.callerNumber = caller;
+      const called = keptCalledNumber(io.app, event.calledNumber);
+      if (called !== undefined) s.calledNumber = called;
+      // The app's lookup by that number, once, before the greeting, through the gate.
+      if (caller !== undefined) callerLookup(s, io);
       const decision = greeting(s);
       bookkeep(s, decision, 'setup');
       return { ...base(), decision, actions: act(decision) };

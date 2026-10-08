@@ -898,6 +898,30 @@
         "goodbye"
       ]
     },
+    "callerNumber": {
+      "type": "object",
+      "properties": {
+        "use": {
+          "type": "string",
+          "const": "hint",
+          "description": "\"hint\": keep the number the caller is calling from for the app's code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling."
+        },
+        "called": {
+          "description": "Keep the number the caller called (the DNIS) too, for the app's code (calledOf(s)). Default false.",
+          "type": "boolean"
+        },
+        "lookup": {
+          "description": "A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides what it may return at level 0. Default: none.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        }
+      },
+      "required": [
+        "use"
+      ],
+      "additionalProperties": false,
+      "description": "The number the caller is calling from, kept for the app's code: a hint, never identity. Without it, the number is kept only for a slot that offers it (a digits slot's callerNumber)."
+    },
     "fixtures": {
       "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",
       "type": "object",

@@ -48,6 +48,9 @@ function callerNumberOf(o: DigitsOptions, display: (value: string, locale?: stri
         : rest !== null && (o.length !== undefined ? rest.length === o.length : fits(rest)) ? rest : digits;
       return local !== null && fits(local) ? { value: local, display: display(local, locale) } : null;
     },
+    // Only when they skip: a slot that asks on a no and with no number is as it was.
+    ...(o.callerNumber!.onNo === 'skip' ? { onNo: 'skip' as const } : {}),
+    ...(o.callerNumber!.ifNone === 'skip' ? { ifNone: 'skip' as const } : {}),
   };
 }
 

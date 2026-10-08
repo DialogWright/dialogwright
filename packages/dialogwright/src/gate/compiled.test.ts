@@ -174,8 +174,8 @@ describe('the seam', () => {
     }
   });
 
-  it('imports only from ./lines, ./bounded, ./listed, ./principal and ./types; anything else is type-only (./bounded only from ./principal and ./types, ./listed from nothing)', () => {
-    const runtime: Record<string, readonly string[]> = { './compiled.ts': ['./lines', './bounded', './listed', './principal', './types'], './bounded.ts': ['./principal', './types'], './listed.ts': [] };
+  it('imports only from ./lines, ./bounded, ./listed, ./callerNumber, ./principal and ./types; anything else is type-only (./bounded only from ./principal and ./types, ./listed from nothing, ./callerNumber from ./lines and ./listed)', () => {
+    const runtime: Record<string, readonly string[]> = { './compiled.ts': ['./lines', './bounded', './listed', './callerNumber', './principal', './types'], './bounded.ts': ['./principal', './types'], './listed.ts': [], './callerNumber.ts': ['./lines', './listed'] };
     for (const [file, allowed] of Object.entries(runtime)) {
       const src = readFileSync(new URL(file, import.meta.url), 'utf8');
       const imports = [...src.matchAll(/^import\s+(type\s+)?[\s\S]*?from\s+'([^']+)';?\s*$/gm)];
@@ -190,7 +190,7 @@ describe('the rules are recorded under their names', () => {
   const write = { tool: 'fileRequest', params: { patientId: 'P-1', note: 'x' } };
 
   it('each built-in rule is its own name, a custom rule its own id, and an action not listed `unlisted`', () => {
-    expect(RULE_ID).toEqual({ identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: 'dateInRange', limit: 'limit', oneOf: 'oneOf', noneOf: 'noneOf' });
+    expect(RULE_ID).toEqual({ identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: 'dateInRange', limit: 'limit', oneOf: 'oneOf', noneOf: 'noneOf', callerNumber: 'callerNumber' });
     expect([...BUILT_IN_RULES]).toEqual(Object.keys(RULE_ID));
     expect(UNLISTED_RULE_ID).toBe('unlisted');
     const allowed = gate.evaluate(write, patient, { ...facts, confirmedHash: confirmationHash(write.params, ['patientId', 'note']) }, lookups);
@@ -205,7 +205,7 @@ describe('the rules are recorded under their names', () => {
 
   it('the ids tables and the legacy evaluator use are kept apart from the names: tables read as rules record names', () => {
     expect(LEGACY_RULE_ID).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' });
-    expect(TABLE_RULE_ID).toEqual({ ...LEGACY_RULE_ID, dateInRange: 'dateInRange', limit: 'limit', oneOf: 'oneOf', noneOf: 'noneOf' });
+    expect(TABLE_RULE_ID).toEqual({ ...LEGACY_RULE_ID, dateInRange: 'dateInRange', limit: 'limit', oneOf: 'oneOf', noneOf: 'noneOf', callerNumber: 'callerNumber' });
     // The compiled tables still list the legacy ids; the gate over them records the names.
     expect(tables().rulesFor.fileRequest).toEqual(['R1', 'R5', 'R2', 'R3']);
     const byHand = compiledPolicyOf({ ...tables(), rulesFor: { ...tables().rulesFor } }, 'patient');

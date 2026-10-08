@@ -26,6 +26,12 @@ export interface SlotState {
   window: SlotPartial | null;
   /** help prompts already played for this slot since it was last emptied; each plays at most once */
   helped: string[];
+  /**
+   * The caller declined the slot (a slot's `callerNumber` with `onNo` or `ifNone` set to `skip`):
+   * empty, but answered, so the form does not ask it and goes on. Absent on every other slot, so a
+   * session of an app without such a slot is as it was.
+   */
+  declined?: true;
 }
 
 export interface HistoryEntry {
@@ -153,12 +159,20 @@ export interface Session {
   locale?: string;
   /**
    * The number the caller is calling from, its digits, `+` first when the carrier wrote it in
-   * international form (core/callerNumber.ts callerNumberOf): kept at the session's
-   * start only for an app with a slot that offers it (SlotSpec.callerNumber), and only when the
-   * carrier sent a number such a slot can use. It is never identity, and nothing reads it but the
-   * offer. Absent otherwise, so every other session is as it was.
+   * international form (core/callerNumber.ts callerNumberOf): kept at the session's start for an
+   * app with a slot that offers it (SlotSpec.callerNumber), when the carrier sent a number such a
+   * slot can use, and for an app that keeps it for its code (app.yaml `callerNumber: { use: hint }`,
+   * App.callerNumber), when the carrier sent any usable number. It is never identity: the offer, the
+   * call-start lookup, the gate's callerNumber rule (GateFacts.callerNumber) and app code through
+   * callerOf read it. Absent otherwise, so every other session is as it was.
    */
   callerNumber?: string;
+  /**
+   * The number the caller called (the DNIS), as callerNumber is kept: only for an app whose
+   * app.yaml `callerNumber` says `called: true`, and only on a call whose carrier sent one. Read it
+   * with calledOf (core/callerNumber.ts). Absent otherwise.
+   */
+  calledNumber?: string;
   /**
    * The slots the open form has offered the caller's number for (callerNumber), each once per form:
    * a slot reopened later is asked its own question. Absent until an offer is made, and gone when the
@@ -399,8 +413,9 @@ export function requiredSlots(session: Session): readonly SlotId[] {
   return session.form ? formOf(appOf(session), session.form).slots : [];
 }
 
+/** The open form's slots still to ask: empty, and not declined (SlotState.declined). */
 export function missingSlots(session: Session): SlotId[] {
-  return requiredSlots(session).filter((id) => session.slots[id]!.value === null);
+  return requiredSlots(session).filter((id) => session.slots[id]!.value === null && session.slots[id]!.declined !== true);
 }
 
 export function currentAttempts(session: Session): number {

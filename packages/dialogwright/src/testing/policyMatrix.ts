@@ -24,7 +24,7 @@ import { gateGridCases, gateGridInput, gridPrincipals, UNLISTED_TOOL, type GateG
  */
 
 /** What a call carries, the axes a row is split by, in the order a split is preferred when two are as short. */
-const AXES = ['purpose', 'subject', 'fields', 'confirmed', 'attempts', 'params'] as const;
+const AXES = ['purpose', 'subject', 'fields', 'confirmed', 'attempts', 'params', 'caller'] as const;
 type Axis = (typeof AXES)[number];
 
 function axisValue(c: GateGridCase, axis: Axis): string {
@@ -35,6 +35,7 @@ function axisValue(c: GateGridCase, axis: Axis): string {
     case 'confirmed': return c.confirmation;
     case 'attempts': return String(c.attempts);
     case 'params': return c.params;
+    case 'caller': return c.caller ?? '-';
   }
 }
 
@@ -129,6 +130,7 @@ function ruleText(rule: Rule, source: PolicySource): string {
     case 'limit': return `limit(${rule.field})`;
     case 'oneOf': return `oneOf(${rule.field}: ${rule.values.join(', ')})`;
     case 'noneOf': return `noneOf(${rule.field}: ${rule.values.join(', ')})`;
+    case 'callerNumber': return `callerNumber(${rule.field}${rule.else === 'confirmed' ? ', else confirmed' : ''})`;
     case 'custom': return `custom ${rule.id}`;
   }
 }
@@ -275,6 +277,8 @@ export function policyMatrixText(app: App, input: GateGridInput = gateGridInput(
     '#   confirmed   none; match (the caller confirmed exactly these values); mismatch',
     `#   attempts    0; ${source.maxAttempts} (the maximum)`,
     '#   params      the policy matrix\'s named sets of values for the action',
+    // Only for a matrix with the caller's number: every other app's header is as it was.
+    ...(input.callerFacts !== undefined ? ['#   caller      kept (the call came from the matrix\'s caller number); none'] : []),
     '# verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>',
     '',
     `purposes: ${Object.entries(source.purposes).map(([purpose, level]) => `${purpose} needs level ${level}`).join(', ') || 'none'}`,

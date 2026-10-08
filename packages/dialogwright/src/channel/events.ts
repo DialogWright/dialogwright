@@ -13,10 +13,12 @@ export const DEFAULT_LANG = 'en-US';
  * it names one: the session speaks it where the app has it (App.locales), its default otherwise.
  * `callerNumber` is the number the caller is calling from, as the carrier sent it
  * (VoiceProvider.setupCallerOf): only on a call, only for an app with a slot that offers it
- * (SlotSpec.callerNumber, core/callerNumber.ts), and only when the carrier sent one. The session keeps
- * it only when a slot can use it; it is never identity.
+ * (SlotSpec.callerNumber, core/callerNumber.ts) or that keeps it for its code (App.callerNumber), and
+ * only when the carrier sent one. The session keeps it only when the app can use it; it is never
+ * identity. `calledNumber` is the number the caller called (VoiceProvider.setupCalledOf), only for an
+ * app that keeps it (App.callerNumber `called`), and only when the carrier sent one.
  */
-export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string; callerNumber?: string }
+export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string; callerNumber?: string; calledNumber?: string }
 /** Recognized speech. Only a final transcript is a turn; a partial one holds. */
 export interface UserSpeech { type: 'user.speech'; text: string; final: boolean; lang: string }
 /** Typed text: always final. */
@@ -52,6 +54,11 @@ export function startEvent(provider: Readonly<Record<string, string>> = {}, loca
 export function withCallerNumber(event: SessionEvent, callerNumber: string | null | undefined): SessionEvent {
   if (event.type !== 'session.start' || callerNumber === null || callerNumber === undefined) return event;
   return { ...event, callerNumber };
+}
+/** A session start with the number the caller called (SessionStart.calledNumber); null or absent leaves it as it is. */
+export function withCalledNumber(event: SessionEvent, calledNumber: string | null | undefined): SessionEvent {
+  if (event.type !== 'session.start' || calledNumber === null || calledNumber === undefined) return event;
+  return { ...event, calledNumber };
 }
 export function speechEvent(text: string, final = true, lang = DEFAULT_LANG): UserSpeech {
   return { type: 'user.speech', text, final, lang };
