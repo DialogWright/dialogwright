@@ -390,7 +390,7 @@ A caller who had not finished is the engine's, not a carrier's (`run/continuatio
 |---|---|
 | `say` | `parts` (text for the channel's own voice or display, or a recorded clip's URL) and `interruptible` |
 | `end` | `completed`: the business done |
-| `transfer` | `reason`, `completed`, `queued`, and the collected `slots`, for the person taking over, as app.yaml's `handoff.data` lets them leave the engine: by default no identity factor, and a redacted slot only masked. On a phone call they are the relay's `end` frame's `handoffData`, which the carrier holds and posts back; a chat's transfer sends none |
+| `transfer` | `reason`, `completed`, `queued`, and the collected `slots`, for the person taking over, as app.yaml's `handoff.data` lets them leave the engine: by default no identity factor, and a redacted slot only masked; with `handoff.data.unconfirmed: mark`, also `unconfirmed`, the ids of the values the caller never confirmed. On a phone call they are the relay's `end` frame's `handoffData`, which the carrier holds and posts back; a chat's transfer sends none |
 | `send_digits` | Key tones to play on the line |
 | `set_language` | Speech and recognition languages |
 

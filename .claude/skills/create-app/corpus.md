@@ -90,6 +90,16 @@ For a form with **checks** ([patterns.md](patterns.md#qualify-before-you-collect
 {"id":"cb-06","text":"yes, but I rent it","intent":"none","context":"confirm_book_inspection","confirm":"yes","labels":{"ownership":"rent"}}
 ```
 
+For a **priority intent** with `correctsForm` ([patterns.md](patterns.md#something-that-must-never-wait)), a line at each summary that also contradicts a slot the form holds, labelled with the intent, `change: replacing` and the slot's new value, and a scripted call to that summary whose `expect` names the corrected value (the handoff carries what the session holds):
+
+```json
+{"id":"cb-07","text":"wait, water is coming through the wall right now","intent":"urgent_repair","context":"confirm_book_inspection","change":"replacing","labels":{"howUrgent":"emergency"}}
+```
+
+```json
+"expect": { "decision": "handoff", "reason": "emergency", "form": "urgent_repair", "slots": { "howUrgent": "emergency" } }
+```
+
 For each **informational and control intent**, eight or more lines, some inside forms (a person asked for mid-form is `"intent":"agent"` with the form as context). For each **delegate**, opening lines with `"as"`.
 
 For the **identity factors**, answers with `prompted` set to the factor slot and the context of a form that steps up. The scaffold's `--identity` corpus has them for `accountId` and `dob`.

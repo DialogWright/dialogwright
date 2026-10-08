@@ -516,7 +516,7 @@ A key on the keypad menu may name it: the key plays the line, then offers the me
 
 ## Something that must never wait
 
-When the app has something that must never wait or be missed, an emergency or a safety report, mark its intent `priority: true`. Without it, a caller who says "actually, water is pouring in right now" at a form's question is read as answering that question, and the form asks the rest of its questions first; one who says "hold on, the wall just started giving way" half aside is ignored as side speech.
+When the app has something that must never wait or be missed, an emergency or a safety report, mark its intent `priority: { correctsForm: true }`. Without `priority`, a caller who says "actually, water is pouring in right now" at a form's question is read as answering that question, and the form asks the rest of its questions first; one who says "hold on, the wall just started giving way" half aside is ignored as side speech.
 
 ```yaml
 # intents.yaml, under intents:
@@ -524,8 +524,19 @@ When the app has something that must never wait or be missed, an emergency or a 
     criteria: Water is pouring in right now, or a wall looks like it is giving way right now
     label: reach the office right away
     kind: form
-    priority: true
+    priority: { correctsForm: true }   # read at PRIORITY_INTENT, as `true` is; and the same words correct the form left
 ```
+
+`correctsForm` is for the handoff: the turn that switches was asked about the open form's slots, so "wait, water is coming through the wall right now", said at the read-back, also sets the urgency the caller gave ten turns earlier to "right now" before the call goes to the office. Without it the office gets the old value. It says nothing (no acknowledgement of the corrected value), runs none of the form's checks on the way out, and changes no question the model is sent. Set the handoff to name the values the caller never confirmed, so the office knows which of them to check:
+
+```yaml
+# app.yaml
+handoff:
+  data:
+    unconfirmed: mark   # everything still goes; the end frame, the console and the audit name the values never confirmed
+```
+
+A value is confirmed when its slot is (a yes to its own read-back, a keyed value) or when the caller said yes to it at a summary and it has not changed since. At a read-back the caller interrupts, none is. The engine's default is `send` (nothing named), and `omit` leaves those values out; prefer `mark` for a new app, since an emergency is when the office most needs the name, the number and the address, confirmed or not.
 
 Read at `PRIORITY_INTENT` (0.8) or more, the intent is acted on that turn, wherever the call is: the form in hand is left (not queued), a pending confirmation is dropped, and side speech or words read as unintelligible do not stop it. A handoff to a person and the injection screen still win, and its form's actions go through the policy gate as any other's. The usual shape is a form with no slots whose `complete` hook hands off with a line of its own:
 
@@ -554,7 +565,7 @@ const toOffice = (reason: string) => (c: CompletionContext): Completion => ({
 urgent_repair: { complete: toOffice('emergency') },
 ```
 
-and the line `handoff_emergency` in `prompts.yaml` ("That sounds urgent. I'm putting you through to our office right now.", `interruptible: false`). Filter out only `ack_intent`: any other line the turn carries is still said. Only a form intent or an informational one may be priority. Give it corpus lines inside each form a caller could be in (`context: <form>`, `change: replacing`) and one said aside ("hold on, ..."). The debug table's `priorityIntent` row says when it took the turn (`act:<intent>:over:<gate>`). The whole option is under "Must never wait" in the [authoring guide](../../../docs/authoring-an-app.md#must-never-wait-priority).
+and the line `handoff_emergency` in `prompts.yaml` ("That sounds urgent. I'm putting you through to our office right now.", `interruptible: false`). Filter out only `ack_intent`: any other line the turn carries is still said. Only a form intent or an informational one may be priority, and `correctsForm` is for a form intent. Give it corpus lines inside each form a caller could be in (`context: <form>`, `change: replacing`), one said aside ("hold on, ..."), and one at each summary that also contradicts a slot the form holds, labelled with the slot's new value ([corpus.md](corpus.md#what-to-write)), with a scripted call that checks the handoff carries it. The debug table's `priorityIntent` row says when it took the turn (`act:<intent>:over:<gate>`). The whole option is under "Must never wait" in the [authoring guide](../../../docs/authoring-an-app.md#must-never-wait-priority).
 
 ## A knowledge form
 

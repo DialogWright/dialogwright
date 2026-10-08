@@ -105,6 +105,8 @@ Drafts awaiting approval, and who has been asked (the commands are `pnpm kb:revi
 | Verification fails <n> times | `identity` | `handoff_identity` |
 | <a role, a bound, a rule> | `<reason>` | `handoff_<reason>` |
 
+What should the person see about details the caller never confirmed (a read-back the caller interrupted, a value changed after a yes)? `handoff.data.unconfirmed`: `mark` (sent and named; the default for a new app), `omit` (left out) or `send` (sent as any other).
+
 ## Choices the paragraph left open
 
 - <what you chose, and why>
