@@ -5,7 +5,7 @@ import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
 import { informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
-import { anythingElseSilenceOf, formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
+import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, Completion, FormId, SlotId, SummaryMove } from './app/types';
 import { candidateSpans, candidateWordSpans } from './spans';
@@ -425,6 +425,25 @@ function completeForm(s: Session, form: FormId, acks: Ack[], io: TurnIO): Decisi
 }
 
 /**
+ * The caller said yes to `form`'s summary and the form completed: each of its filled slots' values is
+ * agreed (Session.agreed), so a handoff later in the call counts it as confirmed while it holds that
+ * value (HandoffData.unconfirmed). Only for an app whose handoff marks or leaves out the values never
+ * confirmed, and only for a form with a summary; every other session is as it was. The slot's own
+ * `confirmed` flag is left alone: it is part of what the model is sent each turn.
+ */
+function agree(s: Session, form: FormId): void {
+  const app = appOf(s);
+  const def = formOf(app, form);
+  if (handoffUnconfirmedOf(app) === 'send' || def.summaryPromptId === null) return;
+  const agreed: Record<SlotId, string> = { ...(s.agreed ?? {}) };
+  for (const id of def.slots) {
+    const value = s.slots[id]!.value;
+    if (value !== null) agreed[id] = value;
+  }
+  s.agreed = agreed;
+}
+
+/**
  * A completion that ends the call (Completion `end`): the form is counted, and it and its slots stay
  * on the session as they were, the filled ones confirmed where the form has a summary, since the
  * caller has just agreed to it.
@@ -433,6 +452,7 @@ function endOnCompletion(s: Session, form: FormId, c: Extract<Completion, { kind
   s.completed.push(form);
   const def = formOf(appOf(s), form);
   if (def.summaryPromptId !== null) for (const id of def.slots) if (s.slots[id]!.value !== null) s.slots[id]!.confirmed = true;
+  agree(s, form);
   return { kind: 'complete', form, promptId: c.promptId, vars: c.vars, acks: c.acks, completed: [...s.completed] };
 }
 
@@ -443,7 +463,10 @@ function endOnCompletion(s: Session, form: FormId, c: Extract<Completion, { kind
  * it closes the same way but is not reported as completed.
  */
 function finishForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, completed = true): Decision {
-  if (completed) s.completed.push(form);
+  if (completed) {
+    s.completed.push(form);
+    agree(s, form);
+  }
   closeForm(s);
   const next = s.queued.shift();
   if (!next) return prompt('anything_else', 'intent', {}, acks);
@@ -935,6 +958,24 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
   return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
 }
 
+/**
+ * A priority switch's correction (IntentDef.priority `correctsForm`), before the priority form is
+ * entered. The turn was planned with the old form open (or with none), so the model was asked about
+ * every slot it listens for, and its answers are in hand: they fill as a correction, a new value
+ * replacing an old one and a value said again unchanged changing nothing. With a form open, its
+ * slots (correctingFill); with none ("anything else?"), the call's own (slotsToFill: the carried
+ * slots, those that listen anywhere, the identity factors where the turn listens for them). What the
+ * fill would say is dropped: an acknowledgement before the priority form's line is noise, and there
+ * is no question to ask on the way out, so a disambiguation changes nothing. The form left is still
+ * neither closed nor completed, nothing in it is confirmed by this, and its checks do not run: the
+ * switch wins whatever the corrected values would have made a check say. Returns the fill's events,
+ * which join the turn's.
+ */
+function correctOnSwitch(s: Session, answers: AnswerMap, ctx: SlotContext): FillEvent[] {
+  const fill = s.form !== null ? correctingFill(s, answers, ctx, s.form) : fillSlots(s, answers, ctx, slotsToFill(s), { correcting: true });
+  return fill.events;
+}
+
 function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO): { decision: Decision; events: FillEvent[] } {
   const t = io.tc.thresholds;
   // The open form hears the turn whatever the turn then does (a form it switches to hears it again
@@ -1162,6 +1203,14 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       }
       // "No, that's all" at "anything else?": the call ends with the goodbye alone.
       if (verdict.intent === 'done') return { decision: goodbye(s), events: [] };
+      // A switch to a priority intent that corrects the form (IntentDef.priority `correctsForm`):
+      // what the turn said for the slots it was asked about replaces what they held, before the
+      // priority form is entered.
+      if (verdict.intent !== s.form && correctsFormOf(io.app, verdict.intent)) {
+        const corrected = correctOnSwitch(s, answers, ctx);
+        const entered = enterForm(s, verdict.intent, answers, ctx, io, verdict.queue);
+        return { decision: entered.decision, events: [...corrected, ...entered.events] };
+      }
       // A second task named on the same breath as the first is queued as the form opens;
       // on an explicit-confirm route it is dropped and the caller can re-add it.
       return enterForm(s, verdict.intent, answers, ctx, io, verdict.queue);

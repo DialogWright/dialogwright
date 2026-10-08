@@ -282,6 +282,13 @@ const handoff = z
             'How a slot goes, by slot id, in place of its default: "omit" (left out), "masked" (as the trace masks it: by its redact setting, or its handoff setting where that is last4 or verified) or "as-is" (its display, in the clear). ' +
               'Default: an identity factor is omitted, a slot with a redact setting goes masked, any other slot as it is. Name a slot "as-is" only when the person taking the call needs it in the clear.',
           ),
+        unconfirmed: z
+          .enum(['send', 'mark', 'omit'])
+          .optional()
+          .describe(
+            'What goes of a value the caller never confirmed (not confirmed on its own, and not the value they said yes to at a summary since): "send" (the default, sent as any other), ' +
+              '"mark" (sent, and the data names it: the end frame\'s unconfirmed list, the console\'s "(not confirmed)", the audit\'s handoff row) or "omit" (left out). An identity factor is never counted. A chat\'s transfer sends no slots whatever this says.',
+          ),
       })
       .optional()
       .describe("What a transfer hands the channel of the collected slots: on a phone call, the relay's end frame, which the carrier holds and posts back on its action callback. A chat's transfer sends none. Default: no identity factor, a redacted slot masked, any other slot as it is."),

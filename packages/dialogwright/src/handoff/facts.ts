@@ -15,6 +15,11 @@ export interface HandoffFacts {
   handoffReason: string | null;
   completed: string[];
   /**
+   * The slots the caller never confirmed, by id, from the handoff row (HandoffData.unconfirmed `mark`
+   * or `omit`). Absent when the row has none, so every other app's facts are as they were.
+   */
+  unconfirmed?: string[];
+  /**
    * The records the call created, listed under the app's own key (HandoffWording.created.key),
    * after the fields above. Absent when the app names none.
    */
@@ -72,6 +77,7 @@ export function handoffFacts(entries: readonly AuditEntry[], w: HandoffWording =
   let codesSpoken = 0;
   let handoffReason: string | null = null;
   let completed: string[] = [];
+  let unconfirmed: string[] | null = null;
   const created: string[] = [];
   for (const e of entries) {
     const d = e.detail;
@@ -90,11 +96,12 @@ export function handoffFacts(entries: readonly AuditEntry[], w: HandoffWording =
       const r = str(d.reason);
       handoffReason = r ? (own(w.reasons, r) ?? own(HANDOFF_WORDS, r) ?? r) : null;
       if (Array.isArray(d.completed)) completed = d.completed.filter((x): x is string => typeof x === 'string');
+      unconfirmed = Array.isArray(d.unconfirmed) ? d.unconfirmed.filter((x): x is string => typeof x === 'string') : null;
     }
   }
   const levelWords = w.levels && Object.hasOwn(w.levels, level) ? w.levels[level] : LEVEL_WORDS[level];
   const identity = startedAs !== null ? own(w.signedIn, startedAs)! : levelWords ?? `level ${level}`;
-  const facts: HandoffFacts = { identity, blocked, manipulationAttempts, codesSpoken, handoffReason, completed };
+  const facts: HandoffFacts = { identity, blocked, manipulationAttempts, codesSpoken, handoffReason, completed, ...(unconfirmed !== null ? { unconfirmed } : {}) };
   return w.created ? { ...facts, [w.created.key]: created } : facts;
 }
 
@@ -121,7 +128,8 @@ export function composeNote(f: HandoffFacts, modelText: string): string {
   if (f.codesSpoken > 0) blockedParts.push(`one-time code said aloud, not accepted; a new code was sent${f.codesSpoken > 1 ? ` (${f.codesSpoken} times)` : ''}`);
   if (f.manipulationAttempts > 0) blockedParts.push(`attempt to manipulate the assistant detected${f.manipulationAttempts > 1 ? ` (${f.manipulationAttempts} times)` : ''}`);
   const done = field(modelText, 'Done') ?? (f.completed.length ? `completed ${f.completed.join(', ')}` : 'nothing completed');
-  const next = field(modelText, 'Next') ?? (f.handoffReason ? `transferred because ${f.handoffReason}` : 'take over the call');
+  const check = f.unconfirmed !== undefined && f.unconfirmed.length > 0 ? `; check with the caller what they never confirmed: ${f.unconfirmed.join(', ')}` : '';
+  const next = field(modelText, 'Next') ?? `${f.handoffReason ? `transferred because ${f.handoffReason}` : 'take over the call'}${check}`;
   return [
     `Identity: ${f.identity}`,
     `Wanted: ${field(modelText, 'Wanted') ?? 'not stated'}`,

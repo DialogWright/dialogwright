@@ -179,6 +179,15 @@ export interface Session {
    * checks is as it was.
    */
   checked?: Record<string, string>;
+  /**
+   * The values the caller said yes to at a summary, by slot (HandoffData.unconfirmed): written when a
+   * form with a summary completes on the caller's yes, for each of its filled slots, and only for an
+   * app whose handoff marks or leaves out the values never confirmed. A slot still holding its value
+   * here counts as confirmed in the handoff; one changed since does not. Kept for the slots that
+   * outlast the form (carried), dropped for those its close empties. Absent for every other app, so
+   * their sessions are as they were. Never in what the model is sent.
+   */
+  agreed?: Record<SlotId, string>;
   /** Failed verifications, of the identity factors together and of the one-time code, which the gate's attempts rule caps. */
   identityAttempts: { factors: number; code: number };
   /** The one-time code has been texted on this call (sendCode); asking for it again does not text another, a reissue does. */
@@ -309,6 +318,7 @@ export function cloneSession(s: Session): Session {
     pendingConfirmation: clonePending(s.pendingConfirmation),
     ...(s.checked ? { checked: { ...s.checked } } : {}),
     ...(s.callerOffered ? { callerOffered: [...s.callerOffered] } : {}),
+    ...(s.agreed ? { agreed: { ...s.agreed } } : {}),
     queued: [...s.queued],
     completed: [...s.completed],
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
@@ -364,7 +374,12 @@ export function setForm(session: Session, form: FormId): Session {
 export function closeForm(session: Session): Session {
   const app = appOf(session);
   if (session.form) {
-    for (const id of formOf(app, session.form).slots) if (!isCarried(app, id)) session.slots[id] = emptySlot();
+    for (const id of formOf(app, session.form).slots) {
+      if (isCarried(app, id)) continue;
+      session.slots[id] = emptySlot();
+      // A value the caller agreed to goes with the slot: one said again in a later form is heard anew.
+      if (session.agreed !== undefined) delete session.agreed[id];
+    }
   }
   session.form = null;
   session.entered = null;

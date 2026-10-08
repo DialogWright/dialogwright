@@ -61,12 +61,23 @@ export interface IntentDef {
    * what the intent's form may do as for any other. `true` reads PRIORITY_INTENT; `{ threshold }`
    * names another, the engine's or one of App.thresholds. For a form intent or an informational
    * one. Absent or false: an intent like any other.
+   *
+   * `{ correctsForm: true }`: before the priority form is entered, the slots the switching turn was
+   * asked about are filled from its answers as a correction (the open form's, or the call's own slots
+   * when no form is open), so a value the caller's words just contradicted ("water is coming through
+   * the wall right now" over "getting worse") is what the handoff carries. Its acks and any
+   * disambiguation are dropped, the form left is still neither closed nor completed, and its checks do
+   * not run on the way out. No question the model is sent changes. Off by default.
    */
   priority?: IntentPriority;
 }
 
-/** Whether an intent is a priority intent, and at which threshold (IntentDef.priority). */
-export type IntentPriority = boolean | { readonly threshold: string };
+/**
+ * Whether an intent is a priority intent (IntentDef.priority): `true`, or an object with the
+ * threshold it is read against (default PRIORITY_INTENT) and whether a switch to it corrects what the
+ * call holds from the switching turn's words (`correctsForm`, default false).
+ */
+export type IntentPriority = boolean | { readonly threshold?: string; readonly correctsForm?: boolean };
 
 /** What an intent the model is unsure of gets: a confirmation, or the no-match line (IntentDef.unsure, App.unsureIntent). */
 export type UnsureIntent = 'confirm' | 'no-match';
@@ -826,7 +837,20 @@ export interface HandoffData {
   readonly slots?: 'all' | 'none' | readonly SlotId[];
   /** How a slot goes, by slot id, in place of its default (HandoffSend). */
   readonly send?: Readonly<Record<SlotId, HandoffSend>>;
+  /** What goes of a value the caller never confirmed (HandoffUnconfirmed). Default `send`. */
+  readonly unconfirmed?: HandoffUnconfirmed;
 }
+
+/**
+ * What a transfer does with a collected value the caller never confirmed: one whose slot is not
+ * `confirmed` (a yes to its own read-back, a keyed value, a fill the slot takes with no read-back) and
+ * that is not the value the caller said yes to at a summary since (Session.agreed). `send`, the
+ * default: sent as any other, as before the option. `mark`: sent, and the data names it (the end
+ * frame's `unconfirmed`, the console's "(not confirmed)", the audit's handoff row). `omit`: left out.
+ * An identity factor, and a slot handed over only as `verified`, is never counted: the Identity line
+ * says what was proven.
+ */
+export type HandoffUnconfirmed = 'send' | 'mark' | 'omit';
 
 export interface App {
   id: string;

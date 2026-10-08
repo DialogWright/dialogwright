@@ -715,3 +715,34 @@ describe('dialogwright check', () => {
     // the whole suite running beside it, so the limit is sized to that work, not vitest's 5 s default.
   }, 60_000);
 });
+
+describe('checkAppFully: a priority switch\'s correction and the handoff\'s unconfirmed values', () => {
+  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem);
+  const intent = (id: string, line: string) => (text: string): string => text.replace(`  ${id}:\n`, `  ${id}:\n    ${line}\n`);
+  const handoffData = (lines: string) => (text: string): string => `${text}\nhandoff:\n  data:\n${lines}`;
+
+  it('says nothing of either on a form intent, or with values to mark', async () => {
+    const dir = folder({ 'intents.yaml': intent('renew_loan', 'priority: { correctsForm: true }'), 'app.yaml': handoffData('    unconfirmed: mark\n') });
+    expect(await lines(dir)).toEqual([]);
+    expect(await warnings(dir)).toEqual([]);
+  });
+
+  it('warns of correctsForm on an informational intent, which opens no form to correct', async () => {
+    const dir = folder({ 'intents.yaml': intent('hours', 'priority: { correctsForm: true }') });
+    expect(await lines(dir)).toEqual([]);
+    expect(await warnings(dir)).toEqual([
+      'intents.yaml:16:31  intents.hours.priority.correctsForm  the informational intent "hours" says correctsForm, but it opens no form, so there is nothing to correct: what the turn says already fills the form in hand  ->  delete "correctsForm", or write priority: true',
+    ]);
+  });
+
+  it('warns of marking or leaving out unconfirmed values when slots is none', async () => {
+    for (const how of ['mark', 'omit'] as const) {
+      const dir = folder({ 'app.yaml': handoffData(`    slots: none\n    unconfirmed: ${how}\n`) });
+      expect(await lines(dir)).toEqual([]);
+      expect(await warnings(dir)).toEqual([
+        `app.yaml:35:18  handoff.data.unconfirmed  unconfirmed is ${how}, but slots is none, so a transfer sends no value to ${how === 'mark' ? 'mark' : 'leave out'}  ->  delete "unconfirmed", or name the slots that go`,
+      ]);
+    }
+    expect(await warnings(folder({ 'app.yaml': handoffData('    slots: none\n    unconfirmed: send\n') }))).toEqual([]);
+  });
+});

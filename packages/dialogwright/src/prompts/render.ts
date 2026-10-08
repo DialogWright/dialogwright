@@ -4,7 +4,7 @@ import { endAction, sayAction, transferAction, type Action, type Say, type SayPa
 import { isPauseOnly, joinSpoken, segmentTemplate, stripLeadingPause, ttsOnly, VAR } from './segments';
 import { vocabularyClipId } from './clips';
 import { speechLanguagesOf } from '../core/locale';
-import { handoffDataSlots } from '../handoff/data';
+import { handoffDataSlots, handoffDataUnconfirmed } from '../handoff/data';
 
 export interface PromptEntry {
   text: string;
@@ -137,10 +137,12 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
       // Same reasoning as 'complete': the call is ending, so nothing here is interruptible. The
       // transfer carries what the app's handoff data option lets leave the engine (handoff/data.ts):
       // by default no identity factor, and a redacted slot only masked.
+      // With `unconfirmed: omit` a value never confirmed is left out; with `mark` the transfer names it.
+      const slots = handoffDataSlots(app, decision.slots, decision.unconfirmed);
       return [
         ...decision.acks.map((a) => say(a.promptId, a.vars, false)),
         say(decision.promptId, {}, false),
-        transferAction(decision.reason, decision.completed, decision.queued, handoffDataSlots(app, decision.slots)),
+        transferAction(decision.reason, decision.completed, decision.queued, slots, handoffDataUnconfirmed(app, slots, decision.unconfirmed)),
       ];
   }
 }

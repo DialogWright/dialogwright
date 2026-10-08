@@ -49,7 +49,7 @@ export function actionsToFrames(actions: readonly Action[]): OutboundFrame[] {
       case 'end':
         return [endFrame('completed', a.completed)];
       case 'transfer':
-        return [endFrame(a.reason, a.completed, a.queued, a.slots)];
+        return [endFrame(a.reason, a.completed, a.queued, a.slots, a.unconfirmed)];
       case 'send_digits':
         return [{ type: 'sendDigits', digits: a.digits }];
       case 'set_language':

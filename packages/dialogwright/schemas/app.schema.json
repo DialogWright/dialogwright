@@ -719,6 +719,15 @@
                   "as-is"
                 ]
               }
+            },
+            "unconfirmed": {
+              "description": "What goes of a value the caller never confirmed (not confirmed on its own, and not the value they said yes to at a summary since): \"send\" (the default, sent as any other), \"mark\" (sent, and the data names it: the end frame's unconfirmed list, the console's \"(not confirmed)\", the audit's handoff row) or \"omit\" (left out). An identity factor is never counted. A chat's transfer sends no slots whatever this says.",
+              "type": "string",
+              "enum": [
+                "send",
+                "mark",
+                "omit"
+              ]
             }
           },
           "additionalProperties": false

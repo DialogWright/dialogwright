@@ -1,4 +1,4 @@
-import type { AnythingElseSilence, App, ChangeSlotWithValue, FormDef, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
+import type { AnythingElseSilence, App, ChangeSlotWithValue, FormDef, HandoffUnconfirmed, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 
@@ -70,7 +70,21 @@ export function unsureOf(app: App, intent: Intent): UnsureIntent {
 export function priorityThresholdOf(app: App, intent: Intent): string | null {
   const priority = app.intents[intent]?.priority;
   if (priority === undefined || priority === false) return null;
-  return priority === true ? 'PRIORITY_INTENT' : priority.threshold;
+  return priority === true ? 'PRIORITY_INTENT' : (priority.threshold ?? 'PRIORITY_INTENT');
+}
+
+/**
+ * Whether a switch to the priority intent `intent` first corrects what the call holds from the
+ * switching turn's words (IntentDef.priority `{ correctsForm: true }`). False for every other intent.
+ */
+export function correctsFormOf(app: App, intent: Intent): boolean {
+  const priority = app.intents[intent]?.priority;
+  return typeof priority === 'object' && priority !== null && priority.correctsForm === true;
+}
+
+/** What a transfer does with a value the caller never confirmed: the app's (HandoffData.unconfirmed), else `send`. */
+export function handoffUnconfirmedOf(app: Pick<App, 'handoff'>): HandoffUnconfirmed {
+  return app.handoff?.data?.unconfirmed ?? 'send';
 }
 
 /** The app's priority intents (IntentDef.priority), in the order it lists them; empty for most apps. */

@@ -140,6 +140,7 @@ export interface HandoffView {
   summaryPending: boolean;
   /** The summary is the demo feed's scripted text (`handoff_summary` with `demo: true`), not a model's. */
   summaryDemo: boolean;
+  /** One `slot: value` line per collected slot, with " (not confirmed)" after a value the caller never confirmed (HandoffData.unconfirmed `mark` or `omit`). */
   packet: string[];
 }
 

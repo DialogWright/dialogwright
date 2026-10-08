@@ -117,7 +117,11 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // A form a check ended (core/checks.ts): which check, for what reason, and how the form ended.
   if (t.stopped) drafts.push({ type: 'form_stopped', detail: { form: t.stopped.form, action: t.stopped.action, reason: t.stopped.reason, then: t.stopped.then } });
   if (decision.kind === 'handoff') {
-    drafts.push({ type: 'handoff', detail: { reason: decision.reason, completed: [...decision.completed], queued: [...decision.queued] } });
+    // The slots the caller never confirmed, by id and never by value, for an app whose handoff marks
+    // or leaves them out (HandoffData.unconfirmed): the note can say what to check with the caller.
+    const detail: AuditDraft['detail'] = { reason: decision.reason, completed: [...decision.completed], queued: [...decision.queued] };
+    if (decision.unconfirmed !== undefined) detail.unconfirmed = [...decision.unconfirmed];
+    drafts.push({ type: 'handoff', detail });
     drafts.push({ type: 'call_ended', detail: { reason: 'handoff', completed: [...decision.completed] } });
   } else if (decision.kind === 'complete') {
     drafts.push({ type: 'call_ended', detail: { reason: 'completed', completed: [...decision.completed] } });

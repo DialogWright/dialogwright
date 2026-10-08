@@ -15,8 +15,12 @@ export type SayPart = { text: string } | { audio: string };
 export interface Say { type: 'say'; parts: SayPart[]; interruptible: boolean; lang?: string }
 /** The session is over and its business done. */
 export interface End { type: 'end'; completed: string[] }
-/** Hand the session to a person, with why and what was done, still queued, and collected. */
-export interface Transfer { type: 'transfer'; reason: string; completed: string[]; queued: string[]; slots: Record<string, string> }
+/**
+ * Hand the session to a person, with why and what was done, still queued, and collected. `unconfirmed`:
+ * the slots of `slots` the caller never confirmed, only for an app whose handoff data marks them
+ * (HandoffData.unconfirmed `mark`); absent otherwise.
+ */
+export interface Transfer { type: 'transfer'; reason: string; completed: string[]; queued: string[]; slots: Record<string, string>; unconfirmed?: string[] }
 /** Play key tones on the line (none produced yet; the relay can send them). */
 export interface SendDigits { type: 'send_digits'; digits: string }
 /** Switch speech and recognition language (none produced yet; the relay can send it). */
@@ -30,8 +34,10 @@ export function sayAction(parts: SayPart[], interruptible: boolean, lang?: strin
 export function endAction(completed: readonly string[] = []): End {
   return { type: 'end', completed: [...completed] };
 }
-export function transferAction(reason: string, completed: readonly string[] = [], queued: readonly string[] = [], slots: Record<string, string> = {}): Transfer {
-  return { type: 'transfer', reason, completed: [...completed], queued: [...queued], slots: { ...slots } };
+export function transferAction(reason: string, completed: readonly string[] = [], queued: readonly string[] = [], slots: Record<string, string> = {}, unconfirmed?: readonly string[]): Transfer {
+  const transfer: Transfer = { type: 'transfer', reason, completed: [...completed], queued: [...queued], slots: { ...slots } };
+  if (unconfirmed !== undefined) transfer.unconfirmed = [...unconfirmed];
+  return transfer;
 }
 
 /** The words said, in order, one space between parts (recorded clips carry no words here). */

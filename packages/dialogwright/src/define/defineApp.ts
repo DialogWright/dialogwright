@@ -352,7 +352,7 @@ export function crossLink(
     if (def.priority !== undefined && def.priority !== false && def.kind === 'control') {
       yaml('intents.yaml', ['intents', id, 'priority'], `the control intent "${id}" cannot be a priority intent: a priority intent starts its form or says its answer`, 'delete "priority": only a form intent or an informational one is a priority intent (a person on request is the agent intent, and wantsHuman already acts on it at once)', true);
     }
-    if (typeof def.priority === 'object' && !thresholdNamesOf(config.app.thresholds).includes(def.priority.threshold)) {
+    if (typeof def.priority === 'object' && def.priority.threshold !== undefined && !thresholdNamesOf(config.app.thresholds).includes(def.priority.threshold)) {
       const name = def.priority.threshold;
       yaml('intents.yaml', ['intents', id, 'priority', 'threshold'], `intent "${id}" names the threshold "${name}", which is neither one of the engine's thresholds nor one the app names`, `${renameHint(name, thresholdNamesOf(config.app.thresholds))}add "${name}" under thresholds in app.yaml, or write priority: true for PRIORITY_INTENT`);
     }

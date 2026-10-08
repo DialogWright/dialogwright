@@ -44,14 +44,23 @@ const intentDef = z
             /^[A-Z][A-Z0-9_]*$/,
             'is not a threshold name: it must be upper case letters, digits and underscores, starting with a letter',
             'name one of the engine\'s thresholds (PRIORITY_INTENT) or one under thresholds in app.yaml',
-          ).describe('The threshold the intent is read against in place of PRIORITY_INTENT: one of the engine\'s, or one under thresholds in app.yaml.'),
+          )
+            .optional()
+            .describe('The threshold the intent is read against in place of PRIORITY_INTENT: one of the engine\'s, or one under thresholds in app.yaml. Default PRIORITY_INTENT.'),
+          correctsForm: z
+            .boolean()
+            .optional()
+            .describe(
+              'Before the priority form is entered, fill the slots the switching turn was asked about from its words, as a correction: the open form\'s, or the call\'s own slots when no form is open. ' +
+                '"Water is coming through the wall right now", said at a read-back, replaces an urgency given earlier, so the handoff carries what the caller just said. Nothing is acknowledged, no check runs, and no question the model is sent changes. For a form intent. Default false.',
+            ),
         }),
       ])
       .optional()
       .describe(
         'Something that must never wait or be missed, such as an emergency or a safety report. Read at PRIORITY_INTENT (0.8) or more, the intent is acted on this turn: ' +
           'mid-form over the question being answered and any pending confirmation (the form in hand is left, as on a switch), and never ignored as side speech or re-asked as unintelligible. ' +
-          'A handoff to a person and the injection screen still stand. true reads PRIORITY_INTENT; { threshold: NAME } reads another. For a form intent or an informational one. Default false.',
+          'A handoff to a person and the injection screen still stand. true reads PRIORITY_INTENT; { threshold: NAME } reads another; { correctsForm: true } also corrects what the call holds from the same words. For a form intent or an informational one. Default false.',
       ),
   })
   .check(checkAlways((value, ctx) => {
@@ -62,8 +71,8 @@ const intentDef = z
       ctx.addIssue({
         code: 'custom',
         path: ['priority'],
-        message: `"priority" is ${JSON.stringify(def.priority)}, which is not true, false or { threshold: NAME }`,
-        params: { fix: 'write priority: true to read PRIORITY_INTENT, or priority: { threshold: NAME } for another threshold' },
+        message: `"priority" is ${JSON.stringify(def.priority)}, which is not true, false or { threshold: NAME, correctsForm: true }`,
+        params: { fix: 'write priority: true to read PRIORITY_INTENT, priority: { threshold: NAME } for another threshold, or priority: { correctsForm: true } to correct the form left from the same words' },
       });
     }
     if (def.kind === 'informational' && def.promptId === undefined && def.passage === undefined && def.locale === undefined) {

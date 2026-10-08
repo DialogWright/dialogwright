@@ -7,7 +7,7 @@ import { decisionToActions } from '../prompts/render';
 import { actionsToFrames } from '../channel/relay/map';
 import { actionsToChatMessages } from '../channel/chat/protocol';
 import { validateApp } from '../core/app/validate';
-import { handoffDataProblems, handoffDataSlots, handoffSendOf } from './data';
+import { handoffDataProblems, handoffDataSlots, handoffDataUnconfirmed, handoffSendOf } from './data';
 
 useTestkit();
 
@@ -78,6 +78,56 @@ describe('handoff data: the app\'s option', () => {
 
   it('omits a slot named omit', () => {
     expect(handoffDataSlots(withData({ send: { expectedDate: 'omit' } }), COLLECTED)).toEqual({ missingNote: 'your description' });
+  });
+});
+
+describe('handoff data: the values the caller never confirmed (unconfirmed)', () => {
+  const UNCONFIRMED = ['missingNote'];
+
+  it('send, the default: every value goes, and nothing is named', () => {
+    for (const app of [testkitApp, withData({ unconfirmed: 'send' })]) {
+      expect(handoffDataSlots(app, COLLECTED, UNCONFIRMED)).toEqual({ missingNote: 'your description', expectedDate: 'Wednesday, September 16' });
+      expect(handoffDataUnconfirmed(app, handoffDataSlots(app, COLLECTED, UNCONFIRMED), UNCONFIRMED)).toBeUndefined();
+    }
+  });
+
+  it('omit leaves them out, after the identity factors are left out as ever', () => {
+    const app = withData({ unconfirmed: 'omit' });
+    expect(handoffDataSlots(app, COLLECTED, UNCONFIRMED)).toEqual({ expectedDate: 'Wednesday, September 16' });
+    expect(handoffDataSlots(app, COLLECTED, [])).toEqual({ missingNote: 'your description', expectedDate: 'Wednesday, September 16' });
+    expect(handoffDataUnconfirmed(app, {}, UNCONFIRMED)).toBeUndefined();
+  });
+
+  it('mark keeps them and names those the data sends, in their order', () => {
+    const app = withData({ unconfirmed: 'mark' });
+    const sent = handoffDataSlots(app, COLLECTED, ['expectedDate', 'missingNote', 'accountId']);
+    expect(sent).toEqual({ missingNote: 'your description', expectedDate: 'Wednesday, September 16' });
+    // A factor is left out of the data, so it is not named either.
+    expect(handoffDataUnconfirmed(app, sent, ['expectedDate', 'missingNote', 'accountId'])).toEqual(['expectedDate', 'missingNote']);
+    expect(handoffDataUnconfirmed(app, sent, [])).toEqual([]);
+  });
+
+  it('on the end frame: an unconfirmed list beside the slots with mark, none with send or omit', () => {
+    const decision = { ...handoffDecision({ missingNote: 'your description', expectedDate: 'Wednesday, September 16' }), unconfirmed: ['expectedDate'] };
+    const end = (app: App) => actionsToFrames(decisionToActions(app, decision)).at(-1);
+    expect(end(withData({ unconfirmed: 'mark' }))).toEqual({ type: 'end', handoffData: '{"reasonCode":"live-agent","slots":{"missingNote":"your description","expectedDate":"Wednesday, September 16"},"unconfirmed":["expectedDate"]}' });
+    expect(end(withData({ unconfirmed: 'omit' }))).toEqual({ type: 'end', handoffData: '{"reasonCode":"live-agent","slots":{"missingNote":"your description"}}' });
+    expect(end(testkitApp)).toEqual({ type: 'end', handoffData: '{"reasonCode":"live-agent","slots":{"missingNote":"your description","expectedDate":"Wednesday, September 16"}}' });
+    // Everything confirmed: no list at all, as an empty completed or queued has none.
+    expect(actionsToFrames(decisionToActions(withData({ unconfirmed: 'mark' }), { ...decision, unconfirmed: [] })).at(-1))
+      .toEqual({ type: 'end', handoffData: '{"reasonCode":"live-agent","slots":{"missingNote":"your description","expectedDate":"Wednesday, September 16"}}' });
+  });
+
+  it('a chat\'s transfer is unchanged: its reason alone', () => {
+    const decision = { ...handoffDecision({ expectedDate: 'Wednesday, September 16' }), unconfirmed: ['expectedDate'] };
+    expect(actionsToChatMessages(decisionToActions(withData({ unconfirmed: 'mark' }), decision), 'en-US').at(-1)).toEqual({ type: 'transfer', reason: 'live-agent' });
+  });
+
+  it('refuses a value it does not have, for an app built in code too', () => {
+    const problems = handoffDataProblems({ unconfirmed: 'flag' as never }, testkitApp.slots, testkitApp.identity?.factorSlots ?? []);
+    expect(problems.map((p) => `${p.path.join('.')}: ${p.message}`)).toEqual(['unconfirmed: "flag" is not one of "send", "mark", "omit"']);
+    expect(() => validateApp(withData({ unconfirmed: 'flag' as never }))).toThrow(/handoff data: "flag" is not one of "send", "mark", "omit" \(handoff\.data\.unconfirmed\)/);
+    for (const how of ['send', 'mark', 'omit'] as const) expect(() => validateApp(withData({ unconfirmed: how }))).not.toThrow();
   });
 });
 

@@ -1,4 +1,4 @@
-import type { App, HandoffData, HandoffSend, SlotId } from '../core/app/types';
+import type { App, HandoffData, HandoffSend, HandoffUnconfirmed, SlotId } from '../core/app/types';
 import type { SlotSpec } from '../core/slots/types';
 import { maskCollectedSlot } from '../trace/redact';
 
@@ -13,6 +13,9 @@ import { maskCollectedSlot } from '../trace/redact';
 
 /** The ways a slot can go, in the order the docs list them. */
 export const HANDOFF_SEND_VALUES: readonly HandoffSend[] = ['omit', 'masked', 'as-is'];
+
+/** What a transfer may do with a value the caller never confirmed (HandoffData.unconfirmed), in the order the docs list them. */
+export const HANDOFF_UNCONFIRMED_VALUES: readonly HandoffUnconfirmed[] = ['send', 'mark', 'omit'];
 
 /** The parts of an app this reads: its slots, its identity factors, and its handoff option. */
 type HandoffApp = Pick<App, 'slots' | 'identity' | 'handoff'>;
@@ -39,16 +42,29 @@ export function handoffSendOf(app: HandoffApp, slot: SlotId): HandoffSend {
 
 /**
  * The handoff data's slots, from what the handoff decision collected (HandoffDecision.slots): each
- * left out, masked or kept as handoffSendOf says. A name that is not one of the app's slots is left out.
+ * left out, masked or kept as handoffSendOf says. A name that is not one of the app's slots is left
+ * out, and so, where the app says `unconfirmed: omit`, is each of `unconfirmed`
+ * (HandoffDecision.unconfirmed), the values the caller never confirmed.
  */
-export function handoffDataSlots(app: HandoffApp, collected: Readonly<Record<string, string>>): Record<string, string> {
+export function handoffDataSlots(app: HandoffApp, collected: Readonly<Record<string, string>>, unconfirmed: readonly SlotId[] = []): Record<string, string> {
   const out: Record<string, string> = {};
+  const omitted = app.handoff?.data?.unconfirmed === 'omit' ? new Set(unconfirmed) : null;
   for (const [slot, value] of Object.entries(collected)) {
     const send = handoffSendOf(app, slot);
-    if (send === 'omit') continue;
+    if (send === 'omit' || omitted?.has(slot) === true) continue;
     out[slot] = send === 'masked' ? maskCollectedSlot(app, slot, value) : value;
   }
   return out;
+}
+
+/**
+ * The values the handoff data names as never confirmed (the end frame's `unconfirmed`): with
+ * `unconfirmed: mark`, those of `unconfirmed` that the data sends (`sent`, handoffDataSlots), in their
+ * order. Undefined with any other setting, so the frame is as it was.
+ */
+export function handoffDataUnconfirmed(app: Pick<App, 'handoff'>, sent: Readonly<Record<string, string>>, unconfirmed: readonly SlotId[] | undefined): SlotId[] | undefined {
+  if (app.handoff?.data?.unconfirmed !== 'mark' || unconfirmed === undefined) return undefined;
+  return unconfirmed.filter((slot) => Object.hasOwn(sent, slot));
 }
 
 /** One thing wrong with an app's handoff data option, at its path under `handoff.data`. */
@@ -88,6 +104,9 @@ export function handoffDataProblems(
   const listed = Array.isArray(which) ? (which as readonly SlotId[]) : null;
   if (which !== undefined && which !== 'all' && which !== 'none' && listed === null) {
     add(['slots'], `${JSON.stringify(which)} is not "all", "none" or a list of slots`, 'write all (the default), none, or a list of slot ids');
+  }
+  if (data.unconfirmed !== undefined && !HANDOFF_UNCONFIRMED_VALUES.includes(data.unconfirmed)) {
+    add(['unconfirmed'], `${JSON.stringify(data.unconfirmed)} is not one of ${HANDOFF_UNCONFIRMED_VALUES.map((v) => `"${v}"`).join(', ')}`, 'write send (the default), mark or omit');
   }
   const send = data.send ?? {};
   listed?.forEach((slot, i) => {

@@ -1,5 +1,5 @@
 import type { SlotPartial } from './slots/types';
-import { identityOf, slotSpecOf } from './app/lookup';
+import { handoffUnconfirmedOf, identityOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { FormId, SlotId } from './app/types';
 import { handoffPromptId } from '../prompts/render';
@@ -53,6 +53,12 @@ export interface HandoffDecision {
    * by default no identity factor at all, and a redacted slot masked.
    */
   slots: Record<string, string>;
+  /**
+   * The slots of `slots` the caller never confirmed (unconfirmedSlots), in the app's slot order: only
+   * for an app whose handoff data marks or leaves them out (HandoffData.unconfirmed `mark` or `omit`).
+   * Absent otherwise, so every other app's handoff is as it was.
+   */
+  unconfirmed?: SlotId[];
 }
 
 export type Decision =
@@ -86,7 +92,29 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
     else if (spec.displayFrom === 'said') slots[id] = slot.value;
     else slots[id] = slot.display ?? slot.value;
   }
-  return { kind: 'handoff', reason, promptId: handoffPromptId(reason), acks, completed: [...s.completed], queued: [...s.queued], slots };
+  const decision: HandoffDecision = { kind: 'handoff', reason, promptId: handoffPromptId(reason), acks, completed: [...s.completed], queued: [...s.queued], slots };
+  if (handoffUnconfirmedOf(app) !== 'send') decision.unconfirmed = unconfirmedSlots(s);
+  return decision;
+}
+
+/**
+ * The filled slots the caller never confirmed (HandoffData.unconfirmed): neither `confirmed` (a yes
+ * to the slot's own read-back, a keyed value, a fill the slot takes with no read-back) nor holding
+ * the value the caller said yes to at a summary (Session.agreed). An identity factor, and a slot
+ * handed over only as `verified`, is never listed: what was proven of the caller is the Identity
+ * line's, not a heard value's.
+ */
+export function unconfirmedSlots(s: Session): SlotId[] {
+  const app = appOf(s);
+  const factors = identityOf(app).factorSlots;
+  const out: SlotId[] = [];
+  for (const [id, spec] of Object.entries(app.slots)) {
+    const slot = s.slots[id]!;
+    if (slot.value === null || slot.confirmed || factors.includes(id) || spec.handoff === 'verified') continue;
+    if (s.agreed !== undefined && Object.hasOwn(s.agreed, id) && s.agreed[id] === slot.value) continue;
+    out.push(id);
+  }
+  return out;
 }
 
 /** "Would you like me to connect you with a support specialist?" */

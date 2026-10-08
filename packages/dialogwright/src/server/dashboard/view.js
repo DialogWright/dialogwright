@@ -513,9 +513,14 @@ function sourceOf(kb) {
   };
 }
 
-/** A handoff's collected slots (already display-safe; redactRecordSlots masked identity before this), one line each. */
-function packetOf(slots) {
-  return Object.entries(slots ?? {}).map(([k, v]) => `${k}: ${v}`);
+/**
+ * A handoff's collected slots (already display-safe; redactRecordSlots masked identity before this), one
+ * line each. A slot the caller never confirmed (the decision's `unconfirmed`, only for an app whose
+ * handoff data marks or leaves those out) says so: "howUrgent: right away (not confirmed)".
+ */
+function packetOf(slots, unconfirmed) {
+  const marked = new Set(Array.isArray(unconfirmed) ? unconfirmed : []);
+  return Object.entries(slots ?? {}).map(([k, v]) => (marked.has(k) ? `${k}: ${v} (not confirmed)` : `${k}: ${v}`));
 }
 
 /** One audit entry as a console line: "gate(tool=lookUp, verdict=BLOCK, ...)". No PHI to hide (core/audit.ts). */
@@ -842,7 +847,7 @@ export function reduce(events, opts) {
         // audit event, so the row cannot assert a seq or a hash it was never actually chained with.
         if (fromTrace && r.audit && r.audit.length) pushAuditDrafts(v, r.audit);
         if (r.kb) v.source = sourceOf(r.kb);
-        if (r.decision.kind === 'handoff') v.handoff = { reason: r.decision.reason, summary: null, summaryPending: true, summaryDemo: false, packet: packetOf(r.decision.slots) };
+        if (r.decision.kind === 'handoff') v.handoff = { reason: r.decision.reason, summary: null, summaryPending: true, summaryDemo: false, packet: packetOf(r.decision.slots, r.decision.unconfirmed) };
         // `turnIndex` is already 1-based (the greeting is turn 1) and repeats on an ignored turn.
         v.turnCount = Math.max(v.turnCount, r.turnIndex);
         v.form = r.form;

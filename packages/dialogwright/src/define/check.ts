@@ -207,9 +207,11 @@ export interface CheckResult {
   codeChecked: boolean;
   /**
    * What is not wrong but likely a mistake: printed, never counted as a problem (the exit code is
-   * the problems'). Absent when there is none. Only a form's checks have any (./formChecks.ts
-   * checkWarnings): an `on` reason the check never refuses for, and a rule a check holds the
-   * caller to that the form's write does not.
+   * the problems'). Absent when there is none. A form's checks (./formChecks.ts checkWarnings): an
+   * `on` reason the check never refuses for, and a rule a check holds the caller to that the form's
+   * write does not; a slot that offers the caller's number (callerNumberWarnings); and a priority
+   * intent's correctsForm or the handoff's unconfirmed option with nothing to act on
+   * (priorityHandoffWarnings).
    */
   warnings?: Problem[];
 }
@@ -256,6 +258,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     }, codeFile);
   }
+  priorityHandoffWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
   problems.push(...checkDone(config, locate));
@@ -271,6 +277,25 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   const result: CheckResult = { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
   if (warnings.length > 0) result.warnings = sortProblems(warnings, codeFile);
   return result;
+}
+
+/**
+ * The warnings for a priority switch's correction and the handoff's unconfirmed values: `correctsForm`
+ * on an informational priority intent, which opens no form (the turn already fills the form in hand
+ * as it is said), and `handoff.data.unconfirmed` marking or leaving out values when `slots: none`
+ * sends none.
+ */
+function priorityHandoffWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  for (const [id, def] of Object.entries(config.intents.intents)) {
+    const priority = def.priority;
+    if (typeof priority !== 'object' || priority.correctsForm !== true || def.kind !== 'informational') continue;
+    report('intents.yaml', ['intents', id, 'priority', 'correctsForm'], `the informational intent "${id}" says correctsForm, but it opens no form, so there is nothing to correct: what the turn says already fills the form in hand`, 'delete "correctsForm", or write priority: true');
+  }
+  const data = config.app.handoff?.data;
+  const unconfirmed = data?.unconfirmed;
+  if ((unconfirmed === 'mark' || unconfirmed === 'omit') && data?.slots === 'none') {
+    report('app.yaml', ['handoff', 'data', 'unconfirmed'], `unconfirmed is ${unconfirmed}, but slots is none, so a transfer sends no value to ${unconfirmed === 'mark' ? 'mark' : 'leave out'}`, 'delete "unconfirmed", or name the slots that go');
+  }
 }
 
 /**

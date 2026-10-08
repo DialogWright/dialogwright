@@ -263,6 +263,20 @@ describe('defineApp: a priority intent (intents.yaml priority)', () => {
     expect('priority' in app.intents.check_hold!).toBe(false);
   });
 
+  it('puts correctsForm on as written, with or without a threshold', () => {
+    const app = defineApp(folder({ 'intents.yaml': withIntent('renew_loan', 'priority: { correctsForm: true }') }), libraryCode);
+    expect(app.intents.renew_loan!.priority).toEqual({ correctsForm: true });
+    const both = defineApp(folder({ 'intents.yaml': withIntent('renew_loan', 'priority: { threshold: INTENT_SWITCH, correctsForm: true }') }), libraryCode);
+    expect(both.intents.renew_loan!.priority).toEqual({ threshold: 'INTENT_SWITCH', correctsForm: true });
+  });
+
+  it('refuses a correctsForm that is not true or false, and a key the object does not have', () => {
+    const [notBoolean] = problems(libraryCode, folder({ 'intents.yaml': withIntent('renew_loan', 'priority: { correctsForm: yes }') }));
+    expect(notBoolean).toMatch(/^intents\.yaml:\d+:\d+  intents\.renew_loan\.priority\.correctsForm  /);
+    const [unknown] = problems(libraryCode, folder({ 'intents.yaml': withIntent('renew_loan', 'priority: { corrects: true }') }));
+    expect(unknown).toMatch(/intents\.renew_loan\.priority/);
+  });
+
   it('refuses it on a control intent, and a threshold nothing defines', () => {
     expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('agent', 'priority: true') }))).toEqual([
       'intents.yaml:21:5  intents.agent.priority  the control intent "agent" cannot be a priority intent: a priority intent starts its form or says its answer  ->  delete "priority": only a form intent or an informational one is a priority intent (a person on request is the agent intent, and wantsHuman already acts on it at once)',
@@ -271,7 +285,7 @@ describe('defineApp: a priority intent (intents.yaml priority)', () => {
       'intents.yaml:16:28  intents.hours.priority.threshold  intent "hours" names the threshold "PRIORITY_INTNET", which is neither one of the engine\'s thresholds nor one the app names  ->  rename it to "PRIORITY_INTENT", or add "PRIORITY_INTNET" under thresholds in app.yaml, or write priority: true for PRIORITY_INTENT',
     ]);
     expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('hours', 'priority: always') }))).toEqual([
-      'intents.yaml:16:15  intents.hours.priority  "priority" is "always", which is not true, false or { threshold: NAME }  ->  write priority: true to read PRIORITY_INTENT, or priority: { threshold: NAME } for another threshold',
+      'intents.yaml:16:15  intents.hours.priority  "priority" is "always", which is not true, false or { threshold: NAME, correctsForm: true }  ->  write priority: true to read PRIORITY_INTENT, priority: { threshold: NAME } for another threshold, or priority: { correctsForm: true } to correct the form left from the same words',
     ]);
   });
 });
@@ -296,6 +310,15 @@ describe('defineApp: what a transfer hands the channel (app.yaml handoff.data)',
     expect(problems(libraryCode, folder({ 'app.yaml': withData('    slots: [card, bok, branch]\n    send:\n      branch: masked\n') }))).toEqual([
       'app.yaml:34:19  handoff.data.slots[1]  slot "bok" is not defined  ->  rename it to "book", or add it to the app\'s slots in app.ts (code.slots.bok)',
       'app.yaml:36:15  handoff.data.send.branch  the slot "branch" has no redact setting (or handoff: last4 or verified), so masked would send it as it is  ->  give the slot a redact setting, or write as-is to send it in the clear',
+    ]);
+  });
+
+  it('puts unconfirmed on as written, and refuses a value it does not have', () => {
+    for (const how of ['send', 'mark', 'omit'] as const) {
+      expect(defineApp(folder({ 'app.yaml': withData(`    unconfirmed: ${how}\n`) }), libraryCode).handoff).toEqual({ data: { unconfirmed: how } });
+    }
+    expect(problems(libraryCode, folder({ 'app.yaml': withData('    unconfirmed: flag\n') }))).toEqual([
+      'app.yaml:34:18  handoff.data.unconfirmed  "unconfirmed" is "flag", which is not allowed here; it must be one of "send", "mark", "omit"  ->  use one of "send", "mark", "omit"',
     ]);
   });
 
