@@ -3,7 +3,7 @@ import { wordsOf, type SessionEvent } from '../channel/events';
 import { maskId } from '../gate/principal';
 import { isAnonymous, type ToolCall } from '../gate/types';
 import type { GateEvent, KbSource, OfferSettled } from './lifecycle';
-import type { FormStopped } from './checks';
+import type { CheckReconfirmed, FormStopped } from './checks';
 import type { Decision } from './decision';
 import type { ScreenResult } from './screen';
 import type { Session } from './session';
@@ -40,6 +40,8 @@ export interface AuditInput {
   stopped?: FormStopped;
   /** The offer of the caller's number this turn settled (core/turn.ts): its `offer` row. */
   offer?: OfferSettled;
+  /** The check whose read-back the caller said no to this turn (core/turn.ts): its `check_reconfirmed` row. */
+  reconfirmed?: CheckReconfirmed;
 }
 
 /** A redacted call as one line: "createReport(accountId=...1234, missingNote=<38 chars>, expectedDate=2026-09-15)". */
@@ -126,7 +128,10 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // intent's passage, said with no gated read): the engine records it, as kbAnswerTool's hook would.
   if (t.kb !== null && !drafts.some((d) => d.type === 'kb_answer')) drafts.push(kbAuditRow(t.kb));
   // A form a check ended (core/checks.ts): which check, for what reason, and how the form ended.
-  if (t.stopped) drafts.push({ type: 'form_stopped', detail: { form: t.stopped.form, action: t.stopped.action, reason: t.stopped.reason, then: t.stopped.then } });
+  // `confirmed` only where the refusal was read back first and the caller said yes (the outcome's `confirm`).
+  if (t.stopped) drafts.push({ type: 'form_stopped', detail: { form: t.stopped.form, action: t.stopped.action, reason: t.stopped.reason, then: t.stopped.then, ...(t.stopped.confirmed ? { confirmed: true } : {}) } });
+  // A check's read-back the caller said no to: the deciding answer was corrected, and is asked again.
+  if (t.reconfirmed) drafts.push({ type: 'check_reconfirmed', detail: { form: t.reconfirmed.form, action: t.reconfirmed.action, reason: t.reconfirmed.reason } });
   if (decision.kind === 'handoff') {
     // The slots the caller never confirmed, by id and never by value, for an app whose handoff marks
     // or leaves them out (HandoffData.unconfirmed): the note can say what to check with the caller.

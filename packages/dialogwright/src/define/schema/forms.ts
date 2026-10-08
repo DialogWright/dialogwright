@@ -27,6 +27,9 @@ export type CheckThen = (typeof CHECK_THEN)[number];
 
 const checkOutcome = z
   .strictObject({
+    confirm: identifier()
+      .optional()
+      .describe('A yes-or-no line (a prompt in prompts.yaml) said before the refusal acts, when a slot the check reads has not been confirmed; it renders with the form\'s slot displays as variables, as `say` does. A yes confirms them and the refusal acts; a no empties them and asks again, and the check runs again when they fill. Skipped when every slot it reads is confirmed already (a read-back, or the summary\'s yes). Default: none, the refusal acts at once.'),
     say: identifier()
       .optional()
       .describe('The line said (a prompt in prompts.yaml); it renders with the form\'s slot displays as variables, as the summary does. Required for end and anything-else; for handoff, said before the handoff line.'),

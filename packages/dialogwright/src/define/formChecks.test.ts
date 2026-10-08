@@ -110,6 +110,38 @@ describe('the refusals', () => {
     ]);
   });
 
+  it('a read-back a check outcome or a slot names that prompts.yaml does not have, and a confirmValues value that is not an option', async () => {
+    const dir = folder({
+      'forms.yaml': replace('out-of-area: { say: decline_out_of_area, then: end }', 'out-of-area: { confirm: check_area, say: decline_out_of_area, then: end }'),
+      'slots.yaml': replace('ownership:\n  type: choice\n', 'ownership:\n  type: choice\n  confirmValues: [rent]\n'),
+    });
+    const { problems } = await checked(dir);
+    expect(problems).toEqual([
+      'forms.yaml:22:35  forms.book_visit.checks[2].on.out-of-area.confirm  prompt "check_area" is not in prompts.yaml  ->  add "check_area:" to prompts.yaml with its text and interruptible',
+      'prompts.yaml:6:1  prompts  prompt "confirm_ownership" is missing from prompts.yaml; the engine says it when it reads the slot "ownership" back for a yes when it is "rent" (its confirmValues), and gives it {ownership}  ->  add "confirm_ownership:" with its text (it may use {ownership}) and interruptible to prompts.yaml',
+    ]);
+    const unknown = folder({ 'slots.yaml': replace('ownership:\n  type: choice\n', 'ownership:\n  type: choice\n  confirmValues: [renter]\n') });
+    expect((await checked(unknown)).problems).toEqual([
+      'slots.yaml:18:19  ownership.confirmValues[0]  confirmValues names "renter", which is not one of the slot\'s options (own, rent)  ->  name an option by its key, as `options` writes it, or delete it from confirmValues',
+    ]);
+  });
+
+  it('a read-back with both lines: no problem, and a check outcome carries it', async () => {
+    const lines = '  confirm_ownership:\n    text: Just to check, {ownership}?\n    interruptible: true\n  check_area:\n    text: Just to check, the home is in {town}?\n    interruptible: true\n';
+    const dir = folder({
+      'forms.yaml': replace('out-of-area: { say: decline_out_of_area, then: end }', 'out-of-area: { confirm: check_area, say: decline_out_of_area, then: end }'),
+      'slots.yaml': replace('ownership:\n  type: choice\n', 'ownership:\n  type: choice\n  confirmValues: [rent]\n'),
+      'prompts.yaml': (t) => `${t}${lines}`,
+    });
+    expect(await checked(dir)).toEqual({ problems: [], warnings: [] });
+    // The read-back line is held to the slot's own variable, as any line a slot declares.
+    const wrong = folder({
+      'slots.yaml': replace('ownership:\n  type: choice\n', 'ownership:\n  type: choice\n  confirmValues: [rent]\n'),
+      'prompts.yaml': (t) => `${t}  confirm_ownership:\n    text: Just to check, {town}?\n    interruptible: true\n`,
+    });
+    expect((await checked(wrong)).problems.join('\n')).toMatch(/confirm_ownership.*\{town\}/);
+  });
+
   it('a check action with a tool in the code', async () => {
     const code: AppCode = { ...screenedCode, tools: { ...screenedCode.tools, checkOwner: { params: ['ownership'], run: () => ({ value: null, summary: 'x' }) } } };
     const { problems } = await checked(folder(), code);

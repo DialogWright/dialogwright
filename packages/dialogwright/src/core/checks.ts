@@ -17,7 +17,9 @@ import type { TurnContext } from './turn';
  * runs once its slots are filled and again whenever one of them changes, and an unchanged yes at the
  * summary asks the gate nothing. They run in the order written, after the entry call and before the
  * next question (turn.ts continueForm), and again first thing at completion (completeForm); the first
- * refusal ends the form with the outcome its reason maps to (`on`).
+ * refusal ends the form with the outcome its reason maps to (`on`). An outcome with `confirm` reads the
+ * refusal back first, when a slot the check reads is not confirmed (turn.ts stopForm): a yes acts on
+ * it as written, a no empties those slots to be asked again.
  *
  * A check is a call through the gate like any other (lifecycle.ts callTool): recorded as a gate event,
  * masked as every call is, and, since a check action has no tool, nothing runs on its ALLOW. Checks ask
@@ -81,6 +83,27 @@ export interface FormStopped {
   /** The gate's reason; null when it gave none (a STEP_UP). */
   reason: string | null;
   then: CheckOutcome['then'];
+  /** The refusal was read back first (the outcome's `confirm`) and the caller said yes. Absent otherwise. */
+  confirmed?: true;
+}
+
+/**
+ * The audit's record of a check's read-back the caller said no to (the `check_reconfirmed` row): the
+ * slots it reads were emptied to be asked again, so an auditor sees the deciding answer corrected.
+ */
+export interface CheckReconfirmed {
+  form: FormId;
+  action: ToolName;
+  reason: string;
+}
+
+/**
+ * The outcome `on` gives a refusal's reason, or null for a reason it does not list and for a
+ * STEP_UP, which never takes one (checkEnding).
+ */
+export function outcomeOf(check: FormCheck, decision: Pick<GateDecision, 'verdict' | 'reason'>): CheckOutcome | null {
+  const reason = decision.reason;
+  return decision.verdict !== 'STEP_UP' && reason !== undefined && check.on !== undefined && Object.hasOwn(check.on, reason) ? check.on[reason]! : null;
 }
 
 /**
@@ -102,9 +125,9 @@ export type CheckEnding =
  * to a person whatever `on` says: a check never asks for identity (the entry call does that first).
  * `vars` are the variables the outcome's line renders with: the form's slot displays.
  */
-export function checkEnding(s: Session, check: FormCheck, decision: GateDecision, acks: Ack[], vars: Record<string, string>): CheckEnding {
+export function checkEnding(s: Session, check: FormCheck, decision: Pick<GateDecision, 'verdict' | 'reason'>, acks: Ack[], vars: Record<string, string>): CheckEnding {
   const reason = decision.reason;
-  const outcome = decision.verdict !== 'STEP_UP' && reason !== undefined && check.on !== undefined && Object.hasOwn(check.on, reason) ? check.on[reason]! : null;
+  const outcome = outcomeOf(check, decision);
   if (outcome === null) {
     const ack = decision.verdict === 'BLOCK' ? blockAck(s, reason) : null;
     if (ack) return { then: 'anything-else', acks: [...acks, ack] };

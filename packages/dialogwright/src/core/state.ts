@@ -2,6 +2,7 @@ import { lastFour } from './callerNumber';
 import type { App, SlotId } from './app/types';
 import { intentLabel } from './app/intents';
 import { appOf } from './app/registry';
+import { formOf } from './app/lookup';
 import { slotLocaleOf } from './locale';
 import { candidateSpans } from './spans';
 import {
@@ -40,17 +41,30 @@ export interface TurnState {
  * The pending confirmation as the model sees it: what is being confirmed, and the thing itself in
  * words. The transfer offer names what a yes buys rather than a form or a slot.
  */
-function pendingState(app: App, pc: Session['pendingConfirmation']): TurnState['pendingConfirmation'] {
+function pendingState(app: App, session: Session): TurnState['pendingConfirmation'] {
+  const pc = session.pendingConfirmation;
   if (pc === null) return null;
   if (pc.target === 'intent') return { target: 'intent', value: intentLabel(app, pc.intent) };
   if (pc.target === 'form') return { target: 'form', value: intentLabel(app, pc.form) };
   if (pc.target === 'transfer') return { target: 'transfer', value: 'connect you to a person' };
+  if (pc.target === 'check') return checkState(app, session, pc);
   // The caller's number offered (core/callerNumber.ts): the model is told what the caller heard of
   // it, its last four, never the whole number.
   if (pc.offered && pc.from !== 'facts') return { target: pc.slot, value: `the number they are calling from, ending in ${lastFour(pc.value)}` };
   // A value read back, or proposed from the facts (`offer: facts`): what the line said of it, its
   // display, and nothing more of what the facts hold.
   return { target: pc.slot, value: pc.display };
+}
+
+/**
+ * A check's refusal read back (a check outcome's `confirm`), as the model sees it: what is read back
+ * is the value the check refused, so it is told as a slot's read-back is, the first slot the check
+ * reads that is not confirmed and its display (the trace masks it as it masks that slot's).
+ */
+function checkState(app: App, session: Session, pc: Extract<Session['pendingConfirmation'], { target: 'check' }>): TurnState['pendingConfirmation'] {
+  const reads = formOf(app, pc.form).checks?.find((c) => c.action === pc.action)?.with ?? [];
+  const slot = reads.find((id) => session.slots[id]?.confirmed === false) ?? reads[0];
+  return slot === undefined ? { target: pc.action, value: pc.reason } : { target: slot, value: session.slots[slot]?.display ?? '' };
 }
 
 /**
@@ -87,6 +101,6 @@ export function buildTurnState(session: Session, input: TurnInput, nowMs: number
     asr: { text: input.text, isFinal: input.isFinal, bargeIn: session.lastInterrupt !== null, dtmf: session.promptedFor === 'otp' ? null : input.dtmf },
     // The number spans in the session's language, as the slots read them (core/turn.ts slotContext).
     candidateSpans: candidateSpans(input.text, slotLocaleOf(session)),
-    pendingConfirmation: pendingState(app, session.pendingConfirmation),
+    pendingConfirmation: pendingState(app, session),
   };
 }

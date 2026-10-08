@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { registerApp, resetAppsForTest } from '../../core/app/registry';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
@@ -7,6 +7,7 @@ import { FixtureStubClient } from '../../jev/fixtureStub';
 import { HeuristicStubClient } from '../../jev/heuristicStub';
 import { scripted } from '../../testing/scripted';
 import { SCREENED_DIR, screenedApp } from '../../testing/screened/app';
+import { CONFIRMING, screenedVariants } from '../../testing/screened/variant';
 import { configure, reduce } from './view.js';
 import { consoleMetaOf } from './meta';
 import type { DashboardEvent } from './events';
@@ -56,5 +57,28 @@ describe('a handoff with values the caller never confirmed (handoff.data.unconfi
       'visitDay: Monday (not confirmed)',
       'timeOfDay: the morning (not confirmed)',
     ]);
+  });
+});
+
+describe('a check\'s refusal read back before it acts (a check outcome\'s `confirm`)', () => {
+  const variants = screenedVariants();
+  afterAll(() => {
+    variants.remove();
+    resetAppsForTest();
+    registerApp(screenedApp);
+    configure(consoleMetaOf(screenedApp));
+  });
+
+  it('says what is being confirmed while the read-back is out, and the stop once the caller agrees', async () => {
+    const confirming = variants.variant(CONFIRMING);
+    resetAppsForTest();
+    registerApp(confirming);
+    configure(consoleMetaOf(confirming));
+    const lines = ['can someone come and look at a crack in my wall', 'yes, I own it', 'Lakeview'];
+    const asked = reduce((await scripted(lines, { client })).events as DashboardEvent[]);
+    expect(asked.now).toMatchObject({ state: 'task', asking: 'confirming before checkArea refuses (out-of-area)' });
+    expect(asked.now).not.toHaveProperty('stopped');
+    const agreed = reduce((await scripted([...lines, 'yes'], { client })).events as DashboardEvent[]);
+    expect(agreed.now).toMatchObject({ stopped: 'stopped: checkArea, out-of-area' });
   });
 });

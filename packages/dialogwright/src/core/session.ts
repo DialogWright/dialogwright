@@ -1,4 +1,4 @@
-import type { FormId, Intent, SlotId } from './app/types';
+import type { FormId, Intent, SlotId, ToolName } from './app/types';
 import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
 import type { Nomination } from '../kb/types';
@@ -6,7 +6,7 @@ import { ANONYMOUS } from '../gate/principal';
 import { formOf, isCarried } from './app/lookup';
 import { appOf, defaultAppId, getApp } from './app/registry';
 import type { App } from './app/types';
-import type { Principal, ToolCall } from '../gate/types';
+import type { GateVerdict, Principal, ToolCall } from '../gate/types';
 import type { Channel, ChannelCaps } from '../channel/caps';
 
 /**
@@ -91,6 +91,13 @@ export type PendingConfirmation =
    * another (FormDef.onSummaryRead; e.g. a short re-read): the same question, so its keypad works there too.
    */
   | { target: 'form'; form: FormId; attempts: number; askedChange?: boolean; readAs?: string }
+  /**
+   * A form check's refusal read back before it acts (a check outcome's `confirm`, core/turn.ts
+   * stopForm): the check by its action, and what the gate said (its verdict and reason), so a yes
+   * acts on that refusal as written without asking the gate again, and a no empties the slots the
+   * check reads. `attempts` counts unanswered turns, as the summary's does.
+   */
+  | { target: 'check'; form: FormId; action: ToolName; verdict: GateVerdict; reason: string; attempts: number }
   /**
    * The transfer offered to a frustrated caller. `attempts` counts silences
    * at the offer only: every spoken answer settles it, a yes as a transfer and anything else as a
@@ -422,7 +429,10 @@ export function missingSlots(session: Session): SlotId[] {
 }
 
 export function currentAttempts(session: Session): number {
-  if (session.promptedFor === 'confirm') return session.pendingConfirmation?.target === 'form' ? session.pendingConfirmation.attempts : 0;
+  if (session.promptedFor === 'confirm') {
+    const pc = session.pendingConfirmation;
+    return pc?.target === 'form' || pc?.target === 'check' ? pc.attempts : 0;
+  }
   if (session.promptedFor === 'intent' || session.promptedFor === null) return session.intentAttempts;
   if (session.promptedFor === 'otp') return session.codeReasks;
   return session.slots[session.promptedFor]!.attempts;

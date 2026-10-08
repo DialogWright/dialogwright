@@ -1,4 +1,4 @@
-import { isAnonymous, isParty } from '../gate/types';
+import { isAnonymous, isParty, type GateDecision } from '../gate/types';
 import { confirmationHash } from '../gate/policy';
 import type { AnswerMap, QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
@@ -8,7 +8,7 @@ import { informationOf, intentLabel, isFormIntent, type Informs } from './app/in
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { App, Completion, FormId, SlotId, SummaryMove } from './app/types';
+import type { App, CheckOutcome, Completion, FormCheck, FormId, SlotId, SummaryMove } from './app/types';
 import { candidateSpans, candidateWordSpans } from './spans';
 import { closeForm, cloneSession, emptySlot, missingSlots, setForm, type PendingConfirmation, type Session } from './session';
 import { buildTurnState, type TurnState } from './state';
@@ -17,7 +17,7 @@ import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type 
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCode, awaitingSignIn, callTool, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
-import { checkEnding, runChecks, type FormStopped } from './checks';
+import { checkEnding, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo } from './callerNumber';
 import { factsCandidate, factsOfferSlots } from './factsOffer';
 import { recordedValue, recordingOf } from './recording';
@@ -179,6 +179,8 @@ export interface TurnResult {
   effects: Effect[];
   /** the form a check ended this turn (core/checks.ts); absent on every other turn */
   stopped?: FormStopped;
+  /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
+  reconfirmed?: CheckReconfirmed;
   /** the offer of the caller's number this turn settled; absent on every other turn */
   offer?: OfferSettled;
   /** what the injection screen made of this turn's words; null when it was not asked (no model turn) */
@@ -400,17 +402,35 @@ function enqueue(s: Session, intent: FormId | undefined): Ack[] {
   return [{ promptId: 'ack_queued', vars: { intentLabel: intentLabel(appOf(s), intent) } }];
 }
 
+/** No slot agreed to at a summary: a completion with no summary's yes behind it. */
+const NONE_AGREED: ReadonlySet<SlotId> = new Set();
+
+/** The open form's values, by slot, as they stand: what heldAsRead compares a yes's fill against. */
+function formValues(s: Session, form: FormId): Record<SlotId, string | null> {
+  return Object.fromEntries(formOf(appOf(s), form).slots.map((id) => [id, s.slots[id]!.value]));
+}
+
+/**
+ * The slots of `form` the caller said yes to as the summary read them: filled, and holding the value
+ * they held before the yes's own words filled anything (`before`, formValues). A value the yes
+ * changed ("yes, but I rent") was never read back, so it is not among them.
+ */
+function heldAsRead(s: Session, form: FormId, before: Record<SlotId, string | null>): Set<SlotId> {
+  return new Set(formOf(appOf(s), form).slots.filter((id) => s.slots[id]!.value !== null && s.slots[id]!.value === before[id]));
+}
+
 /**
  * The form is full and confirmed: its completion answers through the gate (lifecycle.ts), then
  * the call continues. A completion that takes the turn itself returns its decision as it is, and
  * the form is finished later: by a downstream service's answer (service_result), or by the answer to
- * the transfer it offered (declineTransfer).
+ * the transfer it offered (declineTransfer). `agreed` are the slots the caller said yes to as the
+ * summary read them (heldAsRead), which a check's refusal does not read back again (stopForm).
  */
-function completeForm(s: Session, form: FormId, acks: Ack[], io: TurnIO): Decision {
+function completeForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, agreed: ReadonlySet<SlotId> = NONE_AGREED): Decision {
   // The form's checks first: a yes that changed what one reads ("yes, but I rent") is refused here,
   // with the check's own line, and the write is never attempted.
   const checks = runChecks(s, form, io.tc, io.out);
-  if (checks.kind === 'refused') return stopForm(s, form, checks, acks, io);
+  if (checks.kind === 'refused') return stopForm(s, form, checks, acks, io, agreed);
   const c = completion(s, form, [...acks, ...passedAcks(s, checks)], io.tc, io.out);
   switch (c.kind) {
     case 'said':
@@ -542,7 +562,7 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   // gets here and `proceed` maps a confirm target to a slot. Should a confirm turn reach it, the
   // summary's own ladder owns the attempt rather than the intent's.
   if (target === 'confirm') {
-    if (s.pendingConfirmation?.target === 'form') return reaskConfirmation(s, io, acks);
+    if (s.pendingConfirmation?.target === 'form' || s.pendingConfirmation?.target === 'check') return reaskConfirmation(s, io, acks);
     target = 'intent';
   }
   // Waiting on the portal sign-in: whatever this was, the answer is the same, and it costs nothing.
@@ -594,6 +614,8 @@ function reaskCurrent(s: Session, acks: Ack[]): Decision {
         return summaryPrompt(s, pc.form, acks);
       case 'slot':
         return slotConfirmPrompt(pc, acks);
+      case 'check':
+        return checkConfirmPrompt(s, pc, acks);
       case 'intent':
         return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(app, pc.intent) }, acks, ['yes', 'no']);
     }
@@ -772,12 +794,21 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
     if (step === 'dtmf') {
       s.pendingConfirmation = null;
       Object.assign(st, emptySlot(), { attempts });
-      // The caller's number offered and never answered: the slot's own ladder from here, its keypad
-      // where it has one, else its retry.
-      if (pc.offered && slotSpecOf(io.app, pc.slot).dtmf === undefined) return prompt(`ask_${pc.slot}_retry`, pc.slot, {}, acks);
+      // The caller's number offered and never answered, or a library slot's read-back (readBackNo
+      // `ask`): the slot's own ladder from here, its keypad where it has one, else its retry.
+      const spec = slotSpecOf(io.app, pc.slot);
+      if ((pc.offered || spec.readBackNo === 'ask') && spec.dtmf === undefined) return prompt(`ask_${pc.slot}_retry`, pc.slot, {}, acks);
       return prompt(`ask_${pc.slot}_dtmf`, pc.slot, {}, acks);
     }
     return slotConfirmPrompt(pc, acks);
+  }
+  if (pc.target === 'check') {
+    // A check's read-back the caller does not answer is asked again, then a person: the refusal
+    // never acts on silence, and there is no keypad form of it.
+    if (!count) return checkConfirmPrompt(s, pc, acks);
+    pc.attempts += 1;
+    if (retryStep(pc.attempts, t) === 'agent') { s.pendingConfirmation = null; return handoff(s, 'max-attempts', acks); }
+    return checkConfirmPrompt(s, pc, acks);
   }
   if (pc.target === 'transfer') {
     // Only silence gets here: the gate settles every spoken answer to the offer, as a transfer or
@@ -1016,21 +1047,36 @@ function passedAcks(s: Session, checks: Extract<ReturnType<typeof runChecks>, { 
   return checks.passedPromptId === null ? [] : [{ promptId: checks.passedPromptId, vars: summaryVars(s) }];
 }
 
+type CheckConfirmation = Extract<PendingConfirmation, { target: 'check' }>;
+
 /**
- * A check refused (core/checks.ts): the form ends as its reason's outcome says, and the audit is told
- * (`form_stopped`). The form is never counted as completed. When the form was entered on this very
- * turn, the line that said so is dropped (its ack_intent, "Sure, I can help you ...", or the
- * bridge_next into it from the queue, "Now, let's ..."), so the caller does not hear yes and no in
- * one breath. `end` leaves the form and its slots on the session, as a completion that ends the call
- * does, with no question pending (the call is over, so nothing reads them again); with a request
- * queued, the call goes on to it instead.
+ * A check refused (core/checks.ts): the form ends as its reason's outcome says (endByCheck), unless the
+ * outcome reads the refusal back first (its `confirm`) and a slot the check reads is not confirmed:
+ * neither read back on its own and said yes to (SlotState.confirmed) nor among `agreed`, the slots the
+ * caller said yes to as a summary read them. Then the form pauses on that yes or no (checkReadBack),
+ * and nothing is recorded as stopped yet.
  */
-function stopForm(s: Session, form: FormId, refused: Extract<ReturnType<typeof runChecks>, { kind: 'refused' }>, acks: Ack[], io: TurnIO): Decision {
+function stopForm(s: Session, form: FormId, refused: Extract<ReturnType<typeof runChecks>, { kind: 'refused' }>, acks: Ack[], io: TurnIO, agreed: ReadonlySet<SlotId> = NONE_AGREED): Decision {
+  const readBack = checkReadBack(s, form, refused, acks, agreed);
+  if (readBack !== null) return readBack;
+  return endByCheck(s, form, refused.check, refused.decision, acks, io);
+}
+
+/**
+ * The form ends as a check's refusal says, and the audit is told (`form_stopped`, `confirmed` when the
+ * refusal was read back first and the caller said yes). The form is never counted as completed. When
+ * the form was entered on this very turn, the line that said so is dropped (its ack_intent, "Sure, I
+ * can help you ...", or the bridge_next into it from the queue, "Now, let's ..."), so the caller does
+ * not hear yes and no in one breath. `end` leaves the form and its slots on the session, as a
+ * completion that ends the call does, with no question pending (the call is over, so nothing reads
+ * them again); with a request queued, the call goes on to it instead.
+ */
+function endByCheck(s: Session, form: FormId, check: FormCheck, decision: Pick<GateDecision, 'verdict' | 'reason'>, acks: Ack[], io: TurnIO, confirmed = false): Decision {
   const label = intentLabel(io.app, form);
   const entering = (a: Ack): boolean => ((a.promptId === 'ack_intent' || a.promptId === 'bridge_next') && a.vars.intentLabel === label) || (a.promptId === 'ack_intent_then' && a.vars.a === label);
   const kept = acks.filter((a) => !entering(a));
-  const ending = checkEnding(s, refused.check, refused.decision, kept, summaryVars(s));
-  io.out.stopped = { form, action: refused.check.action, reason: refused.decision.reason ?? null, then: ending.then };
+  const ending = checkEnding(s, check, decision, kept, summaryVars(s));
+  io.out.stopped = { form, action: check.action, reason: decision.reason ?? null, then: ending.then, ...(confirmed ? { confirmed: true as const } : {}) };
   switch (ending.then) {
     case 'end':
       if (s.queued.length > 0) return finishForm(s, form, [...ending.acks, ending.line], io, false);
@@ -1042,6 +1088,81 @@ function stopForm(s: Session, form: FormId, refused: Extract<ReturnType<typeof r
     case 'handoff':
       return handoff(s, ending.reason, ending.acks);
   }
+}
+
+/**
+ * A refusal read back before it acts (a check outcome's `confirm`): the outcome's yes-or-no line,
+ * rendered with the form's slot displays as `say` is, the check's refusal kept on the session as the
+ * pending confirmation (Session.pendingConfirmation, target `check`). Null when the outcome has no
+ * read-back, or every slot the check reads is confirmed already (a read-back of its own, or the
+ * summary's yes: `agreed`), so a value is never read back twice.
+ */
+function checkReadBack(s: Session, form: FormId, refused: Extract<ReturnType<typeof runChecks>, { kind: 'refused' }>, acks: Ack[], agreed: ReadonlySet<SlotId>): PromptDecision | null {
+  const { check, decision } = refused;
+  const outcome = outcomeOf(check, decision);
+  if (outcome?.confirm === undefined || decision.reason === undefined) return null;
+  if (check.with.every((id) => s.slots[id]!.confirmed || agreed.has(id))) return null;
+  const pc: CheckConfirmation = { target: 'check', form, action: check.action, verdict: decision.verdict, reason: decision.reason, attempts: 0 };
+  s.pendingConfirmation = pc;
+  return checkConfirmPrompt(s, pc, acks);
+}
+
+/** The check a pending read-back is for, and the outcome its refusal maps to (which has the read-back line). */
+function pendingCheck(s: Session, pc: CheckConfirmation): { check: FormCheck; outcome: CheckOutcome } {
+  const check = (formOf(appOf(s), pc.form).checks ?? []).find((c) => c.action === pc.action);
+  const outcome = check === undefined ? null : outcomeOf(check, pc);
+  if (check === undefined || outcome === null) throw new Error(`form ${pc.form} has no check ${pc.action} with an outcome for "${pc.reason}"`);
+  return { check, outcome };
+}
+
+/** A check's pending read-back asked (again): the outcome's `confirm` line, with the form's slot displays. */
+function checkConfirmPrompt(s: Session, pc: CheckConfirmation, acks: Ack[]): PromptDecision {
+  return prompt(pendingCheck(s, pc).outcome.confirm!, 'confirm', summaryVars(s), acks, ['yes', 'no']);
+}
+
+/**
+ * Yes to a check's read-back: the slots it reads are confirmed, and the refusal acts as written,
+ * without asking the gate again (it already answered, and nothing it reads has changed).
+ */
+function checkConfirmed(s: Session, pc: CheckConfirmation, io: TurnIO): Decision {
+  const { check } = pendingCheck(s, pc);
+  for (const id of check.with) if (s.slots[id]!.value !== null) s.slots[id]!.confirmed = true;
+  return endByCheck(s, pc.form, check, pc, [], io, true);
+}
+
+/**
+ * No to a check's read-back: the deciding answer was misheard. The slots the check reads are emptied,
+ * and so is the check's own pass (Session.checked), so it runs again once they fill; the audit is told
+ * (`check_reconfirmed`), and the form asks the first of them again (askAgain). The no costs that slot
+ * its attempts as a no to a slot's own read-back does, so a second no goes to a person.
+ */
+function checkDeclined(s: Session, pc: CheckConfirmation, io: TurnIO): Decision {
+  const { check } = pendingCheck(s, pc);
+  io.out.reconfirmed = { form: pc.form, action: pc.action, reason: pc.reason };
+  const first = formOf(io.app, pc.form).slots.find((id) => check.with.includes(id)) ?? check.with[0]!;
+  const t = io.tc.thresholds;
+  const attempts = Math.max(s.slots[first]!.attempts + 1, t.MAX_ATTEMPTS - 1);
+  if (retryStep(attempts, t) === 'agent') {
+    s.slots[first]!.attempts = attempts;
+    return handoff(s, 'max-attempts');
+  }
+  for (const id of check.with) {
+    const st = s.slots[id]!;
+    Object.assign(st, emptySlot(), { attempts: id === first ? attempts : st.attempts });
+  }
+  if (s.checked !== undefined) delete s.checked[pc.action];
+  return askAgain(s, io, first, [ACK_DECLINED]);
+}
+
+const ACK_DECLINED: Ack = { promptId: 'ack_declined', vars: {} };
+
+/**
+ * A slot emptied by a no to a read-back, asked again: its keypad question where it takes keys and the
+ * channel has a keypad (the no put it on the keypad rung), else its own question.
+ */
+function askAgain(s: Session, io: TurnIO, slot: SlotId, acks: Ack[]): PromptDecision {
+  if (s.caps.keypad && slotSpecOf(io.app, slot).dtmf !== undefined) return prompt(`ask_${slot}_dtmf`, slot, {}, acks);
+  return askSlot(s, slot, null, acks);
 }
 
 /**
@@ -1181,16 +1302,22 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         s.slots[pc.slot]!.confirmed = true;
         return { decision: continueForm(s, io, [], null), events: [] };
       }
+      // A check's refusal read back (its outcome's `confirm`), and the caller agrees: it acts as written.
+      if (pc.target === 'check') return { decision: checkConfirmed(s, pc, io), events: [] };
       if (pc.target === 'form') {
         const acks = enqueue(s, verdict.queue);
         // A yes that also changes a value ("yes, but it was Sunday") changes it. The write reads its
         // values from the slots, so the gate (the confirmed rule) refuses it against what the summary said, and the
         // summary is read again: what is filed is only ever what the caller heard and agreed to.
         const read = summaryState(s);
+        const asRead = formValues(s, pc.form);
         const fill = correctingFill(s, answers, ctx, pc.form);
         if (fill.disambiguate) return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
+        // A value the yes gave that the slot reads back ("yes, but I rent", with `confirmValues: [rent]`)
+        // is read back first, as it would be anywhere else; the form loop then reads the summary again.
+        if (pendingSlotConfirmation(s) !== null) return { decision: continueForm(s, io, [...acks, ...fill.acks], null), events: fill.events };
         agreeAsRead(s, pc.form, summaryState(s) === read);
-        return { decision: completeForm(s, pc.form, [...acks, ...fill.acks], io), events: fill.events };
+        return { decision: completeForm(s, pc.form, [...acks, ...fill.acks], io, heldAsRead(s, pc.form, asRead)), events: fill.events };
       }
       // The offer was accepted: the transfer the caller was offered is the one they get. One made
       // for a question there was no answer to (a form's completion, or an informational intent's
@@ -1275,8 +1402,13 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         st.attempts = Math.max(st.attempts + 1, t.MAX_ATTEMPTS - 1);
         if (retryStep(st.attempts, t) === 'agent') return { decision: handoff(s, 'max-attempts'), events: [] };
         Object.assign(st, emptySlot(), { attempts: st.attempts });
-        return { decision: prompt(`ask_${pc.slot}_dtmf`, pc.slot, {}, [{ promptId: 'ack_declined', vars: {} }]), events: [] };
+        // A library slot (SlotSpec.readBackNo `ask`) is asked again: by its keypad question only where
+        // it takes keys.
+        if (slotSpecOf(io.app, pc.slot).readBackNo === 'ask') return { decision: askAgain(s, io, pc.slot, [ACK_DECLINED]), events: [] };
+        return { decision: prompt(`ask_${pc.slot}_dtmf`, pc.slot, {}, [ACK_DECLINED]), events: [] };
       }
+      // A check's refusal read back, and the caller says it was misheard: the slots it reads are asked again.
+      if (pc.target === 'check') return { decision: checkDeclined(s, pc, io), events: [] };
       // Declining a mid-form switch means "stay where we were", so resume the form
       // rather than counting an intent failure against the caller.
       if (s.form) return { decision: continueForm(s, io, [], null), events: [] };
@@ -1362,6 +1494,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // goes through the form's checks now, as any fill does in continueForm, rather than waiting
       // for the reopened slot's answer: a caller it rules out is not asked that slot first.
       if (form !== null && fill?.progress === true && s.entered === form) {
+        // A value it gave that the slot reads back (SlotSpec.confirmValues, `always`) is read back
+        // first, as the form loop does, before any check reads it; the reopened slot is asked after.
+        if (pendingSlotConfirmation(s) !== null) return { decision: continueForm(s, io, said, null), events: fill.events };
         const checks = runChecks(s, form, io.tc, io.out);
         if (checks.kind === 'refused') return { decision: stopForm(s, form, checks, said, io), events: fill.events };
         said.push(...passedAcks(s, checks));
@@ -1460,7 +1595,7 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     if (digit === '1') {
       s.pendingConfirmation = null;
       agreeAsRead(s, pc.form, true);
-      return { decision: completeForm(s, pc.form, [], io), rows: [] };
+      return { decision: completeForm(s, pc.form, [], io, heldAsRead(s, pc.form, formValues(s, pc.form))), rows: [] };
     }
     if (digit === '2') return { decision: askChange(pc, []), rows: [] };
     return { decision: reaskConfirmation(s, io), rows: [] };
@@ -1594,6 +1729,7 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
   const audit = auditDrafts({
     before: session, after: r.session, event, decision: r.decision, gateEvents: r.gateEvents, kb: r.kb, screen: r.screen, quarantined: r.quarantined,
     ...(r.stopped ? { stopped: r.stopped } : {}),
+    ...(r.reconfirmed ? { reconfirmed: r.reconfirmed } : {}),
     ...(r.offer ? { offer: r.offer } : {}),
   });
   return { ...r, audit };

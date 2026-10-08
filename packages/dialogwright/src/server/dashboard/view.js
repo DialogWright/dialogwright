@@ -364,6 +364,8 @@ function pendingLine(pending) {
     return `confirm · summary (${named})${attempts}`;
   }
   if (pending.target === 'intent') return `confirm · ${named}`;
+  // A check's refusal read back before it acts (the session's shape: its action and the gate's reason).
+  if (pending.target === 'check') return `confirm · check ${pending.action ?? '?'}${pending.reason ? ` (${pending.reason})` : ''}`;
   const value = pending.display ?? pending.value ?? '';
   return `confirm · ${named}${value ? ` → ${value}` : ''}`;
 }
@@ -633,6 +635,7 @@ function nowAskingOf(record, thresholds) {
   if (p) {
     if (p.target === 'form') return 'confirming the summary with the caller';
     if (p.target === 'intent') return `confirming: ${formLabel(p.intent ?? p.form).toLowerCase() || 'the request'}`;
+    if (p.target === 'check') return `confirming before ${p.action ?? 'a check'} refuses${p.reason ? ` (${p.reason})` : ''}`;
     const name = ((p.slot != null ? slotName(p.slot) : null) ?? p.slot ?? 'a value').toLowerCase();
     return `confirming ${name}${p.display ? ` → ${p.display}` : ''}`;
   }

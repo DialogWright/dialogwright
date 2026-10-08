@@ -201,9 +201,12 @@ export interface FormCheck {
  * What a check's refusal does: `say` its line (with the form's slot displays as variables), then
  * `end` the call (the goodbye follows; with a request queued, the call goes on to it), carry on with
  * `anything-else` (the form closed uncounted), or `handoff` to a person (`reason`, default the
- * gate's; its line is handoff_<reason>).
+ * gate's; its line is handoff_<reason>). With `confirm`, a yes-or-no line read first when a slot the
+ * check reads is not confirmed (core/turn.ts stopForm): a yes confirms them and the refusal acts, a
+ * no empties them and asks again.
  */
 export interface CheckOutcome {
+  readonly confirm?: string;
   readonly say?: string;
   readonly then: 'end' | 'anything-else' | 'handoff';
   readonly reason?: string;

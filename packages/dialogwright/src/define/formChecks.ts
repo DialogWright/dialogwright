@@ -17,9 +17,9 @@ import { closest, type DataPath } from './problems';
  * `with` slot that is not one of the form's slots, or is an identity factor; a check action that lists
  * a confirmed rule (nothing is confirmed part-way through a form), or needs a level above 0 the form's
  * entry does not prove (a form with an entry call whose purpose, policy.yaml `purposes`, needs that
- * level); a line a check says that prompts.yaml does not have (its `say`, the handoff line, the form's
- * checksPassed). A `check: true` action with a tool in the code, or no form's checks naming it, is
- * policyFile.ts's and reach's to report.
+ * level); a line a check says that prompts.yaml does not have (its read-back `confirm` and its `say`,
+ * the handoff line, the form's checksPassed). A `check: true` action with a tool in the code, or no
+ * form's checks naming it, is policyFile.ts's and reach's to report.
  *
  * Warned: an `on` reason the action can never give (no rule of it refuses for that reason), so the
  * outcome never applies; and a rule of a check action that no action the form calls names, so the
@@ -35,13 +35,14 @@ export interface FormCheckInput {
   promptExists(file: string, path: DataPath, id: string): void;
 }
 
-/** The lines a form's checks say: each outcome's `say`, the handoff line of each handoff, and checksPassed. */
+/** The lines a form's checks say: each outcome's read-back (`confirm`) and `say`, the handoff line of each handoff, and checksPassed. */
 export function checkPromptReferences(config: LoadedConfig): { id: string; file: string; path: DataPath }[] {
   const refs: { id: string; file: string; path: DataPath }[] = [];
   for (const [id, form] of Object.entries(config.forms.forms)) {
     (form.checks ?? []).forEach((check, i) => {
       for (const [reason, outcome] of Object.entries(check.on ?? {})) {
         const at: DataPath = ['forms', id, 'checks', i, 'on', reason];
+        if (outcome.confirm !== undefined) refs.push({ id: outcome.confirm, file: 'forms.yaml', path: [...at, 'confirm'] });
         if (outcome.say !== undefined) refs.push({ id: outcome.say, file: 'forms.yaml', path: [...at, 'say'] });
         if (outcome.then === 'handoff') refs.push({ id: handoffPromptId(outcome.reason ?? reason), file: 'forms.yaml', path: [...at, outcome.reason !== undefined ? 'reason' : 'then'] });
       }

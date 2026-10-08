@@ -8,7 +8,7 @@ import { emptySlot, type Session } from './session';
 import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
-import type { FormStopped } from './checks';
+import type { CheckReconfirmed, FormStopped } from './checks';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { idempotencyKey } from './idempotency';
 import { callerGateFacts } from './callerNumber';
@@ -92,6 +92,8 @@ export interface TurnOut {
   stopped?: FormStopped;
   /** The offer of the caller's number this turn settled (core/turn.ts), for the audit's `offer` row. Absent on every other turn. */
   offer?: OfferSettled;
+  /** The check whose read-back the caller said no to this turn (core/turn.ts), for the audit's `check_reconfirmed` row. Absent on every other turn. */
+  reconfirmed?: CheckReconfirmed;
 }
 
 /**
