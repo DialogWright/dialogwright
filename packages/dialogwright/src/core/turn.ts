@@ -13,7 +13,7 @@ import { closeForm, cloneSession, emptySlot, missingSlots, setForm, type Pending
 import { buildTurnState, type TurnState } from './state';
 import { buildQuestions } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
-import { applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
+import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCode, awaitingSignIn, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type TurnOut } from './lifecycle';
 import { checkEnding, runChecks, type FormStopped } from './checks';
@@ -961,19 +961,30 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
 /**
  * A priority switch's correction (IntentDef.priority `correctsForm`), before the priority form is
  * entered. The turn was planned with the old form open (or with none), so the model was asked about
- * every slot it listens for, and its answers are in hand: they fill as a correction, a new value
- * replacing an old one and a value said again unchanged changing nothing. With a form open, its
- * slots (correctingFill); with none ("anything else?"), the call's own (slotsToFill: the carried
- * slots, those that listen anywhere, the identity factors where the turn listens for them). What the
- * fill would say is dropped: an acknowledgement before the priority form's line is noise, and there
- * is no question to ask on the way out, so a disambiguation changes nothing. The form left is still
- * neither closed nor completed, nothing in it is confirmed by this, and its checks do not run: the
- * switch wins whatever the corrected values would have made a check say. Returns the fill's events,
- * which join the turn's.
+ * every slot it listens for, and its answers are in hand: a value they give replaces the one on
+ * file, and a value said again unchanged changes nothing. With a form open, those of its slots the
+ * turn listened for (activeSlots: none at the code prompt); with none ("anything else?"), the call's
+ * own (slotsToFill: the carried slots, those that listen anywhere, the identity factors where the
+ * turn listens for them).
+ *
+ * It is an ordinary fill, not a summary's correction (FillOptions.correcting): no question follows
+ * to read anything back, so nothing on file is given up for less. A window (a part of a date) never
+ * empties a filled slot, and a slot that keeps the value on file unless it was just asked (a text
+ * slot's `keep`) keeps it: "wait, water is coming through the wall right now" at the read-back
+ * replaces the urgency, not the problem the caller described.
+ *
+ * What the fill would say is dropped: an acknowledgement before the priority form's line is noise,
+ * and there is no question to ask on the way out, so a disambiguation changes nothing. The form left
+ * is still neither closed nor completed, nothing in it is confirmed by this, and its checks do not
+ * run: the switch wins whatever the corrected values would have made a check say. Returns the
+ * fill's events, which join the turn's.
  */
 function correctOnSwitch(s: Session, answers: AnswerMap, ctx: SlotContext): FillEvent[] {
-  const fill = s.form !== null ? correctingFill(s, answers, ctx, s.form) : fillSlots(s, answers, ctx, slotsToFill(s), { correcting: true });
-  return fill.events;
+  if (s.form === null) return fillSlots(s, answers, ctx, slotsToFill(s)).events;
+  const app = appOf(s);
+  const listening = new Set(activeSlots(s).map((spec) => spec.id));
+  const specs = formOf(app, s.form).slots.filter((id) => listening.has(id)).map((id) => slotSpecOf(app, id));
+  return fillSlots(s, answers, ctx, specs).events;
 }
 
 function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO): { decision: Decision; events: FillEvent[] } {
@@ -1055,7 +1066,16 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (!isFormIntent(io.app, pc.intent)) return { decision: failAttempt(s, 'intent', io), events: [] };
       // Fill from what the caller originally said, not from the "yes"; the form hears the yes too.
       // Its topic slot reads the topics nominated for those words, not this turn's (for the yes).
-      return enterForm(s, pc.intent, pc.answers, slotContext(s, pc.text, knowledgeOfWords(io.tc, pc.nominated)), io, undefined, answers);
+      const said = slotContext(s, pc.text, knowledgeOfWords(io.tc, pc.nominated));
+      // A priority intent that corrects the form, checked first ("just to check, ..."): those words
+      // were heard with the form left still open, and nothing has filled since, so the yes corrects
+      // from them exactly as a switch taken at once would have (correctOnSwitch).
+      if (pc.intent !== s.form && correctsFormOf(io.app, pc.intent)) {
+        const corrected = correctOnSwitch(s, pc.answers, said);
+        const entered = enterForm(s, pc.intent, pc.answers, said, io, undefined, answers);
+        return { decision: entered.decision, events: [...corrected, ...entered.events] };
+      }
+      return enterForm(s, pc.intent, pc.answers, said, io, undefined, answers);
     }
     case 'rejected': {
       const pc = s.pendingConfirmation!;

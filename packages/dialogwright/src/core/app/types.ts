@@ -63,11 +63,13 @@ export interface IntentDef {
    * one. Absent or false: an intent like any other.
    *
    * `{ correctsForm: true }`: before the priority form is entered, the slots the switching turn was
-   * asked about are filled from its answers as a correction (the open form's, or the call's own slots
-   * when no form is open), so a value the caller's words just contradicted ("water is coming through
-   * the wall right now" over "getting worse") is what the handoff carries. Its acks and any
-   * disambiguation are dropped, the form left is still neither closed nor completed, and its checks do
-   * not run on the way out. No question the model is sent changes. Off by default.
+   * asked about are filled from its answers (the open form's, or the call's own slots when no form is
+   * open), so a value the caller's words just contradicted ("water is coming through the wall right
+   * now" over "getting worse") is what the handoff carries. An ordinary fill, not a summary's
+   * correction: a part of a date never empties a filled slot, and a text slot keeps its value unless
+   * it was just asked. A switch asked about first corrects the same way on the caller's yes. Its acks
+   * and any disambiguation are dropped, the form left is still neither closed nor completed, and its
+   * checks do not run on the way out. No question the model is sent changes. Off by default.
    */
   priority?: IntentPriority;
 }

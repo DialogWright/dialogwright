@@ -360,3 +360,74 @@ describe('an emergency at the offer of the caller\'s number (callerNumber)', () 
     expect(t.session).not.toHaveProperty('callerOffered');
   });
 });
+
+describe('the correction on the way out gives up nothing on file for less', () => {
+  // The booking with two slots made to read the emergency's words as a summary's correction would let
+  // them: the day as a part of a date (a window), and the problem as a text slot that keeps what is on
+  // file unless it was just asked (`keep: first-unless-prompted`) reads it.
+  const lossy: App = (() => {
+    const visitDay = screenedApp.slots.visitDay!;
+    const problem = screenedApp.slots.problem!;
+    return {
+      ...screenedApp,
+      id: 'screened-lossy',
+      slots: {
+        ...screenedApp.slots,
+        visitDay: { ...visitDay, fill: (_answers, ctx) => (ctx.text.includes('right now') ? { kind: 'window', window: { kind: 'weekday', part: 'today' }, confidence: 0.9 } : { kind: 'absent' }) },
+        problem: { ...problem, fill: (_answers, ctx) => (ctx.current !== null && !ctx.prompted ? { kind: 'absent' } : { kind: 'filled', value: 'crack', display: ctx.text, confidence: 0.9, confirm: 'none' }) },
+      },
+    };
+  })();
+
+  it('a window never empties a filled slot, and a slot that keeps its value unless asked keeps it', () => {
+    use(lossy);
+    const s = inBooking(lossy, { problem: ['leak', 'a leak'], ownership: ['own', 'you own it'], visitDay: ['monday', 'Monday'] });
+    s.promptedFor = 'timeOfDay';
+    s.lastPromptId = 'ask_timeOfDay';
+    const t = resolve(s, speechEvent('oh no, water is pouring in right now', true), { ...URGENT, howUrgent: choice({ urgent: 0.92, soon: 0.05, none: 0.03 }) }, turnContext());
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', slots: { problem: 'a leak', visitDay: 'Monday', howUrgent: 'right away' } });
+    expect(t.session.slots.visitDay).toMatchObject({ value: 'monday', window: null });
+    expect(t.session.slots.problem).toMatchObject({ value: 'leak', display: 'a leak' });
+  });
+
+  it('nothing is filled at the code prompt, where the turn listens for no slot', () => {
+    use(lossy);
+    const s = inBooking(lossy, { ownership: ['own', 'you own it'] });
+    s.promptedFor = 'otp';
+    s.lastPromptId = 'ask_otp';
+    const t = resolve(s, speechEvent('water is pouring in right now', true), { ...URGENT, howUrgent: choice({ urgent: 0.92, none: 0.08 }) }, turnContext());
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent' });
+    expect(t.session.slots.problem!.value).toBeNull();
+    expect(t.session.slots.howUrgent!.value).toBeNull();
+  });
+});
+
+describe('a priority intent checked first ("just to check, ..."), then confirmed', () => {
+  const YES = { ...PLAIN, confirmsYes: noul(0.95), confirmsNo: noul(0.02) };
+  // Mid-form, the emergency read below PRIORITY_INTENT and above INTENT_IMPLICIT: a switch asked first.
+  const UNSURE = { ...PLAIN, intent: choice({ urgent: 0.7, none: 0.2, book_visit: 0.1 }), intentChange: choice({ replacing: 0.8, answering: 0.2 }), howUrgent: choice({ urgent: 0.92, soon: 0.05, none: 0.03 }) };
+
+  async function confirmed(app: App): Promise<TurnResult> {
+    use(app);
+    const s = inBooking(app, { problem: ['leak', 'a leak'], ownership: ['own', 'you own it'], howUrgent: ['soon', 'soon'] });
+    s.promptedFor = 'town';
+    s.lastPromptId = 'ask_town';
+    const asked = resolve(s, speechEvent('I think water might be coming in right now', true), UNSURE, turnContext());
+    expect(asked.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_intent_explicit' });
+    // Nothing is corrected before the yes: a no would leave the booking as it was.
+    expect(asked.session.slots.howUrgent!.value).toBe('soon');
+    return resolve(asked.session, speechEvent('yes', true), YES, turnContext());
+  }
+
+  it('the yes corrects from the words it confirmed, as a switch taken at once does', async () => {
+    const t = await confirmed(screenedApp);
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', slots: { howUrgent: 'right away' }, acks: [{ promptId: 'ack_intent' }] });
+    expect(t.fillEvents.map((e) => e.slot)).toContain('howUrgent');
+  });
+
+  it('without correctsForm the value stands as it was', async () => {
+    const t = await confirmed(PLAIN_PRIORITY);
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', slots: { howUrgent: 'soon' } });
+  });
+});
+
