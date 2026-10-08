@@ -186,6 +186,22 @@ describe('the offer', () => {
     expect(t.session.pendingConfirmation).toMatchObject({ target: 'slot', slot: 'phone', offered: true });
   });
 
+  it('a yes that says more fills the rest of the form as well', async () => {
+    const t = last(await call(CALLING_FROM, ...OPENER, "yes, and it's about an order"));
+    expect(t.session.slots.phone).toMatchObject({ value: '5555550142', confirmed: true });
+    expect(t.session.slots.reason).toMatchObject({ value: 'order' });
+    expect(heard(t)).toBe('I have Jordan Avery, at 555 555 0142, about an order. Shall I set up the callback?');
+  });
+
+  it('a number of the wrong shape closes the offer and retries the slot\'s question, with or without a no', async () => {
+    for (const said of ['use five five five', 'no, use five five five']) {
+      const t = last(await call(CALLING_FROM, ...OPENER, said));
+      expect(promptOf(t), said).toBe('ask_phone_retry');
+      expect(t.session.slots.phone, said).toMatchObject({ value: null, attempts: 1 });
+      expect(t.session.pendingConfirmation, said).toBeNull();
+    }
+  });
+
   it('silence re-asks the offer after the no-input line', async () => {
     const r = await runScenario({ id: 'call', callerNumber: CALLING_FROM, steps: [...OPENER.map((say) => ({ say })), { silence: true }], expect: { decision: 'any' } }, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0 });
     const t = last(r);
@@ -210,6 +226,14 @@ describe('the offer', () => {
     expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_phone' });
     expect(t.session.slots.phone!.value).toBeNull();
     expect(t.session.pendingConfirmation).toBeNull();
+  });
+
+  it('is never made for a number given before the form reached it and reopened at the summary', async () => {
+    const r = await call(CALLING_FROM, 'can someone call me back', 'Jordan Avery, call me at five five five five five five zero one nine nine', "it's about an order", 'no, the number is wrong', "actually it's about a bill");
+    expect(r.runs.map((x) => promptOf(x.result))).not.toContain('offer_phone');
+    const t = last(r);
+    expect(promptOf(t)).toBe('ask_phone');
+    expect(t.session.slots.reason!.value).toBe('bill');
   });
 
   it('the written callback carries the number the caller said yes to', async () => {

@@ -15,3 +15,8 @@
 {"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}
 {"id":"no-01","text":"hello","intent":"none","context":"no_form"}
 {"id":"dn-01","text":"that's all, thanks","intent":"done","context":"anything_else"}
+{"id":"of-06","text":"yes, and it's about an order","intent":"none","context":"request_callback","prompted":"phone","confirm":"yes","slots":{"reason":"order"}}
+{"id":"of-07","text":"use five five five","intent":"none","context":"request_callback","prompted":"phone","confirm":"unanswered","slots":{"phone":{"span":"five five five","value":"555"}}}
+{"id":"of-08","text":"no, use five five five","intent":"none","context":"request_callback","prompted":"phone","confirm":"no","slots":{"phone":{"span":"five five five","value":"555"}}}
+{"id":"nm-02","text":"Jordan Avery, call me at five five five five five five zero one nine nine","intent":"none","context":"request_callback","prompted":"caller","slots":{"caller":"Jordan Avery","phone":{"span":"five five five five five five zero one nine nine","value":"5555550199"}}}
+{"id":"ph-02","text":"actually it's about a bill","intent":"none","context":"request_callback","prompted":"phone","slots":{"reason":"bill"}}

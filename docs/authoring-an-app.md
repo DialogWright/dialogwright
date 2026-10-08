@@ -1123,13 +1123,13 @@ When the form would ask `phone` and the call came with a number that fits the sl
 
 | The caller | What happens |
 |---|---|
-| A yes ("yes, that's fine") | The slot holds the number, confirmed, as a keyed number is, and the form goes on. |
+| A yes ("yes, that's fine") | The slot holds the number, confirmed, as a keyed number is, and the form goes on. What else the yes said ("yes, and it's about an order") fills the form's other slots. |
 | A no | `ask_phone`, with no attempt counted: the caller answered what was asked. |
-| A number, with the no or without it ("no, use my cell, 555 555 0199") | The number fills as said, and the form goes on. |
+| A number, with the no or without it ("no, use my cell, 555 555 0199") | The number fills as said, and the form goes on. A number the slot refuses (too short, the wrong shape) closes the offer and is retried as a missed answer to `ask_phone` (`ask_phone_retry`, or the slot's own retry line). |
 | Silence, or words that answer neither | The offer again, as any read-back is asked again: each counts a turn, and the slot's keypad rung (`ask_phone_dtmf`, or `ask_phone_retry` for a slot with no keypad) comes as it would. |
 | A number keyed | It fills as keyed. |
 
-It is offered once per slot per form: a number reopened at the summary ("the number is wrong") is asked with `ask_phone`, not offered again. A chat has no number, and neither does a call whose number is withheld or does not fit, so there the slot is asked as always ([13.13](#1313-the-number-the-caller-is-calling-from) says what counts as a number, and where each carrier puts it).
+It is offered once per slot per form: a number reopened at the summary ("the number is wrong") is asked with `ask_phone`, not offered, whether or not it was offered before. A chat has no number, and neither does a call whose number is withheld or does not fit, so there the slot is asked as always ([13.13](#1313-the-number-the-caller-is-calling-from) says what counts as a number, and where each carrier puts it).
 
 What the option promises, and what it does not:
 

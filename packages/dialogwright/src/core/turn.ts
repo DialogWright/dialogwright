@@ -17,7 +17,7 @@ import { applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, s
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCode, awaitingSignIn, completion, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, takeSummaryHash, type Effect, type GateEvent, type KbSource, type TurnOut } from './lifecycle';
 import { checkEnding, runChecks, type FormStopped } from './checks';
-import { callerCandidate, keptCallerNumber, lastFour } from './callerNumber';
+import { callerCandidate, callerNumberSlots, keptCallerNumber, lastFour } from './callerNumber';
 import type { Tools } from './tools';
 import { withAppThresholds, type Thresholds } from './thresholds';
 import type { ScreenResult } from './screen';
@@ -836,6 +836,19 @@ function slotConfirmPrompt(pc: Extract<PendingConfirmation, { target: 'slot' }>,
   return pc.offered ? offerPrompt(pc.slot, pc.value, acks) : prompt(`confirm_${pc.slot}`, pc.slot, { [pc.slot]: pc.display }, acks, ['yes', 'no']);
 }
 
+/**
+ * At the caller's number's offer, a number said that the slot refused (the wrong length or shape):
+ * the caller gave a number of their own, so the offer is closed and the slot's question is retried
+ * as for any missed answer, with the slot's own retry line where it has one. Null when the turn gave
+ * the slot no such number.
+ */
+function offeredSlotMissed(s: Session, io: TurnIO, slot: SlotId, fill: FillResult, acks: Ack[]): Decision | null {
+  const invalid = fill.events.find((e) => e.slot === slot && e.outcome.kind === 'invalid')?.outcome;
+  if (invalid?.kind !== 'invalid') return null;
+  s.pendingConfirmation = null;
+  return failAttempt(s, slot, io, [...acks, ...fill.acks], false, invalid.retryPromptId ?? null);
+}
+
 /** The form's checksPassed line, when this turn's checks passed the last of them (core/checks.ts). */
 function passedAcks(s: Session, checks: Extract<ReturnType<typeof runChecks>, { kind: 'passed' }>): Ack[] {
   return checks.passedPromptId === null ? [] : [{ promptId: checks.passedPromptId, vars: summaryVars(s) }];
@@ -960,10 +973,16 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
     case 'confirmed': {
       const pc = s.pendingConfirmation!;
       s.pendingConfirmation = null;
-      if (pc.target === 'slot') {
+      if (pc.target === 'slot' && pc.offered) {
         // The caller's number offered (callerNumber): the yes fills the slot with it, confirmed, as a
-        // keyed number is. The summary still reads it back whole.
-        if (pc.offered) Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
+        // keyed number is. The summary still reads it back whole. The offer is the slot's first
+        // question, so what else the yes carried ("yes, and it's about an order") fills the form's
+        // other slots, as a no's does; the offered slot holds the number the yes was to.
+        Object.assign(s.slots[pc.slot]!, { value: pc.value, display: pc.display, confirmed: true, window: null });
+        const fill = fillSlots(s, answers, ctx, slotsToFill(s).filter((spec) => spec.id !== pc.slot));
+        return { decision: continueForm(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };
+      }
+      if (pc.target === 'slot') {
         // The stashed value and display go unread: the gate decided on this turn's yes
         // before any fill could run, so the slot still holds exactly what we read back.
         s.slots[pc.slot]!.confirmed = true;
@@ -1035,8 +1054,11 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (pc.target === 'slot' && pc.offered) {
         // The caller's number offered and declined: the slot's own question, with no attempt counted,
         // since the caller answered what we asked. A number said with the no ("no, use 555 555 0199")
-        // fills as said, and the form goes on.
+        // fills as said, and the form goes on; one that is not a number of the slot's shape is a
+        // missed answer to the slot's question, and is retried as one.
         const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+        const missed = offeredSlotMissed(s, io, pc.slot, fill, []);
+        if (missed) return { decision: missed, events: fill.events };
         return { decision: continueForm(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };
       }
       if (pc.target === 'slot') {
@@ -1085,6 +1107,10 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
           s.pendingConfirmation = null;
           return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
         }
+        // A number of the wrong shape ("use five five five") is not the number offered, nor a number
+        // the slot takes: the offer is closed, and the slot's question retried as for a missed answer.
+        const missed = offeredSlotMissed(s, io, pc.slot, fill, acks);
+        if (missed) return { decision: missed, events: fill.events };
         return { decision: reaskConfirmation(s, io, [...acks, ...fill.acks], acks.length === 0 && !fill.progress), events: fill.events };
       }
       // Only a request that actually joined the queue buys the turn: asking for the same thing
@@ -1114,6 +1140,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // same breath filled is kept, and acked on the way into the question.
       const st = s.slots[verdict.slot]!;
       Object.assign(st, emptySlot(), { attempts: st.attempts });
+      // A slot that offers the caller's number, reopened, is asked its own question from here on,
+      // whether or not its number was offered before (offered once per form, callerOffered).
+      if (s.callerNumber !== undefined && callerNumberSlots(io.app).includes(verdict.slot) && !(s.callerOffered ?? []).includes(verdict.slot)) s.callerOffered = [...(s.callerOffered ?? []), verdict.slot];
       const said = [...acks, ...(fill?.acks ?? [])];
       // What else the breath changed ("the town's wrong, and I rent it", where the naming decides)
       // goes through the form's checks now, as any fill does in continueForm, rather than waiting
