@@ -95,8 +95,10 @@ export interface TraceRecord {
   /**
    * Whether the session kept the number the caller is calling from (core/callerNumber.ts): `kept`,
    * or `none` when the call had no number a slot can offer (none sent, withheld, or one that does
-   * not fit the slot), so a builder can see why no offer was made. Only on the session start's record
-   * of an app with a slot that offers it (SlotSpec.callerNumber); absent for every other app.
+   * not fit the slot, or for an app that keeps it for its code, no usable number), so a builder can
+   * see why no offer or lookup was made. Only on the session start's record of an app with a slot
+   * that offers it (SlotSpec.callerNumber) or that keeps it (app.yaml's callerNumber); absent for
+   * every other app.
    */
   callerNumber?: 'kept' | 'none';
   /**

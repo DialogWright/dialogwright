@@ -447,6 +447,12 @@ describe('the trace and the console', () => {
       expect(JSON.stringify(redactRecordSlots(run.record, 'length'))).not.toMatch(/5555550142|5555550100/);
       expect(JSON.stringify(redactRecord(run.record))).not.toMatch(/5555550142|5555550100/);
     }
+    // The setup's own copies of both numbers in the start event's provider details (a live call's
+    // Twilio `from` and `to`, Telnyx's custom parameters) are masked the same.
+    const live = { ...record, event: { ...record.event, provider: { callSid: 'CA1', from: MOBILE, to: CALLED, 'param.telnyx_call_from': MOBILE, 'param.telnyx_call_to': CALLED } } } as typeof record;
+    expect(JSON.stringify(redactRecordSlots(live, 'length'))).not.toMatch(/5555550142|5555550100/);
+    expect((redactRecordSlots(live, 'length').event as { provider: Record<string, string> }).provider).toEqual({ callSid: 'CA1', from: '...0142', to: '...0100', 'param.telnyx_call_from': '...0142', 'param.telnyx_call_to': '...0100' });
+    expect(JSON.stringify(redactRecord(live))).not.toMatch(/5555550142|5555550100/);
     expect((await call({ callerNumber: 'anonymous' })).runs[0]!.record.callerNumber).toBe('none');
     expect(redactDeep({ calledNumber: CALLED })).toEqual({ calledNumber: '…0100' });
   });

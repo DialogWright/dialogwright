@@ -299,15 +299,18 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
   // `param.telnyx_call_from`) are masked the same. One not kept (withheld, or not one the slot can
   // use) is no value of the slot's, and the provider details keep it as sent, as on every app. An
   // app that keeps the number for its code (app.yaml's callerNumber: { use: hint }) and has no such
-  // slot masks it, and the number called (SessionStart.calledNumber), to the last four digits.
+  // slot masks it, and the number called (SessionStart.calledNumber), to the last four digits, with
+  // the setup's own copies of the number called (Twilio's `to`, Telnyx's `param.telnyx_call_to`).
   const offering = callerNumberRule(app);
   const hinted = app?.callerNumber?.use === 'hint';
   if (isObject(record.event) && record.event.type === 'session.start' && (offering !== null || hinted)) {
     const start = record.event;
     const raw = typeof start.callerNumber === 'string' ? start.callerNumber : null;
+    const called = typeof start.calledNumber === 'string' ? start.calledNumber : null;
     const mask = (v: string): string => (offering !== null ? maskValue(app, offering, v, mode) ?? v : maskLast4(v));
-    const provider = raw !== null && record.callerNumber === 'kept' && isObject(start.provider)
-      ? Object.fromEntries(Object.entries(start.provider).map(([k, v]) => [k, v === raw ? mask(v) : v]))
+    const kept = raw !== null && record.callerNumber === 'kept';
+    const provider = (kept || called !== null) && isObject(start.provider)
+      ? Object.fromEntries(Object.entries(start.provider).map(([k, v]) => [k, kept && v === raw ? mask(v) : called !== null && v === called ? maskLast4(v) : v]))
       : start.provider;
     const masked = { ...start, provider, ...(raw !== null ? { callerNumber: mask(raw) } : {}), ...(typeof start.calledNumber === 'string' ? { calledNumber: maskLast4(start.calledNumber) } : {}) };
     if (raw !== null || typeof start.calledNumber === 'string') out.event = masked;
