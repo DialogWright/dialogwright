@@ -23,7 +23,7 @@ A slot of this type is written under its id in slots.yaml, with `type: birthdate
 | `notThisDate` | string | unset | Another date the caller is likely to mention, which the birth date is not, as a noun phrase ("an appointment date", "the date of the order"). The default month and day questions then say "This is the birth date, not `<it>.`", and the default "false" criterion names it. |
 | `redact` | one of `mask`, `none` | `mask` | How the value is masked wherever it leaves the turn (the trace, the console, a tool call's param of the same name): "mask" keeps the year only ("••/••/1985"); "none" keeps it as it is. |
 | `handoff` | one of `display`, `verified` | `display` | What a transfer to a person hands over: the date as it is said ("display"), or, for a birth date asked to verify identity, only whether the caller was "verified". app.yaml's handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked. |
-| `confirm` | one of `summary` | `summary` | "summary": a birth date is neither acknowledged nor read back on its own; the form's final confirm covers it. |
+| `confirm` | one of `summary`, `always` | `summary` | "summary": a birth date is neither acknowledged nor read back on its own; the form's final confirm covers it. "always": the birth date is read back for a yes as soon as it is heard (`confirm_<slot>`, given its display as `{<slot>}`), before the form goes on; a no empties the slot and asks it again (ack_declined, then `ask_<slot>`, or `ask_<slot>_dtmf` where the slot takes keys), and a second no goes to a person. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: given, givenTrue, givenFalse, month, monthHint, day, dayHint, year, yearAsked, yearNone. |
 | `ids` | map | unset | Question ids in place of the defaults (the slot's id followed by the part: given, month, day, year), to keep the ids an existing slot used. |
 | `listen` | one of `up-front`, `form`, `anywhere`, `call` | `up-front` | Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). "form": asked and filled only while a form that has it is open; outside one its question is not sent. "anywhere": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. "call": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. |
@@ -70,7 +70,7 @@ The slot is always `detect: true` (its row in the console is measured against `S
 | A year before `minYear` | `invalid`, reason `impossible`, raw the year |
 | No such day (February 30th) | `invalid`, reason `impossible`, raw `year-month-day` as heard |
 | Today or a later day | `invalid`, reason `future`, raw the ISO date (so the engine can still tell which day was heard) |
-| A real day in the past | `filled`: the value is the ISO date (1975-06-14), the display says it as a birthday ("June 14th, 1975"), and nothing is read back |
+| A real day in the past | `filled`: the value is the ISO date (1975-06-14), the display says it as a birthday ("June 14th, 1975"), and nothing is read back on its own (with `confirm: always`, it is read back for a yes) |
 
 A month or a day not heard this turn is taken from the pending partial, so "seventy five" after "June fourteenth" fills June 14th, 1975, and "July, seventy five" fills July 14th, 1975. The confidence of a fill is the least of the parts heard this turn.
 
@@ -86,7 +86,7 @@ A hint is the place for how a date said as numbers is read ("A date said as numb
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. Always `yearPrompt` (default `ask_<slot>_year`). With `wholePrompt`, that line. With `keypad`, `ask_<slot>_dtmf`. `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. Always `yearPrompt` (default `ask_<slot>_year`). With `wholePrompt`, that line. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` with `keypad`), and a second no goes to a person. `dialogwright check` requires each in every locale.
 
 ## Examples
 

@@ -6,7 +6,7 @@ The model is asked one question: which of these does the caller name? It has a c
 
 Reach for it when the caller's answer is one of a short list you can write down. For a number no list holds, an identifier, a date, a name or free words, use the type made for it.
 
-The basic options (`options`, `means`, `text`, `keypad` and `fillAt`) are enough for most lists. An advanced tier (`confirm: by-confidence` with `readBack`, `disambiguate`, `hedge`, `help`) is for a list whose entries a caller confuses or is unsure of, such as names that sound alike: it asks which of two, reads back what the caller hedged about, and answers a caller who says they do not know the name. Every advanced option is off unless written.
+The basic options (`options`, `means`, `text`, `keypad` and `fillAt`) are enough for most lists. An option whose answer ends the call or turns a caller away ("rent", where only owners are served) can be read back for a yes as soon as it is chosen: `confirmValues: [rent]` reads those options back, and the others follow `confirm`; `confirm: always` reads every option back. An advanced tier (`confirm: by-confidence` with `readBack`, `disambiguate`, `hedge`, `help`) is for a list whose entries a caller confuses or is unsure of, such as names that sound alike: it asks which of two, reads back what the caller hedged about, and answers a caller who says they do not know the name. Every advanced option is off unless written.
 
 ## Options
 
@@ -20,7 +20,7 @@ The order of `options` matters in two places. It is the keypad order, and it is 
 
 | What the caller said | The outcome |
 |---|---|
-| An option, and the model's probability reaches `fillAt` | `filled`: the value is the option's key, the display its `say`; with `confirm: summary` no read-back is asked for, with `by-confidence` as `readBack` says |
+| An option, and the model's probability reaches `fillAt` | `filled`: the value is the option's key, the display its `say`; with `confirm: summary` no read-back is asked for, with `by-confidence` as `readBack` says; with `always`, or an option in `confirmValues`, it is read back for a yes (`confirm_<slot>`) before the form goes on |
 | The model chooses `none`, or a label that is not an option | `absent`, so the form asks again |
 | An option, but the model's probability is below `fillAt` | `absent` |
 | No answer | `absent` |
@@ -61,7 +61,7 @@ the question, sent to the model, is:
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `keypad`, `ask_<slot>_dtmf`. With `confirm: by-confidence`, `ack_<slot>` (given `{<slot>}`). With `disambiguate` or `hedge.byName`, `disambiguate_<slot>` (given `{a}` and `{b}`). With `help`, each label's `prompt`. The slot says nothing else, and declares each of these (`slot.prompts`); `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `keypad`, `ask_<slot>_dtmf`. With `confirm: by-confidence`, `ack_<slot>` (given `{<slot>}`). With `confirm: always` or `confirmValues`, `confirm_<slot>` (given `{<slot>}`): a no to it empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` with `keypad`), and a second no goes to a person. With `disambiguate` or `hedge.byName`, `disambiguate_<slot>` (given `{a}` and `{b}`). With `help`, each label's `prompt`. The slot says nothing else, and declares each of these (`slot.prompts`); `dialogwright check` requires each in every locale.
 
 ## The advanced tier, written out
 

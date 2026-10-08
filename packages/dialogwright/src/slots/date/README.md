@@ -25,7 +25,7 @@ The slot is always `valueKind: date`: when the caller was asked for another date
 | A span of days, with `windows` | `window`: `{ kind: window, start, end, label }` (ISO days and the span's label), and `narrowPrompt` asks which day |
 | A day below the `fillAt` threshold | `fill`: `whenUnresolved`; `confirm`: `invalid`, reason `low_confidence`, raw the ISO day |
 | A weekday while a span is pending, with no such day left in it | `invalid`, reason `outside_window`, raw the day first resolved |
-| A day | `filled`: the value is the ISO date (2026-09-22), the display says it ("Tuesday, September 22"), and `confirm`/`readBack` say whether it is acknowledged |
+| A day | `filled`: the value is the ISO date (2026-09-22), the display says it ("Tuesday, September 22"), and `confirm`/`readBack` say whether it is acknowledged, or (`confirm: always`) read back for a yes |
 
 The confidence of a fill is the least of the parts the resolver read: the mode and the part it names (and the qualifier, when one is said; the span and the weekday, for a weekday picked out of a span).
 
@@ -47,7 +47,7 @@ A correction is the place for a sentence of your own: "When they correct a day, 
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `windows`, `narrowPrompt` (default `ask_<slot>_narrow`), given `{window}`. With `confirm: by-confidence`, `ack_<slot>`, given `{<slot>}`. With `keypad`, `ask_<slot>_dtmf`. `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `windows`, `narrowPrompt` (default `ask_<slot>_narrow`), given `{window}`. With `confirm: by-confidence`, `ack_<slot>`, given `{<slot>}`. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` with `keypad`), and a second no goes to a person. `dialogwright check` requires each in every locale.
 
 ## Examples
 

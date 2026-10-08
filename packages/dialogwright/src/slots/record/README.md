@@ -10,7 +10,7 @@ Reach for it when the caller chooses among things the app has looked up. For a f
 
 <!-- slot-docs:options -->
 
-The slot is read back in the final summary and never on its own (`spokenConfirm: summary`), and its display is the key as it is.
+The slot is read back in the final summary and not on its own unless `confirm: always` says so, and its display is the key as it is.
 
 ## Labels
 
@@ -58,7 +58,7 @@ the records `{ number: "7101", item: a box of books, day: "2026-09-14" }` and `{
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `disambiguate` (the default), `disambiguate_<slot>` with `{a}` and `{b}`, the two keys. With `keypad`, `ask_<slot>_dtmf`. `dialogwright check` requires each in every locale, with only those variables.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `disambiguate` (the default), `disambiguate_<slot>` with `{a}` and `{b}`, the two keys. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` with `keypad`), and a second no goes to a person. `dialogwright check` requires each in every locale, with only those variables.
 
 ## Examples
 

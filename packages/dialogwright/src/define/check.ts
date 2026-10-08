@@ -135,8 +135,9 @@ function identityParts(config: LoadedConfig): { factors: readonly string[]; fail
  * ones it builds. For each slot a form or identity asks for (core/turn.ts, core/fia.ts,
  * core/decision.ts): `ask_<slot>` and `ask_<slot>_retry` always; with the code's slot spec,
  * `ask_<slot>_dtmf` when the spec has a keypad rung (`dtmf`) or reads every spoken value back
- * (`spokenConfirm: always`, whose declined or unanswered read-back goes to the keypad),
- * `confirm_<slot>` for that read-back, `ack_<slot>` when a spoken value may be acknowledged
+ * (`spokenConfirm: always`, whose declined or unanswered read-back goes to the keypad, unless a no
+ * asks the slot again: `readBackNo: ask`, as every library slot's does), `confirm_<slot>` for that
+ * read-back or for one of its values (`confirmValues`), `ack_<slot>` when a spoken value may be acknowledged
  * (`spokenConfirm: by-confidence`), and the spec's `partialPromptId`. And the handoff line for the role rule's
  * reason, when a role's access to a tool is `person`. And every line a slot declares it can lead
  * the engine to say (SlotSpec.prompts: e.g. `disambiguate_<slot>`, a help prompt, a retryPromptId),
@@ -157,10 +158,13 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     if (!spec) continue;
     if (spec.dtmf !== undefined) {
       needs.push({ id: `ask_${slot}_dtmf`, why: `it asks for the slot "${slot}" on the keypad after spoken answers missed (its slot spec has dtmf)` });
-    } else if (spec.spokenConfirm === 'always') {
+    } else if (spec.spokenConfirm === 'always' && spec.readBackNo !== 'ask') {
       needs.push({ id: `ask_${slot}_dtmf`, why: `a read-back of the slot "${slot}" was declined or not answered, and it asks on the keypad (its slot spec's spokenConfirm is "always")` });
+    } else if ((spec.confirmValues ?? []).length > 0 && spec.readBackNo !== 'ask') {
+      needs.push({ id: `ask_${slot}_dtmf`, why: `a read-back of the slot "${slot}" was declined or not answered, and it asks on the keypad (its slot spec has confirmValues)` });
     }
     if (spec.spokenConfirm === 'always') needs.push({ id: `confirm_${slot}`, why: `it reads a spoken value of the slot "${slot}" back for a yes (its slot spec's spokenConfirm is "always")`, vars: [slot] });
+    else if ((spec.confirmValues ?? []).length > 0) needs.push({ id: `confirm_${slot}`, why: `it reads the slot "${slot}" back for a yes when it is ${spec.confirmValues!.map((v) => `"${v}"`).join(' or ')} (its confirmValues)`, vars: [slot] });
     if (spec.spokenConfirm === 'by-confidence') needs.push({ id: `ack_${slot}`, why: `it acknowledges a value it heard for the slot "${slot}" (its slot spec's spokenConfirm is "by-confidence")`, vars: [slot] });
     if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
     for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)`, ...(declared.vars && declared.vars.length > 0 ? { vars: declared.vars } : {}) });

@@ -1,5 +1,6 @@
 import type { SlotPrompt } from '../../core/slots/types';
 import { examplesFrom } from '../parts/examples';
+import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { choiceDisplay } from './display';
@@ -30,6 +31,7 @@ function promptsOf(id: string, o: ChoiceOptions): SlotPrompt[] {
     if (l.prompt !== undefined && !prompts.some((p) => p.id === l.prompt)) prompts.push({ id: l.prompt, why: `the caller answers "${label}" without naming an option (help)` });
   }
   if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: 'it asks for the option on the keypad after spoken answers missed' });
+  prompts.push(...readBackPrompts(id, o.confirm, o.confirmValues));
   return prompts;
 }
 
@@ -55,7 +57,7 @@ export const choiceType: SlotType<ChoiceOptions, ChoiceWording> = defineSlotType
     const keys = Object.keys(o.options);
     return {
       id,
-      spokenConfirm: o.confirm,
+      ...readBackOf(o.confirm, o.confirmValues),
       questionIds: questionIdsOf(ids),
       prompts: promptsOf(id, o),
       thresholds: thresholdsOf(o),

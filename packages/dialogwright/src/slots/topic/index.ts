@@ -1,5 +1,6 @@
 import type { SlotPrompt } from '../../core/slots/types';
 import { examplesFrom } from '../parts/examples';
+import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { topicDisplay } from './display';
@@ -19,7 +20,8 @@ const examples = examplesFrom(new URL('./examples.yaml', import.meta.url));
 
 /** The lines a topic slot may lead to, beyond ask_<slot> and ask_<slot>_retry. */
 function promptsOf(id: string, o: TopicOptions): SlotPrompt[] {
-  return o.disambiguate ? [{ id: `disambiguate_${id}`, why: 'the caller could mean either of two topics and is asked which', vars: ['a', 'b'] }] : [];
+  const disambiguate: SlotPrompt[] = o.disambiguate ? [{ id: `disambiguate_${id}`, why: 'the caller could mean either of two topics and is asked which', vars: ['a', 'b'] }] : [];
+  return [...disambiguate, ...readBackPrompts(id, o.confirm ?? 'summary')];
 }
 
 /**
@@ -39,8 +41,8 @@ export const topicType: SlotType<TopicOptions> = defineSlotType<TopicOptions>({
     const display = topicDisplay(catalog);
     return {
       id,
-      // Never acknowledged: the final summary reads it back.
-      spokenConfirm: 'summary',
+      // Never acknowledged: the final summary reads it back, or, with `confirm: always`, its own read-back.
+      ...readBackOf(o.confirm ?? 'summary'),
       nominates: true,
       questionIds: [questionId],
       prompts: promptsOf(id, o),

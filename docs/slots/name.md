@@ -19,6 +19,7 @@ A slot of this type is written under its id in slots.yaml, with `type: name` and
 | `exclude` | list of string | `[]` | Words that never belong to the caller's name: a span holding any of them is not offered to the model, and one answered anyway is refused. For the titles and names of people who are discussed on the call but are not the caller (a doctor, a technician). Compared in lower case, word by word. A caller who shares one of the words cannot give their name by voice, so list only what is needed. Default: none. |
 | `redact` | one of `none`, `mask` | `none` | How the value is masked wherever it leaves the turn (the trace, a tool call's param of the same name): "mask" ("•") or "none", kept as it is. |
 | `handoff` | one of `display`, `verified` | `display` | What a transfer to a person hands over: the name as its "display", or only whether the caller was "verified", never the name. app.yaml's handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked. |
+| `confirm` | one of `summary`, `always` | unset | "summary" (the default): a name is neither acknowledged nor read back on its own; the form's final confirm covers it. "always": the name is read back for a yes as soon as it is heard (`confirm_<slot>`, given its display as `{<slot>}`), before the form goes on; a no empties the slot and asks it again (ack_declined, then `ask_<slot>`, or `ask_<slot>_dtmf` where the slot takes keys), and a second no goes to a person. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: given, givenTrue, givenFalse, span, spanNone. |
 | `ids` | map | unset | Question ids in place of the defaults (the slot's id followed by the part: given, span), to keep the ids an existing slot used. |
 | `listen` | one of `up-front`, `form`, `anywhere`, `call` | `up-front` | Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). "form": asked and filled only while a form that has it is open; outside one its question is not sent. "anywhere": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. "call": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. |
@@ -45,7 +46,7 @@ A question's id is the slot's id followed by the part's name (the slot `note` an
 | `ids.given` | The id of the question that asks whether the caller states their own name. |
 | `ids.span` | The id of the question that asks which span of the caller's words is their name. |
 
-The slot is always `detect: true` (its row in the console is measured against `SLOT_DETECT`), read back in the final summary and never on its own (`spokenConfirm: summary`), and has no keypad rung: a name cannot be keyed, so a caller whose name is not heard goes through the retry ladder to a person.
+The slot is always `detect: true` (its row in the console is measured against `SLOT_DETECT`), read back in the final summary and not on its own unless `confirm: always` says so, and has no keypad rung: a name cannot be keyed, so a caller whose name is not heard goes through the retry ladder to a person.
 
 ## The outcome
 
@@ -64,7 +65,7 @@ On the slot `name` the questions are `nameGiven` and `nameSpan`. Each text part 
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot, and nothing more: the slot has no partial value and no keypad. `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot, and nothing more (the slot has no partial value and no keypad), but for `confirm_<slot>`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), and a second no goes to a person. `dialogwright check` requires each in every locale.
 
 ## Examples
 

@@ -1,4 +1,5 @@
 import { examplesFrom } from '../parts/examples';
+import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { textDisplay } from './display';
@@ -35,14 +36,15 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
     const display = textDisplay(o, wording);
     return {
       id,
-      // Never acknowledged or read back on its own: the stand-in says nothing a caller could correct.
-      spokenConfirm: 'summary',
+      // Read back on its own only when the app says so (`confirm: always`): by default the summary
+      // reads it, and the stand-in says nothing a caller could correct.
+      ...readBackOf(o.confirm ?? 'summary'),
       ...(o.redact === 'length' ? { redact: 'length' as const } : {}),
       // Shown as said while the value is written (written.ts): display(value) cannot give the words back.
       ...(displaysSaid(o) ? { displayFrom: 'said' as const } : {}),
       detect: true,
       questionIds: o.pick ? [givenId, pickId] : [givenId],
-      prompts: [],
+      prompts: readBackPrompts(id, o.confirm ?? 'summary'),
       questions: textQuestions(id, o),
       fill: textFill(o, { given: givenId, pick: pickId }, display),
       display,

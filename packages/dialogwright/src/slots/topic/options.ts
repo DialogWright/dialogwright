@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { identifier } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
 import { checkCriterion, CRITERION_FILTERS, CRITERION_VARS } from './criterion';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The text parts of a `topic` slot: its one question and the criterion of its `none` label. Each
@@ -65,6 +66,10 @@ export const topicOptions = z
     missReason: identifier()
       .default(DEFAULT_MISS_REASON)
       .describe('The reason of the invalid outcome when the slot was asked for and the caller chose no topic (or the model was not sure enough). Not asked for, that is absent.'),
+    confirm: z
+      .enum(['summary', 'always'])
+      .optional()
+      .describe(`"summary" (the default): a topic is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('the topic')}`),
     text: TOPIC_PARTS.schema,
     ids: TOPIC_QUESTIONS.schema.describe('Question ids in place of the default: `ids.choice` is the question\'s id (default: the slot\'s id followed by "Topic"), to keep the id an existing slot used.'),
   })

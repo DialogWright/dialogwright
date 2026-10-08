@@ -137,9 +137,26 @@ export interface SlotSpec {
    */
   thresholds?: readonly string[];
   /** always: a spoken fill is read back and must be confirmed before it counts, which needs a `confirm_<slot>`
-   * entry in the prompt manifest (no slot uses this today, so none is there); by-confidence: the fill outcome
-   * decides; summary: a spoken fill is neither acked nor read back; the final confirm covers it */
+   * line (a library slot's `confirm: always` in slots.yaml); by-confidence: the fill outcome decides;
+   * summary: a spoken fill is neither acked nor read back; the final confirm covers it */
   spokenConfirm: 'always' | 'by-confidence' | 'summary';
+  /**
+   * Values read back as soon as the slot fills with one of them, as for `spokenConfirm: always`, and
+   * so needing `confirm_<slot>`; any other value follows spokenConfirm (a choice slot's
+   * `confirmValues`: "rent" read back, "own" left to the summary). Absent: every value follows
+   * spokenConfirm.
+   */
+  confirmValues?: readonly string[];
+  /**
+   * What a no to the slot's own read-back (spokenConfirm `always`, or a value in confirmValues) does.
+   * `ask`: the slot is emptied and asked again, `ack_declined` then `ask_<slot>`, or its keypad
+   * question `ask_<slot>_dtmf` where the slot takes keys (dtmf) and the channel has a keypad; a
+   * read-back left unanswered to the keypad rung is asked the same way, by `ask_<slot>_retry` where
+   * it takes no keys. A second no goes to a person. Absent: the keypad, `ask_<slot>_dtmf`, which
+   * `dialogwright check` then requires (a slot written in code). Every library slot that reads back
+   * sets `ask`.
+   */
+  readBackNo?: 'ask';
   /**
    * The slot reads the topics retrieval nominates (SlotContext.nominated): while it is active, a turn
    * with words runs the app's knowledge retriever once, before the turn is planned (run/turn.ts), and

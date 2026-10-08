@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { identifier, matching } from '../../define/schema/common';
 import { placeholdersOf } from '../parts/template';
 import { questionParts, questionText, textParts } from '../parts/text';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The questions of a choice slot, by part: `choice` (which option; its id is the slot's own unless
@@ -126,9 +127,14 @@ export const choiceOptions = z
       .default('SLOT_CHOICE_FILL')
       .describe('The threshold the model\'s probability for the option must reach for the slot to fill; below it the slot stays empty.'),
     confirm: z
-      .enum(['summary', 'by-confidence'])
+      .enum(['summary', 'by-confidence', 'always'])
       .default('summary')
-      .describe('"summary": a chosen option is neither acknowledged nor read back on its own; the form\'s final confirm covers it. "by-confidence": it is acknowledged (ack_<slot>, given the option\'s display as {<slot>}) when `readBack` says so, and always when the caller hedged (`hedge`).'),
+      .describe(`"summary": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. "by-confidence": it is acknowledged (ack_<slot>, given the option's display as {<slot>}) when \`readBack\` says so, and always when the caller hedged (\`hedge\`). ${alwaysConfirmText('a chosen option')}`),
+    confirmValues: z
+      .array(z.string())
+      .min(1)
+      .optional()
+      .describe('Options (their keys) read back for a yes as soon as one is chosen, as with `confirm: always` (confirm_<slot>, given the option\'s display as {<slot>}); any other option follows `confirm`. For the answer that ends the call or turns a caller away ("rent", not "own"). Default: none.'),
     readBack: z
       .enum(['implicit', 'below-fill', 'none'])
       .optional()
@@ -202,6 +208,34 @@ export const choiceOptions = z
         path: ['means'],
         message: `means uses ${unknown.map((v) => `{${v}}`).join(', ')}, which ${unknown.length === 1 ? 'is' : 'are'} not one of its variables`,
         params: { fix: 'use {say} (what the option says) and {key} (its key), or write the criterion on the option itself' },
+      });
+    }
+    o.confirmValues?.forEach((key, i) => {
+      if (!keys.includes(key)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['confirmValues', i],
+          message: `confirmValues names "${key}", which is not one of the slot's options (${keys.join(', ')})`,
+          params: { fix: 'name an option by its key, as `options` writes it, or delete it from confirmValues' },
+        });
+      } else if (o.confirmValues!.indexOf(key) !== i) {
+        ctx.addIssue({ code: 'custom', path: ['confirmValues', i], message: `confirmValues names "${key}" twice`, params: { fix: 'delete one of the two' } });
+      }
+    });
+    if (o.confirmValues !== undefined && o.confirm === 'always') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['confirmValues'],
+        message: 'confirmValues has no effect with confirm "always", which reads every chosen option back',
+        params: { fix: 'delete confirmValues, or set confirm to summary or by-confidence' },
+      });
+    }
+    if (o.readBack !== undefined && o.confirm === 'always') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['readBack'],
+        message: `readBack "${o.readBack}" has no effect with confirm "always", which reads every chosen option back for a yes`,
+        params: { fix: 'set confirm: by-confidence, or delete readBack' },
       });
     }
     if (o.readBack !== undefined && o.confirm === 'summary') {

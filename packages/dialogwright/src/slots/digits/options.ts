@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { repeatsARepeat } from '../parts/pattern';
 import { identifier } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The text parts of a `digits` slot: its three questions and the span question's "none" label, as
@@ -72,9 +73,9 @@ export const digitsOptions = z
       .optional()
       .describe('How the number is said back, in groups of these sizes ([4, 4]: "5550 7788"). The last group takes any digits left over. Default: all digits together.'),
     confirm: z
-      .enum(['summary', 'by-confidence'])
+      .enum(['summary', 'by-confidence', 'always'])
       .default('summary')
-      .describe('"summary": a spoken number is neither acknowledged nor read back on its own; the form\'s final confirm covers it. "by-confidence": it is acknowledged (ack_<slot>) when `readBack` says so.'),
+      .describe(`"summary": a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. "by-confidence": it is acknowledged (ack_<slot>) when \`readBack\` says so. ${alwaysConfirmText('a spoken number')}`),
     readBack: z
       .enum(['implicit', 'below-fill', 'none'])
       .default('implicit')
@@ -179,6 +180,14 @@ export const digitsOptions = z
         code: 'custom',
         path: ['readBack'],
         message: `readBack "${o.readBack}" has no effect with confirm "summary", which neither acknowledges nor reads back a spoken number`,
+        params: { fix: 'set confirm: by-confidence, or delete readBack' },
+      });
+    }
+    if (o.readBack !== 'implicit' && o.confirm === 'always') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['readBack'],
+        message: `readBack "${o.readBack}" has no effect with confirm "always", which reads every spoken number back for a yes`,
         params: { fix: 'set confirm: by-confidence, or delete readBack' },
       });
     }

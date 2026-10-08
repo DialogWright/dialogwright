@@ -64,10 +64,11 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": a birth date is neither acknowledged nor read back on its own; the form's final confirm covers it.",
+            "description": "\"summary\": a birth date is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the birth date is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf where the slot takes keys), and a second no goes to a person.",
             "type": "string",
             "enum": [
-              "summary"
+              "summary",
+              "always"
             ]
           },
           "text": {
@@ -276,12 +277,21 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the option's display as {<slot>}) when `readBack` says so, and always when the caller hedged (`hedge`).",
+            "description": "\"summary\": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the option's display as {<slot>}) when `readBack` says so, and always when the caller hedged (`hedge`). \"always\": a chosen option is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf where the slot takes keys), and a second no goes to a person.",
             "type": "string",
             "enum": [
               "summary",
-              "by-confidence"
+              "by-confidence",
+              "always"
             ]
+          },
+          "confirmValues": {
+            "description": "Options (their keys) read back for a yes as soon as one is chosen, as with `confirm: always` (confirm_<slot>, given the option's display as {<slot>}); any other option follows `confirm`. For the answer that ends the call or turns a caller away (\"rent\", not \"own\"). Default: none.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "readBack": {
             "description": "With `confirm: by-confidence`, what a chosen option asks for: \"implicit\" (always acknowledged; the default), \"below-fill\" (only when the model is less sure of it than SLOT_CHOICE_FILL), \"none\" (never, unless the caller hedged).",
@@ -518,11 +528,12 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the day as {<slot>}) when `readBack` says so.",
+            "description": "\"summary\": a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the day as {<slot>}) when `readBack` says so. \"always\": a spoken day is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf where the slot takes keys), and a second no goes to a person.",
             "type": "string",
             "enum": [
               "summary",
-              "by-confidence"
+              "by-confidence",
+              "always"
             ]
           },
           "readBack": {
@@ -718,11 +729,12 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>) when `readBack` says so.",
+            "description": "\"summary\": a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>) when `readBack` says so. \"always\": a spoken number is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf where the slot takes keys), and a second no goes to a person.",
             "type": "string",
             "enum": [
               "summary",
-              "by-confidence"
+              "by-confidence",
+              "always"
             ]
           },
           "readBack": {
@@ -916,6 +928,14 @@
               "verified"
             ]
           },
+          "confirm": {
+            "description": "\"summary\" (the default): a name is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the name is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf where the slot takes keys), and a second no goes to a person.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "always"
+            ]
+          },
           "text": {
             "description": "Text to say to the model in place of a default, word for word, by part: given, givenTrue, givenFalse, span, spanNone.",
             "type": "object",
@@ -1086,6 +1106,14 @@
             "enum": [
               "SLOT_CHOICE_FILL",
               "SLOT_CHOICE_CONFIRM"
+            ]
+          },
+          "confirm": {
+            "description": "\"summary\" (the default): a record is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the record is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf where the slot takes keys), and a second no goes to a person.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "always"
             ]
           },
           "text": {
@@ -1290,6 +1318,14 @@
               "title"
             ]
           },
+          "confirm": {
+            "description": "\"summary\" (the default): the words are neither acknowledged nor read back on their own; the form's final confirm covers them. \"always\": what the caller said is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf where the slot takes keys), and a second no goes to a person.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "always"
+            ]
+          },
           "text": {
             "description": "Text to say to the model in place of a default, word for word, by part: given, pick, pickNone.",
             "type": "object",
@@ -1406,6 +1442,14 @@
             "description": "The reason of the invalid outcome when the slot was asked for and the caller chose no topic (or the model was not sure enough). Not asked for, that is absent.",
             "type": "string",
             "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "confirm": {
+            "description": "\"summary\" (the default): a topic is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the topic is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf where the slot takes keys), and a second no goes to a person.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "always"
+            ]
           },
           "text": {
             "description": "Text to say to the model in place of a default, word for word, by part: instructions, none.",

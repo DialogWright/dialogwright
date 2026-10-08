@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { matching } from '../../define/schema/common';
 import { questionParts, textParts } from '../parts/text';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The text parts of a `name` slot: its two questions (does the caller give their own name, which
@@ -68,6 +69,10 @@ export const nameOptions = z.strictObject({
     .enum(['display', 'verified'])
     .default('display')
     .describe('What a transfer to a person hands over: the name as its "display", or only whether the caller was "verified", never the name. app.yaml\'s handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.'),
+  confirm: z
+    .enum(['summary', 'always'])
+    .optional()
+    .describe(`"summary" (the default): a name is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('the name')}`),
   text: NAME_PARTS.schema,
   ids: NAME_QUESTIONS.schema,
 });

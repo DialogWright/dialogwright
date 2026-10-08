@@ -8,7 +8,7 @@ The model is asked one question: which of these does the caller name? It has a c
 
 Reach for it when the caller's answer is one of a short list you can write down. For a number no list holds, an identifier, a date, a name or free words, use the type made for it.
 
-The basic options (`options`, `means`, `text`, `keypad` and `fillAt`) are enough for most lists. An advanced tier (`confirm: by-confidence` with `readBack`, `disambiguate`, `hedge`, `help`) is for a list whose entries a caller confuses or is unsure of, such as names that sound alike: it asks which of two, reads back what the caller hedged about, and answers a caller who says they do not know the name. Every advanced option is off unless written.
+The basic options (`options`, `means`, `text`, `keypad` and `fillAt`) are enough for most lists. An option whose answer ends the call or turns a caller away ("rent", where only owners are served) can be read back for a yes as soon as it is chosen: `confirmValues: [rent]` reads those options back, and the others follow `confirm`; `confirm: always` reads every option back. An advanced tier (`confirm: by-confidence` with `readBack`, `disambiguate`, `hedge`, `help`) is for a list whose entries a caller confuses or is unsure of, such as names that sound alike: it asks which of two, reads back what the caller hedged about, and answers a caller who says they do not know the name. Every advanced option is off unless written.
 
 ## Options
 
@@ -23,7 +23,8 @@ A slot of this type is written under its id in slots.yaml, with `type: choice` a
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: instructions, none. |
 | `keypad` | boolean | `false` | Whether the caller can key the option, by its position (1 for the first), after spoken answers missed. At most 9 options. Needs an `ask_<slot>_dtmf` line. |
 | `fillAt` | one of `SLOT_CHOICE_FILL`, `SLOT_CHOICE_CONFIRM` | `SLOT_CHOICE_FILL` | The threshold the model's probability for the option must reach for the slot to fill; below it the slot stays empty. |
-| `confirm` | one of `summary`, `by-confidence` | `summary` | "summary": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. "by-confidence": it is acknowledged (`ack_<slot>`, given the option's display as `{<slot>}`) when `readBack` says so, and always when the caller hedged (`hedge`). |
+| `confirm` | one of `summary`, `by-confidence`, `always` | `summary` | "summary": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. "by-confidence": it is acknowledged (`ack_<slot>`, given the option's display as `{<slot>}`) when `readBack` says so, and always when the caller hedged (`hedge`). "always": a chosen option is read back for a yes as soon as it is heard (`confirm_<slot>`, given its display as `{<slot>}`), before the form goes on; a no empties the slot and asks it again (ack_declined, then `ask_<slot>`, or `ask_<slot>_dtmf` where the slot takes keys), and a second no goes to a person. |
+| `confirmValues` | list of string | unset | Options (their keys) read back for a yes as soon as one is chosen, as with `confirm: always` (`confirm_<slot>`, given the option's display as `{<slot>}`); any other option follows `confirm`. For the answer that ends the call or turns a caller away ("rent", not "own"). Default: none. |
 | `readBack` | one of `implicit`, `below-fill`, `none` | unset | With `confirm: by-confidence`, what a chosen option asks for: "implicit" (always acknowledged; the default), "below-fill" (only when the model is less sure of it than SLOT_CHOICE_FILL), "none" (never, unless the caller hedged). |
 | `disambiguate` | one of `margin` | unset | "margin": the slot reads the model's probability for every label, not only its pick, and when a second option is within SLOT_CHOICE_MARGIN of the top one (or, while the caller hedges, reaches SLOT_CHOICE_CONFIRM) it asks which of the two (`disambiguate_<slot>`, given {a} and {b}). The top option must then reach SLOT_CHOICE_CONFIRM before anything else is read. Default: off. |
 | `hedge` | map | unset | A second question, a yes-or-no: is the caller unsure which option they mean? A hedged option is read back however sure the model is (with `confirm: by-confidence`); with `disambiguate`, a hedged rival that reaches SLOT_CHOICE_CONFIRM is asked about. Its id is `ids.hedge` (default: `<slot>Hedge`). |
@@ -71,7 +72,7 @@ The order of `options` matters in two places. It is the keypad order, and it is 
 
 | What the caller said | The outcome |
 |---|---|
-| An option, and the model's probability reaches `fillAt` | `filled`: the value is the option's key, the display its `say`; with `confirm: summary` no read-back is asked for, with `by-confidence` as `readBack` says |
+| An option, and the model's probability reaches `fillAt` | `filled`: the value is the option's key, the display its `say`; with `confirm: summary` no read-back is asked for, with `by-confidence` as `readBack` says; with `always`, or an option in `confirmValues`, it is read back for a yes (`confirm_<slot>`) before the form goes on |
 | The model chooses `none`, or a label that is not an option | `absent`, so the form asks again |
 | An option, but the model's probability is below `fillAt` | `absent` |
 | No answer | `absent` |
@@ -112,7 +113,7 @@ the question, sent to the model, is:
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `keypad`, `ask_<slot>_dtmf`. With `confirm: by-confidence`, `ack_<slot>` (given `{<slot>}`). With `disambiguate` or `hedge.byName`, `disambiguate_<slot>` (given `{a}` and `{b}`). With `help`, each label's `prompt`. The slot says nothing else, and declares each of these (`slot.prompts`); `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `keypad`, `ask_<slot>_dtmf`. With `confirm: by-confidence`, `ack_<slot>` (given `{<slot>}`). With `confirm: always` or `confirmValues`, `confirm_<slot>` (given `{<slot>}`): a no to it empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` with `keypad`), and a second no goes to a person. With `disambiguate` or `hedge.byName`, `disambiguate_<slot>` (given `{a}` and `{b}`). With `help`, each label's `prompt`. The slot says nothing else, and declares each of these (`slot.prompts`); `dialogwright check` requires each in every locale.
 
 ## The advanced tier, written out
 

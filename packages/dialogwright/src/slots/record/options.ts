@@ -3,6 +3,7 @@ import { repeatsARepeat } from '../parts/pattern';
 import { identifier } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
 import { checkLabelTemplate, LABEL_FILTERS } from './label';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The text parts of a `record` slot: its one question and the criterion of its `none` label. The
@@ -102,6 +103,10 @@ export const recordOptions = z
       .enum(FILL_AT)
       .default('SLOT_CHOICE_FILL')
       .describe('The threshold the model\'s probability for the record must reach for the slot to fill. Below SLOT_CHOICE_CONFIRM nothing was chosen.'),
+    confirm: z
+      .enum(['summary', 'always'])
+      .optional()
+      .describe(`"summary" (the default): a record is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('the record')}`),
     text: RECORD_PARTS.schema,
     ids: RECORD_QUESTIONS.schema.describe('Question ids in place of the default: `ids.choice` is the question\'s id (default: the slot\'s id followed by "Choice"), to keep the id an existing slot used.'),
   })

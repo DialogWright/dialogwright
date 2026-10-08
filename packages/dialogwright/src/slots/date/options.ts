@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { identifier } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The text parts of a `date` slot: its questions (how the day is referred to, then each part a day
@@ -105,9 +106,9 @@ export const dateOptions = z
       .default(false)
       .describe('Whether the caller can key the day on the keypad as four digits, month then day (MMDD: 0922), or in a day-first locale (Spanish) day then month (DDMM: 2209), resolved as a spoken month and day are for the `range`. Needs an ask_<slot>_dtmf line.'),
     confirm: z
-      .enum(['summary', 'by-confidence'])
+      .enum(['summary', 'by-confidence', 'always'])
       .default('summary')
-      .describe('"summary": a spoken day is neither acknowledged nor read back on its own; the form\'s final confirm covers it. "by-confidence": it is acknowledged (ack_<slot>, given the day as {<slot>}) when `readBack` says so.'),
+      .describe(`"summary": a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. "by-confidence": it is acknowledged (ack_<slot>, given the day as {<slot>}) when \`readBack\` says so. ${alwaysConfirmText('a spoken day')}`),
     readBack: z
       .enum(['implicit', 'below-fill', 'none'])
       .default('implicit')
@@ -148,6 +149,9 @@ export const dateOptions = z
     }
     if (o.readBack !== 'implicit' && o.confirm === 'summary') {
       issue(['readBack'], `readBack "${o.readBack}" has no effect with confirm "summary", which neither acknowledges nor reads back a spoken day`, 'set confirm: by-confidence, or delete readBack');
+    }
+    if (o.readBack !== 'implicit' && o.confirm === 'always') {
+      issue(['readBack'], `readBack "${o.readBack}" has no effect with confirm "always", which reads every spoken day back for a yes`, 'set confirm: by-confidence, or delete readBack');
     }
   });
 

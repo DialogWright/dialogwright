@@ -27,7 +27,7 @@ A slot of this type is written under its id in slots.yaml, with `type: date` and
 | `whenUnsaid` | one of `invalid-if-prompted`, `absent` | `invalid-if-prompted` | What a turn that names no day (the mode question answers none, is below SLOT_CHOICE_CONFIRM, or is not answered at all) gives. "invalid-if-prompted": invalid (reason unresolvable, raw empty) when the caller was asked for the day, so the retry ladder moves on, else absent. "absent": always absent. |
 | `whenUnresolved` | one of `invalid-if-prompted`, `invalid` | `invalid-if-prompted` | What a day named but not resolved (no such day, out of range, a span without `windows`, or below the `fillAt` threshold under "fill") gives. "invalid-if-prompted": invalid (reason unresolvable, raw empty) when the caller was asked for the day, else absent. "invalid": always invalid (reason unresolvable), its raw the mode the caller used (absolute, weekday, ...). |
 | `keypad` | boolean | `false` | Whether the caller can key the day on the keypad as four digits, month then day (MMDD: 0922), or in a day-first locale (Spanish) day then month (DDMM: 2209), resolved as a spoken month and day are for the `range`. Needs an `ask_<slot>_dtmf` line. |
-| `confirm` | one of `summary`, `by-confidence` | `summary` | "summary": a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. "by-confidence": it is acknowledged (`ack_<slot>`, given the day as `{<slot>}`) when `readBack` says so. |
+| `confirm` | one of `summary`, `by-confidence`, `always` | `summary` | "summary": a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. "by-confidence": it is acknowledged (`ack_<slot>`, given the day as `{<slot>}`) when `readBack` says so. "always": a spoken day is read back for a yes as soon as it is heard (`confirm_<slot>`, given its display as `{<slot>}`), before the form goes on; a no empties the slot and asks it again (ack_declined, then `ask_<slot>`, or `ask_<slot>_dtmf` where the slot takes keys), and a second no goes to a person. |
 | `readBack` | one of `implicit`, `below-fill`, `none` | `implicit` | With `confirm: by-confidence`, what a filled day asks for: "implicit" (always acknowledged), "below-fill" (only when the model is less sure of it than SLOT_CHOICE_FILL), "none" (never). |
 | `context` | string | unset | The sentence each default question starts with after "Read asr.text.", saying what day the caller is giving ("The caller is saying which day a parcel was due."). Default, by `range`: "The caller is saying the day something happened." (past), "The caller is saying the day they want." (future). |
 | `exclude` | string | unset | A sentence naming a date the caller may also say that is not this day ("A date of birth is not the day the parcel was due."), which the default mode, month and day questions end with. Default: none. |
@@ -76,7 +76,7 @@ The slot is always `valueKind: date`: when the caller was asked for another date
 | A span of days, with `windows` | `window`: `{ kind: window, start, end, label }` (ISO days and the span's label), and `narrowPrompt` asks which day |
 | A day below the `fillAt` threshold | `fill`: `whenUnresolved`; `confirm`: `invalid`, reason `low_confidence`, raw the ISO day |
 | A weekday while a span is pending, with no such day left in it | `invalid`, reason `outside_window`, raw the day first resolved |
-| A day | `filled`: the value is the ISO date (2026-09-22), the display says it ("Tuesday, September 22"), and `confirm`/`readBack` say whether it is acknowledged |
+| A day | `filled`: the value is the ISO date (2026-09-22), the display says it ("Tuesday, September 22"), and `confirm`/`readBack` say whether it is acknowledged, or (`confirm: always`) read back for a yes |
 
 The confidence of a fill is the least of the parts the resolver read: the mode and the part it names (and the qualifier, when one is said; the span and the weekday, for a weekday picked out of a span).
 
@@ -98,7 +98,7 @@ A correction is the place for a sentence of your own: "When they correct a day, 
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `windows`, `narrowPrompt` (default `ask_<slot>_narrow`), given `{window}`. With `confirm: by-confidence`, `ack_<slot>`, given `{<slot>}`. With `keypad`, `ask_<slot>_dtmf`. `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `windows`, `narrowPrompt` (default `ask_<slot>_narrow`), given `{window}`. With `confirm: by-confidence`, `ack_<slot>`, given `{<slot>}`. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` with `keypad`), and a second no goes to a person. `dialogwright check` requires each in every locale.
 
 ## Examples
 

@@ -1,5 +1,6 @@
 import type { SlotPrompt, SlotSpec } from '../../core/slots/types';
 import { examplesFrom } from '../parts/examples';
+import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { digitsDisplay } from './display';
@@ -24,6 +25,7 @@ function promptsOf(id: string, o: DigitsOptions): SlotPrompt[] {
   if (o.confirm === 'by-confidence') prompts.push({ id: `ack_${id}`, why: `it acknowledges ${thing} it is less sure of`, vars: [id] });
   if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: `it asks for ${thing} on the keypad after spoken answers missed` });
   if (o.callerNumber !== undefined) prompts.push({ id: `offer_${id}`, why: `it offers the number the caller is calling from for ${thing}, as a yes or no (callerNumber)`, vars: ['last4'] });
+  prompts.push(...readBackPrompts(id, o.confirm));
   return prompts;
 }
 
@@ -70,7 +72,7 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
     const fits = digitsFit(o);
     return {
       id,
-      spokenConfirm: o.confirm,
+      ...readBackOf(o.confirm),
       ...(o.redact === 'last4' ? { redact: 'last4' as const } : {}),
       ...(o.handoff !== 'display' ? { handoff: o.handoff } : {}),
       detect: true,

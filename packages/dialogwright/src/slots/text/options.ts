@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { localeTag } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
 import { MAX_PICK_CANDIDATES, MAX_PICK_SPLITS, MIN_TAIL_WORDS } from './pick';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The text parts of a `text` slot, as templates over the options: its yes-or-no question, and with
@@ -93,6 +94,10 @@ export const textOptions = z
       .describe(
         'How the value writes the case of the words. "as-said": as the recognizer or the caller wrote them. "title": words written with no capital at all (a recognizer that writes none) have each word capitalized, but for minor words after the first ("7625 oak hollow lane" is "7625 Oak Hollow Lane"); words with any capital stay as they are. The value only: with say: null the display stays the words as said. Only in a language with rules: English, also read with no locale.',
       ),
+    confirm: z
+      .enum(['summary', 'always'])
+      .optional()
+      .describe(`"summary" (the default): the words are neither acknowledged nor read back on their own; the form's final confirm covers them. ${alwaysConfirmText('what the caller said')}`),
     text: TEXT_PARTS.schema,
     ids: TEXT_QUESTIONS.schema,
   })

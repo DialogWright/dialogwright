@@ -1,4 +1,5 @@
 import { examplesFrom } from '../parts/examples';
+import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { nameDisplay } from './display';
@@ -26,13 +27,13 @@ export const nameType: SlotType<NameOptions> = defineSlotType<NameOptions>({
     const display = nameDisplay();
     return {
       id,
-      // Never acknowledged: the final summary reads it back.
-      spokenConfirm: 'summary',
+      // Never acknowledged: the final summary reads it back, or, with `confirm: always`, its own read-back.
+      ...readBackOf(o.confirm ?? 'summary'),
       ...(o.redact === 'mask' ? { redact: 'mask' as const } : {}),
       ...(o.handoff === 'verified' ? { handoff: 'verified' as const } : {}),
       detect: true,
       questionIds: [ids.given, ids.span],
-      prompts: [],
+      prompts: readBackPrompts(id, o.confirm ?? 'summary'),
       questions: nameQuestions(id, o),
       fill: nameFill(ids, excludedWordsOf(o), display),
       display,

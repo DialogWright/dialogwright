@@ -10,7 +10,7 @@ Reach for it when the app answers general questions from approved passages. It n
 
 <!-- slot-docs:options -->
 
-The slot is read back in the final summary and never on its own (`spokenConfirm: summary`), has no keypad rung, and reads only the thresholds named here.
+The slot is read back in the final summary and not on its own unless `confirm: always` says so, has no keypad rung, and reads only the thresholds named here.
 
 ## The topics
 
@@ -45,7 +45,7 @@ and the instructions:
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for any slot; with `disambiguate`, `disambiguate_<slot>` with `{a}` and `{b}`, the two topics' titles ("Do you mean {a} or {b}?").
+`ask_<slot>` and `ask_<slot>_retry` as for any slot; with `disambiguate`, `disambiguate_<slot>` with `{a}` and `{b}`, the two topics' titles ("Do you mean {a} or {b}?"). With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), and a second no goes to a person.
 
 ## Examples
 

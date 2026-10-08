@@ -257,7 +257,8 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         // correction at the summary (correctingFill, turn.ts): a value spoken again unchanged (one
         // the form holds, heard again in answer to another slot's question) answers nothing, and
         // counting it would hold the prompted slot's `attempts` and re-ask its question forever.
-        const policy = spec.spokenConfirm;
+        // A value the slot reads back at once (SlotSpec.confirmValues) is an always-confirm value.
+        const policy = readsBack(spec, outcome.value) ? 'always' : spec.spokenConfirm;
         const keepConfirmed = slot.confirmed && slot.value === outcome.value;
         slot.value = outcome.value;
         slot.display = outcome.display;
@@ -307,12 +308,20 @@ export function nextPrompt(session: Session): NextPrompt {
   return { kind: 'ask', slot, window: session.slots[slot]!.window };
 }
 
-/** The readback owed for the first filled, unconfirmed always-confirm slot, or null. */
+/**
+ * Whether the slot reads `value` back for a yes as soon as it is heard: every value of an
+ * always-confirm slot, and the values it lists to read back (SlotSpec.confirmValues) of any other.
+ */
+export function readsBack(spec: SlotSpec, value: string): boolean {
+  return spec.spokenConfirm === 'always' || (spec.confirmValues?.includes(value) ?? false);
+}
+
+/** The readback owed for the first filled, unconfirmed slot that reads its value back (readsBack), or null. */
 export function pendingSlotConfirmation(session: Session): Extract<PendingConfirmation, { target: 'slot' }> | null {
   const app = appOf(session);
   for (const id of requiredSlots(session)) {
     const s = session.slots[id]!;
-    if (s.value !== null && !s.confirmed && slotSpecOf(app, id).spokenConfirm === 'always') {
+    if (s.value !== null && !s.confirmed && readsBack(slotSpecOf(app, id), s.value)) {
       return { target: 'slot', slot: id, value: s.value, display: s.display ?? s.value };
     }
   }

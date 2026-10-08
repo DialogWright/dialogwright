@@ -241,6 +241,12 @@ describe('checkApp: the lines the engine builds from the code', () => {
 
   it('a slot read back on every spoken value needs confirm_<slot> and its keypad line; one acknowledged by confidence needs ack_<slot>; a partial value needs its prompt', () => {
     expect(ids(withBook({ spokenConfirm: 'always' }))).toEqual(expect.arrayContaining(['confirm_book', 'ask_book_dtmf']));
+    // A no that asks the slot again (a library slot's readBackNo) needs no keypad line.
+    expect(ids(withBook({ spokenConfirm: 'always', readBackNo: 'ask' }))).toContain('confirm_book');
+    expect(ids(withBook({ spokenConfirm: 'always', readBackNo: 'ask' }))).not.toContain('ask_book_dtmf');
+    // Some values read back (confirmValues): the read-back line, and the summary's policy for the rest.
+    expect(ids(withBook({ confirmValues: ['b1'] }))).toEqual(expect.arrayContaining(['confirm_book', 'ask_book_dtmf']));
+    expect(ids(withBook({ confirmValues: ['b1'], readBackNo: 'ask' }))).not.toContain('ask_book_dtmf');
     expect(ids(withBook({ spokenConfirm: 'by-confidence' }))).toContain('ack_book');
     expect(ids(withBook({ spokenConfirm: 'by-confidence' }))).not.toContain('confirm_book');
     expect(ids(withBook({ partialPromptId: 'ask_book_title' }))).toContain('ask_book_title');
