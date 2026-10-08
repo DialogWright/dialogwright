@@ -143,8 +143,15 @@ describe('the caller-ID question: the worked example', () => {
         use(variants.variant({ 'app.yaml': replace('id: recognized', `id: recognized-${how}`), 'policy.yaml': replace('  callerNumber: last4\n', `  callerNumber: ${how}\n`) }));
         expect(rows(await call({ callerNumber: AVERY }, ...says(STATUS)), 'identity_caller_match'), how).toEqual([{ outcome: 'offered', ...shown }]);
       }
-      // A policy that says nothing of it is refused (validateApp, check: the lookup's param must be
-      // declared), so the row's default, its last four, is never reached by a valid app.
+      // A slot of the same name records it by its own redact (policy.yaml's audit: may then not
+      // declare it): masked or by its length, never its last four.
+      const slot = (yaml: string) => ({ 'policy.yaml': replace('  callerNumber: last4\n', ''), 'slots.yaml': (t: string) => `${t}callerNumber:\n${yaml}` });
+      use(variants.variant({ 'app.yaml': replace('id: recognized', 'id: recognized-slot-mask'), ...slot('  type: birthdate\n') }));
+      expect(rows(await call({ callerNumber: AVERY }, ...says(STATUS)), 'identity_caller_match')).toEqual([{ outcome: 'offered', callerNumber: '•' }]);
+      use(variants.variant({ 'app.yaml': replace('id: recognized', 'id: recognized-slot-length'), ...slot('  type: text\n  what: a phone number\n  redact: length\n') }));
+      expect(rows(await call({ callerNumber: AVERY }, ...says(STATUS)), 'identity_caller_match')).toEqual([{ outcome: 'offered', callerNumber: '<12 chars>' }]);
+      // Neither a slot nor the policy saying how is refused (validateApp, check: the lookup's param
+      // must be declared); should an app get past that, the row's default is the last four, never whole.
     } finally {
       variants.remove();
     }

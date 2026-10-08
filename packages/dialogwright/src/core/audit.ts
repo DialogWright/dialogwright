@@ -12,7 +12,7 @@ import { appOf } from './app/registry';
 import { identityOf } from './app/lookup';
 import type { App } from './app/types';
 import { configAuditDetail } from './app/configHash';
-import { recordedValue, scrubbedDrafts, scrubberOf } from './recording';
+import { recordedValue, recordingOf, scrubbedDrafts, scrubberOf } from './recording';
 import { kbAuditRow } from '../kb/record';
 
 /**
@@ -72,13 +72,16 @@ function ranDrafts(app: App, e: GateEvent, after: Session, kb: KbSource | null):
 
 /**
  * The `identity_caller_match` rows (identity.yaml's callerId) for the steps noted with `from` to `to`
- * gate events before them: the outcome, and the number calling by its last four, or as policy.yaml's
- * `audit: callerNumber` says where it says (`keep`, `secret`, ...). Never the identifier the match holds.
+ * gate events before them: the outcome, and the number calling as the call's param is recorded (a slot
+ * named `callerNumber` by its redact, else policy.yaml's `audit: callerNumber`: `keep`, `secret`, ...),
+ * and by its last four where neither says (recordingOf's own default, `keep`, is not taken here).
+ * Never the identifier the match holds.
  */
 function callerMatchRows(app: App, after: Session, steps: readonly CallerMatchStep[] | undefined, from: number, to: number): AuditDraft[] {
   const number = after.callerNumber;
   const audit = app.policy.audit;
-  const how = audit !== undefined && Object.hasOwn(audit, 'callerNumber') ? audit.callerNumber! : 'last4';
+  const said = (Object.hasOwn(app.slots, 'callerNumber') && app.slots.callerNumber!.redact !== undefined) || (audit !== undefined && Object.hasOwn(audit, 'callerNumber'));
+  const how = said ? recordingOf(app, 'callerNumber') : 'last4';
   const shown = number === undefined ? null : recordedValue(how, number);
   return (steps ?? []).filter((step) => step.at >= from && step.at <= to).map((step) => ({ type: 'identity_caller_match', detail: { outcome: step.outcome, ...(shown !== null ? { callerNumber: shown } : {}) } }));
 }
