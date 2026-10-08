@@ -839,7 +839,7 @@ greet_after_offer:
   interruptible: true
 ```
 
-- A yes fills every covered slot with the caller's number, confirmed, with no question when its form reaches it; a no, or a request instead, leaves each slot to ask its own offer (so write each `offer_<slot>` as well). Each covered slot keeps its own `onNo` and `ifNone` for that case.
+- A yes fills every covered slot with the caller's number, confirmed, with no question when its form reaches it, unless the app's `callerOffer` hook refuses that slot then (it is asked at the greeting, for the covered slots in turn, and again at each covered slot after a grant: a landline refused for texts stays refused). The engine does not remember the hook's answers: a hook that calls a tool keeps the answer in the facts and reads it there next time; a no, or a request instead, leaves each slot to ask its own offer (so write each `offer_<slot>` as well). Each covered slot keeps its own `onNo` and `ifNone` for that case.
 - It is asked only on a call, right after the greeting, with the caller's number kept; never on the chat. The caller-ID question at the greeting comes first and a proposal at the greeting after it: only one question follows the greeting.
 - Every grant is recorded: a `consent` row for the answer, and an `offer` row with `answer: consent` for each slot filled from it. App code reads the answer with `textConsentOf(s)`; a caller who later asks for no more texts is the app's own intent to handle.
 - With a single text moment, skip it: the slot's own offer is the question.

@@ -1047,10 +1047,15 @@ export interface App {
    * Whether the number the caller is calling from may be offered for `slot` (a slot's
    * `callerNumber`): called only when an offer is about to be made (the form would ask the slot and
    * the call has a number that fits it), once per slot per form. False makes no offer, and the slot
-   * goes on as for a call with no number (its `ifNone`: asked, or left empty). It may read the facts,
-   * or call a gated tool (a line-type lookup, say) through ctx.callTool and keep the answer in the
-   * facts. One that throws makes no offer, as false does: what it wrote to the facts is put back and
-   * the side effects it queued are dropped. Without it, every offer is made.
+   * goes on as for a call with no number (its `ifNone`: asked, or left empty). With app.yaml's
+   * `textConsent` it is also called at the greeting, with no form open, for each covered slot in turn
+   * until one is allowed (the consent question is asked for that one), and again at each covered slot
+   * after a grant, before the slot is filled from it: false there leaves the slot as `ifNone` says. It
+   * may read the facts, or call a gated tool (a line-type lookup, say) through ctx.callTool; the engine
+   * does not remember its answers, so a hook that makes such a call keeps the answer in the facts and
+   * reads it there the next time (the texting fixture's keeps the line type). One that throws makes no
+   * offer, as false does: what it wrote to the facts is put back and the side effects it queued are
+   * dropped. Without it, every offer is made.
    */
   callerOffer?(ctx: AppContext, slot: SlotId): boolean;
   /**
