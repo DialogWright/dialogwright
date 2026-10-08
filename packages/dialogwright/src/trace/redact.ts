@@ -275,6 +275,25 @@ function scrubSay(action: unknown, scrub: Scrub): unknown {
   return { ...action, parts: action.parts.map((p: unknown) => (isObject(p) && typeof p.text === 'string' ? { ...p, text: scrub(p.text) } : p)) };
 }
 
+/**
+ * The line the turn before said (the model's node.promptJustPlayed), scrubbed as that turn's say
+ * actions were: of each redacted slot's value and display, the slots and the readback both as the
+ * model was shown them (a value read back, or proposed from the facts, that a no then emptied) and as
+ * the turn left them (a value the yes filled).
+ */
+function scrubPromptJustPlayed(record: TraceRecord, ts: TraceRecord['turnState'], mode: StatementMode, app: Slots): TraceRecord['turnState'] {
+  const raw = record.turnState;
+  if (!isObject(raw) || !isObject(raw.node) || typeof raw.node.promptJustPlayed !== 'string' || raw.node.promptJustPlayed === '' || !isObject(ts) || !isObject(ts.node)) return ts;
+  const shown: [string, unknown][] = [];
+  if (isObject(raw.slots)) for (const [id, st] of Object.entries(raw.slots)) if (isObject(st)) shown.push([id, st.value]);
+  const pc = raw.pendingConfirmation;
+  if (isObject(pc) && typeof pc.target === 'string') shown.push([pc.target, pc.value]);
+  const scrub = slotsScrubber(record.slots, record.pendingConfirmation ?? null, mode, app, shown);
+  if (scrub === null) return ts;
+  const said = scrub(raw.node.promptJustPlayed);
+  return said === ts.node.promptJustPlayed ? ts : { ...ts, node: { ...ts.node, promptJustPlayed: said } };
+}
+
 /** A slot that offers the caller's number (SlotSpec.callerNumber) and is redacted, whose rule masks the number; null when none is. */
 function callerNumberRule(app: Slots): string | null {
   if (app === null) return null;
@@ -289,7 +308,7 @@ function callerNumberRule(app: Slots): string | null {
  */
 export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app: Slots = defaultAppOrNull()): TraceRecord {
   const scrub = recordScrubber(record, mode, app);
-  const out: TraceRecord = { ...record, slots: redactSlots(record.slots, mode, app), turnState: redactTurnState(record.turnState, mode, app) };
+  const out: TraceRecord = { ...record, slots: redactSlots(record.slots, mode, app), turnState: scrubPromptJustPlayed(record, redactTurnState(record.turnState, mode, app), mode, app) };
   // What an interruption heard of our line was cut off as it was said: a value's first digits are masked too.
   const cut = isObject(record.event) && record.event.type === 'user.interrupt' && typeof record.event.heard === 'string' ? recordScrubber(record, mode, app, { cutOff: true }) : null;
   if (cut !== null && record.event.type === 'user.interrupt') out.event = { ...record.event, heard: cut(record.event.heard) };

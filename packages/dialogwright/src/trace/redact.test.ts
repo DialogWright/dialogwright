@@ -64,6 +64,21 @@ describe('redact', () => {
     expect(redactTurnState(record().turnState, 'keep')!.slots).toEqual({ accountId: { value: '...1234', confirmed: true }, dob: { value: '••/••/1985', confirmed: true } });
   });
 
+  it('masks the line the turn before said, as the model was given it (node.promptJustPlayed), idempotently', () => {
+    const said = (slots: TraceRecord['slots'], pc: unknown): TraceRecord => ({
+      ...record(), slots, pendingConfirmation: null,
+      turnState: { ...record().turnState!, slots: {}, pendingConfirmation: pc, node: { id: 'confirm_accountId', promptJustPlayed: 'I have 5550 1234, born April 12th, 1985. Is that right?', options: ['yes', 'no'] } },
+    } as unknown as TraceRecord);
+    // The values the turn left on the slots, and the readback the model was shown though a no then emptied the slot.
+    for (const r of [said(SLOTS, null), said({ ...SLOTS, accountId: emptySlot() } as unknown as TraceRecord['slots'], { target: 'accountId', value: '5550 1234' })]) {
+      for (const mode of ['keep', 'length'] as const) {
+        const out = redactRecordSlots(r, mode);
+        expect(out.turnState!.node.promptJustPlayed, mode).toBe('I have ...1234, born ••/••/1985. Is that right?');
+        expect(redactRecordSlots(out, mode)).toEqual(out);
+      }
+    }
+  });
+
   it('leaves handoff data it cannot read as it is', () => {
     expect(redactHandoffData('not json', 'keep')).toBe('not json');
     expect(redactHandoffData('{"reasonCode":"x"}', 'keep')).toBe('{"reasonCode":"x"}');
