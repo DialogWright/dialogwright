@@ -15,7 +15,7 @@ The guide is long, too long to read in one go: read it a section at a time, from
 2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml) (with [`callerNumber`](#the-number-the-caller-is-calling-from-callernumber)), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml) (with [checks](#checks-ending-a-form-part-way)), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
 3. [Policy and identity](#3-policy-and-identity) (its own list of thirteen subsections is at its head)
 4. [What stays in TypeScript, and why](#4-what-stays-in-typescript-and-why)
-5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [A callback number](#a-callback-number-callernumber), [A text offer](#a-text-offer-onno-and-ifnone), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
+5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [A callback number](#a-callback-number-callernumber), [A text offer](#a-text-offer-onno-and-ifnone), [Proposing a value from a lookup](#proposing-a-value-from-a-lookup-offer-facts), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
 6. [The form hooks](#6-the-form-hooks)
 7. [Checking an app: `pnpm check`](#7-checking-an-app-pnpm-check)
 8. [Locales](#8-locales)
@@ -148,7 +148,7 @@ callerNumber:
 - **Rules.** The gate learns the number through `GateFacts.callerNumber` (and `callerNumberAs`, the number as each slot that offers it holds it), set only for a session that kept one. The built-in `callerNumber` rule reads it; a rule of your own may too.
 - **Privacy.** The numbers are masked as a start event's number is: by their last four on the console and in the frame log, and in the trace file by the slot that offers the number where there is one, else by their last four, the setup's own copies in the start event's provider details (Twilio's `from` and `to`, Telnyx's `param.telnyx_call_from` and `param.telnyx_call_to`) with them. The trace's start record says `callerNumber: kept` or `none`. The number goes to the app's tool and nowhere else; it never enters the model's turn state, and a call with a number sends the model exactly what a call with none sends, but where an offer line says its last four.
 
-Testing it: a scripted call takes `"callerNumber"` and `"calledNumber"`; the text CLI takes `--caller-number` and `--called-number`. Replaying a logged call stands a made-up number in for the caller's, ending in the last four the frame log kept, in the international form carriers send (`+1555555` and the four), so key a lookup fixture by the last four. The frame log does not keep the number called, so a replayed call has none: `calledOf(s)` is null there. The engine's own fixture is `packages/dialogwright/src/testing/texting`: a call-start lookup of the line type, a text offer, and the rule on both.
+Testing it: a scripted call takes `"callerNumber"` and `"calledNumber"`; the text CLI takes `--caller-number` and `--called-number`. Replaying a logged call stands a made-up number in for the caller's, ending in the last four the frame log kept, in the international form carriers send (`+1555555` and the four), so key a lookup fixture by the last four. The frame log does not keep the number called, so a replayed call has none: `calledOf(s)` is null there. The engine's own fixture is `packages/dialogwright/src/testing/texting`: a call-start lookup of the line type, a text offer, and the rule on both. A slot that proposes what the lookup found is [Proposing a value from a lookup](#proposing-a-value-from-a-lookup-offer-facts); its fixture is `packages/dialogwright/src/testing/proposals`.
 
 ### intents.yaml
 
@@ -1262,20 +1262,80 @@ export const code: AppCode = {
 
 **Sending the text.** The app's own tool sends it, from the form's completion, with the slot's value as its param, and only when the slot holds one. Hold that param with the `callerNumber` rule ([3.3](#33-the-built-in-rules)): `callerNumber: { field: textTo }` sends only to the caller's own number; `else: confirmed` sends to a number the caller confirmed at the summary too.
 
-**What is recorded: the `offer` row.** Every offer the caller settles, a callback number's, a text's, writes one row to the audit, in the day's hash chain, so `pnpm audit:verify` covers it:
+**What is recorded: the `offer` row.** Every offer the caller settles, a callback number's, a text's, a proposal's ([below](#proposing-a-value-from-a-lookup-offer-facts)), writes one row to the audit, in the day's hash chain, so `pnpm audit:verify` covers it:
 
 ```
 type: offer
-detail: { slot: textTo, source: caller-number, promptId: offer_textTo,
+detail: { slot: textTo, source: caller-number | facts, promptId: offer_textTo,
           said: "Can I text you updates at the number you're calling from, ending in 0142?",
           answer: yes | no | other | none, by: speech | keypad | null, last4: "0142", locale: en-US }
 ```
+
+(`last4` is the number's; a proposal from the facts has none.)
 
 `said` is the line as it was said, since the prompt manifest may change later. `answer` is `yes` (the number offered), `no` (a no with no number of the caller's own), `other` (a number of their own, said or keyed, with or without a no) or `none` (no answer before the ladder left the offer; `by` is then null). An offer asked again is not settled yet, and one dropped unanswered by a switch to another task or a handoff writes no row. The text tool's own row (its gate row, with the slot's param masked) follows when the form completes.
 
 **Consent is the owner's question.** Whether a spoken yes on this line is consent to be texted, under the TCPA or any other law, is a legal question for the line's owner, and the answer differs between informational and marketing texts. The engine records what was asked, in the words said, and what was answered. It does not decide that the answer is consent, and it sends nothing on its own.
 
 Testing it: a corpus line at the offer has `confirm` `yes`, `no` or `unanswered` as for a callback number; write one for each answer a caller gives there, "that's my landline" among them. The engine's own fixture is `packages/dialogwright/src/testing/texting`.
+
+### Proposing a value from a lookup: `offer: facts`
+
+The call-start lookup ([The number the caller is calling from](#the-number-the-caller-is-calling-from-callernumber)) may find something the caller would otherwise have to say: the street on the account for the number calling, say. Any slot can propose it as a yes or no in place of its question:
+
+```yaml
+# slots.yaml
+place:
+  type: text
+  what: the street address where the problem is
+  say: null
+  redact: none
+  offer: facts    # propose a value from the facts in place of ask_place
+```
+
+```yaml
+# prompts.yaml (every locale)
+offer_place:
+  text: I see an account for the number you're calling from. Is this about {place}?
+  interruptible: true
+```
+
+```ts
+// src/app.ts, the facts: keep what the lookup found, and propose it
+facts: {
+  initial: () => ({}),
+  clone: (f) => ({ ...f }),
+  fromCallerLookup(f, value) {
+    const street = (value as { serviceAddress?: unknown } | null)?.serviceAddress;
+    if (typeof street === 'string') (f as Facts).serviceAddress = street;
+  },
+  offers: (f) => ((f as Facts).serviceAddress ? { place: { value: (f as Facts).serviceAddress!, display: (f as Facts).serviceAddress! } } : {}),
+},
+```
+
+When the form would ask `place` and `facts.offers` has a candidate for it, the line says `offer_place` in place of `ask_place`, with the candidate's display as `{place}`, the only variable it is given. It is made at the slot, inside the form, never in the greeting: the caller has said why they called before anything looked up is said back. The offer is the slot's read-back, with the slot still empty, and the caller answers it as they answer a callback number's ([A callback number](#a-callback-number-callernumber)):
+
+| The caller | What happens |
+|---|---|
+| A yes ("yes") | The slot holds the value, confirmed, and the form goes on. What else the yes said ("yes, and nothing works at all") fills the form's other slots. |
+| A no | `ask_place`, with no attempt counted. |
+| Another value, with the no or without it ("no, I'm at my mother's, 7 Birch Lane") | It fills as said, and the form goes on. |
+| Silence, or words that answer neither | The offer again; each counts a turn, and the slot's ladder (its keypad rung, or `ask_place_retry`) comes as it would. |
+
+It is offered once per slot per form: a slot reopened at the summary ("the address is wrong") is asked, never proposed again. With no candidate (the lookup found nothing, was refused or failed, a withheld number, a chat, a value already said with the request) the slot is asked as always.
+
+What it promises, and what it does not:
+
+- **A yes fills that slot and nothing else.** It is a slot's confirmation, never verification: the principal, the identity level and the identity attempts do not change, and an action that needs identity still asks for the factors. `pnpm check` refuses `offer: facts` on an identity factor, and beside `callerNumber` on one slot.
+- **It says as little as works.** What the display says is said to whoever is holding, or forging, the number, before they prove anything. Only what the lookup's level 0 action returns can be there, and the lookup should return the least that works: a street to propose, never a balance, a claim or a name. Name the record in the line no more than you must ("I see an account", never whose).
+- **The model is told what the line said.** The pending read-back in its turn state is the display, and nothing else of the facts; the slot is empty in it until the yes. An app that turns `offer: facts` on changes the request on the offer turns, so a recorded cassette misses there until it is recorded again; an app that does not is unchanged.
+- **The summary still reads it back** before anything is written.
+
+Every settled proposal writes an `offer` row to the audit, as the caller's number's does, with `source: facts` and no `last4`. Its `said` writes the proposed value as the slot's value is recorded (its `redact`, else policy.yaml's `audit:`), so a slot masked by its length shows only that there.
+
+`pnpm check` needs app.yaml's `callerNumber` with a `lookup` (nothing else looks the caller up to propose from), `facts.offers` in the code, and `offer_<slot>` in every locale saying `{<slot>}` and nothing else.
+
+Testing it: a corpus line at the offer is in the form's context, `prompted` the slot, with `confirm` (`yes`, `no` or `unanswered`), seeded with the slot's placeholder proposed; write a yes, a bare no, a no with another value, another value alone and words that answer neither. A scripted call from a number on file (`"callerNumber"`), one not on file, a withheld one and the chat. Replay stands in a number with the last four the frame log kept, so key the lookup's fixture by those. The engine's own fixture is `packages/dialogwright/src/testing/proposals`.
 
 ### Thresholds
 

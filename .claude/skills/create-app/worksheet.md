@@ -31,6 +31,8 @@ Offer to text them? <no, or the slot and what the text is: an offer the caller m
 
 Look the caller up by number? What may the line say before they verify? <no, or the lookup (app.yaml's `callerNumber.lookup`), what it returns, and why each part of it is safe to say to someone who has proven nothing ([patterns.md](patterns.md#looking-the-caller-up-by-number)); never to verify>
 
+Propose a value from what the lookup found? <no, or the slot (`offer: facts`) and its line ("Is this about {place}?"), saying as little as works ([patterns.md](patterns.md#looking-the-caller-up-by-number))>
+
 Do callers often give details for a later step in their first sentence ("book me in for a Saturday morning")? <no, or which: put those slots in the same form as the step they open, so the opener fills them>
 
 ## Actions

@@ -763,6 +763,37 @@ audit:
 - App code reads the numbers with `callerOf(s)` and `calledOf(s)` (`called: true` keeps the number called). Both are null on a chat and with no number.
 - **Never to verify; a gated lookup may propose.** A match changes neither who the caller is nor their level. A factor slot never takes the number, and a form that needs identity still asks for the factors.
 
+**Proposing what the lookup found.** "If we know their address, ask whether it's that one": the slot proposes it as a yes or no, at the slot, inside the form, never in the greeting.
+
+```yaml
+# slots.yaml, on the slot
+place:
+  type: text
+  what: the street address where the problem is
+  say: null
+  redact: none
+  offer: facts
+```
+
+```yaml
+# prompts.yaml (every locale)
+offer_place:
+  text: I see an account for the number you're calling from. Is this about {place}?
+  interruptible: true
+```
+
+```ts
+// src/app.ts, code.facts
+fromCallerLookup(f, value) { /* keep the street the lookup returned, and nothing else */ },
+offers: (f) => (f.serviceAddress ? { place: { value: f.serviceAddress, display: f.serviceAddress } } : {}),
+```
+
+- **Say as little as works.** The line is said to whoever holds, or forges, the number, before they prove anything: it may name only what the lookup's level 0 action returns, and the lookup returns the least that works (a street, never a balance, a claim or a name). The line says "an account", never whose.
+- **A yes fills that slot and nothing else.** Not the principal, the level or the attempts: a form that needs identity still asks for the factors. `pnpm check` refuses `offer: facts` on a factor, and beside `callerNumber`.
+- A no asks the slot's question with no attempt counted; another value said ("no, 7 Birch Lane") fills as said; it is offered once per slot per form, and a slot reopened at the summary is asked. No candidate (nothing found, a withheld number, a chat): the slot is asked as always.
+- `pnpm check` needs the `callerNumber` block with a `lookup`, `facts.offers`, and `offer_<slot>` saying `{<slot>}` and nothing else. Every settled proposal writes an `offer` row (`source: facts`).
+- Scripted calls: a number on file with a yes, a no, another address and silence; a number not on file; a withheld number; the chat; and a yes followed by a request that needs identity. Corpus lines at the offer as for a callback number: a yes, a bare no, a no with another value, another value alone, words that answer neither.
+
 ## What is recorded: `params` and `audit`
 
 Every call is recorded (the gate event, the trace, the console, the audit), so every value it carries must have a stated way of being recorded. Two parts say it: each tool lists its `params` in code, and `policy.yaml` declares `audit` for each of those that is not a slot with a redact setting.
