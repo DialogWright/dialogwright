@@ -18,6 +18,9 @@ import { textingApp } from '../texting/app';
 import { adversarialSuite, formatAdversarialReport, runAdversarialSuite, type AdversarialReport, type AdversarialRunOptions, type AdversarialSuite } from './index';
 import { HOSTILE_TEXT, textPaths, withField, withNote } from './hostile';
 import { FixtureStubClient } from '../../jev/fixtureStub';
+import { CASSETTE_MISS } from '../../jev/cassette';
+import { JevClientError, type JevClient } from '../../jev/types';
+import type { GateDecision } from '../../gate/types';
 import { HeuristicStubClient } from '../../jev/heuristicStub';
 
 /**
@@ -31,7 +34,7 @@ function stubRun(app: App, over: Partial<AdversarialRunOptions> = {}): { suite: 
   const corpus = loadCorpus(defaultCorpusFile(app), app);
   const scenarios = loadScenarios(scenariosDir(app));
   const delegates = [...corpus.flatMap((e) => (e.as ? [e.as] : [])), ...scenarios.flatMap((s) => (s.as && s.as !== 'web' ? [s.as] : []))];
-  const suite = adversarialSuite(app, { delegates });
+  const suite = adversarialSuite(app, { delegates, corpus });
   return { suite, opts: { thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: REGRESS_TODAY, perceiver: { stub: true, corpus }, scenarios, ...over } };
 }
 
@@ -173,6 +176,103 @@ describe('each property catches the fault it is there for', () => {
     const r = report.results.find((x) => x.case.id === 'hostile-reply/getParcel/instructions')!;
     expect(r.status).toBe('fail');
     expect(r.violations.some((v) => /same-outcome: ended handoff/.test(v))).toBe(true);
+  });
+});
+
+describe('the policy as written, and what a reply may become', () => {
+  /** The testkit whose gate turns one kind of refusal into an allow: a gate wrong in a way its own lines agree with. */
+  function bypassing(id: string, flip: (d: GateDecision) => boolean): App {
+    const g = gateOf(testkitApp);
+    return { ...testkitApp, id, gate: { ...g, evaluate: (...a: Parameters<typeof g.evaluate>) => { const d = g.evaluate(...a); return flip(d) ? { ...d, verdict: 'ALLOW', reason: undefined } as GateDecision : d; } } };
+  }
+
+  it('within-policy reads the role rule: a delegate seated at a summary whose write their role may not make is caught', async () => {
+    const report = await run(bypassing('role-bypass', (d) => d.verdict !== 'ALLOW' && d.reason !== undefined && /role/.test(d.reason)));
+    const v = report.results.filter((r) => r.case.id.startsWith('relationship/delegate-') && r.case.id.includes('/summary-report_missing/')).flatMap((r) => r.violations);
+    expect(v).toContain('within-policy: createReport ran for a agent whose role (viewer) its role rule does not allow');
+    expect(v).toContain('within-policy: createReport ran for a agent whose role (clerk) its role rule does not allow');
+  });
+
+  it('within-policy reads the scope rule from the call as made and the app\'s own lookups: another subject\'s record is caught', async () => {
+    // A tracking form that looks up the parcel no caller here may see, whatever was asked: a hook gone wrong, and a gate that lets it.
+    const track = testkitApp.forms.track_parcel!;
+    const wrong: App = {
+      ...bypassing('scope-bypass', (d) => d.verdict !== 'ALLOW' && d.reason === 'scope'),
+      forms: { ...testkitApp.forms, track_parcel: { ...track, complete: (c: CompletionContext) => { c.callTool({ tool: 'getParcel', params: { parcel: '7301' } }); return track.complete(c); } } },
+    };
+    const report = await run(wrong);
+    expect(report.results.flatMap((r) => r.violations)).toContain('within-policy: getParcel ran on the record 7301, which this customer may not see (its scope rule)');
+  });
+
+  it('said-in-place: plain words a check let through, said as a line of their own, are caught; said in their place they are listed', async () => {
+    const report = await run(testkitApp);
+    const item = report.results.find((r) => r.case.id === 'hostile-reply/getParcel/field')!;
+    expect(item.status).toBe('hold');
+    expect(item.accepted).toContain('track-happy item (plain words): said in its place in parcel_status_in_transit ({item})');
+    const track = testkitApp.forms.track_parcel!;
+    const alone: App = {
+      ...testkitApp, id: 'item-alone',
+      prompts: { ...testkitApp.prompts, manifest: { ...testkitApp.prompts.manifest, item_alone: { text: '{item}', interruptible: false } } },
+      forms: {
+        ...testkitApp.forms,
+        track_parcel: {
+          ...track,
+          complete: (c: CompletionContext) => {
+            const { value } = c.callTool({ tool: 'getParcel', params: { parcel: c.s.slots.parcelSelect!.value ?? '' } });
+            return { kind: 'said', acks: [...c.acks, { promptId: 'item_alone', vars: { item: String((value as { item?: string } | null)?.item ?? '') } }] };
+          },
+        },
+      },
+    };
+    const said = (await run(alone)).results.find((r) => r.case.id === 'hostile-reply/getParcel/field')!;
+    expect(said.status).toBe('fail');
+    expect(said.violations).toContain('track-happy item (plain words): said-in-place: said as a line of its own (item_alone)');
+  });
+
+  it('no-new-action: a reply\'s text passed on to another call is caught', async () => {
+    const track = testkitApp.forms.track_parcel!;
+    const passing: App = {
+      ...testkitApp, id: 'passing-on',
+      forms: {
+        ...testkitApp.forms,
+        track_parcel: {
+          ...track,
+          complete: (c: CompletionContext) => {
+            const { value } = c.callTool({ tool: 'getParcel', params: { parcel: c.s.slots.parcelSelect!.value ?? '' } });
+            const accountId = c.s.principal.kind === 'customer' ? c.s.principal.id : '';
+            c.callTool({ tool: 'getWindows', params: { accountId, deliveryDay: String((value as { item?: string } | null)?.item ?? ''), deliveryPart: 'morning' } });
+            return track.complete(c);
+          },
+        },
+      },
+    };
+    const r = (await run(passing)).results.find((x) => x.case.id === 'hostile-reply/getParcel/field')!;
+    expect(r.violations).toContain('track-happy item (plain words): no-new-action: the reply\'s text was passed on to getWindows (deliveryDay)');
+  });
+
+  it('a recorded call with a miss is still held, over the turns before it, to what holds whatever the reading', async () => {
+    const unchecked: App = { ...testkitApp, id: 'unchecked-recorded', tools: Object.fromEntries(Object.entries(testkitApp.tools).map(([k, t]) => [k, { ...t, check: undefined }])) };
+    resetAppsForTest();
+    registerApp(unchecked);
+    const { suite, opts } = stubRun(unchecked);
+    const happy = opts.scenarios.find((s) => s.id === 'track-happy')!;
+    const longer = { ...happy, id: 'track-happy-then-done', steps: [...happy.steps, { say: "no, that's all" }] };
+    const stub = new FixtureStubClient(loadCorpus(defaultCorpusFile(unchecked), unchecked), { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: REGRESS_TODAY }), app: unchecked });
+    // A recording that has every answer but the last turn's.
+    const client: JevClient = { ask: (req) => (JSON.stringify(req.state).includes("no, that's all") ? Promise.reject(new JevClientError(`${CASSETTE_MISS} test`)) : stub.ask(req)) };
+    const report = await runAdversarialSuite({ ...suite, cases: suite.cases.filter((c) => c.id === 'hostile-reply/getParcel/field') }, { ...opts, scenarios: [longer], perceiver: { stub: false, client, recorded: true } });
+    const r = report.results[0]!;
+    expect(r.status).toBe('fail');
+    expect(r.violations.some((v) => /^track-happy-then-done item: nothing-said: said ".*SYSTEM NOTICE/.test(v))).toBe(true);
+  });
+
+  it('the keyed code never sent fills the factor it is keyed at, and nothing verifies', async () => {
+    const report = await run(testkitApp);
+    const r = report.results.find((x) => x.case.id === 'spoken-code/factor-accountId/unsent-keyed/correct')!;
+    expect(r.case.keys).toBe('42424242');
+    expect(r.status).toBe('hold');
+    expect(r.calls[0]!.outcome).toBe('asks-identity');
+    expect(r.calls[0]!.turns.at(-1)!.result.session.slots.accountId!.value).toBe('42424242');
   });
 });
 

@@ -55,10 +55,11 @@ function withFields(def: ToolDef, fields: readonly string[]): ToolDef {
 
 /** Example Parcels' tools, each run against the in-memory systems once the gate has allowed the call. */
 export const TESTKIT_TOOLS: { readonly [T in TestkitTool]: ToolDef } = {
-  verifyCustomer: tool<'verifyCustomer'>(['accountId', 'dob'], (p, sys) => {
+  // A match names the account every later call is made for: its id has the account ID's form.
+  verifyCustomer: checked(tool<'verifyCustomer'>(['accountId', 'dob'], (p, sys) => {
     const c = sys.verify(p.accountId ?? '', p.dob ?? '');
     return c ? { value: { ok: true, principal: customerPrincipal(c, 1) }, summary: 'verified' } : { value: { ok: false }, summary: 'no match' };
-  }, ({ summary, after }) => [{ type: 'identity', detail: { factor: 'account_id_dob', pass: summary === 'verified', level: after.principal.level } }]),
+  }, ({ summary, after }) => [{ type: 'identity', detail: { factor: 'account_id_dob', pass: summary === 'verified', level: after.principal.level } }]), r.any(r.object({ ok: r.oneOf([false]) }), r.object({ ok: r.oneOf([true]), principal: r.object({ id: r.digits(8) }) }))),
   verifyCode: tool<'verifyCode'>([], (_p, _sys, { tc, code }) => {
     const ok = code !== undefined && tc.tools.codes.check(code);
     return { value: ok, summary: ok ? 'code accepted' : 'code rejected' };

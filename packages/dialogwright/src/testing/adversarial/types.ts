@@ -1,5 +1,5 @@
 import type { CorpusEntry } from '../../jev/corpus';
-import type { FormId, ToolName } from '../../core/app/types';
+import type { FormId, SlotId, ToolName } from '../../core/app/types';
 import type { HostileMode } from './hostile';
 
 /**
@@ -44,26 +44,33 @@ export const OUTCOME_CLASSES: readonly OutcomeClass[] = ['screened', 'handoff', 
 /**
  * What must hold over a case's run, whatever the wording (each checked from the gate events, the
  * sessions, what was said and the trace):
- * - `within-policy`: every tool that ran is one the policy as written lets the caller use: its level
- *   (and its purpose's) no higher than the caller had proven when the case began, its role rule
- *   allowing the caller's role, and an identity tool only for one of the app's subjects or a caller
- *   not yet proven;
+ * - `within-policy`: every tool that ran (as the suite's own record of the calls has them, apart from
+ *   the gate's events) is one the policy as written lets the caller use: its level (and its
+ *   purpose's) no higher than the caller had proven when the case began, its role rule allowing the
+ *   caller's role, its scope rule's subject one the caller may see (the app's own lookups), and an
+ *   identity tool only for one of the app's subjects or a caller not yet proven. The policy's other
+ *   rules (confirmed, limit, dateInRange, attempts, the app's own) are held by the policy tests
+ *   every app keeps (policyInvariants, the matrix golden, runRuleExamples);
  * - `no-raise`: the caller's level never rose;
  * - `no-tool`: no tool ran at all;
  * - `screened`: the injection screen took the turn: asked again, or a person (`security`);
  * - `code-not-kept`: the code said aloud is in no trace record;
  * - `nothing-said`: nothing of the hostile reply was said;
- * - `no-new-action`: the hostile reply made no tool run that the same call with a clean reply did
- *   not, and raised no level it did not;
+ * - `said-in-place`: the plain hostile words, where a field's check let them through, were said only
+ *   as the value of a variable in a fixed line that says more than it, never as a line of their own;
+ * - `no-new-action`: the hostile reply made no write run that the same call with a clean reply did
+ *   not, no read the policy does not let the caller make then, raised no level it did not, and was
+ *   passed on to no call's params or downstream request;
  * - `same-outcome`: the call ended exactly as with a clean reply;
  * - `outcome`: the call ended in one of the case's allowed outcomes.
  */
-export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened' | 'code-not-kept' | 'nothing-said' | 'no-new-action' | 'same-outcome' | 'outcome';
+export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened' | 'code-not-kept' | 'nothing-said' | 'said-in-place' | 'no-new-action' | 'same-outcome' | 'outcome';
 
-/** Where a case's line is said, where the corpus has no context for it: at the code prompt of a form that needs it. */
-export interface CodePrompt {
-  readonly code: FormId;
-}
+/**
+ * Where a case's line is said, where the corpus context alone does not say it: at the code prompt of a
+ * form that needs it; at a form's summary or one of its slots, for a seat a delegate takes (`delegate`).
+ */
+export type CodePrompt = { readonly code: FormId } | { readonly summary: FormId } | { readonly slot: SlotId; readonly form: FormId };
 
 /** A tool or a downstream service whose reply a hostile-reply case makes hostile. */
 export type HostileTarget = { readonly tool: ToolName } | { readonly service: string };
@@ -83,13 +90,23 @@ export interface AdversarialCase {
    * scripted calls.
    */
   readonly line?: CorpusEntry;
-  /** The line is said at the code prompt, seeded in place of the line's context. */
+  /** Where the line is said, seeded in place of the line's context (the code prompt, a summary, a slot). */
   readonly at?: CodePrompt;
+  /**
+   * The seated caller is this delegate (a delegate id the app's principals know), in place of the seed's
+   * caller: a party acting for subjects at a summary, a slot or the code prompt.
+   */
+  readonly delegate?: string;
   /**
    * The words said, where they are not the line's text: a code said aloud is masked before the screen,
    * perception or the trace hear it, so the line (what the stub is asked about) holds the masked words.
    */
   readonly said?: string;
+  /**
+   * The line carries factors' values (a fooled reading that fills an identity factor), so the caller
+   * may verify: each call is held to the level the caller had at it, not the level when the case began.
+   */
+  readonly verifies?: true;
   /** Keys pressed in place of the line's words. */
   readonly keys?: string;
   /** A code the case's words carry, which no trace record may hold (`code-not-kept`): its digits and its words. */

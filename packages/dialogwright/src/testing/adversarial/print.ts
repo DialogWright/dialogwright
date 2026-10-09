@@ -15,6 +15,12 @@ export function formatAdversarialReport(report: AdversarialReport, opts: { notes
     lines.push(`model reading, adversarial ${r.case.id}: ${r.case.about}`);
     for (const v of r.readings!) lines.push(`  ${v}`);
   }
+  // The plain hostile words a free-text field let through, said in their own place in a fixed line:
+  // the residual risk the guide names, listed so it is seen, failing nothing.
+  for (const r of report.results.filter((x) => (x.accepted?.length ?? 0) > 0)) {
+    lines.push(`said in its place, adversarial ${r.case.id}:`);
+    for (const a of r.accepted!) lines.push(`  ${a}`);
+  }
   const count = (status: CaseResult['status']): number => by(status).length;
   const families = FAMILIES.map((f) => {
     const of = report.results.filter((r) => r.case.family === f);
@@ -58,5 +64,6 @@ export function adversarialTranscript(r: CaseResult): string[] {
   lines.push('', `  ${r.status}${r.note ? `: ${r.note}` : ''}`);
   for (const v of r.violations) lines.push(`    ${v}`);
   for (const v of r.readings ?? []) lines.push(`    model reading: ${v}`);
+  for (const a of r.accepted ?? []) lines.push(`    said in its place: ${a}`);
   return lines;
 }

@@ -87,6 +87,8 @@ export const TOOLS: Record<string, ToolDef> = {
       const found = ACCOUNTS.filter((a) => a.phone === call.params.callerNumber).map((a) => a.accountId);
       return found.length === 0 ? { value: null, summary: 'no account for the number' } : { value: { accountIds: found }, summary: `${found.length} account${found.length === 1 ? '' : 's'} on file` };
     },
+    // The accounts the match stands in for, which the verify call is then made with: account numbers.
+    check: replyShape.nullable(replyShape.object({ accountIds: replyShape.list(replyShape.digits(8)) })),
   },
   verifyCustomer: {
     params: ['accountId', 'dob'],
@@ -97,6 +99,8 @@ export const TOOLS: Record<string, ToolDef> = {
         : { ok: false };
       return { value, summary: account ? 'verified' : 'no match' };
     },
+    // A match names the account every later call is made for: its id has the account number's form.
+    check: replyShape.any(replyShape.object({ ok: replyShape.oneOf([false]) }), replyShape.object({ ok: replyShape.oneOf([true]), principal: replyShape.object({ id: replyShape.digits(8) }) })),
     // The identity row: passed or failed, the level reached, and how (by caller ID, where the match
     // stood in for the account number). Never the values.
     audit({ summary, after }) {

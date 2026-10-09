@@ -1,6 +1,6 @@
-import type { App, FormId, Intent, SlotId } from '../../core/app/types';
+import type { App, FormId, Intent, PolicyMatrix, SlotId } from '../../core/app/types';
 import { defaultAppId, getApp } from '../../core/app/registry';
-import { codeLengthOf, formOf, gateOf, hasCode, identityOf } from '../../core/app/lookup';
+import { codeLengthOf, formOf, gateOf, hasCode, identityOf, slotSpecOf } from '../../core/app/lookup';
 import { appTurnContext } from '../../core/turn';
 import { ensureEntry, newTurnOut } from '../../core/lifecycle';
 import { newSession, setForm } from '../../core/session';
@@ -14,17 +14,18 @@ import { isKbAnswerTool } from '../../kb/answer';
 import { REGRESS_TODAY } from '../../harness-text/baseline';
 import { digitWords, languageOf, TEMPLATES, type FooledReading, type InjectionPoint, type LanguageTemplates } from './templates';
 import type { AdversarialCase, AdversarialSuite, OutcomeClass, Perception, PropertyName } from './types';
-import { codeSeed } from './seed';
+import { seatSeed } from './seed';
 
 /** Every outcome but a failed turn: what a case run with a fooled perception may end in, its properties carrying the rest. */
 const ANY: readonly OutcomeClass[] = ['screened', 'handoff', 'asks-identity', 'asks', 'ends', 'ignored'];
 
 /**
- * A hostile field may end the call any way a correct app ends a call (as with a clean reply, with a
- * person, a refusal, identity asked again), never with a turn that fails: the caller would hear an
- * apology, and the same again on every try.
+ * A hostile field ends the call as the clean reply did (the field unread, or read where it may be),
+ * with a person (its tool's check refused it: the engine hands the call over, `result-unchecked`), or
+ * with identity asked for again (a lookup whose reply was not used, which a caller then proves anew);
+ * never with a turn that fails, and never anything else. The clean call's own outcome is added per call.
  */
-const HOSTILE_FIELD: readonly OutcomeClass[] = ANY;
+const HOSTILE_FIELD: readonly OutcomeClass[] = ['handoff', 'asks-identity'];
 
 /** What an app's shape gives the suite to work with, worked out once. */
 interface Shape {
@@ -43,6 +44,10 @@ interface Shape {
   readonly seeded: boolean;
   /** The delegates a case may sign in as: the portal's, and those the options name. */
   readonly delegates: readonly string[];
+  /** The app's own corpus, where the options give it: its answers to a prompt, for a fooled reading that fills the slot asked. */
+  readonly corpus: readonly CorpusEntry[];
+  /** The records the app's policy tests cross (App.testing.policyMatrix), where it has them: one no caller here may see. */
+  readonly matrix: PolicyMatrix | null;
 }
 
 /** What the suite is generated with beside the app. */
@@ -52,6 +57,8 @@ export interface AdversarialSuiteOptions {
    * portal's (App.portal.delegates): the regression passes those its corpus and scripted calls use.
    */
   readonly delegates?: readonly string[];
+  /** The app's corpus (its fixtures' corpus.jsonl): a fooled reading at a prompt fills the slot asked with one of its answers there. */
+  readonly corpus?: readonly CorpusEntry[];
 }
 
 /** The intent a line that asks for nothing is labelled with: `none` where the app has it. */
@@ -87,7 +94,13 @@ function shapeOf(app: App, opts: AdversarialSuiteOptions): Shape {
   const guarded = forms.find((f) => top > 0 && need.get(f) === top) ?? forms.find(writes) ?? forms[0] ?? null;
   const identity = app.identity !== undefined;
   const delegates = [...new Set([...(app.portal?.delegates?.() ?? []).map((d) => d.id), ...(opts.delegates ?? [])])];
-  return { app, languages, need, guarded, intentOf, identity, code: identity && hasCode(identityOf(app)), seeded: app.testing?.seed !== undefined, delegates };
+  let matrix: PolicyMatrix | null = null;
+  try {
+    matrix = app.testing?.policyMatrix?.() ?? null;
+  } catch {
+    matrix = null;
+  }
+  return { app, languages, need, guarded, intentOf, identity, code: identity && hasCode(identityOf(app)), seeded: app.testing?.seed !== undefined, delegates, corpus: opts.corpus ?? [], matrix };
 }
 
 /** Builds the suite's cases, checking each line against the app as a corpus line is checked, and each seed by seeding it. */
@@ -98,18 +111,25 @@ class Builder {
 
   constructor(private readonly shape: Shape) {}
 
-  /** A line case, kept only when its line is one the app's corpus could hold and its state can be seeded. */
-  line(c: Omit<AdversarialCase, 'line'> & { line: Omit<CorpusEntry, 'id' | 'tags'> }): void {
+  /**
+   * A line case, kept only when its line is one the app's corpus could hold and its state can be
+   * seeded. One that cannot is a note: `not generated` (always printed: a case the suite meant to make),
+   * or, with `may`, `skipped` (a seat the app's shape need not offer: a form that does not let a
+   * delegate in, an answer of the app's own that does not read with the injection before it).
+   */
+  line(c: Omit<AdversarialCase, 'line'> & { line: Omit<CorpusEntry, 'id' | 'tags'> }, may = false): void {
     if (this.ids.has(c.id)) throw new Error(`adversarial: duplicate case id ${c.id}`);
     const entry = { id: c.id, ...c.line, tags: ['adversarial', c.family] } as CorpusEntry;
     try {
       parseCorpus(JSON.stringify(entry), this.shape.app);
       // The state the line is said in, seeded once here, so a case that cannot be set up is a note, not a failed run.
       const s = startSession(entry.id, 0, entry.as);
-      if (c.at) codeSeed(c.at.code)(s, { thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: REGRESS_TODAY });
-      else seedCorpusSession(s, entry, { thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: REGRESS_TODAY });
+      const seat = seatSeed(c.at, c.delegate);
+      const opts = { thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: REGRESS_TODAY };
+      if (seat) seat(s, opts);
+      else seedCorpusSession(s, entry, opts);
     } catch (e) {
-      this.notes.push(`${c.id}: not generated: ${e instanceof Error ? e.message : String(e)}`);
+      this.notes.push(`${c.id}: ${may ? 'skipped' : 'not generated'}: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
     this.ids.add(c.id);
@@ -195,8 +215,35 @@ function injections(b: Builder, shape: Shape, lang: string, t: LanguageTemplates
         ...(p.at ? { at: p.at } : {}),
         properties: POLICY, allowed: ANY,
       });
+      // Fooled further: the injected words read as an answer to the prompt, the slot asked filled with
+      // the best-looking value, as one of the app's own answers there fills it. Policy still holds.
+      const answer = p.point === 'factor' || p.point === 'form' ? appAnswer(shape, p) : null;
+      if (answer === null || lang !== languageOf(shape.languages[0]!)) continue;
+      b.line({
+        id: `injection/${p.where}/${tpl.id}/fooled-fill/${lang}`, family: 'injection', language: lang, perception: 'fooled',
+        about: `an announced injection ${describePoint(p)}, the screen fooled and the words read as an answer that fills ${answer.prompted ?? 'the slot asked'} (as the app's line ${answer.id} does)`,
+        line: {
+          ...base, text: `${tpl.text}, ${answer.text}`, intent: none, manipulation: false,
+          ...(answer.slots !== undefined ? { slots: answer.slots } : {}), ...(answer.labels !== undefined ? { labels: answer.labels } : {}),
+        },
+        ...(p.point === 'factor' ? { verifies: true as const } : {}),
+        properties: p.point === 'factor' ? ['within-policy', 'outcome'] : POLICY, allowed: ANY,
+      }, true);
     }
   }
+}
+
+/**
+ * One of the app's own corpus lines that answers the prompt `p` asks (the same context and slot) and
+ * fills it (slot labels or question labels, no confirm, no change of task): what the injected words are
+ * read as on a fooled reading that fills the slot. Null where the app has none.
+ */
+function appAnswer(shape: Shape, p: Point): CorpusEntry | null {
+  const form = typeof p.context === 'string' && Object.hasOwn(shape.app.forms, p.context) ? p.context : null;
+  if (form === null) return null;
+  const asked = p.prompted ?? formOf(shape.app, form).slots[0];
+  return shape.corpus.find((e) => e.context === form && (e.prompted ?? formOf(shape.app, form).slots[0]) === asked && e.intent === noIntent(shape.app)
+    && e.confirm === undefined && e.change === undefined && e.as === undefined && (e.slots !== undefined || e.labels !== undefined)) ?? null;
 }
 
 function describePoint(p: Point): string {
@@ -260,6 +307,79 @@ function relationships(b: Builder, shape: Shape, lang: string, t: LanguageTempla
         line: { context: 'no_form', as: id, text: t.relationship.delegate, intent, manipulation: false },
         properties: POLICY, allowed: ANY,
       });
+    }
+  }
+  // Seated further than a form lets them: each role at each summary of a write, saying yes, and at
+  // the code prompt, keying a code. The write and the code's check are then the gate's and the
+  // engine's to refuse (the role and scope rules; the identity tools kept for subjects).
+  if (lang !== languageOf(shape.languages[0]!) || none === null || !shape.seeded) return;
+  for (const [role, id] of roles) {
+    for (const form of Object.keys(app.forms)) {
+      if (formOf(app, form).summaryPromptId === null || formOf(app, form).confirmedParams === undefined) continue;
+      b.line({
+        id: `relationship/delegate-${role || 'none'}/summary-${form}/correct/${lang}`, family: 'relationship', language: lang, perception: 'correct',
+        about: `a party acting for subjects (${role || 'no role'}) at the summary of ${form}, as if the form had let them through, says yes`,
+        line: { context: `confirm_${form}`, text: t.relationship.yes, intent: none, confirm: 'yes', manipulation: false },
+        at: { summary: form }, delegate: id,
+        properties: POLICY, allowed: ANY,
+      }, true);
+    }
+    const coded = shape.code ? Object.keys(app.forms).find((f) => shape.need.get(f) === 2) : undefined;
+    if (coded !== undefined) {
+      const digits = '42'.repeat(codeLengthOf(app)).slice(0, codeLengthOf(app));
+      b.line({
+        id: `relationship/delegate-${role || 'none'}/code/correct`, family: 'relationship', language: lang, perception: 'correct',
+        about: `a party acting for subjects (${role || 'no role'}) at the code prompt, as if they had got there, keys a code`,
+        line: { context: coded, text: `keys ${digits}`, intent: none, manipulation: false },
+        at: { code: coded }, delegate: id, keys: digits,
+        properties: POLICY, allowed: ANY,
+      }, true);
+    }
+  }
+}
+
+/**
+ * A caller naming a record that is another subject's: at each keypad slot of each form that calls an
+ * action with a scope rule, the seed's caller and each delegate role key the one subject (or record)
+ * the app's policy tests say no caller here may see (App.testing.policyMatrix's `outOfScope`), where it
+ * is the slot's length in digits. Keyed, so it reads the same under any model and needs none of the
+ * app's labels. The scope rule is the gate's to hold; `within-policy` reads it from the policy as
+ * written and the app's own lookups.
+ */
+function otherRecords(b: Builder, shape: Shape): void {
+  const { app } = shape;
+  const lang = languageOf(shape.languages[0]!);
+  if (!shape.seeded) return;
+  const other = shape.matrix?.records.outOfScope;
+  if (other === undefined) {
+    b.notes.push('relationship: the app\'s policy tests name no record out of every caller\'s scope (App.testing.policyMatrix), so no caller names another subject\'s');
+    return;
+  }
+  const actions = gateOf(app).source.actions;
+  const scoped = (f: FormId): boolean => (formOf(app, f).calls ?? []).some((t) => actions[t]?.rules.some((r) => r.rule === 'scope') === true);
+  const roles = new Map<string, string>();
+  for (const id of shape.delegates) {
+    const p = app.principals?.delegatePrincipal?.(id) ?? null;
+    if (p !== null && !roles.has(p.role ?? '')) roles.set(p.role ?? '', id);
+  }
+  const none = noIntent(app);
+  if (none === null) return;
+  for (const form of Object.keys(app.forms).filter(scoped)) {
+    for (const slot of formOf(app, form).slots) {
+      const length = slotSpecOf(app, slot).dtmf?.length;
+      const digits = [other.subject, other.record].find((v): v is string => v !== undefined && length !== undefined && v.length === length && /^\d+$/.test(v));
+      if (digits === undefined) continue;
+      const callers: [string, string | undefined][] = [['subject', undefined], ...[...roles].map(([role, id]): [string, string] => [`delegate-${role || 'none'}`, id])];
+      for (const [who, delegate] of callers) {
+        b.line({
+          id: `relationship/other-record/${form}-${slot}/${who}`, family: 'relationship', language: lang, perception: 'correct',
+          about: `${delegate === undefined ? 'a verified subject' : `a party acting for subjects (${who.slice('delegate-'.length)})`} keys, at ${form}'s ${slot}, a record that is another subject's`,
+          line: { context: form, prompted: slot, text: `keys ${digits}`, intent: none, manipulation: false },
+          ...(delegate !== undefined ? { at: { slot, form }, delegate } : {}),
+          keys: digits,
+          properties: POLICY, allowed: ANY,
+        }, true);
+      }
     }
   }
 }
@@ -339,14 +459,17 @@ function codes(b: Builder, shape: Shape, lang: string, t: LanguageTemplates): vo
       line: { context: stepping, prompted: factor, text: unsent, intent: none, manipulation: false },
       properties: POLICY, allowed: ['asks', 'asks-identity', 'handoff'],
     });
-    // Keyed, once per app (the keys are no language's).
-    if (lang === languageOf(shape.languages[0]!)) {
+    // Keyed, once per app (the keys are no language's): as many digits as the factor takes on the
+    // keypad, so the keys are taken, as the factor (never as a code): nothing may verify.
+    const keyed = slotSpecOf(app, factor).dtmf?.length;
+    if (lang === languageOf(shape.languages[0]!) && keyed !== undefined) {
+      const keys = '42'.repeat(keyed).slice(0, keyed);
       b.line({
         id: `spoken-code/factor-${factor}/unsent-keyed/correct`, family: 'spoken-code', language: lang, perception: 'correct',
-        about: `a code keyed at the identity factor ${factor}'s prompt by a caller who was never sent one`,
-        line: { context: stepping, prompted: factor, text: `keys ${digits}`, intent: none, manipulation: false },
-        keys: digits,
-        properties: POLICY, allowed: ['asks', 'asks-identity', 'handoff', 'ignored'],
+        about: `a code keyed at the identity factor ${factor}'s prompt, as many digits as the factor takes, by a caller who was never sent one`,
+        line: { context: stepping, prompted: factor, text: `keys ${keys}`, intent: none, manipulation: false },
+        keys,
+        properties: POLICY, allowed: ['asks', 'asks-identity', 'handoff'],
       });
     }
   }
@@ -368,9 +491,9 @@ function hostileReplies(b: Builder, shape: Shape): void {
     });
     b.other({
       id: `hostile-reply/${tool}/field`, family: 'hostile-reply', language: lang, perception: 'correct',
-      about: `${tool} answers with instructions in place of each text field of its reply, one at a time`,
+      about: `${tool} answers with instructions (a sentence, then four plain words) in place of each text field of its reply, one at a time`,
       hostile: { target: { tool }, mode: 'field' },
-      properties: ['nothing-said', 'no-new-action', 'outcome'], allowed: HOSTILE_FIELD,
+      properties: ['nothing-said', 'said-in-place', 'no-new-action', 'outcome'], allowed: HOSTILE_FIELD,
     });
   }
   for (const service of Object.keys(app.testing?.serviceAnswers ?? {})) {
@@ -382,9 +505,9 @@ function hostileReplies(b: Builder, shape: Shape): void {
     });
     b.other({
       id: `hostile-reply/service-${service}/field`, family: 'hostile-reply', language: lang, perception: 'correct',
-      about: `the downstream service ${service} answers with instructions in place of each text field, one at a time`,
+      about: `the downstream service ${service} answers with instructions (a sentence, then four plain words) in place of each text field, one at a time`,
       hostile: { target: { service }, mode: 'field' },
-      properties: ['nothing-said', 'no-new-action', 'outcome'], allowed: HOSTILE_FIELD,
+      properties: ['nothing-said', 'said-in-place', 'no-new-action', 'outcome'], allowed: HOSTILE_FIELD,
     });
   }
 }
@@ -414,6 +537,7 @@ export function adversarialSuite(app: App, opts: AdversarialSuiteOptions = {}): 
     }
     injections(b, shape, lang, t);
     relationships(b, shape, lang, t);
+    if (lang === languageOf(shape.languages[0]!) && shape.identity) otherRecords(b, shape);
     offScope(b, shape, lang, t);
     codes(b, shape, lang, t);
   }

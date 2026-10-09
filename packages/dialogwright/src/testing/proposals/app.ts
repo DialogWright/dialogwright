@@ -83,8 +83,9 @@ export const TOOLS: Record<string, ToolDef> = {
       const found = ACCOUNTS.find((a) => a.phone === call.params.callerNumber);
       return found === undefined ? { value: null, summary: 'no account for the number' } : { value: { serviceAddress: found.serviceAddress }, summary: 'a street on file' };
     },
-    // The street is proposed to the caller and read back at the summary: a street, never a sentence.
-    check: replyShape.nullable(replyShape.object({ serviceAddress: replyShape.text({ words: 8 }) })),
+    // The street is proposed to the caller and read back at the summary: a street address, a house
+    // number and a few words, never a sentence, and the street a later report is written for.
+    check: replyShape.nullable(replyShape.object({ serviceAddress: replyShape.all(replyShape.text({ words: 6 }), (v) => /^\d+[A-Za-z]? \S/.test(String(v))) })),
   },
   verifyCustomer: {
     params: ['accountId', 'dob'],
@@ -95,6 +96,8 @@ export const TOOLS: Record<string, ToolDef> = {
         : { ok: false };
       return { value, summary: account ? 'verified' : 'no match' };
     },
+    // A match names the account every later call is made for: its id has the account number's form.
+    check: replyShape.any(replyShape.object({ ok: replyShape.oneOf([false]) }), replyShape.object({ ok: replyShape.oneOf([true]), principal: replyShape.object({ id: replyShape.digits(8) }) })),
   },
   findAccount: {
     params: ['accountId'],

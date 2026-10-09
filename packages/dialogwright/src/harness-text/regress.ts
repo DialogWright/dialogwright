@@ -254,7 +254,7 @@ export async function adversarialRun(
 ): Promise<AdversarialReport> {
   const app = getApp(defaultAppId());
   const delegates = [...corpus.flatMap((e) => (e.as ? [e.as] : [])), ...scenarios.flatMap((s) => (s.as && s.as !== 'web' ? [s.as] : []))];
-  const suite = adversarialSuite(app, { delegates });
+  const suite = adversarialSuite(app, { delegates, corpus });
   const cases = only === undefined ? suite.cases : only.flatMap((prefix) => {
     const found = suite.cases.filter((c) => c.id.startsWith(prefix));
     if (found.length > 0) return found;

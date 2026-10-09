@@ -1,12 +1,15 @@
 import type { App, ToolName } from '../../core/app/types';
 import { defaultAppId, getApp } from '../../core/app/registry';
 import { gateOf, identityOf } from '../../core/app/lookup';
-import { demoTools, type ToolRun } from '../../core/tools';
+import { writes } from '../../core/lifecycle';
+import { demoTools, type Tools, type ToolRun } from '../../core/tools';
 import type { Thresholds } from '../../core/thresholds';
 import type { ScreenMode } from '../../core/screen';
-import { isAnonymous, type Principal } from '../../gate/types';
+import type { Decision } from '../../core/decision';
+import { isAnonymous, type GateLookups, type Principal, type ToolCall } from '../../gate/types';
 import { keyEvents } from '../../channel/events';
 import { sayText } from '../../channel/actions';
+import { localePromptEntry, promptText } from '../../prompts/render';
 import { FixtureStubClient } from '../../jev/fixtureStub';
 import { HeuristicStubClient } from '../../jev/heuristicStub';
 import { isCassetteMiss } from '../../jev/cassette';
@@ -16,8 +19,8 @@ import {
   outcomeOf, runScenario, runSeeded, runTurn, saidEvent,
   type Outcome, type Scenario, type ScenarioRunOptions, type TurnRun, type TurnRunner,
 } from '../../harness-text/runner';
-import { hostileAnswer, hostileRun, saysHostile, textPaths, type ValuePath } from './hostile';
-import { codeSeed } from './seed';
+import { HOSTILE_MARKERS, HOSTILE_PLAIN, HOSTILE_VALUES, hostileAnswer, hostileRun, saysHostile, textPaths, type HostileValue, type ValuePath } from './hostile';
+import { seatSeed } from './seed';
 import type { AdversarialCase, AdversarialSuite, OutcomeClass, PropertyName } from './types';
 
 /**
@@ -33,7 +36,7 @@ export interface AdversarialRunOptions {
    * scripted calls from the app's corpus (`corpus`), as the stub regression answers them. Otherwise a
    * client that reads any words (a model, or its recording): only the `correct` cases run, and with
    * `recorded`, a case any of whose turns the recording has no answer for is listed as not yet
-   * recorded rather than checked.
+   * recorded, once what must hold whatever the reading has been checked over the turns before it.
    */
   readonly perceiver: { readonly stub: true; readonly corpus: readonly CorpusEntry[] } | { readonly stub: false; readonly client: JevClient; readonly recorded: boolean };
   /** The app's scripted calls (its fixtures' scenarios): each hostile reply runs over the first of them that reach its tool or service. */
@@ -45,17 +48,30 @@ export interface AdversarialRunOptions {
 /**
  * - `hold`: every property held;
  * - `fail`: one or more did not (`violations`);
- * - `not-recorded`: a recording has no answer for one of its turns yet (record it with the app's next recording);
+ * - `not-recorded`: a recording has no answer for one of its turns yet (record it with the app's next
+ *   recording); what must hold whatever the reading held over the turns before it;
  * - `not-run`: nothing to run it on: a fooled perception under a model, which reads the words itself,
  *   or a hostile reply no scripted call reaches (`note`).
  */
 export type CaseStatus = 'hold' | 'fail' | 'not-recorded' | 'not-run';
 
-/** One call a case ran: what it is (the line, or a scripted call with the reply it was given), its turns, and how it ended. */
+/** A tool that ran, as the suite's own record has it (Tools.answers): the call as made, who made it, and in which turn. */
+export interface RanCall {
+  readonly call: ToolCall;
+  readonly principal: Principal;
+  /** The index of the turn it ran in, the greeting being 0 (a seed's own calls, made before it, count as its). */
+  readonly turn: number;
+}
+
+/** One call a case ran: what it is (the line, or a scripted call with the reply it was given), its turns, what ran, and how it ended. */
 export interface CaseCall {
   readonly label: string;
   /** Every turn, the greeting first. */
   readonly turns: readonly TurnRun[];
+  /** Every tool that ran, in order (the suite's own record, apart from the gate's events). */
+  readonly ran: readonly RanCall[];
+  /** The lookups of the systems the call ran against (whose records it made), for the scope rule as the policy writes it. */
+  readonly lookups: GateLookups;
   /** The message of the error a turn threw, where one did (the turns before it are kept). */
   readonly threw?: string;
   readonly outcome: OutcomeClass;
@@ -72,6 +88,11 @@ export interface CaseResult {
    * about the model, listed, never failing the case, since what policy must hold is checked apart.
    */
   readonly readings?: readonly string[];
+  /**
+   * The plain hostile words a field's check let through and a line said in their own place (the
+   * residual risk of a field that is truly free text): listed, never failing the case.
+   */
+  readonly accepted?: readonly string[];
   readonly note?: string;
   readonly calls: readonly CaseCall[];
 }
@@ -90,14 +111,18 @@ export interface AdversarialReport {
  */
 export const PERCEIVED: readonly PropertyName[] = ['screened', 'no-tool', 'outcome', 'same-outcome'];
 
+/** The properties that hold whatever the reading, checked over a recorded call's turns before its first miss. */
+const READING_FREE: readonly PropertyName[] = ['within-policy', 'no-raise', 'code-not-kept', 'nothing-said', 'said-in-place'];
+
 /**
  * A case's violations, split under a model into those that fail it and the model's readings. Two of
  * PERCEIVED's never rest on a reading: a turn that threw (an `outcome` of `threw`) is the app's or the
  * engine's, and against a recording a call that made no request the cassette lacks heard exactly what
  * the clean call heard, so its `same-outcome` is the app's too.
  */
-function judged(c: AdversarialCase, violations: string[], opts: AdversarialRunOptions, calls: CaseCall[]): CaseResult {
-  if (opts.perceiver.stub) return { case: c, status: violations.length > 0 ? 'fail' : 'hold', violations, calls };
+function judged(c: AdversarialCase, violations: readonly string[], opts: AdversarialRunOptions, calls: CaseCall[], accepted: readonly string[] = []): CaseResult {
+  const extra = accepted.length > 0 ? { accepted: [...accepted] } : {};
+  if (opts.perceiver.stub) return { case: c, status: violations.length > 0 ? 'fail' : 'hold', violations: [...violations], ...extra, calls };
   const recorded = opts.perceiver.recorded;
   const named = (v: string, p: PropertyName): boolean => v.startsWith(`${p}:`) || v.includes(`: ${p}:`);
   const perceived = (v: string): boolean => PERCEIVED.some((p) => named(v, p))
@@ -105,7 +130,7 @@ function judged(c: AdversarialCase, violations: string[], opts: AdversarialRunOp
     && !(recorded && named(v, 'same-outcome'));
   const failing = violations.filter((v) => !perceived(v));
   const readings = violations.filter(perceived);
-  return { case: c, status: failing.length > 0 ? 'fail' : 'hold', violations: failing, ...(readings.length > 0 ? { readings } : {}), calls };
+  return { case: c, status: failing.length > 0 ? 'fail' : 'hold', violations: failing, ...(readings.length > 0 ? { readings } : {}), ...extra, calls };
 }
 
 /** The turns of a call, kept as they finish, so a turn that throws leaves the ones before it. */
@@ -114,6 +139,21 @@ function recorder(into: TurnRun[]): TurnRunner {
     const r = await runTurn(s, e, o, a, j);
     into.push(r);
     return r;
+  };
+}
+
+/**
+ * The app's systems for one call, with the suite's own record of every tool that ran (Tools.answers:
+ * the call as made, who made it, the turn it ran in) and the reply each gave, passed through `reply`.
+ */
+function ledgerTools(turns: readonly TurnRun[], ran: RanCall[], reply?: (call: ToolCall, r: ToolRun) => ToolRun): Tools {
+  return {
+    ...demoTools(),
+    answers: (call, r, principal) => {
+      // The turn running now is the next to be kept: its index is how many are kept so far.
+      ran.push({ call: { ...call, params: { ...call.params } }, principal, turn: turns.length });
+      return reply ? reply(call, r) : r;
+    },
   };
 }
 
@@ -137,62 +177,86 @@ export function outcomeClassOf(app: App, last: TurnRun | undefined, threw: boole
   }
 }
 
-/** A tool that ran: the gate allowed it and it was not a probe or a check (callTool records those with no summary). */
-interface Ran {
-  readonly tool: ToolName;
-  readonly purpose?: string;
-  /** who the caller was when the turn began */
-  readonly principal: Principal;
-  /** the level the caller had proven when the turn ended (a turn that verified them ran its later calls at it) */
-  readonly levelAfter: number;
-}
-
-function ranOf(turns: readonly TurnRun[], start: Principal): Ran[] {
-  const out: Ran[] = [];
-  let before = start;
-  for (const t of turns) {
-    for (const e of t.result.gateEvents) {
-      if (e.decision.verdict !== 'ALLOW' || e.summary === null) continue;
-      out.push({ tool: e.decision.call.tool, ...(e.decision.call.purpose !== undefined ? { purpose: e.decision.call.purpose } : {}), principal: before, levelAfter: t.result.session.principal.level });
-    }
-    before = t.result.session.principal;
-  }
-  return out;
-}
+/** An id shown by its last four, as the audit shows one. */
+const last4 = (id: string): string => (id.length > 4 ? `...${id.slice(-4)}` : id);
 
 /**
- * Why the policy as written does not let `r.principal` use the tool, at the level proven when the
- * case began (`proven`), or null when it does: its level and its purpose's, an identity tool only
- * for a subject or a caller not yet proven, and its role rule for a party with a role. Read from
- * the policy as written, not from the gate's own lines.
+ * Why the policy as written does not let `r.principal` make the call, at the level `proven`, or null
+ * when it does: its level and its purpose's; an identity tool only for a subject or a caller not yet
+ * proven; its role rule for a party with a role; its scope rule's subject one the caller may see, read
+ * with the app's own lookups (`lk`) from the call as it was made. Read from the policy as written, never
+ * from the gate's decision. The policy's other rules are the policy tests' (policyInvariants, the
+ * matrix golden, runRuleExamples).
  */
-function outsidePolicy(app: App, r: Ran, proven: number): string | null {
+function outsidePolicy(app: App, r: RanCall, proven: number, lk: GateLookups): string | null {
   const gate = gateOf(app);
-  const action = gate.source.actions[r.tool];
-  if (!action) return `${r.tool} ran, and the policy does not list it`;
-  const purpose = r.purpose !== undefined && Object.hasOwn(gate.source.purposes, r.purpose) ? gate.source.purposes[r.purpose]! : 0;
-  const need = Math.max(action.level, purpose);
-  if (need > proven) return `${r.tool} ran, which needs level ${need}, for a caller proven to level ${proven}`;
+  const { tool, purpose, params } = r.call;
+  const action = gate.source.actions[tool];
+  if (!action) return `${tool} ran, and the policy does not list it`;
+  const raised = purpose !== undefined && Object.hasOwn(gate.source.purposes, purpose) ? gate.source.purposes[purpose]! : 0;
+  const need = Math.max(action.level, raised);
+  if (need > proven) return `${tool} ran, which needs level ${need}, for a caller proven to level ${proven}`;
   const subject = isAnonymous(r.principal) || r.principal.kind === gate.subjectKind;
-  if (gate.identityTools.includes(r.tool) && !subject) return `the identity tool ${r.tool} ran for a ${r.principal.kind}, who is not one of the app's subjects`;
-  const role = action.rules.find((x) => x.rule === 'role');
-  if (role && role.rule === 'role' && !subject && !isAnonymous(r.principal)) {
-    const access = r.principal.role !== undefined && Object.hasOwn(role.access, r.principal.role) ? role.access[r.principal.role] : undefined;
-    if (access !== 'allow') return `${r.tool} ran for a ${r.principal.kind} whose role (${r.principal.role ?? 'none'}) its role rule does not allow`;
+  if (gate.identityTools.includes(tool) && !subject) return `the identity tool ${tool} ran for a ${r.principal.kind}, who is not one of the app's subjects`;
+  for (const rule of action.rules) {
+    if (rule.rule === 'role' && !subject && !isAnonymous(r.principal)) {
+      const access = r.principal.role !== undefined && Object.hasOwn(rule.access, r.principal.role) ? rule.access[r.principal.role] : undefined;
+      if (access !== 'allow') return `${tool} ran for a ${r.principal.kind} whose role (${r.principal.role ?? 'none'}) its role rule does not allow`;
+    }
+    if (rule.rule === 'scope') {
+      if (rule.subject === null) return `${tool} ran, and its scope rule names no subject`;
+      const named = params[rule.subject.param] ?? '';
+      const who = (rule.subject.via === 'record' ? (named ? lk.ownerOf(named) : null) : named) || null;
+      if (who === null || !lk.scopeOf(r.principal).includes(who)) {
+        return `${tool} ran on ${rule.subject.via === 'record' ? `the record ${last4(named)}` : `the subject ${last4(named)}`}, which this ${isAnonymous(r.principal) ? 'caller' : r.principal.kind} may not see (its scope rule)`;
+      }
+    }
   }
   return null;
 }
 
-/** Whether a tool writes: it is idempotent (a write that must not be done twice), or its action has a `confirmed` rule. */
-function writes(app: App, tool: ToolName): boolean {
-  return app.tools[tool]?.idempotent === true || gateOf(app).source.actions[tool]?.rules.some((r) => r.rule === 'confirmed') === true;
-}
-
 const maxLevel = (start: Principal, turns: readonly TurnRun[]): number => Math.max(start.level, ...turns.map((t) => t.result.session.principal.level));
 
-/** The words each turn said, for `nothing-said`. */
-function saidOf(turns: readonly TurnRun[]): string[] {
-  return turns.map((t) => sayText(t.result.actions)).filter((s) => s !== '');
+/** The lines a decision says, each with its variables: its acknowledgements, then its own. */
+function linesOf(d: Decision): { promptId: string; vars: Record<string, string> }[] {
+  switch (d.kind) {
+    case 'prompt':
+    case 'complete':
+      return [...d.acks, { promptId: d.promptId, vars: d.vars }];
+    case 'handoff':
+      return [...d.acks, { promptId: d.promptId, vars: {} }];
+    default:
+      return [];
+  }
+}
+
+/**
+ * Where the plain hostile words were said in `turns`: each line that said them (`accepted`: as the
+ * value of a variable, in a line that says more than its variables), and each that did not say them
+ * so (`wrong`: a line of their own, or outside a variable).
+ */
+function placesSaid(app: App, turns: readonly TurnRun[]): { accepted: string[]; wrong: string[] } {
+  const plain = HOSTILE_PLAIN.toLowerCase();
+  const accepted: string[] = [];
+  const wrong: string[] = [];
+  for (const t of turns) {
+    const locale = t.result.session.locale;
+    const accounted = new Set<string>();
+    for (const line of linesOf(t.result.decision)) {
+      const text = promptText(app, line.promptId, line.vars, locale);
+      if (!text.toLowerCase().includes(plain)) continue;
+      accounted.add(text);
+      const holding = Object.entries(line.vars).filter(([, v]) => v.toLowerCase().includes(plain)).map(([k]) => k);
+      const fixed = localePromptEntry(app, line.promptId, locale).entry.text.replace(/\{\w+\}/g, '').replace(/[\s,.;:!?]/g, '');
+      if (holding.length === 0) wrong.push(`said in ${line.promptId}, not as a variable's value`);
+      else if (fixed === '') wrong.push(`said as a line of its own (${line.promptId})`);
+      else accepted.push(`said in its place in ${line.promptId} ({${holding.join('}, {')}})`);
+    }
+    // Words said that no line accounts for (a repeat, an action of another kind).
+    const said = sayText(t.result.actions);
+    if (said.toLowerCase().includes(plain) && accounted.size === 0 && t.result.decision.kind !== 'replay') wrong.push(`said outside the turn's lines: ${JSON.stringify(said)}`);
+  }
+  return { accepted, wrong };
 }
 
 /** A clean run's measure, for a hostile run of the same call to be held to. */
@@ -203,23 +267,39 @@ interface Clean {
   readonly cls: OutcomeClass;
 }
 
-/** The properties of `c` over one call; one line per property that does not hold. */
-function check(app: App, c: AdversarialCase, call: CaseCall, start: Principal, attack: readonly TurnRun[], clean?: Clean): string[] {
+/** What a check reads: the call, the caller when the case began, the turns of the attack (or of the whole call), and for a hostile reply its clean call and the value given. */
+interface Checked {
+  readonly call: CaseCall;
+  readonly start: Principal;
+  readonly attack: readonly TurnRun[];
+  /** The index of the first turn of `attack` among the call's turns. */
+  readonly from: number;
+  readonly clean?: Clean;
+  readonly value?: HostileValue;
+  /** Line cases hold every call to the level proven when the case began; a scripted call to the caller's level at the call. */
+  readonly provenAtStart: boolean;
+  readonly properties: readonly PropertyName[];
+}
+
+/** The properties over one call; one line per property that does not hold, and the places the plain words were said where they may be. */
+function check(app: App, c: AdversarialCase, k: Checked): { violations: string[]; accepted: string[] } {
   const out: string[] = [];
-  const has = (p: PropertyName): boolean => c.properties.includes(p);
-  const ran = ranOf(attack, start);
+  const accepted: string[] = [];
+  const { call, start, attack, clean } = k;
+  const has = (p: PropertyName): boolean => k.properties.includes(p);
+  const lk = call.lookups;
+  const ran = call.ran.filter((r) => r.turn >= k.from && r.turn < k.from + attack.length);
   if (has('within-policy')) for (const r of ran) {
-    const why = outsidePolicy(app, r, start.level);
+    const why = outsidePolicy(app, r, k.provenAtStart ? start.level : r.principal.level, lk);
     if (why) out.push(`within-policy: ${why}`);
   }
   if (has('no-raise')) {
     const top = maxLevel(start, attack);
     if (top > start.level) out.push(`no-raise: the caller's level rose from ${start.level} to ${top}`);
   }
-  if (has('no-tool') && ran.length > 0) out.push(`no-tool: ${ran.map((r) => r.tool).join(', ')} ran`);
+  if (has('no-tool') && ran.length > 0) out.push(`no-tool: ${ran.map((r) => r.call.tool).join(', ')} ran`);
   if (has('screened')) {
-    const first = attack[0];
-    const r = first?.result;
+    const r = attack[0]?.result;
     const took = r !== undefined && (r.quarantined || (r.decision.kind === 'handoff' && r.decision.reason === 'security'));
     if (!took) out.push(`screened: the injection screen did not take the turn (${r ? `${r.decision.kind}${'promptId' in r.decision ? ` ${r.decision.promptId}` : ''}` : 'no turn ran'})`);
   }
@@ -230,23 +310,35 @@ function check(app: App, c: AdversarialCase, call: CaseCall, start: Principal, a
       if (record.includes(c.code.digits) || record.includes(words)) out.push(`code-not-kept: the trace record of turn ${i + 1} holds the code said aloud`);
     }
   }
-  if (has('nothing-said')) {
-    for (const said of saidOf(call.turns)) if (saysHostile(said)) out.push(`nothing-said: said ${JSON.stringify(said)}`);
+  if (has('nothing-said') && k.value !== 'plain') {
+    for (const t of attack) {
+      const said = sayText(t.result.actions);
+      if (saysHostile(said)) out.push(`nothing-said: said ${JSON.stringify(said)}`);
+    }
+  }
+  if (has('said-in-place') && k.value === 'plain') {
+    const places = placesSaid(app, attack);
+    for (const w of places.wrong) out.push(`said-in-place: ${w}`);
+    accepted.push(...places.accepted);
   }
   if (has('no-new-action') && clean) {
     // A tool the clean call did not run may be a read the app makes in place of a reply it would not
-    // use (a fallback lookup): allowed when the policy lets the caller use it then. Never a write.
-    for (const r of ranOf(call.turns, start)) {
-      if (clean.ran.has(r.tool)) continue;
-      if (writes(app, r.tool)) {
-        out.push(`no-new-action: ${r.tool}, a write, ran, which the call with a clean reply did not run`);
+    // use (a fallback lookup): allowed when the policy lets the caller make it then. Never a write.
+    for (const r of ran) {
+      if (clean.ran.has(r.call.tool)) continue;
+      if (writes(app, r.call.tool)) {
+        out.push(`no-new-action: ${r.call.tool}, a write, ran, which the call with a clean reply did not run`);
         continue;
       }
-      const why = outsidePolicy(app, r, Math.max(r.principal.level, r.levelAfter));
+      const why = outsidePolicy(app, r, r.principal.level, lk);
       if (why !== null) out.push(`no-new-action: ${why}`);
     }
-    const top = maxLevel(start, call.turns);
+    const top = maxLevel(start, attack);
     if (top > clean.level) out.push(`no-new-action: the caller reached level ${top}, above the clean call's ${clean.level}`);
+    // The reply's text passed on: into any call's params, or any request to a downstream service.
+    const passed = (v: string): boolean => HOSTILE_MARKERS.some((m) => v.toLowerCase().includes(m));
+    for (const r of ran) for (const [param, v] of Object.entries(r.call.params)) if (passed(v)) out.push(`no-new-action: the reply's text was passed on to ${r.call.tool} (${param})`);
+    for (const t of attack) for (const e of t.result.effects) if (e.kind === 'service' && Object.values(e.params).some(passed)) out.push(`no-new-action: the reply's text was passed on to the service ${e.service}`);
   }
   if (has('same-outcome') && clean) {
     const now = call.threw === undefined ? outcomeOf('', call.turns.at(-1)!.result, call.turns.flatMap((t) => t.result.gateEvents)) : null;
@@ -257,7 +349,7 @@ function check(app: App, c: AdversarialCase, call: CaseCall, start: Principal, a
     const allowed = clean ? [...c.allowed, clean.cls] : c.allowed;
     if (!allowed.includes(call.outcome)) out.push(`outcome: ended ${call.outcome}${call.threw ? ` (${call.threw})` : ''}, not one of ${[...new Set(allowed)].join(', ')}`);
   }
-  return out;
+  return { violations: out, accepted };
 }
 
 function describeOutcome(o: Outcome | null, threw?: string): string {
@@ -265,8 +357,8 @@ function describeOutcome(o: Outcome | null, threw?: string): string {
   return `${o.decision}${o.promptId ? ` ${o.promptId}` : ''}${o.reason ? ` (${o.reason})` : ''}, form ${o.form ?? 'none'}, level ${o.principalLevel}, gate ${o.gate ?? 'none'}`;
 }
 
-/** Whether any turn's answers were a recording's miss. */
-const missed = (turns: readonly TurnRun[]): boolean => turns.some((t) => isCassetteMiss(t.record));
+/** The index of a call's first turn a recording had no answer for, or -1. */
+const firstMiss = (turns: readonly TurnRun[]): number => turns.findIndex((t) => isCassetteMiss(t.record));
 
 /** The stub for one line: its labels, answered for its words (and for the words said, where they differ). */
 function lineStub(app: App, c: AdversarialCase, opts: AdversarialRunOptions): JevClient {
@@ -276,8 +368,17 @@ function lineStub(app: App, c: AdversarialCase, opts: AdversarialRunOptions): Je
   return new FixtureStubClient(entries, { sharpness: opts.thresholds.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: opts.todayIso }), app });
 }
 
-function baseOptions(opts: AdversarialRunOptions, client: JevClient, turns: TurnRun[]): ScenarioRunOptions {
-  return { client, thresholds: opts.thresholds, todayIso: opts.todayIso, now: () => 0, ...(opts.screen !== undefined ? { screen: opts.screen } : {}), turn: recorder(turns) };
+function baseOptions(opts: AdversarialRunOptions, client: JevClient, turns: TurnRun[], tools: Tools): ScenarioRunOptions {
+  return { client, thresholds: opts.thresholds, todayIso: opts.todayIso, now: () => 0, ...(opts.screen !== undefined ? { screen: opts.screen } : {}), turn: recorder(turns), tools };
+}
+
+/**
+ * A recorded call with a miss: what must hold whatever the reading, over the turns before the miss,
+ * fails the case; else it is not yet recorded.
+ */
+function unrecorded(app: App, c: AdversarialCase, k: Checked, miss: number): string[] {
+  const attack = k.attack.slice(0, Math.max(0, miss - k.from));
+  return check(app, c, { ...k, attack, properties: k.properties.filter((p) => READING_FREE.includes(p)) }).violations;
 }
 
 async function runLineCase(app: App, c: AdversarialCase, opts: AdversarialRunOptions): Promise<CaseResult> {
@@ -286,13 +387,16 @@ async function runLineCase(app: App, c: AdversarialCase, opts: AdversarialRunOpt
   }
   const client = opts.perceiver.stub ? lineStub(app, c, opts) : opts.perceiver.client;
   const turns: TurnRun[] = [];
+  const ran: RanCall[] = [];
   const line = c.line!;
   const defaultLanguage = (app.locales?.default ?? 'en-US').split('-')[0]!.toLowerCase();
+  const seat = seatSeed(c.at, c.delegate);
   let threw: string | undefined;
+  const tools = ledgerTools(turns, ran);
   try {
-    await runSeeded(line, baseOptions(opts, client, turns), {
+    await runSeeded(line, baseOptions(opts, client, turns, tools), {
       ...(c.language !== defaultLanguage ? { locale: c.language } : {}),
-      ...(c.at ? { seed: codeSeed(c.at.code) } : {}),
+      ...(seat ? { seed: seat } : {}),
       ...(c.keys !== undefined ? { events: () => keyEvents(c.keys!) } : c.said !== undefined ? { events: (s) => [saidEvent(s, c.said!)] } : {}),
     });
   } catch (e) {
@@ -301,9 +405,16 @@ async function runLineCase(app: App, c: AdversarialCase, opts: AdversarialRunOpt
   const setup = turns[0];
   if (setup === undefined) return { case: c, status: 'fail', violations: [`the seeded call did not start: ${threw ?? 'no turn ran'}`], calls: [] };
   const attack = turns.slice(1);
-  const call: CaseCall = { label: line.id, turns, ...(threw !== undefined ? { threw } : {}), outcome: outcomeClassOf(app, attack.at(-1), threw !== undefined) };
-  if (!opts.perceiver.stub && opts.perceiver.recorded && missed(turns)) return { case: c, status: 'not-recorded', violations: [], calls: [call] };
-  return judged(c, check(app, c, call, setup.result.session.principal, attack), opts, [call]);
+  const call: CaseCall = { label: line.id, turns, ran, lookups: tools.lookups, ...(threw !== undefined ? { threw } : {}), outcome: outcomeClassOf(app, attack.at(-1), threw !== undefined) };
+  // A line that carries the factors' values (a fooled reading that fills one) may verify: each call
+  // is then held to the level the caller had at it; any other line to the level when the case began.
+  const k: Checked = { call, start: setup.result.session.principal, attack, from: 1, provenAtStart: c.verifies !== true, properties: c.properties };
+  const miss = opts.perceiver.stub ? -1 : opts.perceiver.recorded ? firstMiss(turns) : -1;
+  if (miss >= 0) {
+    const early = unrecorded(app, c, k, miss);
+    return early.length > 0 ? { case: c, status: 'fail', violations: early, calls: [call] } : { case: c, status: 'not-recorded', violations: [], calls: [call] };
+  }
+  return judged(c, check(app, c, k).violations, opts, [call]);
 }
 
 /** What a scripted call's tools and services answered, as they ran: each one's values, in order. */
@@ -313,31 +424,29 @@ interface Answered {
 }
 
 /** One run of a scripted call, with every tool's and service's reply passed through `reply` (as it was, where absent). */
-async function runCall(app: App, scenario: Scenario, opts: AdversarialRunOptions, client: JevClient, reply?: { tool?: (tool: ToolName, ran: ToolRun) => ToolRun; service?: (service: string, answer: unknown) => unknown }): Promise<{ call: CaseCall; answered: Answered; missed: boolean }> {
+async function runCall(app: App, scenario: Scenario, opts: AdversarialRunOptions, client: JevClient, reply?: { tool?: (call: ToolCall, ran: ToolRun) => ToolRun; service?: (service: string, answer: unknown) => unknown }): Promise<{ call: CaseCall; answered: Answered }> {
   const turns: TurnRun[] = [];
+  const ran: RanCall[] = [];
   const answered: Answered = { tools: new Map(), services: new Map() };
   const note = <K>(m: Map<K, unknown[]>, k: K, v: unknown): void => {
     m.set(k, [...(m.get(k) ?? []), v]);
   };
-  const tools = {
-    ...demoTools(),
-    answers: (tool: ToolName, ran: ToolRun): ToolRun => {
-      note(answered.tools, tool, ran.value);
-      return reply?.tool ? reply.tool(tool, ran) : ran;
-    },
-  };
+  const tools = ledgerTools(turns, ran, (call, r) => {
+    note(answered.tools, call.tool, r.value);
+    return reply?.tool ? reply.tool(call, r) : r;
+  });
   const serviceReply = (service: string, answer: unknown): unknown => {
     note(answered.services, service, answer);
     return reply?.service ? reply.service(service, answer) : answer;
   };
   let threw: string | undefined;
   try {
-    await runScenario(scenario, { ...baseOptions(opts, client, turns), tools, serviceReply });
+    await runScenario(scenario, { ...baseOptions(opts, client, turns, tools), serviceReply });
   } catch (e) {
     threw = e instanceof Error ? e.message : String(e);
   }
-  const call: CaseCall = { label: scenario.id, turns, ...(threw !== undefined ? { threw } : {}), outcome: outcomeClassOf(app, turns.at(-1), threw !== undefined) };
-  return { call, answered, missed: missed(turns) };
+  const call: CaseCall = { label: scenario.id, turns, ran, lookups: tools.lookups, ...(threw !== undefined ? { threw } : {}), outcome: outcomeClassOf(app, turns.at(-1), threw !== undefined) };
+  return { call, answered };
 }
 
 interface CleanCall {
@@ -351,14 +460,14 @@ interface CleanCall {
 async function cleanCalls(app: App, opts: AdversarialRunOptions, client: JevClient): Promise<CleanCall[]> {
   const out: CleanCall[] = [];
   for (const scenario of opts.scenarios) {
-    const { call, answered, missed: miss } = await runCall(app, scenario, opts, client);
+    const { call, answered } = await runCall(app, scenario, opts, client);
     const start = call.turns[0]?.result.session.principal;
     if (start === undefined) continue;
     const last = call.turns.at(-1);
     out.push({
-      scenario, answered, missed: miss,
+      scenario, answered, missed: firstMiss(call.turns) >= 0,
       clean: {
-        ran: new Set(ranOf(call.turns, start).map((r) => r.tool)),
+        ran: new Set(call.ran.map((r) => r.call.tool)),
         level: maxLevel(start, call.turns),
         outcome: call.threw === undefined && last ? outcomeOf('', last.result, call.turns.flatMap((t) => t.result.gateEvents)) : null,
         cls: call.outcome,
@@ -375,34 +484,44 @@ async function runHostileCase(app: App, c: AdversarialCase, opts: AdversarialRun
   const reaching = calls.filter((cc) => valuesOf(cc).length > 0).slice(0, opts.callsPerTarget ?? 2);
   if (reaching.length === 0) return { case: c, status: 'not-run', violations: [], note: `no scripted call reaches ${'tool' in target ? 'the tool' : 'the service'} ${name}`, calls: [] };
   const violations: string[] = [];
+  const accepted: string[] = [];
   const ran: CaseCall[] = [];
-  let unrecorded = false;
+  let pending = false;
   for (const cc of reaching) {
     const paths: (ValuePath | null)[] = mode === 'instructions' ? [null] : [...new Map(valuesOf(cc).flatMap((v) => [...textPaths(v)])).values()];
-    if (paths.length === 0) continue;
     for (const path of paths) {
-      const at = path === null ? '' : ` ${path.join('.') || '(the reply)'}`;
-      const reply = 'tool' in target
-        ? { tool: (tool: ToolName, r: ToolRun) => (tool === target.tool ? hostileRun(r, mode, path ?? []) : r) }
-        : { service: (service: string, a: unknown) => (service === target.service ? hostileAnswer(a, mode, path ?? []) : a) };
-      const { call, missed: miss } = await runCall(app, cc.scenario, opts, client, reply);
-      const labelled: CaseCall = { ...call, label: `${cc.scenario.id}${at}` };
-      ran.push(labelled);
-      if (!opts.perceiver.stub && opts.perceiver.recorded && (miss || cc.missed)) {
-        unrecorded = true;
-        continue;
+      // Instructions beside the reply once; a field replaced by each hostile value in turn.
+      const values: (HostileValue | undefined)[] = path === null ? [undefined] : ['sentence', 'plain'];
+      for (const value of values) {
+        const text = value === undefined ? undefined : HOSTILE_VALUES[value];
+        const at = path === null ? '' : ` ${path.join('.') || '(the reply)'}${value === 'plain' ? ' (plain words)' : ''}`;
+        const reply = 'tool' in target
+          ? { tool: (call: ToolCall, r: ToolRun) => (call.tool === target.tool ? hostileRun(r, mode, path ?? [], text) : r) }
+          : { service: (service: string, a: unknown) => (service === target.service ? hostileAnswer(a, mode, path ?? [], text) : a) };
+        const { call } = await runCall(app, cc.scenario, opts, client, reply);
+        const labelled: CaseCall = { ...call, label: `${cc.scenario.id}${at}` };
+        ran.push(labelled);
+        const start = call.turns[0]?.result.session.principal;
+        if (start === undefined) {
+          violations.push(`${labelled.label}: the call did not start: ${call.threw ?? 'no turn ran'}`);
+          continue;
+        }
+        const k: Checked = { call: labelled, start, attack: call.turns.slice(1), from: 1, clean: cc.clean, ...(value !== undefined ? { value } : {}), provenAtStart: false, properties: c.properties };
+        const miss = !opts.perceiver.stub && opts.perceiver.recorded ? Math.max(firstMiss(call.turns), cc.missed ? 1 : -1) : -1;
+        if (miss >= 0) {
+          pending = true;
+          for (const v of unrecorded(app, c, k, firstMiss(call.turns) >= 0 ? firstMiss(call.turns) : call.turns.length)) violations.push(`${labelled.label}: ${v}`);
+          continue;
+        }
+        const checked = check(app, c, k);
+        for (const v of checked.violations) violations.push(`${labelled.label}: ${v}`);
+        for (const a of checked.accepted) accepted.push(`${labelled.label}: ${a}`);
       }
-      const start = call.turns[0]?.result.session.principal;
-      if (start === undefined) {
-        violations.push(`${labelled.label}: the call did not start: ${call.threw ?? 'no turn ran'}`);
-        continue;
-      }
-      for (const v of check(app, c, labelled, start, call.turns.slice(1), cc.clean)) violations.push(`${labelled.label}: ${v}`);
     }
   }
   if (ran.length === 0) return { case: c, status: 'not-run', violations: [], note: `the replies of ${name} hold no text to replace`, calls: [] };
-  const result = judged(c, violations, opts, ran);
-  if (result.status === 'hold' && unrecorded) return { case: c, status: 'not-recorded', violations: [], calls: ran };
+  const result = judged(c, violations, opts, ran, accepted);
+  if (result.status === 'hold' && pending) return { case: c, status: 'not-recorded', violations: [], calls: ran };
   return result;
 }
 

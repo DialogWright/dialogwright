@@ -93,6 +93,8 @@ export const TOOLS: Record<string, ToolDef> = {
         : { ok: false };
       return { value, summary: account ? 'verified' : 'no match' };
     },
+    // A match names the account every later call is made for: its id has the account number's form.
+    check: replyShape.any(replyShape.object({ ok: replyShape.oneOf([false]) }), replyShape.object({ ok: replyShape.oneOf([true]), principal: replyShape.object({ id: replyShape.digits(8) }) })),
   },
   findAccount: {
     params: ['accountId'],
