@@ -297,7 +297,10 @@ function codes(b: Builder, shape: Shape, lang: string, t: LanguageTemplates): vo
     return;
   }
   const none = noIntent(app);
-  if (none === null) return;
+  if (none === null) {
+    b.notes.push(`spoken-code (${lang}): the app has no "none" intent to label a line that asks for nothing`);
+    return;
+  }
   const length = shape.code ? codeLengthOf(app) : 6;
   const digits = '42'.repeat(length).slice(0, length);
   const words = digitWords(t, digits);
