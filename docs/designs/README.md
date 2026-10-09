@@ -14,6 +14,7 @@ These are the design documents for engine features. Each one sets out the proble
 - [2026-10-08-sub-forms-and-listening.md](2026-10-08-sub-forms-and-listening.md): `next:` and internal forms, and a per-form switch for whether its slots listen before it opens.
 - [2026-10-08-flow-building-blocks.md](2026-10-08-flow-building-blocks.md): the classic IVR building blocks (telephony data in and out, data dips, ordered branches, play-only steps, collect settings) in DialogWright terms; decided, being built in three pieces.
 - [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md): the build of the flow building blocks' first piece: `attempts`, retry lines per attempt, and `onMaxAttempts` on any slot.
+- [2026-10-09-call-data-and-transfers.md](2026-10-09-call-data-and-transfers.md): the build of the flow building blocks' second piece: `callData` from the carrier and the chat page, and transfer targets chosen by ordered rules, with data sent with the transfer.
 - [2026-10-08-decisions.md](2026-10-08-decisions.md): the maintainer's decisions on the designs above, and the principles behind them.
 
 The [authoring guide](../authoring-an-app.md) is the reference for how a feature works today. Where a design and the guide differ, the guide is right. The create-app skill's pattern notes are in [.claude/skills/create-app/patterns.md](../../.claude/skills/create-app/patterns.md); the trial a design cites is in [docs/trials](../trials/README.md).
