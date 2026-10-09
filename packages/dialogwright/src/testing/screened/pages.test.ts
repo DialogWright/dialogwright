@@ -1,8 +1,9 @@
-import { describe, it } from 'vitest';
+import { afterAll, describe, it } from 'vitest';
 import { join } from 'node:path';
 import { registerApp, resetAppsForTest } from '../../core/app/registry';
 import { expectAppMap, expectPolicyCard, expectPolicyMatrix, policyInvariants, runRuleExamples } from '../index';
 import { SCREENED_DIR, screenedApp } from './app';
+import { NEXT, screenedVariants } from './variant';
 
 /**
  * The fixture's three read-back pages: a form's checks on the app map (each check beside the slots
@@ -20,4 +21,12 @@ describe('the screened fixture\'s pages', () => {
   it('policy.matrix', () => expectPolicyMatrix(screenedApp, join(SCREENED_DIR, 'policy.matrix')));
   it('POLICY.md', () => expectPolicyCard(screenedApp, join(SCREENED_DIR, 'POLICY.md')));
   it('APP-MAP.md', () => expectAppMap(screenedApp, join(SCREENED_DIR, 'APP-MAP.md')));
+});
+
+describe('the two-form variant\'s app map (variant.ts NEXT)', () => {
+  // The screen to its next form, and the internal booking drawn under it, after the screen, with no
+  // intent. Written with writeAppMap on the variant (it has no folder of its own to run app:diagram on).
+  const variants = screenedVariants();
+  afterAll(() => variants.remove());
+  it('APP-MAP.next.md', () => expectAppMap(variants.variant(NEXT), join(SCREENED_DIR, 'APP-MAP.next.md'), 'writeAppMap(screenedVariants().variant(NEXT), <this file>) from a scratch script, after reading the difference'));
 });

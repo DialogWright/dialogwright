@@ -248,7 +248,8 @@ export interface CheckResult {
    * What is not wrong but likely a mistake: printed, never counted as a problem (the exit code is
    * the problems'). Absent when there is none. A form's checks (./formChecks.ts checkWarnings): an
    * `on` reason the check never refuses for, and a rule a check holds the caller to that the form's
-   * write does not; a slot that offers the caller's number (callerNumberWarnings); and a priority
+   * write does not; a slot that offers the caller's number (callerNumberWarnings); a slot whose
+   * `listen` says otherwise than every form that lists it (listenWarnings); and a priority
    * intent's correctsForm or the handoff's unconfirmed option with nothing to act on
    * (priorityHandoffWarnings).
    */

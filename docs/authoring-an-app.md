@@ -291,10 +291,11 @@ forms:
 
 - `slots` are asked in this order. Every slot id must be a slot spec in the code (section 5).
 - `summaryPromptId` is the prompt that reads the filled form back for a yes. `null` means the form completes as soon as its slots are full.
-- `hooks` lists the code hooks the form uses. `complete` is required. The list must match the code exactly: `defineApp` refuses a hook the code writes that the list leaves out, and a hook the list names that the code does not write. Section 6 says what each hook is.
+- `hooks` lists the code hooks the form uses. `complete` is required, unless the form answers from the knowledge base (`answers`) or goes on to another form (`next`). The list must match the code exactly: `defineApp` refuses a hook the code writes that the list leaves out, and a hook the list names that the code does not write. Section 6 says what each hook is.
 - `calls` lists the actions (tools) the form's hooks call through the gate. Declare it for every form or for none (`calls: []` for a form that calls nothing). The engine never reads it; the app map and `check` do ([section 3.7](#37-how-a-form-reaches-an-action-calls)).
 - `checks` and `checksPassed` (optional) end a form part-way on an answer: see [Checks](#checks-ending-a-form-part-way) below.
-- Every form id must also be a `kind: form` intent.
+- `next` (optional) names the form entered at once when this one completes; `internal: true` and `label` make a form that is no intent, reached only by a `next`; `listenBeforeEntered` says whether the form's slots fill from what is said before it is open: see [A form that goes on to the next](#a-form-that-goes-on-to-the-next-next-and-internal-forms) below.
+- Every form id must also be a `kind: form` intent, unless the form is internal.
 
 #### Checks: ending a form part-way
 
@@ -354,7 +355,39 @@ report_problem:
 ```
 
 The engine's fixture is the checking variant of `packages/dialogwright/src/testing/proposals` (`variant.ts`).
-- One form with checks also keeps what the caller says up front. The turn that opens a form fills every slot of it, so "I own the house, can someone come out on a Saturday morning", said on the opener, fills the ownership, the day and the time; the ownership check runs on that turn, and the day and the time are never asked. A line split into a qualifying form and a booking form loses the day and the time instead, since a turn fills only the form it opens ([Where a slot listens](#where-a-slot-listens-listen)). So put the slots a caller names in their first sentence in the same form as the step they open, even when they are asked last.
+- One form with checks also keeps what the caller says up front. The turn that opens a form fills every slot of it, so "I own the house, can someone come out on a Saturday morning", said on the opener, fills the ownership, the day and the time; the ownership check runs on that turn, and the day and the time are never asked. A line split into a qualifying form and a booking form (`next`, below) keeps the qualifying answers but asks the day and the time again, since the booking's own slots wait for the booking to be open. So one form with checks is the first choice: put the slots a caller names in their first sentence in the same form as the step they open, even when they are asked last.
+
+#### A form that goes on to the next: `next` and internal forms
+
+Some lines have several screeners and one booking: a leak, a crack and a draft each qualify the caller differently, then the same booking follows. A form's `next` names the form entered at once when it completes, and a form marked `internal: true` is no intent: the model, the keypad menu and the queue never see it, and it is reached only by a `next`.
+
+```yaml
+forms:
+  screen_home:
+    slots: [problem, ownership, town]
+    summaryPromptId: null
+    calls: []
+    checks: [...]
+    next: book_inspection          # no complete hook: the next form is its answer
+  book_inspection:
+    internal: true
+    label: book your free inspection
+    slots: [problem, ownership, town, address, name, phone, day, timeOfDay]
+    summaryPromptId: confirm_book_inspection
+    hooks: [confirmedParams, complete]
+    calls: [bookInspection]
+```
+
+- When a form with `next` completes as `said` (its `complete` hook answers `said`, or it has none, which `next` allows), the engine closes it and enters the next form at once, ahead of any request the caller queued, which waits until the chain is done. The slots both forms list are kept with their values, displays and confirmations (and, for a handoff, what the caller agreed to), so the booking never asks the screen's answers again and its summary reads them back with its own. The passes of the checks both forms list are kept too, so the gate is not asked again about a value it already allowed; the next form's `checksPassed` is said only if one of its own checks is still to pass. A value changed later runs the check again.
+- The next form is bridged into with `bridge_next` and its label ("Now, let's book your free inspection."), never an `ack_intent`. The label is the intent's for a form intent, and the form's own `label` for an internal one; the same label is what the model is told the caller is in, and what the console's NOW panel says (unless `console.formLabels` names it).
+- A completion that ends the call (`end`), a refusal, `reconfirm`, a completion that takes the turn (`decision`) and a check that ends the form do not go on: the form ends as written.
+- A priority intent, or a switch to another request, during the chain leaves it as it leaves any form. The internal form is not queued, so it is not resumed. Keep chains short: one screener and one booking.
+- A `next` may name a form intent too: a booking reached both by a screener and by asking for it directly. The app decides.
+- `check` refuses a `next` to a form there is not, a loop of `next`, an internal form no `next` reaches, an internal form with an intent in intents.yaml, an internal form with no `label` (and a `label` on a form intent, whose label is in intents.yaml), and a form with neither `complete`, `answers` nor `next`.
+- What is recorded: the first form's completion as any (it is in `completed`), then the audit row `form_next { form, next }` after the first form's gate rows and before the next form's. The app map draws an internal form under the form that leads to it ("After screen_home"), with no intent.
+- `listenBeforeEntered` (default `true` for a form intent, `false` for an internal form) says whether the form's slots fill from what the caller says before the form is open. A slot with no `listen` of its own that every form listing it says `false` for listens as `listen: form` ([Where a slot listens](#where-a-slot-listens-listen)): it is asked once its form is open, even when it was said earlier. A slot the screen lists too still listens up front, since the screen allows it, so a qualifying answer said with the request is kept. A slot's own `listen` overrides the forms; `check` warns when it says otherwise than every form that lists it. Set `listenBeforeEntered: false` on a form intent whose answers should be heard only once it is open.
+
+The engine's fixture is the two-form variant of `packages/dialogwright/src/testing/screened` (`variant.ts` `NEXT`), with its app map in `APP-MAP.next.md`.
 
 ### prompts.yaml
 
@@ -1207,7 +1240,7 @@ The engine asks the questions of every slot the turn listens for, not only the o
 
 ### Where a slot listens: `listen`
 
-Every slot takes `listen:` beside its type's options: in slots.yaml, in `defineSlot`'s configuration, or on a slot written in code (`SlotSpec.listen`). It says what the slot does outside a form; inside a form that has the slot, it always listens.
+Every slot takes `listen:` beside its type's options: in slots.yaml, in `defineSlot`'s configuration, or on a slot written in code (`SlotSpec.listen`). It says what the slot does outside a form; inside a form that has the slot, it always listens. A slot that sets none listens as its forms say (forms.yaml `listenBeforeEntered`, [above](#a-form-that-goes-on-to-the-next-next-and-internal-forms)): `form` when every form that lists it says `false` (the default for an internal form), `up-front` otherwise, so an app that sets neither listens as the table says.
 
 | `listen` | Its question, outside a form | A value said outside a form |
 |---|---|---|
@@ -1229,9 +1262,9 @@ When to choose each:
 - **`form`** is for a value whose words come up in other requests, to be heard only in answer to its own form. A payment arrangement's first payment date is one: "are you open on Saturday", a question about office hours, mentions a day, and the arrangement should never take it as the first payment. The slot's question is then not sent outside its form, and a date said with the request ("set up a payment plan starting Friday") is asked for again once the form is open.
 - **`anywhere`** is for a value a caller often gives before saying what they want, which a later form should not ask for again: a reference number said at the greeting, an order number said with a question. That is how every slot behaved before a value said outside a form was tied to the form the turn enters.
 
-  It does not reach across forms on the turn one opens. "Book me in for a Saturday morning", said on the opener of a line whose first form qualifies the caller and whose second books the day, opens the first form, and the turn fills only that form's slots: the Saturday and the morning are lost, with `anywhere` or `call` on them alike. A line that qualifies before it books does not meet this: make it one form, the qualifying slots first and the booking's after, with a check on each qualifying answer ([Checks](#checks-ending-a-form-part-way)). The opener then opens that form and fills every slot of it, the day and the time included, and they are never asked. The engine's fixture for checks has the call (`day-and-time-up-front-kept`).
+  It does not reach across forms on the turn one opens. "Book me in for a Saturday morning", said on the opener of a line whose first form qualifies the caller and whose second books the day, opens the first form, and the turn fills only that form's slots: the Saturday and the morning are lost, with `anywhere` or `call` on them alike. A line that qualifies before it books does not meet this: make it one form, the qualifying slots first and the booking's after, with a check on each qualifying answer ([Checks](#checks-ending-a-form-part-way)). The opener then opens that form and fills every slot of it, the day and the time included, and they are never asked. The engine's fixture for checks has the call (`day-and-time-up-front-kept`). A line with several screeners and one booking uses `next` instead ([A form that goes on to the next](#a-form-that-goes-on-to-the-next-next-and-internal-forms)): the answers both forms list carry across, and the booking's own slots are asked once it is open.
 
-  What is still lost is a detail for a second request named in the same breath: "where is my parcel, and book a delivery window for tomorrow morning" opens the tracking form and queues the window, and the window's form asks the day again when it is reached. Let it ask, pin it with a scripted call, and write it in the app's gaps; keeping such a value for a queued form is a known gap in the engine, held by a test so that a change to it is deliberate.
+  What is still lost is a detail for a second request named in the same breath: "where is my parcel, and book a delivery window for tomorrow morning" opens the tracking form and queues the window, and the window's form asks the day again when it is reached. Let it ask, pin it with a scripted call, and write it in the app's gaps; keeping such a value for a queued form is a known gap in the engine, held by a test so that a change to it is deliberate. Where the second step always follows the first, make it the first form's `next` and list the slot in both: a value the first form holds then carries into the second.
 - **`call`** is for a value that is the caller's rather than one task's: their name, their date of birth. It is what app.yaml's `carrySlots` does, and `carrySlots` is shorthand for it; a slot `carrySlots` names that says another `listen` is refused by `check`. A carried value pre-fills the next form that has the slot, so give a form that writes from one a summary.
 
 An identity factor (identity.yaml) listens as identity says: while an anonymous caller is still to be verified, inside a form and out, and it stays for the call. `listen` does not apply to it, and `check` refuses it there. An unknown value is refused with the near one (`change it to "anywhere"`).

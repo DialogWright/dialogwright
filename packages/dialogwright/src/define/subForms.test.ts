@@ -8,6 +8,8 @@ import { formatProblem } from './problems';
 import { defineApp } from './defineApp';
 import { validateApp } from '../core/app/validate';
 import { nextCycles } from '../core/app/next';
+import { danglingReferences } from '../testing/appMap';
+import { consoleMetaOf } from '../server/dashboard/meta';
 import { SCREENED_DIR, screenedApp, screenedCode } from '../testing/screened/app';
 import { NEXT, over, replace } from '../testing/screened/variant';
 
@@ -50,6 +52,15 @@ describe('the two-form variant', () => {
     expect(app.forms.book_visit).not.toHaveProperty('next');
     expect(app.forms.screen_home!.complete({ acks: [{ promptId: 'visit_qualifies', vars: {} }] } as never)).toEqual({ kind: 'said', acks: [{ promptId: 'visit_qualifies', vars: {} }] });
     expect(Object.keys(app.intents)).not.toContain('book_visit');
+    // The booking is no intent, and the app map says nothing is dangling for it.
+    expect(danglingReferences(app)).toEqual([]);
+  });
+
+  it('the console names the internal form by its own label, under the app\'s', () => {
+    const app = defineApp(folder({ 'app.yaml': replace('    book_visit: Book a visit\n', '') }), screenedCode);
+    expect(consoleMetaOf(app).formLabels).toEqual({ book_visit: 'book your visit', urgent: 'Something urgent' });
+    expect(consoleMetaOf(defineApp(folder(), screenedCode)).formLabels).toEqual({ book_visit: 'Book a visit', urgent: 'Something urgent' });
+    expect(consoleMetaOf(screenedApp).formLabels).toEqual({ book_visit: 'Book a visit', urgent: 'Something urgent' });
   });
 
   it('leaves the fixture as it was: no form of it has next, internal, label or listenBeforeEntered', () => {

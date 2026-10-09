@@ -98,6 +98,8 @@ export interface SlotPrompt {
  * value said there is kept (SlotSpec.listen). Inside a form that has the slot it always listens.
  * - `up-front` (the default): asked outside a form, and kept only when the turn enters a form that
  *   has the slot: values said up front with the request ("book a window for tomorrow morning").
+ *   A slot that sets none listens as `form` instead when every form that lists it says its slots
+ *   do not listen before it is open (FormDef.listenBeforeEntered; app/lookup.ts listenOf).
  * - `form`: asked and filled only while a form that has it is open. Outside one its question is
  *   not sent, and nothing is taken up front.
  * - `anywhere`: asked outside a form, and a value said there is kept when said on a turn that opens

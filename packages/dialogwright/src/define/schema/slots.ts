@@ -29,7 +29,8 @@ export const LISTEN_DESCRIPTION =
   'Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). ' +
   '"form": asked and filled only while a form that has it is open; outside one its question is not sent. ' +
   '"anywhere": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. ' +
-  '"call": as anywhere, and kept for the whole call, across forms (what app.yaml\'s carrySlots does). An identity factor listens as identity.yaml says, and takes none.';
+  '"call": as anywhere, and kept for the whole call, across forms (what app.yaml\'s carrySlots does). An identity factor listens as identity.yaml says, and takes none. ' +
+  'Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): "form" when every form that lists it says false (the default for an internal form), else "up-front".';
 
 /** `listen:` on one slot: one of the values, or absent for the default (`up-front`). */
 export const slotListenSchema = z.enum(SLOT_LISTEN_VALUES as readonly [SlotListen, ...SlotListen[]]).describe(LISTEN_DESCRIPTION);

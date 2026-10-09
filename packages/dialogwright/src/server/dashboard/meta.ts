@@ -59,6 +59,15 @@ function defaultSlotOrder(app: App): string[] {
   return [...seen];
 }
 
+/**
+ * The labels of the app's internal forms (FormDef.internal, each with a label of its own), for the
+ * console's NOW panel, under any the app gives (ConsoleConfig.formLabels). None for an app whose forms
+ * are all intents, so its labels are exactly its own.
+ */
+function internalLabels(app: App): Record<string, string> {
+  return Object.fromEntries(Object.entries(app.forms).flatMap(([id, form]) => (form.internal === true && form.label !== undefined ? [[id, form.label]] : [])));
+}
+
 function chipStyleOf(app: App): ConsoleMeta['chipStyle'] {
   const out: ConsoleMeta['chipStyle'] = {};
   for (const [id, spec] of Object.entries(app.slots)) {
@@ -78,7 +87,7 @@ export function consoleMetaOf(app: App): ConsoleMeta {
     slotOrder: [...(c.slotOrder ?? defaultSlotOrder(app))],
     stepUp: [...identityOf(app).factorSlots],
     chipStyle: chipStyleOf(app),
-    formLabels: { ...c.formLabels },
+    formLabels: { ...internalLabels(app), ...c.formLabels },
     slotLabels: { ...c.slotLabels },
     questionPrefixes: Object.fromEntries(Object.entries(c.questionPrefixes ?? {}).map(([k, v]) => [k, [...v]])),
     detectQuestions: [...(c.detectQuestions ?? [])],
