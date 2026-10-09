@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { checkAlways, identifier, name, text, unique } from './common';
+import { checkOutcomeSchema } from './outcome';
 
 /**
  * forms.yaml: the forms (tasks that collect slots and then act). Mirrors App.forms (FormDef): the
@@ -21,36 +22,8 @@ export const FORM_HOOKS = [
 ] as const;
 export type FormHook = (typeof FORM_HOOKS)[number];
 
-/** How a form ends when a check refuses for a reason (forms.yaml `checks[].on`). */
-export const CHECK_THEN = ['end', 'anything-else', 'handoff'] as const;
-export type CheckThen = (typeof CHECK_THEN)[number];
-
-const checkOutcome = z
-  .strictObject({
-    confirm: identifier()
-      .optional()
-      .describe('A yes-or-no line (a prompt in prompts.yaml) said before the refusal acts, when a slot the check reads has not been confirmed; it renders with the form\'s slot displays as variables, as `say` does. A yes confirms them and the refusal acts; a no empties them and asks again, and the check runs again when they fill. Skipped when every slot it reads is confirmed already (a read-back, or the summary\'s yes). Default: none, the refusal acts at once.'),
-    say: identifier()
-      .optional()
-      .describe('The line said (a prompt in prompts.yaml); it renders with the form\'s slot displays as variables, as the summary does. Required for end and anything-else; for handoff, said before the handoff line.'),
-    then: z
-      .enum(CHECK_THEN)
-      .describe('What follows the line: end (the call ends, the goodbye after it; with a request queued, the call goes on to it), anything-else (the form closes uncounted and the call carries on: the next queued request, or "anything else?"), or handoff (to a person, with the handoff line handoff_<reason>).'),
-    reason: name()
-      .optional()
-      .describe('For then: handoff, the handoff reason, whose line is handoff_<reason>. Default: the reason the gate gave.'),
-  })
-  .check(checkAlways((value, ctx) => {
-    const outcome = value as { say?: unknown; then?: unknown; reason?: unknown } | null;
-    if (typeof outcome !== 'object' || outcome === null || Array.isArray(outcome)) return;
-    if ((outcome.then === 'end' || outcome.then === 'anything-else') && outcome.say === undefined) {
-      ctx.addIssue({ code: 'custom', path: [], message: `then: ${outcome.then} says a line first, and this outcome names none`, params: { fix: 'add "say: <a prompt id in prompts.yaml>" with the line the caller hears' } });
-    }
-    if (outcome.reason !== undefined && outcome.then !== 'handoff') {
-      ctx.addIssue({ code: 'custom', path: ['reason'], message: 'a reason names the handoff line, and this outcome does not hand off', params: { fix: 'delete "reason", or write "then: handoff"' } });
-    }
-  }))
-  .describe('What a refusal for this reason does: a line, and how the form ends.');
+/** How a form ends when a check refuses for a reason (forms.yaml `checks[].on`): the outcome's `then` (./outcome.ts). */
+export { CHECK_THEN, type CheckThen } from './outcome';
 
 const check = z
   .strictObject({
@@ -59,7 +32,7 @@ const check = z
       .min(1, { error: 'must name at least one slot' })
       .describe('The form\'s slots the check reads, each sent as the param of the same name. The check runs once every one of them holds a value, and again whenever one of them changes. An identity factor may be named too (check warns): it holds a value only once the caller has given it during verification.'),
     on: z
-      .record(name(), checkOutcome)
+      .record(name(), checkOutcomeSchema)
       .optional()
       .describe('A refusal reason (the gate\'s reason) mapped to its line and how the form ends. A reason not listed gets the engine\'s refusal: a BLOCK with a line from the app\'s blockPromptId says it and the call carries on; anything else goes to a person. A STEP_UP asks for identity, as an entry call\'s does, and the check runs again once the caller is verified (in an app without identity.yaml, it goes to a person).'),
   })

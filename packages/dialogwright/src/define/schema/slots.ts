@@ -71,6 +71,11 @@ export const OFFER_ANSWERS_DESCRIPTION =
 /** `offerAnswers:` on one slot: `yes-no-or-value` or `yes-no`, or absent for the default (`yes-no-or-value`). */
 export const slotOfferAnswersSchema = z.enum(OFFER_ANSWERS_VALUES as readonly [OfferAnswers, ...OfferAnswers[]]).describe(OFFER_ANSWERS_DESCRIPTION);
 
+/** The options every slot takes for how often it is asked and what follows when it runs out (SlotSpec.attempts, SlotSpec.onMaxAttempts; ./outcome.ts). A slot type may not have an option of either name. */
+export const ATTEMPTS_OPTION = 'attempts';
+export const ON_MAX_ATTEMPTS_OPTION = 'onMaxAttempts';
+export { ATTEMPTS_DESCRIPTION, ON_MAX_ATTEMPTS_DESCRIPTION, slotAttemptsSchema, slotOnMaxAttemptsSchema } from './outcome';
+
 export const slotsSchema = z
   .record(
     identifier(),

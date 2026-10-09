@@ -958,7 +958,7 @@ const goesOn = (c: CompletionContext): Completion => ({ kind: 'said', acks: c.ac
 /** A form's check as forms.yaml writes it, as FormDef carries it. */
 function checkOf(check: NonNullable<LoadedConfig['forms']['forms'][string]['checks']>[number]): FormCheck {
   const on = check.on === undefined ? undefined : Object.fromEntries(Object.entries(check.on).map(([reason, o]) => {
-    const outcome = { ...(o.confirm !== undefined ? { confirm: o.confirm } : {}), ...(o.say !== undefined ? { say: o.say } : {}), then: o.then, ...(o.reason !== undefined ? { reason: o.reason } : {}) } satisfies CheckOutcome;
+    const outcome = { ...(o.confirm !== undefined ? { confirm: o.confirm } : {}), ...(o.say !== undefined ? { say: o.say } : {}), then: o.then, ...(o.reason !== undefined ? { reason: o.reason } : {}), ...(o.form !== undefined ? { form: o.form } : {}) } satisfies CheckOutcome;
     return [reason, outcome];
   }));
   return on === undefined ? { action: check.action, with: check.with } : { action: check.action, with: check.with, on };

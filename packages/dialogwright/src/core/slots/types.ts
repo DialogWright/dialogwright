@@ -1,6 +1,6 @@
 import type { AnswerMap, QuestionMap } from '../../jev/types';
 import type { Thresholds } from '../thresholds';
-import type { SlotId } from '../app/types';
+import type { Outcome, SlotId } from '../app/types';
 import type { Nomination } from '../../kb/types';
 
 /**
@@ -254,8 +254,24 @@ export interface SlotSpec {
    * (`dialogwright check` refuses it otherwise). Absent: the default.
    */
   offerAnswers?: OfferAnswers;
+  /**
+   * How many failed answers the slot takes before `onMaxAttempts` runs (1 to 10): the failures before
+   * the last but one re-ask, the last but one is the keypad rung (where the slot has `dtmf` and the
+   * channel a keypad, else another re-ask), the last runs `onMaxAttempts`. Absent: the engine's
+   * MAX_ATTEMPTS (core/thresholds.ts; 3), read through attemptsOf (core/outcome.ts).
+   */
+  attempts?: number;
+  /**
+   * What happens when the slot runs out of attempts, by a miss, a silence, an unanswered read-back or
+   * a second no to its read-back (core/outcome.ts): `handoff` (the default: to a person, reason
+   * `max-attempts`), `skip` (left empty and declined, the form goes on), or an Outcome written out (a
+   * line, then `end`, `anything-else`, `handoff` with a reason, `form` with the form entered, or
+   * `skip`). Absent: `handoff`, as it always has been. An offer of the caller's number that runs out
+   * keeps its own `onNo` (callerNumber).
+   */
+  onMaxAttempts?: 'handoff' | 'skip' | Outcome;
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no
-   * keypad rung; its retry ladder is retry, retry, agent. */
+   * keypad rung; its retry ladder is retry, retry, agent (with the default attempts). */
   dtmf?: {
     length: number;
     parse(digits: string, ctx: SlotContext): SlotCandidate | null;

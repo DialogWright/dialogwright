@@ -123,7 +123,7 @@
                         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                       },
                       "say": {
-                        "description": "The line said (a prompt in prompts.yaml); it renders with the form's slot displays as variables, as the summary does. Required for end and anything-else; for handoff, said before the handoff line.",
+                        "description": "The line said (a prompt in prompts.yaml); it renders with the form's slot displays as variables, as the summary does. Required for end and anything-else; for the others, said first.",
                         "type": "string",
                         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                       },
@@ -134,12 +134,17 @@
                           "anything-else",
                           "handoff"
                         ],
-                        "description": "What follows the line: end (the call ends, the goodbye after it; with a request queued, the call goes on to it), anything-else (the form closes uncounted and the call carries on: the next queued request, or \"anything else?\"), or handoff (to a person, with the handoff line handoff_<reason>)."
+                        "description": "What follows the line: end (the call ends after the line; with a request queued, the call goes on to it); anything-else (the form closes uncompleted and the call carries on: the next queued request, or \"anything else?\"); handoff (to a person, with the handoff line handoff_<reason>)."
                       },
                       "reason": {
                         "description": "For then: handoff, the handoff reason, whose line is handoff_<reason>. Default: the reason the gate gave.",
                         "type": "string",
                         "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                      },
+                      "form": {
+                        "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                       }
                     },
                     "required": [
