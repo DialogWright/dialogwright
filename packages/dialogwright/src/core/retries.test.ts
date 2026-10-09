@@ -13,6 +13,12 @@ import { mockCodeVerifier } from './tools';
 import type { AnswerMap } from '../jev/types';
 import { screenedApp } from '../testing/screened/app';
 import { attemptsOf } from './outcome';
+import { join } from 'node:path';
+import { runScenario, type ScenarioStep } from '../harness-text/runner';
+import { loadCorpus } from '../jev/corpus';
+import { FixtureStubClient } from '../jev/fixtureStub';
+import { HeuristicStubClient } from '../jev/heuristicStub';
+import { CALLBACK_DIR, callbackApp } from '../testing/callback/app';
 
 /**
  * Per-slot retries (design 2026-10-09-per-slot-retries): a slot's own `attempts` walks its ladder
@@ -249,5 +255,164 @@ describe('the retry lines (decision 3)', () => {
     s.slots.town!.window = { kind: 'part' };
     expect(said(say(s, 'hmm', MISS))).toBe('ask_town_part');
     expect(said(resolve(s, silenceEvent(), null, tc()))).toBe('ask_town_part');
+  });
+});
+
+describe('what follows when a slot runs out (decisions 2 and 4)', () => {
+  /** A second form beside the booking: a note of a day and a time, no summary, its completion saying what it holds. */
+  const NOTE_LINES: Record<string, string> = {
+    note_done: 'Noted: {day}, {time}.',
+    day_skipped: 'No matter, any day will do.',
+    town_unclear: 'Sorry, I could not make out the town.',
+    handoff_town_unknown: 'Let me get someone who knows the area.',
+    confirm_visitDay: 'Just to check, {visitDay}?',
+  };
+  function withNote(id: string, slots: Partial<Record<string, Partial<SlotSpec>>>, extra: Partial<App> = {}): App {
+    const base = variant(id, slots.town ?? {}, NOTE_LINES);
+    const changed = Object.fromEntries(Object.entries(slots).filter(([k]) => k !== 'town').map(([k, v]) => [k, { ...(screenedApp.slots[k] as SlotSpec), ...v }]));
+    return {
+      ...base,
+      slots: { ...base.slots, ...changed },
+      intents: { ...base.intents, leave_note: { criteria: 'Wants to leave a note of a day and a time', label: 'leave a note', kind: 'form' } },
+      forms: {
+        ...base.forms,
+        leave_note: {
+          slots: ['visitDay', 'timeOfDay'],
+          summaryPromptId: null,
+          calls: [],
+          complete: (c) => ({ kind: 'end', promptId: 'note_done', vars: { day: c.s.slots.visitDay!.value ?? 'none', time: c.s.slots.timeOfDay!.value ?? 'none' }, acks: c.acks }),
+        },
+      },
+      ...extra,
+    };
+  }
+  const DAY_MISS: AnswerMap = { visitDay: choice({ none: 0.95, monday: 0.05 }) };
+  const toNote = (): Session => {
+    const s = resolve(newSession('s', 0, VOICE_RELAY, ANONYMOUS, current.id), startEvent(), null, tc()).session;
+    const t = say(s, 'I want to leave a note', { intent: one('leave_note') });
+    expect(said(t)).toBe('ask_visitDay');
+    return t.session;
+  };
+
+  it('skip, from a miss: the slot is declined, the form goes on to the next, and the completion sees no value', () => {
+    use(withNote('skip-miss', { visitDay: { attempts: 1, onMaxAttempts: { say: 'day_skipped', then: 'skip' } } }));
+    let t = say(toNote(), 'hmm', DAY_MISS);
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_timeOfDay', acks: [{ promptId: 'day_skipped' }] });
+    expect(t.session.slots.visitDay).toMatchObject({ value: null, declined: true, attempts: 1 });
+    expect(t.exhausted).toEqual({ slot: 'visitDay', attempts: 1, outcome: 'skip' });
+    t = say(t.session, 'the morning', { timeOfDay: one('morning') });
+    expect(t.decision).toMatchObject({ kind: 'complete', promptId: 'note_done', vars: { day: 'none', time: 'morning' } });
+  });
+
+  it('skip, from a silence, with no line', () => {
+    use(withNote('skip-silence', { visitDay: { attempts: 2, onMaxAttempts: 'skip' } }));
+    let s = toNote();
+    s = resolve(s, silenceEvent(), null, tc()).session;
+    const t = resolve(s, silenceEvent(), null, tc());
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_timeOfDay', acks: [{ promptId: 'no_input' }] });
+    expect(t.session.slots.visitDay!.declined).toBe(true);
+  });
+
+  it('skip, from a second no to the slot\'s read-back', () => {
+    use(withNote('skip-no', { visitDay: { confirmValues: ['monday'], readBackNo: 'ask', onMaxAttempts: 'skip' } }));
+    const NO: AnswerMap = { confirmsYes: noul(0.05), confirmsNo: noul(0.9) };
+    let t = say(toNote(), 'Monday', { visitDay: one('monday') });
+    expect(said(t)).toBe('confirm_visitDay');
+    t = say(t.session, 'no', NO);
+    expect(said(t)).toBe('ask_visitDay');
+    t = say(t.session, 'Monday', { visitDay: one('monday') });
+    expect(said(t)).toBe('confirm_visitDay');
+    t = say(t.session, 'no', NO);
+    expect(said(t)).toBe('ask_timeOfDay');
+    expect(t.session.slots.visitDay).toMatchObject({ value: null, declined: true });
+  });
+
+  it('form: the form closes uncompleted and the other opens with the slots both list kept, after the line', () => {
+    use(withNote('form', { town: { onMaxAttempts: { say: 'town_unclear', then: 'form', form: 'leave_note' } } }));
+    let s = resolve(newSession('s', 0, VOICE_RELAY, ANONYMOUS, current.id), startEvent(), null, tc()).session;
+    s = say(s, 'there is water in my basement, can someone come on a Saturday', { intent: one('book_visit'), problem: one('leak'), visitDay: one('saturday') }).session;
+    s = say(s, 'I own it', { ownership: one('own') }).session;
+    s = say(s, 'hmm', MISS).session;
+    s = say(s, 'hmm', MISS).session;
+    const t = say(s, 'hmm', MISS);
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_timeOfDay', acks: [{ promptId: 'town_unclear' }, { promptId: 'bridge_next', vars: { intentLabel: 'leave a note' } }] });
+    expect(t.session.form).toBe('leave_note');
+    expect(t.session.completed).toEqual([]);
+    expect(t.session.slots.visitDay!.value).toBe('saturday');
+    expect([t.session.slots.problem!.value, t.session.slots.town!.value, t.session.slots.town!.attempts]).toEqual([null, null, 0]);
+    expect(t.exhausted).toEqual({ slot: 'town', attempts: 3, outcome: 'form' });
+  });
+
+  it('end: the line, and the call ends', () => {
+    use(withNote('end', { town: { attempts: 1, onMaxAttempts: { say: 'town_unclear', then: 'end' } } }));
+    const t = say(atTown(), 'hmm', MISS);
+    expect(t.decision).toMatchObject({ kind: 'complete', form: 'book_visit', promptId: 'town_unclear' });
+    expect(t.session.completed).toEqual([]);
+  });
+
+  it('anything-else: the line, the form closes uncompleted, and "anything else?"', () => {
+    use(withNote('anything-else', { town: { attempts: 1, onMaxAttempts: { say: 'town_unclear', then: 'anything-else' } } }));
+    const t = say(atTown(), 'hmm', MISS);
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'anything_else', acks: [{ promptId: 'town_unclear' }] });
+    expect([t.session.form, t.session.completed]).toEqual([null, []]);
+  });
+
+  it('handoff with a reason says handoff_<reason>; the default is max-attempts, and records nothing new', () => {
+    use(withNote('handoff-reason', { town: { attempts: 1, onMaxAttempts: { then: 'handoff', reason: 'town-unknown' } } }));
+    const t = say(atTown(), 'hmm', MISS);
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'town-unknown', promptId: 'handoff_town_unknown' });
+    expect(t.exhausted).toEqual({ slot: 'town', attempts: 1, outcome: 'handoff' });
+    use(screenedApp);
+    let s = atTown();
+    s = say(s, 'hmm', MISS).session;
+    s = say(s, 'hmm', MISS).session;
+    const plain = say(s, 'hmm', MISS);
+    expect(plain.decision).toMatchObject({ kind: 'handoff', reason: 'max-attempts', promptId: 'handoff_max_attempts' });
+    expect('exhausted' in plain).toBe(false);
+  });
+
+  describe('an offer of the caller\'s number', () => {
+    /** The callback fixture's phone, offered on a call with a number, changed by `phone`. */
+    function offering(id: string, phone: Partial<SlotSpec>): App {
+      const spec: SlotSpec = { ...(callbackApp.slots.phone as SlotSpec), ...phone };
+      const lines = { no_number: { text: 'Then we will write to you instead. Goodbye.', interruptible: false } };
+      return { ...callbackApp, id, slots: { ...callbackApp.slots, phone: spec }, prompts: { ...callbackApp.prompts, manifest: { ...callbackApp.prompts.manifest, ...lines } } };
+    }
+    /** The prompts of a call from a number that names the caller, then is silent `n` times at the offer. */
+    async function silentAtOffer(n: number): Promise<TurnResult[]> {
+      const steps: ScenarioStep[] = [{ say: 'can someone call me back' }, { say: 'Jordan Avery' }, ...Array.from({ length: n }, () => ({ silence: true as const }))];
+      const client = new FixtureStubClient(loadCorpus(join(CALLBACK_DIR, 'fixtures', 'corpus.jsonl')), { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY }) });
+      const r = await runScenario({ id: 'call', callerNumber: '+15555550142', steps, expect: { decision: 'any' } }, { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0 });
+      return r.runs.map((x) => x.result);
+    }
+
+    it('that runs out keeps its own onNo, whatever onMaxAttempts says', async () => {
+      const cn = (callbackApp.slots.phone as SlotSpec).callerNumber!;
+      use(offering('offer-onno', { callerNumber: { ...cn, onNo: 'skip' }, onMaxAttempts: { say: 'no_number', then: 'end' } }));
+      const t = (await silentAtOffer(2)).at(-1)!;
+      expect(said(t)).toBe('ask_reason');
+      expect(t.session.slots.phone!.declined).toBe(true);
+    });
+
+    it('with no onNo, the slot\'s ladder runs on to its onMaxAttempts', async () => {
+      use(offering('offer-max', { onMaxAttempts: { say: 'no_number', then: 'end' } }));
+      const runs = await silentAtOffer(3);
+      expect(runs.slice(-3).map(said)).toEqual(['offer_phone', 'ask_phone_dtmf', 'complete']);
+      expect(runs.at(-1)!.decision).toMatchObject({ kind: 'complete', promptId: 'no_number' });
+    });
+  });
+});
+
+describe('a check\'s outcome goes to a form the same way (decision 5)', () => {
+  it('then: form: the form stops, the other is entered, and the audit names it', () => {
+    const forms = screenedApp.forms;
+    const checks = forms.book_visit!.checks!.map((c) => (c.action === 'checkArea' ? { ...c, on: { 'out-of-area': { say: 'decline_out_of_area', then: 'form' as const, form: 'urgent' } } } : c));
+    use({ ...screenedApp, id: 'check-form', forms: { ...forms, book_visit: { ...forms.book_visit!, checks } } });
+    const t = say(atTown(), 'Lakeview', { town: one('elsewhere') });
+    expect(t.stopped).toEqual({ form: 'book_visit', action: 'checkArea', reason: 'out-of-area', then: 'form', next: 'urgent' });
+    expect(t.audit.find((d) => d.type === 'form_stopped')?.detail).toEqual({ form: 'book_visit', action: 'checkArea', reason: 'out-of-area', then: 'form', next: 'urgent' });
+    // The urgent form has no slots: entered, it completes at once, and its completion hands off.
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', acks: [{ promptId: 'decline_out_of_area' }, { promptId: 'bridge_next', vars: { intentLabel: 'get help right away' } }] });
+    expect(t.session.completed).toEqual([]);
   });
 });

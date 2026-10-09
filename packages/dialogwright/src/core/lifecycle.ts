@@ -9,6 +9,7 @@ import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
 import type { CheckReconfirmed, FormStopped } from './checks';
+import type { SlotExhausted } from './outcome';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { idempotencyKey } from './idempotency';
 import { callerGateFacts } from './callerNumber';
@@ -90,6 +91,12 @@ export interface TurnOut {
   effects: Effect[];
   /** The form a check ended this turn (core/checks.ts), for the audit's `form_stopped` row. Absent on every other turn. */
   stopped?: FormStopped;
+  /**
+   * The slot that ran out of attempts this turn, and what followed (core/outcome.ts), for the trace's
+   * slot_exhausted event: only for a slot with retries of its own (SlotSpec.attempts or onMaxAttempts),
+   * so every other turn and every other app is as it was. Absent on every other turn.
+   */
+  exhausted?: SlotExhausted;
   /** The forms that completed this turn and went on to their next (FormDef.next; core/turn.ts), in order, each for an audit `form_next` row. Absent on every other turn. */
   movedOn?: FormMovedOn[];
   /** The offer of the caller's number this turn settled (core/turn.ts), for the audit's `offer` row. Absent on every other turn. */

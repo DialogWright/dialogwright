@@ -5,6 +5,7 @@ import { appOf } from './app/registry';
 import type { CheckOutcome, FormCheck, FormId, ToolName } from './app/types';
 import { blockAck, callTool, type TurnOut } from './lifecycle';
 import type { Ack } from './fia';
+import { endingOf, type Ending } from './outcome';
 import type { Session } from './session';
 import type { TurnContext } from './turn';
 
@@ -139,6 +140,8 @@ export interface FormStopped {
   /** The gate's reason; null when it gave none (a STEP_UP). */
   reason: string | null;
   then: CheckOutcome['then'];
+  /** For then: form, the form entered. Absent otherwise. */
+  next?: FormId;
   /** The refusal was read back first (the outcome's `confirm`) and the caller said yes. Absent otherwise. */
   confirmed?: true;
 }
@@ -163,16 +166,11 @@ export function outcomeOf(check: FormCheck, decision: Pick<GateDecision, 'verdic
 }
 
 /**
- * How a check's refusal ends the form:
- * - `end`: the line (`say`) is said, then the call ends (or goes on to a queued request);
- * - `anything-else`: the lines are said and the form closes uncounted, the call carrying on;
- * - `handoff`: to a person, for `reason`, after the lines.
- * `acks` are the turn's acks with the outcome's own line last, except for `end`, whose line is `line`.
+ * How a check's refusal ends the form: an Ending (core/outcome.ts), acted on by core/turn.ts actOn as a
+ * slot's outcome is. `acks` are the turn's acks with the outcome's own line last, except for `end`,
+ * whose line is `line`.
  */
-export type CheckEnding =
-  | { then: 'end'; acks: Ack[]; line: Ack }
-  | { then: 'anything-else'; acks: Ack[] }
-  | { then: 'handoff'; reason: string; acks: Ack[] };
+export type CheckEnding = Exclude<Ending, { then: 'skip' }>;
 
 /**
  * The ending a check's refusal maps to: the outcome `on` gives the gate's reason, or, for a reason it
@@ -190,13 +188,5 @@ export function checkEnding(s: Session, check: FormCheck, decision: Pick<GateDec
     if (ack) return { then: 'anything-else', acks: [...acks, ack] };
     return { then: 'handoff', reason: 'needs-human', acks };
   }
-  const said: Ack[] = outcome.say === undefined ? [] : [{ promptId: outcome.say, vars }];
-  switch (outcome.then) {
-    case 'end':
-      return { then: 'end', acks, line: said[0]! };
-    case 'anything-else':
-      return { then: 'anything-else', acks: [...acks, ...said] };
-    case 'handoff':
-      return { then: 'handoff', reason: outcome.reason ?? reason!, acks: [...acks, ...said] };
-  }
+  return endingOf(outcome, acks, vars, reason!) as CheckEnding;
 }

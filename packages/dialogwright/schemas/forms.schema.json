@@ -132,9 +132,10 @@
                         "enum": [
                           "end",
                           "anything-else",
-                          "handoff"
+                          "handoff",
+                          "form"
                         ],
-                        "description": "What follows the line: end (the call ends after the line; with a request queued, the call goes on to it); anything-else (the form closes uncompleted and the call carries on: the next queued request, or \"anything else?\"); handoff (to a person, with the handoff line handoff_<reason>)."
+                        "description": "What follows the line: end (the call ends after the line; with a request queued, the call goes on to it); anything-else (the form closes uncompleted and the call carries on: the next queued request, or \"anything else?\"); handoff (to a person, with the handoff line handoff_<reason>); form (the form closes uncompleted and the form named by `form` is entered, as a next: is, keeping the slots both list)."
                       },
                       "reason": {
                         "description": "For then: handoff, the handoff reason, whose line is handoff_<reason>. Default: the reason the gate gave.",

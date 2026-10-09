@@ -17,8 +17,8 @@ import { checkAlways, identifier, name } from './common';
 export const OUTCOME_THEN = ['end', 'anything-else', 'handoff', 'form', 'skip'] as const;
 export type OutcomeThen = (typeof OUTCOME_THEN)[number];
 
-/** The `then` of a check's outcome. */
-export const CHECK_THEN = ['end', 'anything-else', 'handoff'] as const;
+/** The `then` of a check's outcome: every one but `skip`, which only a slot has. */
+export const CHECK_THEN = ['end', 'anything-else', 'handoff', 'form'] as const;
 export type CheckThen = (typeof CHECK_THEN)[number];
 
 /** The short forms of a slot's `onMaxAttempts`: `handoff` (the default) and `skip`, each with no line. */

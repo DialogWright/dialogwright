@@ -242,7 +242,7 @@ export interface Outcome {
  */
 export interface CheckOutcome extends Outcome {
   readonly confirm?: string;
-  readonly then: 'end' | 'anything-else' | 'handoff';
+  readonly then: 'end' | 'anything-else' | 'handoff' | 'form';
 }
 
 /** A form's summary hook (FormDef.onSummaryRead): an AppContext with the acks the summary will follow. */

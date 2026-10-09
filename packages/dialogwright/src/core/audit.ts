@@ -174,7 +174,7 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   if (t.kb !== null && !drafts.some((d) => d.type === 'kb_answer')) drafts.push(kbAuditRow(t.kb));
   // A form a check ended (core/checks.ts): which check, for what reason, and how the form ended.
   // `confirmed` only where the refusal was read back first and the caller said yes (the outcome's `confirm`).
-  if (t.stopped) drafts.push({ type: 'form_stopped', detail: { form: t.stopped.form, action: t.stopped.action, reason: t.stopped.reason, then: t.stopped.then, ...(t.stopped.confirmed ? { confirmed: true } : {}) } });
+  if (t.stopped) drafts.push({ type: 'form_stopped', detail: { form: t.stopped.form, action: t.stopped.action, reason: t.stopped.reason, then: t.stopped.then, ...(t.stopped.next !== undefined ? { next: t.stopped.next } : {}), ...(t.stopped.confirmed ? { confirmed: true } : {}) } });
   if (decision.kind === 'handoff') {
     // The slots the caller never confirmed, by id and never by value, for an app whose handoff marks
     // or leaves them out (HandoffData.unconfirmed): the note can say what to check with the caller.

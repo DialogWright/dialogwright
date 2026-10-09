@@ -18,7 +18,7 @@ import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation,
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
-import { attemptsOf, noInputLineOf, retryLineOf } from './outcome';
+import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { CONSENT_PROMPT, consentCovers, grantedFor } from './textConsent';
@@ -193,6 +193,8 @@ export interface TurnResult {
   effects: Effect[];
   /** the form a check ended this turn (core/checks.ts); absent on every other turn */
   stopped?: FormStopped;
+  /** the slot that ran out of attempts this turn and what followed (core/outcome.ts), for a slot with retries of its own; absent on every other turn */
+  exhausted?: SlotExhausted;
   /** the forms that completed this turn and went on to their next (FormDef.next), in order; absent on every other turn */
   movedOn?: FormMovedOn[];
   /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
@@ -631,7 +633,7 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   if (target === 'otp') return codeReask(s, io, acks, 'ask_otp');
   const attempts = target === 'intent' ? ++s.intentAttempts : ++s.slots[target]!.attempts;
   const step = rungFor(s, attempts, t, target === 'intent' ? t.MAX_ATTEMPTS : attemptsOf(io.app, target, t));
-  if (step === 'agent') return handoff(s, 'max-attempts', acks);
+  if (step === 'agent') return target === 'intent' ? handoff(s, 'max-attempts', acks) : slotRunsOut(s, target, acks, io);
   if (target === 'intent') {
     if (step === 'dtmf') return { ...prompt('nomatch_dtmf_menu', 'intent', {}, acks, io.app.menu.map((m) => m.digit)), menu: true };
     if (plain) return prompt(intentQuestion, 'intent', {}, acks);
@@ -866,7 +868,7 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
         return continueForm(s, io, acks, null);
       }
     }
-    if (step === 'agent') { s.pendingConfirmation = null; return handoff(s, 'max-attempts', acks); }
+    if (step === 'agent') { s.pendingConfirmation = null; return slotRunsOut(s, pc.slot, acks, io); }
     // A readback the caller never answers burns the same attempts as a wrong value, so it
     // lands on the keypad rather than looping on a value we still cannot vouch for.
     if (step === 'dtmf') {
@@ -1321,18 +1323,83 @@ function endByCheck(s: Session, form: FormId, check: FormCheck, decision: Pick<G
   const entering = (a: Ack): boolean => ((a.promptId === 'ack_intent' || a.promptId === 'bridge_next') && labels.has(a.vars.intentLabel!)) || (a.promptId === 'ack_intent_then' && labels.has(a.vars.a!)) || passedLines.has(a.promptId);
   const kept = acks.filter((a) => !entering(a));
   const ending = checkEnding(s, check, decision, kept, summaryVars(s));
-  io.out.stopped = { form, action: check.action, reason: decision.reason ?? null, then: ending.then, ...(confirmed ? { confirmed: true as const } : {}) };
+  io.out.stopped = { form, action: check.action, reason: decision.reason ?? null, then: ending.then, ...(ending.then === 'form' ? { next: ending.form } : {}), ...(confirmed ? { confirmed: true as const } : {}) };
+  return actOn(s, form, ending, io);
+}
+
+/**
+ * An outcome acts (core/outcome.ts Ending): a check's refusal (endByCheck) or a slot that ran out of
+ * attempts (slotRunsOut), in `form`, the form open (null for a slot asked with none open, an identity
+ * factor at the greeting). The form is never counted as completed.
+ * - `end`: the line, and the call ends with the form and its slots left on the session as they were, as
+ *   a completion that ends the call leaves them, with no question pending; with a request queued, the
+ *   call goes on to it instead.
+ * - `anything-else`: the form closes and the call carries on (the next queued request, or "anything else?").
+ * - `handoff`: to a person, for its reason.
+ * - `form`: the form closes, keeping the slots the form entered lists too, and that form is entered
+ *   (enterByOutcome).
+ * - `skip`: the form goes on to its next question (the slot was declined by slotRunsOut).
+ */
+function actOn(s: Session, form: FormId | null, ending: Ending, io: TurnIO): Decision {
   switch (ending.then) {
     case 'end':
-      if (s.queued.length > 0) return finishForm(s, form, [...ending.acks, ending.line], io, false);
+      if (s.queued.length > 0 && form !== null) return finishForm(s, form, [...ending.acks, ending.line], io, false);
       s.pendingConfirmation = null;
       s.pendingHash = null;
       return { kind: 'complete', form, promptId: ending.line.promptId, vars: ending.line.vars, acks: ending.acks, completed: [...s.completed] };
     case 'anything-else':
+      if (form === null) return prompt('anything_else', 'intent', {}, ending.acks);
       return finishForm(s, form, ending.acks, io, false);
     case 'handoff':
       return handoff(s, ending.reason, ending.acks);
+    case 'form':
+      return enterByOutcome(s, form, ending.form, ending.acks, io);
+    case 'skip':
+      if (form === null) return prompt('anything_else', 'intent', {}, ending.acks);
+      return continueForm(s, io, ending.acks, null);
   }
+}
+
+/**
+ * An outcome's `then: form`: `from` closes uncounted, as a form a check ended does, and `to` is entered
+ * as a `next` enters it (goOn): the slots both forms list stay as they are, the rest of `from`'s go, and
+ * `to` is bridged into (bridge_next with its label) after the outcome's line. Unlike `next`, nothing of
+ * `from` carries: it did not complete, so its checks' passes are not `to`'s, and `to` is reached through
+ * nothing (Session.reachedThrough). The audit's `form_stopped` row names `to` as `next` for a check.
+ */
+function enterByOutcome(s: Session, from: FormId | null, to: FormId, acks: Ack[], io: TurnIO): Decision {
+  const target = formOf(io.app, to);
+  const keep = from === null ? [] : formOf(io.app, from).slots.filter((id) => target.slots.includes(id));
+  closeForm(s, keep);
+  setForm(s, to);
+  return continueForm(s, io, [...acks, { promptId: 'bridge_next', vars: { intentLabel: formLabel(io.app, to) } }], null);
+}
+
+/**
+ * `slot` has run out of attempts (its SlotSpec.attempts, else MAX_ATTEMPTS): by a miss, a silence, a
+ * key that is no answer, an unanswered read-back, or a second no to its read-back. Its onMaxAttempts
+ * acts (core/outcome.ts), after `acks`:
+ * - `handoff` (the default): to a person, for `max-attempts` or the outcome's reason, the slot left as
+ *   it was, so a handoff hands over what it does today;
+ * - `end`: the line, and the call ends, as a check's end;
+ * - `skip`: the slot is emptied and declined (SlotState.declined: empty, answered), its attempts kept,
+ *   and the form goes on to its next question: the completion sees no value;
+ * - `anything-else` and `form`: the slot is emptied, its attempts with it (a slot kept past the form,
+ *   an identity factor or one carried, is asked afresh later), and the form ends as the outcome says.
+ * A pending read-back of the slot is dropped, unless the call goes to a person. For a slot with retries of its own, the trace is
+ * told (TurnOut.exhausted).
+ */
+function slotRunsOut(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision {
+  const spec = slotSpecOf(io.app, slot);
+  const outcome = slotOutcomeOf(spec);
+  const st = s.slots[slot]!;
+  if (hasOwnRetries(spec)) io.out.exhausted = { slot, attempts: st.attempts, outcome: outcome.then };
+  const ending = endingOf(outcome, acks, summaryVars(s), MAX_ATTEMPTS_REASON);
+  const pc = s.pendingConfirmation;
+  if (ending.then !== 'handoff' && pc?.target === 'slot' && pc.slot === slot) s.pendingConfirmation = null;
+  if (ending.then === 'skip') Object.assign(st, emptySlot(), { attempts: st.attempts, declined: true as const });
+  else if (ending.then === 'anything-else' || ending.then === 'form') s.slots[slot] = emptySlot();
+  return actOn(s, s.form, ending, io);
 }
 
 /**
@@ -1423,7 +1490,7 @@ function slotDeclined(s: Session, pc: Extract<PendingConfirmation, { target: 'sl
   const st = s.slots[pc.slot]!;
   const nos = (st.readBackNos ?? 0) + 1;
   st.readBackNos = nos;
-  if (nos >= 2) return { decision: handoff(s, 'max-attempts'), events: [] };
+  if (nos >= 2) return { decision: slotRunsOut(s, pc.slot, [], io), events: [] };
   emptyForReadBack(s, pc.slot);
   const said = sameBreath(s, answers, ctx, [pc.slot], { [pc.slot]: pc.value }, io);
   if (said.taken) return { decision: continueForm(s, io, [ACK_DECLINED, ...said.fill.acks], said.fill.disambiguate), events: said.fill.events };
@@ -1469,7 +1536,7 @@ function askOnLadder(s: Session, io: TurnIO, slot: SlotId, acks: Ack[]): Decisio
   const st = s.slots[slot]!;
   st.attempts += 1;
   const step = rungFor(s, st.attempts, io.tc.thresholds, attemptsOf(io.app, slot, io.tc.thresholds));
-  if (step === 'agent') return handoff(s, 'max-attempts');
+  if (step === 'agent') return slotRunsOut(s, slot, [], io);
   if (step === 'dtmf' && slotSpecOf(io.app, slot).dtmf !== undefined) return prompt(`ask_${slot}_dtmf`, slot, {}, acks);
   return askSlot(s, slot, null, acks);
 }
@@ -1744,7 +1811,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         const st = s.slots[pc.slot]!;
         const max = attemptsOf(io.app, pc.slot, t);
         st.attempts = Math.max(st.attempts + 1, max - 1);
-        if (retryStep(st.attempts, t, max) === 'agent') return { decision: handoff(s, 'max-attempts'), events: [] };
+        if (retryStep(st.attempts, t, max) === 'agent') return { decision: slotRunsOut(s, pc.slot, [], io), events: [] };
         Object.assign(st, emptySlot(), { attempts: st.attempts });
         return { decision: prompt(`ask_${pc.slot}_dtmf`, pc.slot, {}, [ACK_DECLINED]), events: [] };
       }
