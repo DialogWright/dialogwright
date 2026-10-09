@@ -44,7 +44,7 @@ CLAUDE.md       notes for an AI coding assistant changing this app
 .env.example    the keys and settings for recording and for serving (copy to .env)
 ```
 
-What is data is YAML, and what runs is TypeScript. Policy is never in a tool: the gate decides, from `policy.yaml`, whether a tool may run. The guide to every file is [docs/guide/](../../docs/guide/README.md) (its section 3 is policy and identity), and the slot types are in [docs/slots](../../docs/slots/README.md).
+What is data is YAML, and what runs is TypeScript. Policy is never in a tool: the gate decides, from `policy.yaml`, whether a tool may run. The guide to every file is [docs/guide/](../../docs/guide/README.md) (its [section 3](../../docs/guide/03-policy-and-identity.md) is policy and identity), and the slot types are in [docs/slots](../../docs/slots/README.md).
 
 ## Commands
 

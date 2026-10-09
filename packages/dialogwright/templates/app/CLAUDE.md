@@ -1,6 +1,6 @@
 # {{display}}: notes for AI coding assistants
 
-{{display}} is a DialogWright app: a voice and chat agent whose dialog and policy are YAML and whose tools and form hooks are TypeScript. Read the repository's root `CLAUDE.md` first for the rules, and [docs/guide/]({{root}}/docs/guide/README.md) before changing the folder. This app starts as a one-form example (book a service); the example is what you replace.
+{{display}} is a DialogWright app: a voice and chat agent whose dialog and policy are YAML and whose tools and form hooks are TypeScript. Read the repository's root `CLAUDE.md` first for the rules, and the authoring guide, [docs/guide/]({{root}}/docs/guide/README.md), before changing the folder. This app starts as a one-form example (book a service); the example is what you replace.
 
 ## The folder
 
