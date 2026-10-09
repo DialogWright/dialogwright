@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# The three checks are questions to the gate only (check: true): no tool runs. Each holds one
+# answer to a list with a built-in rule (oneOf, noneOf), so the app writes no rule of its own. The
+# booking names the same rules, so the write still refuses what a check refused.
+actions:
+  checkUrgency:
+    say: send something urgent to the office
+    check: true
+    level: 0
+    rules:
+      - identity
+      - noneOf: { field: howUrgent, values: [urgent], reason: urgent, verdict: NEEDS_HUMAN }
+  checkOwner:
+    say: check the caller owns the home
+    check: true
+    level: 0
+    rules:
+      - identity
+      - oneOf: { field: ownership, values: [own], reason: not-owner }
+  checkArea:
+    say: check the home is in the area
+    check: true
+    level: 0
+    rules:
+      - identity
+      - oneOf: { field: town, values: [millbrook, cedar_falls, ashford, riverton], reason: out-of-area }
+  bookVisit:
+    say: book a free visit
+    level: 0
+    rules:
+      - identity
+      - noneOf: { field: howUrgent, values: [urgent], reason: urgent, verdict: NEEDS_HUMAN }
+      - oneOf: { field: ownership, values: [own], reason: not-owner }
+      - oneOf: { field: town, values: [millbrook, cedar_falls, ashford, riverton], reason: out-of-area }
+      - confirmed: [problem, ownership, town, howUrgent, visitDay, timeOfDay]
+
+audit:
+  problem: keep
+  ownership: keep
+  town: keep
+  howUrgent: keep
+  visitDay: keep
+  timeOfDay: keep

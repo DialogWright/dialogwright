@@ -1,0 +1,27 @@
+{"id":"hv-01","text":"there's water in my basement","intent":"book_visit","context":"no_form","labels":{"problem":"leak"}}
+{"id":"hv-02","text":"can someone come and look at a crack in my wall","intent":"book_visit","context":"no_form","labels":{"problem":"crack"}}
+{"id":"hv-03","text":"I own a house in Riverton, water is coming into the basement and it's getting worse, can someone come out on a Saturday morning","intent":"book_visit","context":"no_form","labels":{"problem":"leak","ownership":"own","town":"riverton","howUrgent":"soon","visitDay":"saturday","timeOfDay":"morning"}}
+{"id":"hv-04","text":"I rent a place in Ashford, water is seeping in and it's getting worse","intent":"book_visit","context":"no_form","labels":{"problem":"leak","ownership":"rent","town":"ashford","howUrgent":"soon"}}
+{"id":"hv-05","text":"water is pouring in right now","intent":"urgent","context":"no_form"}
+{"id":"hv-06","text":"oh no, water is pouring in right now","intent":"urgent","context":"book_visit","prompted":"town","change":"replacing"}
+{"id":"hv-07","text":"I own my house, can someone come out on a Saturday morning","intent":"book_visit","context":"no_form","labels":{"ownership":"own","visitDay":"saturday","timeOfDay":"morning"}}
+{"id":"pr-01","text":"a crack in the wall","intent":"none","context":"book_visit","prompted":"problem","labels":{"problem":"crack"}}
+{"id":"ow-01","text":"I rent it","intent":"none","context":"book_visit","prompted":"ownership","labels":{"ownership":"rent"}}
+{"id":"ow-02","text":"yes, I own it","intent":"none","context":"book_visit","prompted":"ownership","labels":{"ownership":"own"}}
+{"id":"tw-01","text":"Lakeview","intent":"none","context":"book_visit","prompted":"town","labels":{"town":"elsewhere"}}
+{"id":"tw-02","text":"Cedar Falls","intent":"none","context":"book_visit","prompted":"town","labels":{"town":"cedar_falls"}}
+{"id":"hu-01","text":"it can wait, whenever suits","intent":"none","context":"book_visit","prompted":"howUrgent","labels":{"howUrgent":"routine"}}
+{"id":"hu-02","text":"it needs someone right away","intent":"none","context":"book_visit","prompted":"howUrgent","labels":{"howUrgent":"urgent"}}
+{"id":"hu-03","text":"it's getting worse","intent":"none","context":"book_visit","prompted":"howUrgent","labels":{"howUrgent":"soon"}}
+{"id":"vd-01","text":"Monday","intent":"none","context":"book_visit","prompted":"visitDay","labels":{"visitDay":"monday"}}
+{"id":"td-01","text":"the morning","intent":"none","context":"book_visit","prompted":"timeOfDay","labels":{"timeOfDay":"morning"}}
+{"id":"cb-01","text":"yes, book it","intent":"none","context":"confirm_book_visit","confirm":"yes"}
+{"id":"cb-02","text":"no wait, it's my landlord's house, I rent","intent":"none","context":"confirm_book_visit","confirm":"no","labels":{"ownership":"rent"}}
+{"id":"cb-03","text":"no, it's in Ashford","intent":"none","context":"confirm_book_visit","confirm":"no","labels":{"town":"ashford"}}
+{"id":"cb-04","text":"yes, but I rent it","intent":"none","context":"confirm_book_visit","confirm":"yes","labels":{"ownership":"rent"}}
+{"id":"cb-05","text":"wait, water is coming through the wall right now","intent":"urgent","context":"confirm_book_visit","change":"replacing","labels":{"howUrgent":"urgent"}}
+{"id":"ag-01","text":"can I talk to a person","intent":"agent","context":"no_form"}
+{"id":"rp-01","text":"can you say that again","intent":"repeat_prompt","context":"no_form"}
+{"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}
+{"id":"no-01","text":"hello","intent":"none","context":"no_form"}
+{"id":"dn-01","text":"that's all, thanks","intent":"done","context":"anything_else"}

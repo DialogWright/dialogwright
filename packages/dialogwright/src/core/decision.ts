@@ -1,9 +1,10 @@
-import type { SlotPartial } from './slots/types';
-import { identityOf, slotSpecOf } from './app/lookup';
+import type { SlotPartial, SlotSpec } from './slots/types';
+import { handoffUnconfirmedOf, identityOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { FormId, SlotId } from './app/types';
 import { handoffPromptId } from '../prompts/render';
 import { maskId } from '../gate/principal';
+import { isAnonymous } from '../gate/types';
 import type { Ack } from './fia';
 import type { Session } from './session';
 import { slotLocaleOf } from './locale';
@@ -53,6 +54,12 @@ export interface HandoffDecision {
    * by default no identity factor at all, and a redacted slot masked.
    */
   slots: Record<string, string>;
+  /**
+   * The slots of `slots` the caller never confirmed (unconfirmedSlots), in the app's slot order: only
+   * for an app whose handoff data marks or leaves them out (HandoffData.unconfirmed `mark` or `omit`).
+   * Absent otherwise, so every other app's handoff is as it was.
+   */
+  unconfirmed?: SlotId[];
 }
 
 export type Decision =
@@ -72,6 +79,11 @@ export const IDENTITY_VERIFIED = 'verified';
 /** A `handoff: 'verified'` slot's handoff value when it was collected but the caller is not verified. */
 export const IDENTITY_UNVERIFIED = 'not verified';
 
+/** A slot recorded by its length that is a secret, not the caller's words (SlotSpec.statement false: a PIN). */
+export function isSecretByLength(spec: Pick<SlotSpec, 'redact' | 'statement'> | undefined): boolean {
+  return spec?.redact === 'length' && spec.statement === false;
+}
+
 export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDecision {
   // Whatever the caller added and the call never got to is the agent's problem now,
   // so it rides along in the handoff data -- together with what the call did collect,
@@ -81,12 +93,40 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
   for (const [id, spec] of Object.entries(app.slots)) {
     const slot = s.slots[id]!;
     if (slot.value === null) continue;
-    if (spec.handoff === 'last4') slots[id] = maskId(slot.value.replace(/\D/g, ''));
+    // A factor the caller-ID match filled, for a caller it did not verify: it came from the number,
+    // not from the caller, so the person taking the call is not handed it as if the caller had said it.
+    if (slot.by === 'caller-id' && isAnonymous(s.principal)) continue;
+    // A secret by its length (a PIN, SlotSpec.statement false) goes by its real length unless it is
+    // handed over only as verified: never its digits, nor a last four that may be most of it.
+    if (spec.handoff !== 'verified' && isSecretByLength(spec)) slots[id] = `<${slot.value.length} chars>`;
+    else if (spec.handoff === 'last4') slots[id] = maskId(slot.value.replace(/\D/g, ''));
     else if (spec.handoff === 'verified') slots[id] = s.principal.kind === identityOf(app).subjectKind ? IDENTITY_VERIFIED : IDENTITY_UNVERIFIED;
     else if (spec.displayFrom === 'said') slots[id] = slot.value;
     else slots[id] = slot.display ?? slot.value;
   }
-  return { kind: 'handoff', reason, promptId: handoffPromptId(reason), acks, completed: [...s.completed], queued: [...s.queued], slots };
+  const decision: HandoffDecision = { kind: 'handoff', reason, promptId: handoffPromptId(reason), acks, completed: [...s.completed], queued: [...s.queued], slots };
+  if (handoffUnconfirmedOf(app) !== 'send') decision.unconfirmed = unconfirmedSlots(s);
+  return decision;
+}
+
+/**
+ * The filled slots the caller never confirmed (HandoffData.unconfirmed): neither `confirmed` (a yes
+ * to the slot's own read-back, a keyed value, a fill the slot takes with no read-back) nor holding
+ * the value the caller said yes to at a summary (Session.agreed). An identity factor, and a slot
+ * handed over only as `verified`, is never listed: what was proven of the caller is the Identity
+ * line's, not a heard value's.
+ */
+export function unconfirmedSlots(s: Session): SlotId[] {
+  const app = appOf(s);
+  const factors = identityOf(app).factorSlots;
+  const out: SlotId[] = [];
+  for (const [id, spec] of Object.entries(app.slots)) {
+    const slot = s.slots[id]!;
+    if (slot.value === null || slot.confirmed || factors.includes(id) || spec.handoff === 'verified') continue;
+    if (s.agreed !== undefined && Object.hasOwn(s.agreed, id) && s.agreed[id] === slot.value) continue;
+    out.push(id);
+  }
+  return out;
 }
 
 /** "Would you like me to connect you with a support specialist?" */

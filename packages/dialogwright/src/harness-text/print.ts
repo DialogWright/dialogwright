@@ -64,7 +64,7 @@ function actionLines(a: Action): string[] {
   switch (a.type) {
     case 'say': return a.parts.map((p) => ('text' in p ? `  > ${p.text}` : '  [play]'));
     case 'end': return [`  [end] ${endFrame('completed', a.completed).handoffData}`];
-    case 'transfer': return [`  [end] ${endFrame(a.reason, a.completed, a.queued, a.slots).handoffData}`];
+    case 'transfer': return [`  [end] ${endFrame(a.reason, a.completed, a.queued, a.slots, a.unconfirmed).handoffData}`];
     case 'send_digits': return ['  [sendDigits]'];
     case 'set_language': return ['  [language]'];
   }

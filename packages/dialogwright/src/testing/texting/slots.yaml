@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../../../schemas/slots.schema.json
+topic:
+  type: choice
+  options:
+    order:
+      say: an order
+      means: The request is about an order
+    bill:
+      say: a bill
+      means: The request is about a bill or a payment
+    other:
+      say: something else
+      means: The request is about something other than an order or a bill
+  text:
+    instructions: Read asr.text. What does the caller say the request is about?
+# A number to text updates to. On a call from a mobile, the line offers the number the caller is
+# calling from as a yes or no (callerNumber); a no, no answer, or no number to offer leaves the slot
+# empty and no text is sent (onNo, ifNone: skip). A number said instead is taken as said.
+textTo:
+  type: digits
+  noun: mobile number
+  length: 10
+  mask: '[2-9]\d{9}'
+  keypad: true
+  group: [3, 3, 4]
+  callerNumber:
+    countryCode: '1'
+    onNo: skip
+    ifNone: skip

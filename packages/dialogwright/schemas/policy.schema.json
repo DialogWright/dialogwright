@@ -25,6 +25,11 @@
               2
             ]
           },
+          "check": {
+            "description": "true: the action is a question to the gate only, a form's check (forms.yaml `checks`). It has no tool: the gate decides and nothing runs. It lists no confirmed rule (nothing is confirmed part-way through a form).",
+            "type": "boolean",
+            "const": true
+          },
           "rules": {
             "type": "array",
             "items": {
@@ -296,6 +301,135 @@
                 {
                   "type": "object",
                   "properties": {
+                    "oneOf": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the value (for a check, one of the slots its `with` sends). A value that is missing or empty BLOCKs, reason \"value-missing\"."
+                        },
+                        "values": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "description": "The values the param must be one of, each as the slot holds it (a choice slot's option ids), matched exactly."
+                        },
+                        "reason": {
+                          "description": "The reason a value not listed fails for, for a form check's `on:`, the app's refusal lines and handoffs. Default \"not-one-of\".",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                        },
+                        "verdict": {
+                          "description": "BLOCK (default) or NEEDS_HUMAN, for a value not listed. A missing value always BLOCKs.",
+                          "type": "string",
+                          "enum": [
+                            "BLOCK",
+                            "NEEDS_HUMAN"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "values"
+                      ],
+                      "additionalProperties": false,
+                      "description": "oneOf: the action's param is one of the values listed."
+                    }
+                  },
+                  "required": [
+                    "oneOf"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The oneOf rule with its parameters, for example \"oneOf: { field: town, values: [millbrook, ashford] }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "noneOf": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the value (for a check, one of the slots its `with` sends). A value that is missing or empty BLOCKs, reason \"value-missing\"."
+                        },
+                        "values": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "description": "The values the param must not be, each as the slot holds it (a choice slot's option ids), matched exactly."
+                        },
+                        "reason": {
+                          "description": "The reason a value listed fails for, for a form check's `on:`, the app's refusal lines and handoffs. Default \"one-of\".",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                        },
+                        "verdict": {
+                          "description": "BLOCK (default) or NEEDS_HUMAN, for a value listed. A missing value always BLOCKs.",
+                          "type": "string",
+                          "enum": [
+                            "BLOCK",
+                            "NEEDS_HUMAN"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "values"
+                      ],
+                      "additionalProperties": false,
+                      "description": "noneOf: the action's param is none of the values listed."
+                    }
+                  },
+                  "required": [
+                    "noneOf"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The noneOf rule with its parameters, for example \"noneOf: { field: howUrgent, values: [emergency], verdict: NEEDS_HUMAN }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "callerNumber": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                          "description": "The action's param that holds the number (for a text, the slot a text offer filled: it is compared as that slot holds the caller's number). A value that is missing or empty BLOCKs, reason \"value-missing\"."
+                        },
+                        "else": {
+                          "description": "What a number that is not the caller's gets: \"refuse\" (default), BLOCK \"not-caller-number\" (or \"no-caller-number\" when the call kept none), or \"confirmed\": it passes when the caller heard the call's values read back at the summary and said yes, which needs the field in the action's confirmed rule.",
+                          "type": "string",
+                          "enum": [
+                            "refuse",
+                            "confirmed"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "field"
+                      ],
+                      "additionalProperties": false,
+                      "description": "callerNumber: the action's param is the number the caller is calling from, or with else: confirmed one they confirmed at the summary. Caller ID is a hint, never identity: the rule says where a call may send something, never whose record it reads."
+                    }
+                  },
+                  "required": [
+                    "callerNumber"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The callerNumber rule with its parameters, for example \"callerNumber: { field: textTo }\"."
+                },
+                {
+                  "type": "object",
+                  "properties": {
                     "custom": {
                       "type": "string",
                       "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
@@ -309,7 +443,7 @@
                   "description": "The custom rule with its parameters, for example \"custom: <the rule's id in code.customRules>\"."
                 }
               ],
-              "description": "One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, dateInRange, limit, custom)."
+              "description": "One rule: a bare name (identity, attempts) or a map of one rule to its parameters (scope, role, confirmed, fields, dateInRange, limit, oneOf, noneOf, callerNumber, custom)."
             },
             "description": "The rules the gate runs before the action, in this order; the first that fails decides. An empty list runs none."
           }

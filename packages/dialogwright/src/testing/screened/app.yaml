@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=../../../schemas/app.schema.json
+# Example Home Visits: a fictional line that books a free visit, the engine's fixture for a form's
+# checks. A caller who rents, or whose home is outside the four towns, hears that the visit is not
+# for them before anything else is asked.
+id: screened
+locale: en-US
+
+brand:
+  name: Example Home Visits
+  mark: HV
+
+console:
+  formLabels:
+    book_visit: Book a visit
+    urgent: Something urgent
+  slotLabels:
+    problem: Problem
+    ownership: Owns or rents
+    town: Town
+    howUrgent: How urgent
+    visitDay: Day
+    timeOfDay: Time of day
+
+wording:
+  addressee: the Example Home Visits line
+
+# The office sees which values the caller never confirmed: everything is still sent, and the end
+# frame, the console and the audit's handoff row name those the caller did not say yes to.
+handoff:
+  data:
+    unconfirmed: mark
+
+fixtures:
+  dir: src/testing/screened/fixtures

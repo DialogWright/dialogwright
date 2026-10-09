@@ -6,7 +6,7 @@ import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/co
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, fixtures, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, fixtures, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -282,6 +282,13 @@ const handoff = z
             'How a slot goes, by slot id, in place of its default: "omit" (left out), "masked" (as the trace masks it: by its redact setting, or its handoff setting where that is last4 or verified) or "as-is" (its display, in the clear). ' +
               'Default: an identity factor is omitted, a slot with a redact setting goes masked, any other slot as it is. Name a slot "as-is" only when the person taking the call needs it in the clear.',
           ),
+        unconfirmed: z
+          .enum(['send', 'mark', 'omit'])
+          .optional()
+          .describe(
+            'What goes of a value the caller never confirmed (not confirmed on its own, and not the value they said yes to at a summary since): "send" (the default, sent as any other), ' +
+              '"mark" (sent, and the data names it: the end frame\'s unconfirmed list, the console\'s "(not confirmed)", the audit\'s handoff row) or "omit" (left out). An identity factor is never counted. A chat\'s transfer sends no slots whatever this says.',
+          ),
       })
       .optional()
       .describe("What a transfer hands the channel of the collected slots: on a phone call, the relay's end frame, which the carrier holds and posts back on its action callback. A chat's transfer sends none. Default: no identity factor, a redacted slot masked, any other slot as it is."),
@@ -331,6 +338,7 @@ const promptSettings = z
         chat: identifier().optional().describe('The opening line on a text channel for an anonymous visitor. Default "greeting_chat".'),
         chatSignedIn: identifier().optional().describe('The opening line on a text channel for a signed-in subject (with {first}). Default "greeting_chat_signed_in".'),
         chatDelegate: identifier().optional().describe('The opening line on a text channel for a signed-in delegate (with {first}). Default "greeting_chat_delegate".'),
+        offer: identifier().optional().describe('On a call that opens on a proposal (a slot\'s offerAt: greeting), the line said before it, in place of the greeting and its open question. Default "greeting_offer".'),
       })
       .optional()
       .describe("The opening line's prompt ids by case. Each prompt must exist in prompts.yaml."),
@@ -340,6 +348,26 @@ const promptSettings = z
     tags: textMap(identifier()).optional().describe('Per-clip voice tags for the clip generator (clip id to tag, for example "[calm]"); the tag syntax is the text-to-speech provider\'s.'),
   })
   .describe('What the app says about its prompts besides their text (which is in prompts.yaml): the opening lines, the variables the clip generator must treat specially, and the clips\' vocabulary and voice tags.');
+
+const callerNumber = z
+  .strictObject({
+    use: z
+      .literal('hint')
+      .describe('"hint": keep the number the caller is calling from for the app\'s code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling on its own (identity.yaml\'s callerId lets a caller-ID match identify an account, with a knowledge factor that verifies it).'),
+    called: z.boolean().optional().describe('Keep the number the caller called (the DNIS) too, for the app\'s code (calledOf(s)). Default false.'),
+    lookup: identifier()
+      .optional()
+      .describe('A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal or a failure is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides whether it runs. Nothing is withheld from a caller not yet proven, so what the tool returns reaches the app whole: what to return, and what the lines say of it before identity, is the app\'s call. Default: none.'),
+  })
+  .describe('The number the caller is calling from, kept for the app\'s code: a hint, never identity on its own (an app may let a caller-ID match identify an account, with a knowledge factor that verifies it: identity.yaml callerId). Without it, the number is kept only for a slot that offers it (a digits slot\'s callerNumber).');
+
+const textConsent = z
+  .strictObject({
+    covers: unique(identifier(), 'slot')
+      .min(1, { error: 'names no slot' })
+      .describe('The slots the consent stands in for: each offers the number the caller is calling from (a digits slot\'s callerNumber). Granted, each is filled with the caller\'s number, confirmed, with no question of its own, and an offer row (answer: consent) records each use; declined or not answered, each asks its own offer.'),
+  })
+  .describe('Consent to text for the whole call: asked once, on a call, right after the greeting (greeting_offer, then consent_texts with {last4}, then greet_after_offer), when the caller\'s number is kept and the app\'s callerOffer allows the first slot it covers. A yes is recorded as a consent row (scope: call); the slots it covers then use the caller\'s number without asking again. Never asked on a chat. Before a proposal at the greeting, after the caller-ID question at the greeting. Default: none, and every text offer is asked where it is.');
 
 export const appSchema = z
   .strictObject({
@@ -380,6 +408,8 @@ export const appSchema = z
           '"repeat": the no_input line and "anything else?" again. "opener": the no_input line and the opening question (ask_intent). "goodbye": the no_input line and the goodbye, ending the call as done does. ' +
           'With repeat and opener a further silence walks the intent ladder as at the opening (the keypad menu, then a person). Default "repeat".',
       ),
+    callerNumber: callerNumber.optional(),
+    textConsent: textConsent.optional(),
     fixtures: z
       .strictObject({
         dir: matching(

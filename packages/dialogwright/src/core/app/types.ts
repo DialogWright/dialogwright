@@ -51,7 +51,35 @@ export interface IntentDef {
    * one and `done`. Absent: the app's (App.unsureIntent).
    */
   unsure?: UnsureIntent;
+  /**
+   * Something that must never wait or be missed (an emergency, a safety report): read at the
+   * threshold or more, the intent is acted on this turn, whatever else the turn was going to do
+   * (gates.ts, the priorityIntent row). Mid-form it takes the turn from the intentChange question
+   * and from a pending confirmation, and is a switch as a replacing one is (the form in hand is
+   * left, not queued); it is never ignored as side speech or re-asked as unintelligible. A handoff
+   * to a person, a held partial and the injection screen still stand, and the policy gate decides
+   * what the intent's form may do as for any other. `true` reads PRIORITY_INTENT; `{ threshold }`
+   * names another, the engine's or one of App.thresholds. For a form intent or an informational
+   * one. Absent or false: an intent like any other.
+   *
+   * `{ correctsForm: true }`: before the priority form is entered, the slots the switching turn was
+   * asked about are filled from its answers (the open form's, or the call's own slots when no form is
+   * open), so a value the caller's words just contradicted ("water is coming through the wall right
+   * now" over "getting worse") is what the handoff carries. An ordinary fill, not a summary's
+   * correction: a part of a date never empties a filled slot, and a text slot keeps its value unless
+   * it was just asked. A switch asked about first corrects the same way on the caller's yes. Its acks
+   * and any disambiguation are dropped, the form left is still neither closed nor completed, and its
+   * checks do not run on the way out. No question the model is sent changes. Off by default.
+   */
+  priority?: IntentPriority;
 }
+
+/**
+ * Whether an intent is a priority intent (IntentDef.priority): `true`, or an object with the
+ * threshold it is read against (default PRIORITY_INTENT) and whether a switch to it corrects what the
+ * call holds from the switching turn's words (`correctsForm`, default false).
+ */
+export type IntentPriority = boolean | { readonly threshold?: string; readonly correctsForm?: boolean };
 
 /** What an intent the model is unsure of gets: a confirmation, or the no-match line (IntentDef.unsure, App.unsureIntent). */
 export type UnsureIntent = 'confirm' | 'no-match';
@@ -84,6 +112,36 @@ export interface FormDef {
    * say where its calls are made.
    */
   calls?: readonly ToolName[];
+  /**
+   * The form's checks (forms.yaml `checks`), in the order written: actions the gate decides on
+   * part-way through the form, each as soon as the slots it reads are filled and again whenever one
+   * of them changes (core/checks.ts). A refusal ends the form as its reason's outcome says. Without
+   * it, nothing is checked before the completion.
+   */
+  checks?: readonly FormCheck[];
+  /** The line said once, on the turn every check of the form has passed (forms.yaml `checksPassed`). Only with checks. */
+  checksPassed?: string;
+  /**
+   * The form entered at once when this one completes as `said` (forms.yaml `next`; core/turn.ts
+   * finishForm): the slots both forms list are kept with their values, displays, confirmations and
+   * agreed values, and the next form is bridged into (`bridge_next` with its label, formLabel) ahead
+   * of anything queued. Any other completion, and a check's refusal, ends the form as written.
+   * Without it, a completed form goes on to the queue or "anything else?".
+   */
+  next?: FormId;
+  /**
+   * True for a form that is not an intent (forms.yaml `internal`): reached only by another form's
+   * `next`, never offered to the model, the keypad menu or the queue. It has a `label` of its own.
+   */
+  internal?: boolean;
+  /** An internal form's spoken label (forms.yaml `label`), read by formLabel where an intent's would be. */
+  label?: string;
+  /**
+   * Whether the form's slots fill from what is said before the form is open (forms.yaml
+   * `listenBeforeEntered`; app/lookup.ts listenOf): a slot with no `listen` of its own, every form of
+   * which says false, listens as `listen: form`. Default true, or false for an internal form.
+   */
+  listenBeforeEntered?: boolean;
   /**
    * The call made before the form's own slots are asked (it may step identity up). Without it the
    * form is entered as it starts: no call, nothing to step up, and neither onEntry nor
@@ -147,6 +205,32 @@ export interface FormDef {
    * a yes arms exactly what was read. Null reads the summary as it is.
    */
   onSummaryRead?(ctx: SummaryContext): SummaryRead | null;
+}
+
+/**
+ * One of a form's checks (FormDef.checks): an action the policy marks `check: true`, the form's
+ * slots it reads (each sent as the param of the same name), and what each refusal reason does.
+ */
+export interface FormCheck {
+  readonly action: ToolName;
+  readonly with: readonly SlotId[];
+  /** A refusal reason, mapped to its line and how the form ends. A reason not listed gets the engine's refusal (CompletionContext.refusal). */
+  readonly on?: Readonly<Record<string, CheckOutcome>>;
+}
+
+/**
+ * What a check's refusal does: `say` its line (with the form's slot displays as variables), then
+ * `end` the call (the goodbye follows; with a request queued, the call goes on to it), carry on with
+ * `anything-else` (the form closed uncounted), or `handoff` to a person (`reason`, default the
+ * gate's; its line is handoff_<reason>). With `confirm`, a yes-or-no line read first when a slot the
+ * check reads is not confirmed (core/turn.ts stopForm): a yes confirms them and the refusal acts, a
+ * no empties them and asks again.
+ */
+export interface CheckOutcome {
+  readonly confirm?: string;
+  readonly say?: string;
+  readonly then: 'end' | 'anything-else' | 'handoff';
+  readonly reason?: string;
 }
 
 /** A form's summary hook (FormDef.onSummaryRead): an AppContext with the acks the summary will follow. */
@@ -266,6 +350,16 @@ export interface IdentityConfig {
   sendCodeParams?(s: Session): Record<string, string>;
   /** The line said before the factors are asked again after a failed match. Without it, 'identity_failed'. */
   failedPromptId?: string;
+  /**
+   * A caller-ID match as the identifier (identity.yaml's level 1 `callerId`): `identifies` are the
+   * factors the match stands in for (e.g. accountId), filled from FactsConfig.callerMatch and never
+   * asked while it stands; the other factors are asked (`identity_caller_match` in place of the first
+   * of them) and verify it through the verify tool, exactly as if the caller had said every factor.
+   * `ask`: when the question is asked, on a step-up (`on-need`) or right after the greeting
+   * (`greeting`). A no, "different account" or a failed check sets the match aside for the call, and
+   * every factor is asked. Without it, every factor is always asked.
+   */
+  callerId?: { readonly identifies: readonly SlotId[]; readonly ask: 'on-need' | 'greeting' };
   /**
    * What each level of the ladder is called (identity.yaml's `name`, e.g. 1: "verified"): labels for
    * the console and the policy card. The engine records and decides on the numbers; a name never
@@ -516,6 +610,65 @@ export interface FactsConfig {
    * (SlotContext.sources: a `record` slot's `from`). Without it, none.
    */
   forSlots?(f: Readonly<SessionFacts>): SlotRecords;
+  /**
+   * Applies the call-start lookup's result to the facts (app.yaml's `callerNumber.lookup`, as a
+   * form's onEntry applies an entry result): called only when the gate allowed the call and the tool
+   * returned a value, with that value whole: policy.yaml's `redact:` withholds fields only from a
+   * party acting for subjects, never from the anonymous caller the lookup is made as. What the tool
+   * returns, and what the app's lines say of it to a caller not yet verified, is the app's call: the
+   * framework filters nothing. Returning only what the app means to say before identity is the usual
+   * advice. Keep only what the app needs, and clear it in onFormClosed where it goes stale. One that throws leaves the facts as they were, and
+   * the call goes on. Without it, the result is not kept.
+   */
+  fromCallerLookup?(f: SessionFacts, value: unknown): void;
+  /**
+   * The values the facts propose, by slot, for the slots that offer them (a slot's `offer: facts`):
+   * each a candidate (its value, and its display, which the offer line says as `{<slot>}`). Called
+   * when such a slot is about to be asked, and at call start, after the call-start lookup, for a slot
+   * that proposes at the greeting (`offerAt: greeting`); a slot with no candidate (none returned, or
+   * one with an empty value or display) is asked as always. It reads whatever the facts hold then:
+   * the call-start lookup's, or what a form's entry call (onEntry) or a hook loaded after identity.
+   * What the display says may be said to a caller who has proven nothing: what to propose is the
+   * app's call (the least that works, a street rather than a balance or a name, is the usual advice).
+   * A yes fills the slot and nothing else. One that
+   * throws proposes nothing, and the slot is asked as always. Without it, no slot is offered a value.
+   */
+  offers?(f: Readonly<SessionFacts>): Readonly<Partial<Record<SlotId, SlotCandidate>>>;
+  /**
+   * The caller-ID match (identity.yaml's level 1 `callerId`): the values of the factors it
+   * identifies (`identifies`, e.g. `{ accountId: '55501234' }`), read from what the call-start lookup
+   * kept, or null when the number calling matches no single account (none, or one shared by two:
+   * the app's call). The engine never says these values and never puts them in a prompt variable:
+   * they go to the verify tool's params, with the factors the caller gave, where policy.yaml's
+   * `redact:` applies as it does to a spoken one. A value that is not a string with something in it,
+   * a missing factor, or a hook that throws is no match, and every factor is asked. Called when
+   * identity is needed, and at call start with `ask: greeting`. Without it (and without `callerId`),
+   * there is no match.
+   */
+  callerMatch?(f: Readonly<SessionFacts>): Readonly<Record<SlotId, string>> | null;
+}
+
+/**
+ * app.yaml's `callerNumber` (App.callerNumber): what the app keeps of the numbers a call came with,
+ * and the lookup made with the caller's at call start.
+ */
+export interface CallerNumberUse {
+  /** `hint`: the number is kept for the app's code, never as identity on its own (a caller-ID match may identify an account that a knowledge factor verifies: identity.yaml `callerId`). */
+  readonly use: 'hint';
+  /** Keep the number called (Session.calledNumber) too. Default false. */
+  readonly called?: boolean;
+  /** A tool called once at call start, through the gate, with `{ callerNumber }` as its params. Absent: none. */
+  readonly lookup?: ToolName;
+}
+
+/**
+ * Consent to text for the whole call (app.yaml's `textConsent`): asked once, on a call, right after
+ * the greeting (`consent_texts`, with `{last4}`). Granted, each slot in `covers` (each offers the
+ * number the caller is calling from, SlotSpec.callerNumber) is filled with that number, confirmed, with
+ * no question; declined or unknown, each asks its own offer (Session.textConsent, textConsentOf).
+ */
+export interface TextConsent {
+  readonly covers: readonly SlotId[];
 }
 
 /** What FactsConfig.forSlots gives the slot specs: one list (`records`), lists by name (`sources`), or both. Absent parts are empty. */
@@ -579,7 +732,7 @@ export interface AppBrand {
  * (src/server/dashboard/meta.ts consoleMetaOf), so every value is plain data.
  */
 export interface ConsoleConfig {
-  /** Each form in words, as the NOW panel says it (e.g. report_missing, "Report a missing parcel"). Default: the id with spaces. */
+  /** Each form in words, as the NOW panel says it (e.g. report_missing, "Report a missing parcel"). Default: an internal form's label, else the id with spaces. */
   readonly formLabels?: Readonly<Record<FormId, string>>;
   /**
    * Every slot in the order the chips and the perception groups show them outside a form.
@@ -779,7 +932,20 @@ export interface HandoffData {
   readonly slots?: 'all' | 'none' | readonly SlotId[];
   /** How a slot goes, by slot id, in place of its default (HandoffSend). */
   readonly send?: Readonly<Record<SlotId, HandoffSend>>;
+  /** What goes of a value the caller never confirmed (HandoffUnconfirmed). Default `send`. */
+  readonly unconfirmed?: HandoffUnconfirmed;
 }
+
+/**
+ * What a transfer does with a collected value the caller never confirmed: one whose slot is not
+ * `confirmed` (a yes to its own read-back, a keyed value, a fill the slot takes with no read-back) and
+ * that is not the value the caller said yes to at a summary since (Session.agreed). `send`, the
+ * default: sent as any other, as before the option. `mark`: sent, and the data names it (the end
+ * frame's `unconfirmed`, the console's "(not confirmed)", the audit's handoff row). `omit`: left out.
+ * An identity factor, and a slot handed over only as `verified`, is never counted: the Identity line
+ * says what was proven.
+ */
+export type HandoffUnconfirmed = 'send' | 'mark' | 'omit';
 
 export interface App {
   id: string;
@@ -887,6 +1053,40 @@ export interface App {
    */
   callerState?(s: Session): Readonly<Record<string, string | number | boolean>>;
   /**
+   * The number the caller is calling from, kept for the app's own code (app.yaml's `callerNumber`):
+   * a hint, never identity on its own (an app may let a caller-ID match identify an account, with a
+   * knowledge factor that verifies it: identity.yaml `callerId`). With it, the session keeps any usable number the call came with, whether
+   * or not a slot can offer it, and the number called too when `called` is true; app code reads them
+   * through `callerOf(s)` and `calledOf(s)`. `lookup` names a tool the engine calls once at call
+   * start, before the greeting, through the gate as the anonymous caller, with the number as its one
+   * param (`callerNumber`); a refusal, or a tool that throws, is silent, and an allowed result goes to the facts
+   * (FactsConfig.fromCallerLookup). Without it, the number is kept only for a slot that offers it,
+   * as before (SlotSpec.callerNumber), and nothing is looked up.
+   */
+  callerNumber?: CallerNumberUse;
+  /**
+   * Whether the number the caller is calling from may be offered for `slot` (a slot's
+   * `callerNumber`): called only when an offer is about to be made (the form would ask the slot and
+   * the call has a number that fits it), once per slot per form. False makes no offer, and the slot
+   * goes on as for a call with no number (its `ifNone`: asked, or left empty). With app.yaml's
+   * `textConsent` it is also called at the greeting, with no form open, for each covered slot in turn
+   * until one is allowed (the consent question is asked for that one), and again at each covered slot
+   * after a grant, before the slot is filled from it: false there leaves the slot as `ifNone` says. It
+   * may read the facts, or call a gated tool (a line-type lookup, say) through ctx.callTool; the engine
+   * does not remember its answers, so a hook that makes such a call keeps the answer in the facts and
+   * reads it there the next time (the texting fixture's keeps the line type). One that throws makes no
+   * offer, as false does: what it wrote to the facts is put back and the side effects it queued are
+   * dropped. Without it, every offer is made.
+   */
+  callerOffer?(ctx: AppContext, slot: SlotId): boolean;
+  /**
+   * Consent to text for the whole call (app.yaml's `textConsent`): asked once after the greeting on a
+   * call, when the session kept the caller's number, the first slot it covers can take it, and
+   * callerOffer allows that slot. Granted, the slots it covers fill with the number without asking;
+   * declined or unknown, each asks its own offer. Without it, every offer is asked where it is.
+   */
+  textConsent?: TextConsent;
+  /**
    * Perception questions of the app's own, asked beside the engine's and the slots' on a spoken turn
    * (e.g. a part of the day the caller volunteers, or a move along what a summary offers). The app
    * decides when each is asked, from the session (s.form, s.pendingConfirmation, s.menuActive); an
@@ -943,10 +1143,12 @@ export interface App {
     /**
      * The opening line's prompt ids by case. `voice`: any channel that speaks. On a text channel:
      * `chat` for an anonymous visitor, `chatSignedIn` (with `{first}`) for a signed-in subject,
-     * `chatDelegate` (with `{first}`) for a signed-in delegate. Each defaults to `greeting`,
-     * `greeting_chat`, `greeting_chat_signed_in`, `greeting_chat_delegate` respectively.
+     * `chatDelegate` (with `{first}`) for a signed-in delegate. `offer`: on a call that opens on a
+     * proposal (a slot's `offerAt: greeting`), the line said before it, in place of the greeting and
+     * its open question. Each defaults to `greeting`, `greeting_chat`, `greeting_chat_signed_in`,
+     * `greeting_chat_delegate`, `greeting_offer` respectively.
      */
-    greetings?: { voice?: string; chat?: string; chatSignedIn?: string; chatDelegate?: string };
+    greetings?: { voice?: string; chat?: string; chatSignedIn?: string; chatDelegate?: string; offer?: string };
   };
   /**
    * The languages the app speaks. A session speaks one of them (Session.locale): the default, or the
@@ -1140,6 +1342,12 @@ export interface TestingHooks {
      * a corpus entry in that context throws.
      */
     anythingElse?(): { form: FormId; call?: ToolCall };
+    /**
+     * For a corpus entry at the caller-ID question (identity.yaml's `callerId`): the number the seeded
+     * call comes from, one the call-start lookup matches to an account, as a carrier sends it. The seed
+     * makes the lookup through the gate with it, as a call would. Without it, such an entry throws.
+     */
+    callerNumber?: string;
   };
   /** The heuristic stub's domain answers (src/jev/heuristicStub.ts; the building blocks are src/jev/heuristicKit.ts). */
   heuristics?: {
@@ -1188,7 +1396,11 @@ export interface TestingHooks {
    * the digit '0' for any.
    */
   replay?: {
-    /** By identity slot: the digits keyed, in order, for a masked digit at that slot's keypad question. */
+    /**
+     * By slot whose keys the frame log masks (an identity factor, or a slot that hides its value by
+     * its length, SlotSpec.statement false: a PIN): the digits keyed, in order, for a masked digit at
+     * that slot's keypad question. A slot not named here replays its masked digits as `codeDigit`.
+     */
     identityKeys?: Readonly<Record<SlotId, string>>;
     /** The digit keyed for a masked one-time-code digit (one the app's verifier accepts). */
     codeDigit?: string;
@@ -1242,6 +1454,13 @@ export interface PolicyMatrix {
   readonly values?: Readonly<Record<string, string>>;
   /** The day the grid's facts carry (GateFacts.todayIso). Default 2026-09-18, the regression's day. */
   readonly todayIso?: string;
+  /**
+   * The number the grid's caller is calling from, as a session keeps it (e.g. '+15555550142'), for a
+   * policy with a callerNumber rule: every case is then run with it kept (GateFacts.callerNumber, as
+   * each slot that offers it holds it) and with none, the `caller` axis. Without it, no case carries a
+   * caller's number, and a callerNumber rule never passes on the grid.
+   */
+  readonly callerNumber?: string;
   /**
    * The lookups the grid evaluates against. Default: a fresh copy of the app's (App.systems). An app
    * whose seed data has no record outside every principal's scope may add one here, over its own.

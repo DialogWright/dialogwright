@@ -1,4 +1,4 @@
-import type { AnythingElseSilence, App, ChangeSlotWithValue, FormDef, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
+import type { AnythingElseSilence, App, ChangeSlotWithValue, FormDef, HandoffUnconfirmed, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 
@@ -41,13 +41,26 @@ export function identityOf(app: App): IdentityConfig {
 
 /**
  * Where a slot listens outside a form (SlotSpec.listen): `call` for a slot app.yaml carries
- * (App.carrySlots, shorthand for it), else the slot's own, else `up-front`. Null for an identity
- * factor, which listens as identity says (fia.ts activeSlots) whatever the slot sets.
+ * (App.carrySlots, shorthand for it), else the slot's own; else `form` when every form that lists
+ * the slot says its slots do not listen before it is entered (listensBeforeEntered), else
+ * `up-front`. Null for an identity factor, which listens as identity says (fia.ts activeSlots)
+ * whatever the slot sets.
  */
 export function listenOf(app: App, id: SlotId): SlotListen | null {
   if (identityOf(app).factorSlots.includes(id)) return null;
   if (app.carrySlots?.includes(id)) return 'call';
-  return app.slots[id]?.listen ?? 'up-front';
+  const own = app.slots[id]?.listen;
+  if (own !== undefined) return own;
+  const forms = Object.values(app.forms).filter((form) => form.slots.includes(id));
+  return forms.length > 0 && !forms.some(listensBeforeEntered) ? 'form' : 'up-front';
+}
+
+/**
+ * Whether a form's slots fill from what is said before it is open (FormDef.listenBeforeEntered): its
+ * own setting, else true for a form intent and false for an internal form (FormDef.internal).
+ */
+export function listensBeforeEntered(form: FormDef): boolean {
+  return form.listenBeforeEntered ?? form.internal !== true;
 }
 
 /**
@@ -61,6 +74,35 @@ export function isCarried(app: App, id: SlotId): boolean {
 /** What an intent the model is unsure of gets: its own setting (IntentDef.unsure), else the app's (App.unsureIntent), else `confirm`. */
 export function unsureOf(app: App, intent: Intent): UnsureIntent {
   return app.intents[intent]?.unsure ?? app.unsureIntent ?? 'confirm';
+}
+
+/**
+ * The threshold a priority intent is read against, by name (IntentDef.priority): PRIORITY_INTENT
+ * for `true`, the one it names otherwise. Null for an intent that is not a priority intent.
+ */
+export function priorityThresholdOf(app: App, intent: Intent): string | null {
+  const priority = app.intents[intent]?.priority;
+  if (priority === undefined || priority === false) return null;
+  return priority === true ? 'PRIORITY_INTENT' : (priority.threshold ?? 'PRIORITY_INTENT');
+}
+
+/**
+ * Whether a switch to the priority intent `intent` first corrects what the call holds from the
+ * switching turn's words (IntentDef.priority `{ correctsForm: true }`). False for every other intent.
+ */
+export function correctsFormOf(app: App, intent: Intent): boolean {
+  const priority = app.intents[intent]?.priority;
+  return typeof priority === 'object' && priority !== null && priority.correctsForm === true;
+}
+
+/** What a transfer does with a value the caller never confirmed: the app's (HandoffData.unconfirmed), else `send`. */
+export function handoffUnconfirmedOf(app: Pick<App, 'handoff'>): HandoffUnconfirmed {
+  return app.handoff?.data?.unconfirmed ?? 'send';
+}
+
+/** The app's priority intents (IntentDef.priority), in the order it lists them; empty for most apps. */
+export function priorityIntentsOf(app: App): Intent[] {
+  return Object.keys(app.intents).filter((id) => priorityThresholdOf(app, id) !== null);
 }
 
 /** What the change question's reading does beside a new value at a summary: the app's (App.changeSlotWithValue), else `set-aside`. */
@@ -108,4 +150,13 @@ export function topLevelOf(identity: IdentityConfig): 1 | 2 {
 export function gateOf(app: App): CompiledPolicy {
   const identity = identityOf(app);
   return app.gate ?? compiledPolicyOf(app.policy, identity.subjectKind, identityToolsOf(identity));
+}
+
+/**
+ * Whether an action is a form's check (policy.yaml `check: true`, PolicyAction.check): a question to
+ * the gate only, with no tool, so an ALLOW runs nothing (core/lifecycle.ts callTool).
+ */
+export function isCheckAction(app: App, tool: ToolName): boolean {
+  const actions = gateOf(app).source.actions;
+  return Object.hasOwn(actions, tool) && actions[tool]!.check === true;
 }

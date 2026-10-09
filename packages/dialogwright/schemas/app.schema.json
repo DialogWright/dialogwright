@@ -719,6 +719,15 @@
                   "as-is"
                 ]
               }
+            },
+            "unconfirmed": {
+              "description": "What goes of a value the caller never confirmed (not confirmed on its own, and not the value they said yes to at a summary since): \"send\" (the default, sent as any other), \"mark\" (sent, and the data names it: the end frame's unconfirmed list, the console's \"(not confirmed)\", the audit's handoff row) or \"omit\" (left out). An identity factor is never counted. A chat's transfer sends no slots whatever this says.",
+              "type": "string",
+              "enum": [
+                "send",
+                "mark",
+                "omit"
+              ]
             }
           },
           "additionalProperties": false
@@ -889,6 +898,49 @@
         "goodbye"
       ]
     },
+    "callerNumber": {
+      "type": "object",
+      "properties": {
+        "use": {
+          "type": "string",
+          "const": "hint",
+          "description": "\"hint\": keep the number the caller is calling from for the app's code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling on its own (identity.yaml's callerId lets a caller-ID match identify an account, with a knowledge factor that verifies it)."
+        },
+        "called": {
+          "description": "Keep the number the caller called (the DNIS) too, for the app's code (calledOf(s)). Default false.",
+          "type": "boolean"
+        },
+        "lookup": {
+          "description": "A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal or a failure is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides whether it runs. Nothing is withheld from a caller not yet proven, so what the tool returns reaches the app whole: what to return, and what the lines say of it before identity, is the app's call. Default: none.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        }
+      },
+      "required": [
+        "use"
+      ],
+      "additionalProperties": false,
+      "description": "The number the caller is calling from, kept for the app's code: a hint, never identity on its own (an app may let a caller-ID match identify an account, with a knowledge factor that verifies it: identity.yaml callerId). Without it, the number is kept only for a slot that offers it (a digits slot's callerNumber)."
+    },
+    "textConsent": {
+      "type": "object",
+      "properties": {
+        "covers": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "description": "The slots the consent stands in for: each offers the number the caller is calling from (a digits slot's callerNumber). Granted, each is filled with the caller's number, confirmed, with no question of its own, and an offer row (answer: consent) records each use; declined or not answered, each asks its own offer."
+        }
+      },
+      "required": [
+        "covers"
+      ],
+      "additionalProperties": false,
+      "description": "Consent to text for the whole call: asked once, on a call, right after the greeting (greeting_offer, then consent_texts with {last4}, then greet_after_offer), when the caller's number is kept and the app's callerOffer allows the first slot it covers. A yes is recorded as a consent row (scope: call); the slots it covers then use the caller's number without asking again. Never asked on a chat. Before a proposal at the greeting, after the caller-ID question at the greeting. Default: none, and every text offer is asked where it is."
+    },
     "fixtures": {
       "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",
       "type": "object",
@@ -928,6 +980,11 @@
             },
             "chatDelegate": {
               "description": "The opening line on a text channel for a signed-in delegate (with {first}). Default \"greeting_chat_delegate\".",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "offer": {
+              "description": "On a call that opens on a proposal (a slot's offerAt: greeting), the line said before it, in place of the greeting and its open question. Default \"greeting_offer\".",
               "type": "string",
               "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
             }

@@ -172,6 +172,30 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** The phone's kind and browser (not its owner), whether the preview used the code, the address the access log recorded, and anything the narrow layout got wrong. A preview that uses the code, or an address that is the tunnel's own, is a code change with a test.
 
+## 9. A withheld caller ID, on Twilio and on Telnyx
+
+**Why.** A slot that offers the number the caller is calling from (a digits slot's `callerNumber`, the guide's [13.13](authoring-an-app.md#1313-the-number-the-caller-is-calling-from)) must make no offer when the number is withheld. Twilio's placeholders for a withheld caller ID are known (the keypad spellings of ANONYMOUS, RESTRICTED, UNAVAILABLE and BLOCKED), and the engine refuses them. How Telnyx writes a withheld number in its setup frame's `customParameters.telnyx_call_from` (absent, empty, a word, or a placeholder of its own) is not yet seen, and a placeholder made of ten digits would be offered as a number.
+
+**Set.** An app with such a slot: the engine's fixture `packages/dialogwright/src/testing/callback` shows the shape (a `phone` slot with `callerNumber: { countryCode: '1' }` and an `offer_phone` line); add the same to a scratch copy of the utility example's form that asks for a number, or to your own app. The carrier's settings from check 1 or 2.
+
+**Do.** On each carrier, call twice from a phone you own: once with its caller ID shown, and once withheld (`*67` before the number in the US, or the phone's own setting). Reach the form's number question each time.
+
+**Look for.** With the caller ID shown: the line offers the number by its last four, and a yes fills it; the console's `call_started` shows the last four on both carriers (Telnyx's showed "unknown" before). Withheld: the line asks the slot's question with no offer, and the trace's first record has `"callerNumber": "none"`. Note what the carrier put where the number would be. The frame log masks it to its last four (Twilio's `from`, Telnyx's `telnyx_call_from`), so read it in the trace file's first record, whose `event.provider` keeps the setup's details as sent: Twilio's `from`, Telnyx's `param.telnyx_call_from`. Say whether it was absent, empty, a word or digits; for digits, what they spell on a keypad.
+
+**Record.** For each carrier, what a withheld setup carries, and whether an offer was made. A Telnyx placeholder made of digits goes into `WITHHELD_PLACEHOLDERS` (`core/callerNumber.ts`) with a test, and into the guide's 13.13.
+
+## 10. The number called, and the caller's number for an app, on Twilio and on Telnyx
+
+**Why.** An app that keeps the numbers for its code (app.yaml's `callerNumber: { use: hint, called: true }`, the guide's [13.13](authoring-an-app.md#1313-the-number-the-caller-is-calling-from)) reads the number called from Twilio's `to` and from Telnyx's `customParameters.telnyx_call_to`. Telnyx's is seen in a live setup frame, never yet read by an app on a live call; and the call-start lookup, the text offer and its `offer` audit row have run only in the harness.
+
+**Set.** A scratch copy of the engine's fixture `packages/dialogwright/src/testing/texting` (its lookup, its `textTo` offer and its `sendUpdates` held by the `callerNumber` rule), or your own app with the block. Add the number you will call from to the fixture's records in the copy, as a mobile. The carrier's settings from check 1 or 2.
+
+**Do.** On each carrier, call from that phone with its caller ID shown: open a request, say yes to the text offer, and yes at the summary. Call again and say no to the offer. Then once withheld.
+
+**Look for.** The trace file's first record: `"callerNumber": "kept"`, the event's `callerNumber` and `calledNumber` masked to their last four, and one gate event, `findCallerByPhone` with purpose `caller-lookup` and its param masked. The offer said by the last four, and `sendUpdates` allowed after the yes with its `callerNumber` line `textTo is the caller's number`. The day's audit file: one `offer` row per call with the line as said and the answer (`yes`, then `no`), and `pnpm audit:verify` passes. Withheld: no gate event at the start, no offer, and the summary read with no texts. The console's `call_started` and the frame log show neither number whole.
+
+**Record.** For each carrier, whether the number called arrived and where, and anything masked whole that should not be, or shown whole that should be masked. A number called in another place is a provider change (`setupCalledOf`) with a test, and a line in the guide's 13.13.
+
 ## Results log
 
 One row per check run. Keep earlier rows.

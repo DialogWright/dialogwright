@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../schemas/intents.schema.json
+intents:
+  book_visit:
+    criteria: Wants a visit to look at a problem with their home, or to book one
+    label: book a free visit
+    kind: form
+  urgent:
+    criteria: Says something is going wrong in the home right now and needs help at once
+    label: get help right away
+    kind: form
+    # Acted on at once, and what the same words say of the booking's answers corrects them first: "water
+    # is coming through the wall right now" at the read-back makes howUrgent "right away" before the handoff.
+    priority: { correctsForm: true }
+  agent:
+    criteria: Asks to speak with a person, a representative, or an operator
+    label: speak with someone
+    kind: control
+  repeat_prompt:
+    criteria: Asks the system to repeat what it just said
+    label: hear that again
+    kind: control
+  done:
+    criteria: Says they are finished and need nothing more, as in no thanks, that's all, or goodbye, including a bare no when just asked whether there is anything else
+    label: finish up
+    kind: control
+  other:
+    criteria: A request this line does not handle
+    label: something else
+    kind: control
+  none:
+    criteria: No request is expressed; the caller is only answering a question or saying something incidental
+    label: nothing
+    kind: control
+
+menu:
+  - digit: "1"
+    intent: book_visit
+  - digit: "0"
+    intent: agent

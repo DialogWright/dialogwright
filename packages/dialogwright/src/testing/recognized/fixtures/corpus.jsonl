@@ -1,0 +1,27 @@
+{"id":"rp-01","text":"I'd like to report a problem","intent":"report_problem","context":"no_form"}
+{"id":"cs-01","text":"I want to check on my request","intent":"check_status","context":"no_form"}
+{"id":"cs-03","text":"I want to check on my request, my account is five five five zero five six seven eight","intent":"check_status","context":"no_form","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero five six seven eight","accountIdComplete":true}}
+{"id":"cs-04","text":"I want to check on my request, my birthday is April twelfth nineteen eighty","intent":"check_status","context":"no_form","labels":{"dobGiven":true,"dobMonth":"april","dobDay":"12","dobYear":"nineteen eighty"}}
+{"id":"cs-02","text":"and can you check on my request","intent":"check_status","context":"anything_else"}
+{"id":"pr-01","text":"nothing is working at all","intent":"none","context":"report_problem","prompted":"problem","labels":{"problem":"out"}}
+{"id":"sm-01","text":"yes, file it","intent":"none","context":"confirm_report_problem","confirm":"yes"}
+{"id":"cm-01","text":"April twelfth nineteen eighty","intent":"none","context":"check_status","prompted":"dob","confirm":"unanswered","labels":{"dobGiven":true,"dobMonth":"april","dobDay":"12","dobYear":"nineteen eighty"}}
+{"id":"cm-02","text":"different account","intent":"none","context":"check_status","prompted":"dob","confirm":"no"}
+{"id":"cm-03","text":"no, that's not me","intent":"none","context":"check_status","prompted":"dob","confirm":"no"}
+{"id":"cm-04","text":"June first nineteen ninety","intent":"none","context":"check_status","prompted":"dob","confirm":"unanswered","labels":{"dobGiven":true,"dobMonth":"june","dobDay":"1","dobYear":"nineteen ninety"}}
+{"id":"cm-05","text":"hmm, which account is that","intent":"none","context":"check_status","prompted":"dob","confirm":"unanswered"}
+{"id":"cm-06","text":"no wait, it's April twelfth nineteen eighty","intent":"none","context":"check_status","prompted":"dob","confirm":"unanswered","labels":{"dobGiven":true,"dobMonth":"april","dobDay":"12","dobYear":"nineteen eighty"}}
+{"id":"cm-07","text":"that's not me","intent":"none","context":"check_status","prompted":"dob","confirm":"no"}
+{"id":"cm-08","text":"different account, it's five five five zero five six seven eight","intent":"none","context":"check_status","prompted":"dob","confirm":"no","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero five six seven eight","accountIdComplete":true}}
+{"id":"cm-09","text":"I don't know my birthday","intent":"none","context":"check_status","prompted":"dob","confirm":"unanswered"}
+{"id":"cm-10","text":"actually I just want to report a problem","intent":"report_problem","context":"check_status","prompted":"dob","confirm":"unanswered","change":"replacing"}
+{"id":"id-01","text":"five five five zero five six seven eight","intent":"none","context":"check_status","prompted":"accountId","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero five six seven eight","accountIdComplete":true}}
+{"id":"id-02","text":"June fourteenth nineteen seventy five","intent":"none","context":"check_status","prompted":"dob","labels":{"dobGiven":true,"dobMonth":"june","dobDay":"14","dobYear":"nineteen seventy five"}}
+{"id":"id-03","text":"five five five zero one two three four","intent":"none","context":"check_status","prompted":"accountId","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero one two three four","accountIdComplete":true}}
+{"id":"id-04","text":"five five five zero nine zero one two","intent":"none","context":"check_status","prompted":"accountId","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero nine zero one two","accountIdComplete":true}}
+{"id":"id-05","text":"February third nineteen ninety","intent":"none","context":"check_status","prompted":"dob","labels":{"dobGiven":true,"dobMonth":"february","dobDay":"3","dobYear":"nineteen ninety"}}
+{"id":"ag-01","text":"can I talk to a person","intent":"agent","context":"no_form"}
+{"id":"rr-01","text":"can you say that again","intent":"repeat_prompt","context":"no_form"}
+{"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}
+{"id":"no-01","text":"hello","intent":"none","context":"no_form"}
+{"id":"dn-01","text":"that's all, thanks","intent":"done","context":"anything_else"}

@@ -1,4 +1,4 @@
-import { maskId } from '../gate/principal';
+import { SHORT_MASK, maskId } from '../gate/principal';
 import type { SlotState } from '../core/session';
 import type { SlotSpec } from '../core/slots/types';
 import type { App, AuditMask } from '../core/app/types';
@@ -25,18 +25,23 @@ import type { TraceRecord } from './types';
  *
  * A `length` slot is the caller's statement: 'length' keeps only its length (the trace file; the
  * statement itself lives in the app's system), 'keep' leaves it (the live console shows the words).
+ * A `length` slot that is a secret (SlotSpec.statement false: a PIN) is kept by its length in both.
  */
 export type StatementMode = 'length' | 'keep';
 
 /** The app whose slots (and, for a side effect's params, policy.yaml's `audit:`) say what is masked. */
-type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'> }) | null;
+type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber'] }) | null;
 
 function ruleOf(app: Slots, slot: string): SlotSpec['redact'] {
   return app !== null && Object.hasOwn(app.slots, slot) ? app.slots[slot]!.redact : undefined;
 }
 
-/** A `last4` slot: "55501234", "5550 1234" or "...1234" all become the last four digits, as the gate logs an id. */
+/**
+ * A `last4` slot: "55501234", "5550 1234" or "...1234" all become the last four digits, as the gate
+ * logs an id (maskId); one of four digits or fewer ("4821", "48 21") becomes SHORT_MASK, which stays.
+ */
 export function maskLast4(v: string): string {
+  if (v === SHORT_MASK || /^\.\.\.\d{4}$/.test(v)) return v;
   return maskId(v.replace(/\D/g, ''));
 }
 
@@ -56,13 +61,21 @@ function maskValue(app: Slots, slot: string, v: string | null, mode: StatementMo
   const rule = ruleOf(app, slot);
   if (rule === 'last4') return maskLast4(v);
   if (rule === 'mask') return maskToYear(v);
-  if (rule === 'length' && mode === 'length') return maskStatement(v);
+  if (rule === 'length' && (mode === 'length' || isSecretByLength(app, slot))) return maskStatement(v);
   return v;
 }
 
-/** A statement's display is a stand-in, never the words, so only its value is masked. */
+/**
+ * A statement's display is a stand-in, never the words, so only its value is masked. A slot by its
+ * length that is no statement (SlotSpec.statement false, a short secret) shows its value as its display.
+ */
 function isStatement(app: Slots, slot: string): boolean {
-  return ruleOf(app, slot) === 'length';
+  return ruleOf(app, slot) === 'length' && app!.slots[slot]!.statement !== false;
+}
+
+/** A slot by its length that is a secret, not the caller's words (SlotSpec.statement false): masked on the live console too. */
+function isSecretByLength(app: Slots, slot: string): boolean {
+  return ruleOf(app, slot) === 'length' && app!.slots[slot]!.statement === false;
 }
 
 /** A redacted slot's pending partial, its numeric parts zeroed and its shape kept. */
@@ -195,7 +208,7 @@ function spokenEntry(app: Slots, slot: string, raw: unknown, mode: StatementMode
   const rule = ruleOf(app, slot);
   if (rule === undefined || typeof raw !== 'string' || raw === '') return null;
   // A statement is shown in full on the live console, and its display is a stand-in ("your description"), never the words.
-  if (rule === 'length' && (mode === 'keep' || display)) return null;
+  if (rule === 'length' && !isSecretByLength(app, slot) && (mode === 'keep' || display)) return null;
   const shown = maskValue(app, slot, raw, mode) ?? raw;
   return { raw, shown, lastFour: rule !== 'last4' };
 }
@@ -276,6 +289,31 @@ function scrubSay(action: unknown, scrub: Scrub): unknown {
 }
 
 /**
+ * The line the turn before said (the model's node.promptJustPlayed), scrubbed as that turn's say
+ * actions were: of each redacted slot's value and display, the slots and the readback both as the
+ * model was shown them (a value read back, or proposed from the facts, that a no then emptied) and as
+ * the turn left them (a value the yes filled).
+ */
+function scrubPromptJustPlayed(record: TraceRecord, ts: TraceRecord['turnState'], mode: StatementMode, app: Slots): TraceRecord['turnState'] {
+  const raw = record.turnState;
+  if (!isObject(raw) || !isObject(raw.node) || typeof raw.node.promptJustPlayed !== 'string' || raw.node.promptJustPlayed === '' || !isObject(ts) || !isObject(ts.node)) return ts;
+  const shown: [string, unknown][] = [];
+  if (isObject(raw.slots)) for (const [id, st] of Object.entries(raw.slots)) if (isObject(st)) shown.push([id, st.value]);
+  const pc = raw.pendingConfirmation;
+  if (isObject(pc) && typeof pc.target === 'string') shown.push([pc.target, pc.value]);
+  const scrub = slotsScrubber(record.slots, record.pendingConfirmation ?? null, mode, app, shown);
+  if (scrub === null) return ts;
+  const said = scrub(raw.node.promptJustPlayed);
+  return said === ts.node.promptJustPlayed ? ts : { ...ts, node: { ...ts.node, promptJustPlayed: said } };
+}
+
+/** A slot that offers the caller's number (SlotSpec.callerNumber) and is redacted, whose rule masks the number; null when none is. */
+function callerNumberRule(app: Slots): string | null {
+  if (app === null) return null;
+  return Object.keys(app.slots).find((id) => app.slots[id]!.callerNumber !== undefined && app.slots[id]!.redact !== undefined) ?? null;
+}
+
+/**
  * Every place a record carries a redacted slot's value, masked; nothing else is changed. That
  * includes what the turn said aloud: the say actions' text, and the part of our line a caller's
  * interruption heard (the event's `heard`, our words, never the caller's), scrubbed of each
@@ -283,10 +321,32 @@ function scrubSay(action: unknown, scrub: Scrub): unknown {
  */
 export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app: Slots = defaultAppOrNull()): TraceRecord {
   const scrub = recordScrubber(record, mode, app);
-  const out: TraceRecord = { ...record, slots: redactSlots(record.slots, mode, app), turnState: redactTurnState(record.turnState, mode, app) };
+  const out: TraceRecord = { ...record, slots: redactSlots(record.slots, mode, app), turnState: scrubPromptJustPlayed(record, redactTurnState(record.turnState, mode, app), mode, app) };
   // What an interruption heard of our line was cut off as it was said: a value's first digits are masked too.
   const cut = isObject(record.event) && record.event.type === 'user.interrupt' && typeof record.event.heard === 'string' ? recordScrubber(record, mode, app, { cutOff: true }) : null;
   if (cut !== null && record.event.type === 'user.interrupt') out.event = { ...record.event, heard: cut(record.event.heard) };
+  // The number the caller is calling from, on the session start (SessionStart.callerNumber): masked as
+  // the slot that offers it masks its value. A number the session kept is the slot's value to be, so
+  // the setup's own copies of it in the event's provider details (Twilio's `from`, Telnyx's
+  // `param.telnyx_call_from`) are masked the same. One not kept (withheld, or not one the slot can
+  // use) is no value of the slot's, and the provider details keep it as sent, as on every app. An
+  // app that keeps the number for its code (app.yaml's callerNumber: { use: hint }) and has no such
+  // slot masks it, and the number called (SessionStart.calledNumber), to the last four digits, with
+  // the setup's own copies of the number called (Twilio's `to`, Telnyx's `param.telnyx_call_to`).
+  const offering = callerNumberRule(app);
+  const hinted = app?.callerNumber?.use === 'hint';
+  if (isObject(record.event) && record.event.type === 'session.start' && (offering !== null || hinted)) {
+    const start = record.event;
+    const raw = typeof start.callerNumber === 'string' ? start.callerNumber : null;
+    const called = typeof start.calledNumber === 'string' ? start.calledNumber : null;
+    const mask = (v: string): string => (offering !== null ? maskValue(app, offering, v, mode) ?? v : maskLast4(v));
+    const kept = raw !== null && record.callerNumber === 'kept';
+    const provider = (kept || called !== null) && isObject(start.provider)
+      ? Object.fromEntries(Object.entries(start.provider).map(([k, v]) => [k, kept && v === raw ? mask(v) : called !== null && v === called ? maskLast4(v) : v]))
+      : start.provider;
+    const masked = { ...start, provider, ...(raw !== null ? { callerNumber: mask(raw) } : {}), ...(typeof start.calledNumber === 'string' ? { calledNumber: maskLast4(start.calledNumber) } : {}) };
+    if (raw !== null || typeof start.calledNumber === 'string') out.event = masked;
+  }
   const pc = record.pendingConfirmation;
   if (pc && pc.target === 'slot') out.pendingConfirmation = { ...pc, value: maskValue(app, pc.slot, pc.value, mode) ?? pc.value, display: maskValue(app, pc.slot, pc.display, mode) ?? pc.display };
   out.decision = scrubVars(redactDecision(app, record.decision, mode), scrub);

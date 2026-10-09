@@ -7,6 +7,8 @@ import { refText, todayText, type DateBound, type LookupRef, type NumberBound } 
 import { identityToolsOf, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
 import { isDefinedRule } from '../gate/defineRule';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
+import { NONE_OF_REASON, ONE_OF_REASON } from '../gate/listed';
+import { NO_CALLER_NUMBER, NOT_CALLER_NUMBER } from '../gate/callerNumber';
 import type { Level } from '../gate/types';
 import {
   andList, capitalize, cell, code, configHashOf, expectGeneratedPage, formWords, humanize, levelName, lowerFirst, mermaidLabel, nodeId, paramNoun, slotNoun, writeGeneratedPage,
@@ -93,6 +95,41 @@ function whoseLookups(app: App, rule: Extract<Rule, { rule: 'dateInRange' | 'lim
   return `; ${lookups} ${refs.length === 1 ? 'reads' : 'read'} the ${nouns} the scope rule above holds to the caller's own records, or those they act for`;
 }
 
+/** A list in words, as alternatives: "a", "a or b", "a, b or c". */
+function orList(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`;
+}
+
+/** A param in words, with its name in code where the words are not simply its name: "town", "owns or rents (`ownership`)". */
+function paramWords(app: App, param: string): string {
+  const noun = paramNoun(app, param);
+  return noun === humanize(param) ? noun : `${noun} (${code(param)})`;
+}
+
+/**
+ * A value of a list rule in words: for a choice slot's option, what the option says ("Cedar Falls"),
+ * with its id in code where the words are not simply the id ("you own it (`own`)"); any other value
+ * in code, as the param carries it.
+ */
+function valueWords(app: App, param: string, value: string): string {
+  const spec = Object.hasOwn(app.slots, param) ? (app.slots[param] as { type?: unknown; config?: { options?: unknown } }) : undefined;
+  const options = spec?.type === 'choice' ? spec.config?.options : undefined;
+  const option = typeof options === 'object' && options !== null && Object.hasOwn(options, value) ? (options as Record<string, { say?: unknown }>)[value] : undefined;
+  const say = typeof option?.say === 'string' && option.say !== '' ? option.say : null;
+  if (say === null) return code(value);
+  return say.toLowerCase() === humanize(value) ? say : `${say} (${code(value)})`;
+}
+
+/** A oneOf or noneOf rule in words: "town must be one of Millbrook, Cedar Falls or Ashford: any other is refused (`out-of-area`), ...". */
+function listLine(app: App, rule: Extract<Rule, { rule: 'oneOf' | 'noneOf' }>): string {
+  const values = rule.values.map((v) => valueWords(app, rule.field, v));
+  const who = paramWords(app, rule.field);
+  const outcome = `${failure(rule.verdict)} (${code(rule.reason ?? (rule.rule === 'oneOf' ? ONE_OF_REASON : NONE_OF_REASON))}), and a missing value is refused`;
+  if (rule.rule === 'oneOf') return values.length === 1 ? `${who} must be ${values[0]}: anything else ${outcome}` : `${who} must be one of ${orList(values)}: any other ${outcome}`;
+  return values.length === 1 ? `${who} must not be ${values[0]}: that ${outcome}` : `${who} must be none of ${orList(values)}: any of them ${outcome}`;
+}
+
 /** One rule of an action in plain English, with its parameters. */
 function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Rule): string {
   const subjectKind = identityOf(app).subjectKind;
@@ -128,6 +165,16 @@ function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Ru
       const bounds = [...(rule.min ? [`at least ${boundText(rule.min)}`] : []), ...(rule.max ? [`at most ${boundText(rule.max)}`] : [])];
       return `the ${paramNoun(app, rule.field)} must be ${andList(bounds)} (a number outside it ${failure(rule.verdicts?.outOfRange)}; anything that is not a number is refused)${whoseLookups(app, rule)}`;
     }
+    case 'oneOf':
+    case 'noneOf':
+      return listLine(app, rule);
+    case 'callerNumber': {
+      const who = paramWords(app, rule.field);
+      const missing = 'a missing number is refused';
+      return rule.else === 'confirmed'
+        ? `${who} must be the number the caller is calling from, or a number the caller heard read back at the summary and said yes to: any other is refused (${code(NOT_CALLER_NUMBER)}, or ${code(NO_CALLER_NUMBER)} on a call with no number), and ${missing}. Caller ID is a hint, never proof of who is calling`
+        : `${who} must be the number the caller is calling from: any other is refused (${code(NOT_CALLER_NUMBER)}), as is any number on a call with no caller's number (${code(NO_CALLER_NUMBER)}), and ${missing}. Caller ID is a hint, never proof of who is calling`;
+    }
     case 'custom': {
       const defined = source.customRules?.[rule.id];
       const what = isDefinedRule(defined) ? lowerFirst(defined.description) : `the app's own rule (no description given)`;
@@ -136,9 +183,10 @@ function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Ru
   }
 }
 
-/** A rule by its name, as a diagram says it: `scope`, `custom R8`, `limit amount`. */
+/** A rule by its name, as a diagram says it: `scope`, `custom R8`, `limit amount`, `oneOf town`, `callerNumber textTo`. */
 export function ruleName(rule: Rule): string {
-  return rule.rule === 'custom' ? `custom ${rule.id}` : rule.rule === 'dateInRange' || rule.rule === 'limit' ? `${rule.rule} ${rule.field}` : rule.rule;
+  if (rule.rule === 'custom') return `custom ${rule.id}`;
+  return rule.rule === 'dateInRange' || rule.rule === 'limit' || rule.rule === 'oneOf' || rule.rule === 'noneOf' || rule.rule === 'callerNumber' ? `${rule.rule} ${rule.field}` : rule.rule;
 }
 
 /** The levels the ladder has, from 0 to its top. */
@@ -248,6 +296,14 @@ function identitySection(app: App, source: PolicySource): string[] {
   out.push(`- Each level includes the one below it. A ${identity.subjectKind} below an action's level is asked for what the next level needs; any other caller is refused.`);
   out.push(`- The identity checks (${identityToolsOf(identity).map((t) => `${actionLabel(source, t)}, ${code(t)}`).join('; ')}) are for ${identity.subjectKind}s only: a caller not yet verified may use them, and any other party (one who acts for ${identity.subjectKind}s, or anyone else) is refused them before their rules run.`);
   if (top === 2) out.push('- The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.');
+  // A caller-ID match as the identifier (identity.yaml's callerId): another way to give level 1's
+  // factors, checked by the same check. Only for an app that sets it, so every other card is as it was.
+  const callerId = identity.callerId;
+  if (callerId !== undefined) {
+    const asked = identity.factorSlots.filter((id) => !callerId.identifies.includes(id));
+    const when = callerId.ask === 'greeting' ? 'right after the greeting' : 'when an action first needs level 1';
+    out.push(`- On a call from a number the call-start lookup matched to one ${identity.subjectKind}'s account, the ${slotsInWords(app, callerId.identifies)} is taken from the match, never said, and the caller is asked ${when} only for their ${slotsInWords(app, asked)}, checked by the same check (${code(identity.verifyTool)}): the caller ID never verifies on its own. "Different account", a no or a failed check (one try) sets the match aside for the call, and the caller gives their ${factors}.`);
+  }
   out.push(identity.signInLevel === undefined
     ? '- The app takes no portal sign-in: every caller proves who they are on the call, and a caller on a channel that signs callers in (a web chat) whose request needs identity goes to a person.'
     : `- A sign-in through a portal proves level ${identity.signInLevel} ('${levelName(app, identity.signInLevel)}'), so a signed-in caller starts there.`);
@@ -267,6 +323,11 @@ function ladderDiagram(app: App, source: PolicySource): string[] {
   const out = ['flowchart LR'];
   for (const level of ladderLevels(app)) out.push(`  L${level}(${mermaidLabel(`Level ${level}`, levelName(app, level))})`);
   out.push(`  L0 -->|${mermaidLabel(`gives ${slotsInWords(app, identity.factorSlots)}`, `checked by: ${actionLabel(source, identity.verifyTool)}`)}| L1`);
+  const callerId = identity.callerId;
+  if (callerId !== undefined) {
+    const asked = identity.factorSlots.filter((id) => !callerId.identifies.includes(id));
+    out.push(`  L0 -->|${mermaidLabel(`caller ID matched, gives ${slotsInWords(app, asked)}`, `checked by: ${actionLabel(source, identity.verifyTool)}`)}| L1`);
+  }
   if (top === 2) {
     out.push(`  L1 -->|${mermaidLabel(`gives a ${identity.codeLength ?? 6}-digit one-time code`, `sent by: ${actionLabel(source, identity.sendCodeTool!)}`, `checked by: ${actionLabel(source, identity.codeTool!)}`)}| L2`);
   }
@@ -353,7 +414,9 @@ const RECORDED: Readonly<Record<AuditMask, string>> = {
  */
 function recordingSection(app: App, source: PolicySource): string[] {
   const tools = Object.keys(source.actions);
-  const listed = (tool: string): readonly string[] | undefined => (Object.hasOwn(app.tools, tool) ? app.tools[tool]!.params : undefined);
+  // A form's check (`check: true`) has no tool: what it is sent is the slots the forms' checks read.
+  const checked = (tool: string): readonly string[] => [...new Set(Object.values(app.forms).flatMap((f) => (f.checks ?? []).filter((c) => c.action === tool).flatMap((c) => c.with)))];
+  const listed = (tool: string): readonly string[] | undefined => (source.actions[tool]?.check === true ? checked(tool) : Object.hasOwn(app.tools, tool) ? app.tools[tool]!.params : undefined);
   if (app.policy.audit === undefined && !tools.some((tool) => listed(tool) !== undefined)) return [];
   const out = ['## What is recorded', ''];
   out.push('What the record of a call keeps of each value the action is sent: the gate\'s decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml\'s `audit` declares, and `check` refuses one that neither covers. Where a rule\'s line, the action\'s summary, its own audit rows, the side effects it queues (as recorded) or a downstream service\'s row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.');
@@ -375,7 +438,9 @@ function actionsSection(app: App, source: PolicySource): string[] {
   const out = ['## Actions', '', 'One row per action the agent may take. Anything else is refused.', ''];
   out.push('| Action | Level | The gate checks, in order |', '| --- | --- | --- |');
   for (const [tool, action] of Object.entries(source.actions)) {
-    const label = action.say === undefined ? code(tool) : `**${cell(capitalize(action.say))}**<br/>${code(tool)}`;
+    const named = action.say === undefined ? code(tool) : `**${cell(capitalize(action.say))}**<br/>${code(tool)}`;
+    // A form's check: the gate answers, and nothing runs (policy.yaml `check: true`).
+    const label = action.check === true ? `${named}<br/>a form's check: the gate answers, nothing runs` : named;
     // The identity tools' own check runs first (gate/compiled.ts subjectOnlyDecision), written in no file.
     const subjectOnly = app.identity !== undefined && identityTools.includes(tool) ? [`only ${article(subjectKind)} ${subjectKind}, or a caller not yet verified, may use it (any other party is refused)`] : [];
     const said = [...subjectOnly, ...action.rules.map((r) => ruleText(app, source, action, r))];

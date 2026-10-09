@@ -92,6 +92,27 @@ export function setupCallIdOf(providerId: string, setup: SetupFrame): string {
   return p?.provider.setupCallId?.(setup) ?? setup.callSid;
 }
 
+/**
+ * The number the caller is calling from in a carrier's setup frame (VoiceProvider.setupCallerOf), or
+ * null when it carries none. A provider without the method, and one the engine does not know: the
+ * setup's `from`.
+ */
+export function setupCallerOf(providerId: string | undefined, setup: SetupFrame): string | null {
+  const p = providerOf(providerId);
+  if (p?.setupCallerOf) return p.setupCallerOf(setup);
+  return typeof setup.from === 'string' && setup.from !== '' ? setup.from : null;
+}
+
+/**
+ * The number the caller called in a carrier's setup frame (VoiceProvider.setupCalledOf), or null
+ * when it carries none. A provider without the method, and one the engine does not know: the setup's `to`.
+ */
+export function setupCalledOf(providerId: string | undefined, setup: SetupFrame): string | null {
+  const p = providerOf(providerId);
+  if (p?.setupCalledOf) return p.setupCalledOf(setup);
+  return typeof setup.to === 'string' && setup.to !== '' ? setup.to : null;
+}
+
 /** Which of a turn's text frames carry `last: true` on this carrier (VoiceProvider.textLast). */
 export function textLastOf(providerId: string | undefined): 'each' | 'final' {
   const id = providerId ?? LEGACY_PROVIDER;

@@ -64,6 +64,21 @@ describe('redact', () => {
     expect(redactTurnState(record().turnState, 'keep')!.slots).toEqual({ accountId: { value: '...1234', confirmed: true }, dob: { value: '••/••/1985', confirmed: true } });
   });
 
+  it('masks the line the turn before said, as the model was given it (node.promptJustPlayed), idempotently', () => {
+    const said = (slots: TraceRecord['slots'], pc: unknown): TraceRecord => ({
+      ...record(), slots, pendingConfirmation: null,
+      turnState: { ...record().turnState!, slots: {}, pendingConfirmation: pc, node: { id: 'confirm_accountId', promptJustPlayed: 'I have 5550 1234, born April 12th, 1985. Is that right?', options: ['yes', 'no'] } },
+    } as unknown as TraceRecord);
+    // The values the turn left on the slots, and the readback the model was shown though a no then emptied the slot.
+    for (const r of [said(SLOTS, null), said({ ...SLOTS, accountId: emptySlot() } as unknown as TraceRecord['slots'], { target: 'accountId', value: '5550 1234' })]) {
+      for (const mode of ['keep', 'length'] as const) {
+        const out = redactRecordSlots(r, mode);
+        expect(out.turnState!.node.promptJustPlayed, mode).toBe('I have ...1234, born ••/••/1985. Is that right?');
+        expect(redactRecordSlots(out, mode)).toEqual(out);
+      }
+    }
+  });
+
   it('leaves handoff data it cannot read as it is', () => {
     expect(redactHandoffData('not json', 'keep')).toBe('not json');
     expect(redactHandoffData('{"reasonCode":"x"}', 'keep')).toBe('{"reasonCode":"x"}');
@@ -120,5 +135,79 @@ describe('what a turn said aloud', () => {
   it('leaves a line with no redacted value, and words a value only resembles, as they are', () => {
     const line = 'Your parcel 5550 is due on 2026-09-15; call 555 0123.';
     expect(text(redactRecordSlots(said(line), 'length'))).toBe(line);
+  });
+});
+
+describe('a short secret (four digits or fewer)', () => {
+  /** A four-digit PIN by its last four (a digits slot's default), one by its length (a digits slot's redact: length), and a statement. */
+  const app = {
+    slots: {
+      pinLast4: { id: 'pinLast4', redact: 'last4' },
+      pin: { id: 'pin', redact: 'length', statement: false },
+      note: { id: 'note', redact: 'length' },
+    },
+  } as unknown as Parameters<typeof redactRecordSlots>[2];
+  const slots = {
+    pinLast4: { ...emptySlot(), value: '4821', display: '4821' },
+    pin: { ...emptySlot(), value: '7395', display: '73 95' },
+    note: { ...emptySlot(), value: 'left at the side gate', display: 'your note' },
+  } as unknown as TraceRecord['slots'];
+  const handed = { pinLast4: '4821', pin: '73 95', note: 'your note' };
+  const shortRecord = (): TraceRecord =>
+    ({
+      slots,
+      turnState: { slots: { pinLast4: { value: '4821', confirmed: true }, pin: { value: '73 95', confirmed: true } }, pendingConfirmation: null },
+      decision: { kind: 'handoff', reason: 'identity', promptId: 'handoff_identity', acks: [], completed: [], queued: [], slots: handed },
+      actions: [sayAction([{ text: 'I have 4 8 2 1 and 7 3 9 5. Is that right?' }], true), transferAction('identity', [], [], handed)],
+      pendingConfirmation: null,
+    }) as unknown as TraceRecord;
+
+  it('masks a last4 value of four digits or fewer to bullets, whatever its spelling, and a longer one as before, idempotently', () => {
+    expect(['4821', '48 21', '482', '••••'].map(maskAccountId)).toEqual(['••••', '••••', '••••', '••••']);
+    expect(['55501234', '...1234', '55505', '...5505'].map(maskAccountId)).toEqual(['...1234', '...1234', '...5505', '...5505']);
+  });
+
+  it('records a last4 value of four digits or fewer as bullets everywhere a record carries it, the live console too', () => {
+    for (const mode of ['length', 'keep'] as const) {
+      const r = redactRecordSlots(shortRecord(), mode, app);
+      expect(r.slots.pinLast4, mode).toMatchObject({ value: '••••', display: '••••' });
+      expect((r.turnState!.slots as Record<string, unknown>).pinLast4, mode).toEqual({ value: '••••', confirmed: true });
+      expect(r.decision, mode).toMatchObject({ slots: { pinLast4: '••••' } });
+      expect(r.actions[1], mode).toMatchObject({ slots: { pinLast4: '••••' } });
+      expect(JSON.stringify(r), mode).not.toContain('4821');
+      expect(JSON.stringify(r), mode).not.toContain('4 8 2 1');
+      expect(redactRecordSlots(r, mode, app), mode).toEqual(r);
+    }
+  });
+
+  it('records a digits slot by its length (statement: false) by its length everywhere, its display and the live console too', () => {
+    for (const mode of ['length', 'keep'] as const) {
+      const r = redactRecordSlots(shortRecord(), mode, app);
+      expect(r.slots.pin, mode).toMatchObject({ value: '<4 chars>', display: '<5 chars>' });
+      expect((r.turnState!.slots as Record<string, unknown>).pin, mode).toEqual({ value: '<5 chars>', confirmed: true });
+      expect(r.decision, mode).toMatchObject({ slots: { pin: '<5 chars>' } });
+      expect(r.actions[1], mode).toMatchObject({ slots: { pin: '<5 chars>' } });
+      expect((r.actions[0] as { parts: { text: string }[] }).parts[0]!.text, mode).toBe('I have •••• and <4 chars>. Is that right?');
+      for (const secret of ['7395', '73 95', '7 3 9 5']) expect(JSON.stringify(r), `${mode} ${secret}`).not.toContain(secret);
+      expect(redactRecordSlots(r, mode, app), mode).toEqual(r);
+    }
+    const data = JSON.parse(redactHandoffData(endFrame('identity', [], [], handed).handoffData, 'keep', app)) as { slots: Record<string, string> };
+    expect(data.slots).toEqual({ pinLast4: '••••', pin: '<5 chars>', note: 'your note' });
+  });
+
+  it('masks a short number calling and called on the start event of an app that keeps the number for its code', () => {
+    const hinted = { slots: {}, callerNumber: { use: 'hint' } } as unknown as Parameters<typeof redactRecordSlots>[2];
+    const start = { ...shortRecord(), event: { type: 'session.start', provider: { from: '4821', to: '+15555550100' }, callerNumber: '4821', calledNumber: '+15555550100' }, callerNumber: 'kept' } as unknown as TraceRecord;
+    for (const mode of ['length', 'keep'] as const) {
+      const r = redactRecordSlots(start, mode, hinted);
+      expect(r.event, mode).toMatchObject({ callerNumber: '••••', calledNumber: '...0100', provider: { from: '••••', to: '...0100' } });
+      expect(JSON.stringify(r.event), mode).not.toContain('4821');
+      expect(redactRecordSlots(r, mode, hinted), mode).toEqual(r);
+    }
+  });
+
+  it('keeps a statement as before: its display a stand-in, its words on the live console', () => {
+    expect(redactRecordSlots(shortRecord(), 'keep', app).slots.note).toMatchObject({ value: 'left at the side gate', display: 'your note' });
+    expect(redactRecordSlots(shortRecord(), 'length', app).slots.note).toMatchObject({ value: '<21 chars>', display: 'your note' });
   });
 });

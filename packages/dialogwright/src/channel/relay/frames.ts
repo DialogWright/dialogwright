@@ -147,6 +147,7 @@ export function endFrame(
   completed: readonly string[] = [],
   queued: readonly string[] = [],
   slots: Record<string, string> = {},
+  unconfirmed: readonly string[] = [],
 ): EndFrame {
   return {
     type: 'end',
@@ -155,6 +156,9 @@ export function endFrame(
       ...(completed.length ? { completed } : {}),
       ...(queued.length ? { queued } : {}),
       ...(Object.keys(slots).length ? { slots } : {}),
+      // The slots above the caller never confirmed (HandoffData.unconfirmed `mark`); the carrier posts
+      // the data back, and the server reads only reasonCode from it.
+      ...(unconfirmed.length ? { unconfirmed } : {}),
     }),
   };
 }

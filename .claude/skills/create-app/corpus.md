@@ -45,7 +45,7 @@ Each library slot asks the model questions with ids built from the slot's id. A 
 
 A span label must be one of the spans the engine finds in the text, or the regression stops with `span "..." is not a candidate span of the text`. The regression's day is Friday 2026-09-18, so "tomorrow" is 2026-09-19 and "Friday" (ahead) is 2026-09-25.
 
-Every slot listens on every turn (inside a form, the form's slots; outside one, every slot but one that says `listen: form`), so a line can fill several slots at once: label each value it says. That is how over-answering is tested.
+Every slot listens on every turn (inside a form, the form's slots; outside one, every slot but one that listens only in its form: `listen: form`, or every form that lists it says `listenBeforeEntered: false`, [patterns.md](patterns.md#where-a-slot-listens-listen-and-listenbeforeentered)), so a line can fill several slots at once: label each value it says. That is how over-answering is tested. A line that opens a form fills only that form's slots, so a value it gives for another form's slot is not kept, whatever that slot's `listen` ([patterns.md](patterns.md#known-gaps)): its outcome shows the slot empty.
 
 ## What to write
 
@@ -58,6 +58,8 @@ For each **form intent**, eight or more opening lines (`context: "no_form"`), fo
 {"id":"pl-04","text":"three payments starting tomorrow","intent":"set_up_plan","context":"no_form","labels":{"count":"three","firstDateMode":"relative_day","firstDateRelative":"tomorrow"}}
 {"id":"pl-05","text":"I can't pay it all at once","intent":"set_up_plan","context":"no_form","tentative":true}
 ```
+
+One of a form's over-answers gives every slot at once with no request word ("the power's been out on Elm Street since noon, and the whole block is dark"), labelled with the form's intent and every value: the model reads such a line as a request only when the intent's criteria say so ([patterns.md](patterns.md#an-intents-criteria)). Another over-answers slots late in the form ("we've got mice at home, can someone come Saturday morning"), so a scripted call can show they are not asked again.
 
 For each **slot**, five or more answers inside its form:
 
@@ -78,6 +80,26 @@ For each **summary**, four or more answers:
 {"id":"pc-04","text":"no, the date is wrong","intent":"none","context":"confirm_set_up_plan","confirm":"no","changeSlot":"firstDate"}
 ```
 
+For a form with **checks** ([patterns.md](patterns.md#qualify-before-you-collect)), a line for each refusal at each point it can be given: asked (the answer to its own question, `prompted` set to the slot), volunteered early (the answer to another question), in one breath with the request (`no_form`, labelled with the form's intent and every value), and at the summary, both as a correction with a no and with a yes:
+
+```json
+{"id":"tw-01","text":"we're out in Fairmont","intent":"none","context":"book_treatment","prompted":"town","labels":{"town":"elsewhere"}}
+{"id":"tw-02","text":"it's ants, and we're over in Fairmont","intent":"none","context":"book_treatment","prompted":"pest","labels":{"pest":"ants","town":"elsewhere"}}
+{"id":"bt-09","text":"there are mice in my house in Fairmont","intent":"book_treatment","context":"no_form","labels":{"pest":"rodents","property":"home","town":"elsewhere"}}
+{"id":"ct-05","text":"no wait, the house is in Fairmont","intent":"none","context":"confirm_book_treatment","confirm":"no","labels":{"town":"elsewhere"}}
+{"id":"ct-06","text":"yes, but it's actually in Fairmont","intent":"none","context":"confirm_book_treatment","confirm":"yes","labels":{"town":"elsewhere"}}
+```
+
+For a **priority intent** with `correctsForm` ([patterns.md](patterns.md#something-that-must-never-wait)), a line at each summary that also contradicts a slot the form holds, labelled with the intent, `change: replacing` and the slot's new value, and a scripted call to that summary whose `expect` names the corrected value (the handoff carries what the session holds):
+
+```json
+{"id":"cr-07","text":"wait, I can smell gas by the meter right now","intent":"gas_smell","context":"confirm_report_outage","change":"replacing","labels":{"hazard":"gas"}}
+```
+
+```json
+"expect": { "decision": "handoff", "reason": "emergency", "form": "gas_smell", "slots": { "hazard": "gas" } }
+```
+
 For each **informational and control intent**, eight or more lines, some inside forms (a person asked for mid-form is `"intent":"agent"` with the form as context). For each **delegate**, opening lines with `"as"`.
 
 For the **identity factors**, answers with `prompted` set to the factor slot and the context of a form that steps up. The scaffold's `--identity` corpus has them for `accountId` and `dob`.
@@ -89,6 +111,22 @@ A line whose context is a form (or a summary) is run in a session seeded as thou
 - `seed.caller` is the verified caller every seeded session has. Make it a subject at the highest level any form needs (level 2 if any action needs the code): a lower one hears `ask_otp` or steps up on every line in a level 2 form.
 - `seed.placeholders` gives a stand-in value for every slot (factors included), used for the slots the form has already collected. Give one for every slot you add, in the slot's own value format (an ISO date for a date, an option key for a choice).
 - A line at `anything_else` needs `seed.anythingElse`: the form just answered, and the call that answered it through the gate (`{ form, call }`), or the form alone (`{ form }`) when its answer was its own line or a write already made. The `done` lines belong there ("no, that's all", "I'm all set", "nothing else", "I don't need anything else", a bare "no" if no other line has it), with one or two at `no_form` too. A line at `offer_transfer` needs `testing.offerTransferForm`. Leave that context out unless you add it.
+
+A slot that offers the number the caller is calling from (`callerNumber`) has its offer answered too: a line in the form's context, `prompted` that slot, with `confirm`, is seeded with the offer just made (the slot's placeholder as the number). Write a yes ("yes, that's fine", "that's the one"), a bare no, a no with a number ("no, use my cell, five five five five five five zero one nine nine", labelled with the number), a number with no yes or no ("my cell is ...", `confirm: unanswered`), "that's my work phone" (labelled as the paragraph means it: a yes when a work phone will do), and something that answers neither (`confirm: unanswered`). An offer to text (`onNo: skip`) gets the same, with "that's my landline" as a no, and a scripted call with two silences at the offer. A slot that proposes a value from the facts (`offer: facts`) is seeded the same way, its placeholder proposed: write a yes, a bare no, a no with another value (labelled as the slot reads it), another value alone (`confirm: unanswered`) and words that answer neither.
+
+## Answers at a read-back, the greeting and the consent question
+
+Some questions are not a slot's own `ask_`, and each has its own way into the corpus:
+
+| Where the caller answers | The corpus line | Seeded from |
+|---|---|---|
+| An offer of the caller's number, or a proposal, at its slot | the form's context, `prompted` the slot, `confirm` | the slot's placeholder, offered (above) |
+| A proposal at the greeting (`offerAt: greeting`) | `no_form`, `prompted` the slot, `confirm` (and the `intent` of a request said with it) | the slot's placeholder, proposed after `greeting_offer` |
+| Consent to text for the call (`textConsent`) | `no_form`, `confirm`, no `prompted` | `testing.seed.callerNumber` and the call-start lookup |
+| The caller-ID question (`callerId`) | a form's context (or `no_form` with `ask: greeting`), `prompted` the factor it asks, `confirm: no` ("different account") or `unanswered` (the factor, or anything else); `yes` is refused | `testing.seed.callerNumber` |
+| A slot's read-back (`confirm: always`, `confirmValues`) or a check's (`confirm`) | no context of its own: test it with scripted calls | |
+
+A scripted call answers a read-back with lines the corpus already has: the yes and the no are lines at a summary (`confirm_<form>`, with `confirm`: "yes, that's right", "no"), and the right answer is the slot's own answer line ("yes, I own it", at `prompted` the slot). A no that gives the right answer in the same breath ("no, I own it") is a line at the summary with `confirm: "no"` and the slot's label. A text is in the corpus once, and any scripted call may use it wherever it is said.
 
 ## Scripted calls
 
@@ -118,6 +156,8 @@ A line whose context is a form (or a summary) is run in a session seeded as thou
 ]
 ```
 
+- `callerNumber`: the number a phone call comes from, as a carrier sends it (`"+15555550142"`), for an app with a slot that offers it or that keeps it for its code ([patterns.md](patterns.md#a-callback-number-callernumber)); absent, the call has no number. A chat never has one.
+- `calledNumber`: the number the call is to (`"+15555550100"`), for an app that keeps it (app.yaml's `callerNumber: { called: true }`).
 - `as`: absent for a phone call from an anonymous caller; a delegate id for a delegate's signed-in chat; `"web"` for a subject's chat, anonymous until a `{ "signIn": "<subject id>" }` step.
 - Steps: `{ "say": "..." }` (its words must be a corpus line's text: the stub regression refuses to run a step whose words no line has, and lists every one, since the stub would answer it with nothing; a run against a model, live or replayed, does not), `{ "dtmf": "..." }` (keys; the one-time code passes when its last digit is even), `{ "silence": true }`, `{ "signIn": "<id>" }`.
 - `expect` is checked on the last turn: `decision` (`prompt`, `handoff`, `complete`, ...), and any of `promptId`, `reason` (a handoff's: `live-agent`, `identity`, `role-person`, `needs-human`, ...), `form`, `slots` (values by slot id), `principalLevel`, `gate` (the last gate decision, `"<tool>:<VERDICT>"`), `text` (words the last turn's lines contain).

@@ -1,5 +1,7 @@
 import type { PolicyTables, PolicyWording, RoleAccess, SubjectParam, ToolName } from '../core/app/types';
 import { DATE_IN_RANGE_ID, dateInRangeRule, LIMIT_ID, limitRule, type DateInRangeParams, type LimitParams } from './bounded';
+import { NONE_OF_ID, noneOfRule, ONE_OF_ID, oneOfRule, type ListParams } from './listed';
+import { CALLER_NUMBER_ID, callerNumberRule, type CallerNumberParams } from './callerNumber';
 import {
   askerOf, checkOutcome, confirmationHash, DEFAULT_RECORD_OWNER, DEFAULT_ROLE_PERSON_REASON, DEFAULT_SCOPE, DEFAULT_SUBJECT, DEFAULT_TOOL_LEVEL, defaultRoleLine,
   scopeShown, threwLine, unknownRuleLine, unlistedLine,
@@ -24,9 +26,11 @@ import { isAnonymous, type GateDecision, type GateFacts, type GateLookups, type 
  * ids it always did (R1..R7, R0); the shadow gate (dialogwright/testing withShadowGate) holds the
  * two together through one id map (testing/gateGrid.ts nameOfLegacyId).
  *
- * Two built-in rules are the file's alone (./bounded.ts): `dateInRange` and `limit`, which hold a
- * param's value to bounds (literals, today, the app's lookups). The legacy evaluator does not know
- * them, so an app that uses one has no shadow reference for it.
+ * Five built-in rules are the file's alone: `dateInRange` and `limit` (./bounded.ts), which hold a
+ * param's value to bounds (literals, today, the app's lookups), `oneOf` and `noneOf` (./listed.ts),
+ * which hold it to a list, and `callerNumber` (./callerNumber.ts), which holds it to the number the
+ * caller is calling from. The legacy evaluator does not know them, so an app that uses one has no
+ * shadow reference for it.
  *
  * One check is the gate's own, written in no file: the identity tools (the app's verify tool and its
  * one-time code's two tools) are for the subject only, so a party who is not one of the app's
@@ -54,6 +58,9 @@ export type Rule =
   | { readonly rule: 'fields'; readonly fields: readonly string[] }
   | ({ readonly rule: 'dateInRange' } & DateInRangeParams)
   | ({ readonly rule: 'limit' } & LimitParams)
+  | ({ readonly rule: 'oneOf' } & ListParams)
+  | ({ readonly rule: 'noneOf' } & ListParams)
+  | ({ readonly rule: 'callerNumber' } & CallerNumberParams)
   | { readonly rule: 'custom'; readonly id: string };
 
 /** The rules the legacy evaluator knows. */
@@ -70,14 +77,15 @@ export const LEGACY_RULE_ID: Readonly<Record<LegacyRuleName, string>> = { identi
 export const LEGACY_UNLISTED_ID = 'R0';
 
 /** The built-in rules, by name: what an action's `rules:` writes. */
-export const BUILT_IN_RULES = ['identity', 'scope', 'confirmed', 'role', 'attempts', 'fields', 'dateInRange', 'limit'] as const;
+export const BUILT_IN_RULES = ['identity', 'scope', 'confirmed', 'role', 'attempts', 'fields', 'dateInRange', 'limit', 'oneOf', 'noneOf', 'callerNumber'] as const;
 
 /**
  * The id each built-in rule is recorded under in decisions, audit lines, the trace and the console:
  * its own name. A custom rule is recorded under the id the app gave it, which may be none of these.
  */
 export const RULE_ID: Readonly<Record<Exclude<Rule['rule'], 'custom'>, string>> = {
-  identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: DATE_IN_RANGE_ID, limit: LIMIT_ID,
+  identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: DATE_IN_RANGE_ID, limit: LIMIT_ID, oneOf: ONE_OF_ID, noneOf: NONE_OF_ID,
+  callerNumber: CALLER_NUMBER_ID,
 };
 
 /**
@@ -88,9 +96,9 @@ export const UNLISTED_RULE_ID = 'unlisted';
 
 /**
  * The id each built-in rule has in a table's `rulesFor`: the legacy id of the rules the legacy
- * evaluator knows, and its own name for a rule it does not (dateInRange, limit).
+ * evaluator knows, and its own name for a rule it does not (dateInRange, limit, oneOf, noneOf).
  */
-export const TABLE_RULE_ID: Readonly<Record<Exclude<Rule['rule'], 'custom'>, string>> = { ...LEGACY_RULE_ID, dateInRange: DATE_IN_RANGE_ID, limit: LIMIT_ID };
+export const TABLE_RULE_ID: Readonly<Record<Exclude<Rule['rule'], 'custom'>, string>> = { ...LEGACY_RULE_ID, dateInRange: DATE_IN_RANGE_ID, limit: LIMIT_ID, oneOf: ONE_OF_ID, noneOf: NONE_OF_ID, callerNumber: CALLER_NUMBER_ID };
 
 /**
  * The id of the gate's own check on the identity tools (the app's verify tool, its code-sending tool
@@ -136,16 +144,21 @@ export function subjectOnlyDecision(call: ToolCall, p: Principal, subjectKind: s
 }
 
 /**
- * The ids of the built-in rules only a policy file can give parameters to (gate/bounded.ts): the
+ * The ids of the built-in rules only a policy file can give parameters to (gate/bounded.ts, gate/listed.ts): the
  * legacy evaluator over the tables does not know them (it BLOCKs a call that reaches one, as an
  * unknown rule), and an app's own rule may not take one as its id.
  */
-export const NAMED_RULE_IDS: readonly string[] = [DATE_IN_RANGE_ID, LIMIT_ID];
+export const NAMED_RULE_IDS: readonly string[] = [DATE_IN_RANGE_ID, LIMIT_ID, ONE_OF_ID, NONE_OF_ID, CALLER_NUMBER_ID];
 
 /** An action as the policy lists it: the level it needs and its rules, in order. */
 export interface PolicyAction {
   /** What the action does, in plain words (policy.yaml's `say`): the policy card's label. The gate never reads it. */
   readonly say?: string;
+  /**
+   * A form's check (policy.yaml `check: true`): a question to the gate only. It has no tool, and an
+   * ALLOW runs nothing (core/lifecycle.ts callTool). Absent for every other action.
+   */
+  readonly check?: true;
   readonly level: Level;
   readonly rules: readonly Rule[];
 }
@@ -295,6 +308,12 @@ function fieldsRule(fields: readonly string[]): (c: RuleContext) => RuleOutcome 
   };
 }
 
+/** The fields the action's confirmed rule names, or null when it has none (the callerNumber rule's `else: confirmed`). */
+function confirmedFieldsOf(action: PolicyAction): readonly string[] | null {
+  const confirmed = action.rules.find((r): r is Extract<Rule, { rule: 'confirmed' }> => r.rule === 'confirmed');
+  return confirmed === undefined ? null : confirmed.fields;
+}
+
 function stepOf(rule: Rule, action: PolicyAction, source: PolicySource): Step {
   switch (rule.rule) {
     case 'identity': return { id: RULE_ID.identity, run: identityRule(action.level, source.purposes) };
@@ -305,6 +324,9 @@ function stepOf(rule: Rule, action: PolicyAction, source: PolicySource): Step {
     case 'fields': return { id: RULE_ID.fields, run: fieldsRule(rule.fields) };
     case 'dateInRange': return { id: RULE_ID.dateInRange, run: dateInRangeRule(rule) };
     case 'limit': return { id: RULE_ID.limit, run: limitRule(rule) };
+    case 'oneOf': return { id: RULE_ID.oneOf, run: oneOfRule(rule) };
+    case 'noneOf': return { id: RULE_ID.noneOf, run: noneOfRule(rule) };
+    case 'callerNumber': return { id: RULE_ID.callerNumber, run: callerNumberRule(rule, confirmedFieldsOf(action)) };
     case 'custom': return { id: rule.id, run: has(source.customRules, rule.id) ? source.customRules![rule.id]! : null };
   }
 }

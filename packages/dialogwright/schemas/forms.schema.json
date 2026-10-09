@@ -32,7 +32,7 @@
             "description": "The prompt (an id in prompts.yaml) that reads the filled form back for a yes, or null for a form with no summary (it completes as soon as its slots are full)."
           },
           "hooks": {
-            "description": "The code hooks this form uses, written in the app's TypeScript; \"complete\" is required, unless the form `answers` from the knowledge base (its completion is then the engine's). entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), confirmedParams (the values a confirmed write sends, for the gate's confirmed rule), complete (runs when the form is full and confirmed), onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), onSummaryRead (looks at what the summary is about to name).",
+            "description": "The code hooks this form uses, written in the app's TypeScript; \"complete\" is required, unless the form `answers` from the knowledge base (its completion is then the engine's) or goes on to a `next` form (its completion is then that form). entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), confirmedParams (the values a confirmed write sends, for the gate's confirmed rule), complete (runs when the form is full and confirmed), onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), onSummaryRead (looks at what the summary is about to name).",
             "type": "array",
             "items": {
               "type": "string",
@@ -80,12 +80,106 @@
             "additionalProperties": false
           },
           "calls": {
-            "description": "The actions (tools) this form's hooks call through the gate: its entry call and the calls its completion makes. Declare it for every form or for none (an empty list for a form that calls nothing): the app map draws each form to its actions, and `check` reports an action that no form reaches and the identity flow does not call.",
+            "description": "The actions (tools) this form's hooks call through the gate: its entry call and the calls its completion makes. Declare it for every form or for none (an empty list for a form that calls nothing): the app map draws each form to its actions, and `check` reports an action that no form reaches and the identity flow does not call. A check action is reached through `checks`, not listed here.",
             "type": "array",
             "items": {
               "type": "string",
               "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
             }
+          },
+          "checks": {
+            "description": "Actions the gate decides on part-way through the form, in the order written: each runs as soon as the slots it reads are filled (after the entry call, before the next question, and again at completion), and again whenever one of them changes. ALLOW lets the form go on; a refusal ends the form with the line and the ending `on` maps its reason to. Checks ask the model nothing.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                  "description": "The action the gate decides on: an action in policy.yaml with check: true (no tool runs; the gate only answers)."
+                },
+                "with": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "description": "The form's slots the check reads, each sent as the param of the same name. The check runs once every one of them holds a value, and again whenever one of them changes. An identity factor may be named too (check warns): it holds a value only once the caller has given it during verification."
+                },
+                "on": {
+                  "description": "A refusal reason (the gate's reason) mapped to its line and how the form ends. A reason not listed gets the engine's refusal: a BLOCK with a line from the app's blockPromptId says it and the call carries on; anything else goes to a person. A STEP_UP asks for identity, as an entry call's does, and the check runs again once the caller is verified (in an app without identity.yaml, it goes to a person).",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "confirm": {
+                        "description": "A yes-or-no line (a prompt in prompts.yaml) said before the refusal acts, when a slot the check reads has not been confirmed; it renders with the form's slot displays as variables, as `say` does. A yes confirms them and the refusal acts; a no empties them and asks again, and the check runs again when they fill. Skipped when every slot it reads is confirmed already (a read-back, or the summary's yes). Default: none, the refusal acts at once.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "say": {
+                        "description": "The line said (a prompt in prompts.yaml); it renders with the form's slot displays as variables, as the summary does. Required for end and anything-else; for handoff, said before the handoff line.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "then": {
+                        "type": "string",
+                        "enum": [
+                          "end",
+                          "anything-else",
+                          "handoff"
+                        ],
+                        "description": "What follows the line: end (the call ends, the goodbye after it; with a request queued, the call goes on to it), anything-else (the form closes uncounted and the call carries on: the next queued request, or \"anything else?\"), or handoff (to a person, with the handoff line handoff_<reason>)."
+                      },
+                      "reason": {
+                        "description": "For then: handoff, the handoff reason, whose line is handoff_<reason>. Default: the reason the gate gave.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                      }
+                    },
+                    "required": [
+                      "then"
+                    ],
+                    "additionalProperties": false,
+                    "description": "What a refusal for this reason does: a line, and how the form ends."
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "with"
+              ],
+              "additionalProperties": false,
+              "description": "One check: an action the gate decides on as soon as the slots it reads are filled."
+            }
+          },
+          "checksPassed": {
+            "description": "A line said once, on the turn every check of the form has passed (never again after a correction). It renders with the form's slot displays as variables. Only with checks.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "next": {
+            "description": "The form entered at once when this one completes (its complete hook answers `said`, or it has none, which `next` allows): the slots both forms list are kept, with their values and confirmations, and the next form is bridged into (bridge_next with its label), ahead of any request the caller queued. A completion that ends the call, a refusal, or a check that ends the form does not go on. Usually an internal form (a booking after a screen); it may be a form intent too.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "internal": {
+            "description": "true: the form is not an intent. The model, the keypad menu and the queue never see it; it is reached only by another form's `next`, and it has no intent in intents.yaml. Needs a `label`. Default false.",
+            "type": "boolean"
+          },
+          "label": {
+            "description": "An internal form's spoken label (\"book your free inspection\"), as an intent's label is used: in bridge_next as {intentLabel}, and as the form the caller is in. Only on an internal form; a form intent's label is in intents.yaml.",
+            "type": "string",
+            "minLength": 1
+          },
+          "listenBeforeEntered": {
+            "description": "Whether the form's slots fill from what the caller says before the form is open (on the turn that opens it, as `listen: up-front` does). false: a slot every form that lists it says false for behaves as `listen: form`, and is asked once its form is open, even when it was said earlier. A slot's own `listen` overrides it. Default true for a form intent, false for an internal form.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -95,7 +189,7 @@
         "additionalProperties": false,
         "description": "One form: the slots it collects, the summary it reads back, the code hooks it uses (or the knowledge answer it says), and the actions it calls."
       },
-      "description": "Every form, by id. Each id must also be a form intent in intents.yaml."
+      "description": "Every form, by id. Each id must also be a form intent in intents.yaml, unless the form is internal (reached only by another form's next)."
     }
   },
   "required": [

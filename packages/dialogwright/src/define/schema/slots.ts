@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SLOT_LISTEN_VALUES, type SlotListen } from '../../core/slots/types';
+import { OFFER_ANSWERS_VALUES, SLOT_LISTEN_VALUES, SLOT_OFFER_AT_VALUES, type OfferAnswers, type SlotListen, type SlotOfferAt } from '../../core/slots/types';
 import { identifier } from './common';
 
 /**
@@ -28,11 +28,48 @@ export const LISTEN_OPTION = 'listen';
 export const LISTEN_DESCRIPTION =
   'Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). ' +
   '"form": asked and filled only while a form that has it is open; outside one its question is not sent. ' +
-  '"anywhere": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. ' +
-  '"call": as anywhere, and kept for the whole call, across forms (what app.yaml\'s carrySlots does). An identity factor listens as identity.yaml says, and takes none.';
+  '"anywhere": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. ' +
+  '"call": as anywhere, and kept for the whole call, across forms (what app.yaml\'s carrySlots does). An identity factor listens as identity.yaml says, and takes none. ' +
+  'Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): "form" when every form that lists it says false (the default for an internal form), else "up-front".';
 
 /** `listen:` on one slot: one of the values, or absent for the default (`up-front`). */
 export const slotListenSchema = z.enum(SLOT_LISTEN_VALUES as readonly [SlotListen, ...SlotListen[]]).describe(LISTEN_DESCRIPTION);
+
+/** The other option every library slot takes beside its type's own (SlotSpec.offer). A slot type may not have an option of this name. */
+export const OFFER_OPTION = 'offer';
+
+/** What `offer:` means, as the JSON Schema, the slot pages and an editor say it. */
+export const OFFER_DESCRIPTION =
+  'Propose a value in place of the question. "facts": when the form would ask the slot and the app\'s facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form\'s entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} ("Is this about 22 Alder Street?"), once per slot per form. ' +
+  'A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. ' +
+  'Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back).';
+
+/** `offer:` on one slot: `facts`, or absent for none. */
+export const slotOfferSchema = z.enum(['facts']).describe(OFFER_DESCRIPTION);
+
+/** The option beside `offer` every library slot takes (SlotSpec.offerAt). A slot type may not have an option of this name. */
+export const OFFER_AT_OPTION = 'offerAt';
+
+/** What `offerAt:` means, as the JSON Schema, the slot pages and an editor say it. */
+export const OFFER_AT_DESCRIPTION =
+  'Where a slot with offer: facts proposes. "slot" (the default): when its form would ask it. "greeting": at call start, on a call, after the call-start lookup, in place of the greeting\'s open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. ' +
+  'A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. ' +
+  'Needs offer: facts, and greeting_offer and greet_after_offer in every locale.';
+
+/** `offerAt:` on one slot: `slot` or `greeting`, or absent for the default (`slot`). */
+export const slotOfferAtSchema = z.enum(SLOT_OFFER_AT_VALUES as readonly [SlotOfferAt, ...SlotOfferAt[]]).describe(OFFER_AT_DESCRIPTION);
+
+/** The option beside `offer` every library slot takes (SlotSpec.offerAnswers). A slot type may not have an option of this name. */
+export const OFFER_ANSWERS_OPTION = 'offerAnswers';
+
+/** What `offerAnswers:` means, as the JSON Schema, the slot pages and an editor say it. */
+export const OFFER_ANSWERS_DESCRIPTION =
+  'What a slot with offer: facts takes at its proposal. "yes-no-or-value" (the default): a yes, a no, or a value of the caller\'s own, which fills the slot as said. ' +
+  '"yes-no": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot\'s question is then asked); on the keypad 1 is yes and 2 is no. ' +
+  'Use yes-no where the line asks only a yes or no question ("Are you calling about the account ending in 1234?"). Needs offer: facts.';
+
+/** `offerAnswers:` on one slot: `yes-no-or-value` or `yes-no`, or absent for the default (`yes-no-or-value`). */
+export const slotOfferAnswersSchema = z.enum(OFFER_ANSWERS_VALUES as readonly [OfferAnswers, ...OfferAnswers[]]).describe(OFFER_ANSWERS_DESCRIPTION);
 
 export const slotsSchema = z
   .record(

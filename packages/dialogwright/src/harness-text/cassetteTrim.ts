@@ -10,6 +10,7 @@ import { REGRESS_TODAY } from './baseline';
 import { loadScenarios } from './runner';
 import { runAll } from './runAll';
 import { parseScreenMode } from '../core/screen';
+import { loadHarnessEnv } from '../server/envFile';
 
 /**
  * The cassette trim: replay the whole regression run from the cassette, note every request it
@@ -22,6 +23,10 @@ async function run(): Promise<void> {
   // replay must make the same requests, or every turn misses and nothing is written.
   const { values: args } = parseArgs({ options: { screen: { type: 'string' } } });
   const screen = parseScreenMode(args.screen, '--screen');
+  // The app's settings, as `regress --client recorded` reads them: JEV_PROVIDER and JEV_MODEL there
+  // name the cassette, so the trim rewrites the one the replay reads. No key is needed or sent.
+  const loaded = loadHarnessEnv();
+  if (loaded !== null) console.error(loaded);
   // The resolved model's cassette (jev/provider.ts), as `--client recorded` replays it.
   const replay = recordedCassette();
   const path = replay.path;

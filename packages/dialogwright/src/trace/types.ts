@@ -93,6 +93,15 @@ export interface TraceRecord {
    */
   answeredBy?: AnsweredBy;
   /**
+   * Whether the session kept the number the caller is calling from (core/callerNumber.ts): `kept`,
+   * or `none` when the call had no number a slot can offer (none sent, withheld, or one that does
+   * not fit the slot, or for an app that keeps it for its code, no usable number), so a builder can
+   * see why no offer or lookup was made. Only on the session start's record of an app with a slot
+   * that offers it (SlotSpec.callerNumber) or that keeps it (app.yaml's callerNumber); absent for
+   * every other app.
+   */
+  callerNumber?: 'kept' | 'none';
+  /**
    * Added later: the injection screen's reading of this turn (null when it was not asked), and
    * whether it quarantined the turn. A quarantined record keeps `answers` for debugging, but nothing
    * acted on them. Optional so older records still load. The screen's usage is included in `usage`.

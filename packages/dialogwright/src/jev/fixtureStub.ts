@@ -103,6 +103,8 @@ function labeledAnswer(id: string, q: Question, entry: CorpusEntry, sharpness: n
     if (id === 'intentTentative') return noulAnswer(entry.tentative ? 0.9 : QUIET_NOUL.intentTentative!);
     if (id === 'confirmsYes') return noulAnswer(entry.confirm === 'yes' ? 0.9 : QUIET_NOUL.confirmsYes!);
     if (id === 'confirmsNo') return noulAnswer(entry.confirm === 'no' ? 0.9 : QUIET_NOUL.confirmsNo!);
+    // The caller-ID question (identity.yaml's callerId): a no to it is "different account".
+    if (id === 'callerMatchDeclined') return noulAnswer(entry.confirm === 'no' ? 0.9 : QUIET_NOUL.callerMatchDeclined!);
     return quietAnswer(id, q, sharpness, app);
   }
   return quietAnswer(id, q, sharpness, app);

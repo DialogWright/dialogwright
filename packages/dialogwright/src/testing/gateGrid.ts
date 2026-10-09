@@ -7,6 +7,7 @@ import { confirmationHash, evaluateCall } from '../gate/policy';
 import { ANONYMOUS } from '../gate/principal';
 import type { GateDecision, GateFacts, GateLookups, Party, Principal, RuleResult, ToolCall } from '../gate/types';
 import { REGRESS_TODAY } from '../harness-text/baseline';
+import { callerGateFacts } from '../core/callerNumber';
 
 /**
  * The gate grid: every tool and probe an app's policy knows (and one it does not), crossed with
@@ -42,6 +43,11 @@ export interface GateGridInput {
   readonly tools?: readonly ToolName[];
   /** The app's identity (App.identity): the matrix's delegates are checked against the kind and roles it declares. */
   readonly identity?: IdentityConfig;
+  /**
+   * The caller's number as the gate knows it (GateFacts.callerNumber and callerNumberAs), from the
+   * matrix's `callerNumber`: every case is run with it and with none. Absent: no case carries one.
+   */
+  readonly callerFacts?: Pick<GateFacts, 'callerNumber' | 'callerNumberAs'>;
 }
 
 /** An app's grid input: its tables, its subject kind, its matrix, and the matrix's lookups or a fresh copy of the app's. */
@@ -51,7 +57,8 @@ export function gateGridInput(app: App): GateGridInput {
   const id = identityOf(app);
   const tools = [...Object.keys(app.tools), id.verifyTool, id.codeTool, id.sendCodeTool].filter((t): t is string => t !== undefined && t !== '');
   const input = { policy: app.policy, subjectKind: id.subjectKind, lookups: matrix.lookups?.() ?? app.systems().lookups, matrix, tools };
-  return app.identity ? { ...input, identity: app.identity } : input;
+  const withIdentity = app.identity ? { ...input, identity: app.identity } : input;
+  return matrix.callerNumber === undefined ? withIdentity : { ...withIdentity, callerFacts: callerGateFacts(app, matrix.callerNumber) };
 }
 
 /** A gate to put through the grid: the legacy evaluator, or a candidate to compare with it. */
@@ -102,7 +109,7 @@ export function legacyGateEvaluator(input: Pick<GateGridInput, 'policy' | 'subje
 
 /** One point of the grid, by its labels. */
 export interface GateGridCase {
-  /** The labels joined: "<tool> <purpose|-> <principal> <subject> <params> <fields> a<attempts> <confirmation>". */
+  /** The labels joined: "<tool> <purpose|-> <principal> <subject> <params> <fields> a<attempts> <confirmation>", then "caller" or "no-caller" for a grid with the caller's number. */
   readonly key: string;
   readonly tool: ToolName;
   readonly purpose: string | null;
@@ -112,6 +119,8 @@ export interface GateGridCase {
   readonly fields: 'exact' | 'extra' | 'missing';
   readonly attempts: number;
   readonly confirmation: 'none' | 'match' | 'mismatch';
+  /** Whether the case's facts carry the caller's number (GateGridInput.callerFacts): `kept` or `none`. Absent for a grid with no caller's number. */
+  readonly caller?: 'kept' | 'none';
   readonly call: ToolCall;
   readonly p: Principal;
   readonly facts: GateFacts;
@@ -249,7 +258,7 @@ function withoutOne(params: Record<string, string>, subjectParam: string | undef
 export function gateGridCases(input: GateGridInput): GateGridCase[] {
   const problems = matrixProblems(input);
   if (problems.length > 0) throw new Error(`the policy matrix does not hold together:\n  ${problems.join('\n  ')}`);
-  const { policy, matrix } = input;
+  const { policy, matrix, callerFacts } = input;
   const todayIso = matrix.todayIso ?? REGRESS_TODAY;
   const purposes: Array<string | null> = [null, ...GRID_PROBES, ...Object.keys(policy.purposeLevel)];
   const principals = gridPrincipals(matrix);
@@ -275,7 +284,14 @@ export function gateGridCases(input: GateGridInput): GateGridCase[] {
                 for (const confirmation of ['none', 'match', 'mismatch'] as const) {
                   const confirmedHash = confirmation === 'none' ? null : confirmation === 'match' ? confirmationHash(sent, policy.confirmedFields) : mismatchHash;
                   const key = `${tool} ${purpose ?? '-'} ${principal} ${subject} ${paramsLabel} ${fields} a${attempts} ${confirmation}`;
-                  out.push({ key, tool, purpose, principal, subject, params: paramsLabel, fields, attempts, confirmation, call, p, facts: { attempts, confirmedHash, todayIso } });
+                  const facts: GateFacts = { attempts, confirmedHash, todayIso };
+                  const base = { tool, purpose, principal, subject, params: paramsLabel, fields, attempts, confirmation, call, p };
+                  // A grid with the caller's number runs each case with it and with none; any other grid is as it was.
+                  if (callerFacts === undefined) out.push({ key, ...base, facts });
+                  else {
+                    out.push({ key: `${key} caller`, ...base, caller: 'kept', facts: { ...facts, ...callerFacts } });
+                    out.push({ key: `${key} no-caller`, ...base, caller: 'none', facts });
+                  }
                 }
               }
             }

@@ -18,6 +18,8 @@ import { seamViolations, segmentTemplate, ttsOnly } from '../prompts/segments';
 import { redactHandoffData, redactRecordSlots } from '../trace/redact';
 import type { TraceRecord } from '../trace/types';
 import { testSlotContext } from '../testing/slots';
+import { defineSlot } from '../slots/defineSlot';
+import { handoffDataSlots } from '../handoff/data';
 
 /**
  * The engine's slot metadata and model wording, run against a small clinic that is not the testkit:
@@ -123,6 +125,36 @@ describe('slot metadata: the handoff and the follow-up for a partial', () => {
     expect(handoff(s, 'identity').slots.birthDate).toBe(IDENTITY_VERIFIED);
   });
 
+  it('hands a digits slot by its length (a PIN, defined as configuration) over by its real length, whatever handoff.data sends', () => {
+    const pinApp = clinic({ id: 'clinic-pin-handoff', slots: { ...SLOTS, pin: defineSlot('pin', { type: 'digits', noun: 'PIN', length: 6, redact: 'length' }) } });
+    registerApp(pinApp);
+    const s = newSession('c', 0, VOICE_RELAY, undefined, pinApp.id);
+    Object.assign(s.slots.pin!, { value: '739512', display: '739512' });
+    const collected = handoff(s, 'live-agent').slots;
+    expect(collected.pin).toBe('<6 chars>');
+    // masked, as-is or by default: the length, never the digits and never ••••.
+    for (const send of ['masked', 'as-is'] as const) {
+      expect(handoffDataSlots({ ...pinApp, handoff: { data: { send: { pin: send } } } } as never, collected).pin, send).toBe('<6 chars>');
+      expect(handoffDataSlots({ ...pinApp, handoff: { data: { send: { pin: send } } } } as never, { pin: '739512' }).pin, send).toBe('<6 chars>');
+    }
+    expect(handoffDataSlots(pinApp, collected).pin).toBe('<6 chars>');
+    // The trace shows the same real length.
+    const r = redactRecordSlots({ slots: {}, decision: { kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent', acks: [], completed: [], queued: [], slots: collected }, actions: [] } as unknown as TraceRecord, 'keep', pinApp);
+    expect(r.decision).toMatchObject({ slots: { pin: '<6 chars>' } });
+    // A PIN handed over only as verified or not stays so.
+    const verified = clinic({ id: 'clinic-pin-verified', slots: { ...SLOTS, pin: defineSlot('pin', { type: 'digits', noun: 'PIN', length: 6, redact: 'length', handoff: 'verified' }) } });
+    registerApp(verified);
+    const v = newSession('c', 0, VOICE_RELAY, undefined, verified.id);
+    Object.assign(v.slots.pin!, { value: '739512', display: '739512' });
+    expect(handoff(v, 'live-agent').slots.pin).toBe(IDENTITY_UNVERIFIED);
+  });
+
+  it('hands an identifier of four digits or fewer over as bullets, since its last four would be all of it', () => {
+    const s = session();
+    Object.assign(s.slots.patientId!, { value: '4821', display: '4821' });
+    expect(handoff(s, 'identity').slots.patientId).toBe('••••');
+  });
+
   it('hands a slot shown as said over by its written value, not the words read back', () => {
     const said = clinic({ id: 'clinic-said', slots: { ...SLOTS, place: slot('place', { displayFrom: 'said' }) } });
     registerApp(said);
@@ -147,6 +179,20 @@ describe('slot metadata: identity digits and the same day heard twice', () => {
     expect(sensitiveDigitAt(CLINIC, 'birthDate', digit!)).toBe('identity');
     expect(sensitiveDigitAt(CLINIC, 'ward', digit!)).toBeNull();
     expect(sensitiveDigitAt(CLINIC, 'otp', digit!)).toBe('code');
+  });
+
+  it('counts a digit at a slot that hides its value by its length (statement: false) as a secret, and at a menu or an open slot as not', () => {
+    const [digit] = keyEvents('7');
+    const app = clinic({ id: 'clinic-pin', slots: { ...SLOTS, pin: slot('pin', { redact: 'length', statement: false }) } });
+    expect(sensitiveDigitAt(app, 'pin', digit!)).toBe('secret');
+    // A statement, an open slot, a slot the app does not have and the intent menu: as before.
+    expect(sensitiveDigitAt(app, 'symptoms', digit!)).toBeNull();
+    expect(sensitiveDigitAt(app, 'ward', digit!)).toBeNull();
+    expect(sensitiveDigitAt(app, 'nowhere', digit!)).toBeNull();
+    expect(sensitiveDigitAt(app, null, digit!)).toBeNull();
+    // A factor stays an identity digit; # and * carry nothing.
+    expect(sensitiveDigitAt(app, 'patientId', digit!)).toBe('identity');
+    expect(sensitiveDigitAt(app, 'pin', keyEvents('#')[0]!)).toBeNull();
   });
 
   it('drops the same day heard by a second date-valued slot, but not by a slot that is not one', () => {

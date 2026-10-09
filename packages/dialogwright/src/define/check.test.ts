@@ -241,6 +241,12 @@ describe('checkApp: the lines the engine builds from the code', () => {
 
   it('a slot read back on every spoken value needs confirm_<slot> and its keypad line; one acknowledged by confidence needs ack_<slot>; a partial value needs its prompt', () => {
     expect(ids(withBook({ spokenConfirm: 'always' }))).toEqual(expect.arrayContaining(['confirm_book', 'ask_book_dtmf']));
+    // A no that asks the slot again (a library slot's readBackNo) needs no keypad line.
+    expect(ids(withBook({ spokenConfirm: 'always', readBackNo: 'ask' }))).toContain('confirm_book');
+    expect(ids(withBook({ spokenConfirm: 'always', readBackNo: 'ask' }))).not.toContain('ask_book_dtmf');
+    // Some values read back (confirmValues): the read-back line, and the summary's policy for the rest.
+    expect(ids(withBook({ confirmValues: ['b1'] }))).toEqual(expect.arrayContaining(['confirm_book', 'ask_book_dtmf']));
+    expect(ids(withBook({ confirmValues: ['b1'], readBackNo: 'ask' }))).not.toContain('ask_book_dtmf');
     expect(ids(withBook({ spokenConfirm: 'by-confidence' }))).toContain('ack_book');
     expect(ids(withBook({ spokenConfirm: 'by-confidence' }))).not.toContain('confirm_book');
     expect(ids(withBook({ partialPromptId: 'ask_book_title' }))).toContain('ask_book_title');
@@ -571,8 +577,9 @@ describe('the engine prompt list', () => {
       }
     }
     // enginePrompts requires each of these where the engine says it; disambiguate_<slot> only the
-    // slot's code can offer (two candidates from its fill), and handoff_<reason> is the reason's.
-    expect([...families].sort()).toEqual(['ack_<x>', 'ask_<x>', 'ask_<x>_dtmf', 'ask_<x>_retry', 'confirm_<x>', 'disambiguate_<x>', 'handoff_<x>']);
+    // slot's code can offer (two candidates from its fill), handoff_<reason> is the reason's, and
+    // offer_<slot> the line a slot that offers the caller's number declares (SlotSpec.prompts).
+    expect([...families].sort()).toEqual(['ack_<x>', 'ask_<x>', 'ask_<x>_dtmf', 'ask_<x>_retry', 'confirm_<x>', 'disambiguate_<x>', 'handoff_<x>', 'offer_<x>']);
   });
 
   it('the role-person reason check names is the gate\'s', async () => {
@@ -584,7 +591,8 @@ describe('the engine prompt list', () => {
   it('names every prompt id the engine says as a literal, or says why not', () => {
     const named = new Set([...Object.keys(ENGINE_PROMPTS), 'greeting', 'greeting_chat', 'nomatch_dtmf_menu', ...IDENTITY_PROMPTS.map((p) => p.id), ...CODE_PROMPTS.map((p) => p.id), ...PORTAL_PROMPTS.map((p) => p.id)]);
     // The ones an app writes or that depend on the app's own code, never the same in two apps.
-    const elsewhere = new Set(['identity_failed', 'handoff_identity']);
+    // greeting_offer is needed only for a slot that proposes at the greeting, and may be named in app.yaml.
+    const elsewhere = new Set(['identity_failed', 'handoff_identity', 'greeting_offer']);
     expect(literals().size).toBeGreaterThan(30);
     const unlisted = [...literals()].filter((id) => !named.has(id) && !elsewhere.has(id));
     expect(unlisted).toEqual([]);
@@ -713,4 +721,35 @@ describe('dialogwright check', () => {
     // Two real tsx processes, each compiling the CLI as it starts: a second or so alone, several with
     // the whole suite running beside it, so the limit is sized to that work, not vitest's 5 s default.
   }, 60_000);
+});
+
+describe('checkAppFully: a priority switch\'s correction and the handoff\'s unconfirmed values', () => {
+  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem);
+  const intent = (id: string, line: string) => (text: string): string => text.replace(`  ${id}:\n`, `  ${id}:\n    ${line}\n`);
+  const handoffData = (lines: string) => (text: string): string => `${text}\nhandoff:\n  data:\n${lines}`;
+
+  it('says nothing of either on a form intent, or with values to mark', async () => {
+    const dir = folder({ 'intents.yaml': intent('renew_loan', 'priority: { correctsForm: true }'), 'app.yaml': handoffData('    unconfirmed: mark\n') });
+    expect(await lines(dir)).toEqual([]);
+    expect(await warnings(dir)).toEqual([]);
+  });
+
+  it('warns of correctsForm on an informational intent, which opens no form to correct', async () => {
+    const dir = folder({ 'intents.yaml': intent('hours', 'priority: { correctsForm: true }') });
+    expect(await lines(dir)).toEqual([]);
+    expect(await warnings(dir)).toEqual([
+      'intents.yaml:16:31  intents.hours.priority.correctsForm  the informational intent "hours" says correctsForm, but it opens no form, so there is nothing to correct: what the turn says already fills the form in hand  ->  delete "correctsForm", or write priority: true',
+    ]);
+  });
+
+  it('warns of marking or leaving out unconfirmed values when slots is none', async () => {
+    for (const how of ['mark', 'omit'] as const) {
+      const dir = folder({ 'app.yaml': handoffData(`    slots: none\n    unconfirmed: ${how}\n`) });
+      expect(await lines(dir)).toEqual([]);
+      expect(await warnings(dir)).toEqual([
+        `app.yaml:35:18  handoff.data.unconfirmed  unconfirmed is ${how}, but slots is none, so a transfer sends no value to ${how === 'mark' ? 'mark' : 'leave out'}  ->  delete "unconfirmed", or name the slots that go`,
+      ]);
+    }
+    expect(await warnings(folder({ 'app.yaml': handoffData('    slots: none\n    unconfirmed: send\n') }))).toEqual([]);
+  });
 });

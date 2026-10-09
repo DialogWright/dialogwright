@@ -1,17 +1,19 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { appTurnContext, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
+import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
-import { callTool, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
+import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
+import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
 import { JevClientError, type JevClient } from '../jev/types';
-import { promptText } from '../prompts/render';
-import { prompt } from '../core/decision';
+import { promptText, spokenText as decisionText } from '../prompts/render';
+import { prompt, type Decision } from '../core/decision';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { formOf, identityOf } from '../core/app/lookup';
 import { delegateProblem, subjectProblem } from '../core/app/principals';
-import type { App, SlotId } from '../core/app/types';
-import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, type SessionEvent } from '../channel/events';
+import type { App, Refused, SlotId } from '../core/app/types';
+import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
+import { keptCallerNumber, lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
+import { factsOfferSlots, greetingOfferPromptId } from '../core/factsOffer';
 import { sayText } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
@@ -108,6 +110,9 @@ function fillPlaceholder(seed: Seed, session: Session, id: SlotId, confirmed: bo
  * exactly what a call would have; its gate events are the seed's, not the entry's.
  */
 export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: SeedOptions): Session {
+  if (atGreetingOffer(entry, appOf(session))) return seedGreetingOffer(session, entry);
+  if (atTextConsent(entry, appOf(session))) return seedTextConsent(session, entry, opts);
+  if (atCallerMatch(entry, appOf(session))) return seedCallerMatch(session, entry, opts);
   if (entry.context === 'no_form') return session;
   const app = appOf(session);
   const seed = app.testing?.seed;
@@ -184,10 +189,115 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     session.frustratedTurns = 2;
     return session;
   }
+  if (atCallerOffer(entry, app)) {
+    // The number the caller is calling from has been offered for the prompted slot (SlotSpec.callerNumber),
+    // or a value proposed from the facts (`offer: facts`), the app's placeholder for the slot as the
+    // value, and the slot is still empty: the entry answers the offer.
+    const slot = entry.prompted;
+    const placeholder = Object.hasOwn(seed.placeholders, slot) ? seed.placeholders[slot] : undefined;
+    if (!placeholder) throw new Error(`no placeholder value for slot "${slot}"`);
+    const facts = factsOfferSlots(app).includes(slot);
+    session.pendingConfirmation = { target: 'slot', slot, value: placeholder.value, display: placeholder.display, offered: true, ...(facts ? { from: 'facts' as const } : {}) };
+    session.callerOffered = [slot];
+    session.promptedFor = slot;
+    session.lastPromptId = `offer_${slot}`;
+    session.lastPromptText = promptText(app, `offer_${slot}`, facts ? { [slot]: placeholder.display } : { last4: lastFour(placeholder.value) }, session.locale);
+    session.lastPromptOptions = ['yes', 'no'];
+    return session;
+  }
   const slot = identity ? entry.prompted! : stopAt ?? null;
   session.promptedFor = slot;
   session.lastPromptId = slot ? `ask_${slot}` : null;
   session.lastPromptText = slot ? promptText(app, `ask_${slot}`, {}, session.locale) : '';
+  return session;
+}
+
+/**
+ * The proposal at the greeting (atGreetingOffer): the app's placeholder for the prompted slot proposed
+ * as a call opens (`offerAt: greeting`), as the engine makes it (core/turn.ts greetingProposal): no form
+ * open, the slot still empty, `offer_<slot>` after the greeting's line, asked for no slot.
+ */
+function seedGreetingOffer(session: Session, entry: CorpusEntry & { prompted: SlotId }): Session {
+  const app = appOf(session);
+  const slot = entry.prompted;
+  const placeholder = app.testing?.seed?.placeholders && Object.hasOwn(app.testing.seed.placeholders, slot) ? app.testing.seed.placeholders[slot] : undefined;
+  if (!placeholder) throw new Error(`corpus ${entry.id}: no placeholder value for slot "${slot}"`);
+  session.pendingConfirmation = { target: 'slot', slot, value: placeholder.value, display: placeholder.display, offered: true, from: 'facts', at: 'greeting' };
+  session.greetingOffered = slot;
+  const said = prompt(`offer_${slot}`, 'intent', { [slot]: placeholder.display }, [{ promptId: greetingOfferPromptId(app), vars: {} }], ['yes', 'no']);
+  session.promptedFor = 'intent';
+  session.lastPromptId = said.promptId;
+  session.lastPromptText = decisionText(app, said, session.locale);
+  session.lastPromptOptions = ['yes', 'no'];
+  return session;
+}
+
+/**
+ * The consent to text for the whole call just asked (atTextConsent), as the engine asks it: the call from
+ * the app's seed number (App.testing.seed.callerNumber), its call-start lookup made through the gate and
+ * kept in the facts as a call's is, then the question for the slot a call would choose (the first covered
+ * slot that takes the number and that callerOffer allows), `consent_texts` after the greeting's line, no
+ * form open.
+ */
+function seedTextConsent(session: Session, entry: CorpusEntry, opts: SeedOptions): Session {
+  const app = appOf(session);
+  const number = app.testing?.seed?.callerNumber;
+  if (number === undefined) throw new Error(`corpus ${entry.id}: app "${app.id}" seeds no consent question (App.testing.seed.callerNumber, the number calling)`);
+  const kept = keptCallerNumber(app, number);
+  if (kept === undefined) throw new Error(`corpus ${entry.id}: the seed number ${number} is not one the app keeps`);
+  session.callerNumber = kept;
+  const tc: TurnContext = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
+  // The call-start lookup, as a call makes it, so a callerOffer hook that reads what it found answers as on a call.
+  const lookup = app.callerNumber?.lookup;
+  if (lookup !== undefined) {
+    const looked = callTool(session, { tool: lookup, params: { callerNumber: kept }, purpose: CALLER_LOOKUP_PURPOSE }, tc, newTurnOut());
+    if (looked.decision.verdict === 'ALLOW' && looked.value != null) app.facts?.fromCallerLookup?.(session.facts, looked.value);
+  }
+  // The same choice of slot a call makes (core/turn.ts askTextConsent): the first covered slot that takes the number and that the hook allows.
+  const said = askTextConsent(session, tc, newTurnOut());
+  if (said === null) throw new Error(`corpus ${entry.id}: the seed number ${number} reaches no consent question (no covered slot takes it, or callerOffer allows none)`);
+  session.promptedFor = 'intent';
+  session.lastPromptId = said.promptId;
+  session.lastPromptText = decisionText(app, said, session.locale);
+  session.lastPromptOptions = ['yes', 'no'];
+  return session;
+}
+
+/**
+ * The caller-ID question just asked (atCallerMatch), as the engine asks it: the call from the app's
+ * seed number (App.testing.seed.callerNumber), its call-start lookup made through the gate and kept in
+ * the facts as a call's is, an anonymous caller, the identified factors and the one asked empty, and
+ * `identity_caller_match` the prompt the entry answers. In a form's context, the form's entry call
+ * through the gate (its step-up, which asks the question); in `no_form`, at the greeting (the step-up
+ * `at: greeting`, after the greeting's line before a proposal).
+ */
+function seedCallerMatch(session: Session, entry: CorpusEntry & { prompted: SlotId }, opts: SeedOptions): Session {
+  const app = appOf(session);
+  const number = app.testing?.seed?.callerNumber;
+  if (number === undefined) throw new Error(`corpus ${entry.id}: app "${app.id}" seeds no caller-ID question (App.testing.seed.callerNumber)`);
+  const tc: TurnContext = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
+  const kept = keptCallerNumber(app, number);
+  const lookup = app.callerNumber?.lookup;
+  if (kept === undefined || lookup === undefined) throw new Error(`corpus ${entry.id}: app "${app.id}" keeps no number to look up for the caller-ID question`);
+  session.callerNumber = kept;
+  const looked = callTool(session, { tool: lookup, params: { callerNumber: kept }, purpose: CALLER_LOOKUP_PURPOSE }, tc, newTurnOut());
+  if (looked.decision.verdict === 'ALLOW' && looked.value != null) app.facts?.fromCallerLookup?.(session.facts, looked.value);
+  const out = newTurnOut();
+  let asked: Decision | Refused | null;
+  if (entry.context === 'no_form') {
+    const identity = identityOf(app);
+    session.stepUp = { call: { tool: identity.verifyTool, params: {} }, need: 1, at: 'greeting' };
+    asked = continueIdentity(session, tc, out, [{ promptId: greetingOfferPromptId(app), vars: {} }]);
+  } else {
+    setForm(session, contextForm(entry.context, app)!);
+    session.entered = null;
+    asked = ensureEntry(session, tc, out, []);
+  }
+  if (asked?.kind !== 'prompt' || asked.promptId !== CALLER_MATCH_PROMPT) throw new Error(`corpus ${entry.id}: the seed number ${number} does not reach the caller-ID question (the lookup found no single match)`);
+  session.promptedFor = asked.target;
+  session.lastPromptId = asked.promptId;
+  session.lastPromptText = decisionText(app, asked, session.locale);
+  session.lastPromptOptions = [];
   return session;
 }
 
@@ -261,7 +371,7 @@ export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOption
   // One book of business per entry: what the entry's turn reads or files is its own.
   const o = { ...opts, tools: opts.tools ?? demoTools() };
   const start = seedCorpusSession(startSession(entry.id, nowOf(opts)(), entry.as), entry, o);
-  const asked = entry.context === 'no_form' ? null : seededPrompt(start);
+  const asked = entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) && !atCallerMatch(entry, appOf(start)) && !atTextConsent(entry, appOf(start)) ? null : seededPrompt(start);
   const turn = opts.turn ?? runTurn;
   const setup = await turn(start, startEvent(), o);
   // The greeting's own bookkeeping moves the prompt to the greeting, so put back the one the seed
@@ -307,6 +417,19 @@ export interface Scenario {
    * scenario starts in the app's default, as it always has.
    */
   locale?: string;
+  /**
+   * The number the call comes from, as a carrier sends it (e.g. "+15555550142"; a withheld one as
+   * the carrier writes it): the start event carries it (SessionStart.callerNumber) when the app has a
+   * slot that offers the caller's number (SlotSpec.callerNumber) or keeps it for its code
+   * (App.callerNumber). Without it, and on a chat, the call has no number, as it always has.
+   */
+  callerNumber?: string;
+  /**
+   * The number the call is to (e.g. "+15555550100"): the start event carries it
+   * (SessionStart.calledNumber) when the app keeps it (app.yaml's callerNumber `called: true`).
+   * Without it, and on a chat, the call has none.
+   */
+  calledNumber?: string;
   steps: ScenarioStep[];
   expect: ScenarioExpectation;
   /**
@@ -362,7 +485,10 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(opts)(), scenario.as);
   const turn = opts.turn ?? runTurn;
-  const setup = await turn(session, startEvent({}, scenario.locale), o);
+  // A call's numbers only: a chat has none (SessionStart.callerNumber, calledNumber).
+  const calling = withCallerNumber(startEvent({}, scenario.locale), session.caps.speech && usesCallerNumber(appOf(session)) ? scenario.callerNumber : undefined);
+  const start = withCalledNumber(calling, session.caps.speech && usesCalledNumber(appOf(session)) ? scenario.calledNumber : undefined);
+  const setup = await turn(session, start, o);
   runs.push(setup);
   stepOf.push(-1);
   session = setup.result.session;
@@ -432,6 +558,8 @@ function isValidScenario(s: unknown): s is Scenario {
     Array.isArray((s as Scenario).steps) &&
     typeof (s as Scenario).expect === 'object' && (s as Scenario).expect !== null &&
     ((s as Scenario).locale === undefined || (typeof (s as Scenario).locale === 'string' && (s as Scenario).locale !== '')) &&
+    ((s as Scenario).callerNumber === undefined || typeof (s as Scenario).callerNumber === 'string') &&
+    ((s as Scenario).calledNumber === undefined || typeof (s as Scenario).calledNumber === 'string') &&
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null)
   );
 }
@@ -443,7 +571,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       seen.add(s.id);
       out.push(s);

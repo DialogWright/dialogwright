@@ -3,7 +3,7 @@ import type { ThresholdName, Thresholds } from '../core/thresholds';
 /** The thresholds an automated sweep may move; the rest (retry count, stub sharpness, timeout, screen grace, price) are fixed. */
 export const SWEEPABLE: readonly ThresholdName[] = [
   'GATE_ADDRESSED', 'GATE_INTELLIGIBLE', 'GATE_COMPLETE', 'GATE_WANTS_HUMAN',
-  'INTENT_ROUTE', 'INTENT_IMPLICIT', 'INTENT_EXPLICIT', 'INTENT_SWITCH', 'GATE_INTENT_MARGIN', 'GATE_FRUSTRATION_HIGH',
+  'INTENT_ROUTE', 'INTENT_IMPLICIT', 'INTENT_EXPLICIT', 'INTENT_SWITCH', 'PRIORITY_INTENT', 'GATE_INTENT_MARGIN', 'GATE_FRUSTRATION_HIGH',
   'INTENT_TENTATIVE', 'INTENT_CHANGE', 'SLOT_CHANGE', 'INTENT_SECOND',
   'SLOT_DETECT', 'SLOT_CHOICE_FILL', 'SLOT_CHOICE_CONFIRM', 'SLOT_CHOICE_MARGIN', 'SLOT_HELP',
   'KB_TOPIC_MARGIN',
@@ -18,6 +18,7 @@ export const SWEEPABLE: readonly ThresholdName[] = [
  */
 export const EXCLUDED: Partial<Record<ThresholdName, string>> = {
   GATE_WANTS_HUMAN: 'handoff gate; the recording has no wants-human evidence between 0.10 and 0.70 except the word "Agent", so a recommended drop is a safety change, not tuning',
+  PRIORITY_INTENT: 'priority intents only (an app that marks none never reads it); a recommended rise lets an emergency wait, so it is a safety change, not tuning',
   SCREEN_FIRE: 'injection screen; sensitive on purpose (a false positive costs one reprompt), and an outcome score rewards raising it, so a recommended rise is a safety change, not tuning',
 };
 

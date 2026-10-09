@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../../../schemas/forms.schema.json
+forms:
+  # What the request is about, and a number to text updates to, which the caller may decline. The
+  # summary names the number only when there is one: the summary hook reads the line that does.
+  open_request:
+    slots: [topic, textTo]
+    summaryPromptId: confirm_open_request
+    hooks: [confirmedParams, complete, onSummaryRead]
+    calls: [openRequest, sendUpdates, lineType]

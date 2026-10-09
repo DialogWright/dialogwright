@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatRegressSummary, type RegressSummaryInput } from './regressSummary';
+import { formatRegressSummary, formatTriage, type RegressSummaryInput } from './regressSummary';
 import type { TraceRecord } from '../trace/types';
 import { CASSETTE_MISS } from '../jev/cassette';
 
@@ -102,5 +102,28 @@ describe('formatRegressSummary', () => {
     expect(text).not.toContain('cost usd');
     expect(text).not.toMatch(/\[(replayed|mixed)\]/);
     expect(text).not.toContain('ask latency ms');
+  });
+});
+
+describe('formatTriage', () => {
+  const miss = row('error', 0, 0, { name: 'JevClientError', message: `${CASSETTE_MISS} abc hello` });
+  const other = row('error', 0, 0, { name: 'JevClientError', message: 'injected timeout' });
+
+  it('counts the untagged corpus differences, the failing calls, the passing calls off the baseline and the misses', () => {
+    expect(formatTriage({
+      corpusDiffering: ['a', 'b', 'c'],
+      scenariosFailing: ['s1'],
+      // s1 fails and differs: counted once, as failing.
+      scenariosDiffering: ['s1', 's2', 's3'],
+      records: [miss, other, row('recorded', 1, 10)],
+    })).toBe('to triage: 3 untagged corpus differences, 1 failing scripted call, 2 passing scripted calls that differ from the baseline, 1 cassette miss');
+  });
+
+  it('says zero of each when nothing needs a decision, and counts a screen that missed', () => {
+    const screenMiss: Row = { ...row('recorded', 1, 10), screen: { value: null, fired: false, error: `${CASSETTE_MISS} def` } };
+    expect(formatTriage({ corpusDiffering: [], scenariosFailing: [], scenariosDiffering: [], records: [] }))
+      .toBe('to triage: 0 untagged corpus differences, 0 failing scripted calls, 0 passing scripted calls that differ from the baseline, 0 cassette misses');
+    expect(formatTriage({ corpusDiffering: ['a'], scenariosFailing: [], scenariosDiffering: ['s'], records: [screenMiss, miss] }))
+      .toBe('to triage: 1 untagged corpus difference, 0 failing scripted calls, 1 passing scripted call that differs from the baseline, 2 cassette misses');
   });
 });

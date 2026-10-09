@@ -240,6 +240,14 @@ describe('redact and handoff', () => {
     expect(open.handoff).toBeUndefined();
     expect(defineSlot('parcel', { type: 'digits', noun: 'parcel', length: 10, handoff: 'verified' }).handoff).toBe('verified');
   });
+
+  it('takes redact length for a short secret: recorded by its length, display and all (not a statement)', () => {
+    const pin = defineSlot('pin', { type: 'digits', noun: 'PIN', length: 4, redact: 'length' });
+    expect(pin).toMatchObject({ redact: 'length', statement: false });
+    // The other settings are unchanged: last4 is still the default, and no slot says statement: false but one by its length.
+    expect(account.redact).toBe('last4');
+    expect('statement' in account).toBe(false);
+  });
 });
 
 describe('the words and the ids', () => {
@@ -392,7 +400,7 @@ describe('the docs', () => {
   it('the docs page names every option', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/digits.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(digitsType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['article', 'confirm', 'group', 'handoff', 'ids', 'keypad', 'length', 'lengthRetryPromptId', 'listen', 'mask', 'minConfidence', 'noun', 'readBack', 'redact', 'text']);
+    expect(options.sort()).toEqual(['article', 'callerNumber', 'confirm', 'group', 'handoff', 'ids', 'keypad', 'length', 'lengthRetryPromptId', 'listen', 'mask', 'minConfidence', 'noun', 'offer', 'offerAnswers', 'offerAt', 'readBack', 'redact', 'text']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
   });
 });

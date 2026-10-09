@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { localeTag } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
 import { MAX_PICK_CANDIDATES, MAX_PICK_SPLITS, MIN_TAIL_WORDS } from './pick';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The text parts of a `text` slot, as templates over the options: its yes-or-no question, and with
@@ -93,10 +94,22 @@ export const textOptions = z
       .describe(
         'How the value writes the case of the words. "as-said": as the recognizer or the caller wrote them. "title": words written with no capital at all (a recognizer that writes none) have each word capitalized, but for minor words after the first ("7625 oak hollow lane" is "7625 Oak Hollow Lane"); words with any capital stay as they are. The value only: with say: null the display stays the words as said. Only in a language with rules: English, also read with no locale.',
       ),
+    confirm: z
+      .enum(['summary', 'always'])
+      .optional()
+      .describe(`"summary" (the default): the words are neither acknowledged nor read back on their own; the form's final confirm covers them. ${alwaysConfirmText('what the caller said', false)}`),
     text: TEXT_PARTS.schema,
     ids: TEXT_QUESTIONS.schema,
   })
   .superRefine((o, ctx) => {
+    if (o.confirm === 'always' && o.say !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['confirm'],
+        message: `confirm "always" reads the slot back by its display, which is the stand-in "${o.say}", so the caller hears nothing they could correct`,
+        params: { fix: 'set say: null (with redact: none) to read the words back as said, or delete confirm' },
+      });
+    }
     const literal = o.text?.given !== undefined;
     if (!literal && o.what === undefined) {
       ctx.addIssue({

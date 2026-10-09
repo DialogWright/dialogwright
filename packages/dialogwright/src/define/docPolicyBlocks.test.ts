@@ -3,6 +3,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { withParentKey, worldWithRoles } from '../testing/docBlocks';
 import { defineRule } from '../gate/defineRule';
 import { AppDefinitionError } from './defineApp';
 import { defineIdentity, definePolicy } from './definePolicy';
@@ -28,7 +29,7 @@ const WORLD_IDENTITY = parse(readFileSync(join(ROOT, 'packages/dialogwright/src/
 const POLICY_KEYS = ['actions', 'purposes', 'wording', 'redact', 'audit'];
 const IDENTITY_KEYS = ['principals', 'levels', 'attempts', 'signIn'];
 
-/** The markdown files whose examples an author copies: the repository's docs, READMEs and CONTRIBUTING. */
+/** The markdown files whose examples an author copies: the repository's docs, READMEs and CONTRIBUTING, and the create-app skill's pages. */
 function docFiles(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -41,6 +42,7 @@ function docFiles(): string[] {
   };
   walk(join(ROOT, 'docs'));
   walk(join(ROOT, 'apps'));
+  walk(join(ROOT, '.claude', 'skills'));
   for (const file of ['README.md', 'CONTRIBUTING.md', 'CLAUDE.md']) out.push(join(ROOT, file));
   return out;
 }
@@ -70,9 +72,10 @@ function blocksOf(file: string): Block[] {
   const text = readFileSync(file, 'utf8');
   const out: Block[] = [];
   for (const m of text.matchAll(/```ya?ml\n([\s\S]*?)```/g)) {
+    const body = withParentKey(m[1]!);
     let value: unknown;
     try {
-      value = parse(m[1]!);
+      value = parse(body);
     } catch {
       continue;
     }
@@ -117,14 +120,14 @@ const standIn = (id: string) => {
 };
 
 /** What loading a block says is wrong with it, one line each: its path, the message and the fix. */
-export function problemsOfBlock(block: Pick<Block, 'kind' | 'value'>): string[] {
+export function problemsOfBlock(block: Pick<Block, 'kind' | 'value'>, declaredRoles: readonly string[] = []): string[] {
   try {
     if (block.kind === 'identity') {
       defineIdentity(block.value);
     } else {
       const { customRules, lookups } = namedBy(block.value);
       definePolicy({ actions: {}, ...block.value }, {
-        identity: WORLD_IDENTITY,
+        identity: worldWithRoles(WORLD_IDENTITY, declaredRoles),
         lookups,
         customRules: Object.fromEntries(customRules.map((id) => [id, standIn(id)])),
       });
@@ -141,8 +144,8 @@ describe('the policy and identity YAML in the docs', () => {
 
   it('is found in the authoring guide and the design, in both kinds', () => {
     const where = (kind: Kind) => new Set(blocks.filter((b) => b.kind === kind).map((b) => b.where.split(':')[0]));
-    for (const file of ['docs/authoring-an-app.md', 'docs/design.md']) expect(where('policy'), file).toContain(file);
-    for (const file of ['docs/authoring-an-app.md']) expect(where('identity'), file).toContain(file);
+    for (const file of ['docs/authoring-an-app.md', 'docs/design.md', '.claude/skills/create-app/patterns.md']) expect(where('policy'), file).toContain(file);
+    for (const file of ['docs/authoring-an-app.md', '.claude/skills/create-app/patterns.md']) expect(where('identity'), file).toContain(file);
     expect(blocks.filter((b) => b.kind === 'policy').length).toBeGreaterThanOrEqual(8);
     expect(blocks.filter((b) => b.kind === 'identity').length).toBeGreaterThanOrEqual(2);
   });
@@ -155,13 +158,20 @@ describe('the policy and identity YAML in the docs', () => {
         for (const entry of isMap(action) && Array.isArray(action.rules) ? action.rules : []) rules.add(typeof entry === 'string' ? entry : Object.keys(entry as object)[0]!);
       }
     }
-    expect([...rules].sort()).toEqual(['attempts', 'confirmed', 'custom', 'dateInRange', 'fields', 'identity', 'limit', 'role', 'scope']);
+    expect([...rules].sort()).toEqual(['attempts', 'callerNumber', 'confirmed', 'custom', 'dateInRange', 'fields', 'identity', 'limit', 'noneOf', 'oneOf', 'role', 'scope']);
     // The sections the docs teach: purposes, wording, redact and audit.
     for (const key of ['purposes', 'wording', 'redact', 'audit']) expect(blocks.some((b) => b.kind === 'policy' && key in b.value), key).toBe(true);
   });
 
   it('builds, every block of it, as written', () => {
-    const failed = blocks.flatMap((b) => problemsOfBlock(b).map((p) => `${b.where}: ${p}`));
+    // The delegate roles each page's own identity blocks declare.
+    const rolesOf = new Map<string, string[]>();
+    for (const b of blocks.filter((x) => x.kind === 'identity')) {
+      const delegates = isMap(b.value.principals) && isMap(b.value.principals.delegates) ? Object.values(b.value.principals.delegates) : [];
+      const file = b.where.split(':')[0]!;
+      for (const d of delegates) if (isMap(d) && Array.isArray(d.roles)) rolesOf.set(file, [...(rolesOf.get(file) ?? []), ...d.roles.map(String)]);
+    }
+    const failed = blocks.flatMap((b) => problemsOfBlock(b, rolesOf.get(b.where.split(':')[0]!)).map((p) => `${b.where}: ${p}`));
     expect(failed).toEqual([]);
   });
 

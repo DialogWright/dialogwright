@@ -5,7 +5,8 @@ import { defaultCorpusFile, scenariosDir } from '../run/fixtures';
 import { useTestkit } from '../testing/apps';
 import { REGRESS_TODAY } from './baseline';
 import { loadScenarios, runCorpusEntry, runScenario, type RunOptions } from './runner';
-import { corpusTranscript, describeStep, scenarioTranscript } from './transcript';
+import { corpusTranscript, describeStep, modelAnswerLines, scenarioTranscript } from './transcript';
+import { JevClientError } from '../jev/types';
 
 useTestkit();
 
@@ -52,6 +53,24 @@ describe('the regression transcript', () => {
       '  1. say "where is my parcel"',
     ]);
     expect(lines).toContain('       -> prompt ask_accountId');
+  });
+
+  it("a corpus line's model answers: each question with its probabilities, the screen, and nothing for a turn that asked none", async () => {
+    const entry = loadCorpus(defaultCorpusFile()).find((e) => e.id === 'tk-01')!;
+    const r = await runCorpusEntry(entry, options());
+    expect(modelAnswerLines(r.setup)).toEqual([]);
+    const lines = modelAnswerLines(r.run);
+    expect(lines[0]).toBe('  model answers (stub:fixture)');
+    expect(lines.find((l) => l.trimStart().startsWith('intent '))).toMatch(/^ {5}intent +choice {2}track_parcel \d\.\d\d/);
+    expect(lines.some((l) => / {2}noul {4}\d\.\d\d$/.test(l))).toBe(true);
+    expect(lines.at(-1)).toMatch(/^ {5}screen +\d\.\d\d {3}\(in the same request\)$/);
+  });
+
+  it('a turn the model did not answer says why', async () => {
+    const entry = loadCorpus(defaultCorpusFile()).find((e) => e.id === 'tk-01')!;
+    const failing = { ...options(), client: { ask: async () => { throw new JevClientError('cassette miss abc where is my parcel'); } } };
+    const r = await runCorpusEntry(entry, failing);
+    expect(modelAnswerLines(r.run)).toEqual(['  model answers: none (cassette miss abc where is my parcel)']);
   });
 
   it('a step as the scenario file writes it', () => {

@@ -11,8 +11,14 @@ export const DEFAULT_LANG = 'en-US';
  * A session began. Provider details (call ids, numbers, custom parameters) are opaque to the core.
  * `locale` is the language the channel asks the session to speak (a language tag, e.g. es-US), when
  * it names one: the session speaks it where the app has it (App.locales), its default otherwise.
+ * `callerNumber` is the number the caller is calling from, as the carrier sent it
+ * (VoiceProvider.setupCallerOf): only on a call, only for an app with a slot that offers it
+ * (SlotSpec.callerNumber, core/callerNumber.ts) or that keeps it for its code (App.callerNumber), and
+ * only when the carrier sent one. The session keeps it only when the app can use it; it is never
+ * identity. `calledNumber` is the number the caller called (VoiceProvider.setupCalledOf), only for an
+ * app that keeps it (App.callerNumber `called`), and only when the carrier sent one.
  */
-export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string }
+export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string; callerNumber?: string; calledNumber?: string }
 /** Recognized speech. Only a final transcript is a turn; a partial one holds. */
 export interface UserSpeech { type: 'user.speech'; text: string; final: boolean; lang: string }
 /** Typed text: always final. */
@@ -43,6 +49,16 @@ export type SessionEvent = SessionStart | UserSpeech | UserText | UserKey | User
 
 export function startEvent(provider: Readonly<Record<string, string>> = {}, locale?: string): SessionStart {
   return locale === undefined ? { type: 'session.start', provider } : { type: 'session.start', provider, locale };
+}
+/** A session start with the number the caller is calling from (SessionStart.callerNumber); null or absent leaves it as it is. */
+export function withCallerNumber(event: SessionEvent, callerNumber: string | null | undefined): SessionEvent {
+  if (event.type !== 'session.start' || callerNumber === null || callerNumber === undefined) return event;
+  return { ...event, callerNumber };
+}
+/** A session start with the number the caller called (SessionStart.calledNumber); null or absent leaves it as it is. */
+export function withCalledNumber(event: SessionEvent, calledNumber: string | null | undefined): SessionEvent {
+  if (event.type !== 'session.start' || calledNumber === null || calledNumber === undefined) return event;
+  return { ...event, calledNumber };
 }
 export function speechEvent(text: string, final = true, lang = DEFAULT_LANG): UserSpeech {
   return { type: 'user.speech', text, final, lang };

@@ -14,6 +14,8 @@ import type { IdentityConfig, ToolName } from './types';
 /** The part of a form this reads. */
 export interface FormCalls {
   readonly calls?: readonly ToolName[];
+  /** The form's checks (FormDef.checks): each reaches its action, which no `calls` lists. */
+  readonly checks?: readonly { readonly action: ToolName }[];
 }
 
 /** Where the app's forms stand: whether any declares its calls, the forms that do not, and the actions the declared calls reach. */
@@ -22,7 +24,7 @@ export interface Reach {
   readonly declared: boolean;
   /** The forms that leave `calls` out while another declares it. */
   readonly undeclared: readonly string[];
-  /** Every action some form lists. */
+  /** Every action some form lists, or checks. */
   readonly reached: ReadonlySet<ToolName>;
 }
 
@@ -32,7 +34,7 @@ export function reachOf(forms: Readonly<Record<string, FormCalls>>): Reach {
   return {
     declared,
     undeclared: declared ? ids.filter((id) => forms[id]!.calls === undefined) : [],
-    reached: new Set(ids.flatMap((id) => forms[id]!.calls ?? [])),
+    reached: new Set(ids.flatMap((id) => [...(forms[id]!.calls ?? []), ...(forms[id]!.checks ?? []).map((c) => c.action)])),
   };
 }
 

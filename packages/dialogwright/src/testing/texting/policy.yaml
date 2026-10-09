@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# The lookups by the number calling hold their param to it; the text goes to the caller's own number,
+# or one they heard read back and said yes to; the write is exactly what the summary read back.
+actions:
+  findCallerByPhone:
+    say: look up the line type of the number calling
+    level: 0
+    rules:
+      - identity
+      - callerNumber: { field: callerNumber }
+  lineType:
+    say: check whether the number calling is a mobile
+    level: 0
+    rules:
+      - identity
+      - callerNumber: { field: callerNumber }
+  openRequest:
+    say: open a request
+    level: 0
+    rules:
+      - identity
+      - confirmed: [topic, textTo]
+  sendUpdates:
+    say: text updates about a request
+    level: 0
+    rules:
+      - identity
+      - callerNumber: { field: textTo, else: confirmed }
+      - confirmed: [topic, textTo]
+
+audit:
+  callerNumber: last4
+  topic: keep

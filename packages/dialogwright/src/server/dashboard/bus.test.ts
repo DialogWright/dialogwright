@@ -77,6 +77,14 @@ describe('maskNumber', () => {
   it('keeps the last four digits', () => {
     expect(maskNumber('+15555550199')).toBe('…0199');
     expect(maskNumber(undefined)).toBe('unknown');
-    expect(maskNumber('123')).toBe('…123');
+    // Four digits or fewer would be the whole number: bullets. A value with no digits names no number.
+    expect(maskNumber('123')).toBe('••••');
+    expect(maskNumber('5550')).toBe('••••');
+    expect(maskNumber('55505')).toBe('…5505');
+    expect(maskNumber('anonymous')).toBe('…');
+    // Idempotent: a number the trace already masked keeps its last four, bullets stay bullets.
+    expect(maskNumber('...0142')).toBe('…0142');
+    expect(maskNumber('…0142')).toBe('…0142');
+    expect(maskNumber('••••')).toBe('••••');
   });
 });

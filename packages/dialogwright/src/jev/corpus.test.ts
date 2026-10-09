@@ -101,6 +101,18 @@ describe('parseCorpus', () => {
     expect(() => parseCorpus(line({ reason: 'r', outcome: { promptId: 'a' }, why: 'x' }))).toThrow(/unknown key why/);
   });
 
+  it('takes knownGap with outcomes, a few pinned outcomes any one of which is allowed, and refuses both or neither', () => {
+    const line = (gap: unknown) => `${JSON.stringify({ id: 'k', text: 'x', intent: 'none', context: 'no_form', knownGap: gap })}\n`;
+    const gap = { reason: 'a borderline line', outcomes: [{ promptId: 'ask_name' }, { promptId: 'anything_else', gate: null }] };
+    expect(parseCorpus(line(gap))[0]?.knownGap).toEqual(gap);
+    expect(() => parseCorpus(line({ ...gap, outcome: { promptId: 'a' } }))).toThrow('corpus k: knownGap takes outcome or outcomes, not both');
+    expect(() => parseCorpus(line({ reason: 'r' }))).toThrow(/give outcome, or outcomes/);
+    expect(() => parseCorpus(line({ reason: 'r', outcomes: [] }))).toThrow(/outcomes must be a list of at least one outcome/);
+    expect(() => parseCorpus(line({ reason: 'r', outcomes: { promptId: 'a' } }))).toThrow(/outcomes must be a list of at least one outcome/);
+    expect(() => parseCorpus(line({ reason: 'r', outcomes: [{ promptId: 'a' }, {}] }))).toThrow(/knownGap.outcomes\[1\] pins no field/);
+    expect(() => parseCorpus(line({ reason: 'r', outcomes: [{ promptId: 'a' }, { id: 'k' }] }))).toThrow(/knownGap.outcomes\[1\] pins id, which is not an outcome field/);
+  });
+
   it('normalizes text for lookup', () => {
     expect(normalizeText("What's the status, of my parcel?")).toBe('what s the status of my parcel');
   });

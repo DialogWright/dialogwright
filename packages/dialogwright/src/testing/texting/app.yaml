@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../../schemas/app.schema.json
+# Example Requests: a fictional line that opens a request and offers to text updates about it, the
+# engine's fixture for the number the caller is calling from used by the app (callerNumber: a hint,
+# never identity): looked up once at call start, offered for an optional text slot, and held by the
+# gate's callerNumber rule when the text is sent.
+id: texting
+locale: en-US
+
+brand:
+  name: Example Requests
+  mark: ER
+
+console:
+  formLabels:
+    open_request: Open a request
+  slotLabels:
+    topic: About
+    textTo: Text updates to
+
+wording:
+  addressee: the Example Requests line
+
+# The number the caller is calling from, kept for the app's code, and the number they called. The
+# lookup finds the line type of a number on file, before the greeting, through the gate.
+callerNumber:
+  use: hint
+  called: true
+  lookup: findCallerByPhone
+
+fixtures:
+  dir: src/testing/texting/fixtures

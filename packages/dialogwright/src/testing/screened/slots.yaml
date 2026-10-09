@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../schemas/slots.schema.json
+problem:
+  type: choice
+  options:
+    leak:
+      say: a leak
+      means: Water is getting in, dripping or leaking
+    crack:
+      say: a crack
+      means: A wall, floor or ceiling has a crack in it
+    draft:
+      say: a draft
+      means: Cold air is getting in around a door or a window
+  text:
+    instructions: Read asr.text. What problem with the home does the caller describe?
+ownership:
+  type: choice
+  options:
+    own:
+      say: you own it
+      means: The caller owns the home, or is calling for the owner
+    rent:
+      say: you rent it
+      means: The caller rents the home from someone else
+  text:
+    instructions: Read asr.text. Does the caller own the home or rent it?
+town:
+  type: choice
+  options:
+    millbrook: Millbrook
+    cedar_falls: Cedar Falls
+    ashford: Ashford
+    riverton: Riverton
+    elsewhere:
+      say: another town
+      means: A town that is not Millbrook, Cedar Falls, Ashford or Riverton
+  text:
+    instructions: Read asr.text. Which town is the home in?
+howUrgent:
+  type: choice
+  options:
+    routine:
+      say: whenever suits
+      means: There is no hurry
+    soon:
+      say: soon
+      means: It is getting worse and should be looked at soon
+    urgent:
+      say: right away
+      means: Something is going wrong right now and needs help at once
+  text:
+    instructions: Read asr.text. How urgent does the caller say the problem is?
+visitDay:
+  type: choice
+  options:
+    monday: Monday
+    wednesday: Wednesday
+    saturday: Saturday
+  text:
+    instructions: Read asr.text. Which day does the caller want the visit?
+timeOfDay:
+  type: choice
+  options:
+    morning: the morning
+    afternoon: the afternoon
+  text:
+    instructions: Read asr.text. Does the caller want the morning or the afternoon?

@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../../../schemas/slots.schema.json
+# What the caller is seeing.
+problem:
+  type: choice
+  keypad: true
+  options:
+    out:
+      say: nothing working at all
+      means: The caller says nothing works at all, it is completely out
+    partial:
+      say: working only in part
+      means: The caller says it works only in part, or only some of it works
+  text:
+    instructions: Read asr.text. What does the caller say the problem is?
+
+# The identity factors (identity.yaml): an account number and a date of birth. On a call matched to
+# one account, the account number is filled from the match and only the date of birth is asked.
+accountId:
+  type: digits
+  noun: account
+  length: 8
+  group: [4, 4]
+  keypad: true
+dob:
+  type: birthdate
+  keypad: true

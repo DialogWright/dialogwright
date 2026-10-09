@@ -5,6 +5,7 @@ import type { Thresholds } from '../../core/thresholds';
 import type { FrameLogLine } from '../frameLog';
 import type { AuditEntry } from '../../audit/types';
 import { consoleKbSource, redactHandoffData, redactRecordSlots } from '../../trace/redact';
+import { SHORT_MASK } from '../../gate/principal';
 
 interface Base { callSid: string; at: number }
 
@@ -61,10 +62,15 @@ export type DashboardEventType = DashboardEvent['type'];
  */
 export type DeliveryFact = { kind: string } & { [field: string]: number | boolean | string | null };
 
-/** The last four digits only; the page never shows a whole caller number. */
+/** The last four digits only; the page never shows a whole caller number (one of four digits or fewer: SHORT_MASK). */
 export function maskNumber(n: string | undefined | null): string {
   if (!n) return 'unknown';
+  // Already masked (the trace's `...0142`, or SHORT_MASK): kept, in the page's own spelling.
+  if (n === SHORT_MASK) return n;
+  const masked = /^(?:\.\.\.|…)(\d{4})$/.exec(n);
+  if (masked) return `…${masked[1]}`;
   const digits = n.replace(/\D/g, '');
+  if (digits.length > 0 && digits.length <= 4) return SHORT_MASK;
   return `…${digits.slice(-4)}`;
 }
 
@@ -72,9 +78,14 @@ export function maskNumber(n: string | undefined | null): string {
  * Caller identity travels under a handful of names that Twilio spells differently per surface --
  * `from`/`to` on the setup frame, `From`/`To`/`Caller`/`Called` on the `/cr-action` form post --
  * and the dashboard route is unauthenticated, so redaction works by key name on any object rather
- * than by frame type. These are matched case-insensitively.
+ * than by frame type. These are matched case-insensitively. `callerNumber` is a session start's
+ * (SessionStart.callerNumber), for an app with a slot that offers the caller's number or that keeps
+ * it for its code, and `calledNumber` the number called (SessionStart.calledNumber), for an app that keeps it. Telnyx's setup
+ * has `from` and `to` null and carries the numbers as custom parameters, `telnyx_call_from` and
+ * `telnyx_call_to` (server/voice/telnyx.ts): masked by those names, in the setup frame the frame log
+ * writes and in a start event's provider details (`param.telnyx_call_from`).
  */
-const MASK_KEYS = new Set(['from', 'to', 'caller', 'called', 'forwardedfrom']);
+const MASK_KEYS = new Set(['from', 'to', 'caller', 'called', 'forwardedfrom', 'callernumber', 'callednumber', 'telnyx_call_from', 'telnyx_call_to']);
 /** Masked to a fixed string rather than to digits: a name has nothing worth keeping. */
 const NAME_KEYS = new Set(['callername']);
 /** Dropped outright; the account id identifies the Twilio account, not the call. */

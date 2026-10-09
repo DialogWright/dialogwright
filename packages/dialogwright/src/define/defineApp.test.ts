@@ -248,6 +248,48 @@ describe('defineApp: what an unsure intent gets (app.yaml unsureIntent, intents.
   });
 });
 
+describe('defineApp: a priority intent (intents.yaml priority)', () => {
+  const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
+  const withIntent = (intent: string, line: string): string => read('intents.yaml').replace(`  ${intent}:\n`, `  ${intent}:\n    ${line}\n`);
+
+  it('leaves it off the App unless written, and puts it on as written', () => {
+    expect(Object.values(libraryApp.intents).some((def) => 'priority' in def)).toBe(false);
+    const app = defineApp(folder({
+      'app.yaml': read('app.yaml').replace('carrySlots: [branch]', 'carrySlots: [branch]\nthresholds:\n  HOURS_SURE: 0.7'),
+      'intents.yaml': withIntent('hours', 'priority: { threshold: HOURS_SURE }').replace('  renew_loan:\n', '  renew_loan:\n    priority: true\n'),
+    }), libraryCode);
+    expect(app.intents.renew_loan!.priority).toBe(true);
+    expect(app.intents.hours!.priority).toEqual({ threshold: 'HOURS_SURE' });
+    expect('priority' in app.intents.check_hold!).toBe(false);
+  });
+
+  it('puts correctsForm on as written, with or without a threshold', () => {
+    const app = defineApp(folder({ 'intents.yaml': withIntent('renew_loan', 'priority: { correctsForm: true }') }), libraryCode);
+    expect(app.intents.renew_loan!.priority).toEqual({ correctsForm: true });
+    const both = defineApp(folder({ 'intents.yaml': withIntent('renew_loan', 'priority: { threshold: INTENT_SWITCH, correctsForm: true }') }), libraryCode);
+    expect(both.intents.renew_loan!.priority).toEqual({ threshold: 'INTENT_SWITCH', correctsForm: true });
+  });
+
+  it('refuses a correctsForm that is not true or false, and a key the object does not have', () => {
+    const [notBoolean] = problems(libraryCode, folder({ 'intents.yaml': withIntent('renew_loan', 'priority: { correctsForm: yes }') }));
+    expect(notBoolean).toMatch(/^intents\.yaml:\d+:\d+  intents\.renew_loan\.priority\.correctsForm  /);
+    const [unknown] = problems(libraryCode, folder({ 'intents.yaml': withIntent('renew_loan', 'priority: { corrects: true }') }));
+    expect(unknown).toMatch(/intents\.renew_loan\.priority/);
+  });
+
+  it('refuses it on a control intent, and a threshold nothing defines', () => {
+    expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('agent', 'priority: true') }))).toEqual([
+      'intents.yaml:21:5  intents.agent.priority  the control intent "agent" cannot be a priority intent: a priority intent starts its form or says its answer  ->  delete "priority": only a form intent or an informational one is a priority intent (a person on request is the agent intent, and wantsHuman already acts on it at once)',
+    ]);
+    expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('hours', 'priority: { threshold: PRIORITY_INTNET }') }))).toEqual([
+      'intents.yaml:16:28  intents.hours.priority.threshold  intent "hours" names the threshold "PRIORITY_INTNET", which is neither one of the engine\'s thresholds nor one the app names  ->  rename it to "PRIORITY_INTENT", or add "PRIORITY_INTNET" under thresholds in app.yaml, or write priority: true for PRIORITY_INTENT',
+    ]);
+    expect(problems(libraryCode, folder({ 'intents.yaml': withIntent('hours', 'priority: always') }))).toEqual([
+      'intents.yaml:16:15  intents.hours.priority  "priority" is "always", which is not true, false or { threshold: NAME, correctsForm: true }  ->  write priority: true to read PRIORITY_INTENT, priority: { threshold: NAME } for another threshold, or priority: { correctsForm: true } to correct the form left from the same words',
+    ]);
+  });
+});
+
 describe('defineApp: what a transfer hands the channel (app.yaml handoff.data)', () => {
   const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
   const withData = (lines: string): string => `${read('app.yaml')}\nhandoff:\n  data:\n${lines}`;
@@ -268,6 +310,15 @@ describe('defineApp: what a transfer hands the channel (app.yaml handoff.data)',
     expect(problems(libraryCode, folder({ 'app.yaml': withData('    slots: [card, bok, branch]\n    send:\n      branch: masked\n') }))).toEqual([
       'app.yaml:34:19  handoff.data.slots[1]  slot "bok" is not defined  ->  rename it to "book", or add it to the app\'s slots in app.ts (code.slots.bok)',
       'app.yaml:36:15  handoff.data.send.branch  the slot "branch" has no redact setting (or handoff: last4 or verified), so masked would send it as it is  ->  give the slot a redact setting, or write as-is to send it in the clear',
+    ]);
+  });
+
+  it('puts unconfirmed on as written, and refuses a value it does not have', () => {
+    for (const how of ['send', 'mark', 'omit'] as const) {
+      expect(defineApp(folder({ 'app.yaml': withData(`    unconfirmed: ${how}\n`) }), libraryCode).handoff).toEqual({ data: { unconfirmed: how } });
+    }
+    expect(problems(libraryCode, folder({ 'app.yaml': withData('    unconfirmed: flag\n') }))).toEqual([
+      'app.yaml:34:18  handoff.data.unconfirmed  "unconfirmed" is "flag", which is not allowed here; it must be one of "send", "mark", "omit"  ->  use one of "send", "mark", "omit"',
     ]);
   });
 
@@ -341,7 +392,7 @@ describe('defineApp: the folder and the code must name the same things', () => {
       'policy.yaml:2:1  actions  tool "payFine" (code.tools.payFine) has no entry under actions, so it can never be called  ->  add "payFine:" under actions with its level and rules, or delete the tool from app.ts (code.tools.payFine)',
       'policy.yaml:2:1  actions  custom rule "late-fee" (code.customRules["late-fee"]) is not named by any action\'s rules, so it never runs  ->  add "- custom: late-fee" to the rules of the action it guards, or delete the rule from app.ts (code.customRules["late-fee"])',
       'app.ts  code.forms.check_hold.onSumaryRead  "onSumaryRead" is not a form hook; the hooks are entry, onEntry, principalEntry, confirmedParams, complete, onAnswers, onSummaryAnswer, keepsSlot, onSummaryRead  ->  rename it to "onSummaryRead", or delete it from app.ts (code.forms.check_hold.onSumaryRead)',
-      'app.ts  code.customRules.R2  custom rule "R2" has a built-in rule\'s id  ->  rename it in app.ts (code.customRules.R2) and in policy.yaml\'s custom: rules; the built-in ids are the rules\' names (identity, scope, confirmed, role, attempts, fields, dateInRange, limit, unlisted, subject) and their old ids (R0, R1, R2, R3, R5, R6, R7)',
+      'app.ts  code.customRules.R2  custom rule "R2" has a built-in rule\'s id  ->  rename it in app.ts (code.customRules.R2) and in policy.yaml\'s custom: rules; the built-in ids are the rules\' names (identity, scope, confirmed, role, attempts, fields, dateInRange, limit, oneOf, noneOf, callerNumber, unlisted, subject) and their old ids (R0, R1, R2, R3, R5, R6, R7)',
       'app.ts  code.identity  the code has identity hooks, but the folder has no identity.yaml  ->  add identity.yaml (principals, levels and attempts, with the identity tools), or delete it from app.ts (code.identity)',
     ]);
   });

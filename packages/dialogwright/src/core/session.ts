@@ -1,4 +1,4 @@
-import type { FormId, Intent, SlotId } from './app/types';
+import type { FormId, Intent, SlotId, ToolName } from './app/types';
 import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
 import type { Nomination } from '../kb/types';
@@ -6,7 +6,7 @@ import { ANONYMOUS } from '../gate/principal';
 import { formOf, isCarried } from './app/lookup';
 import { appOf, defaultAppId, getApp } from './app/registry';
 import type { App } from './app/types';
-import type { Principal, ToolCall } from '../gate/types';
+import type { GateVerdict, Principal, ToolCall } from '../gate/types';
 import type { Channel, ChannelCaps } from '../channel/caps';
 
 /**
@@ -26,6 +26,25 @@ export interface SlotState {
   window: SlotPartial | null;
   /** help prompts already played for this slot since it was last emptied; each plays at most once */
   helped: string[];
+  /**
+   * The caller declined the slot (a slot's `callerNumber` with `onNo` or `ifNone` set to `skip`):
+   * empty, but answered, so the form does not ask it and goes on. Absent on every other slot, so a
+   * session of an app without such a slot is as it was.
+   */
+  declined?: true;
+  /**
+   * The nos the caller has said to the slot's own read-back in this form (a library slot's,
+   * SlotSpec.readBackNo `ask`): kept when a no empties the slot, so a second no goes to a person while
+   * a miss on the question asked again walks the slot's ladder. Absent until the first no, and gone
+   * when the form closes or another is entered, a slot the app carries included (setForm, closeForm).
+   */
+  readBackNos?: number;
+  /**
+   * `caller-id`: a factor the caller-ID match identifies (identity.yaml's `callerId`), filled from the
+   * match just before the check rather than said, with a value and no display. Absent on every other
+   * slot, and gone when the slot is emptied.
+   */
+  by?: 'caller-id';
 }
 
 export interface HistoryEntry {
@@ -38,14 +57,33 @@ export interface HistoryEntry {
  * What the tools returned about the verified caller, kept for the rest of the call. The app's
  * (App.facts makes, copies and clears them); the engine never reads one by name.
  */
+/** What the caller made of the consent to text for the whole call (Session.textConsent). */
+export type TextConsentAnswer = 'granted' | 'declined' | 'unknown';
+
+/**
+ * The consent to text for the whole call as it was settled (Session.textConsent): the answer, and the
+ * question's line as it was said then, in the language it was said in, so a slot later filled from a
+ * grant records the line the caller heard, whatever language the call has moved to since.
+ */
+export interface TextConsentRecord {
+  readonly answer: TextConsentAnswer;
+  readonly said: string;
+  readonly locale: string;
+}
+
 export interface SessionFacts {
   [key: string]: unknown;
 }
 
-/** The entry call waiting on identity, and the level the gate said it needs. */
+/**
+ * The entry call waiting on identity, and the level the gate said it needs. `at: 'greeting'`: identity
+ * asked for at the greeting, with no form open (identity.yaml's `callerId` with `ask: greeting`), whose
+ * call is the verify tool's; absent on every other step-up.
+ */
 export interface StepUp {
   call: ToolCall;
   need: 1 | 2;
+  at?: 'greeting';
 }
 
 export type PendingConfirmation =
@@ -66,7 +104,21 @@ export type PendingConfirmation =
        */
       nominated?: readonly Nomination[];
     }
-  | { target: 'slot'; slot: SlotId; value: string; display: string }
+  /**
+   * A slot's value read back for a yes. `offered`: a value offered before the slot was asked, the
+   * slot still empty: a yes fills it with `value`, and a no asks the slot's own question with no
+   * attempt counted. By `from`: absent, the number the caller is calling from, offered for a slot
+   * that holds a phone number (SlotSpec.callerNumber, core/callerNumber.ts); `facts`, a value the
+   * app proposes from its facts (a slot's `offer: facts`, FactsConfig.offers: e.g. an address the
+   * call-start lookup found). Absent `offered`: a value the caller said, read back. `at: 'greeting'`:
+   * a proposal made at call start (a slot's `offerAt: greeting`), with no form open, asked in place of
+   * the greeting's open question; `attempts` counts its unanswered turns (once more, then the open
+   * question). Both absent on every other read-back. `consent`: the question of consent to text for the
+   * whole call (app.yaml's `textConsent`, core/textConsent.ts), asked `at: 'greeting'` with the first
+   * slot it covers as `slot` and the caller's number as that slot would hold it as `value`: a yes is the
+   * grant (Session.textConsent) and fills nothing; it takes a yes or a no only. Absent on every other.
+   */
+  | { target: 'slot'; slot: SlotId; value: string; display: string; offered?: true; from?: 'facts'; at?: 'greeting'; attempts?: number; consent?: true }
   /**
    * the summary question; attempts counts unanswered turns and resets when a correction lands.
    * askedChange records that "What should I change?" has already been asked for this summary, so
@@ -77,6 +129,15 @@ export type PendingConfirmation =
    * another (FormDef.onSummaryRead; e.g. a short re-read): the same question, so its keypad works there too.
    */
   | { target: 'form'; form: FormId; attempts: number; askedChange?: boolean; readAs?: string }
+  /**
+   * A form check's refusal read back before it acts (a check outcome's `confirm`, core/turn.ts
+   * stopForm): the check by its action, and what the gate said (its verdict and reason), so a yes
+   * acts on that refusal as written without asking the gate again, and a no empties the slots the
+   * check reads. `hash` is of the params the gate refused (as Session.checked keeps a pass's): when
+   * the slots no longer hold them, the refusal is stale and the check runs again. `attempts` counts
+   * unanswered turns, as the summary's does.
+   */
+  | { target: 'check'; form: FormId; action: ToolName; verdict: GateVerdict; reason: string; hash: string; attempts: number }
   /**
    * The transfer offered to a frustrated caller. `attempts` counts silences
    * at the offer only: every spoken answer settles it, a yes as a transfer and anything else as a
@@ -132,6 +193,12 @@ export interface Session {
   pendingConfirmation: PendingConfirmation | null;
   /** intents the caller added mid-form, handled in order after the current form completes */
   queued: FormId[];
+  /**
+   * The forms the open form was reached through by `next` on this call (FormDef.next), in the order
+   * the chain went: their checks still hold in it (core/checks.ts checksOf). Absent for a form entered
+   * any other way, so every session of an app without `next` is as it was.
+   */
+  reachedThrough?: FormId[];
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -145,6 +212,53 @@ export interface Session {
    * that declares locales has one; read it with localeOf, which gives the app's default otherwise.
    */
   locale?: string;
+  /**
+   * The number the caller is calling from, its digits, `+` first when the carrier wrote it in
+   * international form (core/callerNumber.ts callerNumberOf): kept at the session's start for an
+   * app with a slot that offers it (SlotSpec.callerNumber), when the carrier sent a number such a
+   * slot can use, and for an app that keeps it for its code (app.yaml `callerNumber: { use: hint }`,
+   * App.callerNumber), when the carrier sent any usable number. It is never identity on its own: the
+   * offer, the call-start lookup, the gate's callerNumber rule (GateFacts.callerNumber) and app code
+   * through callerOf read it, and an app may let a caller-ID match identify an account, with a
+   * knowledge factor that verifies it (identity.yaml `callerId`). Absent otherwise, so every other
+   * session is as it was.
+   */
+  callerNumber?: string;
+  /**
+   * The number the caller called (the DNIS), as callerNumber is kept: only for an app whose
+   * app.yaml `callerNumber` says `called: true`, and only on a call whose carrier sent one. Read it
+   * with calledOf (core/callerNumber.ts). Absent otherwise.
+   */
+  calledNumber?: string;
+  /**
+   * The slots the open form has made an offer for, each once per form: the caller's number
+   * (callerNumber), or a value proposed from the facts (a slot's `offer: facts`). A slot reopened
+   * later is asked its own question. Absent until an offer is made, and gone when the form closes or
+   * another is entered.
+   */
+  callerOffered?: SlotId[];
+  /**
+   * The slot proposed at the greeting (a slot's `offerAt: greeting`), whatever the caller answered: it
+   * is not proposed again in a form until the first form that has it closes (closeForm). Absent when
+   * no proposal was made at the greeting, so every other session is as it was.
+   */
+  greetingOffered?: SlotId;
+  /**
+   * The caller-ID match (identity.yaml's `callerId`): `offered`, asked or in use; `declined`, a no or
+   * "different account"; `failed`, the check did not match; `verified`, the caller verified with it.
+   * Once declined or failed it is set aside for the call, and every factor is asked. Absent until it is
+   * first used (unused), so every other session is as it was. The match itself stays in the app's facts.
+   */
+  callerMatch?: 'offered' | 'declined' | 'failed' | 'verified';
+  /**
+   * Consent to text for the whole call (app.yaml's `textConsent`), as the caller answered it after the
+   * greeting: `granted`, a yes (the slots it covers fill with the caller's number without asking);
+   * `declined`, a no; `unknown`, a request said instead or no answer. It is asked once, so it never
+   * changes after. Absent when it was never asked (an app without it, a chat, a number withheld), so
+   * every other session is as it was. Read it with textConsentOf (core/textConsent.ts). With the answer,
+   * the line as it was said and its language, which each fill from a grant records.
+   */
+  textConsent?: TextConsentRecord;
   /** Who the caller is proven to be. Written only from a verifier result or a portal sign-in (src/gate/types.ts Principal). */
   principal: Principal;
   facts: SessionFacts;
@@ -152,6 +266,29 @@ export interface Session {
   stepUp: StepUp | null;
   /** The form whose entry call has passed the gate. */
   entered: FormId | null;
+  /**
+   * The open form's checks that have passed (FormDef.checks, core/checks.ts): by action, the hash of
+   * the params it passed with, so a check runs again only when what it reads changes. Absent until a
+   * check runs, and gone when the form closes or another is entered, so a session of an app without
+   * checks is as it was.
+   */
+  checked?: Record<string, string>;
+  /**
+   * The nos the caller has said to each of the open form's checks' read-backs (a check outcome's
+   * `confirm`), by action: a second no to one goes to a person. Absent until the first no, and gone
+   * when the form closes or another is entered, as `checked` is.
+   */
+  checkReadBackNos?: Record<string, number>;
+  /**
+   * The values the caller said yes to at a summary, by slot (HandoffData.unconfirmed): written at a
+   * yes that changed nothing the summary read, and when a form with a summary completes on the
+   * caller's yes, for each of its filled slots but the identity factors and a `verified` slot (never
+   * counted), and only for an app whose handoff marks or leaves out the values never confirmed. A slot still holding its value
+   * here counts as confirmed in the handoff; one changed since does not. Kept for the slots that
+   * outlast the form (carried), dropped for those its close empties. Absent for every other app, so
+   * their sessions are as they were. Never in what the model is sent.
+   */
+  agreed?: Record<SlotId, string>;
   /** Failed verifications, of the identity factors together and of the one-time code, which the gate's attempts rule caps. */
   identityAttempts: { factors: number; code: number };
   /** The one-time code has been texted on this call (sendCode); asking for it again does not text another, a reissue does. */
@@ -280,7 +417,12 @@ export function cloneSession(s: Session): Session {
     stepUp: s.stepUp ? { ...s.stepUp, call: { ...s.stepUp.call, params: { ...s.stepUp.call.params } } } : null,
     identityAttempts: { ...s.identityAttempts },
     pendingConfirmation: clonePending(s.pendingConfirmation),
+    ...(s.checked ? { checked: { ...s.checked } } : {}),
+    ...(s.checkReadBackNos ? { checkReadBackNos: { ...s.checkReadBackNos } } : {}),
+    ...(s.callerOffered ? { callerOffered: [...s.callerOffered] } : {}),
+    ...(s.agreed ? { agreed: { ...s.agreed } } : {}),
     queued: [...s.queued],
+    ...(s.reachedThrough ? { reachedThrough: [...s.reachedThrough] } : {}),
     completed: [...s.completed],
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
   };
@@ -312,13 +454,24 @@ export function setForm(session: Session, form: FormId): Session {
   // The form in hand is never also waiting in the queue, however it was entered:
   // a switch to a queued intent starts it now rather than promising it twice.
   session.queued = session.queued.filter((q) => q !== form);
+  // A form entered by its own route was reached through nothing; one reached by next is told so after.
+  delete session.reachedThrough;
   session.intentAttempts = 0;
   session.pendingConfirmation = null;
   session.menuActive = false;
   // A step-up belongs to the entry call of the form it was raised for; the new form asks the gate afresh.
   session.stepUp = null;
+  // So does a caller-ID match it was using: unused again, it is read afresh when identity is next needed.
+  if (session.callerMatch === 'offered') delete session.callerMatch;
   session.codeReasks = 0;
   session.pendingHash = null;
+  // The checks a form passed are its own: the new form runs its checks afresh.
+  delete session.checked;
+  delete session.checkReadBackNos;
+  // And the nos said to its slots' read-backs: a slot carried in is read back afresh.
+  for (const slot of Object.values(session.slots)) delete slot.readBackNos;
+  // So are its offers (the caller's number, a value from the facts): the new form may offer again.
+  delete session.callerOffered;
   return session;
 }
 
@@ -327,19 +480,39 @@ export function setForm(session: Session, form: FormId): Session {
  * confirmation go. Identity stays for the rest of the call, the slots the app carries (App.carrySlots,
  * and a slot that listens for the call, SlotSpec.listen `call`), and the facts but for what the app
  * clears (App.facts.onFormClosed: e.g. a parcel list, since the call may just have filed a new report).
+ * `keep` are the slots the form that follows lists too (FormDef.next): each stays as it is, its value,
+ * display, confirmation and agreed value, so the next form never asks it again.
  */
-export function closeForm(session: Session): Session {
+export function closeForm(session: Session, keep: readonly SlotId[] = []): Session {
   const app = appOf(session);
   if (session.form) {
-    for (const id of formOf(app, session.form).slots) if (!isCarried(app, id)) session.slots[id] = emptySlot();
+    // The greeting's proposal was for the slot this form had: a later form may propose at the slot
+    // again, unless the next form keeps the slot as it is.
+    if (session.greetingOffered !== undefined && formOf(app, session.form).slots.includes(session.greetingOffered) && !keep.includes(session.greetingOffered)) delete session.greetingOffered;
+    for (const id of formOf(app, session.form).slots) {
+      // A carried slot keeps its value, but not the nos said to its read-back in this form; so does
+      // one the next form keeps (setForm drops those as the next form opens).
+      if (isCarried(app, id) || keep.includes(id)) {
+        delete session.slots[id]!.readBackNos;
+        continue;
+      }
+      session.slots[id] = emptySlot();
+      // A value the caller agreed to goes with the slot: one said again in a later form is heard anew.
+      if (session.agreed !== undefined) delete session.agreed[id];
+    }
   }
   session.form = null;
+  delete session.reachedThrough;
   session.entered = null;
   session.stepUp = null;
+  if (session.callerMatch === 'offered') delete session.callerMatch;
   session.codeReasks = 0;
   session.pendingHash = null;
   session.confirmedHash = null;
   session.pendingConfirmation = null;
+  delete session.checked;
+  delete session.checkReadBackNos;
+  delete session.callerOffered;
   app.facts?.onFormClosed?.(session.facts);
   return session;
 }
@@ -348,12 +521,16 @@ export function requiredSlots(session: Session): readonly SlotId[] {
   return session.form ? formOf(appOf(session), session.form).slots : [];
 }
 
+/** The open form's slots still to ask: empty, and not declined (SlotState.declined). */
 export function missingSlots(session: Session): SlotId[] {
-  return requiredSlots(session).filter((id) => session.slots[id]!.value === null);
+  return requiredSlots(session).filter((id) => session.slots[id]!.value === null && session.slots[id]!.declined !== true);
 }
 
 export function currentAttempts(session: Session): number {
-  if (session.promptedFor === 'confirm') return session.pendingConfirmation?.target === 'form' ? session.pendingConfirmation.attempts : 0;
+  if (session.promptedFor === 'confirm') {
+    const pc = session.pendingConfirmation;
+    return pc?.target === 'form' || pc?.target === 'check' ? pc.attempts : 0;
+  }
   if (session.promptedFor === 'intent' || session.promptedFor === null) return session.intentAttempts;
   if (session.promptedFor === 'otp') return session.codeReasks;
   return session.slots[session.promptedFor]!.attempts;

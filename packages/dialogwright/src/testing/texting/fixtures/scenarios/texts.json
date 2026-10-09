@@ -1,0 +1,151 @@
+[
+  {
+    "id": "text-yes",
+    "callerNumber": "+15555550142",
+    "calledNumber": "+15555550100",
+    "steps": [
+      { "say": "I'd like to open a request" },
+      { "say": "it's about an order" },
+      { "say": "yes, please text me" },
+      { "say": "yes, open it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "request_opened_text",
+      "form": "open_request",
+      "slots": { "topic": "order", "textTo": "5555550142" },
+      "text": "we'll text updates to 555 555 0142",
+      "gate": "sendUpdates:ALLOW"
+    }
+  },
+  {
+    "id": "text-no-skips",
+    "callerNumber": "+15555550142",
+    "steps": [
+      { "say": "I'd like to open a request" },
+      { "say": "it's about an order" },
+      { "say": "no thanks" },
+      { "say": "yes, open it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "request_opened",
+      "form": "open_request",
+      "slots": { "topic": "order" },
+      "gate": "openRequest:ALLOW"
+    }
+  },
+  {
+    "id": "text-no-with-a-number",
+    "callerNumber": "+15555550142",
+    "steps": [
+      { "say": "I'd like to open a request" },
+      { "say": "it's about an order" },
+      { "say": "no, text my cell, five five five five five five zero one nine nine" },
+      { "say": "yes, open it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "request_opened_text",
+      "slots": { "textTo": "5555550199" },
+      "text": "we'll text updates to 555 555 0199",
+      "gate": "sendUpdates:ALLOW"
+    }
+  },
+  {
+    "id": "text-unanswered-skips",
+    "callerNumber": "+15555550142",
+    "steps": [
+      { "say": "I'd like to open a request" },
+      { "say": "it's about an order" },
+      { "silence": true },
+      { "silence": true },
+      { "say": "yes, open it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "request_opened",
+      "slots": { "topic": "order" },
+      "gate": "openRequest:ALLOW"
+    }
+  },
+  {
+    "id": "text-landline-not-offered",
+    "callerNumber": "+15555550143",
+    "steps": [
+      { "say": "I'd like to open a request" },
+      { "say": "it's about an order" },
+      { "say": "yes, open it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "request_opened",
+      "slots": { "topic": "order" },
+      "gate": "openRequest:ALLOW"
+    }
+  },
+  {
+    "id": "text-line-type-looked-up",
+    "callerNumber": "+15555550144",
+    "steps": [
+      { "say": "I'd like to open a request" },
+      { "say": "it's about an order" },
+      { "say": "yes, please text me" },
+      { "say": "yes, open it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "request_opened_text",
+      "slots": { "textTo": "5555550144" },
+      "gate": "sendUpdates:ALLOW"
+    }
+  },
+  {
+    "id": "text-withheld-not-offered",
+    "callerNumber": "anonymous",
+    "steps": [
+      { "say": "I'd like to open a request" },
+      { "say": "it's about an order" },
+      { "say": "yes, open it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "request_opened",
+      "slots": { "topic": "order" },
+      "gate": "openRequest:ALLOW"
+    }
+  },
+  {
+    "id": "text-chat-not-offered",
+    "as": "web",
+    "steps": [
+      { "say": "I'd like to open a request" },
+      { "say": "it's about an order" },
+      { "say": "yes, open it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "request_opened",
+      "slots": { "topic": "order" },
+      "gate": "openRequest:ALLOW"
+    }
+  },
+  {
+    "id": "text-number-changed-at-the-summary",
+    "callerNumber": "+15555550142",
+    "steps": [
+      { "say": "I'd like to open a request" },
+      { "say": "it's about an order" },
+      { "say": "yes, please text me" },
+      { "say": "no, the text number is wrong" },
+      { "say": "five five five five five five zero one nine nine" },
+      { "say": "yes, open it" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "request_opened_text",
+      "slots": { "textTo": "5555550199" },
+      "gate": "sendUpdates:ALLOW"
+    }
+  }
+]

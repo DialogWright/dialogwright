@@ -52,6 +52,29 @@
               "confirm",
               "no-match"
             ]
+          },
+          "priority": {
+            "description": "Something that must never wait or be missed, such as an emergency or a safety report. Read at PRIORITY_INTENT (0.8) or more, the intent is acted on this turn: mid-form over the question being answered and any pending confirmation (the form in hand is left, as on a switch), and never ignored as side speech or re-asked as unintelligible. A handoff to a person and the injection screen still stand. true reads PRIORITY_INTENT; { threshold: NAME } reads another; { correctsForm: true } also corrects what the call holds from the same words. For a form intent or an informational one. Default false.",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "threshold": {
+                    "description": "The threshold the intent is read against in place of PRIORITY_INTENT: one of the engine's, or one under thresholds in app.yaml. Default PRIORITY_INTENT.",
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*$"
+                  },
+                  "correctsForm": {
+                    "description": "Before the priority form is entered, fill the slots the switching turn was asked about from its words, as a correction: the open form's, or the call's own slots when no form is open. \"Water is coming through the wall right now\", said at a read-back, replaces an urgency given earlier, so the handoff carries what the caller just said. Nothing is acknowledged, no check runs, and no question the model is sent changes. For a form intent. Default false.",
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "required": [

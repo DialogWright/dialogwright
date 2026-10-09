@@ -24,6 +24,9 @@ export type { RuleId } from '../gate/policy';
 // The range rules (dateInRange, limit) and the reference grammar their bounds are written in.
 export { parseLookupRef, parseDateBound, parseNumberBound, isIsoDate, DATE_IN_RANGE_REASONS, LIMIT_REASONS, BOUND_UNKNOWN } from '../gate/bounded';
 export type { LookupRef, DateBound, NumberBound, RangeVerdict, DateInRangeParams, LimitParams } from '../gate/bounded';
+// The list rules (oneOf, noneOf): a param's value held to a list, matched exactly.
+export { ONE_OF_REASON, NONE_OF_REASON, VALUE_MISSING } from '../gate/listed';
+export type { ListParams } from '../gate/listed';
 
 // policy.yaml and identity.yaml for an app that is not a folder, and the compilers behind them.
 export { definePolicy, defineIdentity } from './definePolicy';
@@ -33,7 +36,7 @@ export type { CompilePolicyOptions, CompileIdentityOptions, CompiledIdentity, Ru
 export { convertFolder, convertTables, writeConversion, toText as conversionText, ConvertError } from './convert/convertPolicy';
 export type { Conversion, ConvertOptions, FolderConversion } from './convert/convertPolicy';
 export { policySchema, identitySchema, RULE_NAMES } from './schema/index';
-export type { PolicyYaml, IdentityYaml, ActionYaml, RuleEntryYaml, RuleName, DateInRangeYaml, LimitYaml } from './schema/index';
+export type { PolicyYaml, IdentityYaml, ActionYaml, RuleEntryYaml, RuleName, DateInRangeYaml, LimitYaml, ListYaml } from './schema/index';
 
 // An app's own rule, with the examples that say what it does (check refuses one without them).
 export { defineRule, isDefinedRule, ruleDefinitionProblems } from '../gate/defineRule';

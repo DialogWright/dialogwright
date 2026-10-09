@@ -89,6 +89,21 @@ export const END_PLAYBACK_LEAD_MS = 500;
 export const DEFAULT_NO_INPUT_AFTER_SPEECH_MS = 2_500;
 
 /**
+ * KEY_WAIT_MS unless set: after a key pressed at an offer that takes a yes or a no only (the consent to
+ * text for the whole call too), how long the server waits for the next key before the keys are taken
+ * as one answer (core/turn.ts keyBurstPending): a 1 alone is a yes, a 2 alone a no, a number keyed in
+ * full neither. Two seconds is the usual inter-digit wait of a phone menu: long enough between the
+ * keys of a number keyed by hand, short enough that a caller who pressed 1 is not left waiting.
+ */
+export const DEFAULT_KEY_WAIT_MS = 2_000;
+
+/**
+ * The least KEY_WAIT_MS may be: under it the wait could run out between two keys of a number keyed by
+ * hand, and each key would be settled alone, its first a yes or a no and the rest the next question's.
+ */
+export const MIN_KEY_WAIT_MS = 300;
+
+/**
  * RESUME_AFTER_PAUSE_MS unless set: on a carrier that reports the caller's voice, the longest pause in a
  * caller's speech that still leaves them not finished (server/adapter.ts, a caller who came back in). A
  * recognizer ends a prompt at a short pause (Telnyx's about 0.8 s after the caller stops), and a caller

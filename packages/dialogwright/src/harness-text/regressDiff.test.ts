@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diff, gapsNowMatching, knownGapsFor } from './regressDiff';
+import { diff, differingIds, gapsNowMatching, knownGapsFor } from './regressDiff';
 import type { CorpusEntry } from '../jev/corpus';
 
 describe('diff', () => {
@@ -82,6 +82,38 @@ describe('diff', () => {
     expect(diff('corpus', e, { g: { ...e.g, promptId: 'b' } }, new Set(), two).lines).toEqual(['~ corpus g.promptId: "a" -> "b" (knownGap pins "b")']);
   });
 
+  it('allows a gap with a few outcomes when any one of them shows, and fails one that shows none, naming every pinned value', () => {
+    const base: { decision: string; promptId: string; gate: string | null } = { decision: 'prompt', promptId: 'a', gate: null };
+    const e = { g: base };
+    const gaps = new Map([['g', { reason: 'a borderline line', outcomes: [{ promptId: 'b' }, { promptId: 'c', gate: 'listOpenings:ALLOW' }] }]]);
+    // The first outcome.
+    expect(diff('corpus', e, { g: { ...base, promptId: 'b' } }, new Set(), gaps)).toEqual({
+      lines: [],
+      matching: 0,
+      allowed: ['~ corpus g.promptId: "a" -> "b" (allowed: knownGap: a borderline line)'],
+      gapped: ['g'],
+    });
+    // The second, both of its fields.
+    expect(diff('corpus', e, { g: { ...base, promptId: 'c', gate: 'listOpenings:ALLOW' } }, new Set(), gaps)).toEqual({
+      lines: [],
+      matching: 0,
+      allowed: [
+        '~ corpus g.promptId: "a" -> "c" (allowed: knownGap: a borderline line)',
+        '~ corpus g.gate: null -> "listOpenings:ALLOW" (allowed: knownGap: a borderline line)',
+      ],
+      gapped: ['g'],
+    });
+    // A mix of the two is neither outcome, and fails; so does a third value.
+    expect(diff('corpus', e, { g: { ...base, promptId: 'b', gate: 'listOpenings:ALLOW' } }, new Set(), gaps).lines).toEqual([
+      '~ corpus g.promptId: "a" -> "b" (knownGap pins "b" or "c")',
+      '~ corpus g.gate: null -> "listOpenings:ALLOW" (knownGap pins "listOpenings:ALLOW")',
+    ]);
+    expect(diff('corpus', e, { g: { ...base, promptId: 'd' } }, new Set(), gaps).lines).toEqual(['~ corpus g.promptId: "a" -> "d" (knownGap pins "b" or "c")']);
+    // The baseline itself: matching, and the tag may be removable.
+    expect(diff('corpus', e, e, new Set(), gaps)).toEqual({ lines: [], matching: 1, allowed: [], gapped: [] });
+    expect(gapsNowMatching(e, e, gaps)).toEqual(['g']);
+  });
+
   it('compares a pinned object by value, whatever order its keys were written in', () => {
     const e: Record<string, { slots: Record<string, string | null> }> = { g: { slots: { name: 'ann', dob: '1975-06-14' } } };
     const a = { g: { slots: { name: null, dob: '1975-06-14' } } };
@@ -128,5 +160,15 @@ describe('knownGapsFor', () => {
     const a = { g: { promptId: 'b' } };
     expect(diff('corpus', e, a, new Set(), knownGapsFor('stub', corpus)).lines).toEqual(['~ corpus g.promptId: "a" -> "b"']);
     expect(diff('corpus', e, a, new Set(), knownGapsFor('recorded', corpus)).lines).toEqual([]);
+  });
+});
+
+describe('differingIds', () => {
+  it('names each id with a difference that fails, once, and not one whose differences are allowed or that matches', () => {
+    const e = { same: { v: 1 }, two: { v: 1, w: 1 }, gap: { v: 1 }, drift: { decidedGate: 'a', v: 1 }, gone: { v: 1 } };
+    const a = { same: { v: 1 }, two: { v: 2, w: 2 }, gap: { v: 2 }, drift: { decidedGate: 'b', v: 1 }, fresh: { v: 1 } };
+    const gaps = new Map([['gap', { reason: 'r', outcome: { v: 2 } as never }]]);
+    expect(differingIds('x', e, a, new Set(['drift']), gaps)).toEqual(['two', 'gone', 'fresh']);
+    expect(differingIds('x', e, a)).toEqual(['two', 'gap', 'drift', 'gone', 'fresh']);
   });
 });

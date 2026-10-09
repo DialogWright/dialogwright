@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../../schemas/app.schema.json
+# Example Account Line: a fictional line that takes a report of a problem and reads the status of a
+# request to a verified caller. The engine's fixture for a caller-ID match as the identifier
+# (identity.yaml's callerId): the number calling is looked up once, before the greeting, through the
+# gate, and where it matches one account the caller is asked only for the date of birth, which
+# verifies it. Never identity on its own: the date of birth is always asked.
+id: recognized
+locale: en-US
+
+brand:
+  name: Example Account Line
+  mark: AL
+
+console:
+  formLabels:
+    report_problem: Report a problem
+    check_status: Check on a request
+  slotLabels:
+    problem: Problem
+
+wording:
+  addressee: the Example Account Line
+
+# The number the caller is calling from, kept for the app's code. The lookup finds the accounts on
+# file for it, before the greeting, through the gate.
+callerNumber:
+  use: hint
+  lookup: findAccountByPhone
+
+fixtures:
+  dir: src/testing/recognized/fixtures

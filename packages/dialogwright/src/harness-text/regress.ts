@@ -4,17 +4,19 @@ import { loadCorpus } from '../jev/corpus';
 import { buildClient, buildThresholds, cassettePath, CLIENT_KINDS, isClientKind, modelHeader, providerFor } from '../run/client';
 import { defaultCorpusFile, expectedDir, scenariosDir } from '../run/fixtures';
 import { isCassetteMiss } from '../jev/cassette';
-import { diff, gapsNowMatching, knownGapsFor, REAL_MODEL_KINDS } from './regressDiff';
-import { formatRegressSummary } from './regressSummary';
+import { diff, differingIds, gapsNowMatching, knownGapsFor, REAL_MODEL_KINDS } from './regressDiff';
+import { formatRegressSummary, formatTriage } from './regressSummary';
 import type { TraceRecord } from '../trace/types';
 import { loadScenarios, runCorpusEntry, runScenario, unanswerableSteps, type RunOptions, type Scenario } from './runner';
 import type { CorpusEntry } from '../jev/corpus';
 import { closest } from '../define/problems';
-import { corpusTranscript, scenarioTranscript } from './transcript';
+import { corpusTranscript, modelAnswerLines, scenarioTranscript } from './transcript';
 import type { ScenarioOutcome } from './baseline';
+import type { Outcome } from './runner';
 import { readBaseline, REGRESS_TODAY, writeExpected } from './baseline';
 import { emptyRunAll, runAll } from './runAll';
 import { parseScreenMode } from '../core/screen';
+import { loadHarnessEnv } from '../server/envFile';
 
 /**
  * Whether a run on this client refuses a spoken step whose words no corpus line has: only the
@@ -40,6 +42,9 @@ async function run(): Promise<void> {
       // run's diff (transcript.ts). Repeatable; the two may be given together.
       scenario: { type: 'string', multiple: true, default: [] },
       corpus: { type: 'string', multiple: true, default: [] },
+      // With --corpus or --scenario: the outcomes alone, as JSON in the baseline's own shape (the
+      // lines of fixtures/expected/corpus.json or scenarios.json), so an entry can be added by hand.
+      json: { type: 'boolean', default: false },
     },
   });
   const kind = args.client ?? 'stub';
@@ -48,6 +53,14 @@ async function run(): Promise<void> {
     console.error(`--update is stub-only: ${expectedDir()} is the label-derived baseline and is re-recorded from the stub`);
     process.exitCode = 1;
     return;
+  }
+  // A run against a model or its cassette reads the app's settings as `pnpm start` does (the file
+  // ENV_FILE names, else the app's own .env), so the key and the provider `pnpm configure` wrote are
+  // the ones it uses, a variable already in the environment winning. A stub run reads none: it needs
+  // no setting, and gives the same answers on every machine.
+  if (REAL_MODEL_KINDS.has(kind)) {
+    const loaded = loadHarnessEnv();
+    if (loaded !== null) console.error(loaded);
   }
   const thresholds = buildThresholds(args.threshold ?? []);
   const screen = parseScreenMode(args.screen, '--screen');
@@ -70,12 +83,20 @@ async function run(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  // Resolved once, so the header names the model the client asks (jev/provider.ts).
+  const json = args.json === true;
+  if (json && (picked.scenarios.length > 0) === (picked.corpus.length > 0)) {
+    console.error('--json prints one baseline file\'s entries: give it --corpus <id> (corpus.json) or --scenario <id> (scenarios.json), not both');
+    process.exitCode = 1;
+    return;
+  }
+  // Resolved once, so the header names the model the client asks (jev/provider.ts). With --json,
+  // stdout is the JSON alone, so the header goes to stderr.
+  const header = json ? console.error : console.log;
   const provider = providerFor(kind);
-  for (const line of modelHeader(kind, provider)) console.log(line);
+  for (const line of modelHeader(kind, provider)) header(line);
   if (provider && (kind === 'record' || kind === 'recorded')) {
     const path = cassettePath(provider.model);
-    console.log(`cassette ${path}${existsSync(path) ? '' : ' (not found; every turn will miss until recorded)'}  screen ${screen}`);
+    header(`cassette ${path}${existsSync(path) ? '' : ' (not found; every turn will miss until recorded)'}  screen ${screen}`);
   }
   const opts: RunOptions = {
     client: buildClient(kind, defaultCorpusFile(), thresholds, REGRESS_TODAY, provider ?? undefined),
@@ -87,6 +108,10 @@ async function run(): Promise<void> {
   // A run that reaches a model is slow and can abort part way; it reports progress on stderr
   // (stdout is the diff artifact) and still gets a summary of what it paid for, from the finally.
   const live = kind === 'record' || kind === 'jev';
+  if (json) {
+    process.exitCode = await outcomesJson(picked, corpus, scenarioDefs, opts);
+    return;
+  }
   if (picked.scenarios.length + picked.corpus.length > 0) {
     process.exitCode = await transcripts(picked, corpus, scenarioDefs, opts, readBaseline(), kind);
     return;
@@ -170,6 +195,15 @@ async function run(): Promise<void> {
           scenarioMatching: diff('scenario', expected.scenarios, actual.scenarios, drift).matching,
           records: actual.records,
         }));
+        // Against a model or its cassette, one more line: what needs a decision, counted.
+        if (REAL_MODEL_KINDS.has(kind)) {
+          console.log(formatTriage({
+            corpusDiffering: differingIds('corpus', expected.corpus, actual.corpus, new Set(), gaps),
+            scenariosFailing: ran.filter((s) => !s.pass).map((s) => s.id),
+            scenariosDiffering: differingIds('scenario', expected.scenarios, actual.scenarios, drift),
+            records: actual.records,
+          }));
+        }
       }
     } catch (e) {
       console.error(`summary unavailable: ${e instanceof Error ? e.message : String(e)}`);
@@ -216,6 +250,8 @@ async function transcripts(
   for (const entry of entries) {
     const r = await runCorpusEntry(entry, opts);
     for (const l of corpusTranscript(entry, r)) console.log(l);
+    // Against a model or its cassette, what it answered, so a line that read otherwise shows why.
+    if (REAL_MODEL_KINDS.has(kind)) for (const l of [...modelAnswerLines(r.setup), ...modelAnswerLines(r.run)]) console.log(l);
     const had = expected.corpus[entry.id];
     against('line', had !== undefined, had ? diff('corpus', { [entry.id]: had }, { [entry.id]: r.outcome }, new Set(), gaps) : { lines: [], allowed: [] });
     console.log('');
@@ -231,6 +267,42 @@ async function transcripts(
     console.log('');
   }
   return failed ? 1 : 0;
+}
+
+/**
+ * `--json` with `--corpus <id>` or `--scenario <id>`: the outcomes alone, as one JSON object in the
+ * shape of the baseline file they belong to (fixtures/expected/corpus.json or scenarios.json, at the
+ * same indentation), so the lines between its braces paste into that file as a new or replaced entry.
+ * Exit 1, with a line on stderr for each, when a turn had no answer from the client (a cassette miss,
+ * a timeout): an outcome made without the model's answers is not one to paste.
+ */
+async function outcomesJson(
+  picked: { scenarios: readonly string[]; corpus: readonly string[] },
+  corpus: CorpusEntry[],
+  scenarios: Scenario[],
+  opts: RunOptions,
+): Promise<number> {
+  const out: Record<string, Outcome | ScenarioOutcome> = {};
+  const unanswered: string[] = [];
+  const check = (id: string, records: readonly TraceRecord[]): void => {
+    const failed = records.find((r) => r.source === 'error' && r.error !== null);
+    if (failed) unanswered.push(`${id}: the client did not answer a turn (${failed.error!.message})`);
+  };
+  for (const entry of pick('corpus line', picked.corpus, corpus)) {
+    const r = await runCorpusEntry(entry, opts);
+    check(entry.id, [r.setup.record, r.run.record]);
+    out[entry.id] = r.outcome;
+  }
+  for (const scenario of pick('scenario', picked.scenarios, scenarios)) {
+    const r = await runScenario(scenario, opts);
+    // A scripted step marked `fail` is the model failing on purpose; only an unplanned failure counts.
+    const planned = new Set(scenario.steps.flatMap((step, i) => ('say' in step && step.fail === true ? [i] : [])));
+    check(scenario.id, r.runs.filter((_, i) => !planned.has(r.stepOf[i] ?? -1)).map((run) => run.record));
+    out[scenario.id] = { ...r.outcome, pass: r.pass, mismatches: r.mismatches };
+  }
+  console.log(JSON.stringify(out, null, 2));
+  for (const l of unanswered) console.error(l);
+  return unanswered.length > 0 ? 1 : 0;
 }
 
 /** The process entry point, run by an app's launcher after it has registered the app. */

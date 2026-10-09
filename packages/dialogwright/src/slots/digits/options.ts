@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { repeatsARepeat } from '../parts/pattern';
 import { identifier } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The text parts of a `digits` slot: its three questions and the span question's "none" label, as
@@ -72,9 +73,9 @@ export const digitsOptions = z
       .optional()
       .describe('How the number is said back, in groups of these sizes ([4, 4]: "5550 7788"). The last group takes any digits left over. Default: all digits together.'),
     confirm: z
-      .enum(['summary', 'by-confidence'])
+      .enum(['summary', 'by-confidence', 'always'])
       .default('summary')
-      .describe('"summary": a spoken number is neither acknowledged nor read back on its own; the form\'s final confirm covers it. "by-confidence": it is acknowledged (ack_<slot>) when `readBack` says so.'),
+      .describe(`"summary": a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. "by-confidence": it is acknowledged (ack_<slot>) when \`readBack\` says so. ${alwaysConfirmText('a spoken number')}`),
     readBack: z
       .enum(['implicit', 'below-fill', 'none'])
       .default('implicit')
@@ -86,7 +87,31 @@ export const digitsOptions = z
     lengthRetryPromptId: identifier()
       .optional()
       .describe('The prompt that re-asks, in place of the generic ask_<slot>_retry, when what the caller said is not a number of the right shape ("A card number has eight digits.").'),
-    redact: z.enum(['last4', 'none']).default('last4').describe('How the value is masked wherever it leaves the turn (the trace, a tool call\'s param of the same name): "last4" ("...0417") or "none".'),
+    redact: z
+      .enum(['last4', 'length', 'none'])
+      .default('last4')
+      .describe('How the value is masked wherever it leaves the turn (the trace, the console, the audit, a tool call\'s param of the same name): "last4" ("...0417"; a number of four digits or fewer, whose last four would be all of it, as "••••"), "length" (only how many digits, "<4 chars>", its display too and on the live console, its keys masked as they are keyed, and a transfer handed only its length: for a short secret such as a PIN) or "none".'),
+    callerNumber: z
+      .strictObject({
+        countryCode: z
+          .string()
+          .regex(/^\d{1,3}$/, 'countryCode is one to three digits, such as "1"')
+          .describe('The country calling code the carrier writes before the number ("1" for +1). A number in international form (+15555550142, as carriers send it) must begin with it, and it is taken off; one from any other country is no number for the slot. A number with no + has it taken off when what is left has the slot\'s `length`.'),
+        onNo: z
+          .enum(['ask', 'skip'])
+          .default('ask')
+          .describe('What a no to the offer does: "ask" (default) asks ask_<slot>, with no attempt counted; "skip" leaves the slot empty and the form goes on (an offer to text, say, where a no means no text). The end of the offer\'s retry ladder (no answer) does the same. A number said with the no fills the slot as said either way.'),
+        ifNone: z
+          .enum(['ask', 'skip'])
+          .default('ask')
+          .describe('What a call with no number to offer does (a chat, a withheld number, one that does not fit, or one the app\'s callerOffer hook refuses): "ask" (default) asks ask_<slot> as always; "skip" leaves the slot empty and the form goes on.'),
+        answers: z
+          .enum(['yes-no-or-value', 'yes-no'])
+          .default('yes-no-or-value')
+          .describe('What the offer takes: "yes-no-or-value" (default), a yes, a no, or a number of the caller\'s own, said or keyed, which fills the slot as said; "yes-no", a yes or a no only: a number said at the offer is not taken, and with no clear yes it is a no (onNo then says what follows), and on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question.'),
+      })
+      .optional()
+      .describe('Offer the number the caller is calling from: when the form would ask this slot and the call has a number that fits it (its `countryCode`, `length` and `mask`), the line asks offer_<slot> ("Is the number you\'re calling from, ending in {last4}, the best one to reach you?") in place of ask_<slot>, and a yes fills the slot with that number. A no asks ask_<slot>, with no attempt counted, and a number said instead fills as said. A chat, or a call with the number withheld, is asked ask_<slot> as always. Never on an identity factor: a caller ID can be forged.'),
     handoff: z
       .enum(['last4', 'verified', 'display'])
       .default('last4')
@@ -162,6 +187,14 @@ export const digitsOptions = z
         code: 'custom',
         path: ['readBack'],
         message: `readBack "${o.readBack}" has no effect with confirm "summary", which neither acknowledges nor reads back a spoken number`,
+        params: { fix: 'set confirm: by-confidence, or delete readBack' },
+      });
+    }
+    if (o.readBack !== 'implicit' && o.confirm === 'always') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['readBack'],
+        message: `readBack "${o.readBack}" has no effect with confirm "always", which reads every spoken number back for a yes`,
         params: { fix: 'set confirm: by-confidence, or delete readBack' },
       });
     }

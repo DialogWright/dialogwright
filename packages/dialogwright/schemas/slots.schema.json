@@ -64,10 +64,11 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": a birth date is neither acknowledged nor read back on its own; the form's final confirm covers it.",
+            "description": "\"summary\": a birth date is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the birth date is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf at the keypad rung where the slot takes keys), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
             "type": "string",
             "enum": [
-              "summary"
+              "summary",
+              "always"
             ]
           },
           "text": {
@@ -173,7 +174,32 @@
               "call"
             ],
             "default": "up-front",
-            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none."
+            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): \"form\" when every form that lists it says false (the default for an internal form), else \"up-front\"."
+          },
+          "offer": {
+            "type": "string",
+            "enum": [
+              "facts"
+            ],
+            "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -269,12 +295,21 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the option's display as {<slot>}) when `readBack` says so, and always when the caller hedged (`hedge`).",
+            "description": "\"summary\": a chosen option is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the option's display as {<slot>}) when `readBack` says so, and always when the caller hedged (`hedge`). \"always\": a chosen option is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf at the keypad rung where the slot takes keys), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
             "type": "string",
             "enum": [
               "summary",
-              "by-confidence"
+              "by-confidence",
+              "always"
             ]
+          },
+          "confirmValues": {
+            "description": "Options (their keys) read back for a yes as soon as one is chosen, as with `confirm: always` (confirm_<slot>, given the option's display as {<slot>}); any other option follows `confirm`. For the answer that ends the call or turns a caller away (\"rent\", not \"own\"). Default: none.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "readBack": {
             "description": "With `confirm: by-confidence`, what a chosen option asks for: \"implicit\" (always acknowledged; the default), \"below-fill\" (only when the model is less sure of it than SLOT_CHOICE_FILL), \"none\" (never, unless the caller hedged).",
@@ -424,7 +459,32 @@
               "call"
             ],
             "default": "up-front",
-            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none."
+            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): \"form\" when every form that lists it says false (the default for an internal form), else \"up-front\"."
+          },
+          "offer": {
+            "type": "string",
+            "enum": [
+              "facts"
+            ],
+            "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "required": [
@@ -504,11 +564,12 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the day as {<slot>}) when `readBack` says so.",
+            "description": "\"summary\": a spoken day is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>, given the day as {<slot>}) when `readBack` says so. \"always\": a spoken day is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf at the keypad rung where the slot takes keys), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
             "type": "string",
             "enum": [
               "summary",
-              "by-confidence"
+              "by-confidence",
+              "always"
             ]
           },
           "readBack": {
@@ -639,7 +700,32 @@
               "call"
             ],
             "default": "up-front",
-            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none."
+            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): \"form\" when every form that lists it says false (the default for an internal form), else \"up-front\"."
+          },
+          "offer": {
+            "type": "string",
+            "enum": [
+              "facts"
+            ],
+            "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "required": [
@@ -697,11 +783,12 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>) when `readBack` says so.",
+            "description": "\"summary\": a spoken number is neither acknowledged nor read back on its own; the form's final confirm covers it. \"by-confidence\": it is acknowledged (ack_<slot>) when `readBack` says so. \"always\": a spoken number is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf at the keypad rung where the slot takes keys), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
             "type": "string",
             "enum": [
               "summary",
-              "by-confidence"
+              "by-confidence",
+              "always"
             ]
           },
           "readBack": {
@@ -732,12 +819,55 @@
           },
           "redact": {
             "default": "last4",
-            "description": "How the value is masked wherever it leaves the turn (the trace, a tool call's param of the same name): \"last4\" (\"...0417\") or \"none\".",
+            "description": "How the value is masked wherever it leaves the turn (the trace, the console, the audit, a tool call's param of the same name): \"last4\" (\"...0417\"; a number of four digits or fewer, whose last four would be all of it, as \"••••\"), \"length\" (only how many digits, \"<4 chars>\", its display too and on the live console, its keys masked as they are keyed, and a transfer handed only its length: for a short secret such as a PIN) or \"none\".",
             "type": "string",
             "enum": [
               "last4",
+              "length",
               "none"
             ]
+          },
+          "callerNumber": {
+            "description": "Offer the number the caller is calling from: when the form would ask this slot and the call has a number that fits it (its `countryCode`, `length` and `mask`), the line asks offer_<slot> (\"Is the number you're calling from, ending in {last4}, the best one to reach you?\") in place of ask_<slot>, and a yes fills the slot with that number. A no asks ask_<slot>, with no attempt counted, and a number said instead fills as said. A chat, or a call with the number withheld, is asked ask_<slot> as always. Never on an identity factor: a caller ID can be forged.",
+            "type": "object",
+            "properties": {
+              "countryCode": {
+                "type": "string",
+                "pattern": "^\\d{1,3}$",
+                "description": "The country calling code the carrier writes before the number (\"1\" for +1). A number in international form (+15555550142, as carriers send it) must begin with it, and it is taken off; one from any other country is no number for the slot. A number with no + has it taken off when what is left has the slot's `length`."
+              },
+              "onNo": {
+                "default": "ask",
+                "description": "What a no to the offer does: \"ask\" (default) asks ask_<slot>, with no attempt counted; \"skip\" leaves the slot empty and the form goes on (an offer to text, say, where a no means no text). The end of the offer's retry ladder (no answer) does the same. A number said with the no fills the slot as said either way.",
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "skip"
+                ]
+              },
+              "ifNone": {
+                "default": "ask",
+                "description": "What a call with no number to offer does (a chat, a withheld number, one that does not fit, or one the app's callerOffer hook refuses): \"ask\" (default) asks ask_<slot> as always; \"skip\" leaves the slot empty and the form goes on.",
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "skip"
+                ]
+              },
+              "answers": {
+                "default": "yes-no-or-value",
+                "description": "What the offer takes: \"yes-no-or-value\" (default), a yes, a no, or a number of the caller's own, said or keyed, which fills the slot as said; \"yes-no\", a yes or a no only: a number said at the offer is not taken, and with no clear yes it is a no (onNo then says what follows), and on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question.",
+                "type": "string",
+                "enum": [
+                  "yes-no-or-value",
+                  "yes-no"
+                ]
+              }
+            },
+            "required": [
+              "countryCode"
+            ],
+            "additionalProperties": false
           },
           "handoff": {
             "default": "last4",
@@ -811,7 +941,32 @@
               "call"
             ],
             "default": "up-front",
-            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none."
+            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): \"form\" when every form that lists it says false (the default for an internal form), else \"up-front\"."
+          },
+          "offer": {
+            "type": "string",
+            "enum": [
+              "facts"
+            ],
+            "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -853,6 +1008,14 @@
             "enum": [
               "display",
               "verified"
+            ]
+          },
+          "confirm": {
+            "description": "\"summary\" (the default): a name is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the name is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "always"
             ]
           },
           "text": {
@@ -918,7 +1081,32 @@
               "call"
             ],
             "default": "up-front",
-            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none."
+            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): \"form\" when every form that lists it says false (the default for an internal form), else \"up-front\"."
+          },
+          "offer": {
+            "type": "string",
+            "enum": [
+              "facts"
+            ],
+            "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -1020,6 +1208,14 @@
               "SLOT_CHOICE_CONFIRM"
             ]
           },
+          "confirm": {
+            "description": "\"summary\" (the default): a record is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the record is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf at the keypad rung where the slot takes keys), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "always"
+            ]
+          },
           "text": {
             "description": "Text to say to the model in place of a default, word for word, by part: instructions, none.",
             "type": "object",
@@ -1060,7 +1256,32 @@
               "call"
             ],
             "default": "up-front",
-            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none."
+            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): \"form\" when every form that lists it says false (the default for an internal form), else \"up-front\"."
+          },
+          "offer": {
+            "type": "string",
+            "enum": [
+              "facts"
+            ],
+            "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -1215,6 +1436,14 @@
               "title"
             ]
           },
+          "confirm": {
+            "description": "\"summary\" (the default): the words are neither acknowledged nor read back on their own; the form's final confirm covers them. \"always\": what the caller said is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "always"
+            ]
+          },
           "text": {
             "description": "Text to say to the model in place of a default, word for word, by part: given, pick, pickNone.",
             "type": "object",
@@ -1266,7 +1495,32 @@
               "call"
             ],
             "default": "up-front",
-            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none."
+            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): \"form\" when every form that lists it says false (the default for an internal form), else \"up-front\"."
+          },
+          "offer": {
+            "type": "string",
+            "enum": [
+              "facts"
+            ],
+            "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,
@@ -1325,6 +1579,14 @@
             "type": "string",
             "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
           },
+          "confirm": {
+            "description": "\"summary\" (the default): a topic is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the topic is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "always"
+            ]
+          },
           "text": {
             "description": "Text to say to the model in place of a default, word for word, by part: instructions, none.",
             "type": "object",
@@ -1365,7 +1627,32 @@
               "call"
             ],
             "default": "up-front",
-            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept whenever it is said, until a form that has the slot uses it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none."
+            "description": "Where the slot listens outside a form. \"up-front\": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). \"form\": asked and filled only while a form that has it is open; outside one its question is not sent. \"anywhere\": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. \"call\": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): \"form\" when every form that lists it says false (the default for an internal form), else \"up-front\"."
+          },
+          "offer": {
+            "type": "string",
+            "enum": [
+              "facts"
+            ],
+            "description": "Propose a value in place of the question. \"facts\": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks offer_<slot> as a yes or no, with the value as {<slot>} (\"Is this about 22 Alder Street?\"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks ask_<slot> with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and offer_<slot> in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back)."
+          },
+          "offerAt": {
+            "type": "string",
+            "enum": [
+              "slot",
+              "greeting"
+            ],
+            "default": "slot",
+            "description": "Where a slot with offer: facts proposes. \"slot\" (the default): when its form would ask it. \"greeting\": at call start, on a call, after the call-start lookup, in place of the greeting's open question (greeting_offer, then offer_<slot>), when the facts have a value for it then; otherwise at the slot. One greeting proposal per call, the first such slot in slots.yaml order. A yes fills the slot, confirmed, kept for whichever form uses it, and greet_after_offer asks the open question; a yes with a request goes on to the request. A no, or a request with neither, leaves the slot to be asked in its form, not proposed again there. Needs offer: facts, and greeting_offer and greet_after_offer in every locale."
+          },
+          "offerAnswers": {
+            "type": "string",
+            "enum": [
+              "yes-no-or-value",
+              "yes-no"
+            ],
+            "default": "yes-no-or-value",
+            "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           }
         },
         "additionalProperties": false,

@@ -3,11 +3,12 @@ import { isBuiltInRuleId, NAMED_RULE_IDS, sourceOf } from '../../gate/compiled';
 import { isDefinedRule, ruleDefinitionProblems } from '../../gate/defineRule';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../questionIds';
 import { askedQuestionIds, probeContexts } from './probeQuestions';
-import { unknownSlotThresholds, unknownThresholdMessage } from '../slotThresholds';
+import { thresholdNamesOf, unknownSlotThresholds, unknownThresholdMessage } from '../slotThresholds';
 import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, SIGN_IN_CLAIM, topLevelOf } from './lookup';
 import { principalProblems } from './principals';
+import { formsLeadingTo, nextCycles } from './next';
 import type { App, ConfigHashes } from './types';
 import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
@@ -60,6 +61,15 @@ export const CONTROL_INTENTS = [...REQUIRED_CONTROL_INTENTS, 'done'] as const;
  * Checks an app's internal references so a broken one fails when it is registered, not mid-call.
  * Throws on the first problem, naming the app and the bad id.
  */
+/** A priority object (IntentPriority): only `threshold`, a string, and `correctsForm`, a boolean, each optional. */
+function isPriorityObject(v: unknown): v is { threshold?: string; correctsForm?: boolean } {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return Object.keys(o).every((k) => k === 'threshold' || k === 'correctsForm')
+    && (o.threshold === undefined || typeof o.threshold === 'string')
+    && (o.correctsForm === undefined || typeof o.correctsForm === 'boolean');
+}
+
 export function validateApp(app: App): void {
   const fail = (msg: string): never => {
     throw new Error(`app "${app.id}": ${msg}`);
@@ -85,6 +95,17 @@ export function validateApp(app: App): void {
   if (app.anythingElseSilence !== undefined && !ANYTHING_ELSE_SILENCE.includes(app.anythingElseSilence)) fail(`anythingElseSilence "${app.anythingElseSilence}" is not "repeat", "opener" or "goodbye"`);
   for (const [id, def] of Object.entries(app.intents)) {
     if (def.unsure !== undefined && !UNSURE_VALUES.includes(def.unsure)) fail(`intent "${id}" has unsure "${def.unsure}", which is not "confirm" or "no-match"`);
+    // A priority intent (IntentDef.priority): true, false or { threshold, correctsForm }, its threshold
+    // one there is, on a form intent or an informational one.
+    const priority: unknown = def.priority;
+    if (priority !== undefined && typeof priority !== 'boolean' && !isPriorityObject(priority)) {
+      fail(`intent "${id}" has priority ${JSON.stringify(priority)}, which is not true, false or { threshold: NAME, correctsForm: true }`);
+    }
+    if (priority !== undefined && priority !== false && def.kind === 'control') fail(`intent "${id}" is a control intent, which cannot be a priority intent: only a form intent or an informational one is`);
+    if (isPriorityObject(priority) && priority.threshold !== undefined) {
+      const name = priority.threshold;
+      if (!thresholdNamesOf(app.thresholds).includes(name)) fail(`intent "${id}" names the priority threshold "${name}", which is neither one of the engine's thresholds nor one the app names (App.thresholds)`);
+    }
   }
   // A slot that declares its question ids (SlotSpec.questionIds) is checked here.
   for (const clash of declaredQuestionIdClashes(app.slots)) fail(clashMessage(clash));
@@ -207,8 +228,35 @@ export function validateApp(app: App): void {
       else if (!Object.hasOwn(kb.passages, def.passage)) fail(`informational intent "${id}" says the passage "${def.passage}", which the knowledge base does not have`);
     }
   }
-  for (const id of Object.keys(app.forms)) {
-    if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') fail(`form "${id}" has no form intent`);
+  // Every form is a form intent, but an internal one (FormDef.internal), which is no intent, has a
+  // label of its own and is reached by another form's next; a next names a form, and never loops.
+  for (const [id, form] of Object.entries(app.forms)) {
+    if (form.internal === true) {
+      if (Object.hasOwn(app.intents, id)) fail(`form "${id}" is internal, but there is an intent "${id}": an internal form is no intent`);
+      if (form.label === undefined || form.label === '') fail(`internal form "${id}" has no label`);
+      if (formsLeadingTo(app.forms, id).length === 0) fail(`internal form "${id}" is reached by no form's next`);
+    } else if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') {
+      fail(`form "${id}" has no form intent`);
+    }
+    if (form.next !== undefined && !Object.hasOwn(app.forms, form.next)) fail(`form "${id}" goes on to the unknown form "${form.next}"`);
+  }
+  for (const loop of nextCycles(app.forms)) fail(`the forms' next go round in a loop: ${[...loop, loop[0]!].join(' -> ')}`);
+  // A form's checks (FormDef.checks): each a check of the policy, reading the form's own slots or an
+  // identity factor (which holds a value once the caller has given it), each outcome that ends the call
+  // with a line to end on.
+  const checkSource = sourceOf(app.policy);
+  const checkFactors = app.identity?.factorSlots ?? [];
+  for (const [id, form] of Object.entries(app.forms)) {
+    for (const check of form.checks ?? []) {
+      const action = checkSource && Object.hasOwn(checkSource.actions, check.action) ? checkSource.actions[check.action] : undefined;
+      if (action?.check !== true) fail(`form "${id}" checks "${check.action}", which is not a check of the policy (check: true)`);
+      for (const slot of check.with) if (!form.slots.includes(slot) && !checkFactors.includes(slot)) fail(`form "${id}"'s check "${check.action}" reads "${slot}", which is not one of its slots`);
+      if (check.with.length === 0) fail(`form "${id}"'s check "${check.action}" reads no slot`);
+      for (const [reason, outcome] of Object.entries(check.on ?? {})) {
+        if ((outcome.then === 'end' || outcome.then === 'anything-else') && outcome.say === undefined) fail(`form "${id}"'s check "${check.action}" ends with ${outcome.then} for "${reason}" and says no line`);
+      }
+    }
+    if (form.checksPassed !== undefined && !(form.checks ?? []).length) fail(`form "${id}" has a checksPassed line and no checks`);
   }
   for (const id of REQUIRED_CONTROL_INTENTS) if (!Object.hasOwn(app.intents, id)) fail(`missing control intent "${id}"`);
   const { rulesFor, toolLevel, purposeLevel, roles, subjects, customRules } = app.policy;
@@ -222,8 +270,12 @@ export function validateApp(app: App): void {
   // The range rules (dateInRange, limit) take parameters only a policy file gives: tables compiled
   // from one carry the rules they were compiled from (sourceOf), and the rule must be one of them.
   const source = sourceOf(app.policy);
+  const isCheck = (tool: string): boolean => source !== null && Object.hasOwn(source.actions, tool) && source.actions[tool]!.check === true;
   for (const [tool, ids] of Object.entries(rulesFor)) {
-    if (!Object.hasOwn(app.tools, tool)) fail(`policy has rules for tool "${tool}", which is not a tool`);
+    // A form's check (policy.yaml `check: true`) is a question to the gate only: it has no tool, and may have none.
+    if (isCheck(tool)) {
+      if (Object.hasOwn(app.tools, tool)) fail(`policy's check "${tool}" is also a tool; a check has no tool`);
+    } else if (!Object.hasOwn(app.tools, tool)) fail(`policy has rules for tool "${tool}", which is not a tool`);
     const named = source && Object.hasOwn(source.actions, tool) ? source.actions[tool]!.rules.map((r) => r.rule as string) : [];
     for (const id of ids) {
       if (NAMED_RULE_IDS.includes(id)) {
@@ -296,6 +348,17 @@ export function validateApp(app: App): void {
     // identity.yaml's attempts are the attempts rule's: a policy compiled without them would hold the checks to another number.
     if (maxAttempts !== undefined && app.policy.maxAttempts !== maxAttempts) fail(`policy's maxAttempts (${app.policy.maxAttempts}) is not identity.yaml's attempts (${maxAttempts}); compile the policy with the identity (definePolicy's identity option)`);
     for (const problem of principalProblems(app)) fail(problem);
+    // A caller-ID match as the identifier (callerId): factors of level 1 it stands in for, never all
+    // of them (the match alone would verify), on a call the start-of-call lookup matched, read by the
+    // app's facts.callerMatch.
+    const callerId = identity.callerId;
+    if (callerId !== undefined) {
+      for (const slot of callerId.identifies) if (!identity.factorSlots.includes(slot)) fail(`identity callerId identifies "${slot}", which is not a factor of level 1`);
+      if (identity.factorSlots.every((slot) => callerId.identifies.includes(slot))) fail('identity callerId identifies every factor of level 1, so the caller-ID match alone would verify; leave at least one factor to be asked');
+      if (callerId.ask !== 'on-need' && callerId.ask !== 'greeting') fail(`identity callerId ask "${String(callerId.ask)}" is not "on-need" or "greeting"`);
+      if (app.callerNumber?.lookup === undefined) fail('identity callerId needs a call-start lookup (app.yaml callerNumber: { use: hint, lookup })');
+      if (typeof app.facts?.callerMatch !== 'function') fail('identity callerId needs facts.callerMatch, which reads the match from what the lookup kept');
+    }
   }
   for (const tool of Object.keys(toolLevel)) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has a level for tool "${tool}", which has no rules`);
   const seenLinks = new Set<string>();

@@ -1,5 +1,6 @@
-import type { SlotPrompt } from '../../core/slots/types';
+import type { SlotPrompt, SlotSpec } from '../../core/slots/types';
 import { examplesFrom } from '../parts/examples';
+import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { digitsDisplay } from './display';
@@ -23,7 +24,38 @@ function promptsOf(id: string, o: DigitsOptions): SlotPrompt[] {
   }
   if (o.confirm === 'by-confidence') prompts.push({ id: `ack_${id}`, why: `it acknowledges ${thing} it is less sure of`, vars: [id] });
   if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: `it asks for ${thing} on the keypad after spoken answers missed` });
+  if (o.callerNumber !== undefined) prompts.push({ id: `offer_${id}`, why: `it offers the number the caller is calling from for ${thing}, as a yes or no (callerNumber)`, vars: ['last4'] });
+  prompts.push(...readBackPrompts(id, o.confirm));
   return prompts;
+}
+
+/**
+ * The slot's value for the number the caller is calling from (its digits, `+` first when the carrier
+ * wrote it in international form): held to the slot's pattern as a spoken number is, null when it
+ * does not fit. A number in international form names its country, so it must begin with the slot's
+ * country code, which is taken off ("+15555550142" is 5555550142; "+3545550142", ten digits from
+ * another country, is no number for the slot). One with no `+` has the country code taken off when
+ * what is left has the slot's `length` (with no `length`, when what is left fits); otherwise it is
+ * taken as it is.
+ */
+function callerNumberOf(o: DigitsOptions, display: (value: string, locale?: string) => string): NonNullable<SlotSpec['callerNumber']> {
+  const fits = digitsFit(o);
+  const code = o.callerNumber!.countryCode;
+  return {
+    take(number, locale) {
+      const international = number.startsWith('+');
+      const digits = international ? number.slice(1) : number;
+      const rest = digits.startsWith(code) ? digits.slice(code.length) : null;
+      const local = international ? rest
+        : rest !== null && (o.length !== undefined ? rest.length === o.length : fits(rest)) ? rest : digits;
+      return local !== null && fits(local) ? { value: local, display: display(local, locale) } : null;
+    },
+    // Only when they skip: a slot that asks on a no and with no number is as it was.
+    ...(o.callerNumber!.onNo === 'skip' ? { onNo: 'skip' as const } : {}),
+    ...(o.callerNumber!.ifNone === 'skip' ? { ifNone: 'skip' as const } : {}),
+    // Only when it takes a yes or a no alone: an offer that takes a number too is as it was.
+    ...(o.callerNumber!.answers === 'yes-no' ? { answers: 'yes-no' as const } : {}),
+  };
 }
 
 /**
@@ -42,8 +74,10 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
     const fits = digitsFit(o);
     return {
       id,
-      spokenConfirm: o.confirm,
+      ...readBackOf(o.confirm),
       ...(o.redact === 'last4' ? { redact: 'last4' as const } : {}),
+      // A number by its length is a secret (a PIN), not the caller's words: its display is the number, so it is masked too.
+      ...(o.redact === 'length' ? { redact: 'length' as const, statement: false as const } : {}),
       ...(o.handoff !== 'display' ? { handoff: o.handoff } : {}),
       detect: true,
       questionIds: [ids.given, ids.span, ids.complete],
@@ -54,6 +88,7 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
       ...(o.keypad && o.length !== undefined
         ? { dtmf: { length: o.length, parse: (digits: string, ctx: { locale?: string }) => (fits(digits) ? { value: digits, display: display(digits, ctx.locale) } : null) } }
         : {}),
+      ...(o.callerNumber !== undefined ? { callerNumber: callerNumberOf(o, display) } : {}),
       display,
     };
   },

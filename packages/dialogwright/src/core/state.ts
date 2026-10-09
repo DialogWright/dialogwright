@@ -1,6 +1,9 @@
+import { lastFour } from './callerNumber';
 import type { App, SlotId } from './app/types';
-import { intentLabel } from './app/intents';
+import { formLabel, intentLabel } from './app/intents';
+import { checksOf } from './checks';
 import { appOf } from './app/registry';
+import { formOf } from './app/lookup';
 import { slotLocaleOf } from './locale';
 import { candidateSpans } from './spans';
 import {
@@ -31,20 +34,41 @@ export interface TurnState {
   caller: { verified: boolean; level: 0 | 1 | 2; priorCalls: number } & Readonly<Record<string, string | number | boolean>>;
   asr: { text: string; isFinal: boolean; bargeIn: boolean; dtmf: string | null };
   candidateSpans: string[];
-  /** the model sees 'intent', 'form', 'transfer', or the slot id */
-  pendingConfirmation: { target: 'intent' | 'form' | 'transfer' | SlotId; value: string } | null;
+  /** the model sees 'intent', 'form', 'transfer', 'consent' (the consent to text for the whole call), or the slot id */
+  pendingConfirmation: { target: 'intent' | 'form' | 'transfer' | 'consent' | SlotId; value: string } | null;
 }
 
 /**
  * The pending confirmation as the model sees it: what is being confirmed, and the thing itself in
  * words. The transfer offer names what a yes buys rather than a form or a slot.
  */
-function pendingState(app: App, pc: Session['pendingConfirmation']): TurnState['pendingConfirmation'] {
+function pendingState(app: App, session: Session): TurnState['pendingConfirmation'] {
+  const pc = session.pendingConfirmation;
   if (pc === null) return null;
   if (pc.target === 'intent') return { target: 'intent', value: intentLabel(app, pc.intent) };
-  if (pc.target === 'form') return { target: 'form', value: intentLabel(app, pc.form) };
+  if (pc.target === 'form') return { target: 'form', value: formLabel(app, pc.form) };
   if (pc.target === 'transfer') return { target: 'transfer', value: 'connect you to a person' };
+  if (pc.target === 'check') return checkState(app, session, pc);
+  // The consent to text for the whole call (app.yaml's textConsent): what a yes agrees to, by the
+  // number's last four, never the whole number.
+  if (pc.consent === true) return { target: 'consent', value: `text them helpful links during this call, at the number they are calling from, ending in ${lastFour(pc.value)}` };
+  // The caller's number offered (core/callerNumber.ts): the model is told what the caller heard of
+  // it, its last four, never the whole number.
+  if (pc.offered && pc.from !== 'facts') return { target: pc.slot, value: `the number they are calling from, ending in ${lastFour(pc.value)}` };
+  // A value read back, or proposed from the facts (`offer: facts`): what the line said of it, its
+  // display, and nothing more of what the facts hold.
   return { target: pc.slot, value: pc.display };
+}
+
+/**
+ * A check's refusal read back (a check outcome's `confirm`), as the model sees it: what is read back
+ * is the value the check refused, so it is told as a slot's read-back is, the first slot the check
+ * reads that is not confirmed and its display (the trace masks it as it masks that slot's).
+ */
+function checkState(app: App, session: Session, pc: Extract<Session['pendingConfirmation'], { target: 'check' }>): TurnState['pendingConfirmation'] {
+  const reads = checksOf(session, pc.form).find((c) => c.action === pc.action)?.with ?? [];
+  const slot = reads.find((id) => session.slots[id]?.confirmed === false) ?? reads[0];
+  return slot === undefined ? { target: pc.action, value: pc.reason } : { target: slot, value: session.slots[slot]?.display ?? '' };
 }
 
 /**
@@ -73,7 +97,7 @@ export function buildTurnState(session: Session, input: TurnInput, nowMs: number
       elapsed: bucketElapsed(nowMs - session.startedAtMs),
     },
     activeForm: session.form,
-    activeFormLabel: session.form ? intentLabel(app, session.form) : null,
+    activeFormLabel: session.form ? formLabel(app, session.form) : null,
     slots,
     history: session.history.slice(-HISTORY_WINDOW).map((h) => ({ ...h })),
     caller: callerOf(app, session),
@@ -81,6 +105,6 @@ export function buildTurnState(session: Session, input: TurnInput, nowMs: number
     asr: { text: input.text, isFinal: input.isFinal, bargeIn: session.lastInterrupt !== null, dtmf: session.promptedFor === 'otp' ? null : input.dtmf },
     // The number spans in the session's language, as the slots read them (core/turn.ts slotContext).
     candidateSpans: candidateSpans(input.text, slotLocaleOf(session)),
-    pendingConfirmation: pendingState(app, session.pendingConfirmation),
+    pendingConfirmation: pendingState(app, session),
   };
 }

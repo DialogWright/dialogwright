@@ -1,24 +1,26 @@
 ---
 name: create-app
-description: Use when building a new DialogWright app from a plain-language description (a paragraph saying what callers can ask for, who must verify and how, what must be confirmed, what goes to a person). Plans the app in a worksheet, scaffolds it with pnpm create-app, writes the YAML, the tool stubs, the corpus and the scenarios, and iterates until pnpm check, the type check, the tests and the stub regression are green.
+description: Use when building a new DialogWright app from a plain-language description (a paragraph saying what callers can ask for, who must verify and how, what must be confirmed, what goes to a person). Plans the app in a worksheet, scaffolds it with pnpm create-app, writes the YAML, the tool stubs, the corpus and the scenarios, and iterates until pnpm check, the type check, the tests and the stub regression are green; then hands the owner the recording command and triages the recording.
 ---
 
 # Create an app from a description
 
-You are given a paragraph and asked to build an app. This skill is the procedure, from the paragraph to a green app in `apps/<name>`, in eight steps, with one more (step 6b) when callers ask questions that documents answer. Do them in order; each step ends with something you can check.
+You are given a paragraph and asked to build an app. This skill is the procedure, from the paragraph to a green app in `apps/<name>`, in eight steps, with one more (step 6b) when callers ask questions that documents answer, and a ninth once the owner has recorded the app against the real model. Do them in order; each step ends with something you can check.
 
-Three supporting files sit next to this one:
+Five supporting files sit next to this one:
 
-- [worksheet.md](worksheet.md): the template for the app's design worksheet (`apps/<name>/DESIGN.md`), with the final checklist you tick.
-- [patterns.md](patterns.md): the YAML and TypeScript for each feature a paragraph usually asks for (verification, a one-time code, delegates, confirmed writes, bounds on a date or an amount, refusals and handoffs, informational answers, a knowledge form, policy tests), each tried in a running app, and the known gaps with their workarounds.
+- [worksheet.md](worksheet.md): the template for the app's design worksheet (`apps/<name>/DESIGN.md`): what the paragraph asks for, the decisions that lead to each option, and the final checklist you tick.
+- [options.md](options.md): the options index, one row per need (the option, the file it goes in, its pattern, its guide section), and the defaults the skill sets for a new app. Read it whole at step 2.
+- [patterns.md](patterns.md): for each option, when it fits, the YAML and TypeScript, the scripted calls that test it and its pitfall, each tried in a running app, and the known gaps with their workarounds.
 - [corpus.md](corpus.md): how to write corpus lines and scripted calls, including how to label each slot type's questions.
+- [triage.md](triage.md): what to do with the owner's recording (step 9): the three buckets, the order of the fixes, and what to bring to the owner.
 
 ## Before you start
 
 Read these first; the rest of this skill assumes them:
 
 1. [CLAUDE.md](../../../CLAUDE.md): the three roles and the rules.
-2. [docs/authoring-an-app.md](../../../docs/authoring-an-app.md) (long: read it a section at a time, from its contents list): sections 1 and 2 (the folder and each file), 3 (policy and identity: [the built-in rules, including the range rules](../../../docs/authoring-an-app.md#33-the-built-in-rules), [the identity ladder](../../../docs/authoring-an-app.md#36-the-identity-ladder) and [what is recorded](../../../docs/authoring-an-app.md#39-what-is-recorded-audit-and-the-rule-names)), 4 (what stays in TypeScript), 6 (the form hooks) and 7 (`pnpm check`). Skim section 5 (slots); the type pages cover it.
+2. From [the authoring guide](../../../docs/authoring-an-app.md), only [1. The folder](../../../docs/authoring-an-app.md#1-the-folder) and [4. What stays in TypeScript, and why](../../../docs/authoring-an-app.md#4-what-stays-in-typescript-and-why) for now. The guide is the reference for every file, and it is too long to read in one go: never read it whole. Each step below names the sections it needs, under **Guide**; read those when you reach the step, one section at a time. `grep -n '^##' docs/authoring-an-app.md` lists every heading with its line, so you can read a section from its heading to the next.
 3. [docs/slots/README.md](../../../docs/slots/README.md): the slot types and "Which type?".
 4. Only if callers ask questions that documents answer: [section 12 of the authoring guide](../../../docs/authoring-an-app.md#12-the-knowledge-base), the knowledge base, before step 6b.
 
@@ -28,7 +30,7 @@ The rules you keep, whatever the paragraph says:
 - **Never let a model write a regulated line.** Every line a caller hears is in `prompts.yaml`, word for word. The model only answers typed questions. Information answers are fixed lines too, or passages of a knowledge base that people approved: either way word for word.
 - **Fictional data only.** Invented names, invented streets, the 555 phone range, `example.com` web addresses. Nothing real, nothing private.
 - **Do not change `packages/dialogwright`.** If the framework is in your way, see "When something doesn't fit" at the end.
-- **Never run `regress --client record`.** Recording calls a paid API; it is for the app's owner to do later.
+- **Never run `regress --client record`.** Recording calls a paid API; it is for the app's owner to do. You hand them the command, whole (step 9), and triage what it recorded.
 - **Never approve a passage of a knowledge base, and never use a model key.** Only a person approves what callers will hear, after reading it against its source: you do not run `pnpm kb:approve`, you do not write an `approval` or a hash, and you do not edit `kb/approvals.jsonl`. You do not run `pnpm kb:draft` either, since it calls a model with the owner's own key, which you never handle and never put in a file. Step 6b says what you do instead.
 
 ## Step 1: The worksheet
@@ -39,6 +41,7 @@ The worksheet lists:
 
 - **Intents**: everything a caller can ask for, each with five or more example phrasings, terse ones included (one word, a fragment, a bare number).
 - **For each intent**: the information it needs, one row per piece, and whether it is a form (collects information, then acts), informational (says one fixed line) or a person.
+- **Decisions**: the worksheet's questions about the paragraph (does an answer turn the caller away, will callers phone from the number on their account, will the line text them, ...). Each answer names the option it leads to; step 2 builds them.
 - **Actions**: each tool, what it reads and what it writes, and its params.
 - **Who may do each action**: anonymous; the verified caller (the subject) and at which level; each kind of delegate (someone acting for subjects) and each of their roles. For each: allowed, refused, or handed to a person.
 - **Confirmation**: which writes are read back for a yes before they happen, and exactly which values the caller confirms.
@@ -48,19 +51,25 @@ The worksheet lists:
 - **What goes to a person**: on request (always), after failed verification, by a role, by a bound.
 - **Gaps**: anything the paragraph asks for that you are not sure the framework does. Fill this in as you go.
 
-Read the paragraph once more against the worksheet: every sentence of it should land in a row. Where the paragraph is silent (how many tries, how long a code is), choose the framework's default and write the choice down.
+Read the paragraph once more against the worksheet: every sentence of it should land in a row. Where the paragraph is silent (how many tries, how long a code is), choose the framework's default and write the choice down under "Choices the paragraph left open".
+
+One thing you ask rather than choose: **the business name**, when the paragraph gives none. Every caller hears it in the greeting ("Thanks for calling ..."), and `pnpm create-app --display` takes it. Ask the person who gave you the paragraph once, before the scaffold, and carry on with the worksheet while you wait. In this repository every name is fictional, so offer an invented one built from the trade with the question ("Example Plumbing" for a plumber). Everything else the paragraph leaves open, you decide and record as above.
 
 ## Step 2: Map the worksheet onto the framework
 
-Add the mapping to the worksheet:
+Add the mapping to the worksheet. Read [options.md](options.md) whole first: for each decision, its row names the option and the pattern to read before you write it, and its defaults table says what a new app sets where the paragraph is silent (`handoff.data.unconfirmed: mark`, `priority: { correctsForm: true }` on an emergency, a read-back for each answer that ends the call).
 
-- **Each piece of information to a slot type**, using "Which type?" in [docs/slots/README.md](../../../docs/slots/README.md) and the type's page for its options. An identifier in digits is `digits`; one of a list you can write down is `choice` (option keys start with a letter: `two`, not `2`); a day is `date` (`range: future` or `past`); a date of birth is `birthdate`; the caller's own name is `name`; one of the caller's own records is `record`; free words are `text`. Some values have no type yet (an amount of money, a street address, a code with letters): [patterns.md](patterns.md#values-with-no-slot-type) says what to do instead.
-- **Each action to a policy entry**: its `level` (0 anonymous, 1 the identity factors, 2 the factors and a one-time code) and its `rules`, in the order the gate should run them, usually `identity`, `role`, `scope`, `confirmed`, the range rules (`limit`, `dateInRange`), then `custom`. Section 3.3 of the authoring guide ([the built-in rules](../../../docs/authoring-an-app.md#33-the-built-in-rules)) has every rule's parameters.
-- **Verification to `identity.yaml`**: the subject's kind, the level 1 factor slots and the tool that checks them, and level 2 (a one-time code, with the tools that send and check it) only if some action needs level 2. On the phone a caller verifies by voice and keypad; on a chat nothing typed counts as a factor, so if the paragraph mentions a chat, chat callers sign in through the portal (`signIn`): see [patterns.md](patterns.md#phone-and-chat).
+**Guide** (the sections this step reads; for any other, open the one an options row names when its pattern leaves a question open): [Pick a type in slots.yaml](../../../docs/authoring-an-app.md#pick-a-type-in-slotsyaml) and [Where a slot listens](../../../docs/authoring-an-app.md#where-a-slot-listens-listen) (section 5; the type pages have the rest); [3.2 An action and its rules](../../../docs/authoring-an-app.md#32-an-action-and-its-rules), [3.3 The built-in rules](../../../docs/authoring-an-app.md#33-the-built-in-rules), [3.6 The identity ladder](../../../docs/authoring-an-app.md#36-the-identity-ladder), [3.7 How a form reaches an action](../../../docs/authoring-an-app.md#37-how-a-form-reaches-an-action-calls) and [3.9 What is recorded](../../../docs/authoring-an-app.md#39-what-is-recorded-audit-and-the-rule-names). With delegates, also [3.8 Redaction per principal](../../../docs/authoring-an-app.md#38-redaction-per-principal-redact).
+
+- **Each piece of information to a slot type**, using "Which type?" in [docs/slots/README.md](../../../docs/slots/README.md) and the type's page for its options. An identifier in digits is `digits`; one of a list you can write down is `choice` (option keys start with a letter: `two`, not `2`); a day is `date` (`range: future` or `past`); a date of birth is `birthdate`; the caller's own name is `name`; one of the caller's own records is `record`; free words are `text`. Some values have no type yet (an amount of money, a street address, a code with letters): [patterns.md](patterns.md#values-with-no-slot-type) says what to do instead. Name each slot with an id the engine does not keep for its own questions (`urgency` is one: say `howUrgent`); [patterns.md](patterns.md#names-the-engine-keeps) lists them.
+- **Each action to a policy entry**: its `level` (0 anonymous, 1 the identity factors, 2 the factors and a one-time code) and its `rules`, in the order the gate should run them, usually `identity`, `role`, `scope`, `confirmed`, the range rules (`limit`, `dateInRange`), the list rules (`oneOf`, `noneOf`) and `callerNumber`, then `custom`. Section 3.3 of the authoring guide ([the built-in rules](../../../docs/authoring-an-app.md#33-the-built-in-rules)) has every rule's parameters.
+- **Verification to `identity.yaml`**: the subject's kind, the level 1 factor slots and the tool that checks them (with `callerId` where callers phone from the number on their account: [patterns.md](patterns.md#verified-by-caller-id-callerid)), and level 2 (a one-time code, with the tools that send and check it) only if some action needs level 2. On a chat nothing typed counts as a factor, so if the paragraph mentions a chat, chat callers sign in through the portal (`signIn`): see [patterns.md](patterns.md#phone-and-chat).
 - **Delegates to principals and roles**: each kind of delegate under `principals.delegates` with its roles, and a `role` rule on each action whose answer differs by role. Delegates reach the app signed in on a chat, not by phone: see [patterns.md](patterns.md#delegates).
-- **Each tool to its `params`, and each param to how it is recorded.** A tool lists the params its calls carry (`params: ['accountId', 'service']` on the tool in `src/app.ts`, `params: []` for none). A param named after a slot with a redact setting (a `digits` slot is `last4`, a `birthdate` is hidden, a `text` slot is `length`) is recorded as the slot says. Every other param is declared by name under `audit:` in `policy.yaml`, one of `last4`, `mask`, `length`, `secret` or `keep`. Choose by what the value is: an identifier `last4`, free words `length` (or `secret` if they must not be kept at all), a plain choice from a short list, a day or an amount `keep`. A value you keep that a person said in their own words (a street address read back as said) is a privacy trade-off: write it in the worksheet's choices. See [patterns.md](patterns.md#what-is-recorded-params-and-audit).
+- **Each tool to its `params`, and each param to how it is recorded.** A tool lists the params its calls carry (`params: []` for none). A param named after a slot with a redact setting is recorded as the slot says; every other is declared under `audit:` in `policy.yaml` (`last4` for an identifier, `length` or `secret` for free words, `keep` for a choice, a day or an amount). A value kept that a person said in their own words is a privacy trade-off: write it in the worksheet's choices. See [patterns.md](patterns.md#what-is-recorded-params-and-audit).
 - **Each confirmed write to its `confirmed` fields.** An app has one list of confirmed fields, shared by every action with a `confirmed` rule: see [patterns.md](patterns.md#confirmed-writes).
-- **Each form to its hooks**: `complete` always; `entry` (and `onEntry`) when the form needs a verified caller; `principalEntry` when delegates use it; `confirmedParams` for a confirmed write; `onSummaryRead` when the read-back names a value no slot holds.
+- **Each answer that rules a caller out to a check** (decisions 1 to 3): one form, the qualifying slots first, a `check: true` action per answer named in the form's `checks`, with its line and ending, the same rule in the write, and the deciding answer read back first. See [patterns.md](patterns.md#qualify-before-you-collect).
+- **Each other decision to its option**, through its row in [options.md](options.md): the number calling (caller ID, a lookup, a proposal, a callback number, a text and consent), where slots listen, an emergency, and what a transfer hands over.
+- **Each form to its hooks**: `complete`, unless the form answers from the knowledge base (`answers`) or goes on to another form (`next`); `entry` (and `onEntry`) when the form needs a verified caller; `principalEntry` when delegates use it; `confirmedParams` for a confirmed write; `onSummaryRead` when the read-back names a value no slot holds.
 - **Each knowledge row to a topic, and each answer to a passage** (only when the worksheet has knowledge rows): a topic is an id, a title, keywords and example questions in `kb/topics.yaml`; a form with a `topic` slot and `answers:` says it; an answer that is one fixed line for everyone with no question to ask may be an informational intent's `passage:`. The facts an answer depends on (the caller's plan, say) are `applies`, read by code from the system of record, never from what the caller said. See [patterns.md](patterns.md#a-knowledge-form) and step 6b.
 - **Each form to the actions it calls** (`calls` in `forms.yaml`): its entry call and the calls its hooks make through the gate, `calls: []` for one that calls none. The engine never reads it; the app map draws each form to its actions with it, and `pnpm check` reports an action no form reaches. Declare it for every form or for none.
 
@@ -71,15 +80,17 @@ Decide now whether the app needs `--identity`: it does if any action is above le
 At the repository root:
 
 ```sh
-pnpm create-app <name>              # or, when any action is above level 0: pnpm create-app <name> --identity
+pnpm create-app <name> --display "<business name>"     # add --identity when any action is above level 0
 ```
 
 It writes `apps/<name>` (a one-form example: book a service, with an account number and a date of birth under `--identity`), links it into the workspace, and prints the next steps. It passes `pnpm check`, its tests and its regression as created. Move your worksheet into `apps/<name>/DESIGN.md` now. Then read the new folder's `README.md`, `CLAUDE.md` and `src/app.ts`: they say what each file is for, and the example shows the shape of a confirmed write and (with `--identity`) of a form that steps the caller up.
 
+**Guide**: the page for each file as you replace it, in section 2: [app.yaml](../../../docs/authoring-an-app.md#appyaml), [intents.yaml](../../../docs/authoring-an-app.md#intentsyaml) (with [Must never wait](../../../docs/authoring-an-app.md#must-never-wait-priority)), [forms.yaml](../../../docs/authoring-an-app.md#formsyaml), [prompts.yaml](../../../docs/authoring-an-app.md#promptsyaml), [policy.yaml](../../../docs/authoring-an-app.md#policyyaml), [identity.yaml](../../../docs/authoring-an-app.md#identityyaml-optional) and [slots.yaml](../../../docs/authoring-an-app.md#slotsyaml-optional); and [7. Checking an app](../../../docs/authoring-an-app.md#7-checking-an-app-pnpm-check) for what `pnpm check` reports.
+
 Replace the example one piece at a time, running `pnpm check` after each change:
 
-1. `app.yaml`: the brand, `console.formLabels` and `slotLabels`, `voice.hints`, `wording.addressee`.
-2. `intents.yaml`: your intents (form, informational); keep `agent` and `repeat_prompt` (required) and the other control intents, `done` among them: it is how "no, that's all" at "anything else?" ends the call with the goodbye, and `pnpm check` refuses an app that says `anything_else` without it; the keypad menu.
+1. `app.yaml`: the brand, `console.formLabels` and `slotLabels`, `voice.hints`, `wording.addressee`, `handoff.data.unconfirmed: mark`, and the app-wide options your decisions chose (`callerNumber`, `textConsent`, `carrySlots`).
+2. `intents.yaml`: your intents (a form intent for every form but an internal one, and informational ones), each with criteria a one-breath answer to every slot of its form still matches ([patterns.md](patterns.md#an-intents-criteria)); keep `agent` and `repeat_prompt` (required) and the other control intents, `done` among them: it is how "no, that's all" at "anything else?" ends the call with the goodbye, and `pnpm check` refuses an app that says `anything_else` without it; the keypad menu.
 3. `slots.yaml`: your slots, from the mapping. Keep `accountId` and `dob` if your factors are an account number and a date of birth.
 4. `forms.yaml`: your forms, their slots, their summary prompts, their hooks and the actions they call (`calls`).
 5. `policy.yaml` (with its `audit:`) and `identity.yaml`: from the mapping.
@@ -93,12 +104,16 @@ What `pnpm check` does not see: the corpus beyond "every intent has examples" (t
 
 ## Step 4: Tools as stubs over fixture data
 
+**Guide**: [6. The form hooks](../../../docs/authoring-an-app.md#6-the-form-hooks), and [3.4 Rules of your own](../../../docs/authoring-an-app.md#34-rules-of-your-own-definerule) for a custom rule.
+
 - Each tool lists `params`, every param its calls carry, and each one that is not a slot with a redact setting is declared under `audit:` in `policy.yaml` ([patterns.md](patterns.md#what-is-recorded-params-and-audit)); `pnpm check` names the ones missing. Each tool's `run` reads or writes the in-memory `Systems` and the fixture data in `src/data.ts`, and returns `{ value, summary }`. Invented records only: names, 555 numbers, invented streets, amounts written as plain decimals (`240.00`). A real client replaces the stub later; keep the tests on the stub.
 - No `if` about who is calling, their level, a limit or a date inside a tool. If you find yourself writing one, it is a rule: put it in `policy.yaml`, or, when no built-in rule fits, write it with `defineRule` (with an example the gate allows and one it refuses) in `code.customRules` and name it with `custom:` ([patterns.md](patterns.md#bounds-limit-and-dateinrange)).
 - The gate's lookups are code: `systems()` returns `lookups.scopeOf` (the subject ids a principal may see: a subject their own id, a delegate the subjects they act for, an anonymous caller none), `lookups.ownerOf` (the subject a record belongs to, or null), and each lookup a range rule's bound names (also listed in `code.lookups`). The `--identity` scaffold's `scopeOf` gives a verified customer their own account and an anonymous caller none; extend it when delegates act for subjects ([patterns.md](patterns.md#delegates)). Without `--identity` the scaffold's `scopeOf: () => []` fails every `scope` rule, so replace it if you add one.
 - A form's `complete` calls its tool through `c.callTool`, never the tool directly, and turns the gate's decision into a line: `ALLOW` to the form's own line, anything else through `c.refusal(decision)` (a `blockPromptId` line, or a person). [patterns.md](patterns.md#refusals-and-handoffs) has each case.
 
 ## Step 5: The corpus and the scenarios
+
+**Guide**: [fixtures/](../../../docs/authoring-an-app.md#fixtures-optional) in section 2; [corpus.md](corpus.md) has the rest.
 
 The stub decision model answers from `fixtures/corpus.jsonl`, so the corpus is how the app is tested with no keys. [corpus.md](corpus.md) has the format, the contexts and the labels for each slot type. Write at least:
 
@@ -113,13 +128,16 @@ Scripted calls in `fixtures/scenarios/*.json`, each with the outcome it expects.
 - each kind of principal: an anonymous caller, a subject at each level the app uses (verifying by voice, and keying the one-time code), and each delegate role (`as`);
 - the step-up: an anonymous caller asking for an action above level 0, verifying, and being served;
 - failed verification three times (a person takes the call);
-- each refusal: out of scope, each bound (`limit`, `dateInRange`, each custom rule), each refused role;
+- each refusal: out of scope, each bound (`limit`, `dateInRange`, each custom rule), each list (`oneOf`, `noneOf`), each refused role;
 - each handoff: on request from every place a caller can be (at the start, on the keypad menu with its key for a person, inside a form, while verifying, at the code prompt, at each summary), by role, by a rule;
 - keypad entry for each slot with a keypad, and for the one-time code;
+- each option a decision chose, with the calls its pattern lists under **Test** (a read-back answered yes and no, a check that asks for identity, an entry form that goes on to its booking, a caller-ID match turned down, an offer declined, consent granted and declined, a withheld number and the chat for every option of the number calling);
 - each informational answer, spoken and, if it is on the keypad menu, by its key (the key plays the line and offers the menu again, so the call ends at `nomatch_dtmf_menu` with the line in its words).
 - a caller who is done: a form that ends at "anything else?" (a `said` completion), then "no, that's all" (`done`), ending at `"decision": "complete", "promptId": "goodbye"`. Where every form ends the call on its own line, the caller says it at the next question instead (after an informational answer or a request the line does not handle).
 
 ## Step 6: Iterate until green, then make the baseline once
+
+**Guide**: [Follow one scripted call turn by turn](../../../docs/authoring-an-app.md#follow-one-scripted-call-turn-by-turn) (section 11).
 
 Run, at the repository root, until each is clean:
 
@@ -172,7 +190,9 @@ Callers ask general questions a document answers: when are you open, what is the
 
 ## Step 7: Read the policy back
 
-Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write. The scaffold ships the example's read back: `testing.policyMatrix` in `src/app.ts`, the three pages beside `policy.yaml`, and their tests in `src/app.test.ts` ("the policy read back"), so from the first change to the policy, the forms or the tools those tests fail until the pages are written again. Make `testing.policyMatrix` your app's callers and records ([patterns.md](patterns.md#testing-the-policy): a principal per delegate role, the subject at each level), keep the tests, then write the policy matrix, the policy card and the app map:
+**Guide**: [3.10 Testing the policy](../../../docs/authoring-an-app.md#310-testing-the-policy) and [3.11 Reading the policy](../../../docs/authoring-an-app.md#311-reading-the-policy-the-card-and-the-app-map).
+
+Check what the gate will decide against the worksheet's who-may-do-what, not against what you meant to write. The scaffold ships the example's read back: `testing.policyMatrix` in `src/app.ts`, the three pages beside `policy.yaml`, and their tests in `src/app.test.ts` ("the policy read back"), so from the first change to the policy, the forms or the tools those tests fail until the pages are written again. Make `testing.policyMatrix` your app's callers and records ([patterns.md](patterns.md#testing-the-policy): a principal per delegate role, the subject at each level, and named `calls` for each action whose rules read params it has no `confirmed` or `fields` list for, or the matrix shows every caller refused), keep the tests, then write the policy matrix, the policy card and the app map:
 
 ```sh
 pnpm policy:matrix apps/<name>     # policy.matrix: the gate's verdict for every action and kind of caller
@@ -187,6 +207,30 @@ A knowledge form's resolving action and its account line's reads are in the matr
 ## Step 8: The final checklist
 
 Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#final-checklist)), in the worksheet itself. In short: every intent has corpus lines and a scenario; every action has a policy entry, a row in `policy.matrix` and a line in `POLICY.md` you have read, and its bounds tested at their edges; identity matches the paragraph; nothing private or real; `pnpm check`, `pnpm verify` and every app's regression green; the README describes the app and keeps the recording steps the scaffold wrote; the gaps are written up; and, if there is a knowledge base, every draft is either approved by a person or listed in the worksheet as awaiting one, with `pnpm check`'s approval findings the only ones left. Then commit, with the worksheet.
+
+## Step 9: Hand over the recording, then triage it
+
+**Guide**: [fixtures/](../../../docs/authoring-an-app.md#fixtures-optional) (the keys, the providers and the cassettes); [triage.md](triage.md) has the rest.
+
+The app is green on the stub, which answers from your own labels. How the real model reads the same lines is the next thing to know, and only a recording shows it. Recording calls a paid API with the owner's key, so the owner runs it, never you.
+
+**Hand the owner exactly this**, whole, with the app's name filled in, and nothing else to type:
+
+```sh
+pnpm --filter @dialogwright/example-<name> regress --client record --threshold JEV_TIMEOUT_MS=15000
+```
+
+It runs at the repository root and reads the key from the app's own `apps/<name>/.env` (git-ignored). Tell them how the key gets there: `pnpm configure --app <name>` asks for it and writes that file, or they copy a key into `apps/<name>/.env` as `TYPESAFE_API_KEY=...` (the folder's `.env.example` lists the other providers). Do not ask for the key, read the `.env` or put a key in any file yourself. Do not split the command into steps or add a `source` of a `.env`: a `.env` may hold a value a shell cannot read as written. The run takes a few minutes and has cost a few cents for an app this size; it appends the model's answers to `fixtures/recorded/<model>.jsonl` and never touches the baseline.
+
+**When they have recorded**, triage it as [triage.md](triage.md) says. In short:
+
+1. Replay it, offline and free: `pnpm --filter @dialogwright/example-<name> regress --client recorded`. Read its last line, `to triage: N untagged corpus differences, M failing scripted calls, K passing scripted calls that differ from the baseline, J cassette misses`, not its exit code.
+2. Look at each difference with `regress --client recorded --corpus <id>` (the line's model answers, with their probabilities) or `--scenario <id>`, and put it in one bucket: the label was wrong (fix the label, edit the baseline entry by hand, log it under "Baseline edits"); the model misread a borderline line (a `knownGap` with the model's numbers and the caller impact, `outcomes` if it flips); a scripted call broke on an incidental line (change that line, such as a keypad call's opener, not the expectation).
+3. A scripted call has no allowance but `cosmeticDrift`, so one that tests a real gap stays failing: report it to the owner, do not make it pass.
+4. Fix in this order: first everything that changes no request (code, the policy, a `priority` flag, silences and keys, labels and tags), checked on the recording you have; then all the rewording at once; then ask for one re-record (the same command); then `pnpm --filter @dialogwright/example-<name> cassette:trim`, and replay again.
+5. Bring the engine's gaps and the open questions to the owner as a short table (triage.md, "What to bring to the owner"), and write the triage in the worksheet's "Recordings" section.
+
+Commit the cassette with the triage: it holds only the corpus text and the model's answers.
 
 ## When something doesn't fit
 

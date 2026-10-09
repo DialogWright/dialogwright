@@ -1,0 +1,23 @@
+{"id":"rp-01","text":"I'd like to report a problem","intent":"report_problem","context":"no_form"}
+{"id":"rp-02","text":"nothing is working at 7 Birch Lane","intent":"report_problem","context":"no_form","labels":{"placeGiven":true,"placePick":"7 Birch Lane","problem":"out"}}
+{"id":"cs-01","text":"I want to check on my request","intent":"check_status","context":"no_form"}
+{"id":"cs-02","text":"and can you check on my request","intent":"check_status","context":"anything_else"}
+{"id":"of-01","text":"yes","intent":"none","context":"report_problem","prompted":"place","confirm":"yes"}
+{"id":"of-02","text":"yes, and nothing is working at all","intent":"none","context":"report_problem","prompted":"place","confirm":"yes","labels":{"problem":"out"}}
+{"id":"of-03","text":"no","intent":"none","context":"report_problem","prompted":"place","confirm":"no"}
+{"id":"of-04","text":"no, I'm at my mother's, 7 Birch Lane","intent":"none","context":"report_problem","prompted":"place","confirm":"no","labels":{"placeGiven":true,"placePick":"7 Birch Lane"}}
+{"id":"of-05","text":"hmm, which account","intent":"none","context":"report_problem","prompted":"place","confirm":"unanswered"}
+{"id":"of-06","text":"it's at 7 Birch Lane","intent":"none","context":"report_problem","prompted":"place","confirm":"unanswered","labels":{"placeGiven":true,"placePick":"7 Birch Lane"}}
+{"id":"pl-01","text":"It's 14 Birch Lane","intent":"none","context":"report_problem","prompted":"place","labels":{"placeGiven":true,"placePick":"14 Birch Lane"}}
+{"id":"pr-01","text":"nothing is working at all","intent":"none","context":"report_problem","prompted":"problem","labels":{"problem":"out"}}
+{"id":"pr-02","text":"only part of it works","intent":"none","context":"report_problem","prompted":"problem","labels":{"problem":"partial"}}
+{"id":"sm-01","text":"yes, file it","intent":"none","context":"confirm_report_problem","confirm":"yes"}
+{"id":"sm-02","text":"no, the address is wrong","intent":"none","context":"confirm_report_problem","confirm":"no","changeSlot":"place"}
+{"id":"sm-03","text":"yes, but only part of it works","intent":"none","context":"confirm_report_problem","confirm":"yes","labels":{"problem":"partial"}}
+{"id":"id-01","text":"five five five zero one two three four","intent":"none","context":"check_status","prompted":"accountId","labels":{"accountIdGiven":true,"accountIdSpan":"five five five zero one two three four","accountIdComplete":true}}
+{"id":"id-02","text":"April twelfth nineteen eighty","intent":"none","context":"check_status","prompted":"dob","labels":{"dobGiven":true,"dobMonth":"april","dobDay":"12","dobYear":"nineteen eighty"}}
+{"id":"ag-01","text":"can I talk to a person","intent":"agent","context":"no_form"}
+{"id":"rr-01","text":"can you say that again","intent":"repeat_prompt","context":"no_form"}
+{"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}
+{"id":"no-01","text":"hello","intent":"none","context":"no_form"}
+{"id":"dn-01","text":"that's all, thanks","intent":"done","context":"anything_else"}

@@ -45,9 +45,9 @@ export function paramNoun(app: App, param: string): string {
   return Object.hasOwn(app.slots, param) ? slotNoun(app, param) : humanize(param);
 }
 
-/** An intent or form in words: its label in the console, else the id spelled out. */
+/** An intent or form in words: its label in the console, else its intent's, else an internal form's own, else the id spelled out. */
 export function formWords(app: App, form: string): string {
-  return app.console?.formLabels?.[form] ?? app.intents[form]?.label ?? humanize(form);
+  return app.console?.formLabels?.[form] ?? app.intents[form]?.label ?? (Object.hasOwn(app.forms, form) ? app.forms[form]!.label : undefined) ?? humanize(form);
 }
 
 /** A level as the identity names it: "verified"; level 0 is "anonymous", and a level the ladder does not name is "level N". */

@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# The lookup by the number calling holds its param to it and returns only the street on file; the
+# report is exactly what the summary read back; the status needs the factors, whatever was proposed.
+actions:
+  findAccountByPhone:
+    say: find the service address for the number calling
+    level: 0
+    rules:
+      - identity
+      - callerNumber: { field: callerNumber }
+  verifyCustomer:
+    say: check the account number and date of birth
+    level: 0
+    rules: [attempts]
+  findAccount:
+    say: look up the account
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  readStatus:
+    say: read the status of the latest request on the account
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  reportProblem:
+    say: report a problem at an address
+    level: 0
+    rules:
+      - identity
+      - confirmed: [place, problem]
+
+audit:
+  callerNumber: last4
+  place: keep
+  problem: keep

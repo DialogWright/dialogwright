@@ -1,5 +1,6 @@
 import type { SlotPrompt } from '../../core/slots/types';
 import { examplesFrom } from '../parts/examples';
+import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { recordDisplay } from './display';
@@ -24,6 +25,7 @@ function promptsOf(id: string, o: RecordOptions): SlotPrompt[] {
   const out: SlotPrompt[] = [];
   if (o.disambiguate) out.push({ id: `disambiguate_${id}`, why: 'the caller could mean either of two records and is asked which', vars: ['a', 'b'] });
   if (o.keypad !== undefined) out.push({ id: `ask_${id}_dtmf`, why: 'it asks for the key on the keypad after spoken answers missed' });
+  out.push(...readBackPrompts(id, o.confirm ?? 'summary'));
   return out;
 }
 
@@ -42,8 +44,8 @@ export const recordType: SlotType<RecordOptions> = defineSlotType<RecordOptions>
     const display = recordDisplay();
     return {
       id,
-      // Never acknowledged: the final summary reads it back.
-      spokenConfirm: 'summary',
+      // Never acknowledged: the final summary reads it back, or, with `confirm: always`, its own read-back.
+      ...readBackOf(o.confirm ?? 'summary'),
       questionIds: [questionId],
       prompts: promptsOf(id, o),
       thresholds: [o.fillAt],

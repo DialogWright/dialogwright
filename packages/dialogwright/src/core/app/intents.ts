@@ -1,4 +1,4 @@
-import type { App, Intent } from './types';
+import type { App, FormId, Intent } from './types';
 
 /**
  * What the engine reads off an app's intents. Each helper stands in for a constant the engine used
@@ -23,6 +23,20 @@ export function isFormIntent(app: App, intent: string): boolean {
 /** The spoken label for confirmations ("track a parcel"). */
 export function intentLabel(app: App, intent: Intent): string {
   return app.intents[intent]!.label;
+}
+
+/**
+ * A form's spoken label, wherever a form id is said (an ack, a bridge, the form the caller is in):
+ * its intent's label (intentLabel), or, for a form that is no intent (FormDef.internal, reached only
+ * by another form's `next`), the form's own `label`. For an app whose forms are all intents, exactly
+ * intentLabel.
+ */
+export function formLabel(app: App, form: FormId): string {
+  const intent = app.intents[form];
+  if (intent !== undefined) return intent.label;
+  const label = Object.hasOwn(app.forms, form) ? app.forms[form]!.label : undefined;
+  if (label === undefined) throw new Error(`form "${form}" of app "${app.id}" has neither an intent nor a label`);
+  return label;
 }
 
 /** The prompt an informational intent plays, or undefined for any other intent (and for one that says a passage: informationOf). */

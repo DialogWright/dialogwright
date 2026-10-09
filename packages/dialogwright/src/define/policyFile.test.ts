@@ -366,8 +366,8 @@ describe('the checks', () => {
 
   it('a misspelt key, rule or parameter is named with the closest one', () => {
     expect(actionsWith({ getRecord: { levle: 1, rules: ['identiy', { scop: { record: 'recordId' } }] } })).toEqual([
-      'actions.getRecord.rules[0]: "identiy" is not a rule; the rules are identity, scope, role, confirmed, attempts, fields, dateInRange, limit, custom (custom names one of the app\'s own) -> rename it to "identity"',
-      'actions.getRecord.rules[1].scop: "scop" is not a rule; the rules are identity, scope, role, confirmed, attempts, fields, dateInRange, limit, custom (custom names one of the app\'s own) -> rename it to "scope"',
+      'actions.getRecord.rules[0]: "identiy" is not a rule; the rules are identity, scope, role, confirmed, attempts, fields, dateInRange, limit, oneOf, noneOf, callerNumber, custom (custom names one of the app\'s own) -> rename it to "identity"',
+      'actions.getRecord.rules[1].scop: "scop" is not a rule; the rules are identity, scope, role, confirmed, attempts, fields, dateInRange, limit, oneOf, noneOf, callerNumber, custom (custom names one of the app\'s own) -> rename it to "scope"',
       'actions.getRecord.levle: unknown key "levle" under actions.getRecord -> rename "levle" to "level"',
     ]);
     expect(actionsWith({ getRecord: { level: 1, rules: [{ scope: { parm: 'recordId' } }, { role: { viewer: 'allow', reasn: 'x' } }, { identity: {} }, 'scope'] } })).toEqual([

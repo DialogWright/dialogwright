@@ -5,6 +5,7 @@ import { formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { SlotId } from './app/types';
 import { missingSlots, requiredSlots, type PendingConfirmation, type Session } from './session';
+import { yesNoOffer } from './callerNumber';
 import type { Thresholds } from './thresholds';
 
 export type RetryStep = 'open' | 'dtmf' | 'agent';
@@ -67,13 +68,27 @@ export function activeSlots(session: Session): SlotSpec[] {
   // there may be the code read aloud, and no slot may keep any part of it.
   if (session.promptedFor === 'otp') return [];
   const app = appOf(session);
-  const factorSlots = identityOf(app).factorSlots;
+  const factorSlots = listeningFactors(session);
   const collectsIdentity = isAnonymous(session.principal) && !session.caps.signIn;
   if (session.form) {
     const form = formOf(app, session.form).slots.map((id) => slotSpecOf(app, id));
-    return collectsIdentity ? [...factorSlots.map((id) => slotSpecOf(app, id)), ...form.filter((spec) => !factorSlots.includes(spec.id))] : form;
+    return collectsIdentity ? [...factorSlots.map((id) => slotSpecOf(app, id)), ...form.filter((spec) => !identityOf(app).factorSlots.includes(spec.id))] : form;
   }
-  return Object.values(app.slots).filter((spec) => (factorSlots.includes(spec.id) ? collectsIdentity : listenOf(app, spec.id) !== 'form'));
+  return Object.values(app.slots).filter((spec) => (identityOf(app).factorSlots.includes(spec.id) ? collectsIdentity && factorSlots.includes(spec.id) : listenOf(app, spec.id) !== 'form'));
+}
+
+/**
+ * The identity factors a turn listens for while the caller is still to be verified: every factor,
+ * but those a caller-ID match in use identifies (Session.callerMatch `offered`, identity.yaml's
+ * `callerId`), which are filled from the match while it stands. A digit string said for the date of
+ * birth is then never taken for the account number; the model is asked about them only beside the
+ * caller-ID question's decline question (questions.ts), and a turn that declines fills them. Once the
+ * match is set aside, every factor listens again.
+ */
+function listeningFactors(session: Session): readonly SlotId[] {
+  const identity = identityOf(appOf(session));
+  const identified = session.callerMatch === 'offered' ? identity.callerId?.identifies : undefined;
+  return identified === undefined ? identity.factorSlots : identity.factorSlots.filter((id) => !identified.includes(id));
 }
 
 /**
@@ -90,9 +105,12 @@ export function activeSlots(session: Session): SlotSpec[] {
  * Saturday"). Left filled, a form asked for later would skip its question and read that value back
  * as the caller's answer. A form starts from what is said once it is asked for, unless the slot
  * says it keeps a value said anywhere.
+ *
+ * At an offer that takes a yes or a no only (callerNumber.ts yesNoOffer), the slot offered is left
+ * out: the turn takes no value for it, though its question is asked (activeSlots).
  */
 export function slotsToFill(session: Session): SlotSpec[] {
-  const listening = activeSlots(session);
+  const listening = withoutYesNoOffered(session, activeSlots(session));
   if (session.form) return listening;
   const app = appOf(session);
   const callSlots = new Set<SlotId>([...identityOf(app).factorSlots, ...(app.carrySlots ?? [])]);
@@ -101,6 +119,17 @@ export function slotsToFill(session: Session): SlotSpec[] {
     const listen = listenOf(app, spec.id);
     return listen === 'anywhere' || listen === 'call';
   });
+}
+
+/**
+ * `specs` but the slot of a pending offer that takes a yes or a no only (callerNumber.ts yesNoOffer):
+ * its question is still asked, so a value said at the offer can be told from a plain yes or no, but the
+ * turn fills nothing into it. `specs` itself on every other turn.
+ */
+function withoutYesNoOffered(session: Session, specs: SlotSpec[]): SlotSpec[] {
+  const pc = session.pendingConfirmation;
+  if (!yesNoOffer(appOf(session), pc)) return specs;
+  return specs.filter((spec) => spec.id !== pc.slot);
 }
 
 /**
@@ -257,12 +286,15 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         // correction at the summary (correctingFill, turn.ts): a value spoken again unchanged (one
         // the form holds, heard again in answer to another slot's question) answers nothing, and
         // counting it would hold the prompted slot's `attempts` and re-ask its question forever.
-        const policy = spec.spokenConfirm;
+        // A value the slot reads back at once (SlotSpec.confirmValues) is an always-confirm value.
+        const policy = readsBack(spec, outcome.value) ? 'always' : spec.spokenConfirm;
         const keepConfirmed = slot.confirmed && slot.value === outcome.value;
         slot.value = outcome.value;
         slot.display = outcome.display;
         slot.confirmed = keepConfirmed || (policy === 'by-confidence' && outcome.confirm === 'none');
         slot.window = null;
+        // A slot the caller declined (SlotState.declined) that they now give a value is filled, no longer declined.
+        delete slot.declined;
         if (policy === 'by-confidence' && outcome.confirm === 'implicit') acks.push({ promptId: `ack_${spec.id}`, vars: { [spec.id]: outcome.display } });
         if (isNew) progress = true;
         break;
@@ -305,12 +337,20 @@ export function nextPrompt(session: Session): NextPrompt {
   return { kind: 'ask', slot, window: session.slots[slot]!.window };
 }
 
-/** The readback owed for the first filled, unconfirmed always-confirm slot, or null. */
+/**
+ * Whether the slot reads `value` back for a yes as soon as it is heard: every value of an
+ * always-confirm slot, and the values it lists to read back (SlotSpec.confirmValues) of any other.
+ */
+export function readsBack(spec: SlotSpec, value: string): boolean {
+  return spec.spokenConfirm === 'always' || (spec.confirmValues?.includes(value) ?? false);
+}
+
+/** The readback owed for the first filled, unconfirmed slot that reads its value back (readsBack), or null. */
 export function pendingSlotConfirmation(session: Session): Extract<PendingConfirmation, { target: 'slot' }> | null {
   const app = appOf(session);
   for (const id of requiredSlots(session)) {
     const s = session.slots[id]!;
-    if (s.value !== null && !s.confirmed && slotSpecOf(app, id).spokenConfirm === 'always') {
+    if (s.value !== null && !s.confirmed && readsBack(slotSpecOf(app, id), s.value)) {
       return { target: 'slot', slot: id, value: s.value, display: s.display ?? s.value };
     }
   }
@@ -341,5 +381,6 @@ export function applyDtmf(session: Session, buffer: string, ctx: SlotContext): D
   slot.display = parsed.display;
   slot.confirmed = true;
   slot.window = null;
+  delete slot.declined;
   return { kind: 'filled', slot: target, display: parsed.display };
 }

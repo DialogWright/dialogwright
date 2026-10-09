@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { defaultAppId, getApp } from '../core/app/registry';
 import { identityOf } from '../core/app/lookup';
+import { callerNumberSlots } from '../core/callerNumber';
+import { factsOfferSlots, greetingOfferSlots } from '../core/factsOffer';
 import type { App, CorpusSlotLabels, FormId, Intent, SlotId } from '../core/app/types';
 import { ENGINE_QUESTION_IDS } from '../core/questions';
 
@@ -11,7 +13,10 @@ export interface AnswerOverride {
 
 /**
  * The state an utterance is spoken in:
- * - `no_form`: the opener, nothing started and nobody verified;
+ * - `no_form`: the opener, nothing started and nobody verified; with `prompted` a slot that proposes at
+ *   the greeting (`offerAt: greeting`) and `confirm`, the greeting's proposal just made (atGreetingOffer);
+ *   with `confirm` and no `prompted`, in an app with app.yaml's `textConsent`, the consent question just
+ *   asked (atTextConsent);
  * - a form in progress, with a verified (level 2) caller whose facts are loaded, unless `prompted`
  *   is an identity factor, which seeds an anonymous caller mid step-up instead;
  * - `confirm_<form>`: the summary of a form that has one (report_missing);
@@ -48,13 +53,29 @@ const PINNABLE: ReadonlySet<string> = new Set([
  * A documented gap between an entry's label and what a real decision model does with it: why, and
  * the outcome fields the model is known to produce instead (the baseline's outcome with these
  * fields overlaid is the known outcome). Only that exact outcome is tolerated; anything else the
- * model does on the entry still fails the run.
+ * model does on the entry still fails the run. A borderline line the model reads one way in one
+ * recording and another way in the next gives `outcomes` instead, a few such pins: any one of them
+ * shown is tolerated.
  */
-export interface KnownGap {
+export type KnownGap = {
   /** one line: what the model reads, and what follows from it */
   reason: string;
-  /** the fields that differ from the baseline when the model shows the gap, each with the value it produces */
-  outcome: PinnedOutcome;
+} & (
+  | {
+      /** the fields that differ from the baseline when the model shows the gap, each with the value it produces */
+      outcome: PinnedOutcome;
+      outcomes?: never;
+    }
+  | {
+      /** each outcome the model is known to produce on the line, pinned as `outcome` is; any one of them is tolerated */
+      outcomes: PinnedOutcome[];
+      outcome?: never;
+    }
+);
+
+/** The outcomes a known gap tolerates: its one `outcome`, or each of its `outcomes`. */
+export function gapOutcomes(gap: KnownGap): PinnedOutcome[] {
+  return gap.outcomes ?? [gap.outcome!];
 }
 
 /** An identity factor a step-up asks for (App.identity.factorSlots); `prompted` may name one in any form context. */
@@ -86,7 +107,13 @@ export interface CorpusEntry {
   tentative?: boolean;
   /** in-form only: the utterance adds a task or replaces the current one; absent means answering */
   change?: 'adding' | 'replacing';
-  /** confirm_ and offer_transfer contexts only: how the utterance answers the question */
+  /**
+   * confirm_ and offer_transfer contexts only, the offer of the caller's number (a form context
+   * whose `prompted` slot offers it, atCallerOffer), the proposal at the greeting (no_form with
+   * `prompted` a slot that proposes there, atGreetingOffer), the consent to text for the whole call
+   * (no_form with no `prompted`, atTextConsent), and the caller-ID question (`prompted` the
+   * factor it asks for, atCallerMatch: `no` for "different account"): how the utterance answers the question
+   */
   confirm?: 'yes' | 'no' | 'unanswered';
   /**
    * confirm_ contexts only: the detail the caller names when asked what to change, without its new
@@ -150,6 +177,54 @@ export function contextForm(context: CorpusContext, app: App = corpusApp()): For
 }
 
 /** true for an identity factor named as the prompt: the entry seeds a step-up rather than a verified caller */
+/**
+ * An offer: of the number the caller is calling from (SlotSpec.callerNumber), or of a value proposed
+ * from the facts (a slot's `offer: facts`). An entry in a form's context whose `prompted` slot makes
+ * one and that says how it answers (`confirm`). Its state is the offer made, `offer_<slot>` just
+ * asked, the slot still empty.
+ */
+export function atCallerOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: CorpusContext } {
+  return entry.confirm !== undefined && entry.prompted !== undefined && contextForm(entry.context, app) !== null && confirmForm(entry.context, app) === null
+    && !offerTransfer(entry.context) && (callerNumberSlots(app).includes(entry.prompted) || factsOfferSlots(app).includes(entry.prompted));
+}
+
+/**
+ * The proposal made at the greeting (a slot's `offerAt: greeting`): an entry in the `no_form` context
+ * whose `prompted` slot proposes there and that says how it answers (`confirm`). Its state is the
+ * proposal just made, `offer_<slot>` after the greeting's line, no form open, the slot still empty: the
+ * entry answers it, with a yes, a no, a request, or a value of the caller's own.
+ */
+export function atGreetingOffer(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: 'no_form' } {
+  return entry.context === 'no_form' && entry.confirm !== undefined && entry.prompted !== undefined && greetingOfferSlots(app).includes(entry.prompted);
+}
+
+/**
+ * The consent to text for the whole call (app.yaml's `textConsent`): an entry in the `no_form` context
+ * that says how it answers (`confirm`) and names no `prompted`, in an app that asks it. Its state is the
+ * question just asked, `consent_texts` after the greeting's line, no form open: the entry answers it,
+ * with a yes, a no, or a request.
+ */
+export function atTextConsent(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: undefined; confirm: 'yes' | 'no' | 'unanswered'; context: 'no_form' } {
+  return entry.context === 'no_form' && entry.confirm !== undefined && entry.prompted === undefined && (app.textConsent?.covers.length ?? 0) > 0;
+}
+
+/**
+ * The caller-ID question (identity.yaml's `callerId`): an entry whose `prompted` is the first factor
+ * the match leaves to ask (the date of birth, say) and that says how it answers it (`confirm`: `no` for
+ * "different account" or a no, `unanswered` for the factor or anything else). Its state is the question
+ * just asked, the match in use and the identified factors empty: in a form's context, on a step-up for
+ * the form's entry call; in `no_form`, at the greeting, for an app that asks it there (`ask: greeting`).
+ * `yes` is no answer to it: the question asks for a factor, not a yes.
+ */
+export function atCallerMatch(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: CorpusContext } {
+  const callerId = app.identity?.callerId;
+  if (callerId === undefined || entry.confirm === undefined || entry.prompted === undefined) return false;
+  const first = identityOf(app).factorSlots.find((id) => !callerId.identifies.includes(id));
+  if (entry.prompted !== first) return false;
+  if (entry.context === 'no_form') return callerId.ask === 'greeting';
+  return contextForm(entry.context, app) !== null && confirmForm(entry.context, app) === null && !offerTransfer(entry.context);
+}
+
 export function promptsIdentity(entry: Pick<CorpusEntry, 'prompted'>, app: App = corpusApp()): entry is { prompted: IdentityPrompt } {
   return entry.prompted !== undefined && identityOf(app).factorSlots.includes(entry.prompted);
 }
@@ -163,16 +238,30 @@ const ENTRY_KEYS = new Set([
   'confirm', 'changeSlot', 'secondIntent', 'manipulation', 'answers', 'tags', 'as', 'labels', 'knownGap',
 ]);
 
-/** A known gap (CorpusEntry.knownGap): a reason, and at least one outcome field it pins. */
+/** A known gap (CorpusEntry.knownGap): a reason, and the outcome it pins or a list of a few, each pinning at least one field. */
 function checkKnownGap(entry: CorpusEntry, gap: unknown): void {
-  const shape = `corpus ${entry.id}: knownGap must be { reason, outcome }, a one-line reason and the outcome fields the model is known to produce`;
+  const shape = `corpus ${entry.id}: knownGap must be { reason, outcome } or { reason, outcomes }, a one-line reason and the outcome fields the model is known to produce (outcomes: a list of them, any one allowed)`;
   if (typeof gap !== 'object' || gap === null || Array.isArray(gap)) throw new Error(shape);
-  const { reason, outcome, ...rest } = gap as Record<string, unknown>;
+  const { reason, outcome, outcomes, ...rest } = gap as Record<string, unknown>;
   if (Object.keys(rest).length > 0) throw new Error(`${shape}; unknown key ${Object.keys(rest)[0]}`);
   if (typeof reason !== 'string' || reason.trim() === '') throw new Error(`${shape}; the reason is missing`);
-  if (typeof outcome !== 'object' || outcome === null || Array.isArray(outcome) || Object.keys(outcome).length === 0) throw new Error(`${shape}; the outcome pins no field`);
+  if (outcome !== undefined && outcomes !== undefined) throw new Error(`corpus ${entry.id}: knownGap takes outcome or outcomes, not both`);
+  if (outcomes !== undefined) {
+    if (!Array.isArray(outcomes) || outcomes.length === 0) throw new Error(`${shape}; outcomes must be a list of at least one outcome`);
+    outcomes.forEach((o, i) => checkPinned(entry, o, `knownGap.outcomes[${i}]`, shape));
+    return;
+  }
+  if (outcome === undefined) throw new Error(`${shape}; the outcome pins no field: give outcome, or outcomes (a list of the outcomes it may show)`);
+  checkPinned(entry, outcome, 'knownGap.outcome', shape);
+}
+
+/** One pinned outcome of a known gap: an object of at least one outcome field. */
+function checkPinned(entry: CorpusEntry, outcome: unknown, where: string, shape: string): void {
+  if (typeof outcome !== 'object' || outcome === null || Array.isArray(outcome) || Object.keys(outcome).length === 0) {
+    throw new Error(`${shape}; ${where === 'knownGap.outcome' ? 'the outcome' : where} pins no field`);
+  }
   for (const key of Object.keys(outcome)) {
-    if (!PINNABLE.has(key)) throw new Error(`corpus ${entry.id}: knownGap.outcome pins ${key}, which is not an outcome field (${[...PINNABLE].join(', ')})`);
+    if (!PINNABLE.has(key)) throw new Error(`corpus ${entry.id}: ${where} pins ${key}, which is not an outcome field (${[...PINNABLE].join(', ')})`);
   }
 }
 
@@ -243,7 +332,7 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     // prompted names a slot on a form already in progress (for the offer, the question the caller
     // was on when it was made), or an identity factor a step-up is asking for in any form; a
     // summary has no "prompted slot" of its own.
-    if (entry.prompted !== undefined) {
+    if (entry.prompted !== undefined && !atGreetingOffer(entry, app) && !(entry.context === 'no_form' && atCallerMatch(entry, app))) {
       if (cf !== null || form === null) throw new Error(`corpus ${entry.id}: prompted needs a form context, not ${entry.context}`);
       const identity = promptsIdentity(entry, app);
       if (identity && offering) throw new Error(`corpus ${entry.id}: prompted ${entry.prompted} needs a form context, not ${entry.context}`);
@@ -265,7 +354,8 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     }
     if (entry.confirm !== undefined) {
       if (!['yes', 'no', 'unanswered'].includes(entry.confirm)) throw new Error(`corpus ${entry.id}: confirm must be yes, no, or unanswered`);
-      if (cf === null && !offering) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context`);
+      if (cf === null && !offering && !atCallerOffer(entry, app) && !atGreetingOffer(entry, app) && !atCallerMatch(entry, app) && !atTextConsent(entry, app)) throw new Error(`corpus ${entry.id}: confirm needs a confirm_ or offer_transfer context, or a form context whose prompted slot offers the caller's number (callerNumber), or no_form with prompted a slot that proposes at the greeting (offerAt: greeting), or prompted the factor the caller-ID question asks for (identity.yaml callerId), or no_form with no prompted in an app that asks consent to text (app.yaml textConsent)`);
+      if (atCallerMatch(entry, app) && entry.confirm === 'yes') throw new Error(`corpus ${entry.id}: the caller-ID question asks for a factor, not a yes: confirm no ("different account") or unanswered (the factor, or anything else)`);
     }
     if (entry.changeSlot !== undefined) {
       if (cf === null) throw new Error(`corpus ${entry.id}: changeSlot needs a confirm_ context`);

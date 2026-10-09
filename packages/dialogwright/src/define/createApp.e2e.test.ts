@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -31,10 +32,27 @@ function link(app: string): void {
   symlinkSync(tool('@types', 'node'), join(app, 'node_modules', '@types', 'node'));
 }
 
+/** This test run's environment for a child: no vitest variables, no colour, and a short TMPDIR. */
+function childEnv(): NodeJS.ProcessEnv {
+  // TMPDIR short, since tsx opens a socket under it (../testing/shortTmp.ts).
+  return withShortTmp({ ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('VITEST') && key !== 'FORCE_COLOR')), NO_COLOR: '1' });
+}
+
+/**
+ * Runs a node script in `cwd` that is expected to exit with any code, with none of the model's
+ * settings from this run's own environment (so only the app's `.env` gives any), and returns its code
+ * and what it printed on each stream.
+ */
+function nodeRun(cwd: string, script: string, args: string[]): { code: number | null; stdout: string; stderr: string } {
+  const env = Object.fromEntries(Object.entries(childEnv()).filter(([key]) => !/^(ENV_FILE|JEV_|TYPESAFE_|OPENROUTER_|AI_GATEWAY_)/.test(key)));
+  const r = spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: 'utf8', timeout: 120_000 });
+  const plain = (t: string) => t.replace(/\u001b\[[0-9;]*m/g, '');
+  return { code: r.status, stdout: plain(r.stdout ?? ''), stderr: plain(r.stderr ?? '') };
+}
+
 /** Runs a node script in `cwd`, outside this test run's own vitest, and returns what it printed. */
 function node(cwd: string, script: string, args: string[]): string {
-  // TMPDIR short, since tsx opens a socket under it (../testing/shortTmp.ts).
-  const env = withShortTmp({ ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('VITEST') && key !== 'FORCE_COLOR')), NO_COLOR: '1' });
+  const env = childEnv();
   try {
     // Without colour codes, which a CI run turns on whatever is asked, so the output can be read as text.
     return execFileSync(process.execPath, [script, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 }).replace(/\u001b\[[0-9;]*m/g, '');
@@ -48,7 +66,7 @@ describe('a scaffolded app, end to end', () => {
   it.each([
     { name: 'plain-demo', identity: false },
     { name: 'identity-demo', identity: true },
-  ])('$name passes check, typecheck, its tests and its stub regression as created', async ({ name, identity }) => {
+  ])('$name passes check, typecheck, its tests and its stub regression as created, and its recorded launchers run', async ({ name, identity }) => {
     const base = mkdtempSync(join(SHORT_TMP, 'dialogwright-scaffold-'));
     scratch.push(base);
     const app = join(base, name);
@@ -79,5 +97,22 @@ describe('a scaffolded app, end to end', () => {
     const regress = node(app, tool('tsx', 'dist', 'cli.mjs'), ['src/regress.ts']);
     expect(regress).toContain('no changes');
     expect(regress).toMatch(/scenarios\s+4\/4 pass expectation,\s+4\/4 match expected/);
+    // Against a cassette, the run reads the app's own .env as `pnpm start` does: here it names a model
+    // with no cassette, so the replay looks for that model's file, says where the settings came from
+    // (never a value), and every turn misses.
+    writeFileSync(join(app, '.env'), "JEV_MODEL=example-model-from-env\nEXAMPLE_NOTE='two words'\n");
+    const replay = nodeRun(app, tool('tsx', 'dist', 'cli.mjs'), ['src/regress.ts', '--client', 'recorded']);
+    expect(replay.code, replay.stdout + replay.stderr).toBe(1);
+    expect(replay.stderr).toContain(`settings from ${join(realpathSync(app), '.env')} (2 set)`);
+    expect(replay.stdout).toContain('model example-model-from-env from typesafe, replayed from its cassette');
+    expect(replay.stdout).toContain('example-model-from-env.jsonl (not found; every turn will miss until recorded)');
+    expect(replay.stdout).toMatch(/cassette misses \d+/);
+    rmSync(join(app, '.env'));
+    // `pnpm --filter ... cassette:trim`: the launcher runs; the scaffold has no cassette yet, so every
+    // request misses and it writes nothing.
+    const trim = nodeRun(app, tool('tsx', 'dist', 'cli.mjs'), ['src/cassetteTrim.ts']);
+    expect(trim.code, trim.stdout + trim.stderr).toBe(1);
+    expect(trim.stderr).toMatch(/jev-1\.13\.0\.jsonl: \d+ requests missed; re-record the cassette .* Nothing written\./);
+    expect(existsSync(join(app, 'fixtures', 'recorded'))).toBe(false);
   }, 240_000);
 });

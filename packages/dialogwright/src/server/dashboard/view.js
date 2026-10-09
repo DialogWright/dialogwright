@@ -50,6 +50,9 @@ const CONFIRM_IDS = new Set(['confirmsYes', 'confirmsNo', 'changeSlot']);
 const DECIDED_ALIAS = {
   menuNumber: ['menuNumberSaid'],
   intentMargin: ['intent'],
+  // A priority intent read strongly enough to take the turn (gates.ts priorityIntent): the intent
+  // answer is what decided, whichever gate it took the turn from.
+  priorityIntent: ['intent'],
 };
 
 /**
@@ -361,6 +364,8 @@ function pendingLine(pending) {
     return `confirm · summary (${named})${attempts}`;
   }
   if (pending.target === 'intent') return `confirm · ${named}`;
+  // A check's refusal read back before it acts (the session's shape: its action and the gate's reason).
+  if (pending.target === 'check') return `confirm · check ${pending.action ?? '?'}${pending.reason ? ` (${pending.reason})` : ''}`;
   const value = pending.display ?? pending.value ?? '';
   return `confirm · ${named}${value ? ` → ${value}` : ''}`;
 }
@@ -510,9 +515,14 @@ function sourceOf(kb) {
   };
 }
 
-/** A handoff's collected slots (already display-safe; redactRecordSlots masked identity before this), one line each. */
-function packetOf(slots) {
-  return Object.entries(slots ?? {}).map(([k, v]) => `${k}: ${v}`);
+/**
+ * A handoff's collected slots (already display-safe; redactRecordSlots masked identity before this), one
+ * line each. A slot the caller never confirmed (the decision's `unconfirmed`, only for an app whose
+ * handoff data marks or leaves those out) says so: "howUrgent: right away (not confirmed)".
+ */
+function packetOf(slots, unconfirmed) {
+  const marked = new Set(Array.isArray(unconfirmed) ? unconfirmed : []);
+  return Object.entries(slots ?? {}).map(([k, v]) => (marked.has(k) ? `${k}: ${v} (not confirmed)` : `${k}: ${v}`));
 }
 
 /** One audit entry as a console line: "gate(tool=lookUp, verdict=BLOCK, ...)". No PHI to hide (core/audit.ts). */
@@ -585,18 +595,24 @@ function steppingUp(promptedFor) {
   return promptedFor === 'otp' || META.stepUp.includes(promptedFor);
 }
 
+/** What an identifier of four digits or fewer is shown as, its last four being all of it (gate/principal.ts SHORT_MASK). */
+export const SHORT_MASK = '••••';
+
 /**
  * One NOW chip's value, never an identifier in full (ConsoleMeta.chipStyle): an identifier only by
- * its last four (the record's display is already `...1234`; anything else is masked again here), a
+ * its last four (the record's display is already `...1234`, or `••••` for one of four digits or
+ * fewer; anything else is masked again here, a short one to `••••`), a
  * verified factor only as given or verified, the caller's own words only as recorded (live they
  * are the words, in replay their length), and a slot shown as said by its written value.
  */
-function nowChipLabel(id, s, level) {
+export function nowChipLabel(id, s, level) {
   const style = Object.hasOwn(META.chipStyle, id) ? META.chipStyle[id] : null;
   if (s.value) {
     if (style === 'last4') {
       const shown = String(s.display ?? s.value);
-      return /^(\.\.\.|…)\d{4}$/.test(shown) ? shown : `…${shown.replace(/\D/g, '').slice(-4)}`;
+      if (shown === SHORT_MASK || /^(\.\.\.|…)\d{4}$/.test(shown)) return shown;
+      const digits = shown.replace(/\D/g, '');
+      return digits.length <= 4 ? SHORT_MASK : `…${digits.slice(-4)}`;
     }
     if (style === 'verified') return level >= 1 ? 'verified' : 'given';
     if (style === 'recorded') return 'recorded';
@@ -625,6 +641,7 @@ function nowAskingOf(record, thresholds) {
   if (p) {
     if (p.target === 'form') return 'confirming the summary with the caller';
     if (p.target === 'intent') return `confirming: ${formLabel(p.intent ?? p.form).toLowerCase() || 'the request'}`;
+    if (p.target === 'check') return `confirming before ${p.action ?? 'a check'} refuses${p.reason ? ` (${p.reason})` : ''}`;
     const name = ((p.slot != null ? slotName(p.slot) : null) ?? p.slot ?? 'a value').toLowerCase();
     return `confirming ${name}${p.display ? ` → ${p.display}` : ''}`;
   }
@@ -678,6 +695,17 @@ function factOf(record, prevSlots, prev) {
     if (rule) fact = ruleFact(rule, record, prevSlots, prev, det);
   }
   return fact;
+}
+
+/**
+ * The form a check ended on this turn, from its `form_stopped` audit draft (core/audit.ts), as the
+ * NOW panel says it: "stopped: checkOwner, not-owner". Null on every other turn.
+ */
+function stoppedOf(drafts) {
+  const d = (drafts ?? []).find((x) => x.type === 'form_stopped');
+  if (!d) return null;
+  const det = d.detail ?? {};
+  return `stopped: ${det.action}${det.reason ? `, ${det.reason}` : ''}`;
 }
 
 function emptyNow() {
@@ -828,7 +856,7 @@ export function reduce(events, opts) {
         // audit event, so the row cannot assert a seq or a hash it was never actually chained with.
         if (fromTrace && r.audit && r.audit.length) pushAuditDrafts(v, r.audit);
         if (r.kb) v.source = sourceOf(r.kb);
-        if (r.decision.kind === 'handoff') v.handoff = { reason: r.decision.reason, summary: null, summaryPending: true, summaryDemo: false, packet: packetOf(r.decision.slots) };
+        if (r.decision.kind === 'handoff') v.handoff = { reason: r.decision.reason, summary: null, summaryPending: true, summaryDemo: false, packet: packetOf(r.decision.slots, r.decision.unconfirmed) };
         // `turnIndex` is already 1-based (the greeting is turn 1) and repeats on an ignored turn.
         v.turnCount = Math.max(v.turnCount, r.turnIndex);
         v.form = r.form;
@@ -845,6 +873,7 @@ export function reduce(events, opts) {
           chips: nowChipsOf(r.slots, r.form ?? null, r.promptedFor ?? null, v.level),
           asking: nowAskingOf(r, v.thresholds),
           queued: (r.queued ?? []).map((f) => formLabel(f).toLowerCase()),
+          stopped: stoppedOf(r.audit),
         };
         prevSlots = r.slots;
         v.pending = pendingLine(r.pendingConfirmation);
@@ -994,6 +1023,8 @@ function nowOf(v, task, completed, facts, transfer) {
   const done = completed.length ? [...new Set(completed.map(formLabel))].join(', ') : null;
   now.completedLabel = done;
   now.queued = task?.queued ?? [];
+  // A check ended the form on the latest turn (only then is the field there at all).
+  if (task?.stopped) now.stopped = task.stopped;
   if (v.handoff || transfer) {
     const reason = v.handoff?.reason ?? transfer.reason;
     now.state = 'handoff';

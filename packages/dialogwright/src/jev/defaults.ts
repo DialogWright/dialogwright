@@ -15,6 +15,7 @@ export const QUIET_NOUL: Record<string, number> = {
   triedSelfService: 0.1,
   confirmsYes: 0.1,
   confirmsNo: 0.1,
+  callerMatchDeclined: 0.05,
   intentTentative: 0.05,
   manipulation: 0.04,
 };

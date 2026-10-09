@@ -3,6 +3,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { withParentKey } from '../testing/docBlocks';
 import type { z } from 'zod';
 import { appSchema, intentsSchema } from './schema';
 
@@ -22,7 +23,7 @@ import { appSchema, intentsSchema } from './schema';
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
-/** The markdown files whose examples an author copies: the repository's docs, READMEs and CONTRIBUTING. */
+/** The markdown files whose examples an author copies: the repository's docs, READMEs and CONTRIBUTING, and the create-app skill's pages. */
 function docFiles(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -36,6 +37,7 @@ function docFiles(): string[] {
   walk(join(ROOT, 'docs'));
   walk(join(ROOT, 'apps'));
   walk(join(ROOT, 'packages/widget'));
+  walk(join(ROOT, '.claude', 'skills'));
   for (const file of ['README.md', 'CONTRIBUTING.md', 'CLAUDE.md']) out.push(join(ROOT, file));
   return out;
 }
@@ -82,14 +84,15 @@ function blocksOf(file: string): Block[] {
   const text = readFileSync(file, 'utf8');
   const out: Block[] = [];
   for (const m of text.matchAll(/```ya?ml\n([\s\S]*?)```/g)) {
+    const body = withParentKey(m[1]!);
     let value: unknown;
     try {
-      value = parse(m[1]!);
+      value = parse(body);
     } catch {
       continue;
     }
     const where = `${relative(ROOT, file)}:${text.slice(0, m.index).split('\n').length}`;
-    for (const piece of piecesOf(m[1]!, value)) out.push({ ...piece, where });
+    for (const piece of piecesOf(body, value)) out.push({ ...piece, where });
   }
   return out;
 }
@@ -120,6 +123,12 @@ describe('the app.yaml and intents.yaml in the docs', () => {
     // A Twilio voice with its own provider is shown, as well as a name alone.
     expect(Object.values(locales).some((l) => isMap(l.voices?.twilio))).toBe(true);
     expect(guide('intents').some((b) => isMap(b.value.intents) && Object.values(b.value.intents).some((i) => isMap(i) && typeof i.locale === 'string'))).toBe(true);
+  });
+
+  it('is found in the create-app skill too, its pieces under a key read with the key', () => {
+    const skill = blocks.filter((b) => b.where.startsWith('.claude/skills/create-app/'));
+    expect(skill.some((b) => b.kind === 'app')).toBe(true);
+    expect(skill.some((b) => b.kind === 'intents')).toBe(true);
   });
 
   it('reads, every block of it, as written', () => {

@@ -1,0 +1,158 @@
+# yaml-language-server: $schema=../../../schemas/prompts.schema.json
+# Every line a caller can hear, word for word. The agent says exactly these and never composes its
+# own. Braces are filled in by the engine ({intentLabel}) or by the code ({service}); `interruptible`
+# says whether a caller may talk over it. `pnpm check` lists any line the engine needs that is
+# missing here.
+prompts:
+  # The opening lines and the engine's own lines
+  greeting:
+    text: Thanks for calling Example Home Visits. I can book a free visit. How can I help?
+    interruptible: true
+  greeting_chat:
+    text: Hi, this is Example Home Visits. I can book a free visit. What can I help with?
+    interruptible: true
+  ask_intent:
+    text: How can I help you today?
+    interruptible: true
+  nomatch_open:
+    text: Sorry, I didn't catch that. You can ask to book a free visit.
+    interruptible: true
+  nomatch_dtmf_menu:
+    text: Let's try the keypad. To book a free visit press 1. To speak with someone press 0.
+    interruptible: true
+  no_input:
+    text: I didn't hear anything.
+    interruptible: false
+  ack_intent:
+    text: Sure, I can help you {intentLabel}.
+    interruptible: false
+  confirm_intent_explicit:
+    text: Just to check, do you want to {intentLabel}? Yes or no.
+    interruptible: false
+  disambiguate_intent:
+    text: Do you want to {a}, or {b}?
+    interruptible: true
+  ack_intent_then:
+    text: Sure, I can help you {a}, and then {b}.
+    interruptible: false
+  ack_queued:
+    text: Sure, we'll {intentLabel} after this.
+    interruptible: false
+  bridge_next:
+    text: Now, let's {intentLabel}.
+    interruptible: false
+  ack_frustration:
+    text: I understand, let's get this sorted.
+    interruptible: false
+  offer_transfer:
+    text: Would you like me to connect you to a person, or keep going?
+    interruptible: true
+  ack_declined:
+    text: Okay, let's keep going.
+    interruptible: false
+  system_slow_dtmf_hint:
+    text: Sorry for the delay. You can also use your keypad.
+    interruptible: true
+  system_slow_chat:
+    text: Sorry, I'm having trouble on my end. Please send that again.
+    interruptible: true
+  ask_change:
+    text: What should I change?
+    interruptible: true
+  confirm_dtmf:
+    text: Press 1 to confirm, or 2 to change something.
+    interruptible: false
+  anything_else:
+    text: Is there anything else I can help with?
+    interruptible: true
+  goodbye:
+    text: Goodbye.
+    interruptible: false
+  goodbye_chat:
+    text: Thanks for chatting with Example Home Visits. Goodbye.
+    interruptible: false
+  screen_reprompt:
+    text: I can help you book a free visit.
+    interruptible: true
+  screen_reprompt_form:
+    text: Let's keep going.
+    interruptible: true
+  handoff_live_agent:
+    text: One moment while I connect you to a person.
+    interruptible: false
+  handoff_frustrated:
+    text: Let me get you to someone who can help.
+    interruptible: false
+  handoff_max_attempts:
+    text: Let me get someone to help you with that.
+    interruptible: false
+  handoff_system_failure:
+    text: I'm having trouble right now. Let me connect you to someone.
+    interruptible: false
+  handoff_needs_human:
+    text: This one needs a person. Let me connect you to someone.
+    interruptible: false
+  handoff_security:
+    text: Let me connect you to someone who can help.
+    interruptible: false
+
+  handoff_urgent:
+    text: That sounds urgent. I'm putting you through to our office right now.
+    interruptible: false
+
+  # The slots
+  ask_problem:
+    text: What's the problem with the home, a leak, a crack, or a draft?
+    interruptible: true
+  ask_problem_retry:
+    text: Sorry, is it a leak, a crack, or a draft?
+    interruptible: true
+  ask_ownership:
+    text: Do you own the home, or rent it?
+    interruptible: true
+  ask_ownership_retry:
+    text: Sorry, do you own the home or rent it?
+    interruptible: true
+  ask_town:
+    text: Which town is the home in?
+    interruptible: true
+  ask_town_retry:
+    text: Sorry, which town is that? We work in Millbrook, Cedar Falls, Ashford and Riverton.
+    interruptible: true
+  ask_howUrgent:
+    text: How soon does it need looking at?
+    interruptible: true
+  ask_howUrgent_retry:
+    text: Sorry, is it urgent, soon, or whenever suits?
+    interruptible: true
+  ask_visitDay:
+    text: Which day suits you, Monday, Wednesday or Saturday?
+    interruptible: true
+  ask_visitDay_retry:
+    text: Sorry, Monday, Wednesday or Saturday?
+    interruptible: true
+  ask_timeOfDay:
+    text: The morning or the afternoon?
+    interruptible: true
+  ask_timeOfDay_retry:
+    text: Sorry, the morning or the afternoon?
+    interruptible: true
+
+  # The checks: what a caller the visit is not for hears, and the line once the home qualifies
+  decline_renter:
+    text: Thank you for calling. Our visits are for homeowners, so I'm sorry we can't help with a rented home, but the owner is welcome to call us.
+    interruptible: false
+  decline_out_of_area:
+    text: Thank you for calling. We only work in Millbrook, Cedar Falls, Ashford and Riverton, so I'm sorry we can't help with a home outside them.
+    interruptible: false
+  visit_qualifies:
+    text: Good news, we work in {town}, and the visit is free.
+    interruptible: false
+
+  # The form: the summary read back for a yes, and the line the booking says
+  confirm_book_visit:
+    text: A free visit about {problem} in {town}, on {visitDay} in {timeOfDay}. Shall I book it?
+    interruptible: true
+  visit_booked:
+    text: Done. Your visit is booked for {visitDay} in {timeOfDay}.
+    interruptible: false

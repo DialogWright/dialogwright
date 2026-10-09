@@ -1,6 +1,7 @@
 import { describeWindow } from '../../core/extract/date';
 import type { SlotPartial, SlotPrompt } from '../../core/slots/types';
 import { examplesFrom } from '../parts/examples';
+import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { dateDisplay } from './display';
@@ -33,6 +34,7 @@ function promptsOf(id: string, o: DateOptions): SlotPrompt[] {
   if (o.windows) prompts.push({ id: narrowPromptOf(id, o), why: 'the caller named a span of days without the day (the partialPromptId), said as {window}', vars: ['window'] });
   if (o.confirm === 'by-confidence') prompts.push({ id: `ack_${id}`, why: 'it acknowledges a day it is less sure of', vars: [id] });
   if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: 'it asks for the day on the keypad, as four digits (month then day; in Spanish day then month), after spoken answers missed' });
+  prompts.push(...readBackPrompts(id, o.confirm));
   return prompts;
 }
 
@@ -51,7 +53,7 @@ export const dateType: SlotType<DateOptions> = defineSlotType<DateOptions>({
     const display = dateDisplay();
     return {
       id,
-      spokenConfirm: o.confirm,
+      ...readBackOf(o.confirm),
       valueKind: 'date',
       ...(o.windows ? { partialPromptId: narrowPromptOf(id, o), partialVars } : {}),
       questionIds: questionIdsOf(id, o),

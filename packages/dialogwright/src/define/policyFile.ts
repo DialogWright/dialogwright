@@ -87,6 +87,15 @@ export function readRule(entry: RuleEntryYaml): Rule {
       ...(verdicts !== undefined ? { verdicts } : {}),
     };
   }
+  if ('oneOf' in entry || 'noneOf' in entry) {
+    const which = 'oneOf' in entry ? 'oneOf' : 'noneOf';
+    const { field, values, reason, verdict } = 'oneOf' in entry ? entry.oneOf : entry.noneOf;
+    return { rule: which, field, values: Object.freeze([...values]), ...(reason !== undefined ? { reason } : {}), ...(verdict !== undefined ? { verdict } : {}) };
+  }
+  if ('callerNumber' in entry) {
+    const { field, else: otherwise } = entry.callerNumber;
+    return { rule: 'callerNumber', field, ...(otherwise !== undefined ? { else: otherwise } : {}) };
+  }
   return { rule: 'custom', id: entry.custom };
 }
 
@@ -180,7 +189,7 @@ export function compilePolicy(file: PolicyYaml, options: CompilePolicyOptions = 
     const rules = Object.freeze(action.rules.map((entry) => Object.freeze(readRule(entry))));
     toolLevel[tool] = level;
     rulesFor[tool] = Object.freeze(rules.map(ruleIdOf));
-    actions[tool] = Object.freeze(action.say === undefined ? { level, rules } : { say: action.say, level, rules });
+    actions[tool] = Object.freeze({ ...(action.say === undefined ? {} : { say: action.say }), ...(action.check === true ? { check: true as const } : {}), level, rules });
     for (const rule of rules) {
       if (rule.rule === 'scope' && rule.subject !== null) subjects[tool] = rule.subject;
       else if (rule.rule === 'fields') serviceFields[tool] = rule.fields;
@@ -269,6 +278,20 @@ export function slotRedactOf(slots: Readonly<Record<string, unknown>>): Record<s
   return out;
 }
 
+/**
+ * Each choice slot's option ids (a library `choice` slot: its configuration's options), by slot id,
+ * read from slots that may be wrong: a slot of another type, or with no options map, is left out.
+ */
+export function slotChoicesOf(slots: Readonly<Record<string, unknown>>): Record<string, readonly string[]> {
+  const out: Record<string, readonly string[]> = {};
+  for (const [id, spec] of Object.entries(slots)) {
+    if (typeof spec !== 'object' || spec === null || (spec as { type?: unknown }).type !== 'choice') continue;
+    const options = (spec as { config?: { options?: unknown } }).config?.options;
+    if (typeof options === 'object' && options !== null && !Array.isArray(options)) out[id] = Object.keys(options);
+  }
+  return out;
+}
+
 /** The fields a tool declares (ToolDef.fields), read from code that may be wrong: none unless it is a list of strings. */
 export function declaredFields(tool: unknown): readonly string[] {
   const fields = typeof tool === 'object' && tool !== null ? (tool as { fields?: unknown }).fields : undefined;
@@ -324,6 +347,7 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
   }
   if (options.sendCodeParams !== undefined) identity.sendCodeParams = options.sendCodeParams;
   if (one.failedPrompt !== undefined) identity.failedPromptId = one.failedPrompt;
+  if (one.callerId !== undefined) identity.callerId = Object.freeze({ identifies: Object.freeze([...one.callerId.identifies]), ask: one.callerId.ask ?? 'on-need' });
   if (two) identity.codeLength = two.factors[0]?.otp.length ?? DEFAULT_CODE_LENGTH;
   identity.levelNames = Object.freeze(two ? { 1: one.name, 2: two.name } : { 1: one.name });
   if (file.signIn) identity.signInLevel = file.signIn.level;
@@ -392,6 +416,11 @@ export interface PolicyCheckInput {
   customRules?: readonly string[];
   /** The lookups the code declares for the range rules' references (AppCode.lookups). */
   lookups?: readonly string[];
+  /**
+   * Each choice slot's option ids, by slot id: a list rule (oneOf, noneOf) on a param of a choice
+   * slot's name lists only those. Left out: not checked.
+   */
+  slotChoices?: Readonly<Record<string, readonly string[]>>;
   /** The prompt ids of the default locale. */
   prompts?: readonly string[];
   /** Whether a form has a confirmedParams hook (so something is ever confirmed). */
@@ -471,8 +500,25 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
     }
   };
 
+  /**
+   * The params an action sends, where its rules close them (a fields or confirmed rule), else the
+   * params its tool lists (ToolDef.params), with how a problem says so and where a param is added: a
+   * param outside them can never reach the gate with a value, so a rule on it could never pass. A
+   * check's params are the slots its forms send (formChecks.ts checks those).
+   */
+  const sentBy = (tool: string, rules: readonly Rule[]) => {
+    const listed = c.toolParams && has(c.toolParams, tool) ? c.toolParams[tool] : null;
+    const sent = paramsOf(rules) ?? (listed ? { params: listed, from: 'params' } : null);
+    const lists = sent ? (sent.from === 'params' ? `its tool lists ${sent.params.join(', ') || 'none'}` : `its ${sent.from} rule lists ${sent.params.join(', ') || 'none'}`) : '';
+    const addTo = (param: string): string => (sent?.from === 'params' ? `add "${param}" to ${c.inCode('tools', tool, 'params')}` : `add "${param}" to its ${sent?.from} rule`);
+    return { sent, lists, addTo };
+  };
+
   for (const [tool, action] of Object.entries(policy.actions)) {
-    if (c.tools && !c.tools.includes(tool)) at(P, ['actions', tool], `tool "${tool}" is not defined in the code`, `${renameHint(tool, c.tools)}add it to the app's tools in ${c.inCode('tools', tool)}, or delete this action`, true);
+    // A check (`check: true`) is a question to the gate only: it has no tool, and must have none.
+    if (action.check === true) {
+      if (c.tools && c.tools.includes(tool)) at(P, ['actions', tool, 'check'], `action "${tool}" is a check, which has no tool, but the code defines a tool "${tool}"`, `delete the tool from ${c.inCode('tools', tool)}, since a check runs nothing, or delete "check: true" to make it an action with a tool`);
+    } else if (c.tools && !c.tools.includes(tool)) at(P, ['actions', tool], `tool "${tool}" is not defined in the code`, `${renameHint(tool, c.tools)}add it to the app's tools in ${c.inCode('tools', tool)}, or delete this action`, true);
     const given = action.level !== undefined;
     levelProblem(`action "${tool}"`, action.level ?? DEFAULT_ACTION_LEVEL, given ? ['actions', tool, 'level'] : ['actions', tool], given);
     action.rules.forEach((entry, i) => {
@@ -513,16 +559,40 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
         case 'attempts':
           if (!identity) at(P, path, 'the attempts rule counts failed tries at the identity checks, but the app has no identity.yaml, so there are none', 'delete the rule, or add identity.yaml');
           break;
+        case 'oneOf':
+        case 'noneOf': {
+          const rulePath: DataPath = [...path, rule.rule];
+          const { sent, lists, addTo } = sentBy(tool, action.rules.map(readRule));
+          if (sent && !sent.params.includes(rule.field)) at(P, [...rulePath, 'field'], `"${rule.field}" is not a param "${tool}" sends (${lists})`, `${renameHint(rule.field, sent.params)}name one of those, or ${addTo(rule.field)}`);
+          // A param of a choice slot's name carries one of its option ids: a value that is not one never matches.
+          const options = c.slotChoices && has(c.slotChoices, rule.field) ? c.slotChoices[rule.field]! : null;
+          if (options) {
+            rule.values.forEach((value, j) => {
+              if (options.includes(value)) return;
+              at(P, [...rulePath, 'values', j], `"${value}" is not an option of the choice slot "${rule.field}" (${options.join(', ')}), so the param never carries it`, `${renameHint(value, options)}list the option's id as slots.yaml has it, or add "${value}" to the slot's options`);
+            });
+          }
+          break;
+        }
+        case 'callerNumber': {
+          const rulePath: DataPath = [...path, 'callerNumber'];
+          const read = action.rules.map(readRule);
+          const { sent, lists, addTo } = sentBy(tool, read);
+          const unsent = sent !== null && !sent.params.includes(rule.field);
+          if (unsent) at(P, [...rulePath, 'field'], `"${rule.field}" is not a param "${tool}" sends (${lists})`, `${renameHint(rule.field, sent.params)}name one of those, or ${addTo(rule.field)}`);
+          // A number other than the caller's passes only once the caller heard it whole and said yes:
+          // the action's confirmed rule must cover it, or nothing is ever confirmed for it.
+          if (rule.else === 'confirmed' && !unsent) {
+            const confirmedRule = read.find((r): r is Extract<Rule, { rule: 'confirmed' }> => r.rule === 'confirmed');
+            if (confirmedRule === undefined) at(P, [...rulePath, 'else'], `the callerNumber rule of "${tool}" passes a number the caller confirmed, but the action has no confirmed rule, so no number but the caller's own ever passes`, `add "- confirmed: [..., ${rule.field}]" to the action, with the fields its summary reads back, or delete "else: confirmed"`);
+            else if (!confirmedRule.fields.includes(rule.field)) at(P, [...rulePath, 'else'], `the callerNumber rule of "${tool}" passes a number the caller confirmed, but its confirmed rule does not name "${rule.field}", so the caller never confirmed it`, `add "${rule.field}" to the action's confirmed rule (and to the form's confirmedParams, with a summary that reads {${rule.field}} back), or delete "else: confirmed"`);
+          }
+          break;
+        }
         case 'dateInRange':
         case 'limit': {
           const rulePath: DataPath = [...path, rule.rule];
-          // The params the action sends, where its rules close them (a fields or confirmed rule), else
-          // the params its tool lists (ToolDef.params): a param outside them can never reach the gate
-          // with a value, so the rule could never pass.
-          const listed = c.toolParams && has(c.toolParams, tool) ? c.toolParams[tool] : null;
-          const sent = paramsOf(action.rules.map(readRule)) ?? (listed ? { params: listed, from: 'params' } : null);
-          const lists = sent ? (sent.from === 'params' ? `its tool lists ${sent.params.join(', ') || 'none'}` : `its ${sent.from} rule lists ${sent.params.join(', ') || 'none'}`) : '';
-          const addTo = (param: string): string => (sent?.from === 'params' ? `add "${param}" to ${c.inCode('tools', tool, 'params')}` : `add "${param}" to its ${sent?.from} rule`);
+          const { sent, lists, addTo } = sentBy(tool, action.rules.map(readRule));
           if (sent && !sent.params.includes(rule.field)) at(P, [...rulePath, 'field'], `"${rule.field}" is not a param "${tool}" sends (${lists})`, `${renameHint(rule.field, sent.params)}name one of those, or ${addTo(rule.field)}`);
           // A bound read through a lookup is about the record its param names: that param is held to
           // the caller's own records by a scope rule before this one, or the rule says its lookups are
@@ -637,7 +707,7 @@ function ruleParams(rule: Rule, path: DataPath): { param: string; path: DataPath
     case 'scope': return rule.subject === null ? [] : [{ param: rule.subject.param, path: [...path, 'scope', rule.subject.via === 'record' ? 'record' : 'param'], rule: 'scope' }];
     case 'confirmed':
     case 'fields': return rule.fields.map((param, i) => ({ param, path: [...path, rule.rule, i], rule: rule.rule }));
-    // A range rule's params are checked where it is (policyProblems), against the params the action sends.
+    // A range or list rule's param is checked where it is (policyProblems), against the params the action sends.
     default: return [];
   }
 }

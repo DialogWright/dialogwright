@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../../schemas/forms.schema.json
+forms:
+  # Anyone may report a problem (level 0). The address is proposed from the call-start lookup where
+  # it found one (offer: facts on place); the summary reads back the address and the problem, and a
+  # yes files the report (a confirmed write).
+  report_problem:
+    slots: [place, problem]
+    summaryPromptId: confirm_report_problem
+    hooks: [confirmedParams, complete]
+    calls: [reportProblem]
+
+  # The status of the latest request: the entry call needs level 1, so a caller not yet verified is
+  # asked for the account number and the date of birth first, whatever an earlier proposal found.
+  check_status:
+    slots: []
+    summaryPromptId: null
+    hooks: [entry, complete]
+    calls: [findAccount, readStatus]

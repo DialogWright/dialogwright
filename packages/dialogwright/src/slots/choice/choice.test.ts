@@ -488,11 +488,58 @@ describe('the library fixture\'s book and branch, written as configuration', () 
   });
 });
 
+describe('a read-back the app asks for (confirm: always, confirmValues)', () => {
+  const tenancy = { type: 'choice', options: { own: 'you own it', rent: 'you rent it' } };
+  const problems = (config: Record<string, unknown>) => {
+    const r = buildSlot('s', { ...tenancy, ...config });
+    return r.ok ? [] : r.problems.map(formatProblem);
+  };
+
+  it('confirmValues: those options are read back, the rest follow confirm, and a no asks the slot again', () => {
+    const slot = defineSlot('ownership', { ...tenancy, confirmValues: ['rent'] });
+    expect(slot).toMatchObject({ spokenConfirm: 'summary', confirmValues: ['rent'], readBackNo: 'ask' });
+    expect(slot.prompts).toEqual([{ id: 'confirm_ownership', why: 'it reads "rent" back for a yes as soon as it is chosen (confirmValues)', vars: ['ownership'] }]);
+    // The fill is as it was: the engine decides the read-back from the value (core/fia.ts readsBack).
+    expect(slot.fill({ ownership: choice({ rent: 0.95, none: 0.05 }) }, testSlotContext('I rent it'))).toMatchObject({ kind: 'filled', value: 'rent', confirm: 'none' });
+    const confident = defineSlot('ownership', { ...tenancy, confirm: 'by-confidence', confirmValues: ['rent'] });
+    expect(confident).toMatchObject({ spokenConfirm: 'by-confidence', confirmValues: ['rent'] });
+    expect(confident.prompts!.map((p) => p.id)).toEqual(['ack_ownership', 'confirm_ownership']);
+  });
+
+  it('confirm: always reads every option back, with no keypad line needed', () => {
+    const slot = defineSlot('ownership', { ...tenancy, confirm: 'always' });
+    expect(slot).toMatchObject({ spokenConfirm: 'always', readBackNo: 'ask' });
+    expect(slot).not.toHaveProperty('confirmValues');
+    expect(slot.prompts).toEqual([{ id: 'confirm_ownership', why: 'it reads a value back for a yes as soon as it is heard (confirm: always)', vars: ['ownership'] }]);
+  });
+
+  it('neither: the slot is built as it always was', () => {
+    const slot = defineSlot('ownership', tenancy);
+    expect(slot).not.toHaveProperty('confirmValues');
+    expect(slot).not.toHaveProperty('readBackNo');
+    expect(slot.prompts).toEqual([]);
+  });
+
+  it('refuses a value that is not an option, one named twice, confirmValues with always, and readBack with always', () => {
+    expect(problems({ confirmValues: ['rents'] })).toEqual([
+      '(code)  s.confirmValues[0]  confirmValues names "rents", which is not one of the slot\'s options (own, rent)  ->  name an option by its key, as `options` writes it, or delete it from confirmValues',
+    ]);
+    expect(problems({ confirmValues: ['rent', 'rent'] })).toEqual(['(code)  s.confirmValues[1]  confirmValues names "rent" twice  ->  delete one of the two']);
+    expect(problems({ confirmValues: [] })).toHaveLength(1);
+    expect(problems({ confirm: 'always', confirmValues: ['rent'] })).toEqual([
+      '(code)  s.confirmValues  confirmValues has no effect with confirm "always", which reads every chosen option back  ->  delete confirmValues, or set confirm to summary or by-confidence',
+    ]);
+    expect(problems({ confirm: 'always', readBack: 'below-fill' })).toEqual([
+      '(code)  s.readBack  readBack "below-fill" has no effect with confirm "always", which reads every chosen option back for a yes  ->  set confirm: by-confidence, or delete readBack',
+    ]);
+  });
+});
+
 describe('the docs', () => {
   it('the docs page names every option', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/choice.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(choiceType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['confirm', 'disambiguate', 'fillAt', 'hedge', 'help', 'ids', 'keypad', 'listen', 'means', 'options', 'readBack', 'text']);
+    expect(options.sort()).toEqual(['confirm', 'confirmValues', 'disambiguate', 'fillAt', 'hedge', 'help', 'ids', 'keypad', 'listen', 'means', 'offer', 'offerAnswers', 'offerAt', 'options', 'readBack', 'text']);
     for (const option of [...options, 'text.instructions', 'text.none', 'ids.choice', 'hedge.byName', 'help.labels', 'help.labels.<key>.prompt', 'hedge.text', 'help.text', 'hedge.threshold', 'help.threshold', 'ids.hedge', 'ids.help']) {
       expect(readme, option).toContain(`\`${option}\``);
     }

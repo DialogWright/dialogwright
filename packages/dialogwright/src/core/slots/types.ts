@@ -98,10 +98,13 @@ export interface SlotPrompt {
  * value said there is kept (SlotSpec.listen). Inside a form that has the slot it always listens.
  * - `up-front` (the default): asked outside a form, and kept only when the turn enters a form that
  *   has the slot: values said up front with the request ("book a window for tomorrow morning").
+ *   A slot that sets none listens as `form` instead when every form that lists it says its slots
+ *   do not listen before it is open (FormDef.listenBeforeEntered; app/lookup.ts listenOf).
  * - `form`: asked and filled only while a form that has it is open. Outside one its question is
  *   not sent, and nothing is taken up front.
- * - `anywhere`: asked outside a form, and a value said there is kept whenever it is said, until a
- *   form that has the slot uses it and clears it as it closes.
+ * - `anywhere`: asked outside a form, and a value said there is kept when said on a turn that opens
+ *   no form, or with the request for a form that has the slot, until a form that has the slot uses it
+ *   and clears it as it closes; a turn that opens a form without it keeps nothing for it (turn.ts).
  * - `call`: as `anywhere`, and kept for the whole call, across forms (App.carrySlots).
  * An identity factor listens as identity says, whatever this is (fia.ts activeSlots).
  */
@@ -109,6 +112,23 @@ export type SlotListen = 'up-front' | 'form' | 'anywhere' | 'call';
 
 /** Every SlotListen value, in the order the docs list them. */
 export const SLOT_LISTEN_VALUES: readonly SlotListen[] = ['up-front', 'form', 'anywhere', 'call'];
+
+/** Where a slot that proposes a value from the facts proposes it (SlotSpec.offerAt). */
+export type SlotOfferAt = 'slot' | 'greeting';
+
+/** Every SlotOfferAt value, the default first. */
+export const SLOT_OFFER_AT_VALUES: readonly SlotOfferAt[] = ['slot', 'greeting'];
+
+/**
+ * The answers an offer takes (a slot's `offerAnswers`, a `callerNumber`'s `answers`):
+ * `yes-no-or-value` (the default), a yes, a no, or a value of the caller's own, which fills the slot
+ * as said; `yes-no`, a yes or a no only: the slot offered takes no value from the turn at its offer, a
+ * value said there with no clear yes is a no, and on the keypad 1 is yes and 2 is no.
+ */
+export type OfferAnswers = 'yes-no-or-value' | 'yes-no';
+
+/** Every OfferAnswers value, the default first. */
+export const OFFER_ANSWERS_VALUES: readonly OfferAnswers[] = ['yes-no-or-value', 'yes-no'];
 
 export interface SlotSpec {
   id: SlotId;
@@ -136,9 +156,28 @@ export interface SlotSpec {
    */
   thresholds?: readonly string[];
   /** always: a spoken fill is read back and must be confirmed before it counts, which needs a `confirm_<slot>`
-   * entry in the prompt manifest (no slot uses this today, so none is there); by-confidence: the fill outcome
-   * decides; summary: a spoken fill is neither acked nor read back; the final confirm covers it */
+   * line (a library slot's `confirm: always` in slots.yaml); by-confidence: the fill outcome decides;
+   * summary: a spoken fill is neither acked nor read back; the final confirm covers it */
   spokenConfirm: 'always' | 'by-confidence' | 'summary';
+  /**
+   * Values read back as soon as the slot fills with one of them, as for `spokenConfirm: always`, and
+   * so needing `confirm_<slot>`; any other value follows spokenConfirm (a choice slot's
+   * `confirmValues`: "rent" read back, "own" left to the summary). Absent: every value follows
+   * spokenConfirm.
+   */
+  confirmValues?: readonly string[];
+  /**
+   * What a no to the slot's own read-back (spokenConfirm `always`, or a value in confirmValues) does.
+   * `ask`: the slot is emptied and asked again, `ack_declined` then `ask_<slot>`, the no counted as
+   * one attempt on the slot's ladder (its keypad question `ask_<slot>_dtmf` at the keypad rung, where
+   * it takes keys and the channel has a keypad); a value the no itself gives ("no, I own it") is taken
+   * instead. The nos are counted apart (SlotState.readBackNos), and a second goes to a person. A
+   * read-back left unanswered to the keypad rung is asked by `ask_<slot>_retry` where the slot takes
+   * no keys, and a value such a slot reads back, given at a summary, is read back before the checks
+   * run. Absent: the keypad, `ask_<slot>_dtmf`, which `dialogwright check` then requires (a slot
+   * written in code), and nothing else of the above. Every library slot that reads back sets `ask`.
+   */
+  readBackNo?: 'ask';
   /**
    * The slot reads the topics retrieval nominates (SlotContext.nominated): while it is active, a turn
    * with words runs the app's knowledge retriever once, before the turn is planned (run/turn.ts), and
@@ -162,6 +201,59 @@ export interface SlotSpec {
    * give the same outcome each time and keep no count or cache of its own.
    */
   fill(answers: AnswerMap, ctx: SlotContext): SlotOutcome;
+  /**
+   * The slot offers the number the caller is calling from (a `digits` slot's `callerNumber`,
+   * core/callerNumber.ts): when the form would ask it and the call has a number that fits, the engine
+   * asks `offer_<slot>` (a yes or no, with `{last4}`) in place of `ask_<slot>`. `take` turns the
+   * carrier's number (its digits, with a leading `+` when the carrier wrote it in international form,
+   * the engine's withheld placeholders already refused) into the slot's value and display, or null
+   * when it does not fit. Never on an identity factor: `dialogwright check`
+   * refuses it there, and the engine never offers one. Absent: the slot is asked as always.
+   *
+   * `onNo: 'skip'`: a no to the offer leaves the slot empty and the form goes on (the slot is
+   * `declined`, SlotState.declined), as does the end of the offer's retry ladder; absent, a no asks
+   * `ask_<slot>`. `ifNone: 'skip'`: a call with no number that fits, or one the app will not offer
+   * (App.callerOffer), leaves the slot empty the same way; absent, the slot is asked. A number said
+   * in place of a yes or no fills the slot as said either way, unless `answers` is `yes-no`: the offer
+   * then takes a yes or a no only (OfferAnswers), a number said there is not taken, and with no clear
+   * yes it is a no. Absent, the default (`yes-no-or-value`).
+   */
+  callerNumber?: {
+    take(number: string, locale?: string): SlotCandidate | null;
+    onNo?: 'skip';
+    ifNone?: 'skip';
+    answers?: 'yes-no';
+  };
+  /**
+   * `facts`: the slot proposes a value from the app's facts (FactsConfig.offers: e.g. a street the
+   * call-start lookup found for the number calling, or one a form's entry call loaded after identity)
+   * as a yes or no, in place of its question: when
+   * the form would ask it and the facts have a candidate for it, the engine asks `offer_<slot>` with
+   * the candidate's display as `{<slot>}`, once per slot per form, the slot still empty. A yes fills
+   * the slot with the candidate, confirmed, and nothing else: never the principal, the identity level
+   * or the attempts. A no asks `ask_<slot>` with no attempt counted, and a value said instead fills as
+   * said, as for the caller's number's offer (callerNumber). Never on an identity factor, and never
+   * beside `callerNumber`, and never on a slot redacted by its length (its words are never said back):
+   * `dialogwright check` refuses all three. Absent: the slot is asked as always.
+   */
+  offer?: 'facts';
+  /**
+   * Where a slot with `offer: facts` proposes (SlotOfferAt): `slot` (the default), when its form would
+   * ask it; `greeting`, at call start on a call, in place of the greeting's open question, when the
+   * facts have a candidate for it then (the call-start lookup's), and otherwise at the slot as `slot`
+   * does. One greeting proposal per call: the first such slot in slots.yaml order with a candidate. A
+   * yes there fills the slot, confirmed, for whichever form uses it later; a no, or a request with
+   * neither, leaves it to be asked, not proposed again, in that form. Only with `offer: facts`
+   * (`dialogwright check` refuses it otherwise). Absent: `slot`.
+   */
+  offerAt?: SlotOfferAt;
+  /**
+   * The answers a slot with `offer: facts` takes at its proposal (OfferAnswers): `yes-no-or-value`
+   * (the default), where a value said instead fills as said; `yes-no`, where it is not taken, and with
+   * no clear yes it is a no (the slot's question is then asked). Only with `offer: facts`
+   * (`dialogwright check` refuses it otherwise). Absent: the default.
+   */
+  offerAnswers?: OfferAnswers;
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no
    * keypad rung; its retry ladder is retry, retry, agent. */
   dtmf?: {
@@ -188,14 +280,27 @@ export interface SlotSpec {
    * name as it is recorded (the gate event, the trace, the audit), and the trace's and console's
    * copies of the slot (its value, display, the turn state the model saw, a readback, a handoff's
    * collected slots, a side effect's params). Absent: the value is kept as it is.
-   * - `last4`: an identifier, by its last four digits ("...1234").
+   * - `last4`: an identifier, by its last four digits ("...1234"). A value of four digits or fewer,
+   *   whose last four would be all of it, as four bullets ("••••", SHORT_MASK); its digits are
+   *   counted, so "MBR1234" is "••••" too.
    * - `mask`: hidden, but for a year it holds ("••/••/1985"); a call's param as "•".
-   * - `length`: the caller's own words, by their length ("<38 chars>"), in the trace's value and a
-   *   call's or effect's params; the slot's display is a stand-in and is kept, and the live console
-   *   keeps the words (StatementMode 'keep').
+   * - `length`: by its length ("<38 chars>"). For the caller's own words (a statement, the default:
+   *   see `statement`), in the trace's value and a call's or effect's params; the slot's display is
+   *   a stand-in and is kept, and the live console keeps the words (StatementMode 'keep'). For a
+   *   secret (`statement: false`), everywhere, its display and the live console too.
    * A redacted slot's pending partial is masked too: its numeric parts are zeroed, its shape kept.
    */
   redact?: 'last4' | 'mask' | 'length';
+  /**
+   * With `redact: 'length'`: whether the value is the caller's statement. Absent: it is, so its
+   * display is a stand-in ("your description"), kept as it is, and the live console shows the words.
+   * `false`: a secret recorded by its length (a PIN, the last four of an identity number: a digits
+   * slot's `redact: length`), whose display is the value itself, so the display is masked by its
+   * length too, and the live console masks both. Its keys are masked as it is keyed (core/turn.ts
+   * sensitiveDigitAt, 'secret'), and a handoff carries only its real length, whatever app.yaml's
+   * handoff.data `send` says (core/decision.ts handoff).
+   */
+  statement?: false;
   /**
    * How a handoff hands the slot over in what the call collected (HandoffDecision.slots). Absent:
    * its display (its value for a slot shown as said, `displayFrom: 'said'`). `last4`: the value's last four digits. `verified`: only whether identity was

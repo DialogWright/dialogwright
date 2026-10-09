@@ -116,3 +116,22 @@ describe('handoffFacts, with no app wording', () => {
     expect(factsIn([e({ type: 'handoff', detail: { reason: 'role-person', completed: [] } })]).handoffReason).toBe('role-person');
   });
 });
+
+describe('the values the caller never confirmed (HandoffData.unconfirmed)', () => {
+  it('are in the facts, by id, from the handoff row, and the fallback Next line names them', () => {
+    const facts = factsIn([e({ type: 'handoff', detail: { reason: 'urgent', completed: [], queued: [], unconfirmed: ['howUrgent', 'town'] } })], { reasons: { urgent: 'something is going wrong in the home right now' } });
+    expect(facts.unconfirmed).toEqual(['howUrgent', 'town']);
+    expect(composeNote(facts, 'Wanted: help at once').split('\n').at(-1)).toBe('Next: transferred because something is going wrong in the home right now; check with the caller what they never confirmed: howUrgent, town');
+    // The model's own Next line stands as it wrote it.
+    expect(composeNote(facts, 'Next: call the caller back').split('\n').at(-1)).toBe('Next: call the caller back');
+  });
+
+  it('an empty list says nothing more, and a row without one leaves the facts and the note as they were', () => {
+    const none = factsIn([e({ type: 'handoff', detail: { reason: 'live-agent', completed: [], queued: [], unconfirmed: [] } })]);
+    expect(none.unconfirmed).toEqual([]);
+    expect(composeNote(none, '').split('\n').at(-1)).toBe('Next: transferred because the caller asked for a person');
+    const absent = factsIn([e({ type: 'handoff', detail: { reason: 'live-agent', completed: [], queued: [] } })]);
+    expect(absent).not.toHaveProperty('unconfirmed');
+    expect(composeNote(absent, '').split('\n').at(-1)).toBe('Next: transferred because the caller asked for a person');
+  });
+});

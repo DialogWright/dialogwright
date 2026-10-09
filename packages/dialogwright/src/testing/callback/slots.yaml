@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../../schemas/slots.schema.json
+caller:
+  type: name
+# The number to call back. On a call whose number came with it, the line offers that number as a
+# yes or no first (callerNumber); a chat, or a withheld number, is asked ask_phone as always.
+phone:
+  type: digits
+  noun: phone
+  length: 10
+  mask: '[2-9]\d{9}'
+  keypad: true
+  group: [3, 3, 4]
+  callerNumber:
+    countryCode: '1'
+reason:
+  type: choice
+  options:
+    order:
+      say: an order
+      means: The call is about an order
+    bill:
+      say: a bill
+      means: The call is about a bill or a payment
+    other:
+      say: something else
+      means: The call is about something other than an order or a bill
+  text:
+    instructions: Read asr.text. What does the caller say the callback is about?

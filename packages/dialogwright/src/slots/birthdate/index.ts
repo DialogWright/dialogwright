@@ -1,5 +1,6 @@
 import type { SlotPrompt } from '../../core/slots/types';
 import { examplesFrom } from '../parts/examples';
+import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { birthdateDisplay } from './display';
@@ -24,6 +25,7 @@ function promptsOf(id: string, o: BirthdateOptions): SlotPrompt[] {
   const prompts: SlotPrompt[] = [{ id: yearPromptOf(id, o), why: 'the caller gave the month and day of their birth without the year (the partialPromptId)' }];
   if (o.wholePrompt !== undefined) prompts.push({ id: o.wholePrompt, why: 'a month or a day of the birth date was not heard (the fill\'s retryPromptId)' });
   if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: 'it asks for the date of birth on the keypad, as eight digits, after spoken answers missed' });
+  prompts.push(...readBackPrompts(id, o.confirm));
   return prompts;
 }
 
@@ -42,7 +44,7 @@ export const birthdateType: SlotType<BirthdateOptions> = defineSlotType<Birthdat
     const display = birthdateDisplay();
     return {
       id,
-      spokenConfirm: o.confirm,
+      ...readBackOf(o.confirm),
       ...(o.redact === 'mask' ? { redact: 'mask' as const } : {}),
       ...(o.handoff === 'verified' ? { handoff: 'verified' as const } : {}),
       valueKind: 'date',

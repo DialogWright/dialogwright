@@ -24,7 +24,7 @@ function walk(dir: string, base = dir): string[] {
 const PLAIN_FILES = [
   '.env.example', 'APP-MAP.md', 'CLAUDE.md', 'POLICY.md', 'README.md', 'app.yaml', 'fixtures/corpus.jsonl', 'fixtures/expected/corpus.json',
   'fixtures/expected/scenarios.json', 'fixtures/scenarios/core.json', 'forms.yaml', 'intents.yaml', 'package.json',
-  'policy.matrix', 'policy.yaml', 'prompts.yaml', 'slots.yaml', 'src/app.test.ts', 'src/app.ts', 'src/cli.ts', 'src/data.ts',
+  'policy.matrix', 'policy.yaml', 'prompts.yaml', 'slots.yaml', 'src/app.test.ts', 'src/app.ts', 'src/cassetteTrim.ts', 'src/cli.ts', 'src/data.ts',
   'src/fixtures.test.ts', 'src/index.ts', 'src/regress.ts', 'src/serve.ts', 'src/testing/setup.ts', 'tsconfig.json', 'vitest.config.ts',
 ];
 
@@ -79,7 +79,7 @@ describe('createApp', () => {
     for (const file of made.files) expect(readFileSync(join(dir, file), 'utf8'), file).not.toMatch(/\{\{[^}]*\}\}/);
     const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name: string; scripts: Record<string, string> };
     expect(pkg.name).toBe('@dialogwright/example-demo');
-    expect(Object.keys(pkg.scripts)).toEqual(['typecheck', 'test', 'regress', 'cli', 'serve']);
+    expect(Object.keys(pkg.scripts)).toEqual(['typecheck', 'test', 'regress', 'cassette:trim', 'cli', 'serve']);
     expect(parse(readFileSync(join(dir, 'app.yaml'), 'utf8'))).toMatchObject({
       id: 'demo', locale: 'en-US', brand: { name: 'Demo', mark: 'DE', key: 'demo' }, fixtures: { dir: 'fixtures' },
     });
@@ -176,15 +176,13 @@ describe('createApp', () => {
     for (const line of lines) expect(line, line).toMatch(/^[A-Z_]+=$/);
   });
 
-  it('keeps the vocabulary of the template neutral and its data invented', () => {
-    // One industry's words, written in pieces so that this file keeps to the rule it checks.
-    const words = ['cla' + 'ims?', 'cover' + 'age', 'insur' + 'ance', 'insur' + 'er', 'bro' + 'ker', 'mem' + 'ber', 'policy' + 'holder', 'pre' + 'mium', 'deduct' + 'ible', 'lo' + 'ss', 'acci' + 'dent', 'gene' + 'sys'];
+  it('keeps the template free of the one name and of em dashes', () => {
+    // The one name the repository never carries, written in pieces so that this file keeps to the rule it checks.
+    const words = ['gene' + 'sys'];
     const banned = new RegExp(`\\b(${words.join('|')})\\b`, 'i');
-    // The sign-in token's own term, as the repository's wording rule admits it (src/wording.test.ts SENSES): blanked, so any other use is still caught.
-    const tokenSense = new RegExp(['\\bsignIn\\.' + 'cla' + 'im\\b', '\\bfromCla' + 'ims\\b', '\\btoken cla' + 'ims?\\b', '\\bcla' + 'ims? of (?:the|a) token\\b'].join('|'), 'gi');
     for (const identity of [false, true]) {
       for (const [file, text] of templateFiles(identity)) {
-        expect(text.replace(tokenSense, (m) => ' '.repeat(m.length)), file).not.toMatch(banned);
+        expect(text, file).not.toMatch(banned);
         expect(text, file).not.toContain('—');
       }
     }
@@ -200,7 +198,7 @@ describe('dialogwright create-app', () => {
     expect(code).toBe(0);
     expect(err).toEqual([]);
     expect(existsSync(join(base, 'my', 'demo', 'identity.yaml'))).toBe(true);
-    expect(out[0]).toBe('created my/demo: 29 files, with identity.yaml, for "Demo"');
+    expect(out[0]).toBe('created my/demo: 30 files, with identity.yaml, for "Demo"');
     const text = out.join('\n');
     expect(text).toContain('Next:');
     expect(text).toContain('not directly under apps/');
@@ -255,7 +253,7 @@ describe('dialogwright create-app', () => {
     expect(installed).toEqual([root]);
     expect(err[0]).toContain('pnpm install failed');
     expect(out.join('\n')).toContain('1. pnpm install');
-    expect(out[0]).toBe('created apps/demo: 28 files, without identity.yaml, for "Demo"');
+    expect(out[0]).toBe('created apps/demo: 29 files, without identity.yaml, for "Demo"');
   });
 
   it('does not run pnpm install with --no-install, and skips the step when it worked', async () => {

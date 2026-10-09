@@ -233,4 +233,10 @@ describe('the console\'s view of a turn: what was said, and whom a passage answe
     // The trace file keeps them: it is the record of the call, apart from the console.
     expect(redactRecordSlots({ ...baseRecord(speechEvent('x')), kb }, 'length').kb).toEqual(kb);
   });
+
+  it('shows a passage\'s applies declared last4 of four characters or fewer as bullets', () => {
+    const kb = { passageId: 'p', topic: 't', version: '1', applies: { member: '4821', plan: 'MBR-55501234' }, document: 'd', section: 's', effectiveFrom: '2026-01-01', fresh: true };
+    const app = { slots: {}, policy: { audit: { member: 'last4', plan: 'last4' } } } as unknown as Parameters<typeof consoleKbSource>[1];
+    expect(consoleKbSource(kb, app).applies).toEqual({ member: '••••', plan: '...1234' });
+  });
 });

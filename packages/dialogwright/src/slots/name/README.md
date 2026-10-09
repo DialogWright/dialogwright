@@ -12,7 +12,7 @@ Reach for it for the caller's own name. For a name chosen from a list (a doctor,
 
 <!-- slot-docs:options -->
 
-The slot is always `detect: true` (its row in the console is measured against `SLOT_DETECT`), read back in the final summary and never on its own (`spokenConfirm: summary`), and has no keypad rung: a name cannot be keyed, so a caller whose name is not heard goes through the retry ladder to a person.
+The slot is always `detect: true` (its row in the console is measured against `SLOT_DETECT`), read back in the final summary and not on its own unless `confirm: always` says so, and has no keypad rung: a name cannot be keyed, so a caller whose name is not heard goes through the retry ladder to a person.
 
 ## The outcome
 
@@ -31,7 +31,7 @@ On the slot `name` the questions are `nameGiven` and `nameSpan`. Each text part 
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot, and nothing more: the slot has no partial value and no keypad. `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot, and nothing more (the slot has no partial value and no keypad), but for `confirm_<slot>`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. `dialogwright check` requires each in every locale.
 
 ## Examples
 

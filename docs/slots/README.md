@@ -55,7 +55,7 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 
 | Type | `redact` | `handoff` |
 |---|---|---|
-| `digits` | `last4` ("...0417") | `last4` |
+| `digits` | `last4` ("...0417"; four digits or fewer as "••••"), or `length` for a short secret | `last4` |
 | `birthdate` | `mask` (the year only) | `display` |
 | `name` | `none` | `display` |
 | `text` | `length` (`<38 chars>`) | the display, a stand-in |
@@ -63,7 +63,11 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 
 ### Where a slot listens
 
-Every slot takes `listen:` beside its type's options, so each page lists it: `up-front` (the default: asked outside a form, and a value kept only when the turn enters a form that has the slot), `form` (asked only while its form is open), `anywhere` (a value said outside a form is kept whenever it is said) or `call` (kept for the whole call, as app.yaml's `carrySlots` keeps it). An identity factor takes none. Any value but the default changes what the model is sent on some turns, so it re-keys a recorded cassette there. When to choose each is in section 5 of the [authoring guide](../authoring-an-app.md#where-a-slot-listens-listen).
+Every slot takes `listen:` beside its type's options, so each page lists it: `up-front` (the default: asked outside a form, and a value kept only when the turn enters a form that has the slot), `form` (asked only while its form is open), `anywhere` (a value said outside a form is kept, on a turn that opens no form or opens one that has the slot; not on a turn that opens a different form) or `call` (kept for the whole call, as app.yaml's `carrySlots` keeps it). An identity factor takes none. Any value but the default changes what the model is sent on some turns, so it re-keys a recorded cassette there. When to choose each is in section 5 of the [authoring guide](../authoring-an-app.md#where-a-slot-listens-listen).
+
+### Proposing a value
+
+Every slot also takes `offer: facts` beside its type's options: when the form would ask the slot and the app's facts have a value for it (`facts.offers` in the code, from what the call-start lookup found), the line proposes it as a yes or no (`offer_<slot>`, with the value as `{<slot>}`) in place of the question. A yes fills that slot and nothing else, never who the caller is; a no asks the slot's question. It needs app.yaml's `callerNumber` with a `lookup`, and is never on an identity factor. It changes what the model is sent on the offer turns, so it re-keys a recorded cassette there. See [Proposing a value from a lookup](../authoring-an-app.md#proposing-a-value-from-a-lookup-offer-facts) in the authoring guide.
 
 ### Locales
 

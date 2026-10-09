@@ -53,3 +53,33 @@ export function formatRegressSummary(i: RegressSummaryInput): string {
   if (screenErrors.length > 0) lines.push(`screen errors ${screenErrors.length} (first: ${screenErrors[0]!.screen!.error})`);
   return lines.join('\n');
 }
+
+export interface TriageInput {
+  /** corpus ids that differ from the baseline in a way no known gap allows (regressDiff.ts differingIds) */
+  corpusDiffering: readonly string[];
+  /** scripted calls that miss their own expectation */
+  scenariosFailing: readonly string[];
+  /** scripted calls that differ from the baseline in a way `cosmeticDrift` does not allow, failing or not */
+  scenariosDiffering: readonly string[];
+  records: Pick<TraceRecord, 'source' | 'error' | 'screen'>[];
+}
+
+const counted = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The last line of a run against a model or its cassette: how many things need a decision, so triage
+ * does not mean reading the diff by hand. A failing scripted call is counted once, as failing; the
+ * calls that pass their expectation but still differ from the baseline (without `cosmeticDrift`) are
+ * counted on their own.
+ */
+export function formatTriage(i: TriageInput): string {
+  const failing = new Set(i.scenariosFailing);
+  const drifting = i.scenariosDiffering.filter((id) => !failing.has(id)).length;
+  const misses = i.records.filter(isCassetteMiss).length;
+  return [
+    `to triage: ${counted(i.corpusDiffering.length, 'untagged corpus difference', 'untagged corpus differences')}`,
+    counted(failing.size, 'failing scripted call', 'failing scripted calls'),
+    counted(drifting, 'passing scripted call that differs from the baseline', 'passing scripted calls that differ from the baseline'),
+    counted(misses, 'cassette miss', 'cassette misses'),
+  ].join(', ');
+}

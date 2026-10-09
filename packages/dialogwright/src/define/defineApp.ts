@@ -1,13 +1,14 @@
 import type {
-  App, AppBrand, AppLocales, ConsoleConfig, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
-  PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale,
+  App, AppBrand, AppLocales, CheckOutcome, Completion, CompletionContext, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
+  PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse,
 } from '../core/app/types';
-import { SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
+import { OFFER_ANSWERS_VALUES, SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
 import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { askedQuestionIds, probeContexts } from '../core/app/probeQuestions';
 import { thresholdNamesOf, unknownSlotThresholds, unknownThresholdMessage } from '../core/slotThresholds';
 import { reachOf, unreachedActions } from '../core/app/reach';
+import { formsLeadingTo, nextCycles } from '../core/app/next';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
@@ -17,10 +18,11 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { BUILT_IN_IDS_NOTE, BUILT_IN_RULES } from '../gate/compiled';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { ruleDefinitionProblems } from '../gate/defineRule';
-import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotRedactOf, toolFieldProblems, toolParamProblems } from './policyFile';
+import { compileIdentity, compilePolicy, customRulesNamed, declaredFields, declaredParams, identityProblems, isBuiltInRuleId, lookupDeclarationProblems, policyProblems, slotChoicesOf, slotRedactOf, toolFieldProblems, toolParamProblems } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type DataPath, type Problem } from './problems';
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
 import { kbLinkProblems } from '../kb/rules';
+import { checkProblems } from './formChecks';
 import type { Retriever } from '../kb/types';
 import { kbCatalog } from '../kb/catalog';
 import { defaultRetriever } from '../kb/hybrid';
@@ -57,7 +59,7 @@ import { handoffDataProblems } from '../handoff/data';
 export type FormHooks = Pick<FormDef, FormHook>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 
@@ -90,6 +92,8 @@ export interface AppCode {
   facts?: App['facts'];
   questions?: App['questions'];
   callerState?: App['callerState'];
+  /** Whether the caller's number may be offered for a slot (App.callerOffer). */
+  callerOffer?: App['callerOffer'];
   blockPromptId?: App['blockPromptId'];
   onServiceResult?: App['onServiceResult'];
   testing?: App['testing'];
@@ -346,6 +350,15 @@ export function crossLink(
     if (def.unsure !== undefined && def.kind === 'control' && id !== 'done') {
       yaml('intents.yaml', ['intents', id, 'unsure'], `the control intent "${id}" is never confirmed, so "unsure" does nothing for it`, 'delete "unsure": only a form intent, an informational one and done are confirmed when the model is unsure of them', true);
     }
+    // A priority intent is acted on as a form or an answer (gates.ts priorityIntent); a control
+    // intent is neither, and the agent intent already reaches a person through wantsHuman.
+    if (def.priority !== undefined && def.priority !== false && def.kind === 'control') {
+      yaml('intents.yaml', ['intents', id, 'priority'], `the control intent "${id}" cannot be a priority intent: a priority intent starts its form or says its answer`, 'delete "priority": only a form intent or an informational one is a priority intent (a person on request is the agent intent, and wantsHuman already acts on it at once)', true);
+    }
+    if (typeof def.priority === 'object' && def.priority.threshold !== undefined && !thresholdNamesOf(config.app.thresholds).includes(def.priority.threshold)) {
+      const name = def.priority.threshold;
+      yaml('intents.yaml', ['intents', id, 'priority', 'threshold'], `intent "${id}" names the threshold "${name}", which is neither one of the engine's thresholds nor one the app names`, `${renameHint(name, thresholdNamesOf(config.app.thresholds))}add "${name}" under thresholds in app.yaml, or write priority: true for PRIORITY_INTENT`);
+    }
     if (def.passage !== undefined) {
       promptExists('intents.yaml', ['intents', id, 'passage'], KB_ANSWER_PROMPT);
       promptExists('intents.yaml', ['intents', id, 'passage'], KB_UNAVAILABLE_PROMPT);
@@ -360,10 +373,17 @@ export function crossLink(
   // forms.yaml, and each form's hooks in the code
   for (const [id, form] of Object.entries(forms)) {
     const intent = intents[id];
-    if (!intent) {
+    if (form.internal === true) {
+      // An internal form is no intent: it is reached only by another form's next.
+      if (intent) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, so it is no intent, but intents.yaml has an intent "${id}"`, `delete "${id}:" from intents.yaml (the form is reached by another form's next), or delete "internal: true" to make the form an intent`);
+      if (formsLeadingTo(forms, id).length === 0) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, and no form goes on to it, so nothing can reach it`, `add "next: ${id}" to the form that comes before it, or delete "internal: true" and give it an intent in intents.yaml`);
+    } else if (!intent) {
       yaml('forms.yaml', ['forms', id], `form "${id}" has no intent in intents.yaml`, `add "${id}:" under intents in intents.yaml with kind: form, its criteria and its label`);
     } else if (intent.kind !== 'form') {
       yaml('forms.yaml', ['forms', id], `form "${id}" has an intent in intents.yaml of kind ${intent.kind}, not form`, `change intents.${id}.kind in intents.yaml to form`);
+    }
+    if (form.next !== undefined && !has(forms, form.next)) {
+      yaml('forms.yaml', ['forms', id, 'next'], `form "${id}" goes on to "${form.next}", which is not a form in forms.yaml`, `${renameHint(form.next, Object.keys(forms))}add "${form.next}:" under forms in forms.yaml, or delete "next"`);
     }
     form.slots.forEach((slot, i) => slotExists('forms.yaml', ['forms', id, 'slots', i], slot));
     if (form.summaryPromptId !== null) promptExists('forms.yaml', ['forms', id, 'summaryPromptId'], form.summaryPromptId);
@@ -399,6 +419,12 @@ export function crossLink(
       }
     }
   }
+  // A chain of next that comes back round would never end: each loop once, at the form defined first.
+  for (const loop of nextCycles(forms)) {
+    yaml('forms.yaml', ['forms', loop[0]!, 'next'], `the forms ${loop.map((f) => `"${f}"`).join(', ')} go on to each other in a loop (${[...loop, loop[0]!].join(' -> ')}), so the chain never ends`, `delete "next" from one of them: the last form of a chain completes in code (hooks: [complete])`);
+  }
+  // forms.yaml's checks: their actions, slots, levels and lines (./formChecks.ts).
+  checkProblems({ config, report: yaml, promptExists });
   for (const id of Object.keys(code.forms ?? {})) {
     if (has(forms, id)) continue;
     const guess = closest(id, Object.keys(forms));
@@ -422,7 +448,10 @@ export function crossLink(
     }
   }
   const flow = config.identity ? { verifyTool: config.identity.levels[1].verify, ...(config.identity.levels[2] ? { codeTool: config.identity.levels[2].verify, sendCodeTool: config.identity.levels[2].send } : {}) } : undefined;
-  for (const tool of unreachedActions(Object.keys(policy.actions), forms, flow)) {
+  // A check no form names is formChecks.ts's to report, in its own words.
+  // The call-start lookup (app.yaml's callerNumber.lookup) is reached at call start, by no form.
+  const startLookup = config.app.callerNumber?.lookup;
+  for (const tool of unreachedActions(Object.keys(policy.actions).filter((t) => policy.actions[t]!.check !== true && t !== startLookup), forms, flow)) {
     yaml('policy.yaml', ['actions', tool], `action "${tool}" is reached by no form: no form's calls list it, and the identity flow does not call it`, `add "${tool}" to the calls of the form whose hooks call it in forms.yaml, or delete the action from policy.yaml and the tool from ${inCode('tools', tool)}`, true);
   }
 
@@ -437,6 +466,7 @@ export function crossLink(
     toolFields: Object.fromEntries(tools.map((tool) => [tool, declaredFields(code.tools?.[tool])])),
     toolParams: Object.fromEntries(tools.map((tool) => [tool, declaredParams(code.tools?.[tool])])),
     slotRedact: slotRedactOf(linked.slots),
+    slotChoices: slotChoicesOf(linked.slots),
     slots: linked.known,
     addSlot,
     customRules: Object.keys(customRules),
@@ -541,6 +571,134 @@ export function crossLink(
       at(`the slot "${id}" is an identity factor (identity.yaml), which listens while the caller is still to be verified and stays for the call, so listen does not apply to it`, deleteIt);
     } else if (listen !== 'call' && app.carrySlots?.includes(id)) {
       at(`the slot "${id}" is in app.yaml's carrySlots, which keeps it for the whole call (listen: call), but it says listen: ${listen}`, `${deleteIt} (carrySlots already makes it call), or take "${id}" out of carrySlots in app.yaml`);
+    }
+  }
+  // A slot that offers the number the caller is calling from (SlotSpec.callerNumber, a digits slot's
+  // `callerNumber`) is never an identity factor: a caller ID can be forged, so it proves no one.
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    if (spec?.callerNumber === undefined || !factors.includes(id)) continue;
+    const message = `the slot "${id}" is an identity factor (identity.yaml), but it offers the number the caller is calling from (callerNumber): a caller ID can be forged, so it must never stand in for proving who the caller is`;
+    if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'callerNumber'], message, `delete "callerNumber" here, or use a slot of its own for a callback number`);
+    else inTs(['slots', id, 'callerNumber'], message, `delete callerNumber from ${inCode('slots', id)}, or use a slot of its own for a callback number`);
+  }
+  // A slot that proposes a value from the facts (SlotSpec.offer `facts`): never an identity factor
+  // (a proposal is no proof), never beside the caller's number's offer on one slot, and only with
+  // the code that proposes (code.facts.offers). What feeds the facts is the app's: the call-start
+  // lookup, a form's entry call after identity, a hook.
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    const offer = spec?.offer;
+    // Where a proposal is made (SlotSpec.offerAt): only for a slot that makes one.
+    const offerAt = spec?.offerAt;
+    if (offerAt !== undefined) {
+      const where = (message: string, fix: string): void => {
+        if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'offerAt'], message, fix);
+        else inTs(['slots', id, 'offerAt'], message, fix);
+      };
+      const deleteAt = linked.library.has(id) ? 'delete "offerAt"' : `delete "offerAt" from ${inCode('slots', id)}`;
+      if (offerAt !== 'slot' && offerAt !== 'greeting') where(`the slot "${id}" says offerAt: ${JSON.stringify(offerAt)}, which is not "slot" or "greeting"`, `change it to "slot" or "greeting", or ${deleteAt}`);
+      else if (offer !== 'facts') where(`the slot "${id}" says offerAt: ${JSON.stringify(offerAt)}, but it proposes nothing (it has no offer: facts)`, `add "offer: facts", or ${deleteAt}`);
+    }
+    // The answers a proposal takes (SlotSpec.offerAnswers): only for a slot that makes one.
+    const offerAnswers = spec?.offerAnswers;
+    if (offerAnswers !== undefined) {
+      const where = (message: string, fix: string): void => {
+        if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'offerAnswers'], message, fix);
+        else inTs(['slots', id, 'offerAnswers'], message, fix);
+      };
+      const deleteAnswers = linked.library.has(id) ? 'delete "offerAnswers"' : `delete "offerAnswers" from ${inCode('slots', id)}`;
+      const ofCaller = spec?.callerNumber !== undefined;
+      if (!OFFER_ANSWERS_VALUES.includes(offerAnswers)) where(`the slot "${id}" says offerAnswers: ${JSON.stringify(offerAnswers)}, which is not "yes-no-or-value" or "yes-no"`, `change it to "yes-no" or "yes-no-or-value", or ${deleteAnswers}`);
+      else if (offer !== 'facts') where(`the slot "${id}" says offerAnswers: ${JSON.stringify(offerAnswers)}, but it proposes nothing (it has no offer: facts)${ofCaller ? '; the offer of the caller\'s number takes callerNumber.answers' : ''}`, ofCaller ? `move it into callerNumber as "answers: ${offerAnswers}", or ${deleteAnswers}` : `add "offer: facts", or ${deleteAnswers}`);
+    }
+    if (offer === undefined) continue;
+    const library = linked.library.has(id);
+    const at = (message: string, fix: string): void => {
+      if (library) yaml(SLOTS_FILE, [id, 'offer'], message, fix);
+      else inTs(['slots', id, 'offer'], message, fix);
+    };
+    const deleteIt = library ? 'delete "offer"' : `delete "offer" from ${inCode('slots', id)}`;
+    if (offer !== 'facts') {
+      at(`the slot "${id}" says offer: ${JSON.stringify(offer)}, which is not "facts"`, `change it to "facts", or ${deleteIt}`);
+      continue;
+    }
+    if (factors.includes(id)) {
+      at(`the slot "${id}" is an identity factor (identity.yaml), but it proposes a value from the facts (offer: facts): a proposal from a lookup by the number calling proves no one, so it must never stand in for a factor`, `${deleteIt}; the factors are always asked`);
+      continue;
+    }
+    if (spec?.callerNumber !== undefined) {
+      at(`the slot "${id}" offers both the number the caller is calling from (callerNumber) and a value from the facts (offer: facts), but a slot makes one offer`, `${deleteIt}, or delete "callerNumber"`);
+    }
+    // A statement (redact: length) is never said back: its display is a stand-in ("your note"), and the
+    // trace and the console keep its display as one. A proposal says its value aloud and makes it the
+    // display, so it would put the words where the slot keeps only their length.
+    if (spec?.redact === 'length') {
+      const fix = library ? 'set "redact: none" (with "say: null" for a text slot, so the value is read back as said)' : `give ${inCode('slots', id)} another redact`;
+      at(`the slot "${id}" is redacted by its length (redact: length), so its words are never said back, but it proposes a value from the facts (offer: facts), which says the value aloud and makes it what the slot shows`, `${fix}, or ${deleteIt}`);
+    }
+    if (code.facts?.offers === undefined) {
+      at(`the slot "${id}" proposes a value from the facts (offer: facts), but the code has no facts.offers, so it never has a value to propose`, `add offers(f) to ${inCode('facts')}, returning { ${id}: { value, display } } from what the lookup kept, or ${deleteIt}`);
+    }
+  }
+  // A slot that may be left empty (a callerNumber offer with onNo or ifNone: skip, SlotState.declined)
+  // is never named in its form's summary line: the line would read an empty value. A form's summary
+  // hook (onSummaryRead) may read another line that names it when it is filled.
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    const offer = spec?.callerNumber;
+    if (offer === undefined || (offer.onNo !== 'skip' && offer.ifNone !== 'skip')) continue;
+    for (const [formId, form] of Object.entries(forms)) {
+      const summary = form.summaryPromptId;
+      if (!form.slots.includes(id) || summary === null || !has(prompts, summary)) continue;
+      if (!prompts[summary]!.text.includes(`{${id}}`)) continue;
+      yaml('prompts.yaml', ['prompts', summary, 'text'], `the summary of the form "${formId}" names {${id}}, but the slot may be left empty (its callerNumber says ${offer.onNo === 'skip' ? 'onNo' : 'ifNone'}: skip), so the line would read nothing there`, `take {${id}} out of "${summary}", and read it back from a line of its own when it is filled (the form's onSummaryRead hook can return that line's promptId)`);
+    }
+  }
+  // app.yaml's textConsent: each slot it covers is one, and offers the number the caller is calling
+  // from (SlotSpec.callerNumber), the number a grant fills it with.
+  app.textConsent?.covers.forEach((slot, i) => {
+    if (!linked.known.has(slot)) {
+      slotExists('app.yaml', ['textConsent', 'covers', i], slot);
+      return;
+    }
+    if (linked.slots[slot]?.callerNumber === undefined) {
+      const fix = linked.library.has(slot) ? `add "callerNumber: { countryCode: ... }" to the slot "${slot}" in slots.yaml (a digits slot), or take "${slot}" out of covers` : `give ${inCode('slots', slot)} a callerNumber, or take "${slot}" out of covers`;
+      yaml('app.yaml', ['textConsent', 'covers', i], `the slot "${slot}" is covered by textConsent, but it does not offer the number the caller is calling from (callerNumber), so a grant has no number to fill it with`, fix);
+    }
+  });
+  // app.yaml's callerNumber: the call-start lookup is an action of the policy, a tool called with one
+  // param, the number (lookup: its params are exactly [callerNumber]).
+  const lookup = app.callerNumber?.lookup;
+  if (lookup !== undefined) {
+    const actions = Object.keys(policy.actions);
+    if (!has(policy.actions, lookup)) {
+      yaml('app.yaml', ['callerNumber', 'lookup'], `the call-start lookup "${lookup}" is not an action in policy.yaml`, `${renameHint(lookup, actions)}add "${lookup}:" under actions in policy.yaml with its level and rules, and the tool to ${inCode('tools', lookup)}`);
+    } else if (policy.actions[lookup]!.check === true) {
+      yaml('app.yaml', ['callerNumber', 'lookup'], `the call-start lookup "${lookup}" is a check (check: true in policy.yaml), which runs nothing, so it returns nothing to look up`, `name an action with a tool, or delete "lookup"`);
+    }
+    const params = has(code.tools, lookup) ? code.tools[lookup]!.params : undefined;
+    if (params !== undefined && !(params.length === 1 && params[0] === 'callerNumber')) {
+      inTs(['tools', lookup, 'params'], `the tool "${lookup}" is the call-start lookup (app.yaml's callerNumber.lookup), which is called with one param, callerNumber, but it lists ${params.length === 0 ? 'none' : params.join(', ')}`, `make ${inCode('tools', lookup, 'params')} ["callerNumber"]`);
+    }
+  }
+  // identity.yaml's callerId: a caller-ID match as the identifier, with the other factors asked to
+  // verify it. It names factors of level 1, never all of them (the match alone would then verify, which
+  // an app should not reach by accident), and needs the call-start lookup that finds the match and the
+  // code that reads it (facts.callerMatch).
+  const callerId = config.identity?.levels[1].callerId;
+  if (callerId !== undefined) {
+    const one = config.identity!.levels[1];
+    callerId.identifies.forEach((slot, i) => {
+      if (!one.factors.includes(slot)) yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies', i], `"${slot}" is not one of level 1's factors (${one.factors.join(', ')}), so the caller-ID match has nothing of it to stand in for`, `${renameHint(slot, one.factors)}name a factor of level 1, such as the account number`);
+    });
+    if (one.factors.every((slot) => callerId.identifies.includes(slot))) {
+      yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies'], 'callerId identifies every factor of level 1, so the caller-ID match alone would verify the caller, and a caller ID can be forged', 'leave at least one factor to be asked (such as the date of birth); an app that means to take the match alone writes a verify tool that ignores a factor');
+    }
+    if (lookup === undefined) {
+      yaml('identity.yaml', ['levels', '1', 'callerId'], 'callerId takes the match from the call-start lookup, but app.yaml has no callerNumber lookup, so there is never a match', 'add "callerNumber: { use: hint, lookup: <tool> }" to app.yaml, or delete "callerId"');
+    }
+    if (code.facts?.callerMatch === undefined) {
+      yaml('identity.yaml', ['levels', '1', 'callerId'], 'callerId takes the match from the facts, but the code has no facts.callerMatch, so there is never a match', `add callerMatch(f) to ${inCode('facts')}, returning { ${callerId.identifies.join(', ')} } from what the lookup kept (null for no single match), or delete "callerId"`);
+    } else if (typeof code.facts.callerMatch !== 'function') {
+      inTs(['facts', 'callerMatch'], 'facts.callerMatch is not a function', `make ${inCode('facts', 'callerMatch')} a function of the facts`);
     }
   }
   for (const name of Object.keys(app.thresholds ?? {})) {
@@ -728,6 +886,9 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'anythingElseSilence', a.anythingElseSilence);
   put(app, 'thresholds', a.thresholds);
   put(app, 'callerState', code.callerState);
+  put(app, 'callerNumber', a.callerNumber === undefined ? undefined : callerNumberOf(a.callerNumber));
+  put(app, 'callerOffer', code.callerOffer);
+  put(app, 'textConsent', a.textConsent === undefined ? undefined : { covers: [...a.textConsent.covers] });
   put(app, 'questions', code.questions);
   put(app, 'brand', a.brand as AppBrand | undefined);
   put(app, 'console', a.console as ConsoleConfig | undefined);
@@ -751,12 +912,18 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   return app as App;
 }
 
+/** app.yaml's callerNumber as App.callerNumber carries it: `called` only when true. */
+function callerNumberOf(c: NonNullable<AppYaml['callerNumber']>): CallerNumberUse {
+  return { use: c.use, ...(c.called === true ? { called: true } : {}), ...(c.lookup !== undefined ? { lookup: c.lookup } : {}) };
+}
+
 function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
   const intent: IntentDef = { criteria: def.criteria, label: def.label, kind: def.kind };
   put(intent, 'promptId', def.promptId);
   put(intent, 'passage', def.passage);
   put(intent, 'locale', def.locale);
   put(intent, 'unsure', def.unsure);
+  put(intent, 'priority', def.priority);
   return intent;
 }
 
@@ -768,12 +935,33 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
 function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks | undefined): FormDef {
   const def: Record<string, unknown> = { slots: form.slots, summaryPromptId: form.summaryPromptId };
   if (form.calls !== undefined) def.calls = form.calls;
+  if (form.checks !== undefined && form.checks.length > 0) def.checks = form.checks.map(checkOf);
+  if (form.checksPassed !== undefined) def.checksPassed = form.checksPassed;
+  if (form.next !== undefined) def.next = form.next;
+  if (form.internal === true) def.internal = true;
+  if (form.label !== undefined) def.label = form.label;
+  if (form.listenBeforeEntered !== undefined) def.listenBeforeEntered = form.listenBeforeEntered;
   for (const hook of form.hooks ?? []) def[hook] = hooks?.[hook];
   if (form.answers) {
     const { slot, via, answer, unavailable } = form.answers;
     def.complete = kbCompletion({ slot, ...(via !== undefined ? { via } : {}), ...(answer !== undefined ? { answer } : {}), ...(unavailable !== undefined ? { unavailable } : {}) });
   }
+  // A form that goes on to the next with no complete hook of its own completes as `said`, with the
+  // turn's lines: the next form is its answer.
+  if (form.next !== undefined && def.complete === undefined) def.complete = goesOn;
   return def as unknown as FormDef;
+}
+
+/** The completion of a form with `next` and no complete hook: `said`, with the turn's lines as they are. */
+const goesOn = (c: CompletionContext): Completion => ({ kind: 'said', acks: c.acks });
+
+/** A form's check as forms.yaml writes it, as FormDef carries it. */
+function checkOf(check: NonNullable<LoadedConfig['forms']['forms'][string]['checks']>[number]): FormCheck {
+  const on = check.on === undefined ? undefined : Object.fromEntries(Object.entries(check.on).map(([reason, o]) => {
+    const outcome = { ...(o.confirm !== undefined ? { confirm: o.confirm } : {}), ...(o.say !== undefined ? { say: o.say } : {}), then: o.then, ...(o.reason !== undefined ? { reason: o.reason } : {}) } satisfies CheckOutcome;
+    return [reason, outcome];
+  }));
+  return on === undefined ? { action: check.action, with: check.with } : { action: check.action, with: check.with, on };
 }
 
 function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {

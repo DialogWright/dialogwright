@@ -139,8 +139,8 @@ describe('the policy entry', () => {
     expect(policy.LEGACY_RULE_ID).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7' });
     expect([...policy.RULE_IDS]).toEqual(['R1', 'R2', 'R3', 'R5', 'R6', 'R7']);
     // the names decisions and audit lines record, and the ids tables still list
-    expect(policy.RULE_ID).toEqual({ identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: 'dateInRange', limit: 'limit' });
-    expect(policy.TABLE_RULE_ID).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7', dateInRange: 'dateInRange', limit: 'limit' });
+    expect(policy.RULE_ID).toEqual({ identity: 'identity', scope: 'scope', confirmed: 'confirmed', role: 'role', attempts: 'attempts', fields: 'fields', dateInRange: 'dateInRange', limit: 'limit', oneOf: 'oneOf', noneOf: 'noneOf', callerNumber: 'callerNumber' });
+    expect(policy.TABLE_RULE_ID).toEqual({ identity: 'R1', scope: 'R2', confirmed: 'R3', role: 'R5', attempts: 'R6', fields: 'R7', dateInRange: 'dateInRange', limit: 'limit', oneOf: 'oneOf', noneOf: 'noneOf', callerNumber: 'callerNumber' });
     expect(policy.UNLISTED_RULE_ID).toBe('unlisted');
     expect(policy.passed).toBe((await import('./gate/types')).passed);
     // the gate's types, for an app's own rules and its gate tests

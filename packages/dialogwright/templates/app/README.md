@@ -53,14 +53,21 @@ The baseline that came with this folder is the example's. When your own app is b
 
 ## Recording against the real model
 
-The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API, so it is a deliberate local step and never part of CI.
+The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API (a few cents for an app this size), so it is a deliberate local step for the app's owner, and never part of CI.
 
-1. Copy `.env.example` to `.env` in this folder (it is git-ignored) and put your TypeSafe API key in it as `TYPESAFE_API_KEY` (or a key from OpenRouter or the Vercel AI Gateway, or a compatible endpoint's, with `JEV_PROVIDER`: `.env.example` lists them). `regress` and `cli` do not read `.env` themselves (the server does, when `ENV_FILE` names it), so load it into your shell: `set -a && source .env && set +a`.
-2. At the repository root: `pnpm --filter @dialogwright/example-{{name}} regress --client record --threshold JEV_TIMEOUT_MS=15000`. It appends each answer to `fixtures/recorded/<model>.jsonl` and aborts after three consecutive client errors. The diff against the stub baseline shows where the real model reads a line differently from its label; that is expected, and it never rewrites the baseline.
-3. Check the replay offline, with the key unset: `pnpm --filter @dialogwright/example-{{name}} regress --client recorded`. A line the model reads differently from its label stays the truth in the corpus and gets a `knownGap` with its reason (see "Known gaps" in the [clinic's README]({{root}}/apps/clinic/README.md)).
-4. Commit the cassette. It holds only the corpus text and the model's answers to it.
+1. Put the key in this folder's `.env` (it is git-ignored). At the repository root, `pnpm configure --app {{name}}` asks for it and writes the file; or copy `.env.example` to `.env` here and put your TypeSafe API key in it as `TYPESAFE_API_KEY` (or a key from OpenRouter or the Vercel AI Gateway, or a compatible endpoint's, with `JEV_PROVIDER`: `.env.example` lists them). `regress` reads this folder's `.env` itself: there is nothing to load into the shell.
+2. Record, at the repository root, with this one command:
 
-A change to the words in the YAML (criteria, labels, prompts, the questions a slot sends) changes what the model is sent, so the replay reports each changed request as a cassette miss until the cassette is recorded again.
+   ```sh
+   pnpm --filter @dialogwright/example-{{name}} regress --client record --threshold JEV_TIMEOUT_MS=15000
+   ```
+
+   It appends each answer to `fixtures/recorded/<model>.jsonl` and aborts after three consecutive client errors. The diff against the stub baseline shows where the real model reads a line differently from its label; that is expected, and it never rewrites the baseline.
+3. Replay it offline, as often as you like: `pnpm --filter @dialogwright/example-{{name}} regress --client recorded`. It calls nothing and costs nothing. Its last line counts what is left to decide: `to triage: N untagged corpus differences, M failing scripted calls, K passing scripted calls that differ from the baseline, J cassette misses`. A line the model reads differently from its label stays the truth in the corpus and gets a `knownGap` with its reason (see "Known gaps" in the [clinic's README]({{root}}/apps/clinic/README.md)); the create-app skill's [triage page]({{root}}/.claude/skills/create-app/triage.md) has the whole procedure.
+4. After a second recording, trim the cassette: `pnpm --filter @dialogwright/example-{{name}} cassette:trim`. Recording appends, so the first recording's answers stay in the file though no replay reads them; the trim replays the whole run from the cassette and keeps only the answers it uses, and writes nothing if a request misses.
+5. Commit the cassette. It holds only the corpus text and the model's answers to it.
+
+A change to the words in the YAML (criteria, labels, prompts, the questions a slot sends) changes what the model is sent, so the replay reports each changed request as a cassette miss until the cassette is recorded again. A change to code, to the policy, or to a scripted call's silences and keys sends nothing new: check it on the recording you have before asking for another.
 
 ## Running it
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { identifier } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
+import { alwaysConfirmText } from '../parts/readBack';
 
 /**
  * The text parts of a `birthdate` slot: its four questions, the yes-or-no question's two criteria,
@@ -105,9 +106,9 @@ export const birthdateOptions = z
       .default('display')
       .describe('What a transfer to a person hands over: the date as it is said ("display"), or, for a birth date asked to verify identity, only whether the caller was "verified". app.yaml\'s handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.'),
     confirm: z
-      .enum(['summary'])
+      .enum(['summary', 'always'])
       .default('summary')
-      .describe('"summary": a birth date is neither acknowledged nor read back on its own; the form\'s final confirm covers it.'),
+      .describe(`"summary": a birth date is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('the birth date')}`),
     text: BIRTHDATE_PARTS.schema,
     ids: BIRTHDATE_QUESTIONS.schema,
   })

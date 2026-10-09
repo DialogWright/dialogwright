@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { useTestkit } from '../testing/apps';
 import { CUSTOMERS, STAFF } from '../testing/testkit/domain/data';
 import { agentPrincipal, customerPrincipal } from '../testing/testkit/domain/principals';
-import { ANONYMOUS, maskId, raise } from './principal';
+import { ANONYMOUS, SHORT_MASK, maskId, raise } from './principal';
 
 useTestkit();
 
@@ -22,6 +22,14 @@ describe('raise', () => {
 describe('maskId', () => {
   it('shows only the last four digits', () => {
     expect(maskId('55505678')).toBe('...5678');
+    expect(maskId('55505')).toBe('...5505');
+  });
+
+  it('shows an id of four characters or fewer as bullets, since its last four would be all of it', () => {
+    expect(SHORT_MASK).toBe('••••');
+    expect(['5550', '555', '5'].map(maskId)).toEqual(['••••', '••••', '••••']);
+    // An empty id has nothing to hide.
+    expect(maskId('')).toBe('...');
   });
 });
 

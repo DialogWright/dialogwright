@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../../schemas/identity.schema.json
+# How a caller proves who they are. Level 1 is the account number and the date of birth, checked by
+# verifyCustomer. On a call from a number on file for one account, the caller-ID match stands in for
+# the account number (callerId), and the caller is asked only for the date of birth, which verifies
+# it: "different account", a no or a failed check asks for both, as on any other call.
+principals:
+  subject: customer
+levels:
+  1:
+    name: verified
+    factors: [accountId, dob]
+    verify: verifyCustomer
+    failedPrompt: identity_failed
+    callerId:
+      identifies: [accountId]
+      ask: on-need
+# Three failed tries at the factors, and a person takes the call.
+attempts: 3

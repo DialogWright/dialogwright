@@ -226,6 +226,15 @@ describe('the masks', () => {
     expect((['last4', 'mask', 'length', 'secret', 'keep'] as const).map((h) => recordedValue(h, ''))).toEqual(['', '', '<0 chars>', null, '']);
   });
 
+  it('a last4 value of four characters or fewer as bullets, since its last four would be all of it', () => {
+    expect(['4821', '482', 'PX-5'].map((v) => recordedValue('last4', v))).toEqual(['••••', '••••', '••••']);
+    expect(recordedValue('last4', 'PX-55')).toBe('...X-55');
+    const call: ToolCall = { tool: 't', params: { parcel: '4821', note: 'hold it' }, purpose: 'p' };
+    expect(redactCall(app({ parcel: 'last4', note: 'keep' }), call)).toEqual({ tool: 't', params: { parcel: '••••', note: 'hold it' }, purpose: 'p' });
+    // The free text beside it says the value as it is recorded.
+    expect(scrubberFor(app({ parcel: 'last4' }), call)!('found 4821 for the caller')).toBe('found •••• for the caller');
+  });
+
   it('a call: each param as declared, a secret one left out with its name', () => {
     const call: ToolCall = { tool: 't', params: { accountId: '55501234', parcel: 'PX-55519876', note: 'hold it', deliveryDay: RAW_DAY }, purpose: 'p' };
     expect(redactCall(app({ parcel: 'mask', note: 'secret' }), call)).toEqual({ tool: 't', params: { accountId: '...1234', parcel: '•', deliveryDay: RAW_DAY }, purpose: 'p' });

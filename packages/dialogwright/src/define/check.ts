@@ -5,12 +5,16 @@ import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
 import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, type AppCode } from './defineApp';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
-import { DEFAULT_ROLE_PERSON_REASON, personReasons } from './policyFile';
+import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRule } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
-import { FILE_NAMES, FOLDER_FILES } from './schema/index';
+import { FILE_NAMES, FOLDER_FILES, SLOTS_FILE } from './schema/index';
+import type { SlotSpec } from '../core/slots/types';
+import { CONSENT_PROMPT } from '../core/textConsent';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 import { withoutFallbackWarnings } from '../kb/fallback';
 import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProblems } from './knowledgeUse';
+import { checkPromptReferences, checkWarnings } from './formChecks';
+import { digitsMayBeShort } from '../slots/digits/fill';
 
 /**
  * `dialogwright check`: everything that can be wrong with an app folder, found in one pass.
@@ -100,6 +104,18 @@ export const IDENTITY_PROMPTS: readonly EngineNeed[] = [
   { id: 'handoff_identity', why: 'a caller who could not be verified is handed to a person' },
   { id: 'identity_verified', why: 'the caller was verified', vars: ['first'] },
 ];
+/**
+ * The caller-ID question's lines (identity.yaml's level 1 `callerId`): the question, said in place of
+ * the first factor asked, which is given nothing (the match is never said). `identity_caller_declined`,
+ * said before the factors are asked after a no or "different account", is optional: said where
+ * prompts.yaml has it.
+ */
+export const CALLER_ID_PROMPTS: readonly EngineNeed[] = [
+  { id: 'identity_caller_match', why: 'a call from a number matched to one account asks for the factors that verify it (identity.yaml callerId)' },
+];
+/** The optional line before the factors are asked, after a no or "different account" to the caller-ID question. */
+export const CALLER_ID_DECLINED_PROMPT = 'identity_caller_declined';
+
 /** The one-time code's lines: only for a ladder with level 2 (a ladder of one rung has no code). */
 export const CODE_PROMPTS: readonly EngineNeed[] = [
   { id: 'ask_otp', why: 'it asks for the one-time code', vars: ['phoneLast4'] },
@@ -133,8 +149,9 @@ function identityParts(config: LoadedConfig): { factors: readonly string[]; fail
  * ones it builds. For each slot a form or identity asks for (core/turn.ts, core/fia.ts,
  * core/decision.ts): `ask_<slot>` and `ask_<slot>_retry` always; with the code's slot spec,
  * `ask_<slot>_dtmf` when the spec has a keypad rung (`dtmf`) or reads every spoken value back
- * (`spokenConfirm: always`, whose declined or unanswered read-back goes to the keypad),
- * `confirm_<slot>` for that read-back, `ack_<slot>` when a spoken value may be acknowledged
+ * (`spokenConfirm: always`, whose declined or unanswered read-back goes to the keypad, unless a no
+ * asks the slot again: `readBackNo: ask`, as every library slot's does), `confirm_<slot>` for that
+ * read-back or for one of its values (`confirmValues`), `ack_<slot>` when a spoken value may be acknowledged
  * (`spokenConfirm: by-confidence`), and the spec's `partialPromptId`. And the handoff line for the role rule's
  * reason, when a role's access to a tool is `person`. And every line a slot declares it can lead
  * the engine to say (SlotSpec.prompts: e.g. `disambiguate_<slot>`, a help prompt, a retryPromptId),
@@ -155,13 +172,28 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     if (!spec) continue;
     if (spec.dtmf !== undefined) {
       needs.push({ id: `ask_${slot}_dtmf`, why: `it asks for the slot "${slot}" on the keypad after spoken answers missed (its slot spec has dtmf)` });
-    } else if (spec.spokenConfirm === 'always') {
+    } else if (spec.spokenConfirm === 'always' && spec.readBackNo !== 'ask') {
       needs.push({ id: `ask_${slot}_dtmf`, why: `a read-back of the slot "${slot}" was declined or not answered, and it asks on the keypad (its slot spec's spokenConfirm is "always")` });
+    } else if ((spec.confirmValues ?? []).length > 0 && spec.readBackNo !== 'ask') {
+      needs.push({ id: `ask_${slot}_dtmf`, why: `a read-back of the slot "${slot}" was declined or not answered, and it asks on the keypad (its slot spec has confirmValues)` });
     }
     if (spec.spokenConfirm === 'always') needs.push({ id: `confirm_${slot}`, why: `it reads a spoken value of the slot "${slot}" back for a yes (its slot spec's spokenConfirm is "always")`, vars: [slot] });
+    else if ((spec.confirmValues ?? []).length > 0) needs.push({ id: `confirm_${slot}`, why: `it reads the slot "${slot}" back for a yes when it is ${spec.confirmValues!.map((v) => `"${v}"`).join(' or ')} (its confirmValues)`, vars: [slot] });
     if (spec.spokenConfirm === 'by-confidence') needs.push({ id: `ack_${slot}`, why: `it acknowledges a value it heard for the slot "${slot}" (its slot spec's spokenConfirm is "by-confidence")`, vars: [slot] });
     if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
     for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)`, ...(declared.vars && declared.vars.length > 0 ? { vars: declared.vars } : {}) });
+    if (spec.offer === 'facts') needs.push({ id: `offer_${slot}`, why: `it proposes a value from the facts for the slot "${slot}", as a yes or no (its offer is "facts")`, vars: [slot] });
+    if (spec.offer === 'facts' && spec.offerAt === 'greeting') {
+      needs.push({ id: greetings?.offer ?? 'greeting_offer', why: `a call opens on a proposal for the slot "${slot}" (its offerAt is "greeting"), said in place of the greeting before offer_${slot}` });
+      needs.push({ id: 'greet_after_offer', why: `the proposal at the greeting for the slot "${slot}" is settled, and it asks the open question` });
+    }
+  }
+  // Consent to text for the whole call (app.yaml's textConsent): asked after the greeting's line before
+  // a proposal, and the open question follows once it is settled, as for a proposal at the greeting.
+  if (config.app.textConsent !== undefined) {
+    needs.push({ id: greetings?.offer ?? 'greeting_offer', why: 'a call opens on the consent to text for the whole call (app.yaml textConsent), said in place of the greeting before consent_texts' });
+    needs.push({ id: CONSENT_PROMPT, why: 'it asks consent to text for the whole call (app.yaml textConsent), by the last four digits of the number calling', vars: ['last4'] });
+    needs.push({ id: 'greet_after_offer', why: 'the consent to text for the whole call is settled, and it asks the open question' });
   }
   for (const reason of personReasons(config.policy)) {
     needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (a role rule in policy.yaml) and the call goes to a person for the reason "${reason}"` });
@@ -171,6 +203,16 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     needs.push(...IDENTITY_PROMPTS);
     if (identity.code) needs.push(...CODE_PROMPTS);
     needs.push({ id: identity.failedPromptId ?? 'identity_failed', why: 'the identity factors did not match' });
+    const callerId = config.identity?.levels[1].callerId;
+    if (callerId !== undefined) {
+      needs.push(...CALLER_ID_PROMPTS);
+      // Asked at the greeting, it is said after the greeting's line before a proposal, and the open
+      // question follows once it is settled, as for a proposal at the greeting.
+      if (callerId.ask === 'greeting') {
+        needs.push({ id: greetings?.offer ?? 'greeting_offer', why: 'a call opens on the caller-ID question (identity.yaml callerId ask: greeting), said in place of the greeting before identity_caller_match' });
+        needs.push({ id: 'greet_after_offer', why: 'the caller-ID question at the greeting is settled, and it asks the open question' });
+      }
+    }
   }
   if (code?.portal) needs.push(...PORTAL_PROMPTS);
   const seen = new Set<string>();
@@ -203,6 +245,16 @@ export interface CheckResult {
   problems: Problem[];
   /** Whether the folder was checked against the app's code: false when there was none to check. */
   codeChecked: boolean;
+  /**
+   * What is not wrong but likely a mistake: printed, never counted as a problem (the exit code is
+   * the problems'). Absent when there is none. A form's checks (./formChecks.ts checkWarnings): an
+   * `on` reason the check never refuses for, and a rule a check holds the caller to that the form's
+   * write does not; a slot that offers the caller's number (callerNumberWarnings); a slot whose
+   * `listen` says otherwise than every form that lists it (listenWarnings); and a priority
+   * intent's correctsForm or the handoff's unconfirmed option with nothing to act on
+   * (priorityHandoffWarnings); and a short secret redacted by its last four (shortSecretWarnings).
+   */
+  warnings?: Problem[];
 }
 
 /** Every problem with the app folder `dir`: the loader's, the cross-checks against the code, and the checks above. */
@@ -219,6 +271,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   const found = options.code ? { code: options.code } : await loadCode(dir);
   const codeFile = ('file' in found ? found.file : undefined) ?? CODE_FILE;
   const problems: Problem[] = [];
+  const warnings: Problem[] = [];
   let code: AppCode | undefined;
   let linked = false;
   if ('problems' in found) {
@@ -231,10 +284,45 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     if (found.code) code = codeWithLinkedSlots(config, found.code, loaded.document, codeFile);
   } else if (found.code) {
     problems.push(...crossLink(config, found.code, locate, codeFile, loaded.locateKey, loaded.document));
+    checkWarnings({
+      config,
+      report: (file, path, message, fix, atKey = false) => {
+        const at = (atKey && loaded.locateKey ? loaded.locateKey(file, path) : locate(file, path)) ?? { line: 1, column: 1 };
+        warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+      },
+    }, found.code.customRules ?? {});
     // The checks below read the slots' specs: the folder's library slots count as the code's.
     code = { ...found.code, slots: linkSlots(config, found.code, loaded.document, codeFile).slots };
     linked = true;
+    callerNumberWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    }, codeFile);
+    greetingOfferWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    }, codeFile);
+    listenWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    }, codeFile);
+    callerHintWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    });
   }
+  textConsentWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
+  priorityHandoffWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
+  shortSecretWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
   problems.push(...checkDone(config, locate));
@@ -247,7 +335,184 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   // to the code when it ran; without it, to the folder alone. A passage an intent says must be fresh.
   if (!linked) problems.push(...knowledgeUseProblems(config, locate));
   problems.push(...knowledgeUseStateProblems(config, locate));
-  return { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
+  const result: CheckResult = { problems: sortProblems(problems, codeFile), codeChecked: code !== undefined || linked };
+  if (warnings.length > 0) result.warnings = sortProblems(warnings, codeFile);
+  return result;
+}
+
+/**
+ * The warnings for a priority switch's correction and the handoff's unconfirmed values: `correctsForm`
+ * on an informational priority intent, which opens no form (the turn already fills the form in hand
+ * as it is said), and `handoff.data.unconfirmed` marking or leaving out values when `slots: none`
+ * sends none.
+ */
+function priorityHandoffWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  for (const [id, def] of Object.entries(config.intents.intents)) {
+    const priority = def.priority;
+    if (typeof priority !== 'object' || priority.correctsForm !== true || def.kind !== 'informational') continue;
+    report('intents.yaml', ['intents', id, 'priority', 'correctsForm'], `the informational intent "${id}" says correctsForm, but it opens no form, so there is nothing to correct: what the turn says already fills the form in hand`, 'delete "correctsForm", or write priority: true');
+  }
+  const data = config.app.handoff?.data;
+  const unconfirmed = data?.unconfirmed;
+  if ((unconfirmed === 'mark' || unconfirmed === 'omit') && data?.slots === 'none') {
+    report('app.yaml', ['handoff', 'data', 'unconfirmed'], `unconfirmed is ${unconfirmed}, but slots is none, so a transfer sends no value to ${unconfirmed === 'mark' ? 'mark' : 'leave out'}`, 'delete "unconfirmed", or name the slots that go');
+  }
+}
+
+/**
+ * The warning for a short secret: a library `digits` slot that can be four digits or fewer (its
+ * `length`, or a `mask` that lets it; digitsMayBeShort), redacted by its last four (`redact: last4`,
+ * the default), which would be all of it. The engine records such a value as bullets (SHORT_MASK)
+ * anyway; the warning points to `redact: length`, which records how many digits it has. A warning,
+ * never a refusal: the app decides.
+ */
+function shortSecretWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  if (config.slots === null) return;
+  const factors = new Set(config.identity?.levels[1].factors ?? []);
+  for (const [id, raw] of Object.entries(config.slots)) {
+    const o = raw as { type: string; length?: unknown; mask?: unknown; redact?: unknown };
+    if (o.type !== 'digits' || (o.redact !== undefined && o.redact !== 'last4')) continue;
+    const length = typeof o.length === 'number' ? o.length : undefined;
+    const mask = typeof o.mask === 'string' ? o.mask : undefined;
+    let short: boolean;
+    try {
+      short = digitsMayBeShort({ length, mask });
+    } catch {
+      continue; // A mask that is no pattern is the slot's own problem.
+    }
+    if (!short) continue;
+    const by = length !== undefined ? `length: ${length}` : `mask: ${mask}`;
+    const what = factors.has(id) ? `is an identity factor of 4 digits or fewer (${by})` : `can be 4 digits or fewer (${by})`;
+    report(
+      SLOTS_FILE,
+      o.redact !== undefined ? [id, 'redact'] : [id],
+      `the slot "${id}" ${what}, and redact: last4 shows a value by its last four digits, which would be all of it, so it is recorded as bullets (••••)`,
+      'set "redact: length" to record it by its length (<4 chars>), or ask a longer number; nothing to do if bullets are meant',
+    );
+  }
+}
+
+/**
+ * The warnings for a slot that offers the number the caller is calling from (SlotSpec.callerNumber):
+ * a form with the slot and no summary, where a yes would fill a number the caller never heard whole;
+ * and a slot that listens for the call or is carried, which is offered once per form and, once
+ * filled, not offered again.
+ */
+function callerNumberWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void, codeFile: string): void {
+  for (const [id, spec] of Object.entries(slots)) {
+    if (spec?.callerNumber === undefined) continue;
+    const library = config.slots !== null && Object.hasOwn(config.slots, id);
+    const at = (message: string, fix: string): void => {
+      if (library) report(SLOTS_FILE, [id, 'callerNumber'], message, fix);
+      else report(codeFile, ['slots', id, 'callerNumber'], message, fix);
+    };
+    const forms = Object.entries(config.forms.forms).filter(([, form]) => form.slots.includes(id));
+    const unread = forms.filter(([, form]) => form.summaryPromptId === null).map(([form]) => form);
+    if (unread.length > 0) {
+      at(`the slot "${id}" offers the number the caller is calling from, but ${unread.length === 1 ? 'the form' : 'the forms'} ${unread.map((f) => `"${f}"`).join(', ')} ${unread.length === 1 ? 'has' : 'have'} no summary, so a yes fills a number the caller only heard the last four digits of`, `give ${unread.length === 1 ? 'the form' : 'each form'} a summaryPromptId that reads {${id}} back, or delete "callerNumber"`);
+    }
+    if (spec.listen === 'call' || (config.app.carrySlots ?? []).includes(id)) {
+      at(`the slot "${id}" offers the number the caller is calling from and is kept for the whole call, so it is offered once, in the first form that asks it; a later form uses the value kept`, `nothing to do if that is meant; otherwise give the slot listen: form or up-front`);
+    }
+  }
+}
+
+/**
+ * The warning for a slot whose own `listen` says it listens before its form is open (`up-front`,
+ * `anywhere` or `call`) while every form that lists it says its slots do not (forms.yaml
+ * `listenBeforeEntered: false`, the default for an internal form): the slot's own setting wins, so
+ * the designer is told which one the call follows.
+ */
+function listenWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void, codeFile: string): void {
+  /** The forms that list `id`, when every one says its slots do not listen before it is open; else null. */
+  const waiting = (id: string): { names: string; one: boolean; byDefault: boolean } | null => {
+    const forms = Object.entries(config.forms.forms).filter(([, form]) => form.slots.includes(id));
+    if (forms.length === 0 || forms.some(([, form]) => form.listenBeforeEntered ?? form.internal !== true)) return null;
+    return { names: forms.map(([form]) => `"${form}"`).join(', '), one: forms.length === 1, byDefault: forms.some(([, form]) => form.listenBeforeEntered === undefined) };
+  };
+  const says = (w: { names: string; one: boolean; byDefault: boolean }): string => `${w.one ? 'the form' : 'every form'} that lists it (${w.names}) says its slots do not listen before it is open (listenBeforeEntered: false${w.byDefault ? ', the default for an internal form' : ''})`;
+  const carried = config.app.carrySlots ?? [];
+  for (const [id, spec] of Object.entries(slots)) {
+    const listen = spec?.listen;
+    if (listen === undefined || listen === 'form') continue;
+    const w = waiting(id);
+    if (w === null) continue;
+    const message = `the slot "${id}" says listen: ${listen}, but ${says(w)}; the slot's own listen wins`;
+    const fix = 'nothing to do if that is meant; otherwise delete the slot\'s "listen", so it is asked once its form is open';
+    if (config.slots !== null && Object.hasOwn(config.slots, id)) report(SLOTS_FILE, [id, 'listen'], message, fix);
+    else report(codeFile, ['slots', id, 'listen'], message, fix);
+  }
+  // A slot app.yaml carries listens for the call (listen: call's shorthand), whatever its forms say.
+  carried.forEach((id, i) => {
+    if (slots[id]?.listen !== undefined) return;
+    const w = waiting(id);
+    if (w === null) return;
+    report('app.yaml', ['carrySlots', i], `the slot "${id}" is carried (carrySlots), which listens for the whole call, but ${says(w)}; carrySlots wins`, 'nothing to do if that is meant; otherwise take the slot out of carrySlots, so it is asked once its form is open');
+  });
+}
+
+/**
+ * The warning for consent to text for the whole call (app.yaml's textConsent) that no form can use: no
+ * slot it covers is in a form, so it is asked and never stands in for an offer.
+ */
+function textConsentWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const covers = config.app.textConsent?.covers;
+  if (covers === undefined || covers.length === 0) return;
+  const asked = new Set(Object.values(config.forms.forms).flatMap((form) => form.slots));
+  if (covers.some((slot) => asked.has(slot))) return;
+  report('app.yaml', ['textConsent', 'covers'], `textConsent covers ${covers.map((slot) => `"${slot}"`).join(', ')}, but no form asks ${covers.length === 1 ? 'it' : 'any of them'}, so the caller is asked consent that nothing uses`, 'cover a slot a form asks (one that offers the number the caller is calling from), or delete "textConsent"');
+}
+
+/**
+ * The warning for a slot that proposes at the greeting (`offerAt: greeting`) in an app with no
+ * call-start lookup (app.yaml's `callerNumber.lookup`): the greeting comes before anything else could
+ * load the facts, so nothing is proposed there, and the slot proposes at the slot instead.
+ */
+function greetingOfferWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void, codeFile: string): void {
+  if (config.app.callerNumber?.lookup !== undefined) return;
+  for (const [id, spec] of Object.entries(slots)) {
+    if (spec?.offer !== 'facts' || spec.offerAt !== 'greeting') continue;
+    const library = config.slots !== null && Object.hasOwn(config.slots, id);
+    const message = `the slot "${id}" proposes at the greeting (offerAt: greeting), but app.yaml has no callerNumber lookup, so nothing has loaded the facts by then and it is proposed at the slot instead`;
+    const fix = 'add "callerNumber: { use: hint, lookup: <tool> }" to app.yaml, or delete "offerAt"';
+    if (library) report(SLOTS_FILE, [id, 'offerAt'], message, fix);
+    else report(codeFile, ['slots', id, 'offerAt'], message, fix);
+  }
+}
+
+/**
+ * The warnings for the number the caller is calling from as the app's code and its policy use it
+ * (app.yaml's `callerNumber`, policy.yaml's callerNumber rule): a call-start lookup above level 0,
+ * which the caller not yet proven can never run, so it is always refused; the lookup's param recorded
+ * as it is (`audit: callerNumber: keep`); a callerNumber rule (else refuse) in an app that keeps no
+ * caller's number, which then refuses every call; and a rule on a param that is no slot offering the
+ * number and not `callerNumber` (the number as kept), which is compared digit for digit.
+ */
+function callerHintWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const policy = config.policy;
+  const block = config.app.callerNumber;
+  const lookup = block?.lookup;
+  if (lookup !== undefined && Object.hasOwn(policy.actions, lookup)) {
+    const level = policy.actions[lookup]!.level ?? DEFAULT_ACTION_LEVEL;
+    if (level > 0) report('policy.yaml', ['actions', lookup, ...(policy.actions[lookup]!.level !== undefined ? ['level'] : [])], `the action "${lookup}" is the call-start lookup (app.yaml's callerNumber.lookup), which runs before anyone is verified, but it needs level ${level}, so the gate always refuses it and nothing is looked up`, `set its level to 0 (what it returns may be said to a caller not yet verified, so return what the app means to say then); or delete "lookup" and load the facts from a form's entry call after identity`);
+  }
+  if (lookup !== undefined && policy.audit?.callerNumber === 'keep') {
+    report('policy.yaml', ['audit', 'callerNumber'], 'the call-start lookup\'s param, the number the caller is calling from, is recorded as it is (keep) in the trace, the console and the audit', 'write "callerNumber: last4" unless the whole number must be recorded');
+  }
+  const factors: readonly string[] = config.identity?.levels[1].factors ?? [];
+  const offering = Object.entries(slots).filter(([id, spec]) => spec?.callerNumber !== undefined && !factors.includes(id)).map(([id]) => id);
+  const keeps = block?.use === 'hint' || offering.length > 0;
+  for (const [tool, action] of Object.entries(policy.actions)) {
+    action.rules.forEach((entry, i) => {
+      if (typeof entry !== 'object' || entry === null || !('callerNumber' in entry)) return;
+      const rule = readRule(entry);
+      if (rule.rule !== 'callerNumber') return;
+      const path: DataPath = ['actions', tool, 'rules', i, 'callerNumber'];
+      if (!keeps && rule.else !== 'confirmed') report('policy.yaml', path, `the callerNumber rule of "${tool}" holds "${rule.field}" to the number the caller is calling from, but the app keeps no caller's number (no callerNumber in app.yaml, and no slot that offers it), so the rule refuses every call`, 'add "callerNumber: { use: hint }" to app.yaml, or give the slot that takes the number a callerNumber offer');
+      // A param named callerNumber is the number as the session keeps it (the lookup's param, callerOf(s).number): compared as it is meant to be.
+      else if (keeps && !offering.includes(rule.field) && rule.field !== 'callerNumber') report('policy.yaml', [...path, 'field'], `"${rule.field}" is no slot that offers the caller's number, so the rule compares it with the number as the carrier sent it, digit for digit (+15555550142 is not 5555550142)`, `name the slot that offers the number (its value is the number as the slot holds it), or pass the number in that form`);
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -398,6 +663,8 @@ function referencesOf(config: LoadedConfig): Reference[] {
   for (const [id, form] of Object.entries(config.forms.forms)) {
     if (form.summaryPromptId !== null) refs.push({ id: form.summaryPromptId, file: 'forms.yaml', path: ['forms', id, 'summaryPromptId'] });
   }
+  // The lines a form's checks say: each outcome's line, each handoff's, and checksPassed (./formChecks.ts).
+  for (const ref of checkPromptReferences(config)) refs.push(ref);
   // The lines a knowledge answer is said through: a form's answers (kb_answer and kb_unavailable, or its own) and an intent's passage.
   for (const { id, file, path } of knowledgePromptReferences(config)) refs.push({ id, file, path });
   const identity = identityParts(config);
@@ -451,7 +718,64 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
       if (!has(prompts, id) && !reported.has(id)) missing(id, `the engine says it when ${why}`, vars);
     }
     problems.push(...checkSlotPromptVariables(config, locale, prompts, file, locate, code, codeFile));
+    problems.push(...checkFactsOfferLines(config, locale, prompts, file, locate, code));
+    problems.push(...checkConsentLine(config, locale, prompts, file, locate));
     if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));
+  }
+  return problems;
+}
+
+/**
+ * The line of a slot that proposes a value from the facts (`offer_<slot>`, its offer `facts`), in
+ * each locale that has it: it says the value proposed, `{<slot>}`, so a yes is to a value the caller
+ * heard, and it is given nothing else, so a line that uses another fails when it is said.
+ */
+function checkFactsOfferLines(
+  config: LoadedConfig,
+  locale: string,
+  prompts: LoadedConfig['prompts'][string],
+  file: string,
+  locate: LoadResult['locate'],
+  code: AppCode | undefined,
+): Problem[] {
+  const problems: Problem[] = [];
+  for (const slot of askedSlots(config)) {
+    const spec = code?.slots && Object.hasOwn(code.slots, slot) ? code.slots[slot] : undefined;
+    const id = `offer_${slot}`;
+    if (spec?.offer !== 'facts' || !has(prompts, id)) continue;
+    const used = variablesOf(prompts[id]!.text);
+    const extra = used.filter((name) => name !== slot);
+    const line = locale === config.defaultLocale ? `the line "${id}"` : `the ${locale} line "${id}"`;
+    const at = locate(file, ['prompts', id, 'text']) ?? { line: 1, column: 1 };
+    const path = formatPath(['prompts', id, 'text']);
+    if (!used.includes(slot)) {
+      problems.push({ file, ...at, path, message: `${line} proposes a value for the slot "${slot}" but does not say it ({${slot}}), so a yes would fill a value the caller never heard`, fix: `say {${slot}} in the line ("Is this about {${slot}}?")` });
+    }
+    if (extra.length > 0) {
+      problems.push({ file, ...at, path, message: `${line} uses ${extra.map((name) => `{${name}}`).join(', ')}, which the engine does not give it (it gives a proposal only {${slot}}), so saying it would fail`, fix: `use only {${slot}} in this line` });
+    }
+  }
+  return problems;
+}
+
+/**
+ * The consent question (app.yaml's textConsent, `consent_texts`), in each locale that has it: it says
+ * the last four digits of the number a grant is for, `{last4}`, so a yes is to a number the caller
+ * heard of, and it is given nothing else, so a line that uses another fails when it is said.
+ */
+function checkConsentLine(config: LoadedConfig, locale: string, prompts: LoadedConfig['prompts'][string], file: string, locate: LoadResult['locate']): Problem[] {
+  if (config.app.textConsent === undefined || !has(prompts, CONSENT_PROMPT)) return [];
+  const used = variablesOf(prompts[CONSENT_PROMPT]!.text);
+  const extra = used.filter((name) => name !== 'last4');
+  const line = locale === config.defaultLocale ? `the line "${CONSENT_PROMPT}"` : `the ${locale} line "${CONSENT_PROMPT}"`;
+  const at = locate(file, ['prompts', CONSENT_PROMPT, 'text']) ?? { line: 1, column: 1 };
+  const path = formatPath(['prompts', CONSENT_PROMPT, 'text']);
+  const problems: Problem[] = [];
+  if (!used.includes('last4')) {
+    problems.push({ file, ...at, path, message: `${line} asks consent to text for the whole call but does not say which number ({last4}), so a yes would be to a number the caller never heard of`, fix: 'say {last4} in the line ("Can I text you helpful links during this call, at the number ending in {last4}?")' });
+  }
+  if (extra.length > 0) {
+    problems.push({ file, ...at, path, message: `${line} uses ${extra.map((name) => `{${name}}`).join(', ')}, which the engine does not give it (it gives the consent question only {last4}), so saying it would fail`, fix: 'use only {last4} in this line' });
   }
   return problems;
 }

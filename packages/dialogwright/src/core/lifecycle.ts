@@ -1,15 +1,17 @@
 import { confirmationHash } from '../gate/policy';
 import { raise } from '../gate/principal';
 import { isAnonymous, isParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
-import { codeLengthOf, formOf, gateOf, hasCode, identityOf, toolOf } from './app/lookup';
+import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { AppContext, Completion, CompletionContext, FormId, Refused, VerifyOutcome } from './app/types';
+import type { AppContext, Completion, CompletionContext, FormId, Refused, SlotId, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
 import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
+import type { CheckReconfirmed, FormStopped } from './checks';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { idempotencyKey } from './idempotency';
+import { callerGateFacts } from './callerNumber';
 import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
 
 export { redactCall };
@@ -86,6 +88,95 @@ export interface TurnOut {
   gateEvents: GateEvent[];
   kb: KbSource | null;
   effects: Effect[];
+  /** The form a check ended this turn (core/checks.ts), for the audit's `form_stopped` row. Absent on every other turn. */
+  stopped?: FormStopped;
+  /** The forms that completed this turn and went on to their next (FormDef.next; core/turn.ts), in order, each for an audit `form_next` row. Absent on every other turn. */
+  movedOn?: FormMovedOn[];
+  /** The offer of the caller's number this turn settled (core/turn.ts), for the audit's `offer` row. Absent on every other turn. */
+  offer?: OfferSettled;
+  /**
+   * The slots this turn filled from the call's consent to text (app.yaml's `textConsent`, core/turn.ts),
+   * in order, each for an `offer` row with `answer: consent`. Absent on every other turn.
+   */
+  consented?: OfferSettled[];
+  /** The consent to text for the whole call, settled this turn (core/turn.ts), for the audit's `consent` row. Absent on every other turn. */
+  consent?: ConsentSettled;
+  /** The check whose read-back the caller said no to this turn (core/turn.ts), for the audit's `check_reconfirmed` row. Absent on every other turn. */
+  reconfirmed?: CheckReconfirmed;
+  /**
+   * What became of the caller-ID match this turn (identity.yaml's `callerId`), in order, for the
+   * audit's `identity_caller_match` rows: asked (`offered`), then `verified`, `declined` or `failed`,
+   * each with `at`, the number of the turn's gate events before it, so its row sits where it happened
+   * among theirs. Absent on every other turn.
+   */
+  callerMatch?: CallerMatchStep[];
+}
+
+/**
+ * A form that completed and went on to its next form (FormDef.next): the two forms, and `at`, the
+ * number of the turn's gate events before the move, so its `form_next` row sits between the first
+ * form's rows and the next form's.
+ */
+export interface FormMovedOn {
+  readonly form: FormId;
+  readonly next: FormId;
+  readonly at: number;
+}
+
+/** One step of the caller-ID match this turn, and how many of the turn's gate events came before it. */
+export interface CallerMatchStep {
+  readonly outcome: CallerMatchOutcome;
+  readonly at: number;
+}
+
+/** One step of the caller-ID match (TurnOut.callerMatch, Session.callerMatch). */
+export type CallerMatchOutcome = 'offered' | 'verified' | 'declined' | 'failed';
+
+/**
+ * An offer settled: the number the caller is calling from (a slot's `callerNumber`), or a value
+ * proposed from the facts (a slot's `offer: facts`). What was asked, as the line was said, and what
+ * the caller answered. `yes`: the value offered; `no`: a no, with no value of their own (or, at an
+ * offer that takes a yes or a no only, a value with no clear yes); `other`: a value of their own, said
+ * or keyed, with or without a no; `none`: no answer before the offer's retry ladder ran out;
+ * `consent`: no offer was asked, since the caller granted consent to text for the whole call
+ * (app.yaml's `textConsent`), and the line is that question's, as said. The audit writes it as an
+ * `offer` row in the day's hash chain (core/audit.ts), with how it was answered.
+ */
+export interface OfferSettled {
+  readonly slot: SlotId;
+  /** Where the value offered came from: the number the caller is calling from, or the app's facts. */
+  readonly source: 'caller-number' | 'facts';
+  readonly promptId: string;
+  /**
+   * The offer's line as rendered (the prompt manifest may change later). A value proposed from the
+   * facts is written into it as the slot's value is recorded (its redact, else policy.yaml's `audit:`).
+   */
+  readonly said: string;
+  readonly answer: 'yes' | 'no' | 'other' | 'none' | 'consent';
+  /** The last four digits of the number offered, as the line said them; absent for a value from the facts. */
+  readonly last4?: string;
+  /** The language the line was said in. */
+  readonly locale: string;
+  /** Answered on the keypad, though the turn that settled it was the keys' end (a silence turn): the audit's `by` is `keypad`. */
+  readonly keyed?: true;
+}
+
+/**
+ * The consent to text for the whole call settled (app.yaml's `textConsent`, core/textConsent.ts): the
+ * line as it was said, and what the caller answered. `granted`: true for a yes, false for a no (or a
+ * value with no yes), null for a request said instead or no answer. The audit writes it as a `consent`
+ * row (`scope: call`) in the day's hash chain (core/audit.ts), with how it was answered.
+ */
+export interface ConsentSettled {
+  readonly scope: 'call';
+  readonly granted: boolean | null;
+  readonly promptId: string;
+  readonly said: string;
+  /** The last four digits of the number the line named. */
+  readonly last4: string;
+  readonly locale: string;
+  /** Answered on the keypad (OfferSettled.keyed). */
+  readonly keyed?: true;
 }
 
 export function newTurnOut(): TurnOut {
@@ -118,11 +209,16 @@ function isOtherParty(s: Session, subjectKind: string): boolean {
 /**
  * What the gate may know of the session for this call. The attempts are the ones the call's own
  * identity check has failed: the one-time code's for the app's code tool, the factors' for anything
- * else (the attempts rule runs only for the identity tools the app's rulesFor gives it to).
+ * else (the attempts rule runs only for the identity tools the app's rulesFor gives it to). The
+ * caller's number, where the session kept one, for the callerNumber rule (GateFacts.callerNumber).
  */
 function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
-  const attempts = call.tool === identityOf(appOf(s)).codeTool ? s.identityAttempts.code : s.identityAttempts.factors;
-  return { attempts, confirmedHash: s.confirmedHash, todayIso: tc.todayIso };
+  const app = appOf(s);
+  const attempts = call.tool === identityOf(app).codeTool ? s.identityAttempts.code : s.identityAttempts.factors;
+  const facts = { attempts, confirmedHash: s.confirmedHash, todayIso: tc.todayIso };
+  // The caller's number, only for a session that kept one (core/callerNumber.ts): every other
+  // session's facts are as they were.
+  return s.callerNumber === undefined ? facts : { ...facts, ...callerGateFacts(app, s.callerNumber) };
 }
 
 /**
@@ -164,11 +260,21 @@ function evaluate(s: Session, call: ToolCall, tc: TurnContext): GateDecision {
  */
 export const RESULT_UNREDACTABLE = 'result-unredactable';
 
+/** How a call to a tool is made (callTool). */
+export interface CallOptions {
+  /** A tool that throws fails the call, recorded with TOOL_FAILED_SUMMARY, not the turn. Default false. */
+  readonly failSoft?: boolean;
+}
+
+/** The summary recorded for a call made with `failSoft` whose tool threw: the error itself is never recorded. */
+export const TOOL_FAILED_SUMMARY = 'the tool failed: nothing was returned';
+
 /**
  * The only way a turn reaches a tool: evaluate the gate, and on ALLOW run the tool, withhold from
  * its result what the policy keeps from this caller (policy.yaml `redact:`), and record a summary
  * (no PHI). Every gate decision is recorded, allowed or not, with the call redacted. A probe
- * (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW.
+ * (PROBES) is evaluated and recorded only: its tool never runs, even on ALLOW. So is a form's check
+ * (policy.yaml `check: true`), which has no tool: its ALLOW is recorded with no result.
  *
  * The summary and the record it names are masked as the call is (a raw value of a param recorded
  * masked or never) and as the result was (every text a withheld field held), and so are the params
@@ -180,17 +286,32 @@ export const RESULT_UNREDACTABLE = 'result-unredactable';
  *
  * `code` is the keypad one-time code for verifyCode. It travels beside the call, never in its
  * params, so it reaches neither the gate event nor the trace.
+ *
+ * `opts.failSoft`: a tool that throws as it runs fails the call, not the turn (the call-start lookup,
+ * core/turn.ts callerLookup, which must never keep the greeting from being said). The call is
+ * recorded as allowed, with TOOL_FAILED_SUMMARY and nothing of the error (its message may hold a
+ * param's raw value), the side effects it queued before it threw are dropped, and its value is null.
+ * Without it, a throw goes up to the turn, as it always has.
  */
-export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code?: string): ToolOutcome {
+export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code?: string, opts: CallOptions = {}): ToolOutcome {
   // Nothing past this line holds the raw call: the event, the trace and the audit see the redacted one.
   const decision = evaluate(s, call, tc);
-  if (decision.verdict !== 'ALLOW' || (call.purpose !== undefined && PROBES.has(call.purpose))) {
+  // A form's check (policy.yaml `check: true`) has no tool: like a probe, the gate's answer is all there is.
+  if (decision.verdict !== 'ALLOW' || (call.purpose !== undefined && PROBES.has(call.purpose)) || isCheckAction(appOf(s), call.tool)) {
     out.gateEvents.push({ decision, summary: null });
     return { decision, value: null };
   }
   // The side effects the tool queues as it runs: recorded with the call's scrub (recordedEffect), sent as they are.
   const effectsBefore = out.effects.length;
-  const ran = runTool(s, call, tc, out, code);
+  let ran: ReturnType<typeof runTool>;
+  try {
+    ran = runTool(s, call, tc, out, code);
+  } catch (err) {
+    if (opts.failSoft !== true) throw err;
+    out.effects.length = effectsBefore;
+    out.gateEvents.push({ decision, summary: TOOL_FAILED_SUMMARY });
+    return { decision, value: null };
+  }
   // Redaction per principal, the one place it happens: nothing past this line holds the whole
   // result. The hooks, the facts and the lines get the stripped value; the event (so the trace, the
   // console and the audit) gets the summary with what was withheld.
@@ -300,9 +421,75 @@ function signInImpossible(s: Session): boolean {
   return s.caps.signIn && identityOf(appOf(s)).signInLevel === undefined && isAnonymous(s.principal) && s.stepUp !== null;
 }
 
+/** The caller-ID question (identity.yaml's `callerId`), said in place of the first factor it leaves to ask. */
+export const CALLER_MATCH_PROMPT = 'identity_caller_match';
+
+/**
+ * The caller-ID match in force (identity.yaml's level 1 `callerId`, FactsConfig.callerMatch): the
+ * value of each factor it identifies, or null when there is none to use. None for an app without
+ * `callerId`, a caller already verified, a session with no number, a match set aside on this call
+ * (a no or "different account", a failed check) or already used, one whose identifier the caller
+ * said themselves, and when the app's hook finds no
+ * single match: it returns null, leaves out a factor or gives one that is not a string with something
+ * in it, or throws. Nothing of an error is kept, since its message may hold what the facts hold.
+ */
+export function callerMatchOf(s: Session): Readonly<Record<SlotId, string>> | null {
+  const app = appOf(s);
+  const callerId = app.identity?.callerId;
+  const hook = app.facts?.callerMatch;
+  if (callerId === undefined || hook === undefined || !isAnonymous(s.principal) || s.callerNumber === undefined) return null;
+  if (s.callerMatch !== undefined && s.callerMatch !== 'offered') return null;
+  // An identifier the caller said themselves ("my account is ...") is theirs to verify: the match does not replace it.
+  if (callerId.identifies.some((id) => s.slots[id]?.value != null && s.slots[id]!.by !== 'caller-id')) return null;
+  let found: Readonly<Record<SlotId, string>> | null;
+  try {
+    found = hook(s.facts);
+  } catch {
+    return null;
+  }
+  if (found === null || typeof found !== 'object') return null;
+  const values: Record<SlotId, string> = {};
+  for (const id of callerId.identifies) {
+    const v: unknown = Object.hasOwn(found, id) ? found[id] : undefined;
+    if (typeof v !== 'string' || v.trim() === '') return null;
+    values[id] = v;
+  }
+  return values;
+}
+
+/** Records a step of the caller-ID match: on the session (Session.callerMatch) and for the turn's audit rows (TurnOut.callerMatch). */
+export function noteCallerMatch(s: Session, out: TurnOut, outcome: CallerMatchOutcome): void {
+  s.callerMatch = outcome;
+  out.callerMatch = [...(out.callerMatch ?? []), { outcome, at: out.gateEvents.length }];
+}
+
+/**
+ * The factors a step-up asks the caller for: every factor, or, with a caller-ID match in force
+ * (callerMatchOf), those the match does not identify.
+ */
+function askedFactors(s: Session, match: Readonly<Record<SlotId, string>> | null): SlotId[] {
+  const factors = identityOf(appOf(s)).factorSlots;
+  return match === null ? [...factors] : factors.filter((id) => !Object.hasOwn(match, id));
+}
+
+/**
+ * The caller-ID question: "I see an account associated with the number you're calling from. To
+ * access it, please tell me your date of birth, or say different account." Asked for the first factor
+ * the match leaves to ask, which reads the answer as its own, with no variables: the match is never
+ * said. The first time it is asked on the call, the audit's `offered` row is written.
+ */
+export function askCallerMatch(s: Session, slot: SlotId, out: TurnOut, acks: Ack[]): PromptDecision {
+  if (s.callerMatch !== 'offered') noteCallerMatch(s, out, 'offered');
+  return prompt(CALLER_MATCH_PROMPT, slot, {}, acks);
+}
+
 /**
  * The next thing a step-up needs: an identity factor still missing, their check once both are in,
  * or, at level 1 with level 2 needed, the keypad code. On a web chat, the portal sign-in instead.
+ * With a caller-ID match in force (identity.yaml's `callerId`), the factors it identifies are not
+ * asked: the first factor left to ask is asked with the caller-ID question in place of its own
+ * (unless it holds part of a value already), and once those are in, the identified ones are filled
+ * from the match and the check runs as for factors said.
  */
 function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | Refused | null {
   if (awaitingSignIn(s)) {
@@ -311,12 +498,48 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
   }
   if (signInImpossible(s)) return handoff(s, 'needs-human', acks);
   if (isAnonymous(s.principal)) {
-    const missing = identityOf(appOf(s)).factorSlots.find((id) => s.slots[id]!.value === null);
-    if (missing) return askSlot(s, missing, s.slots[missing]!.window, acks);
+    const match = callerMatchOf(s);
+    // A match in use that is gone now (the app's facts changed, or the caller said an identifier of
+    // their own) is unused again: every factor is asked, and every factor listens.
+    if (match === null && s.callerMatch === 'offered') delete s.callerMatch;
+    const missing = askedFactors(s, match).find((id) => s.slots[id]!.value === null);
+    if (missing) {
+      const window = s.slots[missing]!.window;
+      if (match !== null && window === null) return askCallerMatch(s, missing, out, acks);
+      return askSlot(s, missing, window, acks);
+    }
+    if (match !== null) fillFromCallerMatch(s, match);
     // Verified to the level needed: the entry call is retried, now with the customer's own ID.
     return verifyFactors(s, tc, out, acks) ?? ensureEntry(s, tc, out, acks);
   }
   return sendCodeAndAsk(s, tc, out, acks);
+}
+
+/**
+ * The factors the caller-ID match identifies, filled from it just before the check (SlotState.by
+ * `caller-id`): the value only, never a display, so no line, prompt variable or model request says it,
+ * and the trace masks the value as the slot's redact says, as it masks one said. The match is in use
+ * (Session.callerMatch `offered`) whether or not the question was asked: a caller who gave the other
+ * factors on the way in ("check my request, my birthday is ...") is checked with it.
+ */
+function fillFromCallerMatch(s: Session, match: Readonly<Record<SlotId, string>>): void {
+  for (const [id, value] of Object.entries(match)) Object.assign(s.slots[id]!, { value, display: null, confirmed: false, window: null, by: 'caller-id' });
+  s.callerMatch = 'offered';
+}
+
+/** Whether the check about to run, or just run, has factors the caller-ID match filled (SlotState.by `caller-id`). */
+function identifiedByCallerId(s: Session): boolean {
+  return identityOf(appOf(s)).factorSlots.some((id) => s.slots[id]?.by === 'caller-id');
+}
+
+/**
+ * Identity asked for at the greeting (identity.yaml's `callerId` with `ask: greeting`), and what follows
+ * it there with no form open: the next factor or the check, as a step-up would. Null once the caller is
+ * verified (the open question follows); a request said instead ends it (core/turn.ts), and the factors
+ * are asked again, if at all, when something needs them.
+ */
+export function continueIdentity(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | null {
+  return nextFactor(s, tc, out, acks) as Decision | null;
 }
 
 /**
@@ -329,11 +552,15 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
  * their own acks into it ("Thanks, Alex.", "Thank you, you're verified."), so the caller passes a
  * copy it means to speak from. While a step-up is pending the gate is not asked again: it said
  * what it needs when the step-up began, and the entry call is retried once the factors are verified.
+ * A step-up a check began (stepUp, from core/turn.ts stopForm) is pending with the form entered: it
+ * goes on here too, and once it is done the form loop runs the check again.
  */
 export function ensureEntry(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | Refused | null {
   const form = s.form;
-  if (form === null || s.entered === form) return null;
+  if (form === null) return null;
+  // A step-up waiting goes on first: the entry call's, or a check's once the form is entered (stepUp).
   if (s.stepUp) return nextFactor(s, tc, out, acks);
+  if (s.entered === form) return null;
   const app = appOf(s);
   const def = formOf(app, form);
   if (!def.entry) {
@@ -358,11 +585,7 @@ export function ensureEntry(s: Session, tc: TurnContext, out: TurnOut, acks: Ack
       s.entered = form;
       return null;
     case 'STEP_UP':
-      // An app without identity has no factors to ask: validateApp keeps every tool at level 0, so
-      // only an app's own rule can get here, and it fails closed, to a person.
-      if (!app.identity) return handoff(s, 'needs-human', acks);
-      s.stepUp = { call, need: decision.needLevel === 2 ? 2 : 1 };
-      return nextFactor(s, tc, out, acks);
+      return stepUp(s, call, decision.needLevel === 2 ? 2 : 1, tc, out, acks);
     case 'BLOCK': {
       const ack = blockAck(s, decision.reason);
       if (!ack) return handoff(s, 'needs-human', acks);
@@ -371,6 +594,23 @@ export function ensureEntry(s: Session, tc: TurnContext, out: TurnOut, acks: Ack
     case 'NEEDS_HUMAN':
       return handoff(s, decision.reason === 'attempts' ? 'identity' : 'needs-human', acks);
   }
+}
+
+/**
+ * The gate said STEP_UP for `call`, to level `need`: the entry call of the open form (ensureEntry), or
+ * one of its checks (core/turn.ts stopForm, which also asks for level 1 for a check that waits on an
+ * identity factor). Identity is asked for (the next factor, their check, or the keypad code;
+ * on a web chat, the portal sign-in), and the form loop goes on once the caller is verified to the
+ * level the gate said: the entry call is made again, and a check runs again, since a check that has
+ * not passed is not in Session.checked. A check's call is kept without its params: it is never made
+ * again as it stands, but from what the slots then hold. An app without identity has no factors to
+ * ask: validateApp keeps every tool at level 0, so only an app's own rule can get here, and it fails
+ * closed, to a person.
+ */
+export function stepUp(s: Session, call: ToolCall, need: 1 | 2, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | Refused | null {
+  if (!appOf(s).identity) return handoff(s, 'needs-human', acks);
+  s.stepUp = { call, need };
+  return nextFactor(s, tc, out, acks);
 }
 
 /**
@@ -390,17 +630,26 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
     // tool that says otherwise (or hands back something that is not a proven party) is not believed,
     // and the caller goes to a person.
     if (!isParty(value.principal) || value.principal.kind !== subjectKind || value.principal.level !== 1) return handoff(s, 'needs-human', acks);
-    s.principal = value.principal;
+    // Verified with the caller-ID match standing in for the factors it identifies: the principal
+    // says so (via), for the app's audit row and its own decisions. Every other principal is as the tool made it.
+    const byCallerId = identifiedByCallerId(s);
+    const { via: _via, ...proven } = value.principal;
+    s.principal = byCallerId ? { ...proven, via: 'caller-id' } : _via === undefined ? value.principal : proven;
+    if (byCallerId) noteCallerMatch(s, out, 'verified');
     acks.push({ promptId: 'identity_verified', vars: { first: value.principal.first } });
     if (s.stepUp?.need === 2) return sendCodeAndAsk(s, tc, out, acks);
     s.stepUp = null;
     return null;
   }
-  // No match: every factor is asked again from the first, keeping what each has cost.
+  // No match: every factor is asked again from the first, keeping what each has cost. A caller-ID
+  // match that took part is set aside for the call: the caller may be someone else on a shared phone,
+  // and every factor lets them identify their own account.
   s.identityAttempts.factors += 1;
+  if (identifiedByCallerId(s)) noteCallerMatch(s, out, 'failed');
   for (const id of factorSlots) {
     const st = s.slots[id]!;
     Object.assign(st, emptySlot(), { attempts: st.attempts });
+    delete st.by;
   }
   if (!retryAllowed(s, verifyTool, tc, out)) return handoff(s, 'identity', acks);
   return askSlot(s, factorSlots[0]!, null, [...acks, { promptId: failedPromptId ?? 'identity_failed', vars: {} }]);
