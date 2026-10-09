@@ -29,6 +29,14 @@ describe('consoleMetaOf', () => {
   });
 });
 
+describe('consoleMetaOf: a slot\'s own attempts', () => {
+  it('lists each slot that has its own (SlotSpec.attempts), and no other', () => {
+    expect(consoleMetaOf(bare).slotAttempts).toEqual({});
+    const dob = testkitApp.slots.dob!;
+    expect(consoleMetaOf({ ...bare, slots: { ...bare.slots, dob: { ...dob, attempts: 5 } } }).slotAttempts).toEqual({ dob: 5 });
+  });
+});
+
 describe('consoleMetaOf: a slot shown as said', () => {
   it('shows a slot whose display is the words as said by its written value (SlotSpec.displayFrom)', () => {
     const note = testkitApp.slots.missingNote!;

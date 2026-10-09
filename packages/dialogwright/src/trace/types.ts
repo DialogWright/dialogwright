@@ -10,6 +10,7 @@ import type { ScreenResult } from '../core/screen';
 import type { Effect, GateEvent, KbSource } from '../core/lifecycle';
 import type { AuditDraft } from '../audit/types';
 import type { NominationVia } from '../kb/types';
+import type { SlotExhausted } from '../core/outcome';
 
 export type TraceSource = AnswerSource | 'dtmf' | 'silence' | 'error' | 'none';
 
@@ -129,6 +130,13 @@ export interface TraceRecord {
    */
   joined?: { fragments: string[] };
   effects?: Effect[];
+  /**
+   * The slot_exhausted event: the slot that ran out of attempts on this turn, the failures it took,
+   * and what followed (its onMaxAttempts' then; core/outcome.ts). Only for a slot with retries of its
+   * own (SlotSpec.attempts or onMaxAttempts); absent on every other turn, and for every other slot,
+   * whose running out is the handoff it always was.
+   */
+  slotExhausted?: SlotExhausted;
   /**
    * This turn's audit drafts, in the order they were chained -- before chaining: no `seq` or
    * `hash` yet (those are the sink's, core/audit.ts's `AuditDraft` is what a turn reports). The

@@ -39,4 +39,13 @@ describe('trace', () => {
     expect(parsed.completed).toEqual([]);
     expect(parsed.usage).toEqual({ inputTokens: 0, outputTokens: 0, estimated: true, costUsd: 0 });
   });
+
+  it('a turn on which a slot ran out of attempts carries the slot_exhausted event; every other has none', () => {
+    const event = startEvent();
+    const result = resolve(newSession('s', 0, VOICE_RELAY), event, null, { nowMs: 0, todayIso: '2026-09-18', thresholds: { ...DEFAULT_THRESHOLDS }, tools: demoTools() });
+    const input = { event, questions: null, response: null, error: null, timing: { planMs: 0, askMs: 0, resolveMs: 1, totalMs: 1 }, ts: '2026-09-18T00:00:00.000Z', pricePerMtok: 0.042 };
+    expect('slotExhausted' in buildTraceRecord({ result, ...input })).toBe(false);
+    const record = buildTraceRecord({ result: { ...result, exhausted: { slot: 'town', attempts: 2, outcome: 'skip' } }, ...input });
+    expect(record.slotExhausted).toEqual({ slot: 'town', attempts: 2, outcome: 'skip' });
+  });
 });

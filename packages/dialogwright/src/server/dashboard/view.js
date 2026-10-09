@@ -155,7 +155,7 @@ export function deliveryNote(fact, held) {
 
 /** The console metadata in force: neutral until the page (or a test) configures the app's. */
 let META = {
-  formLabels: {}, slotLabels: {}, questionPrefixes: {}, detectQuestions: [], stepUp: [], chipStyle: {},
+  formLabels: {}, slotLabels: {}, questionPrefixes: {}, detectQuestions: [], stepUp: [], chipStyle: {}, slotAttempts: {},
   handoffReasons: {}, facts: [], serviceNote: { label: 'Downstream service', answered: 'answered', reasons: {} },
   signIn: { marker: 'signed in · portal', role: null }, chatPrefixes: [],
 };
@@ -370,12 +370,18 @@ function pendingLine(pending) {
   return `confirm · ${named}${value ? ` → ${value}` : ''}`;
 }
 
+/** How many attempts the slot `id` takes: its own (ConsoleMeta.slotAttempts), else the run's MAX_ATTEMPTS. */
+function attemptsOf(id, thresholds) {
+  const own = META.slotAttempts ?? {};
+  return Object.hasOwn(own, id) ? own[id] : (thresholds.MAX_ATTEMPTS ?? 3);
+}
+
 function askingLine(record, thresholds) {
   const id = record.promptedFor;
   if (!id || id === 'intent' || id === 'confirm') return null;
   const slot = record.slots ? record.slots[id] : null;
   if (!slot) return null;
-  return `asking ${id} · attempt ${(slot.attempts ?? 0) + 1} of ${thresholds.MAX_ATTEMPTS ?? 3}`;
+  return `asking ${id} · attempt ${(slot.attempts ?? 0) + 1} of ${attemptsOf(id, thresholds)}`;
 }
 
 function money(usd) {
@@ -650,7 +656,7 @@ function nowAskingOf(record, thresholds) {
   if (!id || id === 'intent' || id === 'confirm') return null;
   const slot = record.slots ? record.slots[id] : null;
   if (!slot) return null;
-  return `asking ${id} · attempt ${(slot.attempts ?? 0) + 1} of ${thresholds.MAX_ATTEMPTS ?? 3}`;
+  return `asking ${id} · attempt ${(slot.attempts ?? 0) + 1} of ${attemptsOf(id, thresholds)}`;
 }
 
 /** A tool result summary in words: `in_review` reads "in review". */

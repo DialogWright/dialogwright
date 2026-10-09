@@ -116,6 +116,17 @@ describe('reduce', () => {
     expect(v.chips.map((c) => [c.id, c.state, c.changed])).toEqual([['deliveryDay', 'filled', false], ['deliveryPart', 'empty', false]]);
   });
 
+  it('counts a slot\'s attempts against its own (SlotSpec.attempts), else the run\'s MAX_ATTEMPTS', async () => {
+    const { events } = await scripted(['can you deliver on monday', ACCOUNT_ID, 'april twelfth']);
+    try {
+      configure(consoleMetaOf({ ...testkitApp, slots: { ...testkitApp.slots, dob: { ...testkitApp.slots.dob!, attempts: 5 } } }));
+      expect(reduce(events).asking).toBe('asking dob · attempt 1 of 5');
+    } finally {
+      configure(consoleMetaOf(testkitApp));
+    }
+    expect(reduce(events).asking).toBe('asking dob · attempt 1 of 3');
+  });
+
   it('shows a correction refilling a slot, flashes only that chip, and a queued task', async () => {
     const { events } = await scripted([
       'i want to report a missing parcel and then track another one',

@@ -23,6 +23,11 @@ export interface ConsoleMeta {
    * words). A slot not listed shows its display.
    */
   chipStyle: Record<string, 'last4' | 'verified' | 'recorded' | 'value'>;
+  /**
+   * The attempts of each slot that has its own (SlotSpec.attempts), for the asking line's "attempt k of
+   * N"; a slot not listed takes the run's MAX_ATTEMPTS (the call_started event's thresholds).
+   */
+  slotAttempts: Record<string, number>;
   formLabels: Record<string, string>;
   slotLabels: Record<string, string>;
   questionPrefixes: Record<string, string[]>;
@@ -87,6 +92,7 @@ export function consoleMetaOf(app: App): ConsoleMeta {
     slotOrder: [...(c.slotOrder ?? defaultSlotOrder(app))],
     stepUp: [...identityOf(app).factorSlots],
     chipStyle: chipStyleOf(app),
+    slotAttempts: Object.fromEntries(Object.entries(app.slots).flatMap(([id, spec]) => (spec.attempts === undefined ? [] : [[id, spec.attempts]]))),
     formLabels: { ...internalLabels(app), ...c.formLabels },
     slotLabels: { ...c.slotLabels },
     questionPrefixes: Object.fromEntries(Object.entries(c.questionPrefixes ?? {}).map(([k, v]) => [k, [...v]])),

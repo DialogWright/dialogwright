@@ -103,6 +103,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     ...(input.joined ? { joined: { fragments: [...input.joined] } } : {}),
     // As recorded: each param masked as its call was (core/recording.ts recordedEffect); the runner sends the effect itself.
     effects: result.effects.map(recordedEffect),
+    // Only on a turn a slot with retries of its own ran out: every other record is as it was.
+    ...(result.exhausted ? { slotExhausted: { ...result.exhausted } } : {}),
     audit: [...result.audit],
     timing,
     usage: {

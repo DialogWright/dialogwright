@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { libraryApp } from '../define/fixture/app';
 import type { App, FormDef } from '../core/app/types';
+import type { SlotSpec } from '../core/slots/types';
 import { appMapText, danglingReferences } from './appMap';
 import { useTestkit } from './apps';
 
@@ -69,5 +70,34 @@ describe('the app map: what it cannot connect', () => {
   it('says so when forms do not declare their calls, and finds no action unreached then', () => {
     expect(danglingReferences(libraryApp)).toEqual([]);
     expect(appMapText(libraryApp)).toContain('the forms do not declare which actions they call (`calls`), so which actions are reached is not checked.');
+  });
+});
+
+describe('the app map: a slot that runs out, and an outcome that enters a form', () => {
+  const slots = libraryApp.forms.renew_loan!.slots;
+  const slot = slots[0]!;
+  const withOutcome = (onMaxAttempts: SlotSpec['onMaxAttempts'], attempts?: number): App => ({
+    ...libraryApp,
+    slots: { ...libraryApp.slots, [slot]: { ...(libraryApp.slots[slot] as SlotSpec), onMaxAttempts, ...(attempts !== undefined ? { attempts } : {}) } },
+  });
+
+  it('draws each onMaxAttempts that is not the default handoff beside its slot, with its attempts where it has its own', () => {
+    expect(appMapText(withOutcome('handoff'))).not.toContain('runs out');
+    expect(appMapText(withOutcome({ then: 'handoff' }))).not.toContain('runs out');
+    const skip = appMapText(withOutcome({ say: 'hours', then: 'skip' }, 4));
+    expect(skip).toContain(`  x_${slot}>"When it runs out, after 4 attempts<br/>say hours, skip"]`);
+    expect(skip).toContain(`  s_${slot} -.->|"runs out"| x_${slot}`);
+    expect(appMapText(withOutcome({ then: 'handoff', reason: 'loan-desk' }))).toContain(`x_${slot}>"When it runs out<br/>handoff loan-desk"]`);
+    expect(appMapText(withOutcome({ then: 'form', form: 'check_hold' }))).toContain(`x_${slot}>"When it runs out<br/>form check_hold"]`);
+  });
+
+  it('an internal form an outcome enters is drawn after the form the outcome leaves', () => {
+    const app: App = {
+      ...withOutcome({ then: 'form', form: 'desk' }),
+      forms: { ...libraryApp.forms, desk: { slots: [], summaryPromptId: null, internal: true, label: 'talk to the desk', complete: (c) => ({ kind: 'said', acks: c.acks }) } },
+    };
+    const map = appMapText(app);
+    expect(map).toContain('after("After<br/>renew_loan, as an outcome: Renew a book<br/>check_hold, as an outcome: Check a hold")');
+    expect(map).toContain('After `renew_loan` (an outcome), `check_hold` (an outcome): the internal form `desk`');
   });
 });

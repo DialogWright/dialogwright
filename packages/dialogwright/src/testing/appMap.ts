@@ -1,8 +1,9 @@
 import { dirname, relative } from 'node:path';
 import { gateOf } from '../core/app/lookup';
 import { reachOf, unreachedActions } from '../core/app/reach';
-import { formsLeadingTo } from '../core/app/next';
-import type { App, FormId, IntentDef } from '../core/app/types';
+import { formsEnteringByOutcome, formsLeadingTo } from '../core/app/next';
+import type { App, FormId, IntentDef, Outcome } from '../core/app/types';
+import { slotOutcomeOf } from '../core/outcome';
 import { capitalize, cell, code, expectGeneratedPage, formWords, levelName, mermaidLabel, nodeId, slotNoun, writeGeneratedPage } from './generatedPage';
 import { ruleName } from './policyCard';
 
@@ -81,7 +82,9 @@ function formDiagram(app: App, id: FormId): string[] {
   const actions = gateOf(app).source.actions;
   const out = ['flowchart LR'];
   if (form.internal === true) {
-    out.push(`  after(${mermaidLabel('After', ...formsLeadingTo(app.forms, id).map((from) => `${from}: ${formWords(app, from)}`))})`, '  after --> slots');
+    const byOutcome = enteredByOutcome(app, id);
+    const after = [...formsLeadingTo(app.forms, id).map((from) => `${from}: ${formWords(app, from)}`), ...byOutcome.map((from) => `${from}, as an outcome: ${formWords(app, from)}`)];
+    out.push(`  after(${mermaidLabel('After', ...after)})`, '  after --> slots');
   } else {
     out.push(`  intent(${mermaidLabel('Intent', id, ...(intent ? [intent.label] : []))})`);
   }
@@ -89,6 +92,16 @@ function formDiagram(app: App, id: FormId): string[] {
   form.slots.forEach((slot) => out.push(`    ${nodeId('s', slot)}[${mermaidLabel(...slotLines(app, slot))}]`));
   if (form.slots.length === 0) out.push(`    none[${mermaidLabel('no slots')}]`);
   out.push('  end');
+  // What a slot does when it runs out of attempts (SlotSpec.onMaxAttempts), where it is not the default
+  // handoff: each beside its slot, with its attempts where it has its own.
+  for (const slot of form.slots) {
+    const spec = Object.hasOwn(app.slots, slot) ? app.slots[slot]! : undefined;
+    if (spec === undefined || spec.onMaxAttempts === undefined || spec.onMaxAttempts === 'handoff') continue;
+    const outcome = slotOutcomeOf(spec);
+    if (outcome.then === 'handoff' && outcome.say === undefined && outcome.reason === undefined) continue;
+    const node = nodeId('x', slot);
+    out.push(`  ${node}>${mermaidLabel(spec.attempts === undefined ? 'When it runs out' : `When it runs out, after ${spec.attempts} attempts`, outcomeWords(outcome, 'max-attempts'))}]`, `  ${nodeId('s', slot)} -.->|${mermaidLabel('runs out')}| ${node}`);
+  }
   if (form.internal !== true) out.push('  intent --> slots');
   let last = 'slots';
   if (form.summaryPromptId !== null) {
@@ -101,7 +114,7 @@ function formDiagram(app: App, id: FormId): string[] {
   for (const check of form.checks ?? []) {
     const action = actions[check.action];
     const node = nodeId('c', check.action);
-    const outcomes = Object.entries(check.on ?? {}).map(([reason, o]) => `${reason}: ${o.say !== undefined ? `say ${o.say}, ` : ''}${o.then === 'handoff' ? `handoff ${o.reason ?? reason}` : o.then}`);
+    const outcomes = Object.entries(check.on ?? {}).map(([reason, o]) => `${reason}: ${outcomeWords(o, reason)}`);
     out.push(`  ${node}{{${mermaidLabel('Check', action?.say === undefined ? check.action : action.say, action === undefined ? 'not in the policy' : `level ${action.level}: ${levelName(app, action.level)}`, ...outcomes)}}}`);
     for (const slot of check.with) out.push(`  ${nodeId('s', slot)} -.->|${mermaidLabel('checked')}| ${node}`);
     if (action === undefined) classes.push(node);
@@ -135,6 +148,17 @@ function formDiagram(app: App, id: FormId): string[] {
   if (form.internal !== true && intent?.kind !== 'form') classes.push('intent');
   if (classes.length > 0) out.push(`  ${DANGLING}`, `  class ${[...new Set(classes)].join(',')} dangling`);
   return out;
+}
+
+/** The forms an outcome (a check's, or a slot's when it runs out) goes from to `form`. */
+function enteredByOutcome(app: App, form: FormId): FormId[] {
+  return formsEnteringByOutcome(app.forms, Object.fromEntries(Object.entries(app.slots).map(([slot, spec]) => [slot, spec.onMaxAttempts])), form);
+}
+
+/** An outcome in words: its line, then what follows (a handoff's reason, `reason` by default; the form entered). */
+function outcomeWords(o: Outcome, reason: string): string {
+  const then = o.then === 'handoff' ? `handoff ${o.reason ?? reason}` : o.then === 'form' ? `form ${o.form}` : o.then;
+  return `${o.say !== undefined ? `say ${o.say}, ` : ''}${then}`;
 }
 
 /** The keypad menu as a tree, and the intents that only say a line, each to its prompt. */
@@ -258,7 +282,7 @@ export function appMapText(app: App): string {
   ];
   for (const id of formOrder(app)) {
     const intro = app.forms[id]!.internal === true
-      ? `After ${formsLeadingTo(app.forms, id).map(code).join(', ') || 'no form'}: the internal form ${code(id)}, its slots, the summary, the action and its rules.`
+      ? `After ${[...formsLeadingTo(app.forms, id).map(code), ...enteredByOutcome(app, id).map((from) => `${code(from)} (an outcome)`)].join(', ') || 'no form'}: the internal form ${code(id)}, its slots, the summary, the action and its rules.`
       : `Intent ${code(id)} to its slots, the summary, the action and its rules.`;
     lines.push('', `## ${capitalize(formWords(app, id))}`, '', intro, '', '```mermaid', ...formDiagram(app, id), '```');
   }
