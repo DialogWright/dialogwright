@@ -13,7 +13,7 @@ DialogWright is an open-source TypeScript framework for voice and chat agents. A
 
 ## Try it, with no keys
 
-You need Node 22.19 or later and pnpm. Nothing here needs an account or a key: a stub stands in for the decision model.
+You need git, Node 22.19 or later and pnpm 9 (`corepack enable` gives the version this repository pins). Nothing here needs an account or a key: a stub stands in for the decision model.
 
 ```sh
 git clone https://github.com/DialogWright/dialogwright.git
@@ -28,7 +28,7 @@ That is the text console of the example clinic, Example Family Practice (a ficti
 pnpm --filter @dialogwright/example-clinic regress
 ```
 
-It prints `no changes`, then a summary: the corpus, the scripted calls, and the adversarial suite (injections, relationships claimed and not proven, off-scope requests, codes said aloud, hostile replies from every tool), each case held to what must hold whatever the wording. [apps/clinic](apps/clinic/README.md) says what the app is made of; [apps/utility](apps/utility/README.md), a fictional electric utility built by an AI coding assistant from one paragraph, is the example of identity, a one-time code, delegates and a knowledge base.
+It prints `no changes`, then a summary: the corpus, the scripted calls, and the adversarial suite (injections, off-scope requests, hostile replies from every tool; for an app with identity, unproven relationships and codes said aloud too), each case held to what must hold whatever the wording. A line `client errors 3 (first: injected timeout)` is the run testing its own handling of a model that times out, on purpose. [apps/clinic](apps/clinic/README.md) says what the app is made of; [apps/utility](apps/utility/README.md), a fictional electric utility built by an AI coding assistant from one paragraph, is the example of identity, a one-time code, delegates and a knowledge base.
 
 ## Build your own
 
@@ -43,18 +43,18 @@ Then replace the example with your own, reading the [authoring guide](docs/guide
 
 ## Answer a real phone call in an hour
 
-On your own laptop, with two keys: a carrier's (Telnyx or Twilio, with a number) and a decision model's (TypeSafe, OpenRouter or the Vercel AI Gateway; or none, with a compatible model on your own machine). Nothing else needs an account: the carrier reaches you through Cloudflare's quick tunnel, which needs only `cloudflared` installed (`brew install cloudflared` on a Mac).
+On your own laptop, with two keys: a carrier's (Telnyx or Twilio, with a number) and a decision model's (TypeSafe, OpenRouter or the Vercel AI Gateway; or none, with a compatible model on your own machine). Nothing else needs an account: the carrier reaches you through Cloudflare's quick tunnel, which needs only `cloudflared` installed (`brew install cloudflared` on a Mac, or Cloudflare's package for Linux).
 
 ```sh
 pnpm install
-pnpm configure                 # which app, then a phone line: the carrier and its key, the model and its key, the number for a person
-pnpm start --tunnel quick      # opens the tunnel, starts the server with the app's .env, prints the webhook URL to paste into your number
-pnpm diagnose --app <name>     # in another terminal, with the PUBLIC_HOST=... line pnpm start prints: checks it end to end
+pnpm configure                           # which app, then a phone line: the carrier and its key, the model and its key, the number for a person
+pnpm start --app <name> --tunnel quick   # opens the tunnel, starts the server with the app's .env, prints the webhook URL to paste into your number
+pnpm diagnose --app <name>               # in another terminal, with the PUBLIC_HOST=... line pnpm start prints: checks it end to end
 ```
 
-In a project of its own the same commands are `npx dialogwright configure`, `npx dialogwright start --tunnel quick` and `npx dialogwright diagnose`.
+In a project of its own the same commands are `npx dialogwright configure`, `npx dialogwright start --tunnel quick` and `npx dialogwright diagnose`, with no `--app` (the project is its one app).
 
-`configure` reads a key with the echo off (or from the environment variable of its own name, never a flag), writes it only to the app's `.env` (`apps/<app>/.env` here, the project's own in a project), readable by you alone and git-ignored, prints its length and never the key, and sends it nowhere. To try it first with no keys at all, choose "on this computer": the web chat and the console on `localhost`. The quick tunnel's address changes every run; for a line that stays up on a machine you own (a named tunnel, a service that starts at boot, calls that survive a restart, the console from your phone), follow [running your own IVR on a machine you own](https://dialogwright.com/guides/home-server.html), and see [the guide's section 14](docs/guide/14-running-it.md) for every option. (The commands are `configure` and `diagnose` because `pnpm setup` and `pnpm doctor` are pnpm's own.)
+`configure` reads a key with the echo off (or from the environment variable of its own name, never a flag), writes it only to the app's `.env` (`apps/<name>/.env` here, the project's own in a project), readable by you alone and git-ignored, prints its length and never the key, and sends it nowhere. To try it first with no keys at all, choose "on this computer": the web chat and the console on `localhost`. The quick tunnel's address changes every run; for a line that stays up on a machine you own (a named tunnel, a service that starts at boot, calls that survive a restart, the console from your phone), follow [running your own IVR on a machine you own](https://dialogwright.com/guides/home-server.html), and see [the guide's section 14](docs/guide/14-running-it.md) for every option. (The commands are `configure` and `diagnose` because `pnpm setup` and `pnpm doctor` are pnpm's own.)
 
 ## Status
 
