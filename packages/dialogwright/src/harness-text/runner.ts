@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { rulesAt } from '../core/routes';
 import { join } from 'node:path';
 import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
@@ -120,6 +121,9 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   const tc: TurnContext = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
   const identity = promptsIdentity(entry, app);
   session.principal = identity ? ANONYMOUS : seed.caller();
+  // A caller seeded as verified was verified earlier in the call, so the routes after identity
+  // (routes.yaml) have run: the entry's turn does not run them as if the caller had just verified.
+  if (!identity && rulesAt(app, 'afterIdentity').length > 0) session.identityRouted = true;
   // A verified caller's factors stay on the call; a step-up has the factors it asked before the one prompted.
   const factors = identityOf(app).factorSlots;
   for (const id of factors) {

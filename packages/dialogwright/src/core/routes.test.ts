@@ -280,3 +280,13 @@ describe('the fixture\'s scripted calls, and a saved session', () => {
     expect(report.turns).toBeGreaterThan(40);
   }, 60_000);
 });
+
+describe('a seeded corpus call', () => {
+  it('a caller seeded as verified was routed after identity earlier in the call', async () => {
+    const { runCorpusEntry } = await import('../harness-text/runner');
+    const entry = corpus.find((e) => e.id === 'pr-01')!;
+    const { run } = await runCorpusEntry(entry, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0 });
+    expect(run.result.routes).toBeUndefined();
+    expect(run.result.session.identityRouted).toBe(true);
+  });
+});

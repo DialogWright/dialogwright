@@ -16,8 +16,7 @@ import { buildQuestions, callerMatchAsked } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { type RouteNoted } from './lifecycle';
-import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
+import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type RouteNoted, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
@@ -2483,7 +2482,7 @@ function routeSay(s: Session, o: RouteOutcome): Ack[] {
   return o.say === undefined ? [] : [{ promptId: o.say, vars: summaryVars(s) }];
 }
 
-/** A route's outcome that is one of piece 1's (end, handoff, form, anything-else) as it acts (core/outcome.ts Ending). */
+/** A route's outcome that a check's refusal takes too (end, handoff, form, anything-else), as it acts (core/outcome.ts Ending). */
 function routeEnding(s: Session, o: Exclude<RouteOutcome, { then: 'continue' | 'locale' }>, acks: Ack[]): Ending {
   return endingOf(o as Outcome, acks, summaryVars(s), ROUTE_HANDOFF_REASON);
 }

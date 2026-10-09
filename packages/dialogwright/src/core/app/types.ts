@@ -305,7 +305,7 @@ export interface AppToolResult {
 }
 
 /**
- * What a route does (routes.yaml, App.routes): piece 1's Outcome but `skip` (a slot's), and two of its
+ * What a route does (routes.yaml, App.routes): an Outcome (a check's and a slot's) but `skip` (a slot's alone), and two of its
  * own. Each says its line first, where it has one:
  * - `continue`: the call goes on as if no route were written;
  * - `locale`: the call switches to `locale` (one of the app's), as the language intent does, then goes on;
