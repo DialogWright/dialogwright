@@ -15,6 +15,12 @@ pnpm --filter dialogwright regress:testkit
 
 `pnpm verify` runs the type check and the tests together, and `pnpm check` checks every app folder (its YAML against the schemas and the cross-references, and against the app's code). Run all of the above before you open a pull request.
 
+### The build, and how the workspace reads the source
+
+Nothing in this repository needs a build: each package's `package.json` points its `exports` (and the engine's `bin`) at `src/`, so vitest, tsx and tsc read the TypeScript as it is. A project that installs a package reads JavaScript instead. `pnpm -r build` writes each package's `dist/` (`scripts/build-package.mjs`: tsc with `tsconfig.build.json`, every relative import made one Node resolves, and the non-TypeScript files under `src/` copied beside the code that reads them; the engine's build also copies the authoring guide, the slot pages and the create-app skill into the package, `scripts/shipDocs.ts`). Each package's `publishConfig` names what a project gets: `exports` from `dist/` through the same entries (the engine's four, `'dialogwright'`, `/testing`, `/slot-kit` and `/policy`, and `/kb/onnx`; the per-file subpaths are this workspace's only), and the engine's bin `bin/dialogwright.mjs`, which registers tsx's loader so the commands can read an app's own TypeScript. `pnpm pack` and `pnpm publish` put `publishConfig` in place of those fields, so publish with pnpm, never npm. A file a runtime path reads (a `new URL(..., import.meta.url)`, a JSON import, a template) must work from `dist/` as from `src/`: keep it under `src/` (it is copied) or at the package's root and in its `files`.
+
+`pnpm adopt:test` is the proof: it builds and packs the packages, makes a project of its own outside the workspace from the packed `create-dialogwright`, installs the tarballs with npm (third-party packages from the registry), and runs the project's check, type check, tests, stub regression, read-back commands, `configure` and `diagnose --offline`, for an app with identity and one without. It runs weekly in CI (`.github/workflows/adopt.yml`); run it yourself after a change to a package's manifest, its build, the scaffold's templates or a command line. [RELEASING.md](RELEASING.md) is the maintainer's release.
+
 ## Rules
 
 - The engine imports no app. Apps depend on the engine, never the other way around.

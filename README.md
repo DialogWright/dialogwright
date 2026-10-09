@@ -15,7 +15,7 @@ DialogWright is an open-source TypeScript framework for voice and chat agents th
 
 Pre-release. APIs will change, and the packages are not yet published to npm.
 
-The package ships TypeScript source (run it with tsx or vitest) until a release adds a build.
+The packages build (`pnpm -r build`: JavaScript and declarations in each package's `dist/`), and `pnpm adopt:test` packs them, makes a project of its own outside this repository from the packed `create-dialogwright`, and runs its checks, tests and regression; publishing is the maintainer's step ([RELEASING.md](RELEASING.md)). In this repository nothing needs a build: the packages are read from their TypeScript source.
 
 ## What's here
 
@@ -32,7 +32,7 @@ The package ships TypeScript source (run it with tsx or vitest) until a release 
 - `packages/dialogwright/schemas`: the JSON Schema of each YAML file in an app folder; every file names its schema on its first line, so an editor completes and checks it.
 - `apps/clinic`: Example Family Practice, a fictional clinic's appointment line, an app folder, and the first example app to read. A caller can schedule, reschedule, cancel or confirm an appointment with one of eight providers, or be put through to billing. It shows an app with no identity verification, all five of its slots configured in `slots.yaml` from the slot library, reads and gated writes through the directory tools, scheduling built from generic form hooks, and its own corpus (241 labelled utterances), scripted calls (89) and regression baseline. It needs no keys: `pnpm --filter @dialogwright/example-clinic cli --client heuristic` is a text console, and `pnpm --filter @dialogwright/example-clinic regress` replays its fixtures. See [apps/clinic/README.md](apps/clinic/README.md).
 - `apps/utility`: Example Power & Light, a fictional electric utility's phone and chat line, built by an AI coding assistant from a one-paragraph description, and the example to read for identity and policy. Callers can report an outage (confirmed before it is filed), hear a balance behind verification, and set up a payment arrangement behind a one-time code, with bounds on the first payment and the total; a property manager may check balances and report outages for their buildings, but an arrangement for a tenant's account goes to a person. It has its own policy card, policy matrix, app map, corpus, scripted calls and stub regression baseline, and a recording against the decision model that CI replays offline (`--client recorded`). See [apps/utility/README.md](apps/utility/README.md).
-- [`pnpm create-app`](docs/authoring-an-app.md#where-to-start) and the [create-app skill](.claude/skills/create-app/SKILL.md): the scaffold writes a small app that passes the checks as created, and the skill is the procedure an AI coding assistant follows to turn a paragraph into an app. The [trials](docs/trials/README.md) tried it with two fresh assistants and say what they found.
+- [`pnpm create-app`](docs/authoring-an-app.md#where-to-start) and the [create-app skill](.claude/skills/create-app/SKILL.md): the scaffold writes a small app that passes the checks as created, and the skill is the procedure an AI coding assistant follows to turn a paragraph into an app. Outside this repository, `npm create dialogwright@latest <name>` (`packages/create-dialogwright`, once published; `pnpm create-app <name> --standalone` here) writes the same app as a project of its own on the `dialogwright` package, run with `npx dialogwright <command>`. The [trials](docs/trials/README.md) tried it with two fresh assistants and say what they found.
 - `site/`: the website at [dialogwright.com](https://dialogwright.com), static pages published to GitHub Pages by `.github/workflows/pages.yml`: the landing page and two guides, [running your own IVR on a machine you own](https://dialogwright.com/guides/home-server.html) (try it with no accounts, then a phone line with a carrier, a model key and a tunnel, kept running by launchd or systemd) and [scaling out](https://dialogwright.com/guides/scaling.html) (what one machine already has, and the design for many servers, Phase 8b, not built yet). A test checks every page's links against the repository.
 
 ## Quick start
@@ -46,6 +46,8 @@ pnpm --filter @dialogwright/example-clinic regress
 pnpm --filter dialogwright slot-docs         # regenerate the slot type pages
 pnpm policy:card apps/clinic                 # write the policy card, POLICY.md (also: policy:matrix, app:diagram)
 pnpm create-app <name>                       # a new app under apps/<name> that passes the checks (--identity for one that verifies callers)
+pnpm -r build                                # each package's dist/ (not needed to develop here)
+pnpm adopt:test                              # the packages packed, and a project of its own outside the repository, all green
 pnpm kb:ingest docs/ --dir apps/<name>       # a knowledge base from documents: sources (also a website: a URL and --depth)
 pnpm kb:draft apps/<name>                    # draft passages with your own ANTHROPIC_API_KEY (in .env, never in CI); nothing drafted is said
 pnpm kb:review apps/<name>                   # the review page on this machine: a person approves each passage (also: kb:approve, kb:status)

@@ -167,8 +167,9 @@ export function templateFiles(identity: boolean, standalone = false): Map<string
 /**
  * The create-app skill as a project of its own gets it, by path under .claude/skills/create-app: each
  * page's links to the authoring guide and the slot pages point at the installed package's copies
- * (node_modules/dialogwright/docs), links between the skill's own pages stay, and a link to any other
- * page of this repository points at it on GitHub.
+ * (node_modules/dialogwright/docs), links between the skill's own pages and to CLAUDE.md (the
+ * project's own, where the repository's is) stay, and a link to any other page of this repository
+ * points at it on GitHub.
  */
 export function standaloneSkill(): Map<string, string> {
   const files = new Map<string, string>();
@@ -176,7 +177,8 @@ export function standaloneSkill(): Map<string, string> {
     const text = readFileSync(join(SKILL_DIR, file), 'utf8');
     const from = posix.join(SKILL_REPO_PATH, file);
     files.set(posix.join('.claude/skills/create-app', file), !file.endsWith('.md') ? text : relinkMarkdown(text, from, (target, anchor) => {
-      if (target === SKILL_REPO_PATH || target.startsWith(`${SKILL_REPO_PATH}/`)) return null;
+      // The skill's own pages, and CLAUDE.md, which in a project is the project's own, at the same place.
+      if (target === SKILL_REPO_PATH || target.startsWith(`${SKILL_REPO_PATH}/`) || target === 'CLAUDE.md') return null;
       const shipped = packagePathOf(target);
       if (shipped !== null && shipped.startsWith('docs/')) return `${posix.relative(posix.dirname(from), posix.join('node_modules/dialogwright', shipped))}${anchor}`;
       return `${REPOSITORY_PAGES}${target}${anchor}`;

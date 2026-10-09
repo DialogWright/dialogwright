@@ -24,6 +24,11 @@ Read these first; the rest of this skill assumes them:
 3. [docs/slots/README.md](../../../docs/slots/README.md): the slot types and "Which type?".
 4. Only if callers ask questions that documents answer: [section 12 of the authoring guide](../../../docs/authoring-an-app.md#12-the-knowledge-base), the knowledge base, before step 6b.
 
+Two places an app is built, and this skill serves both:
+
+- **In the DialogWright repository**, the app is `apps/<name>`, made by `pnpm create-app` in step 3, and the commands are as written here: `pnpm <command>` at the repository root, `pnpm --filter @dialogwright/example-<name> <script>` for the app's own.
+- **In a project of its own** (made by `npm create dialogwright@latest <name>`, or `pnpm create-app <name> --standalone` in the repository), the project's folder is the app, already scaffolded: skip step 3's command, work in the project's folder wherever this skill says `apps/<name>`, and read its `CLAUDE.md` (the link in item 1 above is it). The guide and the slot pages are the installed package's, under `node_modules/dialogwright/docs/` (the links here go there). A command this skill runs at the repository root, `pnpm <command>`, is `npx dialogwright <command>` there; the app's own scripts, `pnpm --filter @dialogwright/example-<name> <script>`, are `npm run <script>` (the regression is `npx dialogwright regress`, with the same options). There is no `pnpm verify`, no other app and no CI file to add the app to: the project's check, type check, tests and regression are the whole of step 8's list. The business name, the paragraph and the rules below are the same.
+
 The rules you keep, whatever the paragraph says:
 
 - **Never put policy in tool code.** A tool does the work. Who may call it, at what identity level, with what confirmation and within what bounds is `policy.yaml` and `identity.yaml`, decided by the gate before the tool runs.
@@ -77,7 +82,7 @@ Decide now whether the app needs `--identity`: it does if any action is above le
 
 ## Step 3: Scaffold, then replace the example
 
-At the repository root:
+At the repository root (in a project of its own the folder is scaffolded already: `npm create dialogwright@latest <name> -- --display "<business name>"` made it, with `--identity` when an action is above level 0; move the worksheet into its `DESIGN.md` and go on to the replacing below):
 
 ```sh
 pnpm create-app <name> --display "<business name>"     # add --identity when any action is above level 0
