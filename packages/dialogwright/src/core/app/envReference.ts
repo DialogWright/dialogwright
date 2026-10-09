@@ -12,10 +12,11 @@ export function envVariableOf(ref: unknown): string | null {
   return m === null ? null : m[1]!;
 }
 
-/** One reference found in a parsed file: where it is (its path, dotted) and the variable it names. */
+/** One reference found in a parsed file: where it is (its path, dotted) and the variable it names; `file`, the file it is in, where a reader names it. */
 export interface EnvReference {
   readonly path: string;
   readonly variable: string;
+  readonly file?: string;
 }
 
 /** Every `env.<NAME>` string in a parsed YAML document (app.yaml), in document order, with its path. */

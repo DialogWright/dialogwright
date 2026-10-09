@@ -132,6 +132,20 @@ describe('pnpm diagnose', () => {
       expect(JSON.stringify(results)).not.toContain('support-east');
     });
 
+    it('reads routes.yaml\'s too: a called condition\'s number is E.164, and the file is named', async () => {
+      const dir = appDir('id: lines\ntransfer:\n  targets:\n    - when: { called: env.SALES_LINE }\n      to: env.SALES_DESK\n  default: env.HANDOFF_NUMBER\n');
+      writeFileSync(join(dir, 'routes.yaml'), 'start:\n  - when: { called: [env.SPANISH_LINE, env.OTHER_LINE] }\n    then: locale\n    locale: es\n  - else: continue\n');
+      const env = { ...goodEnv(dir), SALES_LINE: '+15555550177', SALES_DESK: '+442079460123', SPANISH_LINE: '+15555550188', OTHER_LINE: 'sip:x@example.com' };
+      const results = (await runDoctor({ env, cwd: dir, appDir: dir, offline: true }, deps())).filter((r) => r.id === 'variables');
+      expect(results).toEqual([
+        { id: 'variables', status: 'ok', message: "app.yaml's transfer.targets.0.when.called reads SALES_LINE: set, a phone number (the number called is compared with it)" },
+        { id: 'variables', status: 'ok', message: "app.yaml's transfer.targets.0.to reads SALES_DESK: set, a phone number" },
+        expect.objectContaining({ message: expect.stringContaining("app.yaml's transfer.default reads HANDOFF_NUMBER") }),
+        { id: 'variables', status: 'ok', message: "routes.yaml's start.0.when.called.0 reads SPANISH_LINE: set, a phone number (the number called is compared with it)" },
+        { id: 'variables', status: 'fail', message: "routes.yaml's start.0.when.called.1 reads OTHER_LINE: set, but it is not an E.164 number: the server will not start", fix: 'set OTHER_LINE to the number callers dial, like +15551234567' },
+      ]);
+    });
+
     it('holds a transfer target to an E.164 number or a sip: URI, warns of a 555 one, and never says the value', async () => {
       const yaml = 'id: lines\ntransfer:\n  targets:\n    - when: { reason: emergency }\n      to: env.DESK_SIP\n    - when: { reason: security }\n      to: env.SECURITY_LINE\n    - when: { reason: frustrated }\n      to: env.BAD_LINE\n  default: env.MAIN_LINE\n';
       const dir = appDir(yaml);

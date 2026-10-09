@@ -1,6 +1,6 @@
 import type { App, FormId, PredicateContext, RouteOutcome, RoutePoint, RouteRule, Routes } from './app/types';
 import { ROUTE_POINTS, ROUTE_THEN, ROUTE_THEN_AT } from './app/types';
-import { allHold, alwaysHolds, conditionProblems, conditionRefProblems, CONDITION_SHAPES, subjectsOf, type ConditionFacts, type ConditionWorld } from './conditions';
+import { allHold, alwaysHolds, conditionProblems, conditionRefProblems, CONDITION_SHAPES, subjectsOf, type Condition, type ConditionFacts, type ConditionWorld } from './conditions';
 import { hoursOpen, scheduleNames } from './hours';
 import type { Session } from './session';
 import { callDataOf } from './callData';
@@ -207,6 +207,19 @@ export function routeProblems(routes: Routes | undefined, world: RouteWorld): Ro
       list(routes[point], [point], point);
     }
   }
+  return out;
+}
+
+/**
+ * The environment variables the app's `called` conditions name (routes.yaml's rules and app.yaml's
+ * transfer targets), each once, in the order they are written: what the server reads as it starts.
+ */
+export function calledVariables(app: Pick<App, 'routes' | 'transfer'>): string[] {
+  const out: string[] = [];
+  const rules: { readonly when: readonly Condition[] }[] = [
+    ...(app.routes?.start ?? []), ...(app.routes?.afterIdentity ?? []), ...Object.values(app.routes?.afterForm ?? {}).flat(), ...(app.transfer?.targets ?? []),
+  ];
+  for (const r of rules) for (const c of r.when) if (c.kind === 'called') for (const v of c.variables) if (!out.includes(v)) out.push(v);
   return out;
 }
 

@@ -1,6 +1,7 @@
 import type { App } from '../core/app/types';
 import { transferHeaderNames, transferVariables, HEADER_NAME } from '../core/transfer';
 import { envVariableOf } from '../core/app/envReference';
+import { calledVariables } from '../core/routes';
 import { writableValue } from '../channel/callData';
 import { maskNumber } from '../channel/maskByName';
 import { fitHeaders, isSipTarget, SIP_URI_MAX, type DialTarget } from './voice/dial';
@@ -63,6 +64,22 @@ export function transferTargetsFrom(app: Pick<App, 'transfer'> | undefined, env:
     numbers.set(variable, value);
   }
   return { numbers, defaultVariable: envVariableOf(transfer.default) ?? HANDOFF_VARIABLE, headerNames: transferHeaderNames(transfer) };
+}
+
+/**
+ * The variables the app's `called` conditions name (routes.yaml, app.yaml's transfer targets: the number
+ * a caller dialed is one of these), read as the server starts: one unset or blank, or that is not an
+ * E.164 number, stops it with the fix, as a transfer target's does, since the condition would never
+ * hold. The names, never the numbers, for the startup line. None for an app that names none.
+ */
+export function calledVariablesFrom(app: Pick<App, 'routes' | 'transfer'> | undefined, env: Env): string[] {
+  const names = app === undefined ? [] : calledVariables(app);
+  for (const variable of names) {
+    const value = env[variable]?.trim();
+    if (value === undefined || value === '') throw new Error(`a called condition (routes.yaml or app.yaml's transfer) reads ${variable}, which is not set: set ${variable} in the app's .env to the E.164 number callers dial, or take the condition out`);
+    if (!E164.test(value)) throw new Error(`${variable} (read by a called condition) is not an E.164 number: set it to the number callers dial, like +15551234567`);
+  }
+  return names;
 }
 
 /** A handoff as the carrier posted it back (the end frame's handoff data, channel/relay/frames.ts endFrame). */

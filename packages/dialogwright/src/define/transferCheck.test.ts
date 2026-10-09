@@ -188,3 +188,16 @@ describe('the schema and validateApp', () => {
     expect(() => validateApp(callbackApp)).not.toThrow();
   });
 });
+
+describe('the conditions routes add, on a transfer target (design 2026-10-09-routes, decision 4)', () => {
+  const target = (when: string) => replace("    - when: { reason: security }\n", `    - when: ${when}\n      to: env.SECURITY_DESK\n    - when: { reason: security }\n`);
+  it('takes a fact, a slot and a level', async () => {
+    expect((await resultOf(target('[{ fact: tier, is: gold }, { slot: phone, present: true }, { level: 1 }]'))).problems).toEqual([]);
+  });
+  it('refuses hours the app does not have, a predicate the code does not write, the number called where it is not kept', async () => {
+    const { problems } = await resultOf(target('[{ hours: closed }, { named: vip }, { called: env.SALES_LINE }]'));
+    expect(problems.join('\n')).toContain('transfer.targets[2].when[0].hours  app.yaml has no hours, so this condition never holds');
+    expect(problems.join('\n')).toContain('transfer.targets[2].when[1].named  the code has no predicate "vip"');
+    expect(problems.join('\n')).toContain('transfer.targets[2].when[2].called  the app does not keep the number called');
+  });
+});

@@ -1,4 +1,4 @@
-import { targetValueProblem } from './transfer';
+import { E164, targetValueProblem } from './transfer';
 import { isSipTarget } from './voice/dial';
 import { accessSync, constants, existsSync, readFileSync, realpathSync, statfsSync, statSync } from 'node:fs';
 import { lookup as dnsLookup } from 'node:dns/promises';
@@ -355,10 +355,16 @@ const TEMPORARY_ROOTS = ['/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp',
 export function variableChecks(appDir: string, env: Env): CheckResult[] {
   const refs = appYamlEnvReferences(appDir);
   if (refs === null) return [{ id: 'variables', status: 'skip', message: 'the variables app.yaml names: app.yaml cannot be read (pnpm check says why)' }];
-  return refs.map(({ path, variable }) => {
+  return refs.map(({ path, variable, file }) => {
     const value = env[variable];
-    const where = `app.yaml's ${path} reads ${variable}`;
+    const where = `${file ?? 'app.yaml'}'s ${path} reads ${variable}`;
     if (value === undefined || value.trim() === '') return { id: 'variables', status: 'fail', message: `${where}, which is not set: the server will not start`, fix: `set ${variable} in the settings file` };
+    // A called condition (a route's or a transfer target's): the E.164 number callers dial, as the server holds it (server/transfer.ts calledVariablesFrom).
+    if (/(^|\.)called(\.\d+)?$/.test(path)) {
+      return E164.test(value.trim())
+        ? { id: 'variables', status: 'ok', message: `${where}: set, a phone number (the number called is compared with it)` }
+        : { id: 'variables', status: 'fail', message: `${where}: set, but it is not an E.164 number: the server will not start`, fix: `set ${variable} to the number callers dial, like +15551234567` };
+    }
     // A transfer target: an E.164 number or a sip: URI, as the server holds it (server/transfer.ts); a 555 number warned of, as HANDOFF_NUMBER is.
     if (path.startsWith('transfer.')) return targetCheck(where, variable, value.trim());
     if (value.length > CALL_DATA_VALUE_MAX) return { id: 'variables', status: 'fail', message: `${where}: set, ${value.length} characters, more than the ${CALL_DATA_VALUE_MAX} a custom parameter takes`, fix: `shorten ${variable}` };

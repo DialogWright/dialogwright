@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { callbackApp } from '../testing/callback/app';
-import { defaultTarget, describeDropped, dialPlan, maskTarget, parseHandoff, recordedPlan, targetNumber, transferTargetsFrom, type ServerTransfer } from './transfer';
+import { calledVariablesFrom, defaultTarget, describeDropped, dialPlan, maskTarget, parseHandoff, recordedPlan, targetNumber, transferTargetsFrom, type ServerTransfer } from './transfer';
 import { dialVerb, fitHeaders, SIP_HEADERS_MAX, sipUriWithHeaders } from './voice/dial';
 import { decideAction, type HttpDeps } from './http';
 import { twilioProvider } from './voice/twilio';
@@ -34,6 +34,16 @@ const ENV = { PRIORITY_LINE: 'sip:priority@pbx.example.com', CALLBACK_DESK: '+15
 function transfer(): ServerTransfer {
   return transferTargetsFrom(callbackApp, ENV, HANDOFF)!;
 }
+
+describe('the numbers a called condition reads, read as the server starts', () => {
+  it('names each, and stops the server on one unset or not E.164', async () => {
+    const { routedApp } = await import('../testing/routed/app');
+    expect(calledVariablesFrom(routedApp, { SPANISH_LINE: '+15555550188' })).toEqual(['SPANISH_LINE']);
+    expect(() => calledVariablesFrom(routedApp, {})).toThrow("a called condition (routes.yaml or app.yaml's transfer) reads SPANISH_LINE, which is not set");
+    expect(() => calledVariablesFrom(routedApp, { SPANISH_LINE: 'sip:es@pbx.example.com' })).toThrow('SPANISH_LINE (read by a called condition) is not an E.164 number');
+    expect(calledVariablesFrom(callbackApp, {})).toEqual([]);
+  });
+});
 
 describe('the targets, read as the server starts', () => {
   it('reads each variable the transfer names, HANDOFF_NUMBER from the config', () => {
