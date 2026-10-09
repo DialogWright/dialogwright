@@ -140,6 +140,9 @@ export type { Session, SessionFacts } from './core/session';
 // The numbers a call came with, for an app that keeps them (app.yaml's callerNumber): a hint, never identity on its own.
 export { callerOf, calledOf } from './core/callerNumber';
 export type { CallerNumber } from './core/callerNumber';
+// The data a call or chat came with that the app names (app.yaml's callData), for the app's code.
+export { callDataOf } from './core/callData';
+export type { CallDataKey } from './core/app/types';
 // What the caller answered to consent to text for the whole call (app.yaml's textConsent), for app code that needs it.
 export { textConsentOf } from './core/textConsent';
 export type { TextConsentAnswer } from './core/session';

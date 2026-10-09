@@ -231,6 +231,14 @@ export interface Session {
    */
   calledNumber?: string;
   /**
+   * The data the call or chat came with that the app names (app.yaml's `callData`, App.callData), by
+   * key, kept at the session's start from SessionStart.callData: only the keys the app names, each
+   * only when its source sent a value. A reconnect keeps the first setup's values. Read it with
+   * callDataOf (core/callData.ts). Never in what the model is sent, unless the app's callerState
+   * passes a value. Absent otherwise, so every other session is as it was.
+   */
+  callData?: Readonly<Record<string, string>>;
+  /**
    * The slots the open form has made an offer for, each once per form: the caller's number
    * (callerNumber), or a value proposed from the facts (a slot's `offer: facts`). A slot reopened
    * later is asked its own question. Absent until an offer is made, and gone when the form closes or

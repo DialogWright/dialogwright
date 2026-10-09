@@ -11,7 +11,7 @@ import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { formOf, identityOf } from '../core/app/lookup';
 import { delegateProblem, subjectProblem } from '../core/app/principals';
 import type { App, Refused, SlotId } from '../core/app/types';
-import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
+import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCallData, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
 import { keptCallerNumber, lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import { factsOfferSlots, greetingOfferPromptId } from '../core/factsOffer';
 import { sayText } from '../channel/actions';
@@ -373,7 +373,8 @@ export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOption
   const start = seedCorpusSession(startSession(entry.id, nowOf(opts)(), entry.as), entry, o);
   const asked = entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) && !atCallerMatch(entry, appOf(start)) && !atTextConsent(entry, appOf(start)) ? null : seededPrompt(start);
   const turn = opts.turn ?? runTurn;
-  const setup = await turn(start, startEvent(), o);
+  // The call data a seeded call comes with (App.testing.seed.callData); none for an app whose seed names none.
+  const setup = await turn(start, withCallData(startEvent(), appOf(start).testing?.seed?.callData), o);
   // The greeting's own bookkeeping moves the prompt to the greeting, so put back the one the seed
   // left the caller answering. Only the prompt: seeding again would read a summary a second time,
   // and a summary hook that remembers what the caller heard (FormDef.onSummaryRead) would then read the
@@ -430,6 +431,13 @@ export interface Scenario {
    * Without it, and on a chat, the call has none.
    */
   calledNumber?: string;
+  /**
+   * The data the call or chat comes with, by the app's callData keys (e.g. `{ "queue": "priority" }`),
+   * as the channel reads them from its source (a custom parameter, a setup or webhook field, a chat's
+   * context): the start event carries them (SessionStart.callData), and the session keeps the keys the
+   * app names. Without it, the call came with none, as it always has.
+   */
+  callData?: Record<string, string>;
   steps: ScenarioStep[];
   expect: ScenarioExpectation;
   /**
@@ -487,7 +495,7 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const turn = opts.turn ?? runTurn;
   // A call's numbers only: a chat has none (SessionStart.callerNumber, calledNumber).
   const calling = withCallerNumber(startEvent({}, scenario.locale), session.caps.speech && usesCallerNumber(appOf(session)) ? scenario.callerNumber : undefined);
-  const start = withCalledNumber(calling, session.caps.speech && usesCalledNumber(appOf(session)) ? scenario.calledNumber : undefined);
+  const start = withCallData(withCalledNumber(calling, session.caps.speech && usesCalledNumber(appOf(session)) ? scenario.calledNumber : undefined), scenario.callData);
   const setup = await turn(session, start, o);
   runs.push(setup);
   stepOf.push(-1);
@@ -551,6 +559,11 @@ export function checkExpectation(outcome: Outcome, expected: ScenarioExpectation
   return out;
 }
 
+/** An object of strings (a scenario's callData). */
+function isStringMap(v: unknown): v is Record<string, string> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === 'string');
+}
+
 function isValidScenario(s: unknown): s is Scenario {
   return (
     typeof s === 'object' && s !== null &&
@@ -560,6 +573,7 @@ function isValidScenario(s: unknown): s is Scenario {
     ((s as Scenario).locale === undefined || (typeof (s as Scenario).locale === 'string' && (s as Scenario).locale !== '')) &&
     ((s as Scenario).callerNumber === undefined || typeof (s as Scenario).callerNumber === 'string') &&
     ((s as Scenario).calledNumber === undefined || typeof (s as Scenario).calledNumber === 'string') &&
+    ((s as Scenario).callData === undefined || isStringMap((s as Scenario).callData)) &&
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null)
   );
 }
@@ -571,7 +585,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData that is not an object of strings, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       seen.add(s.id);
       out.push(s);

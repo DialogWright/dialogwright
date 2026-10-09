@@ -16,9 +16,11 @@ export const DEFAULT_LANG = 'en-US';
  * (SlotSpec.callerNumber, core/callerNumber.ts) or that keeps it for its code (App.callerNumber), and
  * only when the carrier sent one. The session keeps it only when the app can use it; it is never
  * identity. `calledNumber` is the number the caller called (VoiceProvider.setupCalledOf), only for an
- * app that keeps it (App.callerNumber `called`), and only when the carrier sent one.
+ * app that keeps it (App.callerNumber `called`), and only when the carrier sent one. `callData` is
+ * the data the call or chat came with that the app names (app.yaml's `callData`, channel/callData.ts
+ * callDataFrom), only for an app that names some, and only the keys whose source sent a value.
  */
-export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string; callerNumber?: string; calledNumber?: string }
+export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string; callerNumber?: string; calledNumber?: string; callData?: Readonly<Record<string, string>> }
 /** Recognized speech. Only a final transcript is a turn; a partial one holds. */
 export interface UserSpeech { type: 'user.speech'; text: string; final: boolean; lang: string }
 /** Typed text: always final. */
@@ -59,6 +61,11 @@ export function withCallerNumber(event: SessionEvent, callerNumber: string | nul
 export function withCalledNumber(event: SessionEvent, calledNumber: string | null | undefined): SessionEvent {
   if (event.type !== 'session.start' || calledNumber === null || calledNumber === undefined) return event;
   return { ...event, calledNumber };
+}
+/** A session start with the call data the app names (SessionStart.callData); null, absent or empty leaves it as it is. */
+export function withCallData(event: SessionEvent, callData: Readonly<Record<string, string>> | null | undefined): SessionEvent {
+  if (event.type !== 'session.start' || callData === null || callData === undefined || Object.keys(callData).length === 0) return event;
+  return { ...event, callData: { ...callData } };
 }
 export function speechEvent(text: string, final = true, lang = DEFAULT_LANG): UserSpeech {
   return { type: 'user.speech', text, final, lang };

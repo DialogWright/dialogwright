@@ -8,6 +8,7 @@ import type { Decision } from './decision';
 import type { ScreenResult } from './screen';
 import type { Session } from './session';
 import { saidCode } from './spokenCode';
+import { callDataAuditDetail } from './callData';
 import { appOf } from './app/registry';
 import { identityOf } from './app/lookup';
 import type { App } from './app/types';
@@ -104,7 +105,7 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
     const subject = !isAnonymous(p) && p.kind === subjectKind ? { [p.kind]: maskId(p.id) } : {};
     // An app built from a folder (App.configHashes) also names the configuration in force: the combined
     // hash and each file's `<file>:<hash>` line, once per call. Any other app's row is as it was.
-    drafts.push({ type: 'call_started', detail: { channel: after.channel, principal: p.kind, level: p.level, ...subject, ...configAuditDetail(app.configHashes) } });
+    drafts.push({ type: 'call_started', detail: { channel: after.channel, principal: p.kind, level: p.level, ...subject, ...configAuditDetail(app.configHashes), ...callDataAuditDetail(app, after) } });
   }
   // The portal's sign-in raised an anonymous web chat to one of the app's subjects. The factor is the
   // portal's own (multi-factor in production); nothing the subject typed took part in it.

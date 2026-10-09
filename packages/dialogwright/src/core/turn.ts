@@ -20,6 +20,7 @@ import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMP
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
+import { keptCallData } from './callData';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { CONSENT_PROMPT, consentCovers, grantedFor } from './textConsent';
 import { recordedValue, recordingOf } from './recording';
@@ -2498,6 +2499,9 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       if (caller !== undefined) s.callerNumber = caller;
       const called = keptCalledNumber(io.app, event.calledNumber);
       if (called !== undefined) s.calledNumber = called;
+      // The data the call or chat came with, only the keys the app names (core/callData.ts).
+      const data = keptCallData(io.app, event.callData);
+      if (data !== undefined) s.callData = data;
       // The app's lookup by that number, once, before the greeting, through the gate.
       if (caller !== undefined) callerLookup(s, io);
       // The caller-ID question at the greeting (identity.yaml's callerId, ask: greeting), with a match

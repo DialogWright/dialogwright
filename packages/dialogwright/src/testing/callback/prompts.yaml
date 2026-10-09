@@ -130,3 +130,7 @@ prompts:
   callback_booked:
     text: Done. We'll call {caller} back at {phone}. Your reference is {ref}.
     interruptible: false
+  # A call put through from the priority queue (callData's queue, a custom parameter of the call)
+  callback_booked_priority:
+    text: Done. We'll call {caller} back at {phone} within the hour. Your reference is {ref}.
+    interruptible: false

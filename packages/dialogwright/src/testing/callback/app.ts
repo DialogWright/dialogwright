@@ -1,6 +1,6 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ANONYMOUS, defineApp, type AppCode, type Completion, type CompletionContext, type Session, type ToolDef } from '../../index';
+import { ANONYMOUS, callDataOf, defineApp, type AppCode, type Completion, type CompletionContext, type Session, type ToolDef } from '../../index';
 import type { CorpusSlotLabels } from '../../core/app/types';
 
 /**
@@ -9,8 +9,10 @@ import type { CorpusSlotLabels } from '../../core/app/types';
  * slot's `callerNumber`, core/callerNumber.ts): when the form reaches the phone slot and the call came
  * with a number that fits it, the line asks whether that number is the best one to reach the caller
  * (`offer_phone`, by its last four digits) rather than asking for it. A yes fills the slot, a no asks
- * the slot's own question, and the summary reads the number back whole either way. All names and
- * numbers are made up (the 555 range).
+ * the slot's own question, and the summary reads the number back whole either way. It is also the
+ * fixture for the data a call comes with (app.yaml's `callData`, core/callData.ts): a call put through
+ * from the priority queue is told the callback comes within the hour. All names and numbers are made
+ * up (the 555 range).
  */
 
 /** The folder this app's YAML is in. */
@@ -56,7 +58,10 @@ function completeCallback(c: CompletionContext): Completion {
   if (decision.verdict !== 'ALLOW') return c.refusal(decision);
   s.pendingHash = null;
   const { ref } = value as { ref: string };
-  return { kind: 'end', promptId: 'callback_booked', vars: { caller: s.slots.caller?.display ?? '', phone: s.slots.phone?.display ?? '', ref }, acks };
+  // A call put through from the priority queue (app.yaml's callData, a custom parameter of the call) is
+  // told the callback comes within the hour: the app's code reads call data, the model never sees it.
+  const promptId = callDataOf(s).queue === 'priority' ? 'callback_booked_priority' : 'callback_booked';
+  return { kind: 'end', promptId, vars: { caller: s.slots.caller?.display ?? '', phone: s.slots.phone?.display ?? '', ref }, acks };
 }
 
 /** A corpus line's name label, the caller's name as said. */

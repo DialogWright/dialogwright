@@ -1,0 +1,95 @@
+[
+  {
+    "id": "priority-queue",
+    "callerNumber": "+15555550142",
+    "callData": {
+      "queue": "priority",
+      "accountRef": "AC-55501234"
+    },
+    "steps": [
+      {
+        "say": "can someone call me back"
+      },
+      {
+        "say": "Jordan Avery"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "it's about an order"
+      },
+      {
+        "say": "yes, please"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "callback_booked_priority",
+      "form": "request_callback",
+      "text": "within the hour",
+      "gate": "requestCallback:ALLOW"
+    }
+  },
+  {
+    "id": "standard-queue",
+    "callerNumber": "+15555550142",
+    "callData": {
+      "queue": "standard"
+    },
+    "steps": [
+      {
+        "say": "can someone call me back"
+      },
+      {
+        "say": "Jordan Avery"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "it's about an order"
+      },
+      {
+        "say": "yes, please"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "callback_booked",
+      "form": "request_callback",
+      "gate": "requestCallback:ALLOW"
+    }
+  },
+  {
+    "id": "chat-from-page",
+    "as": "web",
+    "callData": {
+      "page": "/orders/1042",
+      "queue": "priority"
+    },
+    "steps": [
+      {
+        "say": "can someone call me back"
+      },
+      {
+        "say": "Jordan Avery"
+      },
+      {
+        "say": "five five five five five five zero one nine nine"
+      },
+      {
+        "say": "it's about an order"
+      },
+      {
+        "say": "yes, please"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "callback_booked_priority",
+      "form": "request_callback",
+      "gate": "requestCallback:ALLOW"
+    }
+  }
+]
