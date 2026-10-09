@@ -986,6 +986,69 @@ HELP_DESK=+15555550123
 - **Test:** a scripted call per target, with `"expect": { "decision": "handoff", "transfer": { "target": "VIP_LINE", "headers": { ... } } }`, its call data in `"callData"`; one that reaches the default. Write each target's variable in the worksheet, and tell the owner to set it: the server will not start while one is unset (`pnpm diagnose` checks each).
 - **Pitfall:** a condition on call data is only as trustworthy as its source; a `chat.` key is the visitor's own word, fine for choosing a team, never for a line that trusts the caller more. `pnpm check` refuses a form, key or slot the app does not have, a `secret` key sent, and a header that is not an `X-` name or `User-to-User`; it warns of a reason no handoff has a line for and a rule after one that always holds ([authoring guide, 13.15](../../../docs/authoring-an-app.md#1315-where-a-handoff-goes-and-what-goes-with-it-transfer)).
 
+## Routes: the call's start, after identity, after a form
+
+**When:** "we're closed evenings and weekends", "during an outage, tell callers before anything else", "the Spanish line", "past-due accounts set up a payment plan first", "a danger goes straight to a person", "VIP callers go to their team". Without routes.yaml, every caller goes where they ask. With it, ordered rules decide at three points: as the call starts (before the greeting), the first time the caller is verified, and after a form completes. What the caller says still decides every other turn: routes are not a menu tree.
+
+```yaml
+# app.yaml (the hours a route reads, and the start hook's calls)
+callerNumber: { use: hint, called: true }
+hours:
+  timezone: America/New_York
+  weekly: { mon-fri: ["08:00-18:00"], sat: ["09:00-13:00"] }
+  closed: [2026-12-25]
+onStart:
+  calls: [lookupNotices]
+```
+
+```yaml
+# routes.yaml
+start:
+  - when: { hours: closed }
+    say: closed_now
+    then: end
+  - when: { named: vip }
+    then: handoff
+    reason: vip
+  - when: { fact: outage, is: true }
+    say: outage_notice
+    then: continue
+  - when: { called: env.SPANISH_LINE }
+    then: locale
+    locale: es
+  - else: continue
+afterIdentity:
+  - when: { fact: account.pastDue, is: true }
+    say: past_due_first
+    then: form
+    form: payment_plan
+  - else: continue
+afterForm:
+  report_problem:
+    - when: { slot: severity, is: danger }
+      then: handoff
+      reason: emergency
+    - else: continue
+```
+
+```ts
+// app.ts: the start hook writes the fact the route reads; a failed lookup is no notice
+onStart(ctx) {
+  const region = callDataOf(ctx.s).region;
+  if (region === undefined) return;
+  const { decision, value, failed } = ctx.callTool({ tool: 'lookupNotices', params: { region } }, { failSoft: true });
+  if (decision.verdict === 'ALLOW' && failed !== true) (ctx.s.facts as Facts).outage = (value as { outage?: unknown } | null)?.outage === true;
+},
+predicates: { vip: ({ s }) => vipNumbers.includes(callerOf(s as Session)?.number ?? '') },
+```
+
+- **Order:** the app's: the first rule whose conditions all hold is taken, and every point ends with an `else`. Put closed first, so no one reaches a desk that is not there.
+- **What each does:** `say` a line first (at start, before the greeting), then `continue`, `locale` (a language the app has), `end` (with its line), `handoff` (with a `reason` and its `handoff_<reason>` line), `form` (at start after the welcome, `greeting_offer`; after identity the caller's own request follows; after a form, as its `next`), or `anything-else` (not at start).
+- **Facts:** a `fact` is whatever the code keeps in the facts: the start hook's (from the call data, the number called, a lookup), the call-start lookup's, or a form's `onEntry` (the account's standing, read after identity). Start them in `facts.initial()` so `pnpm check` can tell a misspelled one.
+- **Numbers stay out of YAML:** `called: env.SPANISH_LINE` is the number callers dial, set in the owner's `.env` (the server will not start without it); app.yaml keeps the number called (`called: true`).
+- **Test:** a scripted call per route with its clock and data: `"now": "2026-10-12T19:00:00-04:00"` for closed, a holiday, an open hour; `"callData"`, `"calledNumber"` with `"env"`, `"callerNumber"`; set `testing.seed.now` to an open hour so the corpus runs. Expect the line (`"promptId": "closed_now"`, `"text"`) or the handoff and its target.
+- **Pitfall:** a route into a form that needs identity at `start` asks for it first (`pnpm check` warns); a `reason` condition never holds in a route (it is a transfer target's); the hours are the line's own time zone, not the server's. `pnpm check` refuses what a rule names that the app does not have, a missing `else` and a `then` its point does not take ([authoring guide, routes.yaml](../../../docs/authoring-an-app.md#routesyaml-optional)).
+
 ## A knowledge form
 
 **When:** callers ask general questions a document answers ("what is the late fee?"), more than a fixed line or two can hold. The answer is said from a passage a person approved, word for word. The whole feature is section 12 of the [authoring guide](../../../docs/authoring-an-app.md#12-the-knowledge-base); this is the wiring, as built in a running app (the engine's library fixture), and the traps.

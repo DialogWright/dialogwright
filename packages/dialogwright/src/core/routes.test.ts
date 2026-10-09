@@ -261,3 +261,22 @@ describe('a transfer target on the hours', () => {
     expect(early.decision).toMatchObject({ transfer: { target: 'MAIN_LINE', rule: null } });
   });
 });
+
+describe('the fixture\'s scripted calls, and a saved session', () => {
+  it('each scripted call passes its own expectation', async () => {
+    const { loadScenarios } = await import('../harness-text/runner');
+    const scenarios = loadScenarios(join(ROUTED_DIR, 'fixtures', 'scenarios'));
+    expect(scenarios.length).toBeGreaterThanOrEqual(12);
+    for (const scenario of scenarios) {
+      const r = await runScenario(scenario, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0 });
+      expect(r.mismatches, scenario.id).toEqual([]);
+    }
+  });
+
+  it('resumes exactly: every corpus entry and scripted call as the live session runs it, at every turn', async () => {
+    const { sessionRoundTrip } = await import('../testing/sessionRoundTrip');
+    const report = await sessionRoundTrip('stub');
+    expect(report.mismatches).toEqual([]);
+    expect(report.turns).toBeGreaterThan(40);
+  }, 60_000);
+});

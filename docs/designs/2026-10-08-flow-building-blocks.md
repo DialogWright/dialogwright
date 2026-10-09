@@ -1,6 +1,6 @@
 # Flow building blocks: the classic IVR toolkit in DialogWright terms (design, for review)
 
-Date: 2026-10-08. Status: **reviewed (the maintainer's decisions are at the end); being built.** Piece 1, per-slot retries (section 6), is built: its build plan and the decisions made building it are [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md). Piece 2, `callData` (section 1) and transfer targets with the data sent (section 2), is built: its decisions are in [2026-10-09-call-data-and-transfers.md](2026-10-09-call-data-and-transfers.md) ([2a](2026-10-09-call-data-and-transfers.md#as-built-2a), [2b](2026-10-09-call-data-and-transfers.md#as-built-2b)); the condition evaluator piece 3's routes will reuse is `core/conditions.ts`. The rest (routes, `onStart`, notices, warm transfer) is not built yet. Engine: DialogWright local `main`. Source: the principle in [2026-10-08-decisions.md](2026-10-08-decisions.md): "we read in data, we process forms, nothing is limited by the framework".
+Date: 2026-10-08. Status: **reviewed (the maintainer's decisions are at the end); built, all three pieces.** Piece 1, per-slot retries (section 6), is built: its build plan and the decisions made building it are [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md). Piece 2, `callData` (section 1) and transfer targets with the data sent (section 2), is built: its decisions are in [2026-10-09-call-data-and-transfers.md](2026-10-09-call-data-and-transfers.md) ([2a](2026-10-09-call-data-and-transfers.md#as-built-2a), [2b](2026-10-09-call-data-and-transfers.md#as-built-2b)); the condition evaluator piece 3's routes will reuse is `core/conditions.ts`. Piece 3, `routes.yaml` with `hours`, `onStart` and `failSoft` (sections 3, 4 and 5's notices), is built: its decisions are in [2026-10-09-routes.md](2026-10-09-routes.md#as-built). All three pieces are built; greeting variables, warm transfer and async tools are not. Engine: DialogWright local `main`. Source: the principle in [2026-10-08-decisions.md](2026-10-08-decisions.md): "we read in data, we process forms, nothing is limited by the framework".
 
 ## At a glance
 
@@ -72,7 +72,9 @@ transfer:
 
 ## 4. Branching: `routes`
 
-```yaml
+The proposal as it was written (a `text` block: as built, an outcome is written beside `when` as `say`, `then` and its fields, `else` is the last entry of the list, and `locale` is a `then`; see [the build plan](2026-10-09-routes.md#as-built)):
+
+```text
 # routes.yaml
 start:                     # before the open question
   - when: { hours: closed }

@@ -12,11 +12,11 @@ Two apps in this repository are the examples, and the snippets below are copied 
 The guide is long, too long to read in one go: read it a section at a time, from the list below. Building an app with the [create-app skill](../.claude/skills/create-app/SKILL.md), read only the sections each of its steps names. `grep -n '^##' docs/authoring-an-app.md` lists every heading with its line.
 
 1. [The folder](#1-the-folder)
-2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml) (with [`callerNumber`](#the-number-the-caller-is-calling-from-callernumber)), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml) (with [checks](#checks-ending-a-form-part-way)), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
+2. [The files, one by one](#2-the-files-one-by-one): [app.yaml](#appyaml) (with [`callerNumber`](#the-number-the-caller-is-calling-from-callernumber)), [intents.yaml](#intentsyaml) (with [`unsure`](#when-the-model-is-unsure-unsure) and [`priority`](#must-never-wait-priority)), [forms.yaml](#formsyaml) (with [checks](#checks-ending-a-form-part-way)), [prompts.yaml](#promptsyaml), [policy.yaml](#policyyaml), [identity.yaml](#identityyaml-optional), [routes.yaml](#routesyaml-optional) (with [business hours](#business-hours-hours)), [slots.yaml](#slotsyaml-optional), [fixtures/](#fixtures-optional), [kb/](#kb-optional)
 3. [Policy and identity](#3-policy-and-identity) (its own list of thirteen subsections is at its head)
 4. [What stays in TypeScript, and why](#4-what-stays-in-typescript-and-why)
 5. [Writing a slot](#5-writing-a-slot): [Pick a type](#pick-a-type-in-slotsyaml), [Every slot listens on every turn](#every-slot-listens-on-every-turn), [Where a slot listens](#where-a-slot-listens-listen), [A callback number](#a-callback-number-callernumber), [A text offer](#a-text-offer-onno-and-ifnone), [Proposing a value from a lookup](#proposing-a-value-from-a-lookup-offer-facts), [When a slot runs out](#when-a-slot-runs-out-attempts-and-onmaxattempts), [Thresholds](#thresholds), [When no type fits](#when-no-type-fits-a-slot-in-code), [The contract](#the-contract), [The keypad](#the-keypad), [Sensitive values](#sensitive-values), [Testing a slot](#testing-a-slot)
-6. [The form hooks](#6-the-form-hooks)
+6. [The form hooks](#6-the-form-hooks), and [the start hook, predicates and `failSoft`](#the-start-hook-predicates-and-failsoft)
 7. [Checking an app: `pnpm check`](#7-checking-an-app-pnpm-check)
 8. [Locales](#8-locales)
 9. [Configuration hashes](#9-configuration-hashes)
@@ -38,13 +38,14 @@ my-app/
   prompts.yaml      every line a caller can hear
   policy.yaml       what the agent may do, action by action, and the rules the gate runs before each
   identity.yaml     optional: who the app serves, and how a caller proves who they are
+  routes.yaml       optional: what the call does at its start, once the caller is verified, and after a form
   slots.yaml        optional: every slot the app has, and their order
   locale/<tag>/     optional: prompts.yaml for each extra language, and slots.yaml for how its slots say values
   app.ts            the code: export const code: AppCode = { ... }
   fixtures/         optional: corpus.jsonl, scripted calls, a baseline, recorded cassettes
 ```
 
-Five YAML files are required (app, intents, forms, prompts, policy). `identity.yaml` is optional: an app without it verifies no one, and every tool must then be at level 0 (the clinic is like this).
+Five YAML files are required (app, intents, forms, prompts, policy). `identity.yaml` is optional: an app without it verifies no one, and every tool must then be at level 0 (the clinic is like this). `routes.yaml` is optional too: an app without it decides nothing at those points, and behaves exactly as before routes.
 
 The code lives in `app.ts` in the folder, or in `src/app.ts` when the folder is also a package (the clinic). `dialogwright check` looks in both. The module exports the code parts as `code` (an `AppCode`), and may also call `defineApp` itself to build the app, as both examples do. A module that does so must import without starting anything else: `check` imports it.
 
@@ -131,7 +132,9 @@ prompts:
 - `callerNumber` keeps the number the caller is calling from for the app's own code, and may look the caller up by it once at call start: [The number the caller is calling from](#the-number-the-caller-is-calling-from-callernumber), below.
 - `textConsent: { covers: [textTo, ...] }` asks once, right after the greeting, for consent to text the caller during the call, and the text offers it covers then use the caller's number without asking again: [Consent to text for the whole call](#consent-to-text-for-the-whole-call-textconsent).
 - `callData` names the data a call or chat comes with that the app's code may read (a carrier's custom parameter, a field of the setup or of the answer webhook, the web chat page's context), each key with where it comes from and how it is recorded; `startParameters` names the custom parameters the server writes into every start document, each read from an environment variable: [13.14](#1314-the-data-a-call-or-chat-comes-with-calldata).
-- `transfer` names where a handoff goes and what goes with it: ordered targets on the handoff's reason, the form and the call data, each an environment variable holding an E.164 number or a `sip:` URI, a `default`, and the SIP headers (and a web chat's data) sent: [13.15](#1315-where-a-handoff-goes-and-what-goes-with-it-transfer). Without it, every handoff dials `HANDOFF_NUMBER`, as before.
+- `transfer` names where a handoff goes and what goes with it: ordered targets on the handoff's reason, the form, the call data and the other conditions routes use (the hours among them), each an environment variable holding an E.164 number or a `sip:` URI, a `default`, and the SIP headers (and a web chat's data) sent: [13.15](#1315-where-a-handoff-goes-and-what-goes-with-it-transfer). Without it, every handoff dials `HANDOFF_NUMBER`, as before.
+- `hours` says when the line is open, in its own time zone, with holidays and schedules by name, for the `hours` condition of a route or a transfer target: [Business hours](#business-hours-hours), below.
+- `onStart: { calls: [...] }` says the code has a start hook (`code.onStart`), which runs once as every call starts, and names the actions it calls, as a form's `calls` does: [The start hook, predicates and `failSoft`](#the-start-hook-predicates-and-failsoft). Written exactly when the code has one: `pnpm check` refuses either without the other.
 
 #### The number the caller is calling from: `callerNumber`
 
@@ -152,6 +155,30 @@ callerNumber:
 - **Privacy.** The numbers are masked as a start event's number is: by their last four on the console and in the frame log, and in the trace file by the slot that offers the number where there is one, else by their last four, the setup's own copies in the start event's provider details (Twilio's `from` and `to`, Telnyx's `param.telnyx_call_from` and `param.telnyx_call_to`) with them. The trace's start record says `callerNumber: kept` or `none`. The number goes to the app's tool and nowhere else; it never enters the model's turn state, and a call with a number sends the model exactly what a call with none sends, but where an offer line says its last four.
 
 Testing it: a scripted call takes `"callerNumber"` and `"calledNumber"`; the text CLI takes `--caller-number` and `--called-number`. Replaying a logged call stands a made-up number in for the caller's, ending in the last four the frame log kept, in the international form carriers send (`+1555555` and the four), so key a lookup fixture by the last four. The frame log does not keep the number called, so a replayed call has none: `calledOf(s)` is null there. The engine's own fixture is `packages/dialogwright/src/testing/texting`: a call-start lookup of the line type, a text offer, and the rule on both. A slot that proposes what the lookup found is [Proposing a value from a lookup](#proposing-a-value-from-a-lookup-offer-facts); its fixture is `packages/dialogwright/src/testing/proposals`.
+
+#### Business hours: `hours`
+
+When the line is open, read by the `hours` condition of a route ([routes.yaml](#routesyaml-optional)) or a transfer target ([13.15](#1315-where-a-handoff-goes-and-what-goes-with-it-transfer)). From the routed fixture (`packages/dialogwright/src/testing/routed`):
+
+```yaml
+# app.yaml
+hours:
+  timezone: America/New_York
+  weekly:
+    mon-fri: ["08:00-18:00"]
+    sat: ["09:00-13:00"]
+  closed: [2026-12-25, 2027-01-01]
+  schedules:
+    billing:
+      weekly: { mon-fri: ["09:00-17:00"] }
+```
+
+- `timezone` is an IANA name; daylight saving is the zone's. The time is the platform's own (`Intl.DateTimeFormat`), with no dependency added.
+- `weekly` maps a day (`mon` ... `sun`) or a range of two (`mon-fri`; `fri-mon` goes round the week) to a list of `HH:MM-HH:MM` ranges in 24-hour time. A range whose end is before its start runs overnight into the next day (`22:00-06:00`); `24:00` ends a range at midnight. Two keys that name the same day both apply. A day no key names is closed, so `weekly: {}` is never open.
+- `closed` lists dates (`YYYY-MM-DD`) closed all day. A date closes the hours that start on it: a range that starts the day before and runs overnight runs to its end.
+- `schedules` names schedules of their own (a department's), read by `{ hours: open, schedule: billing }`. A named schedule takes the default's `timezone` and `closed` unless it writes its own (write `closed: []` for none).
+- The hours are judged at the turn's clock, never the machine's: a scripted call sets it with `"now": "2026-10-12T19:00:00-04:00"`, a seeded corpus call with `testing.seed.now`, and a replay runs at the moment the call was taken.
+- `pnpm check` refuses a time zone the platform does not know, a day or a range that is not one, and a date that is not a calendar date; `validateApp` refuses the same for an app built in code. When the line is open is the app's.
 
 ### intents.yaml
 
@@ -457,6 +484,78 @@ attempts: 3
 ```
 
 An app without the file verifies no one, and every action must be level 0. [Section 3.6](#36-the-identity-ladder) says what each part means: the principals, the ladder's levels and factors, the length of the one-time code, the attempts, sign-in, and a caller-ID match standing in for the identifier (level 1's `callerId`).
+
+### routes.yaml (optional)
+
+What the call does at three points, decided by ordered rules: the first whose conditions all hold is taken, and an `else` is last. Routes are not a state machine: what the caller says, intents, priority intents and the agent intent still decide every turn; routes decide only at their points. An app without the file decides nothing there, and behaves exactly as before. From the routed fixture:
+
+```yaml
+# routes.yaml
+start:
+  - when: { hours: closed }
+    say: closed_now
+    then: end
+  - when: { named: vip }
+    then: handoff
+    reason: vip
+  - when: { fact: outage, is: true }
+    say: outage_notice
+    then: continue
+  - when: { called: env.SPANISH_LINE }
+    then: locale
+    locale: es
+  - else: continue
+
+afterIdentity:
+  - when: { fact: account.pastDue, is: true }
+    say: past_due_first
+    then: form
+    form: payment_plan
+  - else: continue
+
+afterForm:
+  report_problem:
+    - when: { slot: severity, is: danger }
+      then: handoff
+      reason: emergency
+    - else: continue
+```
+
+**The points.**
+
+- `start`: once, as the call or chat starts, after the start hook (`onStart`) and the call-start lookup (`callerNumber.lookup`), before the greeting. A `say` is said before the greeting; `continue` and `locale` go on to the greeting (or what replaces it: the caller-ID question, the consent to text, a proposal at the greeting); `end` ends the call on its line with no greeting; `handoff` goes to a person; `form` enters the form after the welcome, the greeting's line before a proposal (`greeting_offer`, or app.yaml's `prompts.greetings.offer`), in place of the open question. `anything-else` is refused here: nothing has been asked.
+- `afterIdentity`: once, the first time one of the app's subjects is verified (through the one-time code too, where the step-up asked for it), after the identity step's own line ("Thank you, Avery. You're verified."), before the form that asked for identity goes on. `continue` is that form going on. `form` puts the caller's own request first in the queue, so it is bridged back into once the form entered is done ("past-due accounts go to payments first"); a route to the form the caller is already in goes on in it. `end`, `handoff` and `anything-else` act as a check's outcome does in that form (with no form open, at the greeting, `anything-else` asks "anything else?"). A signed-in chat subject is routed the first time they reach a form, or as they sign in. Whether it ran is kept on the session (`identityRouted`), only for an app with these routes.
+- `afterForm.<form>`: when that form completes as said (its completion's `said`; a completion that ends, refuses or hands off is not), before its `next`. The form is counted as completed whatever is taken. `continue` is what the form does without a route: its `next`, else "anything else?"; `anything-else` skips the `next`; `form` goes on to the form named in its place, as a `next` does (the slots both list kept, the move recorded as `form_next`, and a loop within one turn sent to a person); `end` ends on its line (with a request queued, the call goes on to it); `handoff` goes to a person with the form left open, as a completion that hands off leaves it.
+
+**A rule** is `when` and an outcome. `when` is one condition or a list, all of which must hold. The last rule of every point is `else`: `else: continue`, or an outcome written out (`else: { say: closed_now, then: end }`).
+
+**The outcomes** are the ones a check's refusal and a slot's `onMaxAttempts` take, but `skip` (a slot's alone), and two of their own. Each says its `say` first, where it has one, a line of prompts.yaml rendered with the open form's slot displays as variables:
+
+| `then` | What follows | Takes |
+|---|---|---|
+| `continue` | the call goes on as if no route were written | `say` |
+| `locale` | the call switches to `locale` (one of the app's), as the language intent does, then goes on; the `say` is said in the new language | `locale`, `say` |
+| `end` | the call ends on the line | `say` (required) |
+| `handoff` | to a person, with the line `handoff_<reason>` (and the transfer target that reason picks) | `reason` (default `needs-human`), `say` |
+| `form` | the form named is entered | `form`, `say` |
+| `anything-else` | the form closes and "anything else?" is asked (not at `start`) | `say` (required) |
+
+**The conditions** are the transfer targets' ([13.15](#1315-where-a-handoff-goes-and-what-goes-with-it-transfer)), one evaluator for both, each a subject and, for a subject with a value, one test (`is`, `in`, `notIn`, `present`):
+
+- `{ fact: pastDue, is: true }`: a value in the session's facts, by a dotted path for a nested one (`account.pastDue`). Null or not set is absent (`present: false`); a list or a record is present and equals no value. `pnpm check` warns of a fact whose first name the code's `facts.initial()` does not start with (a hook may add it later), and checks nothing for an app whose initial facts are empty.
+- `{ slot: severity, is: danger }`: a slot's value as the call holds it (the form's slot, or one carried); an empty slot is absent.
+- `{ callData: queue, is: spanish }`: a key of the call data ([13.14](#1314-the-data-a-call-or-chat-comes-with-calldata)), as for a transfer target.
+- `{ level: 1 }`: the caller is verified to at least this level (1 or 2).
+- `{ hours: open }` or `{ hours: closed }`, with `schedule: billing` for a named one: app.yaml's [hours](#business-hours-hours) at the turn's clock. An app with no hours holds neither.
+- `{ called: env.SPANISH_LINE }` or a list: the number the caller dialed is the value of one of these environment variables (the numbers stay out of YAML), compared by its digits (the last ten where one has a country code the other does not). It needs app.yaml's `callerNumber: { use: hint, called: true }`. The server reads each variable as it starts and refuses to start when one is unset or not E.164; `pnpm diagnose` checks each.
+- `{ named: vip }`: a predicate the app writes in code (`code.predicates`), for anything else ([below](#the-start-hook-predicates-and-failsoft)).
+- `{ form: payment }`: the form open, or the last completed (never at `start`, where `pnpm check` refuses it). `reason` holds only where a handoff is being chosen, so a route refuses it.
+
+**Records.** Each route taken is a trace event (the record's `routes`: the point, the form after which, the rule by its index from 0 or `else`, what followed, and the subjects it read, such as `hours`, `fact.outage`, `named.vip`) and an audit row `route` with the same, never a value. The console's NOW panel says the route taken on the latest turn (`route: start rule 1, end`), the app map draws each point's rules in order ([3.11](#311-reading-the-policy-the-card-and-the-app-map)), and `regress --scenario` prints a `route` line under the turn.
+
+**`pnpm check`** refuses a form, a slot, a call data key, a prompt, a schedule, a predicate, a locale or a variable the app does not have (or keep); a point with no `else`, or an `else` before its end; a `then` the point does not take; an `afterForm` route that enters the form it follows (it would loop); hours where app.yaml has none; and a condition that can never hold where it is. It warns of a fact the facts do not start with, a rule after one that always holds, and a route into a form needing an identity level the point cannot have reached (at `start`, any; after identity, 2): the form will ask for it. It needs `greeting_offer` in every locale when a `start` route enters a form. `validateApp` refuses the same for an app built in code. Which routes, and in what order, are the app's.
+
+**Testing.** A scripted call takes `"now"` (an ISO date and time with its offset: every turn reads that clock), `"env"` (the variables `called` reads), `"calledNumber"` and `"callData"`; a seeded corpus call happens at `testing.seed.now`. The engine's fixture is Example Service Line (`packages/dialogwright/src/testing/routed`): each point, hours open and closed, a holiday and a named schedule, the start hook writing a fact, a dip that fails soft, a predicate, the Spanish line and a transfer target on the billing desk's hours; `tsx src/testing/routed/regress.ts --scenario past-due-first` follows one call.
 
 ### slots.yaml (optional)
 
@@ -1027,7 +1126,7 @@ When a rule or the gate itself changes, the same grid is the way to prove nothin
 
 Write `say:` for every action, and a `description` for every custom rule, in the words a reviewer would use. A role is shown by its id spelt out (`office_admin` as "office admin"). `expectPolicyCard(app, file)` (from `'dialogwright/testing'`) fails a test on any difference between the page and what the app generates, with a line diff and the command that writes it; put it beside the policy matrix's test. The card is a golden: a policy change is a diff of two files a reviewer reads, and only the command writes it, never CI.
 
-**The app map.** `APP-MAP.md`, beside policy.yaml, draws the app's structure with Mermaid: a table of the intents and what each does; the keypad menu as a tree, with the intents that only say a line joined to their prompt; and, for each form, a diagram from its intent to its slots (each with its type), the summary it reads back, the actions it calls (`calls`) and each action's rules. Write it with `pnpm app:diagram <folder>` and test it with `expectAppMap(app, file)`, as the card.
+**The app map.** `APP-MAP.md`, beside policy.yaml, draws the app's structure with Mermaid: a table of the intents and what each does; the keypad menu as a tree, with the intents that only say a line joined to their prompt; and, for each form, a diagram from its intent to its slots (each with its type), the summary it reads back, the actions it calls (`calls`) and each action's rules; for an app with routes, each point's rules in the order they are tried, the else last, and the start hook with the actions it calls ([routes.yaml](#routesyaml-optional)); for an app with transfer targets, where a handoff goes. Write it with `pnpm app:diagram <folder>` and test it with `expectAppMap(app, file)`, as the card.
 
 It is the structure, not a script for a call: the dialog is mixed-initiative, so a caller may give the slots in any order, change their mind or ask for two things in a row. What the map cannot connect is drawn marked and listed under "Dangling references" (`danglingReferences(app)` returns it): an intent with no form, a form no intent starts, an informational intent whose line is not there, a keypad digit to no intent, a form that asks for a slot that does not exist, a call to an action the policy does not list, and an action no form reaches. `check` reports the ones it can from the YAML, with a fix, including the last.
 
@@ -1986,7 +2085,30 @@ A library type's own tests (the conformance kit and its unit tests) cover its pa
 
 The clinic's reschedule form has six: `[onSummaryRead, onAnswers, onSummaryAnswer, keepsSlot, confirmedParams, complete]`. The library's check_hold has one. Start with `complete` and add a hook only when the form needs it.
 
-Where they run in a turn: the turn fills slots (speech, the keypad, a correction at the summary), then the form loop asks a disambiguation or a slot read-back if one is due, makes the `entry` call if the form has not passed it, runs the form's `checks` ([forms.yaml, Checks](#checks-ending-a-form-part-way)), and asks the next slot or reads the summary. A `STEP_UP` from the entry call or from a check asks for identity first, and the loop comes back to the same place once the caller is verified. A yes at the summary runs the checks once more, then `complete`. A form that rules a caller out on an answer needs no hook for it: write a check, not a `complete` that turns the caller away after the rest was asked, and never write `s.queued` from a hook to chain a second form.
+Where they run in a turn: the turn fills slots (speech, the keypad, a correction at the summary), then the form loop asks a disambiguation or a slot read-back if one is due, makes the `entry` call if the form has not passed it, runs the routes after identity the first time the caller is through it ([routes.yaml](#routesyaml-optional)), runs the form's `checks` ([forms.yaml, Checks](#checks-ending-a-form-part-way)), and asks the next slot or reads the summary. A `STEP_UP` from the entry call or from a check asks for identity first, and the loop comes back to the same place once the caller is verified. A yes at the summary runs the checks once more, then `complete`; a `said` completion runs the routes after the form, then its `next`. A form that rules a caller out on an answer needs no hook for it: write a check, not a `complete` that turns the caller away after the rest was asked, and never write `s.queued` from a hook to chain a second form: a `next`, a check's outcome or a route does that.
+
+### The start hook, predicates and `failSoft`
+
+Three pieces of code an app may write beside its forms' hooks:
+
+- **`code.onStart(ctx)`**, the start hook: runs once as every call or chat starts (not only one with a caller number), before the call-start lookup and the start routes. It may read the call data (`callDataOf(ctx.s)`), the numbers (`callerOf`, `calledOf`), the clock (`ctx.tc.nowMs`), write the facts a route or a line reads, and call tools through the gate (`ctx.callTool`), each recorded as any call is. One that throws leaves the facts as they were and drops the side effects it queued (the calls it made stay recorded), and the call goes on. app.yaml says so, with the actions it calls, so `pnpm check` knows they are reached: `onStart: { calls: [lookupNotices] }` (`onStart: {}` for none). The call-start lookup is unchanged.
+- **`code.predicates`**: conditions of the app's own, by name, for a route's or a transfer target's `{ named: <name> }`. Each is given `{ s, nowMs, todayIso }`, the session a copy (what it writes is lost), and returns true or false; one that throws is false. A predicate decides only; it calls no tool.
+- **`failSoft`**: `ctx.callTool(call, { failSoft: true })`, in any hook, makes a tool that throws fail the call, not the turn: the call is recorded as allowed with the summary `the tool failed: nothing was returned` (nothing of the error, whose message may hold a value), the side effects it queued are dropped, and the result is `{ decision, value: null, failed: true }`, so the hook treats a failed dip as no data, as the call-start lookup does. Without it, a throw goes up to the turn, as it always has.
+
+From the routed fixture:
+
+```ts
+onStart(ctx) {
+  const region = callDataOf(ctx.s).region;
+  if (region === undefined) return;
+  const { decision, value, failed } = ctx.callTool({ tool: 'lookupNotices', params: { region } }, { failSoft: true });
+  if (decision.verdict !== 'ALLOW' || failed === true) return;
+  (ctx.s.facts as RoutedFacts).outage = (value as { outage?: unknown } | null)?.outage === true;
+},
+predicates: {
+  vip: ({ s }) => ACCOUNTS.some((a) => a.vip && a.phone === callerOf(s as Session)?.number),
+},
+```
 
 ## 7. Checking an app: `pnpm check`
 
@@ -2815,7 +2937,7 @@ voice:
         telnyx: { provider: google }
 ```
 
-- `voice.numbers` maps a number called (E.164, in quotes: unquoted, YAML reads `+1555...` as a number) to the locale its calls start in. Any other number starts in the default locale.
+- `voice.numbers` maps a number called (E.164, in quotes: unquoted, YAML reads `+1555...` as a number) to the locale its calls start in. Any other number starts in the default locale. A start route's `then: locale` ([routes.yaml](#routesyaml-optional)) switches the language on anything a condition reads instead (a queue in the call data, `{ called: env.SPANISH_LINE }` with the number kept out of YAML), before the greeting, as the language intent does.
 - `voice.locales.<tag>` is keyed by the app's own locale tags. `tts` and `transcription` are language tags; the start document names the call's language by them, and each line's text frame says its `tts`.
 - `voices` names a voice per carrier, in that carrier's own names. A Twilio voice written as a name alone is one of the deployment's `TTS_PROVIDER` (or of Twilio's default provider when that is unset); written as `{ voice, provider }` it names its own provider (`Google`, `Amazon` or `ElevenLabs`), so the app does not depend on how the deployment is set. A Telnyx voice is always a name alone, since its name carries its provider. An app's voice wins over the deployment's (`TTS_VOICE`, `TELNYX_VOICE`), which is used for the default locale only: another locale with no voice of its own gets the carrier's default voice for its language, never the default locale's voice reading another language.
 - `recognition` names the speech recognizer per carrier: `provider` and `model`, in the carrier's own names. On Twilio they are `transcriptionProvider` and `speechModel`; on Telnyx `provider` is `transcriptionProvider`, and a `model` is written on the locale's `<Language>` only, the one place Telnyx documents a `speechModel`. The app's recognizer for a locale wins, as a whole: a field it leaves out is the carrier's default, and `{}` asks for the carrier's default outright. Without one, the default locale has the deployment's recognizer and every other locale the carrier's default. The deployment's stops at the default locale on purpose: it is chosen for one language (Deepgram's flux is for English), and a recognizer that does not hear a language is worse than the carrier's default for it. A deployment whose app's default locale is not English should set `TWILIO_SPEECH_MODEL`, or the app should name the default locale's `recognition`.
@@ -3122,7 +3244,7 @@ transfer:
 ```
 
 - **Ordered rules, not a fixed precedence.** The app writes the order; the most specific first (`callData`, then `form`, then `reason`) reads best. A rule's `when` is one condition or a list of them, and it holds when every one does; a rule without `when` always holds, and `pnpm check` warns of a rule after one that always holds (never taken). `default` is required.
-- **Conditions** (the same evaluator routes will use): `reason`, the handoff's reason, one or a list (`live-agent`, `max-attempts`, a check's or a slot's `reason`); `form`, one or a list: the form the caller is in, or, with none open, the last one completed on the call; `callData: <key>` with one test, `is: <value>`, `in: [values]`, `notIn: [values]` or `present: true | false`. A key the call came without fails `is`, `in` and `notIn` alike and holds only `present: false`, so a rule never routes on a value that is not there.
+- **Conditions** (the same evaluator routes use, [routes.yaml](#routesyaml-optional)): `reason`, the handoff's reason, one or a list (`live-agent`, `max-attempts`, a check's or a slot's `reason`); `form`, one or a list: the form the caller is in, or, with none open, the last one completed on the call; `callData: <key>` with one test, `is: <value>`, `in: [values]`, `notIn: [values]` or `present: true | false`. A key the call came without fails `is`, `in` and `notIn` alike and holds only `present: false`, so a rule never routes on a value that is not there. A target takes the routes' conditions too: `fact`, `slot`, `level`, `hours` (with `schedule`), `called` and `named`, each judged at the moment of the handoff (the turn's clock), so a rule `{ hours: closed, schedule: billing }` sends a handoff after the billing desk has closed to the after-hours desk.
 - **Numbers stay in the environment.** `to` and `default` are `env.<NAME>`; the variable holds an E.164 number or a `sip:` URI (under 255 characters). The server reads each as it starts and refuses to start, naming the variable and the fix, when one is unset or neither; the startup line names the targets, never their numbers; `pnpm diagnose` checks each and warns of a 555 one ([14.5](#145-diagnose)). `HANDOFF_NUMBER` stays the server's own: required, E.164, whatever names it.
 - **The engine chooses, the server dials.** The handoff decision carries the chosen target's variable name, never the number, on the transfer action and the end frame's handoff data (`target`, beside `reasonCode`); the carrier posts it back, and the server dials the variable's value only when the name is one the app's transfer names, else `HANDOFF_NUMBER`. A call put through with no handoff decision (the relay lost after its reconnects, a server stopping, a saved call it cannot read, whether its carrier's callback or its socket found it, a new call while draining) goes to the `default`, with no headers; so does a handoff whose data names no target. A target the app does not name goes to `HANDOFF_NUMBER`.
 - **What goes with it.** `send.headers` maps SIP header names (an `X-` name, or `User-to-User`) to a value, `send.chat` maps plain words to one: `reason`; `form` (the form the rule was chosen on); `callData.<key>`, sent as the key's `redact` records it (`last4` by its last four, `mask` as `•`, `keep` whole) and never less masked than the records keep a field of that name (a number by its last four), a `secret` key refused by `pnpm check`; `slot.<id>`, sent as `handoff.data` sends it (left out, masked or as it is, by the same rules), so a header never carries more than the handoff data would (but carries no mark of its own: with `handoff.data.unconfirmed: mark` the handoff data names a value the caller never confirmed, and a header sending the same slot cannot say so, so name the slot in the handoff data too where the person taking the call must know; `pnpm check` warns of a call data key recorded by `mask` or `length`, which can only ever send the mask); anything else, a constant sent as written (quote one that YAML would read as a number). A reference with nothing to send on a call (no form, a key the call came without, a slot left out) is left out. A rule's own `send` is merged over the top-level one, a name it writes winning.
@@ -3197,7 +3319,7 @@ A stop (Ctrl-C, SIGTERM, or the terminal closing) is passed to the server once, 
 PUBLIC_HOST=<the tunnel's hostname> pnpm diagnose --app <name>   # pnpm start prints this line
 ```
 
-`pnpm diagnose` reads the settings the server would and checks, one line each with `ok`, `warn`, `fail` or `skip` and a fix: the settings file is its owner's alone; the config loads (with the server's own messages); `PUBLIC_HOST` resolves and `/health` answers through it within five seconds; the console is a 404 there (or, with `CONSOLE_AUTH=token`, sends a browser with no cookie to the sign-in page, and its data answers 401); each carrier's secret has its shape and signatures are checked; which model, from where, and its key variable set; `HANDOFF_NUMBER` is not a 555 number; each environment variable the app's app.yaml names (`env.<NAME>`, read from the YAML alone: `startParameters`, `transfer`) is set, by its length and never its value, and fits a custom parameter, or, for a transfer target, holds an E.164 number or a `sip:` URI and is not a 555 number; the trace and audit folders can be written, with a gigabyte free; the clock is within a minute of the carrier's API host's (Telnyx refuses a webhook signed more than five minutes off); and, with `SESSION_STORE=file:`, its folder ([14.7](#147-surviving-a-restart)). It exits 1 only on a `fail`. It calls no carrier or model API and sends no key: its requests are DNS, a few GETs to the server's own address, and one `HEAD` with no key and no body to the carrier's API host (or else the model provider's) for its `Date`. `--offline` makes no request at all; it is what `pnpm configure` runs.
+`pnpm diagnose` reads the settings the server would and checks, one line each with `ok`, `warn`, `fail` or `skip` and a fix: the settings file is its owner's alone; the config loads (with the server's own messages); `PUBLIC_HOST` resolves and `/health` answers through it within five seconds; the console is a 404 there (or, with `CONSOLE_AUTH=token`, sends a browser with no cookie to the sign-in page, and its data answers 401); each carrier's secret has its shape and signatures are checked; which model, from where, and its key variable set; `HANDOFF_NUMBER` is not a 555 number; each environment variable the app's app.yaml and routes.yaml name (`env.<NAME>`, read from the YAML alone: `startParameters`, `transfer`, a `called` condition) is set, by its length and never its value, and fits a custom parameter, or, for a transfer target, holds an E.164 number or a `sip:` URI and is not a 555 number, or, for a `called` condition, holds an E.164 number; the trace and audit folders can be written, with a gigabyte free; the clock is within a minute of the carrier's API host's (Telnyx refuses a webhook signed more than five minutes off); and, with `SESSION_STORE=file:`, its folder ([14.7](#147-surviving-a-restart)). It exits 1 only on a `fail`. It calls no carrier or model API and sends no key: its requests are DNS, a few GETs to the server's own address, and one `HEAD` with no key and no body to the carrier's API host (or else the model provider's) for its `Date`. `--offline` makes no request at all; it is what `pnpm configure` runs.
 
 ### 14.6 An always-on machine
 
