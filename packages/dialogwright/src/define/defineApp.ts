@@ -1104,6 +1104,7 @@ export function routeWorldOf(config: LoadedConfig, slots: readonly string[], pre
     hours: config.app.hours === undefined ? null : { schedules: Object.keys(config.app.hours.schedules ?? {}) },
     predicates,
     calledKept: config.app.callerNumber?.called === true,
+    maxLevel: config.identity === null ? 0 : config.identity.levels[2] !== undefined ? 2 : 1,
     locales: [config.defaultLocale, ...Object.keys(config.prompts).filter((l) => l !== config.defaultLocale)],
     hasLine: (id) => Object.hasOwn(prompts, id),
   };

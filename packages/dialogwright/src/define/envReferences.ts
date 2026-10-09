@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
-import { envReferencesIn, type EnvReference } from '../core/app/envReference';
+import { calledReferencePaths, envReferencesIn, type EnvReference } from '../core/app/envReference';
 
 /**
  * The environment variables an app folder names (`env.<NAME>`): app.yaml's (startParameters, transfer
@@ -16,7 +16,9 @@ export function appYamlEnvReferences(appDir: string): EnvReference[] | null {
     const file = join(appDir, name);
     if (!existsSync(file)) continue;
     try {
-      out.push(...envReferencesIn(parse(readFileSync(file, 'utf8')) as unknown).map((r) => ({ ...r, file: name })));
+      const parsed = parse(readFileSync(file, 'utf8')) as unknown;
+      const called = calledReferencePaths(name as 'app.yaml' | 'routes.yaml', parsed);
+      out.push(...envReferencesIn(parsed).map((r) => ({ ...r, file: name, ...(called.has(r.path) ? { kind: 'called' as const } : {}) })));
     } catch {
       return null;
     }

@@ -154,7 +154,7 @@ describe('the subjects routes add (design 2026-10-09-routes, decision 4)', () =>
     expect(conditionHolds(c, { env })).toBe(false);
     expect(conditionHolds(c, { calledNumber: '+15555550188' })).toBe(false);
     expect(conditionHolds({ kind: 'called', variables: ['BLANK'] }, { calledNumber: '+15555550188', env })).toBe(false);
-    expect(sameNumber('+44 20 5555 0100', '+442055550100')).toBe(true);
+    expect(sameNumber('+44 555 555 0100', '+445555550100')).toBe(true);
     expect(sameNumber('555-0100', '+15555550100')).toBe(false);
   });
 
@@ -240,5 +240,16 @@ describe('the condition schema', () => {
     expect(messages(conditionSchema.safeParse({ called: '+15555550100' }))).toEqual(['called: is not an environment variable']);
     expect(messages(conditionSchema.safeParse({ fact: 'a..b', is: 1 }))[0]).toMatch(/^fact: is not a fact's name/);
     expect(messages(conditionSchema.safeParse({ named: 'vip', is: true }))).toEqual(['is: named takes no is: it names its one value itself']);
+  });
+});
+
+describe('review fixes: the number called', () => {
+  it('two numbers that both carry a country code are the same only digit for digit', () => {
+    expect(sameNumber('+15551234567', '+75551234567')).toBe(false);
+    expect(sameNumber('+15555550100', '+445555550100')).toBe(false);
+    expect(sameNumber('5551234567', '+15551234567')).toBe(true);
+    expect(sameNumber('+15551234567', '(555) 123-4567')).toBe(true);
+    expect(sameNumber('+15551234567', '+1 555 123 4567')).toBe(true);
+    expect(sameNumber('1234567', '+15551234567')).toBe(false);
   });
 });

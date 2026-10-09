@@ -154,8 +154,8 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // Each form that completed and went on to its next form (FormDef.next): which, after the rows of
   // the gate events before the move (the form's checks) and before the next form's.
   const movedOn = (from: number, to: number): AuditDraft[] => (t.movedOn ?? []).filter((m) => m.at >= from && m.at <= to).map((m) => ({ type: 'form_next', detail: { form: m.form, next: m.next } }));
-  // Each route taken (routes.yaml): the point, the form after which, the rule (its index from 0, or
-  // `else`), what followed, and the subjects it read, never their values; where it was taken among the
+  // Each route taken (routes.yaml): the point, the form after which, the rule (its number, the first
+  // being 1, or `else`), what followed, and the subjects it read, never their values; where it was taken among the
   // turn's gate rows (after the start hook's and the call-start lookup's calls, say).
   const routed = (from: number, to: number): AuditDraft[] => (t.routes ?? []).filter((r) => r.at >= from && r.at <= to).map((r) => ({
     type: 'route',

@@ -79,7 +79,7 @@ describe('start', () => {
     const t = last(await call({ now: EVENING }));
     expect(t.decision).toMatchObject({ kind: 'complete', form: null, promptId: 'closed_now', acks: [] });
     expect(heard(t)).toMatch(/^Thanks for calling Example Service Line. We're closed right now/);
-    expect(t.routes).toEqual([{ point: 'start', rule: 0, outcome: 'end', subjects: ['hours'], at: 0 }]);
+    expect(t.routes).toEqual([{ point: 'start', rule: 1, outcome: 'end', subjects: ['hours'], at: 0 }]);
   });
 
   it('a holiday is closed all day; a Saturday morning open', async () => {
@@ -95,7 +95,7 @@ describe('start', () => {
     expect((t.session.facts as RoutedFacts).outage).toBe(true);
     // The hook's call is first among the turn's rows, then the route, as it was taken after it.
     expect(t.audit.map((d) => d.type)).toEqual(['call_started', 'gate', 'tool_result', 'route']);
-    expect(routeRows(r)).toEqual([{ point: 'start', rule: 2, outcome: 'continue', subjects: ['fact.outage'] }]);
+    expect(routeRows(r)).toEqual([{ point: 'start', rule: 3, outcome: 'continue', subjects: ['fact.outage'] }]);
   });
 
   it('locale: the call goes on in the language named, the greeting in it', async () => {
@@ -111,7 +111,7 @@ describe('start', () => {
   it('a named predicate: handed off for its reason, to the target that reason picks', async () => {
     const t = last(await call({ callerNumber: '+15555550143' }));
     expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'vip', transfer: { target: 'VIP_DESK', rule: 1 } });
-    expect(t.routes).toEqual([{ point: 'start', rule: 1, outcome: 'handoff', subjects: ['named.vip'], at: 0 }]);
+    expect(t.routes).toEqual([{ point: 'start', rule: 2, outcome: 'handoff', subjects: ['named.vip'], at: 0 }]);
     // Another caller is not on the list.
     expect(promptOf(last(await call({ callerNumber: '+15555550142' })))).toBe('greeting');
   });
@@ -183,7 +183,7 @@ describe('after identity', () => {
     expect(heard(done)).toBe('Done. Your plan is set up, and the first part is due next month. Now, let\'s check on a request. Your latest request, P100, is open. Is there anything else I can help with?');
     expect(routeRows(r)).toEqual([
       { point: 'start', rule: 'else', outcome: 'continue', subjects: [] },
-      { point: 'afterIdentity', rule: 0, outcome: 'form', subjects: ['fact.account.pastDue'] },
+      { point: 'afterIdentity', rule: 1, outcome: 'form', subjects: ['fact.account.pastDue'] },
     ]);
   });
 
@@ -216,7 +216,7 @@ describe('after a form', () => {
     const t = last(r);
     expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'emergency', completed: ['report_problem'] });
     expect(heard(t)).toBe('Done. Your report number is P201. Since someone may be at risk, let me connect you to a person right away.');
-    expect(routeRows(r).at(-1)).toEqual({ point: 'afterForm', form: 'report_problem', rule: 0, outcome: 'handoff', subjects: ['slot.severity'] });
+    expect(routeRows(r).at(-1)).toEqual({ point: 'afterForm', form: 'report_problem', rule: 1, outcome: 'handoff', subjects: ['slot.severity'] });
     // Never the slot's value in the record.
     expect(JSON.stringify(routeRows(r))).not.toContain('danger');
   });
@@ -303,5 +303,94 @@ describe('review fixes', () => {
     const { routeProblems, conditionWorldOf } = await import('./routes');
     const problems = routeProblems({ start: [null as never, { when: [], outcome: { then: 'continue' }, else: true }] }, { ...conditionWorldOf(routedApp), locales: ['en-US'] });
     expect(problems.map((p) => p.message)).toContain('is not a rule ({ when, outcome } or the else)');
+  });
+});
+
+describe('review fixes: the turn\'s environment holds only the variables the app\'s conditions name', () => {
+  it('an app hook and a tool see SPANISH_LINE alone, never the process\'s environment', async () => {
+    const seen: Record<string, unknown> = {};
+    process.env.DIALOGWRIGHT_PROBE_SECRET = 'not-a-real-secret';
+    try {
+      const app = variants.variant({}, {
+        ...routedCode,
+        onStart: (ctx) => { seen.hook = { ...ctx.tc.env }; seen.frozen = Object.isFrozen(ctx.tc.env); },
+      });
+      use(app);
+      await call({ env: { SPANISH_LINE: '+15555550188', ANTHROPIC_API_KEY: 'not-a-real-key' } });
+      expect(seen.hook).toEqual({ SPANISH_LINE: '+15555550188' });
+      expect(seen.frozen).toBe(true);
+      // A scripted call with no env reads none: never the developer's shell.
+      process.env.SPANISH_LINE = '+15555550188';
+      await call({});
+      expect(seen.hook).toEqual({});
+      const t = last(await call({ calledNumber: '+15555550188' }));
+      expect(t.session.locale).toBe('en-US');
+    } finally {
+      delete process.env.DIALOGWRIGHT_PROBE_SECRET;
+      delete process.env.SPANISH_LINE;
+    }
+  });
+
+  it('an app whose conditions name no variable gets no environment at all', async () => {
+    use(callbackApp);
+    let env: unknown = 'unset';
+    const { runTurn } = await import('../run/turn');
+    const { newSession: fresh } = await import('./session');
+    const { startEvent } = await import('../channel/events');
+    const seenApp = { ...callbackApp, id: 'callback-env', onStart: (ctx: { tc: { env?: unknown } }) => { env = ctx.tc.env; } } as App;
+    use(seenApp);
+    await runTurn(fresh('e', 0, VOICE_RELAY, undefined, seenApp.id), startEvent(), { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, env: { HOME: '/home/x' } });
+    expect(env).toBeUndefined();
+  });
+});
+
+describe('review fixes: a start hook that throws', () => {
+  it('a tool the gate allowed that threw is recorded (gate and failure rows) even without failSoft; the session is as before the hook; the trace names the kind', async () => {
+    const app = variants.variant({}, {
+      ...routedCode,
+      onStart: (ctx) => {
+        (ctx.s.facts as RoutedFacts).outage = true;
+        ctx.s.callData = { region: 'rewritten' };
+        ctx.callTool({ tool: 'lookupNotices', params: { region: 'down' } });
+      },
+    });
+    use(app);
+    const r = await call({ callData: { region: 'north' } });
+    const t = r.runs[0]!.result;
+    expect(promptOf(t)).toBe('greeting');
+    expect(t.audit.map((d) => d.type)).toEqual(['call_started', 'gate', 'tool_result', 'route']);
+    expect(t.audit.find((d) => d.type === 'tool_result')?.detail).toMatchObject({ summary: 'the tool failed: nothing was returned' });
+    expect(t.startHookFailed).toBe('Error');
+    expect(r.runs[0]!.record.startHookFailed).toBe('Error');
+    expect(JSON.stringify(r.runs[0]!.record)).not.toContain('did not answer');
+    expect((t.session.facts as RoutedFacts).outage).toBe(false);
+    expect(t.session.callData).toEqual({ region: 'north' });
+  });
+});
+
+describe('review fixes: after identity, a refused entry', () => {
+  it('marks the routes as passed, so they do not run later in another request', async () => {
+    const app = variants.variant({}, {
+      ...routedCode,
+      blockPromptId: () => 'status_none',
+      forms: { ...routedCode.forms, check_status: { ...routedCode.forms.check_status!, entry: () => ({ tool: 'findAccount', params: { accountId: '55509012' } }) } },
+    });
+    use(app);
+    const r = await call({}, ...says(STATUS, ACCOUNT, DOB, REPORT));
+    expect(r.runs.at(-2)!.result.decision).toMatchObject({ kind: 'prompt', promptId: 'anything_else' });
+    expect(r.runs.at(-2)!.result.session.identityRouted).toBe(true);
+    expect(routeRows(r).some((d) => d.point === 'afterIdentity')).toBe(false);
+    expect(promptOf(last(r))).toBe('ask_problem');
+  });
+});
+
+describe('review fixes: a scripted call\'s date follows its clock', () => {
+  it('in the hours\' time zone, unless the call gives its own', async () => {
+    const dates: string[] = [];
+    const { runTurn } = await import('../run/turn');
+    const turn: Parameters<typeof runScenario>[1]['turn'] = (s, e, o, a) => { dates.push(o.todayIso); return runTurn(s, e, o, a); };
+    await runScenario({ id: 'd', now: '2026-10-13T01:30:00Z', steps: [], expect: { decision: 'any' } }, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2001-01-01', turn });
+    await runScenario({ id: 'd', now: '2026-10-13T01:30:00Z', todayIso: '2026-10-20', steps: [], expect: { decision: 'any' } }, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2001-01-01', turn });
+    expect(dates).toEqual(['2026-10-12', '2026-10-20']);
   });
 });

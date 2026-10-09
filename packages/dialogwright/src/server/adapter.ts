@@ -1442,6 +1442,14 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     if (run.joined) logDelivery(deps, entry, { joined: run.joined.length });
     turnFailures.delete(entry.callSid);
     entry.session = run.result.session;
+    // The app's start hook threw (App.onStart): said by its kind, never its message; the call went on.
+    if (run.result.startHookFailed !== undefined) {
+      deps.log(`${entry.callSid}: the app's start hook failed (${run.result.startHookFailed}); the call goes on`);
+      entry.frames.write('log', { startHookFailed: run.result.startHookFailed });
+    }
+    // The routes taken (routes.yaml), by point and rule only, for replay to compare with the routes it takes:
+    // a start route on the number called, which the frame log does not keep, takes another branch there.
+    if (run.result.routes !== undefined) entry.frames.write('log', { routes: run.result.routes.map((r) => ({ point: r.point, ...(r.form !== undefined ? { form: r.form } : {}), rule: r.rule })) });
     // Kept on the call's own entry whether or not the console is on: the handoff summary reads it.
     entry.auditEntries.push(...run.audit);
     const kind = run.result.decision.kind;

@@ -205,6 +205,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     ? openFileStores(resolvePath(config.sessionStore.dir), { tokenTtlMs: TOKEN_TTL_MS, now, log, fsync: config.sessionStore.fsync === true })
     : null;
   if (files) log(`sessions: file:${files.dir} (calls, chats and relay tokens are saved after every turn, and a restart resumes them)`);
+  // The numbers called conditions compare the number dialed with (routes.yaml, transfer targets), read
+  // now, before any call: one unset, or not E.164, stops the server here. Each turn reads these values
+  // and nothing else of the environment (TurnContext.env).
+  const called = calledVariablesFrom(getApp(defaultAppId()), overrides.env ?? process.env);
   /** RESTART_PAUSE_S with the file store: how long a planned restart's handover asks each carrier to wait; 0 with none. */
   const restartPauseS = config.sessionStore?.restartPauseS ?? 0;
   const store: SessionStore = new SessionStore(
@@ -214,7 +218,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
         session: newSession(callSid, now(), VOICE_RELAY),
-        opts: { client, thresholds, todayIso: todayIso(), trace, now, render, observe, tools, audit, screen: config.screen, env: overrides.env ?? process.env },
+        opts: { client, thresholds, todayIso: todayIso(), trace, now, render, observe, tools, audit, screen: config.screen, env: called },
         trace,
         frames: new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now),
       };
@@ -255,9 +259,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // app.yaml's transfer targets, read from the environment now: one unset, or neither a number nor a sip: URI, stops the server here.
   const transfer = transferTargetsFrom(app, overrides.env ?? process.env, config.handoffNumber);
   if (transfer) log(`transfer targets: ${[...transfer.numbers.keys()].join(', ')}; default ${transfer.defaultVariable}`);
-  // The numbers called conditions compare the number dialed with (routes.yaml, transfer targets): one unset, or not E.164, stops the server here.
-  const called = calledVariablesFrom(app, overrides.env ?? process.env);
-  if (called.length > 0) log(`called numbers: ${called.join(', ')}`);
+  if (Object.keys(called).length > 0) log(`called numbers: ${Object.keys(called).join(', ')}`);
   let draining = false;
   /** Set once the drain's wait is over (or close() has begun): a live call's reconnect goes to the handoff number. */
   let closing = false;
@@ -280,7 +282,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
         // No render context: a chat shows a line's words, never a recorded clip.
         return {
-          opts: { client, thresholds, todayIso: todayIso(), trace, now, render: null, observe, tools, audit, screen: config.screen, env: overrides.env ?? process.env },
+          opts: { client, thresholds, todayIso: todayIso(), trace, now, render: null, observe, tools, audit, screen: config.screen, env: called },
           frames: new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now),
         };
       },

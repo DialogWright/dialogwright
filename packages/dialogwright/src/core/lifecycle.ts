@@ -130,6 +130,11 @@ export interface TurnOut {
    * it happened among theirs. Absent on every other turn, and for every app without routes.
    */
   routes?: RouteNoted[];
+  /**
+   * The app's start hook (App.onStart) threw: the kind of error (its class's name, `Error` or `thrown`
+   * for a value that is no Error), never its message, which may hold a value. Absent on every other turn.
+   */
+  startHookFailed?: string;
 }
 
 /** A route taken, as the turn notes it: the record, and where among the turn's gate events it was taken. */
@@ -316,7 +321,8 @@ export const TOOL_FAILED_SUMMARY = 'the tool failed: nothing was returned';
  * core/turn.ts callerLookup, which must never keep the greeting from being said). The call is
  * recorded as allowed, with TOOL_FAILED_SUMMARY and nothing of the error (its message may hold a
  * param's raw value), the side effects it queued before it threw are dropped, and its value is null.
- * Without it, a throw goes up to the turn, as it always has.
+ * Without it, a throw goes up to the turn, as it always has, after the call is recorded as failed the
+ * same way (a turn that throws writes nothing; a caller that catches it, the start hook, keeps the row).
  */
 export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code?: string, opts: CallOptions = {}): ToolOutcome {
   // Nothing past this line holds the raw call: the event, the trace and the audit see the redacted one.
@@ -332,9 +338,12 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
   try {
     ran = runTool(s, call, tc, out, code);
   } catch (err) {
+    // The gate allowed the call and the tool ran, whatever came of it: the call is recorded (as failed,
+    // with nothing of the error) before anything else, so a caller that catches the throw (the start
+    // hook, a hook of the app's own) leaves the record of a tool that may have done its work.
+    out.gateEvents.push({ decision, summary: TOOL_FAILED_SUMMARY });
     if (opts.failSoft !== true) throw err;
     out.effects.length = effectsBefore;
-    out.gateEvents.push({ decision, summary: TOOL_FAILED_SUMMARY });
     return { decision, value: null, failed: true };
   }
   // Redaction per principal, the one place it happens: nothing past this line holds the whole

@@ -134,7 +134,8 @@ async function run(): Promise<void> {
   if (isClientKind(kind)) for (const line of modelHeader(kind, provider)) console.log(line);
   const client = buildClient(kind, corpusFileOf(args['corpus-file'], args.corpus), thresholds, todayIso, provider ?? undefined);
   const trace = args.trace ? new TraceWriter(args.trace) : null;
-  const opts: RunOptions = { client, thresholds, todayIso, trace, screen: parseScreenMode(args.screen, '--screen') };
+  // The CLI's own environment, of which a turn reads only the variables the app's conditions name (a called condition's).
+  const opts: RunOptions = { client, thresholds, todayIso, trace, screen: parseScreenMode(args.screen, '--screen'), env: process.env };
   const records: TraceRecord[] = [];
 
   if (args.corpus) {

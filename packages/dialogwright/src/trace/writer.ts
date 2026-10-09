@@ -108,6 +108,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     // Only on a turn a loop of moves went to a person: every other record is as it was.
     ...(result.formLoop ? { formLoop: { ...result.formLoop } } : {}),
     // Only on a turn a route was taken (routes.yaml): every other record is as it was.
+    // Only on a start turn whose start hook threw: its kind of error, never its message.
+    ...(result.startHookFailed ? { startHookFailed: result.startHookFailed } : {}),
     ...(result.routes ? { routes: result.routes.map(({ at: _at, ...taken }) => ({ ...taken, subjects: [...taken.subjects] })) } : {}),
     audit: [...result.audit],
     timing,

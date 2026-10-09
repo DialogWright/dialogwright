@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { rulesAt } from '../core/routes';
+import { localDateIso } from '../run/clock';
 import { join } from 'node:path';
 import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
@@ -375,7 +376,7 @@ export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOption
   // One book of business per entry: what the entry's turn reads or files is its own.
   // A seeded call happens at the seed's moment, where the app gives one (App.testing.seed.now: hours read it).
   const seededAt = getApp(defaultAppId()).testing?.seed?.now;
-  const o = { ...opts, tools: opts.tools ?? demoTools(), ...(seededAt !== undefined ? { now: () => Date.parse(seededAt) } : {}) };
+  const o = { ...opts, tools: opts.tools ?? demoTools(), ...(seededAt !== undefined ? { now: () => Date.parse(seededAt), todayIso: dateAt(Date.parse(seededAt)) } : {}) };
   const start = seedCorpusSession(startSession(entry.id, nowOf(o)(), entry.as), entry, o);
   const asked = entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) && !atCallerMatch(entry, appOf(start)) && !atTextConsent(entry, appOf(start)) ? null : seededPrompt(start);
   const turn = opts.turn ?? runTurn;
@@ -463,6 +464,12 @@ export interface Scenario {
    */
   now?: string;
   /**
+   * The call's date (YYYY-MM-DD), what date slots and rules read as today. Without it, with `now`, the
+   * date at `now` in the app's hours' time zone (app.yaml's hours), else in UTC, as a server takes its
+   * date in its own; without either, the run's.
+   */
+  todayIso?: string;
+  /**
    * The environment the call's `called` conditions read (`env.<NAME>`, TurnContext.env), by variable
    * (e.g. `{ "SPANISH_LINE": "+15555550188" }`). Without it, the run's own (the process's, in a regress).
    */
@@ -511,6 +518,11 @@ export async function followEffects(run: TurnRun, opts: ScenarioRunOptions, down
   return runs;
 }
 
+/** The date at `ms` where the call is: in the app's hours' time zone (app.yaml's hours), else UTC. */
+function dateAt(ms: number): string {
+  return localDateIso(ms, getApp(defaultAppId()).hours?.timezone ?? 'UTC');
+}
+
 export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions): Promise<ScenarioRun> {
   let failNext = false;
   const client: JevClient = {
@@ -519,7 +531,8 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   // One book of business per scenario, so a record created on one turn is there on the next. A scenario
   // with its own clock or environment runs every turn on them.
   const at = scenario.now === undefined ? undefined : Date.parse(scenario.now);
-  const o = { ...opts, client, tools: opts.tools ?? demoTools(), ...(at !== undefined ? { now: () => at } : {}), ...(scenario.env !== undefined ? { env: { ...scenario.env } } : {}) };
+  const today = scenario.todayIso ?? (at !== undefined ? dateAt(at) : undefined);
+  const o = { ...opts, client, tools: opts.tools ?? demoTools(), ...(at !== undefined ? { now: () => at } : {}), ...(today !== undefined ? { todayIso: today } : {}), ...(scenario.env !== undefined ? { env: { ...scenario.env } } : {}) };
   const runs: TurnRun[] = [];
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(o)(), scenario.as);
@@ -613,6 +626,7 @@ function isValidScenario(s: unknown): s is Scenario {
     ((s as Scenario).calledNumber === undefined || typeof (s as Scenario).calledNumber === 'string') &&
     ((s as Scenario).callData === undefined || isStringMap((s as Scenario).callData)) &&
     ((s as Scenario).now === undefined || (typeof (s as Scenario).now === 'string' && Number.isFinite(Date.parse((s as Scenario).now!)))) &&
+    ((s as Scenario).todayIso === undefined || (typeof (s as Scenario).todayIso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test((s as Scenario).todayIso!))) &&
     ((s as Scenario).env === undefined || isStringMap((s as Scenario).env)) &&
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null)
   );
@@ -625,7 +639,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       seen.add(s.id);
       out.push(s);

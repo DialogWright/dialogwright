@@ -3,9 +3,9 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
-import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, routeWorldOf, routeYamlProblems, transferYamlProblems, type AppCode } from './defineApp';
+import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, routesOf, routeWorldOf, routeYamlProblems, transferYamlProblems, type AppCode } from './defineApp';
 import type { RouteRuleYaml } from './schema/index';
-import { ROUTE_HANDOFF_REASON } from '../core/routes';
+import { declaredFacts, ROUTE_HANDOFF_REASON, routeFormEdges, writtenOutcome } from '../core/routes';
 import type { RoutePoint } from '../core/app/types';
 import { slotOutcomeOf } from '../core/outcome';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
@@ -210,7 +210,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
   }
   // A start route that enters a form says the welcome first, the greeting's line before a proposal.
   const startRules = config.routes?.start ?? [];
-  if (startRules.some((r) => (r.else !== undefined && r.else !== 'continue' ? r.else.then : r.then) === 'form')) {
+  if (startRules.some((r) => writtenOutcome(r)?.outcome.then === 'form')) {
     needs.push({ id: greetings?.offer ?? 'greeting_offer', why: 'a start route (routes.yaml) enters a form as the call opens, said in place of the greeting before the form\'s first question' });
   }
   for (const reason of personReasons(config.policy)) {
@@ -431,23 +431,18 @@ function formNeed(config: LoadedConfig, form: string): number {
 function routeWarnings(config: LoadedConfig, code: AppCode | undefined, slots: readonly string[], report: (file: string, path: DataPath, message: string, fix: string) => void): void {
   const routes = config.routes;
   if (routes === null) return;
-  let facts: string[] | null = null;
-  try {
-    const initial = code?.facts?.initial();
-    if (typeof initial === 'object' && initial !== null && !Array.isArray(initial)) facts = Object.keys(initial);
-  } catch {
-    facts = null;
-  }
+  const facts = declaredFacts(code?.facts);
   const predicates = typeof code?.predicates === 'object' && code.predicates !== null ? Object.keys(code.predicates) : null;
   for (const p of routeYamlProblems(routes, { ...routeWorldOf(config, slots, predicates), facts })) if (p.warning) report('routes.yaml', p.path, p.message, p.fix);
   const reached: [RoutePoint, readonly RouteRuleYaml[] | undefined, number][] = [['start', routes.start, 0], ['afterIdentity', routes.afterIdentity, 1]];
   for (const [point, rules, level] of reached) {
     (rules ?? []).forEach((rule, i) => {
-      const written = rule.else !== undefined ? (rule.else === 'continue' ? null : rule.else) : rule;
-      if (written?.then !== 'form' || written.form === undefined || !Object.hasOwn(config.forms.forms, written.form)) return;
+      const w = writtenOutcome(rule);
+      const written = w?.outcome;
+      if (w === null || written?.then !== 'form' || written.form === undefined || !Object.hasOwn(config.forms.forms, written.form)) return;
       const need = formNeed(config, written.form);
       if (need <= level) return;
-      const path: DataPath = rule.else !== undefined ? [point, i, 'else', 'form'] : [point, i, 'form'];
+      const path: DataPath = [point, i, ...w.at, 'form'];
       report('routes.yaml', path, `the route enters "${written.form}", which needs identity level ${need}, and at ${point} the caller is at level ${level}: the form will ask for it first`, 'nothing to do if that is meant; otherwise route to it after identity (afterIdentity), or to a form the caller can use now');
     });
   }
@@ -515,8 +510,11 @@ function retryWarnings(config: LoadedConfig, slots: Readonly<Record<string, Slot
   // reads other values; the engine sends a caller who goes round it within one turn to a person.
   const forms = config.forms.forms;
   const outcomes = slotOutcomesOf(slots);
-  for (const loop of moveCycles(forms, outcomes)) {
-    report('forms.yaml', ['forms', loop[0]!], `the forms go round in a loop by their outcomes (then: form) and next: ${[...loop, loop[0]!].join(' -> ')}, so a caller can be sent round it, and one sent round it within one turn goes to a person (needs-human)`, 'nothing to do if each pass reads values the caller can change; otherwise end the loop: send one of the outcomes to a form outside it, or end the call there');
+  const routeEdges = config.routes === null ? undefined : routeFormEdges(routesOf(config.routes));
+  for (const loop of moveCycles(forms, outcomes, routeEdges)) {
+    const byRoute = routeEdges !== undefined && loop.some((from, i) => (routeEdges[from] ?? []).includes(loop[(i + 1) % loop.length]!));
+    if (byRoute) report('routes.yaml', ['afterForm', loop.find((from, i) => (routeEdges![from] ?? []).includes(loop[(i + 1) % loop.length]!))!], `the forms go round in a loop by routes after a form (then: form), their outcomes and next: ${[...loop, loop[0]!].join(' -> ')}, so a caller can be sent round it, and one sent round it within one turn goes to a person (needs-human)`, 'nothing to do if each pass reads values the caller can change; otherwise end the loop: send one of the routes to a form outside it, or go on (continue)');
+    else report('forms.yaml', ['forms', loop[0]!], `the forms go round in a loop by their outcomes (then: form) and next: ${[...loop, loop[0]!].join(' -> ')}, so a caller can be sent round it, and one sent round it within one turn goes to a person (needs-human)`, 'nothing to do if each pass reads values the caller can change; otherwise end the loop: send one of the outcomes to a form outside it, or end the call there');
   }
   // An identity factor that runs out goes on unverified: a form its outcome enters that needs identity
   // would ask the same factor again (from the start of its ladder), and round again.
@@ -847,9 +845,10 @@ function routeReferences(config: LoadedConfig): Reference[] {
   for (const [form, rules] of Object.entries(config.routes?.afterForm ?? {})) lists.push([['afterForm', form], rules]);
   for (const [at, rules] of lists) {
     rules.forEach((rule, i) => {
-      const written = rule.else !== undefined ? (rule.else === 'continue' ? null : rule.else) : rule;
-      const base: DataPath = rule.else !== undefined ? [...at, i, 'else'] : [...at, i];
-      if (written === null) return;
+      const w = writtenOutcome(rule);
+      if (w === null) return;
+      const written = w.outcome;
+      const base: DataPath = [...at, i, ...w.at];
       if (written.say !== undefined) refs.push({ id: written.say, file: 'routes.yaml', path: [...base, 'say'] });
       if (written.then === 'handoff') refs.push({ id: handoffPromptId(written.reason ?? ROUTE_HANDOFF_REASON), file: 'routes.yaml', path: [...base, written.reason !== undefined ? 'reason' : 'then'] });
     });

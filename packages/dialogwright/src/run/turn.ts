@@ -20,6 +20,7 @@ import type { AuditDraft, AuditEntry } from '../audit/types';
 import { topicsListening } from '../core/knowledge';
 import { localeOf } from '../core/locale';
 import { retrieve } from './retrieve';
+import { calledVariables } from '../core/routes';
 
 export interface TurnObserver {
   /**
@@ -65,8 +66,10 @@ export interface RunOptions {
    */
   screen?: ScreenMode;
   /**
-   * The environment a route's or a transfer target's `called` condition reads (`env.<NAME>`;
-   * TurnContext.env). Unset, the process's own. A test and a scripted call set their own.
+   * Where the variables the app's conditions name are read from (a route's or a transfer target's
+   * `called`, `env.<NAME>`; TurnContext.env): runTurn hands the turn only those names, never anything
+   * else. The server passes the values it checked as it started; the text CLI its own environment; a
+   * scripted call its `env`. Unset, none is set, and such a condition never holds.
    */
   env?: Readonly<Record<string, string | undefined>>;
   /**
@@ -81,6 +84,22 @@ export interface RunOptions {
  * date of birth) is recorded as, in every log. The name is historical: it masks all three.
  */
 export const CODE_DIGIT = '•';
+
+/**
+ * The turn's environment (TurnContext.env): the variables the app's conditions name (calledVariables),
+ * each as `env` holds it, and nothing else, frozen. None for an app whose conditions name none, so its
+ * turns are as they were; an empty record where `env` is unset.
+ */
+function conditionEnv(session: Session, env: RunOptions['env']): Pick<TurnContext, 'env'> {
+  const names = calledVariables(appOf(session));
+  if (names.length === 0) return {};
+  const picked: Record<string, string> = {};
+  for (const name of names) {
+    const value = env !== undefined && Object.hasOwn(env, name) ? env[name] : undefined;
+    if (value !== undefined) picked[name] = value;
+  }
+  return { env: Object.freeze(picked) };
+}
 
 export function nowOf(opts: RunOptions): () => number {
   return opts.now ?? (() => Date.now());
@@ -198,7 +217,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     thresholds: opts.thresholds,
     tools: opts.tools ?? demoTools(),
     render: opts.render ?? null,
-    env: opts.env ?? process.env,
+    ...conditionEnv(session, opts.env),
     ...digit,
   };
   const tr = performance.now();

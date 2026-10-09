@@ -288,6 +288,12 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       record(e.frames, 'log', { turnFailed: describeError(err) });
       return;
     }
+    // The app's start hook threw (App.onStart): said by its kind, never its message; the chat went on.
+    for (const r of runs) {
+      if (r.result.startHookFailed === undefined) continue;
+      log(`chat ${e.id}: the app's start hook failed (${r.result.startHookFailed}); the chat goes on`);
+      record(e.frames, 'log', { startHookFailed: r.result.startHookFailed });
+    }
     for (const m of before(e)) sendTo(e, m);
     let last: ServerMessage['type'] | null = null;
     for (const r of runs) {

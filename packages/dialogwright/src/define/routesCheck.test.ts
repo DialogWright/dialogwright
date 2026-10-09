@@ -242,3 +242,28 @@ describe('the routed fixture (src/testing/routed)', () => {
     ]);
   });
 });
+
+describe('review fixes: warnings', () => {
+  async function warningsOf(routes: string): Promise<{ problems: string[]; warnings: string[] }> {
+    const { ROUTED_DIR, routedCode } = await import('../testing/routed/app');
+    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-routes-'));
+    scratch.push(dir);
+    cpSync(ROUTED_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+    writeFileSync(join(dir, 'routes.yaml'), `# yaml-language-server: $schema=../../../schemas/routes.schema.json\n${routes}`);
+    const r = await checkAppFully(dir, { code: routedCode, fixturesRoot: PACKAGE_DIR });
+    return { problems: r.problems.map(formatProblem), warnings: (r.warnings ?? []).map(formatProblem) };
+  }
+
+  it('a loop through routes after a form, across two forms', async () => {
+    const r = await warningsOf('afterIdentity:\n  - else: { then: form, form: payment_plan }\nafterForm:\n  report_problem:\n    - else: { then: form, form: check_status }\n  check_status:\n    - else: { then: form, form: report_problem }\n');
+    expect(r.problems).toEqual([]);
+    expect(r.warnings.join('\n')).toContain('the forms go round in a loop by routes after a form (then: form), their outcomes and next: report_problem -> check_status -> report_problem');
+  });
+
+  it('a level no caller reaches, and a slot read at start, where nothing is filled yet', async () => {
+    const r = await warningsOf('start:\n  - when: { level: 2 }\n    say: closed_now\n    then: end\n  - when: { slot: severity, is: danger }\n    say: closed_now\n    then: end\n  - else: continue\nafterIdentity:\n  - else: { then: form, form: payment_plan }\n');
+    expect(r.problems).toEqual([]);
+    expect(r.warnings.join('\n')).toContain('start[0].when.level  no caller reaches level 2: the app\'s identity stops at level 1, so this condition never holds');
+    expect(r.warnings.join('\n')).toContain('start[1].when.slot  no slot holds a value at start');
+  });
+});

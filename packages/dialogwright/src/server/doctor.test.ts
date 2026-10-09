@@ -132,6 +132,13 @@ describe('pnpm diagnose', () => {
       expect(JSON.stringify(results)).not.toContain('support-east');
     });
 
+    it('knows a called condition by where it is, not by a key named called', async () => {
+      const dir = appDir('id: lines\nstartParameters:\n  called: env.CALLED_PARAM\n');
+      const env = { ...goodEnv(dir), CALLED_PARAM: 'east' };
+      const results = (await runDoctor({ env, cwd: dir, appDir: dir, offline: true }, deps())).filter((r) => r.id === 'variables');
+      expect(results).toEqual([{ id: 'variables', status: 'ok', message: "app.yaml's startParameters.called reads CALLED_PARAM: set, 4 characters" }]);
+    });
+
     it('reads routes.yaml\'s too: a called condition\'s number is E.164, and the file is named', async () => {
       const dir = appDir('id: lines\ntransfer:\n  targets:\n    - when: { called: env.SALES_LINE }\n      to: env.SALES_DESK\n  default: env.HANDOFF_NUMBER\n');
       writeFileSync(join(dir, 'routes.yaml'), 'start:\n  - when: { called: [env.SPANISH_LINE, env.OTHER_LINE] }\n    then: locale\n    locale: es\n  - else: continue\n');

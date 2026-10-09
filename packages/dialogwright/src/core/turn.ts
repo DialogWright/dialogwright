@@ -80,9 +80,10 @@ export interface TurnContext {
    */
   knowledge?: TurnKnowledge;
   /**
-   * The environment the `called` condition of a route or a transfer target reads its numbers from
-   * (`env.<NAME>`; core/conditions.ts). runTurn sets it from RunOptions.env, else the process's own;
-   * unset, no variable is set, and a `called` condition never holds.
+   * The variables the app's conditions name, nothing else (a route's or a transfer target's `called`,
+   * `env.<NAME>`; core/conditions.ts): runTurn picks only those names from RunOptions.env, frozen. Absent
+   * for an app whose conditions name none; a variable not set is absent, and a `called` condition on it
+   * never holds.
    */
   env?: Readonly<Record<string, string | undefined>>;
 }
@@ -211,6 +212,8 @@ export interface TurnResult {
   movedOn?: FormMovedOn[];
   /** the routes taken this turn (routes.yaml, core/routes.ts), in order; absent on every other turn and for every app without routes */
   routes?: RouteNoted[];
+  /** the app's start hook threw on this turn: its kind of error, never its message; absent on every other turn */
+  startHookFailed?: string;
   /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
   reconfirmed?: CheckReconfirmed;
   /** the offer of the caller's number this turn settled; absent on every other turn */
@@ -979,8 +982,13 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   // adds its own ack ("Thanks, Alex."), so the rest of the turn speaks `said`, a copy of `acks`.
   const said = [...acks];
   const entry = ensureEntry(s, io.tc, io.out, said);
-  // A refused entry call still drains the queue: the caller's other requests are not lost to it.
-  if (entry?.kind === 'refused') return finishForm(s, form, entry.acks, io, false);
+  // A refused entry call still drains the queue: the caller's other requests are not lost to it. A
+  // caller verified for it has had their moment: the routes after identity are not run later, mid-way
+  // through another request, as if they had just verified.
+  if (entry?.kind === 'refused') {
+    if (verifiedSubject(s, io) && rulesAt(io.app, 'afterIdentity').length > 0) s.identityRouted = true;
+    return finishForm(s, form, entry.acks, io, false);
+  }
   if (entry) return entry;
   // The routes after identity (routes.yaml afterIdentity), once, the first time the caller is through it:
   // after the identity step's own line, before the form that asked for it goes on.
@@ -2449,21 +2457,31 @@ function callerMatchAgain(s: Session): boolean {
 /**
  * The app's start hook (App.onStart), once as the call starts, for every call: it may read the call
  * data, the numbers and the clock, write the facts and call tools through the gate. One that throws
- * leaves the facts as they were and drops the side effects it queued; the calls it made stay recorded,
- * and the call goes on.
+ * leaves the session as it was before it ran (the facts, the call data, anything else it wrote) and
+ * drops the side effects it queued; the calls it made stay recorded (one whose tool threw as failed),
+ * the trace says the hook failed and its kind of error (TurnOut.startHookFailed), and the call goes on.
+ * A refusal or a NEEDS_HUMAN its calls get is the hook's to read: the hook cannot hand off, so the call
+ * goes on to the routes and the greeting, as after a call-start lookup the gate refused.
  */
 function startHook(s: Session, io: TurnIO): void {
   const hook = io.app.onStart;
   if (hook === undefined) return;
-  const facts = io.app.facts;
-  const before = facts !== undefined ? facts.clone(s.facts) : structuredClone(s.facts);
+  const before = cloneSession(s);
   const effects = io.out.effects.length;
   try {
     hook(appContext(s, io.tc, io.out));
-  } catch {
-    s.facts = before;
+  } catch (err) {
+    for (const key of Object.keys(s)) if (!Object.hasOwn(before, key)) delete (s as unknown as Record<string, unknown>)[key];
+    Object.assign(s, before);
     io.out.effects.length = effects;
+    io.out.startHookFailed = errorKind(err);
   }
+}
+
+/** An error's kind for a record: its class's name where that is a plain word, else `Error`; `thrown` for a value that is no Error. Never its message. */
+function errorKind(err: unknown): string {
+  if (!(err instanceof Error)) return 'thrown';
+  return /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(err.name) ? err.name : 'Error';
 }
 
 /** The rule `point`'s routes take on this call now, noted for the records; null where the app has no routes there. */
@@ -2502,6 +2520,11 @@ function startRoute(s: Session, io: TurnIO): { decision?: Decision; acks: Ack[] 
   return { decision: actOn(s, null, routeEnding(s, o, []), io), acks: [] };
 }
 
+/** The caller is one of the app's subjects, verified (level 1 or more). */
+function verifiedSubject(s: Session, io: TurnIO): boolean {
+  return !isAnonymous(s.principal) && s.principal.kind === identityOf(io.app).subjectKind && s.principal.level >= 1;
+}
+
 /**
  * The routes after identity (routes.yaml `afterIdentity`): once, the first time one of the app's
  * subjects is verified (and through the one-time code, where the step-up asked for it), after the
@@ -2510,10 +2533,11 @@ function startRoute(s: Session, io: TurnIO): { decision?: Decision; acks: Ack[] 
  * at the greeting, with none). `form` puts the caller's own request (the form that asked for identity)
  * first in the queue, so it is bridged back into once the form entered is done ("past-due accounts go
  * to payments first"); a route to the form the caller is already in goes on in it. Null where the call
- * goes on.
+ * goes on. Where the form's entry call is refused once the caller is verified, they are marked as
+ * passed without running (continueForm), so they never run later, mid-way through another request.
  */
 function afterIdentityRoute(s: Session, io: TurnIO, said: Ack[]): Decision | null {
-  if (s.identityRouted === true || isAnonymous(s.principal) || s.principal.kind !== identityOf(io.app).subjectKind || s.principal.level < 1) return null;
+  if (s.identityRouted === true || !verifiedSubject(s, io)) return null;
   if (rulesAt(io.app, 'afterIdentity').length === 0) return null;
   s.identityRouted = true;
   const o = takeRoute(s, 'afterIdentity', io);

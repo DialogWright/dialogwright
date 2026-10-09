@@ -102,12 +102,12 @@ export type MoveKind = 'next' | 'outcome';
 
 /**
  * Every loop of moves between forms (a form that comes back round to itself) that goes by at least one
- * outcome (`then: form`), each once, as the forms in it in the order the moves go, starting from the
+ * outcome (`then: form`) or route after a form (`routes`: by form, the forms its routes enter), each once, as the forms in it in the order the moves go, starting from the
  * one defined first. A loop of `next` alone is nextCycles' (and refused); one through an outcome may be
  * meant (checks that read different values on each pass), so `check` warns of it, and the engine sends
  * a caller who goes round it within one turn to a person (core/turn.ts moveLoops).
  */
-export function moveCycles(forms: Readonly<Record<FormId, FormNext & FormOutcomes>>, slots: Readonly<Record<SlotId, unknown>>): FormId[][] {
+export function moveCycles(forms: Readonly<Record<FormId, FormNext & FormOutcomes>>, slots: Readonly<Record<SlotId, unknown>>, routes?: Readonly<Record<FormId, readonly FormId[]>>): FormId[][] {
   const ids = Object.keys(forms);
   const edges = new Map<FormId, Map<FormId, Set<MoveKind>>>();
   const add = (from: FormId, to: FormId | undefined, kind: MoveKind): void => {
@@ -121,6 +121,8 @@ export function moveCycles(forms: Readonly<Record<FormId, FormNext & FormOutcome
     add(id, def.next, 'next');
     for (const check of def.checks ?? []) for (const o of Object.values(check.on ?? {})) if (o.then === 'form') add(id, o.form, 'outcome');
     for (const slot of def.slots) if (Object.hasOwn(slots, slot)) add(id, slotOutcomeForm(slots[slot]), 'outcome');
+    // A route after the form that enters another (routes.yaml afterForm), a move as an outcome's is.
+    for (const to of routes?.[id] ?? []) add(id, to, 'outcome');
   }
   const cycles: FormId[][] = [];
   ids.forEach((start, i) => {

@@ -5,6 +5,7 @@ import { hoursOpen, scheduleNames } from './hours';
 import type { Session } from './session';
 import { callDataOf } from './callData';
 import type { TransferWorld } from './transfer';
+import { topLevelOf } from './app/lookup';
 
 /**
  * Routes (routes.yaml, App.routes; design 2026-10-09-routes): ordered rules at three points of a call,
@@ -21,7 +22,7 @@ export interface RouteTaken {
   readonly point: RoutePoint;
   /** The form that completed, for afterForm. */
   readonly form?: FormId;
-  /** The rule taken, by its index in the point's list (from 0), or `else`. */
+  /** The rule taken, by its number in the point's list as people count (the first is 1), or `else`. Every record and display says this same number. */
   readonly rule: number | 'else';
   readonly outcome: RouteOutcome['then'];
   /** The subjects the rule read (conditions.ts subjectsOf): `hours`, `fact.pastDue`, ...; none for `else`. */
@@ -91,21 +92,29 @@ export function routeRecord(point: RoutePoint, taken: { rule: RouteRule; index: 
   return {
     point,
     ...(form !== undefined ? { form } : {}),
-    rule: taken.rule.else === true ? 'else' : taken.index,
+    rule: taken.rule.else === true ? 'else' : taken.index + 1,
     outcome: taken.rule.outcome.then,
     subjects: taken.rule.else === true ? [] : subjectsOf(taken.rule.when),
   };
 }
 
+/**
+ * The facts' names an app declares: the keys its facts start with (FactsConfig.initial), or null where
+ * it declares none (no facts, an initial value that is not a record, or a hook that throws), so a fact
+ * condition is not checked against them.
+ */
+export function declaredFacts(facts: { initial(): unknown } | undefined): string[] | null {
+  try {
+    const initial = facts?.initial();
+    return typeof initial === 'object' && initial !== null && !Array.isArray(initial) ? Object.keys(initial) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** What the app has that its conditions may name (ConditionWorld, but where it is judged). */
 export function conditionWorldOf(app: App): TransferWorld {
-  let facts: string[] | null = null;
-  try {
-    const initial = app.facts?.initial();
-    if (typeof initial === 'object' && initial !== null && !Array.isArray(initial)) facts = Object.keys(initial);
-  } catch {
-    facts = null;
-  }
+  const facts = declaredFacts(app.facts);
   return {
     forms: Object.keys(app.forms),
     slots: Object.keys(app.slots),
@@ -114,6 +123,7 @@ export function conditionWorldOf(app: App): TransferWorld {
     hours: app.hours === undefined ? null : { schedules: scheduleNames(app.hours) },
     predicates: Object.keys(app.predicates ?? {}),
     calledKept: app.callerNumber?.called === true,
+    maxLevel: app.identity === undefined ? 0 : topLevelOf(app.identity),
   };
 }
 
@@ -224,6 +234,35 @@ export function calledVariables(app: Pick<App, 'routes' | 'transfer'>): string[]
     ...(app.routes?.start ?? []), ...(app.routes?.afterIdentity ?? []), ...Object.values(app.routes?.afterForm ?? {}).flat(), ...(app.transfer?.targets ?? []),
   ];
   for (const r of rules) for (const c of r.when) if (c.kind === 'called') for (const v of c.variables) if (!out.includes(v)) out.push(v);
+  return out;
+}
+
+/** A route as routes.yaml writes it: a rule with its outcome beside `when`, or the else with its outcome under `else`. */
+export interface WrittenRoute {
+  readonly else?: 'continue' | { readonly then?: string; readonly say?: string; readonly reason?: string; readonly form?: string; readonly locale?: string };
+  readonly then?: string;
+  readonly say?: string;
+  readonly reason?: string;
+  readonly form?: string;
+  readonly locale?: string;
+}
+
+/**
+ * The outcome a route as written takes, wherever it is written: beside `when`, or under `else` (null
+ * for `else: continue`, which says and enters nothing), with the path from the rule to it.
+ */
+export function writtenOutcome(rule: WrittenRoute): { outcome: Omit<WrittenRoute, 'else'>; at: readonly string[] } | null {
+  if (rule.else === undefined) return { outcome: rule, at: [] };
+  return rule.else === 'continue' ? null : { outcome: rule.else, at: ['else'] };
+}
+
+/** The forms each form's routes after it enter (afterForm `then: form`), by form: moves between forms, for the loop check (core/app/next.ts moveCycles). */
+export function routeFormEdges(routes: Routes | undefined): Record<FormId, FormId[]> {
+  const out: Record<FormId, FormId[]> = {};
+  for (const [form, rules] of Object.entries(routes?.afterForm ?? {})) {
+    const to = rules.flatMap((r) => (r.outcome?.then === 'form' ? [r.outcome.form] : []));
+    if (to.length > 0) out[form] = [...new Set(to)];
+  }
   return out;
 }
 

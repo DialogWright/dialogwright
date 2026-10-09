@@ -17,6 +17,39 @@ export interface EnvReference {
   readonly path: string;
   readonly variable: string;
   readonly file?: string;
+  /** `called`: the reference is a `called` condition's (the number callers dial), found by where it is in the file's structure, never by its key's name. */
+  readonly kind?: 'called';
+}
+
+/**
+ * The paths (dotted, as envReferencesIn writes them) of every `called` condition's references in a parsed
+ * app.yaml (its transfer targets' `when`) or routes.yaml (each point's rules' `when`), read from the
+ * file's structure: a key named `called` anywhere else (a startParameters entry) is not one.
+ */
+export function calledReferencePaths(file: 'app.yaml' | 'routes.yaml', value: unknown): Set<string> {
+  const out = new Set<string>();
+  const isMap = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  const fromWhen = (when: unknown, at: string): void => {
+    const conditions = Array.isArray(when) ? when.map((c, j) => [c, `${at}.${j}`] as const) : [[when, at] as const];
+    for (const [c, path] of conditions) {
+      if (!isMap(c) || c.called === undefined) continue;
+      if (Array.isArray(c.called)) c.called.forEach((_, k) => out.add(`${path}.called.${k}`));
+      else out.add(`${path}.called`);
+    }
+  };
+  const fromRules = (rules: unknown, at: string): void => {
+    if (Array.isArray(rules)) rules.forEach((r, i) => { if (isMap(r)) fromWhen(r.when, `${at}.${i}.when`); });
+  };
+  if (!isMap(value)) return out;
+  if (file === 'app.yaml') {
+    const transfer = value.transfer;
+    if (isMap(transfer)) fromRules(transfer.targets, 'transfer.targets');
+  } else {
+    fromRules(value.start, 'start');
+    fromRules(value.afterIdentity, 'afterIdentity');
+    if (isMap(value.afterForm)) for (const [form, rules] of Object.entries(value.afterForm)) fromRules(rules, `afterForm.${form}`);
+  }
+  return out;
 }
 
 /** Every `env.<NAME>` string in a parsed YAML document (app.yaml), in document order, with its path. */

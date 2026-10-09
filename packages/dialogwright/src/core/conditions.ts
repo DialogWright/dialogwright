@@ -158,15 +158,19 @@ function digitsOf(n: string): string {
 }
 
 /**
- * Whether the number called is `wanted` (a variable's value): the same digits, or, where one has more
- * (a country code), the same last ten, when both have at least ten.
+ * Whether the number called is `wanted` (a variable's value): the same digits; or, where only one of
+ * them carries a country code (the other is exactly ten digits, a national number written without it),
+ * the longer one ending in the shorter. Two numbers that both carry a country code are the same only
+ * digit for digit (+15551234567 is not +75551234567).
  */
 export function sameNumber(called: string, wanted: string): boolean {
   const a = digitsOf(called);
   const b = digitsOf(wanted);
   if (a === '' || b === '') return false;
   if (a === b) return true;
-  return a.length >= 10 && b.length >= 10 && a.slice(-10) === b.slice(-10);
+  if (a.length === b.length) return false;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  return short.length === 10 && long.endsWith(short);
 }
 
 /** Whether one condition holds. */
@@ -412,6 +416,8 @@ export interface ConditionWorld {
   readonly predicates?: readonly string[] | null;
   /** Whether the app keeps the number called (app.yaml's callerNumber `called: true`). */
   readonly calledKept?: boolean;
+  /** The highest identity level the app's callers can reach (0 with no identity, 1, or 2 with a one-time code); absent, not checked. */
+  readonly maxLevel?: number;
   /** Whether a handoff for `reason` has its line (handoff_<reason>); absent, not asked. */
   readonly hasReasonLine?: (reason: string) => boolean;
   /** Where the condition is judged: a handoff (a transfer target, where a reason is known), or a route's point. */
@@ -466,8 +472,12 @@ export function conditionRefProblems(c: Condition, world: ConditionWorld): Condi
     }
     case 'slot':
       if (!world.slots.includes(c.key)) out.push({ key: 'slot', message: `slot "${c.key}" is not defined`, fix: 'name one of the app\'s slots', unknownSlot: c.key });
+      // The start routes run before anything is asked or proposed (the caller-ID question, a proposal at
+      // the greeting and the consent to text all come after them), so no slot holds a value yet.
+      else if (world.at === 'start') out.push({ key: 'slot', message: `no slot holds a value at start, before anything is asked, so this condition holds only as present: false`, fix: 'move the rule to afterIdentity or afterForm, or read what the start hook or the call data says', warning: true });
       break;
     case 'level':
+      if (world.maxLevel !== undefined && c.level > world.maxLevel) out.push({ key: 'level', message: `no caller reaches level ${c.level}: the app's identity ${world.maxLevel === 0 ? 'is not there (identity.yaml)' : `stops at level ${world.maxLevel}`}, so this condition never holds`, fix: world.maxLevel === 0 ? 'add identity.yaml, or delete the condition' : `use level ${world.maxLevel} or below, or add the level to identity.yaml`, warning: true });
       break;
     case 'hours':
       if (world.hours === undefined || world.hours === null) out.push({ key: 'hours', message: 'app.yaml has no hours, so this condition never holds', fix: 'add hours to app.yaml: { timezone, weekly: { mon-fri: ["08:00-18:00"] }, closed: [dates] }' });

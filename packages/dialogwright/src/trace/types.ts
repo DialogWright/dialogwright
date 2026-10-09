@@ -146,10 +146,12 @@ export interface TraceRecord {
   formLoop?: { form: FormId; from?: FormId };
   /**
    * The routes taken on this turn (routes.yaml, core/routes.ts), in order: the point, the form (after a
-   * form), the rule (its index from 0, or `else`), what followed, and the subjects the rule read, never
+   * form), the rule (its number, the first being 1, or `else`), what followed, and the subjects the rule read, never
    * their values. Absent on every other turn, and for every app without routes.
    */
   routes?: RouteTaken[];
+  /** The app's start hook (App.onStart) threw on this turn: its kind of error (a class's name), never its message. Absent on every other turn. */
+  startHookFailed?: string;
   /**
    * This turn's audit drafts, in the order they were chained -- before chaining: no `seq` or
    * `hash` yet (those are the sink's, core/audit.ts's `AuditDraft` is what a turn reports). The

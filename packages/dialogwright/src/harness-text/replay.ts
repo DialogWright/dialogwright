@@ -165,6 +165,36 @@ function loggedCallDataKeys(lines: readonly ReadFrameLogLine[]): string[] {
   return [];
 }
 
+/** A route taken, as the frame log and a replay name it: `start rule 3`, `afterForm report_problem else`. */
+function routeKey(r: { point: string; form?: string; rule: number | string }): string {
+  return `${r.point}${r.form !== undefined ? ` ${r.form}` : ''} ${r.rule === 'else' ? 'else' : `rule ${r.rule}`}`;
+}
+
+/** The routes the live call took, in order (the adapter's `{ routes: [...] }` log lines, server/adapter.ts); null for a log with none (an app without routes, or a log written before the line). */
+export function loggedRoutes(lines: readonly ReadFrameLogLine[]): string[] | null {
+  let found = false;
+  const out: string[] = [];
+  for (const line of lines) {
+    if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
+    const routes = (line.msg as { routes?: unknown }).routes;
+    if (!Array.isArray(routes)) continue;
+    found = true;
+    for (const r of routes) if (typeof r === 'object' && r !== null) out.push(routeKey(r as { point: string; form?: string; rule: number | string }));
+  }
+  return found ? out : null;
+}
+
+/**
+ * Whether the replay took other routes than the live call (routes.yaml): said, never silently passed
+ * over. A start route on the number called (`called`) is the usual cause: the frame log does not keep
+ * the number called, so a replayed call has none and takes another branch from there.
+ */
+export function routeDivergence(live: string[] | null, replayed: string[]): string | null {
+  if (live === null) return null;
+  if (live.length === replayed.length && live.every((r, i) => r === replayed[i])) return null;
+  return `routes: the call took ${live.join(', ') || 'none'}, the replay took ${replayed.join(', ') || 'none'} (a route on the number called takes another branch in a replay: the frame log does not keep the number called); what follows may differ from the call`;
+}
+
 function loggedCallerLastFour(lines: readonly ReadFrameLogLine[]): string | 'short' | null {
   for (const line of lines) {
     if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
@@ -430,5 +460,7 @@ export async function replayFrameLog(
     if (event.type === 'service.result') await flushDeferred();
   }
   for (const d of deferred) skipped.push(`line ${d.lineNumber}: ${d.type} during a downstream service's wait that never ended`);
+  const diverged = routeDivergence(loggedRoutes(lines), runs.flatMap((r) => (r.result.routes ?? []).map(routeKey)));
+  if (diverged !== null) skipped.push(diverged);
   return { runs, records: runs.map((r) => r.record), skipped };
 }

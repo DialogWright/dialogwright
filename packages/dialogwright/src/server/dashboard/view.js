@@ -723,7 +723,7 @@ function routedOf(drafts) {
   if (rows.length === 0) return null;
   return `route: ${rows.map((d) => {
     const det = d.detail ?? {};
-    const rule = det.rule === 'else' ? 'else' : `rule ${Number(det.rule) + 1}`;
+    const rule = det.rule === 'else' ? 'else' : `rule ${det.rule}`;
     return `${det.point}${det.form ? ` ${det.form}` : ''} ${rule}, ${det.outcome}`;
   }).join('; ')}`;
 }
