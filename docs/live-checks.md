@@ -220,6 +220,24 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** For each carrier, whether each header arrived on the INVITE, under which name and case, with what value (percent-decoded or not), and whether `User-to-User` arrives if added (`User-to-User: callData.accountRef`). On Telnyx: replace the `dial` entry's `source` in `server/voice/__fixtures__/telnyx/webhooks.json` with `captured <date>`, and the guide's 13.15 table row. A header a carrier drops, renames or needs written another way (a `<Sip>` attribute, a `<Header>` child) is a provider change with a test.
 
+## 13. Routes, business hours and the start hook, on Twilio, on Telnyx and on the web chat
+
+**Why.** routes.yaml (the guide's [routes.yaml](authoring-an-app.md#routesyaml-optional)) decides as the call starts, once the caller is verified and after a form, on business hours, the number called, the call data, the facts the start hook wrote and a predicate. Each is held by unit tests and the engine's fixture's scripted calls at a fixed clock; none is yet seen on a live call: what each carrier sends as the number called, the latency the start hook adds at pickup, the hours on a server whose own time zone is not the hours', and a restart after the route after identity ran.
+
+**Set.** A scratch copy of the engine's fixture `packages/dialogwright/src/testing/routed` (Example Service Line) served on each carrier (check 1 or 2's settings) and on the web chat (`CHAT=on`). Its `.env`: `SPANISH_LINE` set to a second number of yours on the carrier, as E.164; `AFTER_HOURS_DESK`, `VIP_DESK` and `MAIN_LINE` to phones you can answer; `SESSION_STORE=file:sessions`. Run the server with `TZ` set to a zone other than `America/New_York` (for example `TZ=Europe/Berlin`). Edit app.yaml's `hours` so its open hours end (and the billing desk's close) a few minutes from now, in New York time.
+
+**Do.**
+1. Call the main number while the line is open: the greeting. Call the Spanish line's number: the greeting in Spanish. Call from the vip account's number (set `ACCOUNTS[1].phone` to your phone, E.164): straight to `VIP_DESK`.
+2. With the region parameter (`startParameters: { region: env.REGION }`, `REGION=north`): the outage notice before the greeting. With `REGION=down`: the greeting, and the server's log names no failure of the call (the lookup failed soft).
+3. Ask for a person a minute before and a minute after the billing desk's close: `MAIN_LINE`, then `AFTER_HOURS_DESK`. Call a minute after the line's close: the closed line and goodbye, no greeting.
+4. Check on a request as Avery (past due): verified, then the payment plan first. Restart the server (check 7's planned restart) right after the plan's question, answer it after the carrier calls back: the plan is set up and the status follows, and the route after identity is not run again.
+5. Move the hours to a holiday (add today to `closed`) and to the day daylight saving changes in New York (set the server's clock or the fixture's dates to it): closed on the holiday; open and closed at the right local hours across the change.
+6. On the web chat: a start route that ends (closed), one that enters a form (add `then: form` with `greeting_offer`), and one that switches language (a `callData: { from: chat.lang }` key and a route on it).
+
+**Look for.** The trace's start record's `routes` (`[{ point: 'start', rule: 4, outcome: 'locale' }]`, rule numbers as people count) and the audit's `route` rows, never a value. The number called as each carrier delivers it (Twilio's `To`, Telnyx's `telnyx_call_to`; with or without `+`, a country code) matches `SPANISH_LINE` written as E.164. The frame log's `{ routes: [...] }` line on each turn a route was taken, and replaying that log (`pnpm --filter <app> cli --replay <frames.jsonl>`) saying where it went another way (`routes: the call took start rule 4, the replay took start else`: the number called is not logged). The time from the carrier's setup to the first audio line with the start hook and without it (the hook runs before the greeting). The hours judged in New York time whatever the server's `TZ`. After the restart, the saved session's `identityRouted: true`.
+
+**Record.** For each carrier: the number called as delivered, whether `called` matched, the start hook's added latency at pickup, each boundary's result (a minute either side), the holiday and the daylight saving change, the restart. A carrier that delivers the number called in a form `sameNumber` does not match is a change to `channel/callerNumber`'s reading with a test; a latency a caller would notice is a note in the guide's start hook section.
+
 ## Results log
 
 One row per check run. Keep earlier rows.
