@@ -279,6 +279,8 @@ export const ALL_SLOTS: readonly string[];
 export const FORM_SLOTS: Readonly<Record<string, readonly string[]>>;
 
 /** A form id in words: the app's label (ConsoleMeta.formLabels), or the id with spaces. */
+/** One NOW chip's label for the slot `id` (ConsoleMeta.chipStyle): never an identifier in full. */
+export function nowChipLabel(id: string, slot: { value?: string | null; display?: string | null; window?: unknown }, level: number): string;
 export function formLabel(form: string | null | undefined): string;
 /** A handoff reason in words: `live-agent` reads "caller asked for a person"; the app's own from ConsoleMeta.handoffReasons. */
 export function handoffReasonText(reason: string | null | undefined): string;
@@ -316,6 +318,8 @@ export interface ScriptLine {
   codeMasked?: boolean;
 }
 export const CODE_MASK: string;
+/** What an identifier of four digits or fewer is shown as (gate/principal.ts SHORT_MASK). */
+export const SHORT_MASK: string;
 export function scriptOf(lines: readonly Line[], turnsView: readonly TurnView[]): ScriptLine[];
 
 /** The replay positions a step lands on: a keypad entry is one step, not two per digit. */

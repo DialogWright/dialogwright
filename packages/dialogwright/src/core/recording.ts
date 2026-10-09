@@ -49,6 +49,15 @@ export function recordingOf(app: RecordingApp, param: string): AuditMask {
   return 'keep';
 }
 
+/**
+ * A value's last-four form as a line may write it (`...1234`), looked for where the value is recorded
+ * hidden: maskId's form for a value longer than four characters, and the form code that slices its
+ * own last four would write for a shorter one (maskId shows that as SHORT_MASK).
+ */
+function lastFourForm(v: string): string {
+  return `...${v.slice(-4)}`;
+}
+
 /** A value as it is recorded under `how`; null for a secret, which is not recorded at all. An empty value stays empty (but its length). */
 export function recordedValue(how: AuditMask, v: string): string | null {
   switch (how) {
@@ -165,7 +174,7 @@ export function scrubberFor(app: RecordingApp, call: ToolCall): Scrub | null {
     const shown = recordedValue(how, v) ?? '•';
     pairs.push([v, shown]);
     // A line that names the value by its last four (the scope rule's subject, say) says them only where the value is recorded so.
-    if (how !== 'last4' && v.length >= SCRUB_MIN_LENGTH) lastFour.push([maskId(v), shown]);
+    if (how !== 'last4' && v.length >= SCRUB_MIN_LENGTH) lastFour.push([lastFourForm(v), shown]);
   }
   const masked = lastFour.length === 0 ? null : maskedIdScrub(lastFour);
   return bothScrubs(scrubberOfValues(pairs), masked);
@@ -273,7 +282,7 @@ export function spokenValuesScrubber(values: Iterable<{ readonly raw: string; re
   for (const { raw, shown, lastFour: hidden } of values) {
     if (raw === shown) continue;
     pairs.push([raw, shown]);
-    if (hidden && raw.length >= SCRUB_MIN_LENGTH) lastFour.push([maskId(raw), shown]);
+    if (hidden && raw.length >= SCRUB_MIN_LENGTH) lastFour.push([lastFourForm(raw), shown]);
     const digits = raw.replace(/\D/g, '');
     if (digits.length >= SCRUB_MIN_LENGTH && !runs.has(digits)) runs.set(digits, shown);
   }

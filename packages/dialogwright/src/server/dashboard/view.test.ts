@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { CODE_MASK as CORE_CODE_MASK } from '../../core/spokenCode';
+import { SHORT_MASK as CORE_SHORT_MASK } from '../../gate/principal';
 import { JevClientError } from '../../jev/types';
 import { FORMS } from '../../testing/testkit/domain/forms';
 import { ALL_SLOTS as REAL_ALL_SLOTS } from '../../testing/testkit/domain/slots';
 import type { AuditEntry } from '../../audit/types';
 import type { FrameDir, FrameLogLine } from '../frameLog';
 import { CALL, FROM, TODAY, replayRecords, scripted, type Step } from '../../testing/scripted';
-import { ALL_SLOTS, FORM_SLOTS, configure, decisiveRows, formLabel, groupRows, handoffReasonText, latestTrace, positionText, reduce, replayEvents, replayStops, scriptOf, CODE_MASK, serviceNoteView, traceLabel, cleanTraceName, TRACE_NAME_MAX, stepStop, thresholdFor, exchanges } from './view.js';
+import { ALL_SLOTS, FORM_SLOTS, configure, decisiveRows, formLabel, groupRows, handoffReasonText, latestTrace, positionText, reduce, replayEvents, replayStops, scriptOf, CODE_MASK, serviceNoteView, traceLabel, cleanTraceName, TRACE_NAME_MAX, stepStop, thresholdFor, exchanges, nowChipLabel, SHORT_MASK } from './view.js';
 import { consoleMetaOf } from './meta';
 import { testkitApp } from '../../testing/testkit';
 import { useTestkit } from '../../testing/apps';
@@ -1050,6 +1051,14 @@ describe('now', () => {
   /** The NOW view after each acting turn of a scripted call, in order. */
   const nowByTurn = (events: readonly DashboardEvent[]) => turnIndexes(events).map((i) => reduce(events.slice(0, i + 1)).now);
   const chips = (n: { chips: Array<{ name: string; state: string; label: string }> }) => n.chips.map((c) => `${c.name}:${c.state}${c.label ? `:${c.label}` : ''}`);
+
+  it('shows an identifier chip by its last four, and one of four digits or fewer as bullets, never whole', () => {
+    expect(nowChipLabel('accountId', { value: '...1234', display: '...1234' }, 1)).toBe('...1234');
+    expect(nowChipLabel('accountId', { value: '55501234', display: '5550 1234' }, 1)).toBe('…1234');
+    expect(nowChipLabel('accountId', { value: '••••', display: '••••' }, 1)).toBe('••••');
+    expect(nowChipLabel('accountId', { value: '4821', display: '48 21' }, 1)).toBe('••••');
+    expect(SHORT_MASK).toBe(CORE_SHORT_MASK);
+  });
 
   it('names the forms and the handoff reasons in words', () => {
     expect(formLabel('report_missing')).toBe('Report a missing parcel');

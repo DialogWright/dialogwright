@@ -123,6 +123,12 @@ describe('slot metadata: the handoff and the follow-up for a partial', () => {
     expect(handoff(s, 'identity').slots.birthDate).toBe(IDENTITY_VERIFIED);
   });
 
+  it('hands an identifier of four digits or fewer over as bullets, since its last four would be all of it', () => {
+    const s = session();
+    Object.assign(s.slots.patientId!, { value: '4821', display: '4821' });
+    expect(handoff(s, 'identity').slots.patientId).toBe('••••');
+  });
+
   it('hands a slot shown as said over by its written value, not the words read back', () => {
     const said = clinic({ id: 'clinic-said', slots: { ...SLOTS, place: slot('place', { displayFrom: 'said' }) } });
     registerApp(said);

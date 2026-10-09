@@ -1,4 +1,4 @@
-import { maskId } from '../gate/principal';
+import { SHORT_MASK, maskId } from '../gate/principal';
 import type { SlotState } from '../core/session';
 import type { SlotSpec } from '../core/slots/types';
 import type { App, AuditMask } from '../core/app/types';
@@ -25,6 +25,7 @@ import type { TraceRecord } from './types';
  *
  * A `length` slot is the caller's statement: 'length' keeps only its length (the trace file; the
  * statement itself lives in the app's system), 'keep' leaves it (the live console shows the words).
+ * A `length` slot that is a secret (SlotSpec.statement false: a PIN) is kept by its length in both.
  */
 export type StatementMode = 'length' | 'keep';
 
@@ -35,8 +36,12 @@ function ruleOf(app: Slots, slot: string): SlotSpec['redact'] {
   return app !== null && Object.hasOwn(app.slots, slot) ? app.slots[slot]!.redact : undefined;
 }
 
-/** A `last4` slot: "55501234", "5550 1234" or "...1234" all become the last four digits, as the gate logs an id. */
+/**
+ * A `last4` slot: "55501234", "5550 1234" or "...1234" all become the last four digits, as the gate
+ * logs an id (maskId); one of four digits or fewer ("4821", "48 21") becomes SHORT_MASK, which stays.
+ */
 export function maskLast4(v: string): string {
+  if (v === SHORT_MASK || /^\.\.\.\d{4}$/.test(v)) return v;
   return maskId(v.replace(/\D/g, ''));
 }
 
@@ -56,13 +61,21 @@ function maskValue(app: Slots, slot: string, v: string | null, mode: StatementMo
   const rule = ruleOf(app, slot);
   if (rule === 'last4') return maskLast4(v);
   if (rule === 'mask') return maskToYear(v);
-  if (rule === 'length' && mode === 'length') return maskStatement(v);
+  if (rule === 'length' && (mode === 'length' || isSecretByLength(app, slot))) return maskStatement(v);
   return v;
 }
 
-/** A statement's display is a stand-in, never the words, so only its value is masked. */
+/**
+ * A statement's display is a stand-in, never the words, so only its value is masked. A slot by its
+ * length that is no statement (SlotSpec.statement false, a short secret) shows its value as its display.
+ */
 function isStatement(app: Slots, slot: string): boolean {
-  return ruleOf(app, slot) === 'length';
+  return ruleOf(app, slot) === 'length' && app!.slots[slot]!.statement !== false;
+}
+
+/** A slot by its length that is a secret, not the caller's words (SlotSpec.statement false): masked on the live console too. */
+function isSecretByLength(app: Slots, slot: string): boolean {
+  return ruleOf(app, slot) === 'length' && app!.slots[slot]!.statement === false;
 }
 
 /** A redacted slot's pending partial, its numeric parts zeroed and its shape kept. */
@@ -195,7 +208,7 @@ function spokenEntry(app: Slots, slot: string, raw: unknown, mode: StatementMode
   const rule = ruleOf(app, slot);
   if (rule === undefined || typeof raw !== 'string' || raw === '') return null;
   // A statement is shown in full on the live console, and its display is a stand-in ("your description"), never the words.
-  if (rule === 'length' && (mode === 'keep' || display)) return null;
+  if (rule === 'length' && !isSecretByLength(app, slot) && (mode === 'keep' || display)) return null;
   const shown = maskValue(app, slot, raw, mode) ?? raw;
   return { raw, shown, lastFour: rule !== 'last4' };
 }

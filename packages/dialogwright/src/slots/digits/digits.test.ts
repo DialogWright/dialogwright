@@ -240,6 +240,14 @@ describe('redact and handoff', () => {
     expect(open.handoff).toBeUndefined();
     expect(defineSlot('parcel', { type: 'digits', noun: 'parcel', length: 10, handoff: 'verified' }).handoff).toBe('verified');
   });
+
+  it('takes redact length for a short secret: recorded by its length, display and all (not a statement)', () => {
+    const pin = defineSlot('pin', { type: 'digits', noun: 'PIN', length: 4, redact: 'length' });
+    expect(pin).toMatchObject({ redact: 'length', statement: false });
+    // The other settings are unchanged: last4 is still the default, and no slot says statement: false but one by its length.
+    expect(account.redact).toBe('last4');
+    expect('statement' in account).toBe(false);
+  });
 });
 
 describe('the words and the ids', () => {

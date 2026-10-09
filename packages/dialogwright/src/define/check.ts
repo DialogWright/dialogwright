@@ -14,6 +14,7 @@ import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 import { withoutFallbackWarnings } from '../kb/fallback';
 import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProblems } from './knowledgeUse';
 import { checkPromptReferences, checkWarnings } from './formChecks';
+import { digitsMayBeShort } from '../slots/digits/fill';
 
 /**
  * `dialogwright check`: everything that can be wrong with an app folder, found in one pass.
@@ -251,7 +252,7 @@ export interface CheckResult {
    * write does not; a slot that offers the caller's number (callerNumberWarnings); a slot whose
    * `listen` says otherwise than every form that lists it (listenWarnings); and a priority
    * intent's correctsForm or the handoff's unconfirmed option with nothing to act on
-   * (priorityHandoffWarnings).
+   * (priorityHandoffWarnings); and a short secret redacted by its last four (shortSecretWarnings).
    */
   warnings?: Problem[];
 }
@@ -318,6 +319,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
+  shortSecretWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
   problems.push(...checkDone(config, locate));
@@ -351,6 +356,39 @@ function priorityHandoffWarnings(config: LoadedConfig, report: (file: string, pa
   const unconfirmed = data?.unconfirmed;
   if ((unconfirmed === 'mark' || unconfirmed === 'omit') && data?.slots === 'none') {
     report('app.yaml', ['handoff', 'data', 'unconfirmed'], `unconfirmed is ${unconfirmed}, but slots is none, so a transfer sends no value to ${unconfirmed === 'mark' ? 'mark' : 'leave out'}`, 'delete "unconfirmed", or name the slots that go');
+  }
+}
+
+/**
+ * The warning for a short secret: a library `digits` slot that can be four digits or fewer (its
+ * `length`, or a `mask` that lets it; digitsMayBeShort), redacted by its last four (`redact: last4`,
+ * the default), which would be all of it. The engine records such a value as bullets (SHORT_MASK)
+ * anyway; the warning points to `redact: length`, which records how many digits it has. A warning,
+ * never a refusal: the app decides.
+ */
+function shortSecretWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  if (config.slots === null) return;
+  const factors = new Set(config.identity?.levels[1].factors ?? []);
+  for (const [id, raw] of Object.entries(config.slots)) {
+    const o = raw as { type: string; length?: unknown; mask?: unknown; redact?: unknown };
+    if (o.type !== 'digits' || (o.redact !== undefined && o.redact !== 'last4')) continue;
+    const length = typeof o.length === 'number' ? o.length : undefined;
+    const mask = typeof o.mask === 'string' ? o.mask : undefined;
+    let short: boolean;
+    try {
+      short = digitsMayBeShort({ length, mask });
+    } catch {
+      continue; // A mask that is no pattern is the slot's own problem.
+    }
+    if (!short) continue;
+    const by = length !== undefined ? `length: ${length}` : `mask: ${mask}`;
+    const what = factors.has(id) ? `is an identity factor of 4 digits or fewer (${by})` : `can be 4 digits or fewer (${by})`;
+    report(
+      SLOTS_FILE,
+      o.redact !== undefined ? [id, 'redact'] : [id],
+      `the slot "${id}" ${what}, and redact: last4 shows a value by its last four digits, which would be all of it, so it is recorded as bullets (••••)`,
+      'set "redact: length" to record it by its length (<4 chars>), or ask a longer number; nothing to do if bullets are meant',
+    );
   }
 }
 

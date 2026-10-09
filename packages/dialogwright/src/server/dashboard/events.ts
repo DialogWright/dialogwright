@@ -5,6 +5,7 @@ import type { Thresholds } from '../../core/thresholds';
 import type { FrameLogLine } from '../frameLog';
 import type { AuditEntry } from '../../audit/types';
 import { consoleKbSource, redactHandoffData, redactRecordSlots } from '../../trace/redact';
+import { SHORT_MASK } from '../../gate/principal';
 
 interface Base { callSid: string; at: number }
 
@@ -61,10 +62,15 @@ export type DashboardEventType = DashboardEvent['type'];
  */
 export type DeliveryFact = { kind: string } & { [field: string]: number | boolean | string | null };
 
-/** The last four digits only; the page never shows a whole caller number. */
+/** The last four digits only; the page never shows a whole caller number (one of four digits or fewer: SHORT_MASK). */
 export function maskNumber(n: string | undefined | null): string {
   if (!n) return 'unknown';
+  // Already masked (the trace's `...0142`, or SHORT_MASK): kept, in the page's own spelling.
+  if (n === SHORT_MASK) return n;
+  const masked = /^(?:\.\.\.|…)(\d{4})$/.exec(n);
+  if (masked) return `…${masked[1]}`;
   const digits = n.replace(/\D/g, '');
+  if (digits.length > 0 && digits.length <= 4) return SHORT_MASK;
   return `…${digits.slice(-4)}`;
 }
 

@@ -595,18 +595,24 @@ function steppingUp(promptedFor) {
   return promptedFor === 'otp' || META.stepUp.includes(promptedFor);
 }
 
+/** What an identifier of four digits or fewer is shown as, its last four being all of it (gate/principal.ts SHORT_MASK). */
+export const SHORT_MASK = '••••';
+
 /**
  * One NOW chip's value, never an identifier in full (ConsoleMeta.chipStyle): an identifier only by
- * its last four (the record's display is already `...1234`; anything else is masked again here), a
+ * its last four (the record's display is already `...1234`, or `••••` for one of four digits or
+ * fewer; anything else is masked again here, a short one to `••••`), a
  * verified factor only as given or verified, the caller's own words only as recorded (live they
  * are the words, in replay their length), and a slot shown as said by its written value.
  */
-function nowChipLabel(id, s, level) {
+export function nowChipLabel(id, s, level) {
   const style = Object.hasOwn(META.chipStyle, id) ? META.chipStyle[id] : null;
   if (s.value) {
     if (style === 'last4') {
       const shown = String(s.display ?? s.value);
-      return /^(\.\.\.|…)\d{4}$/.test(shown) ? shown : `…${shown.replace(/\D/g, '').slice(-4)}`;
+      if (shown === SHORT_MASK || /^(\.\.\.|…)\d{4}$/.test(shown)) return shown;
+      const digits = shown.replace(/\D/g, '');
+      return digits.length <= 4 ? SHORT_MASK : `…${digits.slice(-4)}`;
     }
     if (style === 'verified') return level >= 1 ? 'verified' : 'given';
     if (style === 'recorded') return 'recorded';

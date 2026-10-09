@@ -1208,7 +1208,8 @@ describe('dashboard publishing', () => {
     // keeps the raw one, and `/dashboard/traces/<sid>` redacts it the same way on the way back.
     expect(JSON.stringify(events)).not.toContain('+15555550199');
     const setupTurn = events.find((e) => e.type === 'turn');
-    expect(setupTurn).toMatchObject({ record: { event: { type: 'session.start', provider: { from: '…0199', to: '…2' } } } });
+    // The number called here is one digit ('+2'): its last four would be all of it, so it is bullets.
+    expect(setupTurn).toMatchObject({ record: { event: { type: 'session.start', provider: { from: '…0199', to: '••••' } } } });
   });
 
   it('masks the caller number in the raw frame log for the setup line, at write time', async () => {
@@ -1216,7 +1217,7 @@ describe('dashboard publishing', () => {
     const sock = fakeSocket();
     await handleSocketMessage(d, sock, newConnectionContext(d.tokens.mint('CA1'), sock), setupMsg('CA1', 'VX', '+15555550199'));
     const setupLine = frameLines(d.dir).find((l) => l.dir === 'in' && l.msg.type === 'setup');
-    expect(setupLine?.msg).toMatchObject({ from: '…0199', to: '…2' });
+    expect(setupLine?.msg).toMatchObject({ from: '…0199', to: '••••' });
     expect(JSON.stringify(setupLine)).not.toContain('5555550199');
     // A reconnect's setup line (the call already has an entry) is masked the same way.
     const reconnectSock = fakeSocket();

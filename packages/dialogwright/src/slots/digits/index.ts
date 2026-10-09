@@ -76,6 +76,8 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
       id,
       ...readBackOf(o.confirm),
       ...(o.redact === 'last4' ? { redact: 'last4' as const } : {}),
+      // A number by its length is a secret (a PIN), not the caller's words: its display is the number, so it is masked too.
+      ...(o.redact === 'length' ? { redact: 'length' as const, statement: false as const } : {}),
       ...(o.handoff !== 'display' ? { handoff: o.handoff } : {}),
       detect: true,
       questionIds: [ids.given, ids.span, ids.complete],

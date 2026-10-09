@@ -25,6 +25,21 @@ export function digitsFit(o: Pick<DigitsOptions, 'mask' | 'length'>): (digits: s
 }
 
 /**
+ * Whether the slot's value can be `most` digits or fewer (four: a value whose last four would be all of
+ * it): `length` when given, otherwise whether the mask matches any number of 1 to `most` digits, each
+ * tried (at most 11,110 of them for four). Only for `check`, never on a turn.
+ */
+export function digitsMayBeShort(o: Pick<DigitsOptions, 'mask' | 'length'>, most = 4): boolean {
+  if (o.length !== undefined) return o.length <= most;
+  if (o.mask === undefined) return false;
+  const fits = digitsFit(o);
+  for (let n = 1; n <= most; n++) {
+    for (let i = 0; i < 10 ** n; i++) if (fits(String(i).padStart(n, '0'))) return true;
+  }
+  return false;
+}
+
+/**
  * A digits slot's fill. Not stated (SLOT_DETECT): absent. Stated but not whole (SLOT_DETECT):
  * invalid, "incomplete". No span chosen: invalid, "no_span". The chosen span's probability below
  * `minConfidence`: invalid, "low_confidence". The span turned into digits and not matching the

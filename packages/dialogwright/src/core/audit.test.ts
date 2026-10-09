@@ -172,4 +172,12 @@ describe('auditDrafts', () => {
     const r = resolve(web, signedInEvent(customerPrincipal(CUSTOMERS[0]!, 2)), null, tc);
     expect(r.audit).toContainEqual({ type: 'identity', detail: { factor: 'portal_sign_in', pass: true, level: 2, customer: '...1234' } });
   });
+
+  it('records a subject whose id is four characters or fewer as bullets, never the whole id', () => {
+    const tc: TurnContext = { nowMs: 0, todayIso: '2026-09-18', thresholds: { ...DEFAULT_THRESHOLDS }, tools: demoTools() };
+    const web = resolve(newSession('w', 0, WEB_CHAT), startEvent(), null, tc).session;
+    const r = resolve(web, signedInEvent({ ...customerPrincipal(CUSTOMERS[0]!, 2), id: '4821' }), null, tc);
+    expect(r.audit).toContainEqual({ type: 'identity', detail: { factor: 'portal_sign_in', pass: true, level: 2, customer: '••••' } });
+    expect(JSON.stringify(r.audit)).not.toContain('4821');
+  });
 });

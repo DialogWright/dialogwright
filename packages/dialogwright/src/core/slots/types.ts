@@ -280,14 +280,24 @@ export interface SlotSpec {
    * name as it is recorded (the gate event, the trace, the audit), and the trace's and console's
    * copies of the slot (its value, display, the turn state the model saw, a readback, a handoff's
    * collected slots, a side effect's params). Absent: the value is kept as it is.
-   * - `last4`: an identifier, by its last four digits ("...1234").
+   * - `last4`: an identifier, by its last four digits ("...1234"). A value of four digits or fewer,
+   *   whose last four would be all of it, as four bullets ("••••", SHORT_MASK).
    * - `mask`: hidden, but for a year it holds ("••/••/1985"); a call's param as "•".
-   * - `length`: the caller's own words, by their length ("<38 chars>"), in the trace's value and a
-   *   call's or effect's params; the slot's display is a stand-in and is kept, and the live console
-   *   keeps the words (StatementMode 'keep').
+   * - `length`: by its length ("<38 chars>"). For the caller's own words (a statement, the default:
+   *   see `statement`), in the trace's value and a call's or effect's params; the slot's display is
+   *   a stand-in and is kept, and the live console keeps the words (StatementMode 'keep'). For a
+   *   secret (`statement: false`), everywhere, its display and the live console too.
    * A redacted slot's pending partial is masked too: its numeric parts are zeroed, its shape kept.
    */
   redact?: 'last4' | 'mask' | 'length';
+  /**
+   * With `redact: 'length'`: whether the value is the caller's statement. Absent: it is, so its
+   * display is a stand-in ("your description"), kept as it is, and the live console shows the words.
+   * `false`: a secret recorded by its length (a PIN, the last four of an identity number: a digits
+   * slot's `redact: length`), whose display is the value itself, so the display is masked by its
+   * length too, and the live console masks both.
+   */
+  statement?: false;
   /**
    * How a handoff hands the slot over in what the call collected (HandoffDecision.slots). Absent:
    * its display (its value for a slot shown as said, `displayFrom: 'said'`). `last4`: the value's last four digits. `verified`: only whether identity was

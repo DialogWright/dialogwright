@@ -13,7 +13,19 @@ export function raise(p: Principal, level: 2, subjectKind: string): Principal | 
   return { ...p, level };
 }
 
-/** Ids are shown and logged by their last four characters only. */
+/**
+ * How a value is shown where it would be masked by its last four but has four characters or fewer,
+ * so its last four would be all of it: four bullets, whatever its length, so not even that is told.
+ */
+export const SHORT_MASK = '••••';
+
+/**
+ * Ids are shown and logged by their last four characters only ("...5678"). An id of one to four
+ * characters (a PIN, the last four of an identity number) is shown as SHORT_MASK; an empty one,
+ * which has nothing to hide, as "..." as before. Every `last4` mask
+ * goes through here: a slot's or a param's (core/recording.ts recordedValue, trace/redact.ts
+ * maskLast4), a handoff's (core/decision.ts) and a principal's id (the audit, the gate's lines).
+ */
 export function maskId(id: string): string {
-  return `...${id.slice(-4)}`;
+  return id.length > 0 && id.length <= 4 ? SHORT_MASK : `...${id.slice(-4)}`;
 }
