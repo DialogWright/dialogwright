@@ -98,6 +98,12 @@ export const DEFAULT_NO_INPUT_AFTER_SPEECH_MS = 2_500;
 export const DEFAULT_KEY_WAIT_MS = 2_000;
 
 /**
+ * The least KEY_WAIT_MS may be: under it the wait could run out between two keys of a number keyed by
+ * hand, and each key would be settled alone, its first a yes or a no and the rest the next question's.
+ */
+export const MIN_KEY_WAIT_MS = 300;
+
+/**
  * RESUME_AFTER_PAUSE_MS unless set: on a carrier that reports the caller's voice, the longest pause in a
  * caller's speech that still leaves them not finished (server/adapter.ts, a caller who came back in). A
  * recognizer ends a prompt at a short pause (Telnyx's about 0.8 s after the caller stops), and a caller

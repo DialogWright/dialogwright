@@ -290,7 +290,9 @@ export function plan(session: Session, event: SessionEvent, turnContext: TurnCon
  * far. Typed text is always final, exactly as a final transcript is.
  */
 function heard(s: Session, event: UserSpeech | UserText): { text: string; isFinal: boolean; dtmf: string | null } {
-  return { text: event.text, isFinal: event.type === 'user.text' ? true : event.final, dtmf: s.dtmfBuffer || null };
+  // Keys held at a yes-or-no offer (keyBurstPending) are dropped when words come (resolveTurn), so the
+  // model is not told of them either. Every other buffer is sent as it stands.
+  return { text: event.text, isFinal: event.type === 'user.text' ? true : event.final, dtmf: keyBurstPending(s) ? null : s.dtmfBuffer || null };
 }
 
 /**
@@ -2408,6 +2410,9 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     }
     case 'user.speech':
     case 'user.text': {
+      // Keys held at a yes-or-no offer are dropped when words come: the words are the answer now, and
+      // the keys are neither sent to the model nor settled after them. Any other buffer is as it was.
+      if (keyBurstPending(s)) s.dtmfBuffer = '';
       const turnState = buildTurnState(s, heard(s, event), tc.nowMs);
       const screened: GateRow[] = screen ? [screenRow(screen, tc.thresholds)] : [];
       // Quarantine does not wait on perception: its answers are discarded whether or not they came.

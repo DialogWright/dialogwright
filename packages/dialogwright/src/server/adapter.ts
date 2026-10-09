@@ -3,7 +3,7 @@ import { keptCallerNumber, usesCalledNumber, usesCallerNumber } from '../core/ca
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
-import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
+import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { keyEvents, serviceResultEvent, silenceEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
@@ -87,7 +87,7 @@ interface NoInput {
 }
 const noInputTimers = new Map<string, NoInput>();
 
-export { DEFAULT_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS };
+export { DEFAULT_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, MIN_KEY_WAIT_MS };
 
 /**
  * The longest a no-input wait is held for a caller the carrier reports speaking with no report that they
@@ -294,7 +294,8 @@ function armNoInput(deps: AdapterDeps, entry: CallEntry, frames: readonly Outbou
  */
 function armKeyWait(deps: AdapterDeps, entry: CallEntry): void {
   clearNoInput(entry.callSid);
-  const delay = deps.keyWaitMs ?? DEFAULT_KEY_WAIT_MS;
+  // Never under the floor the config holds KEY_WAIT_MS to, whatever a caller of the adapter passes.
+  const delay = Math.max(MIN_KEY_WAIT_MS, deps.keyWaitMs ?? DEFAULT_KEY_WAIT_MS);
   scheduleNoInput(deps, entry, delay);
   entry.frames.write('log', { keyWaitMs: delay });
 }

@@ -173,6 +173,22 @@ describe('answers on the caller\'s number\'s offer', () => {
     expect(offers(then)).toMatchObject([{ answer: 'yes', by: 'keypad' }]);
   });
 
+  it('a key held when words come is dropped, and never reaches the model as keys pressed', async () => {
+    const asked: JevRequest[] = [];
+    const r = await call(MOBILE, textingCorpus, [...says(...OPENER), { dtmf: '1' }, { say: 'hmm, which one' }], asked);
+    const state = asked.at(-1)!.state as { asr: { dtmf: string | null; text: string } };
+    expect(state.asr).toMatchObject({ text: 'hmm, which one', dtmf: null });
+    expect(last(r).session.dtmfBuffer).toBe('');
+    // The words were neither a yes nor a no: the offer is asked again, and nothing is settled.
+    expect(promptOf(last(r))).toBe('offer_textTo');
+    expect(offers(r)).toEqual([]);
+    // An app with no such offer is sent its keys as before: a digit held for a slot reaches the model.
+    use(textingApp);
+    const held: JevRequest[] = [];
+    await call(MOBILE, textingCorpus, [...says(...OPENER, 'no thanks', 'no, the text number is wrong'), { dtmf: '555' }, { say: 'hmm, which one' }], held);
+    expect((held.at(-1)!.state as { asr: { dtmf: string | null } }).asr.dtmf).toBe('555');
+  });
+
   it('the default takes a number said or keyed at the offer, as before', async () => {
     use(textingApp);
     const said = await text(...says(...OPENER, 'no, text my cell, five five five five five five zero one nine nine'));

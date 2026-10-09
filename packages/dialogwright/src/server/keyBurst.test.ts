@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULT_KEY_WAIT_MS, forgetNoInput, handleSocketMessage, newConnectionContext, type AdapterDeps } from './adapter';
+import { DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, forgetNoInput, handleSocketMessage, newConnectionContext, type AdapterDeps } from './adapter';
 import { SessionStore, type SocketLike } from './sessions';
 import { CallTokens } from './tokens';
 import { FrameLog } from './frameLog';
@@ -20,7 +20,8 @@ import { replayFrameLog } from '../harness-text/replay';
 import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { ANONYMOUS } from '../gate/principal';
 import { VOICE_RELAY } from '../channel/caps';
-import { CONSENT, textingVariants } from '../testing/texting/variant';
+import { CONSENT, textingVariants, YES_NO } from '../testing/texting/variant';
+import type { App } from '../core/app/types';
 
 /**
  * Keys at an offer that takes a yes or a no only (the consent question here) on a live call: each key
@@ -32,10 +33,12 @@ import { CONSENT, textingVariants } from '../testing/texting/variant';
 const variants = textingVariants();
 afterAll(() => variants.remove());
 const consent = variants.variant(CONSENT);
+const yesNo = variants.variant(YES_NO);
 resetAppsForTest();
 registerApp(consent);
-const corpus = loadCorpus(join(variants.dirOf(consent), 'fixtures', 'corpus.jsonl'), consent);
-const client = (): JevClient => new FixtureStubClient(corpus, { sharpness: 0.9, fallback: new HeuristicStubClient() });
+registerApp(yesNo);
+const corpusOf = (app: App) => loadCorpus(join(variants.dirOf(app), 'fixtures', 'corpus.jsonl'), app);
+const client = (app: App = consent): JevClient => new FixtureStubClient(corpusOf(app), { sharpness: 0.9, fallback: new HeuristicStubClient() });
 
 type Fake = SocketLike & { sent: unknown[] };
 function fakeSocket(): Fake {
@@ -45,11 +48,15 @@ function fakeSocket(): Fake {
 const texts = (s: Fake) => s.sent.filter((m) => (m as { type: string }).type === 'text').map((m) => (m as { token: string }).token.trimEnd());
 
 const WAIT = 60_000;
-function deps(keyWaitMs?: number): AdapterDeps & { dir: string } {
+
+/** The audit drafts of every turn of the call, as its trace records them. */
+const drafts = (dir: string): { type: string; detail: Record<string, unknown> }[] =>
+  readFileSync(join(dir, 'CA1.jsonl'), 'utf8').trim().split('\n').flatMap((l) => (JSON.parse(l) as { audit?: { type: string; detail: Record<string, unknown> }[] }).audit ?? []);
+function deps(keyWaitMs?: number, app: App = consent): AdapterDeps & { dir: string } {
   const dir = mkdtempSync(join(tmpdir(), 'keys-'));
-  const c = client();
+  const c = client(app);
   const store = new SessionStore((callSid) => ({
-    session: newSession(callSid, 0, VOICE_RELAY, ANONYMOUS, consent.id),
+    session: newSession(callSid, 0, VOICE_RELAY, ANONYMOUS, app.id),
     opts: { client: c, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-08', trace: new TraceWriter(join(dir, `${callSid}.jsonl`)), now: () => 0, render: null, observe: null },
     trace: new TraceWriter(join(dir, `${callSid}.jsonl`)),
     frames: new FrameLog(join(dir, `${callSid}.frames.jsonl`), () => 0),
@@ -87,6 +94,7 @@ describe('keys at the consent question, on a live call', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(texts(sock).at(-1)).toBe(OPEN);
     expect(textConsentOf(d.store.get('CA1')!.session)).toBe('granted');
+    expect(drafts(d.dir).filter((e) => e.type === 'consent').map((e) => [e.detail.granted, e.detail.by])).toEqual([[true, 'keypad']]);
   });
 
   it('# ends the keys at once', async () => {
@@ -121,7 +129,8 @@ describe('keys at the consent question, on a live call', () => {
     expect(texts(sock).at(-1)).toBe(CONSENT_Q);
     const s = d.store.get('CA1')!.session;
     expect([textConsentOf(s), s.menuActive, s.dtmfBuffer]).toEqual([null, false, '']);
-    expect(d.store.get('CA1')!.auditEntries.map((e) => e.type)).not.toContain('consent');
+    expect(drafts(d.dir).map((e) => e.type)).not.toContain('consent');
+    expect(drafts(d.dir).filter((e) => e.type === 'gate').map((e) => e.detail.tool)).toEqual(['findCallerByPhone']);
     // Replay holds the keys and settles them at the silence turn, as the call did.
     const replay = await replayFrameLog(join(d.dir, 'CA1.frames.jsonl'), { client: client(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-08', trace: null }, undefined, { todayIsoOverride: '2026-10-08' });
     const live = readFileSync(join(d.dir, 'CA1.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { event: { type: string }; decision: { kind: string; promptId?: string } });
@@ -147,4 +156,47 @@ describe('KEY_WAIT_MS', () => {
     expect(DEFAULT_KEY_WAIT_MS).toBe(2000);
     expect(loadConfig({ ...base, KEY_WAIT_MS: '1200' }).keyWaitMs).toBe(1200);
   });
+
+  it('refuses a wait under 300 ms, which would settle the keys of a number one at a time', () => {
+    const base = { PUBLIC_HOST: 'example.test', TWILIO_AUTH_TOKEN: 'tok', HANDOFF_NUMBER: '+15555550100' };
+    expect(MIN_KEY_WAIT_MS).toBe(300);
+    for (const raw of ['0', '299']) expect(() => loadConfig({ ...base, KEY_WAIT_MS: raw }), raw).toThrow('KEY_WAIT_MS must be at least 300 milliseconds');
+    expect(loadConfig({ ...base, KEY_WAIT_MS: '300' }).keyWaitMs).toBe(300);
+  });
 });
+
+describe('keys at a slot\'s own yes-or-no offer, on a live call', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    forgetNoInput('CA1');
+    vi.useRealTimers();
+  });
+  const say = (t: string) => JSON.stringify({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true });
+  const OFFER = promptText(yesNo, 'offer_textTo', { last4: '0142' });
+
+  it('a number keyed is asked again once, files nothing, and the 1 after it is the yes', async () => {
+    const d = deps(undefined, yesNo);
+    const { sock, send } = await call(d);
+    await send(say("I'd like to open a request"));
+    await send(say("it's about an order"));
+    expect(texts(sock).at(-1)).toBe(OFFER);
+    const before = texts(sock).length;
+    for (const k of '2125550199') await send(digit(k));
+    expect(texts(sock)).toHaveLength(before);
+    await vi.advanceTimersByTimeAsync(DEFAULT_KEY_WAIT_MS);
+    expect(texts(sock).slice(before)).toEqual([OFFER]);
+    const entry = d.store.get('CA1')!;
+    expect([entry.session.slots.textTo!.value, entry.session.slots.textTo!.declined, entry.session.pendingConfirmation?.target]).toEqual([null, undefined, 'slot']);
+    expect(drafts(d.dir).map((e) => e.type)).not.toContain('offer');
+    expect(drafts(d.dir).filter((e) => e.type === 'gate').map((e) => e.detail.tool)).toEqual(['findCallerByPhone']);
+    // A 1 alone, ended by #: the yes, and the summary is read, nothing filed.
+    await send(digit('1'));
+    await send(digit('#'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(texts(sock).at(-1)).toBe(promptText(yesNo, 'confirm_open_request_text', { topic: 'an order', textTo: '555 555 0142' }));
+    expect(entry.session.slots.textTo).toMatchObject({ value: '5555550142', confirmed: true });
+    expect(drafts(d.dir).filter((e) => e.type === 'offer').map((e) => [e.detail.answer, e.detail.by])).toEqual([['yes', 'keypad']]);
+    expect(drafts(d.dir).filter((e) => e.type === 'gate').map((e) => e.detail.tool)).toEqual(['findCallerByPhone']);
+  });
+});
+
