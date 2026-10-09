@@ -90,10 +90,19 @@ export interface AdversarialReport {
  */
 export const PERCEIVED: readonly PropertyName[] = ['screened', 'no-tool', 'outcome', 'same-outcome'];
 
-/** A case's violations, split under a model into those that fail it and the model's readings. */
+/**
+ * A case's violations, split under a model into those that fail it and the model's readings. Two of
+ * PERCEIVED's never rest on a reading: a turn that threw (an `outcome` of `threw`) is the app's or the
+ * engine's, and against a recording a call that made no request the cassette lacks heard exactly what
+ * the clean call heard, so its `same-outcome` is the app's too.
+ */
 function judged(c: AdversarialCase, violations: string[], opts: AdversarialRunOptions, calls: CaseCall[]): CaseResult {
   if (opts.perceiver.stub) return { case: c, status: violations.length > 0 ? 'fail' : 'hold', violations, calls };
-  const perceived = (v: string): boolean => PERCEIVED.some((p) => v.startsWith(`${p}:`) || v.includes(`: ${p}:`));
+  const recorded = opts.perceiver.recorded;
+  const named = (v: string, p: PropertyName): boolean => v.startsWith(`${p}:`) || v.includes(`: ${p}:`);
+  const perceived = (v: string): boolean => PERCEIVED.some((p) => named(v, p))
+    && !/ended threw|with a turn that threw/.test(v)
+    && !(recorded && named(v, 'same-outcome'));
   const failing = violations.filter((v) => !perceived(v));
   const readings = violations.filter(perceived);
   return { case: c, status: failing.length > 0 ? 'fail' : 'hold', violations: failing, ...(readings.length > 0 ? { readings } : {}), calls };

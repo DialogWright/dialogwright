@@ -363,10 +363,12 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
     return { decision, value: null, failed: true };
   }
   // The tool's check of its own reply (ToolDef.check), before anything reads it: a reply that fails
-  // goes nowhere. The call ran, so it is recorded, with neither the reply nor the summary it came with.
+  // (or a check that throws on it) goes nowhere, and neither do the side effects the tool queued as it
+  // ran, which may have been made from it. The call ran, so it is recorded, with neither the reply
+  // nor the summary it came with.
   const check = toolOf(appOf(s), call.tool).check;
-  if (check !== undefined && !check(ran.value)) {
-    scrubEffects(out, effectsBefore, scrubberOf(decision));
+  if (check !== undefined && !passesCheck(check, ran.value)) {
+    out.effects.length = effectsBefore;
     out.gateEvents.push({ decision, summary: RESULT_UNCHECKED_SUMMARY });
     return { decision: { ...decision, verdict: 'NEEDS_HUMAN', reason: RESULT_UNCHECKED }, value: null };
   }
@@ -392,6 +394,15 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
   const ref = scrub && typeof ran.ref === 'string' ? scrub(ran.ref) : ran.ref;
   out.gateEvents.push(ref === undefined ? { decision, summary } : { decision, summary, ref });
   return redacted ? { decision, value, redacted: fields } : { decision, value };
+}
+
+/** Whether `value` passes a tool's check; a check that throws on it fails it. */
+function passesCheck(check: (value: unknown) => boolean, value: unknown): boolean {
+  try {
+    return check(value) === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Registers `scrub` for the side effects queued since `from`, for their params as recorded (core/recording.ts recordedEffect). */

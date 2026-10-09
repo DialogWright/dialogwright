@@ -71,6 +71,26 @@ describe('a tool\'s check of its own reply (ToolDef.check)', () => {
     expect(JSON.stringify(events)).not.toContain('SYSTEM NOTICE');
   });
 
+  it('a check that throws on a reply fails it, as a check that says no does', () => {
+    const THROWING: App = { ...testkitApp, id: 'result-throwing', tools: { ...testkitApp.tools, getAccount: { ...getAccount, check: () => { throw new Error('unreadable'); } } } };
+    registerApp(THROWING);
+    const { outcome, events } = call(ALEX, 'getAccount', { accountId: ALEX.id }, ctx(), THROWING.id);
+    expect(outcome).toEqual({ decision: expect.objectContaining({ verdict: 'NEEDS_HUMAN', reason: RESULT_UNCHECKED }), value: null });
+    expect(events[0]!.summary).toBe(RESULT_UNCHECKED_SUMMARY);
+  });
+
+  it('the side effects a tool queued as it ran go nowhere with a reply that fails', () => {
+    const QUEUING: App = {
+      ...testkitApp, id: 'result-queuing',
+      tools: { ...testkitApp.tools, getAccount: { ...getAccount, check: () => false, run: (c, sys, x) => { x.out.effects.push({ kind: 'service', service: 'depot', params: {} }); return getAccount.run(c, sys, x); } } },
+    };
+    registerApp(QUEUING);
+    const s = newSession('q', 0, WEB_CHAT, ALEX, QUEUING.id);
+    const out = newTurnOut();
+    callTool(s, { tool: 'getAccount', params: { accountId: ALEX.id } }, ctx(), out);
+    expect(out.effects).toEqual([]);
+  });
+
   it('a tool with no check uses every reply as it is', () => {
     const tools = answering('getAccount', (v) => ({ ...(v as object), first: HOSTILE }));
     const { outcome, events } = call(ALEX, 'getAccount', { accountId: ALEX.id }, ctx(tools), UNCHECKED.id);

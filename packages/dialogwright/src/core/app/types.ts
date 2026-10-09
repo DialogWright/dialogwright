@@ -533,9 +533,10 @@ export interface ToolDef {
    * Whether a reply is one the tool may give: what its fields must look like where a line says them
    * or a call is made from them (a reference number, an amount, a date, a short name). A tool's reply
    * comes from a downstream system and is not trusted: one that fails is never used. The engine checks
-   * it right after the tool runs, before redaction and before any hook, fact or line reads it; the call
-   * is recorded as having run, with a summary that says its reply was not used (neither the reply nor
-   * the summary it came with), and the gate's decision becomes NEEDS_HUMAN (`result-unchecked`), so the
+   * it right after the tool runs, before redaction and before any hook, fact or line reads it; a check
+   * that throws fails the reply. The call is recorded as having run, with a summary that says its reply
+   * was not used (neither the reply nor the summary it came with), the side effects the tool queued as
+   * it ran are dropped, and the gate's decision becomes NEEDS_HUMAN (`result-unchecked`), so the
    * caller goes to a person. Text with instructions in it, in a field a line says, is never said. The
    * adversarial suite's hostile replies find the fields that need it (dialogwright/testing
    * adversarialSuite). Without it, every reply is used as it is.

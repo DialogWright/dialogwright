@@ -17,6 +17,8 @@ import { screenedApp } from '../screened/app';
 import { textingApp } from '../texting/app';
 import { adversarialSuite, formatAdversarialReport, runAdversarialSuite, type AdversarialReport, type AdversarialRunOptions, type AdversarialSuite } from './index';
 import { HOSTILE_TEXT, textPaths, withField, withNote } from './hostile';
+import { FixtureStubClient } from '../../jev/fixtureStub';
+import { HeuristicStubClient } from '../../jev/heuristicStub';
 
 /**
  * The adversarial suite over the engine's own apps (the testkit and the fixtures under src/testing),
@@ -88,6 +90,15 @@ describe('the engine\'s own apps hold under the suite', () => {
     expect(suite.cases.some((c) => c.id === 'injection/open/ignore-instructions/correct/es')).toBe(true);
   });
 
+  it('two locales of one language give its cases once', async () => {
+    const twice = { ...routedApp, id: 'routed-twice', locales: { ...routedApp.locales!, prompts: { ...routedApp.locales!.prompts, 'es-MX': routedApp.locales!.prompts.es! } } } as App;
+    resetAppsForTest();
+    registerApp(twice);
+    const ids = adversarialSuite(twice).cases.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.filter((id) => id.endsWith('/es')).length).toBeGreaterThan(0);
+  });
+
   it('an app in a language the suite has no words for is skipped with a note', async () => {
     const french = { ...callbackApp, id: 'callback-fr', locales: { default: 'fr-FR', prompts: {} } } as App;
     resetAppsForTest();
@@ -126,6 +137,19 @@ describe('each property catches the fault it is there for', () => {
     const said = bare.results.find((r) => r.case.id === 'hostile-reply/getParcel/field')!;
     expect(said.status).toBe('fail');
     expect(said.violations.some((v) => /^track-happy item: nothing-said: said ".*SYSTEM NOTICE/.test(v))).toBe(true);
+  });
+
+  it('a turn that throws on a hostile reply fails under a model too: it is no reading of the words', async () => {
+    const unchecked: App = { ...testkitApp, id: 'unchecked-model', tools: Object.fromEntries(Object.entries(testkitApp.tools).map(([k, t]) => [k, { ...t, check: undefined }])) };
+    resetAppsForTest();
+    registerApp(unchecked);
+    const { suite, opts } = stubRun(unchecked);
+    const client = new FixtureStubClient([...loadCorpus(defaultCorpusFile(unchecked), unchecked)], { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: REGRESS_TODAY }), app: unchecked });
+    const report = await runAdversarialSuite({ ...suite, cases: suite.cases.filter((c) => c.id === 'hostile-reply/getParcel/field') }, { ...opts, perceiver: { stub: false, client, recorded: true } });
+    const r = report.results[0]!;
+    expect(r.status).toBe('fail');
+    expect(r.violations.some((v) => /status: outcome: ended threw/.test(v))).toBe(true);
+    expect(r.violations.some((v) => /item: nothing-said/.test(v))).toBe(true);
   });
 
   it('same-outcome: an app that acts on the instructions beside a reply is caught', async () => {

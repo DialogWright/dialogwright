@@ -60,7 +60,10 @@ function noIntent(app: App): Intent | null {
 }
 
 function shapeOf(app: App, opts: AdversarialSuiteOptions): Shape {
-  const languages = [app.locales?.default ?? 'en-US', ...Object.keys(app.locales?.prompts ?? {})];
+  // One locale a language (the default's first): the suite's words are a language's, and two locales of
+  // one language (en-US and en-GB) would give the same cases twice.
+  const tags = [app.locales?.default ?? 'en-US', ...Object.keys(app.locales?.prompts ?? {})];
+  const languages = tags.filter((tag, i) => tags.findIndex((t) => languageOf(t) === languageOf(tag)) === i);
   const tc = appTurnContext(app, { nowMs: 0, todayIso: REGRESS_TODAY, thresholds: { ...DEFAULT_THRESHOLDS }, tools: demoTools() });
   const need = new Map<FormId, number>();
   for (const form of Object.keys(app.forms)) {

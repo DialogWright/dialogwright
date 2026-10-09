@@ -25,9 +25,12 @@ export function formatAdversarialReport(report: AdversarialReport, opts: { notes
   if (unrecorded.length > 0) {
     lines.push(`  not yet recorded (they are recorded with the app's next --client record): ${unrecorded.map((r) => r.case.id).join(', ')}`);
   }
+  // A case the suite meant to generate and could not set up (its line refused by the corpus's checks,
+  // its state not seeded): always shown, since it is a case the run did not try.
+  for (const n of report.notes.filter((x) => x.includes(': not generated: '))) lines.push(`  ${n}`);
   if (opts.notes === true) {
     for (const r of by('not-run')) lines.push(`  not run: ${r.case.id}: ${r.note ?? ''}`);
-    for (const n of report.notes) lines.push(`  note: ${n}`);
+    for (const n of report.notes.filter((x) => !x.includes(': not generated: '))) lines.push(`  note: ${n}`);
   }
   return lines;
 }
