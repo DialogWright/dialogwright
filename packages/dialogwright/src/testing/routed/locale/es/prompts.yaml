@@ -1,25 +1,174 @@
 # yaml-language-server: $schema=../../../../../schemas/prompts.schema.json
-# The Spanish line's words (routes.yaml's start switches a call to the Spanish line's number to es).
-# A line not written here is said from prompts.yaml.
+# The Spanish line's words: routes.yaml's start switches a call to the Spanish line's number to es.
 prompts:
   greeting:
-    text: Gracias por llamar a Example Service Line. Puedo tomar un reporte de un problema, o revisar una solicitud. ¿En qué le puedo ayudar?
+    text: "Gracias por llamar a Example Service Line. Puedo tomar un reporte de un problema, o revisar una solicitud. ¿En qué le puedo ayudar?"
+    interruptible: true
+  greeting_chat:
+    text: "Hola, le habla Example Service Line. Puedo tomar un reporte de un problema, o revisar una solicitud. ¿En qué le puedo ayudar?"
     interruptible: true
   ask_intent:
-    text: ¿En qué le puedo ayudar hoy?
+    text: "¿En qué le puedo ayudar hoy?"
     interruptible: true
+  nomatch_open:
+    text: "Perdón, no le entendí. Puede reportar un problema, o revisar una solicitud."
+    interruptible: true
+  nomatch_dtmf_menu:
+    text: "Probemos con el teclado. Para reportar un problema marque 1. Para revisar una solicitud marque 2. Para hablar con alguien marque 0."
+    interruptible: true
+  no_input:
+    text: "No escuché nada."
+    interruptible: false
   ack_intent:
-    text: Claro, le puedo ayudar a {intentLabel}.
+    text: "Claro, le puedo ayudar a {intentLabel}."
+    interruptible: false
+  confirm_intent_explicit:
+    text: "Solo para confirmar, ¿quiere {intentLabel}? Sí o no."
+    interruptible: false
+  disambiguate_intent:
+    text: "¿Quiere {a}, o {b}?"
+    interruptible: true
+  ack_intent_then:
+    text: "Claro, le puedo ayudar a {a}, y luego a {b}."
+    interruptible: false
+  ack_queued:
+    text: "Claro, vamos a {intentLabel} después de esto."
+    interruptible: false
+  bridge_next:
+    text: "Ahora, vamos a {intentLabel}."
+    interruptible: false
+  ack_frustration:
+    text: "Entiendo, vamos a resolver esto."
+    interruptible: false
+  offer_transfer:
+    text: "¿Quiere que le comunique con una persona, o seguimos?"
+    interruptible: true
+  ack_declined:
+    text: "Muy bien, sigamos."
+    interruptible: false
+  system_slow_dtmf_hint:
+    text: "Perdón por la demora. También puede usar el teclado."
+    interruptible: true
+  system_slow_chat:
+    text: "Perdón, tengo un problema de mi lado. Por favor envíelo otra vez."
+    interruptible: true
+  ask_change:
+    text: "¿Qué debo cambiar?"
+    interruptible: true
+  confirm_dtmf:
+    text: "Marque 1 para confirmar, o 2 para cambiar algo."
     interruptible: false
   anything_else:
-    text: ¿Hay algo más en que le pueda ayudar?
+    text: "¿Hay algo más en que le pueda ayudar?"
     interruptible: true
   goodbye:
-    text: Adiós.
+    text: "Adiós."
     interruptible: false
+  goodbye_chat:
+    text: "Gracias por escribir a Example Service Line. Adiós."
+    interruptible: false
+  screen_reprompt:
+    text: "Le puedo ayudar a reportar un problema, o a revisar una solicitud."
+    interruptible: true
+  screen_reprompt_form:
+    text: "Sigamos."
+    interruptible: true
   handoff_live_agent:
-    text: Un momento, le comunico con una persona.
+    text: "Un momento, le comunico con una persona."
+    interruptible: false
+  handoff_frustrated:
+    text: "Le comunico con alguien que le pueda ayudar."
+    interruptible: false
+  handoff_max_attempts:
+    text: "Le comunico con alguien que le ayude con eso."
+    interruptible: false
+  handoff_system_failure:
+    text: "Tengo un problema en este momento. Le comunico con alguien."
+    interruptible: false
+  handoff_needs_human:
+    text: "Esto necesita una persona. Le comunico con alguien."
+    interruptible: false
+  handoff_security:
+    text: "Le comunico con alguien que le pueda ayudar."
+    interruptible: false
+  closed_now:
+    text: "Gracias por llamar a Example Service Line. En este momento estamos cerrados. Abrimos de lunes a viernes de ocho a seis, y el sábado de nueve a una. Adiós."
+    interruptible: false
+  outage_notice:
+    text: "Sabemos que hay un problema con el servicio en su zona, y estamos trabajando en ello."
+    interruptible: false
+  past_due_first:
+    text: "Antes de eso, su cuenta tiene un saldo vencido."
+    interruptible: false
+  handoff_vip:
+    text: "Bienvenido de nuevo. Le comunico con su equipo."
+    interruptible: false
+  handoff_emergency:
+    text: "Como alguien puede estar en riesgo, le comunico con una persona de inmediato."
     interruptible: false
   ask_problem:
-    text: ¿Qué está pasando, no funciona nada, o funciona solo en parte?
+    text: "¿Qué está pasando, no funciona nada, o funciona solo en parte?"
     interruptible: true
+  ask_problem_retry:
+    text: "Perdón, ¿no funciona nada, o funciona solo en parte?"
+    interruptible: true
+  ask_problem_dtmf:
+    text: "Si no funciona nada marque 1. Si funciona solo en parte marque 2."
+    interruptible: true
+  ask_severity:
+    text: "¿Hay alguien en riesgo de lastimarse?"
+    interruptible: true
+  ask_severity_retry:
+    text: "Perdón, ¿es un peligro para alguien, o nadie está en riesgo?"
+    interruptible: true
+  ask_severity_dtmf:
+    text: "Si alguien está en riesgo marque 1. Si nadie lo está marque 2."
+    interruptible: true
+  ask_accountId:
+    text: "¿Cuál es su número de cuenta de ocho dígitos?"
+    interruptible: true
+  ask_accountId_retry:
+    text: "Perdón, ¿cuál es su número de cuenta? Por favor dígalo un dígito a la vez."
+    interruptible: true
+  ask_accountId_dtmf:
+    text: "Por favor marque su número de cuenta de ocho dígitos."
+    interruptible: true
+  ask_dob:
+    text: "¿Y su fecha de nacimiento?"
+    interruptible: true
+  ask_dob_retry:
+    text: "Perdón, ¿cuál es su fecha de nacimiento? Por ejemplo, catorce de junio de mil novecientos setenta y cinco."
+    interruptible: true
+  ask_dob_dtmf:
+    text: "Por favor marque su fecha de nacimiento: dos dígitos para el mes, dos para el día, y cuatro para el año."
+    interruptible: true
+  ask_dob_year:
+    text: "¿Y el año en que nació?"
+    interruptible: true
+  identity_verified:
+    text: "Gracias, {first}. Ya está verificado."
+    interruptible: false
+  identity_failed:
+    text: "No pude confirmar esos datos. Intentemos otra vez."
+    interruptible: false
+  handoff_identity:
+    text: "No pude verificarle, así que le comunico con alguien que le pueda ayudar."
+    interruptible: false
+  confirm_report_problem:
+    text: "Está reportando {problem}, y {severity}. ¿Lo registro?"
+    interruptible: true
+  problem_reported:
+    text: "Listo. Su número de reporte es {ref}."
+    interruptible: false
+  status_is:
+    text: "Su solicitud más reciente, {ref}, está {status}."
+    interruptible: false
+  status_none:
+    text: "No veo una solicitud abierta en su cuenta."
+    interruptible: false
+  confirm_payment_plan:
+    text: "Puedo preparar un plan para pagar el saldo en tres partes mensuales. ¿Lo preparo?"
+    interruptible: true
+  payment_plan_set:
+    text: "Listo. Su plan está preparado, y la primera parte vence el próximo mes."
+    interruptible: false

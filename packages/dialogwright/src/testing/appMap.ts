@@ -9,6 +9,8 @@ import { ruleName } from './policyCard';
 import { describeWhen } from '../core/conditions';
 import { sendOf } from '../core/transfer';
 import { envVariableOf } from '../core/app/envReference';
+import { formsEnteredByRoutes, ROUTE_HANDOFF_REASON } from '../core/routes';
+import type { RouteOutcome, RouteRule } from '../core/app/types';
 
 /**
  * Test support: the app map, a page of Mermaid diagrams written from the compiled app, kept as
@@ -61,7 +63,9 @@ export function danglingReferences(app: App): DanglingReference[] {
     for (const tool of form.calls ?? []) if (!Object.hasOwn(actions, tool)) add('form-calls-unlisted', id, `the form ${code(id)} calls ${code(tool)}, which the policy does not list`);
     for (const check of form.checks ?? []) if (!Object.hasOwn(actions, check.action)) add('form-calls-unlisted', id, `the form ${code(id)} checks ${code(check.action)}, which the policy does not list`);
   }
-  for (const tool of unreachedActions(Object.keys(actions), app.forms, app.identity)) add('action-unreached', tool, `no form reaches the action ${code(tool)}, and the identity flow does not call it`);
+  // The start hook's calls (app.yaml's onStart.calls) are reached as the call starts, by no form.
+  const atStart = new Set(app.startCalls ?? []);
+  for (const tool of unreachedActions(Object.keys(actions).filter((t) => !atStart.has(t)), app.forms, app.identity)) add('action-unreached', tool, `no form reaches the action ${code(tool)}, and the identity flow does not call it`);
   return out;
 }
 
@@ -86,7 +90,7 @@ function formDiagram(app: App, id: FormId): string[] {
   const out = ['flowchart LR'];
   if (form.internal === true) {
     const byOutcome = enteredByOutcome(app, id);
-    const after = [...formsLeadingTo(app.forms, id).map((from) => `${from}: ${formWords(app, from)}`), ...byOutcome.map((from) => `${from}, as an outcome: ${formWords(app, from)}`), ...factorsEntering(app, id).map((slot) => `identity, as ${slot} runs out`)];
+    const after = [...formsLeadingTo(app.forms, id).map((from) => `${from}: ${formWords(app, from)}`), ...byOutcome.map((from) => `${from}, as an outcome: ${formWords(app, from)}`), ...factorsEntering(app, id).map((slot) => `identity, as ${slot} runs out`), ...enteredByRoute(app, id).map((at) => `a route, ${at}`)];
     out.push(`  after(${mermaidLabel('After', ...after)})`, '  after --> slots');
   } else {
     out.push(`  intent(${mermaidLabel('Intent', id, ...(intent ? [intent.label] : []))})`);
@@ -144,6 +148,11 @@ function formDiagram(app: App, id: FormId): string[] {
   if (form.internal !== true && intent?.kind !== 'form') classes.push('intent');
   if (classes.length > 0) out.push(`  ${DANGLING}`, `  class ${[...new Set(classes)].join(',')} dangling`);
   return out;
+}
+
+/** The routes' points that enter `form` (routes.yaml `then: form`): `start`, `afterIdentity`, `after <form>`. */
+function enteredByRoute(app: App, form: FormId): string[] {
+  return formsEnteredByRoutes(app.routes).get(form) ?? [];
 }
 
 /** The forms an outcome (a check's, or a slot's when it runs out) goes from to `form`. */
@@ -317,6 +326,56 @@ function transferDiagram(app: App): string[] {
   return out;
 }
 
+/** A route's outcome in words: its line, then what follows. */
+function routeWords(o: RouteOutcome, point: string): string {
+  const then = o.then === 'handoff' ? `handoff ${o.reason ?? ROUTE_HANDOFF_REASON}`
+    : o.then === 'form' ? `form ${o.form}`
+      : o.then === 'locale' ? `locale ${o.locale}, then go on`
+        : o.then === 'continue' ? (point === 'start' ? 'continue: the greeting' : point === 'afterIdentity' ? 'continue: the form that asked for it' : 'continue: its next, else anything else?')
+          : o.then;
+  return `${o.say !== undefined ? `say ${o.say}, ` : ''}${then}`;
+}
+
+/** One point's rules as a chain of questions, each to its outcome, the else last. */
+function pointDiagram(key: string, entry: string[], rules: readonly RouteRule[], point: string): string[] {
+  const out = ['flowchart TD', `  ${nodeId('p', key)}(${mermaidLabel(...entry)})`];
+  let from = nodeId('p', key);
+  let edge = '';
+  rules.forEach((rule, i) => {
+    const target = nodeId(`o_${key}`, String(i));
+    if (rule.else === true) {
+      out.push(`  ${target}[[${mermaidLabel('else', routeWords(rule.outcome, point))}]]`, `  ${from} -->${edge} ${target}`);
+      return;
+    }
+    const ask = nodeId(`w_${key}`, String(i));
+    out.push(`  ${ask}{${mermaidLabel(describeWhen(rule.when))}}`, `  ${from} -->${edge} ${ask}`);
+    out.push(`  ${target}[[${mermaidLabel(routeWords(rule.outcome, point))}]]`, `  ${ask} -->|${mermaidLabel('yes')}| ${target}`);
+    from = ask;
+    edge = `|${mermaidLabel('no')}|`;
+  });
+  return out;
+}
+
+/**
+ * The routes (routes.yaml, core/routes.ts): each point's rules in the order they are tried, the else
+ * last, under its own heading; and the start hook with the actions it calls. Nothing for an app with
+ * neither.
+ */
+function routesSection(app: App): string[] {
+  const routes = app.routes;
+  const hook = app.onStart !== undefined ? [`The start hook runs first, as every call starts${(app.startCalls ?? []).length > 0 ? `, and calls ${app.startCalls!.map(code).join(', ')}` : ''}.`] : [];
+  if (routes === undefined) return hook.length > 0 ? ['', '## Routes', '', ...hook] : [];
+  const lines = ['', '## Routes', '', 'What the call does at its start, once the caller is verified, and after a form: the rules at each point are tried in order, the first whose conditions all hold is taken, and the else last. What the caller says still decides every other turn.'];
+  if (hook.length > 0) lines.push('', ...hook);
+  const startEntry = ['The call starts', `after the start hook${app.callerNumber?.lookup !== undefined ? ' and the call-start lookup' : ''}, before the greeting`];
+  if (routes.start !== undefined) lines.push('', '### At the start of a call', '', '```mermaid', ...pointDiagram('start', startEntry, routes.start, 'start'), '```');
+  if (routes.afterIdentity !== undefined) lines.push('', '### Once the caller is verified', '', '```mermaid', ...pointDiagram('identity', ['The caller is verified', 'once, after the identity step\'s line'], routes.afterIdentity, 'afterIdentity'), '```');
+  for (const [form, rules] of Object.entries(routes.afterForm ?? {})) {
+    lines.push('', `### After ${formWords(app, form)}`, '', '```mermaid', ...pointDiagram(`after_${form}`, [`${form} completes`, 'before its next'], rules, 'afterForm'), '```');
+  }
+  return lines;
+}
+
 /** The app map for `app`, as Markdown. */
 export function appMapText(app: App): string {
   const forms = Object.keys(app.forms);
@@ -341,12 +400,13 @@ export function appMapText(app: App): string {
   ];
   for (const id of formOrder(app)) {
     const intro = app.forms[id]!.internal === true
-      ? `After ${[...formsLeadingTo(app.forms, id).map(code), ...enteredByOutcome(app, id).map((from) => `${code(from)} (an outcome)`), ...factorsEntering(app, id).map((slot) => `identity (${code(slot)} runs out)`)].join(', ') || 'no form'}: the internal form ${code(id)}, its slots, the summary, the action and its rules.`
+      ? `After ${[...formsLeadingTo(app.forms, id).map(code), ...enteredByOutcome(app, id).map((from) => `${code(from)} (an outcome)`), ...factorsEntering(app, id).map((slot) => `identity (${code(slot)} runs out)`), ...enteredByRoute(app, id).map((at) => `a route (${at})`)].join(', ') || 'no form'}: the internal form ${code(id)}, its slots, the summary, the action and its rules.`
       : `Intent ${code(id)} to its slots, the summary, the action and its rules.`;
     lines.push('', `## ${capitalize(formWords(app, id))}`, '', intro, '', '```mermaid', ...formDiagram(app, id), '```');
   }
   const identity = identityDiagram(app);
   if (identity.length > 0) lines.push('', '## When an identity factor runs out', '', 'Identity asks its factors for whichever form needs them; each factor below does something other than hand off when it runs out of attempts.', '', '```mermaid', ...identity, '```');
+  lines.push(...routesSection(app));
   const transfer = transferDiagram(app);
   if (transfer.length > 0) lines.push('', '## Where a handoff goes', '', 'The transfer targets, tried in order: the first whose conditions all hold is taken, else the default. Each dials the number or SIP address in its environment variable; the headers go only to a SIP address, the chat data only on a web chat.', '', '```mermaid', ...transfer, '```');
   lines.push('', '## Dangling references', '');

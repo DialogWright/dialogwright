@@ -186,6 +186,8 @@ export interface NowView {
   handoff: NowHandoff | null;
   /** "stopped: checkOwner, not-owner": a form's check ended the form on the latest turn (core/checks.ts). Absent otherwise. */
   stopped?: string;
+  /** "route: start rule 1, end": the routes taken on the latest turn (routes.yaml, core/routes.ts). Absent otherwise. */
+  routed?: string;
 }
 
 export interface View {

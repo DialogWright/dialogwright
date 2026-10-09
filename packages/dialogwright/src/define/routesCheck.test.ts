@@ -216,3 +216,29 @@ describe('validateApp: the same refusals for an app built in code', () => {
     expect(() => validateApp({ ...app, routes: { start: [{ when: [], outcome: { then: 'continue' }, else: true }] } })).not.toThrow();
   });
 });
+
+describe('the routed fixture (src/testing/routed)', () => {
+  it('passes check with nothing to warn of', async () => {
+    const { ROUTED_DIR, routedCode } = await import('../testing/routed/app');
+    expect(await checkAppFully(ROUTED_DIR, { code: routedCode, fixturesRoot: PACKAGE_DIR })).toEqual({ problems: [], codeChecked: true });
+  });
+
+  it('warns of a route into a form needing a level the point cannot have reached, and of a fact the facts do not start with', async () => {
+    const { ROUTED_DIR, routedCode } = await import('../testing/routed/app');
+    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-routes-'));
+    scratch.push(dir);
+    cpSync(ROUTED_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+    const routes = readFileSync(join(dir, 'routes.yaml'), 'utf8')
+      .replace('  - when: { named: vip }\n    then: handoff\n    reason: vip\n', '  - when: { named: vip }\n    then: form\n    form: check_status\n')
+      .replace('{ fact: outage, is: true }', '{ fact: notice.outage, is: true }');
+    writeFileSync(join(dir, 'routes.yaml'), routes);
+    // A start route into a form says the welcome first (greeting_offer), in every locale.
+    for (const file of ['prompts.yaml', 'locale/es/prompts.yaml']) writeFileSync(join(dir, file), `${readFileSync(join(dir, file), 'utf8')}  greeting_offer:\n    text: Thanks for calling.\n    interruptible: false\n`);
+    const r = await checkAppFully(dir, { code: routedCode, fixturesRoot: PACKAGE_DIR });
+    expect(r.problems.map(formatProblem)).toEqual([]);
+    expect((r.warnings ?? []).map(formatProblem)).toEqual([
+      expect.stringContaining('routes.yaml:13:11  start[1].form  the route enters "check_status", which needs identity level 1, and at start the caller is at level 0: the form will ask for it first'),
+      expect.stringContaining('start[2].when.fact  the facts\' initial value has no "notice", so this fact is set only if the app\'s code adds it'),
+    ]);
+  });
+});

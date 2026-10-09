@@ -633,7 +633,9 @@
     const asking = n.asking ? `<span class="now-asking">${esc(n.asking)}</span>` : '';
     const fact = n.fact ? `<span class="now-fact">${esc(n.fact)}</span>` : '';
     // A form's check ended the form on this turn: which check, and why.
-    const stopped = n.stopped ? `<span class="now-why">· ${esc(n.stopped)}</span>` : '';
+    const stopped = (n.stopped ? `<span class="now-why">· ${esc(n.stopped)}</span>` : '')
+      // A route was taken on this turn (routes.yaml): its point, its rule and what followed.
+      + (n.routed ? `<span class="now-why">· ${esc(n.routed)}</span>` : '');
     let body;
     if (n.state === 'handoff') {
       const h = n.handoff ?? { number: null, reason: '', reasonText: '' };

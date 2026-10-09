@@ -714,6 +714,20 @@ function stoppedOf(drafts) {
   return `stopped: ${det.action}${det.reason ? `, ${det.reason}` : ''}`;
 }
 
+/**
+ * The routes taken on this turn, from its `route` audit drafts (core/audit.ts), as the NOW panel says
+ * them: "route: start rule 1, end; afterForm report_problem else, continue". Null on every other turn.
+ */
+function routedOf(drafts) {
+  const rows = (drafts ?? []).filter((x) => x.type === 'route');
+  if (rows.length === 0) return null;
+  return `route: ${rows.map((d) => {
+    const det = d.detail ?? {};
+    const rule = det.rule === 'else' ? 'else' : `rule ${Number(det.rule) + 1}`;
+    return `${det.point}${det.form ? ` ${det.form}` : ''} ${rule}, ${det.outcome}`;
+  }).join('; ')}`;
+}
+
 function emptyNow() {
   return { state: 'idle', form: null, label: null, chips: [], asking: null, queued: [], completedLabel: null, fact: null, handoff: null };
 }
@@ -880,6 +894,7 @@ export function reduce(events, opts) {
           asking: nowAskingOf(r, v.thresholds),
           queued: (r.queued ?? []).map((f) => formLabel(f).toLowerCase()),
           stopped: stoppedOf(r.audit),
+          routed: routedOf(r.audit),
         };
         prevSlots = r.slots;
         v.pending = pendingLine(r.pendingConfirmation);
@@ -1031,6 +1046,8 @@ function nowOf(v, task, completed, facts, transfer) {
   now.queued = task?.queued ?? [];
   // A check ended the form on the latest turn (only then is the field there at all).
   if (task?.stopped) now.stopped = task.stopped;
+  // A route was taken on the latest turn (only then is the field there at all).
+  if (task?.routed) now.routed = task.routed;
   if (v.handoff || transfer) {
     const reason = v.handoff?.reason ?? transfer.reason;
     now.state = 'handoff';
