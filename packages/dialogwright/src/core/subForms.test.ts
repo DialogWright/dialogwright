@@ -53,6 +53,19 @@ const ownerInBooking = variants.variant(over(NEXT, {
   'forms.yaml': replace('    checks:\n      - action: checkOwner\n        with: [ownership]\n        on:\n          not-owner: { say: decline_renter, then: end }\n      - action: checkArea', '    checks:\n      - action: checkArea'),
 }));
 
+/** A second screener into the same booking. */
+const twoScreens = variants.variant(over(NEXT, {
+  'app.yaml': replace('id: screened-next', 'id: screened-next-two'),
+  'forms.yaml': replace('  book_visit:\n', '  screen_crack:\n    slots: [problem, ownership, town]\n    summaryPromptId: null\n    calls: []\n    next: book_visit\n  book_visit:\n'),
+  'intents.yaml': replace('  urgent:\n', '  screen_crack:\n    criteria: Wants a visit about a crack in the home\n    label: look at a crack\n    kind: form\n  urgent:\n'),
+}));
+/** The booking is an intent too, reached directly or after the screen. */
+const bookingIntent = variants.variant(over(NEXT, {
+  'app.yaml': replace('id: screened-next', 'id: screened-next-direct'),
+  'forms.yaml': replace('  book_visit:\n    internal: true\n    label: book your visit\n', '  book_visit:\n'),
+  'intents.yaml': replace('  urgent:\n', '  book_visit:\n    criteria: Wants to book the visit itself\n    label: book your visit\n    kind: form\n  urgent:\n'),
+}));
+
 let current: App = app;
 function use(a: App): void {
   resetAppsForTest();
@@ -316,8 +329,8 @@ describe('the earlier forms\' checks hold in the booking', () => {
 
   it('the forms the booking was reached through are on the session, and only there', () => {
     const t = say(started(), OPENER_TEXT, OPENER);
-    expect(t.session.via).toEqual(['screen_home']);
-    expect(started()).not.toHaveProperty('via');
+    expect(t.session.reachedThrough).toEqual(['screen_home']);
+    expect(started()).not.toHaveProperty('reachedThrough');
   });
 });
 
@@ -337,5 +350,39 @@ describe('a chain resumed and on chat', () => {
     expect(t.session.form).toBe('book_visit');
     expect(ackIds(t)).toEqual(['ack_intent', 'visit_qualifies', 'bridge_next']);
     expect(rows(t)).toEqual(['gate', 'gate', 'form_next']);
+  });
+});
+
+describe('the task in hand is the path actually taken', () => {
+  it('two screeners into one booking: from the booking, the other screener is another request, to switch to', () => {
+    use(twoScreens);
+    const t0 = say(started(), OPENER_TEXT, OPENER);
+    expect(t0.session.reachedThrough).toEqual(['screen_home']);
+    const t = say(t0.session, 'actually it is a crack', { intent: one('screen_crack'), intentChange: REPLACING });
+    expect(t.rows.find((r) => r.gate === 'intent')!.outcome).toBe('switch:screen_crack');
+    // The crack's screen opens with the answers already held, completes, and goes on to the booking
+    // again, now reached through it.
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_howUrgent', acks: [{ promptId: 'ack_intent', vars: { intentLabel: 'look at a crack' } }, { promptId: 'bridge_next' }] });
+    expect(t.session.reachedThrough).toEqual(['screen_crack']);
+    expect(t.session.completed).toEqual(['screen_home', 'screen_crack']);
+  });
+
+  it('two screeners into one booking: the other screener added mid-booking is queued', () => {
+    use(twoScreens);
+    const t0 = say(started(), OPENER_TEXT, OPENER);
+    const t = say(t0.session, 'it can wait, and there is a crack too', { intent: choice({ screen_crack: 0.9, none: 0.1 }), intentChange: ADDING, howUrgent: one('routine') });
+    expect(t.session.queued).toEqual(['screen_crack']);
+    expect(t.session.form).toBe('book_visit');
+  });
+
+  it('a booking asked for directly was reached through nothing: it can switch to the screen, or queue it', () => {
+    use(bookingIntent);
+    const opened = say(started(), 'I want to book the visit', { intent: one('book_visit') });
+    expect(opened.session.form).toBe('book_visit');
+    expect(opened.session).not.toHaveProperty('reachedThrough');
+    const added = say(opened.session, 'and check my home first too', { intent: choice({ screen_home: 0.9, none: 0.1 }), intentChange: ADDING });
+    expect(added.session.queued).toEqual(['screen_home']);
+    const switched = say(opened.session, 'actually check my home first', { intent: one('screen_home'), intentChange: REPLACING });
+    expect(switched.session.form).toBe('screen_home');
   });
 });

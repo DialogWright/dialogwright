@@ -2,7 +2,6 @@ import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from 
 import { informationOf, isFormIntent, type Informs } from './app/intents';
 import { changeSlotWithValueOf, formOf, priorityIntentsOf, priorityThresholdOf, unsureOf } from './app/lookup';
 import { appOf } from './app/registry';
-import { formsBefore } from './app/next';
 import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
 import type { TurnState } from './state';
@@ -80,12 +79,13 @@ function isRoutable(app: App, intent: string): boolean {
 }
 
 /**
- * The task in hand as the intents name it: the open form, and the forms that lead to it through
- * `next` (a screen before its booking), which are the same request. Exactly the open form for an app
- * without `next`.
+ * The task in hand as the intents name it: the open form, and the forms it was reached through by
+ * `next` on this call (Session.reachedThrough: the screen the caller came through, not every form
+ * that could lead there), which are the same request. Exactly the open form for a form entered any
+ * other way, so for every app without `next`.
  */
-function sameTask(app: App, form: FormId): FormId[] {
-  return [form, ...formsBefore(app.forms, form)];
+function sameTask(session: Session, form: FormId): FormId[] {
+  return [form, ...(session.reachedThrough ?? [])];
 }
 
 /**
@@ -99,8 +99,8 @@ export const ADDED_INTENT_FLOOR = 0.3;
  * The task an in-form "adding" utterance adds: the likeliest form other than `active`, with its
  * probability as a share of everything but `active` (the model's reading that the words go on with
  * the current task is no evidence against the task added beside it). `active` is the form in hand
- * and the forms that lead to it through next (sameTask): the screen before a booking is the booking's
- * own request, so naming it again adds nothing. Null when no other form is
+ * and the forms it was reached through by next (sameTask): the screen the caller came through is the
+ * booking's own request, so naming it again adds nothing. Null when no other form is
  * ranked, when `active` takes all of it, or when the added form's own probability is under
  * `ADDED_INTENT_FLOOR`.
  */
@@ -280,8 +280,8 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   const second = ranked[1];
   const label = top.label as Intent;
   const activeForm = session.form;
-  // The form in hand, and the forms that lead to it through next: one task (sameTask).
-  const inHand = activeForm === null ? [] : sameTask(app, activeForm);
+  // The form in hand, and the forms it was reached through by next: one task (sameTask).
+  const inHand = activeForm === null ? [] : sameTask(session, activeForm);
   const informs = informationOf(app, label);
 
   let routeVerdict: Verdict | null = null;

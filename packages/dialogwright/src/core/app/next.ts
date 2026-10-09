@@ -17,24 +17,6 @@ export function formsLeadingTo(forms: Readonly<Record<FormId, FormNext>>, form: 
   return Object.keys(forms).filter((id) => forms[id]!.next === form);
 }
 
-/**
- * Every form that leads to `form` through `next`, however many steps back (a screen before a middle
- * form before a booking), nearest first, each once. Empty for a form no form goes on to, so for an
- * app without `next`.
- */
-export function formsBefore(forms: Readonly<Record<FormId, FormNext>>, form: FormId): FormId[] {
-  const out: FormId[] = [];
-  const queue = [form];
-  while (queue.length > 0) {
-    for (const id of formsLeadingTo(forms, queue.shift()!)) {
-      if (id === form || out.includes(id)) continue;
-      out.push(id);
-      queue.push(id);
-    }
-  }
-  return out;
-}
-
 /** Every form `form` goes on to through `next`, in the order the chain goes, each once. */
 export function formsAfter(forms: Readonly<Record<FormId, FormNext>>, form: FormId): FormId[] {
   const out: FormId[] = [];

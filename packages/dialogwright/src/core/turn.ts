@@ -5,7 +5,6 @@ import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
 import { formLabel, informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
-import { formsBefore } from './app/next';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
@@ -415,9 +414,8 @@ function askChange(pc: Extract<PendingConfirmation, { target: 'form' }>, acks: A
 
 /** Add an intent the caller asked for on the side; returns the ack to speak, if it was new. */
 function enqueue(s: Session, intent: FormId | undefined): Ack[] {
-  // A form that leads to the open one through next is the task in hand, not another.
-  if (intent === undefined || intent === s.form || s.queued.includes(intent)) return [];
-  if (s.form !== null && formsBefore(appOf(s).forms, s.form).includes(intent)) return [];
+  // A form the open one was reached through by next on this call is the task in hand, not another.
+  if (intent === undefined || intent === s.form || s.queued.includes(intent) || s.reachedThrough?.includes(intent) === true) return [];
   s.queued.push(intent);
   return [{ promptId: 'ack_queued', vars: { intentLabel: formLabel(appOf(s), intent) } }];
 }
@@ -551,7 +549,7 @@ function finishForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, completed
  * the caller queued, which waits for the end of the chain. The slots both forms list stay as they
  * are, with their values, displays, confirmations and agreed values (closeForm's `keep`), so the next
  * form never asks them again; a slot the next form does not list goes, as any form's does. The next
- * form is told the forms it was reached through (Session.via), whose checks still hold in it
+ * form is told the forms it was reached through (Session.reachedThrough), whose checks still hold in it
  * (checksOf), and the passes of every check that runs there carry (Session.checked, the hash of what
  * each passed with), so the gate is not asked again about values it has already allowed, and a value
  * changed later runs the check again. The next form's checksPassed line is then said only if one of
@@ -563,10 +561,10 @@ function goOn(s: Session, form: FormId, then: FormId, acks: Ack[], io: TurnIO): 
   const next = formOf(io.app, then);
   const keep = formOf(io.app, form).slots.filter((id) => next.slots.includes(id));
   const checked = s.checked ?? {};
-  const via = [...(s.via ?? []), form];
+  const reachedThrough = [...(s.reachedThrough ?? []), form];
   closeForm(s, keep);
   setForm(s, then);
-  s.via = via;
+  s.reachedThrough = reachedThrough;
   const runs = new Set(checksOf(s, then).map((c) => c.action));
   const passed = Object.entries(checked).filter(([action]) => runs.has(action));
   if (passed.length > 0) s.checked = Object.fromEntries(passed);

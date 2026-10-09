@@ -198,7 +198,7 @@ export interface Session {
    * the chain went: their checks still hold in it (core/checks.ts checksOf). Absent for a form entered
    * any other way, so every session of an app without `next` is as it was.
    */
-  via?: FormId[];
+  reachedThrough?: FormId[];
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -422,7 +422,7 @@ export function cloneSession(s: Session): Session {
     ...(s.callerOffered ? { callerOffered: [...s.callerOffered] } : {}),
     ...(s.agreed ? { agreed: { ...s.agreed } } : {}),
     queued: [...s.queued],
-    ...(s.via ? { via: [...s.via] } : {}),
+    ...(s.reachedThrough ? { reachedThrough: [...s.reachedThrough] } : {}),
     completed: [...s.completed],
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
   };
@@ -455,7 +455,7 @@ export function setForm(session: Session, form: FormId): Session {
   // a switch to a queued intent starts it now rather than promising it twice.
   session.queued = session.queued.filter((q) => q !== form);
   // A form entered by its own route was reached through nothing; one reached by next is told so after.
-  delete session.via;
+  delete session.reachedThrough;
   session.intentAttempts = 0;
   session.pendingConfirmation = null;
   session.menuActive = false;
@@ -502,7 +502,7 @@ export function closeForm(session: Session, keep: readonly SlotId[] = []): Sessi
     }
   }
   session.form = null;
-  delete session.via;
+  delete session.reachedThrough;
   session.entered = null;
   session.stepUp = null;
   if (session.callerMatch === 'offered') delete session.callerMatch;
