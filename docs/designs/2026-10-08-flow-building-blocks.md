@@ -1,6 +1,6 @@
 # Flow building blocks: the classic IVR toolkit in DialogWright terms (design, for review)
 
-Date: 2026-10-08. Status: **reviewed (the maintainer's decisions are at the end); being built.** Piece 1, per-slot retries (section 6), is built: its build plan and the decisions made building it are [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md). The rest is not built yet. Engine: DialogWright local `main`. Source: the principle in [2026-10-08-decisions.md](2026-10-08-decisions.md): "we read in data, we process forms, nothing is limited by the framework".
+Date: 2026-10-08. Status: **reviewed (the maintainer's decisions are at the end); being built.** Piece 1, per-slot retries (section 6), is built: its build plan and the decisions made building it are [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md). Piece 2's first item, `callData` (section 1), is built: its decisions are in [2026-10-09-call-data-and-transfers.md](2026-10-09-call-data-and-transfers.md#as-built-2a). The rest is not built yet. Engine: DialogWright local `main`. Source: the principle in [2026-10-08-decisions.md](2026-10-08-decisions.md): "we read in data, we process forms, nothing is limited by the framework".
 
 ## At a glance
 

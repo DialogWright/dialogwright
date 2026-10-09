@@ -1323,6 +1323,31 @@ offers: (f) => (f.serviceAddress ? { place: { value: f.serviceAddress, display: 
 - **Test:** scripted calls from a number on file with a yes, a no, another address and silence; a number not on file; a withheld number; the chat; and a yes followed by a request that needs identity. Corpus lines at the offer as for a callback number: a yes, a bare no, a no with another value, another value alone, words that answer neither.
 - **Pitfall:** whatever the lookup returns may be said to someone who has proven nothing; and `offerAt: greeting` with no `callerNumber` lookup proposes nothing at the greeting (nothing has loaded the facts yet), which `pnpm check` warns of.
 
+## Data the call comes with: `callData`
+
+**When:** "calls come from our contact centre with the customer's account reference", "the queue the call came through decides what we say", "the chat knows which page the visitor is on". The carrier, an upstream system or the web page attaches data to the call; app.yaml's `callData` names what the app's code may read, each key with its source and how it is recorded.
+
+```yaml
+# app.yaml
+callData:
+  queue:      { from: param.queue, redact: keep }        # a custom parameter of the setup
+  accountRef: { from: param.accountRef, redact: last4 }
+  uui:        { from: webhook.SipHeader_User-to-User }    # a field of the carrier's answer webhook; mask by default
+  page:       { from: chat.page, redact: keep }           # the web chat's page context (data-context)
+```
+
+```ts
+// src/app.ts, in a completion or a hook
+const promptId = callDataOf(s).queue === 'priority' ? 'callback_booked_priority' : 'callback_booked';
+```
+
+- **Sources:** `param.<name>` (a custom parameter), `setup.<field>` (a field of the setup frame: forwardedFrom, callerName, callType, direction, the call ids), `webhook.<field>` (a field of the answer webhook, echoed back to the setup), `chat.<key>` (the page's context). Only the keys named are kept, each only when its source sent a value.
+- **Choose `redact` per key.** The default is `mask`: the value is in the session for the code, and `•` in the trace, the console, the frame log and the audit. `keep` a key the code branches on (a queue), so the records and a replay show which branch; `last4` an account reference; `secret` what must never be written. Write each choice in the worksheet.
+- **The model never sees it**, unless `callerState` passes a value; a choice of lines by call data belongs in code, as above, with every line in prompts.yaml.
+- **Parameters out:** `startParameters: { line: env.CALLBACK_LINE }` writes a fixed custom parameter into every start document, its value from the environment (the server refuses to start while it is unset). Only for calls placed from the app's own systems.
+- **Test:** scripted calls with `"callData": { "queue": "priority" }` and without, each with `expect.promptId` naming the line the data chooses; a chat (`"as": "web"`) with the page's key if the app reads one.
+- **Pitfall:** call data is attached by whoever placed the call: a parameter is as trustworthy as the system that set it, and never identity. Data from the page (`chat.`) is the visitor's browser's: read it as a hint, as the caller's number is ([authoring guide, 13.14](../../../docs/authoring-an-app.md#1314-the-data-a-call-or-chat-comes-with-calldata)).
+
 ## Switches with a safe default
 
 **When:** rarely at first. Each switch below has a default that suits most lines; change one only for a reason the paragraph gives, or one a recording shows, and write the reason in the worksheet.

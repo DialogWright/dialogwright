@@ -196,6 +196,18 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** For each carrier, whether the number called arrived and where, and anything masked whole that should not be, or shown whole that should be masked. A number called in another place is a provider change (`setupCalledOf`) with a test, and a line in the guide's 13.13.
 
+## 11. Call data: a custom parameter and a webhook field, on Twilio and on Telnyx
+
+**Why.** An app's `callData` (the guide's [13.14](authoring-an-app.md#1314-the-data-a-call-or-chat-comes-with-calldata)) reads a custom parameter off the setup, and a field of the answer webhook that the start document echoes back as a `<Parameter>` named `dw_<key>`. The kit checks both against each carrier's documented shapes; that Telnyx hands an echoed `<Parameter>` back beside its own `telnyx_*` keys, and which fields its TeXML voice webhook carries, are not yet seen on a live call (its conformance fixture marks them `ASSUMED`).
+
+**Set.** A scratch copy of the engine's fixture `packages/dialogwright/src/testing/callback` (its `callData` reads `param.queue`, `param.accountRef`, `setup.forwardedFrom` and `webhook.SipHeader_X-Referral`), or your own app. Change its `referral` key to a field the carrier's voice webhook carries on an ordinary call (`webhook.ForwardedFrom` or `webhook.CallerName` on Twilio; `webhook.CallSessionId` or `webhook.Direction` on Telnyx), and add `startParameters: { queue: env.CALLBACK_QUEUE }` with `CALLBACK_QUEUE=priority` in the `.env`, so the start document carries a custom parameter of the app's own. The carrier's settings from check 1 or 2.
+
+**Do.** On each carrier, call and set up a callback (a name, yes to the offered number, "an order", yes).
+
+**Look for.** The start document (the carrier's request log) has `<Parameter name="queue" value="priority"/>` and `<Parameter name="dw_referral" value="..."/>`. The frame log's setup has `customParameters` with `queue` as sent, `dw_referral` as `•`, and every other custom parameter (Telnyx's `telnyx_*` keys) as `redacted`, the numbers by their last four. The trace file's first record has the event's `callData` with `queue: priority` and `referral: "•"`; the day's audit file has `callData.queue: priority` on the `call_started` row. The completion says "within the hour". Then cut the relay (as in check 3): the reconnect's start document carries `dw_referral` again, and the call keeps its call data.
+
+**Record.** For each carrier, whether each parameter came back, under which name, and anything written whole that should be masked. On Telnyx: replace the `callData` entry of `server/voice/__fixtures__/telnyx/webhooks.json` with what was seen (its `source` set to `captured <date>`), and the guide's 13.14 table row. A parameter Telnyx drops or renames is a provider change with a test.
+
 ## Results log
 
 One row per check run. Keep earlier rows.

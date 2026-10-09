@@ -130,6 +130,7 @@ prompts:
 - `prompts` holds what is said about prompts besides their text: which opening lines to use, which variables are always spoken by text to speech, the clips' vocabulary.
 - `callerNumber` keeps the number the caller is calling from for the app's own code, and may look the caller up by it once at call start: [The number the caller is calling from](#the-number-the-caller-is-calling-from-callernumber), below.
 - `textConsent: { covers: [textTo, ...] }` asks once, right after the greeting, for consent to text the caller during the call, and the text offers it covers then use the caller's number without asking again: [Consent to text for the whole call](#consent-to-text-for-the-whole-call-textconsent).
+- `callData` names the data a call or chat comes with that the app's code may read (a carrier's custom parameter, a field of the setup or of the answer webhook, the web chat page's context), each key with where it comes from and how it is recorded; `startParameters` names the custom parameters the server writes into every start document, each read from an environment variable: [13.14](#1314-the-data-a-call-or-chat-comes-with-calldata).
 
 #### The number the caller is calling from: `callerNumber`
 
@@ -2750,6 +2751,8 @@ The same app answers on the phone, through Twilio, Telnyx or both, and on the we
 | What an offer takes | `answers` in a slot's `callerNumber`, `offerAnswers` beside `offer: facts` (slots.yaml): `yes-no-or-value` or `yes-no` | `yes-no-or-value`: a yes, a no, or a value of the caller's own | `yes-no` where the line asks only a yes or no question: a value said there is a no, and the keypad's 1 and 2 are yes and no ([Yes or no only](#yes-or-no-only-answers)). |
 | Whether an offer may be declined | `onNo` and `ifNone` in a slot's `callerNumber` (slots.yaml): `ask` or `skip` | `ask`: a required offer, the slot's own question after a no | `skip` for an optional one (a reminder text): a no leaves the slot empty ([A text offer](#a-text-offer-onno-and-ifnone)). |
 | Consent to text for the whole call | `textConsent: { covers }` (app.yaml), with `consent_texts` | none: each text offer is asked where it is | To ask once, after the greeting, and fill the covered offers with the caller's number on a yes ([Consent to text for the whole call](#consent-to-text-for-the-whole-call-textconsent)). |
+| The data a call or chat comes with | `callData` (app.yaml): by key, `from` (`param.<name>`, `setup.<field>`, `webhook.<field>`, `chat.<key>`) and `redact` | none kept | When the app's code needs what the carrier or the page attached to the call: a queue, an account reference, a SIP header ([13.14](#1314-the-data-a-call-or-chat-comes-with-calldata)). |
+| Custom parameters on every start document | `startParameters` (app.yaml): name to `env.<NAME>` | none | For calls placed from the app's own systems through the carrier, which read them back ([13.14](#1314-the-data-a-call-or-chat-comes-with-calldata)). |
 | What a transfer hands the carrier | `handoff.data` (app.yaml): `slots` (`all`, `none` or a list), `send` by slot (`omit`, `masked`, `as-is`) | no identity factor; a redacted slot masked; any other slot as it is | When the person taking the call needs a value in the clear (name it `as-is`), or fewer values on the carrier. |
 | Values the caller never confirmed, in a transfer | `handoff.data.unconfirmed` (app.yaml): `send`, `mark` or `omit` | `send`: sent as any other, nothing named | `mark` when the person should know which values to check with the caller (the end frame's `unconfirmed`, the console's "(not confirmed)", the audit's handoff row); `omit` to send only what the caller agreed to ([app.yaml](#appyaml)). |
 | The language a call starts in | `voice.numbers` (app.yaml): number called to locale | the app's default locale | A number per language. |
@@ -2844,7 +2847,7 @@ Choosing it, by words, by its menu key or on the yes to an unsure reading, sets 
 `CHAT=on` serves the engine's own web chat on the WebSocket `/chat`, to the pages of the sites in `CHAT_ALLOWED_ORIGINS`. Off (the default), `/chat` is a 404 like any unknown path, and nothing about the server changes. Each chat is a session on the `WEB_CHAT` channel, run through the same turn path as a call: the same app, policy, gate, trace, audit (`channel: chat`) and console, and the same handoff summary. A chat gets the app's lines as words, never recorded clips, and is never asked for a keypad key.
 
 - **Who may open one.** The page's `Origin` is checked against `CHAT_ALLOWED_ORIGINS` before the upgrade (403 otherwise, and a request with no `Origin` is refused). Origins are exact (scheme, host and any port, no path); `*` is allowed only with `PUBLIC_HOST=localhost`.
-- **The wire** is our own JSON, one message per WebSocket frame (`src/channel/chat/protocol.ts`, version 1). The client sends `start` (`v: 1`, and optionally `locale`, `token`, `resume`) within 10 seconds, then `text` (1 to 500 characters), `sign_in` (`token`) and `ping`. The server sends `ready` (`session`, `resume`, `locale`), `say` (`text`, `lang`), `transfer` (`reason`, never the values collected), `end`, `signed_in` (`level`), `pong` and `error` (`code`: `bad_message`, `too_long`, `not_allowed`, `sign_in_failed`, `session_unknown`, `busy`, `server_error`). A refusal names the field and the rule, never the value. A message is at most 16 KiB; ten malformed ones close the socket.
+- **The wire** is our own JSON, one message per WebSocket frame (`src/channel/chat/protocol.ts`, version 1). The client sends `start` (`v: 1`, and optionally `locale`, `token`, `resume`, and `context`, the page's own data: at most 50 strings of at most 500 characters, under keys of letters, digits, underscores, hyphens and dots, of which the app keeps only what its `callData` names, [13.14](#1314-the-data-a-call-or-chat-comes-with-calldata)) within 10 seconds, then `text` (1 to 500 characters), `sign_in` (`token`) and `ping`. The server sends `ready` (`session`, `resume`, `locale`), `say` (`text`, `lang`), `transfer` (`reason`, never the values collected), `end`, `signed_in` (`level`), `pong` and `error` (`code`: `bad_message`, `too_long`, `not_allowed`, `sign_in_failed`, `session_unknown`, `busy`, `server_error`). A refusal names the field and the rule, never the value. A message is at most 16 KiB; ten malformed ones close the socket.
 - **A drop is not the end.** `start { resume }` reopens the chat with the resume token the last `ready` gave (a fresh one each time) until `CHAT_IDLE_MS` of quiet ends it (recorded as `abandoned`). A second resume takes the chat over and closes the socket it replaced. A resume of a chat that has ended starts a new one.
 - **Limits.** At most `CHAT_MAX_SESSIONS` chats are live at once, a dropped one waiting for its resume included: over it a new `start` is answered `busy` and closed, and a resume is never refused for it. A chat holds at most five messages waiting for their reply; past that a message is answered `busy`. A limit per visitor is the reverse proxy's to keep: behind one, every chat comes from its address.
 - **A transfer** sends the line, `transfer` and `end`, and closes; what happens next is the site's (the widget's `onTransfer`).
@@ -2913,6 +2916,7 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`, and, for `getT
 | `position` | `data-position` | `bottom-right` | `bottom-right`, `bottom-left`, or `inline` (inside `container`, always open). |
 | `container` | `data-container` (a CSS selector) | none | Where an `inline` widget goes. |
 | `startOpen` | `data-start-open` | `false` | Open, and connect, on load; otherwise it connects when first opened. |
+| `context` | `data-context` (JSON) | none | The page's own data, sent on each start (`{"page":"/orders"}`): the app keeps only the keys its `callData` names as `chat.<key>` ([13.14](#1314-the-data-a-call-or-chat-comes-with-calldata)). A key or value the chat cannot take is left out, with a warning. |
 | `getToken` | code only | none | The site's sign-in token, or null; with it, the panel offers sign-in. |
 | `onTransfer` | code only | the panel says `transferred` | What a transfer does on the site. |
 | `onEvent` | code only | none | Every event the client reports, after the panel has shown it. |
@@ -3048,6 +3052,48 @@ The console's `call_started` shows it by its last four on either carrier ("unkno
 
 How Telnyx writes a withheld number is not yet seen: until a live call shows it ([live-checks.md](live-checks.md)), anything that is not a number by the rules above makes no offer, and a placeholder of Telnyx's own made of ten digits would be offered as a number. A web chat has no number at all.
 
+### 13.14 The data a call or chat comes with: `callData`
+
+A carrier can attach data to a call (a queue the call was routed through, an account reference a system upstream already knows, a SIP header from a contact centre), and a web page can tell the chat where the visitor is. An app names in app.yaml what its code may read, off by default:
+
+```yaml
+callData:
+  queue:      { from: param.queue, redact: keep }          # a custom parameter of the setup
+  accountRef: { from: param.accountRef, redact: last4 }
+  forwarded:  { from: setup.forwardedFrom, redact: last4 }  # a field of the setup frame
+  uui:        { from: webhook.SipHeader_User-to-User }      # a field of the carrier's answer webhook
+  page:       { from: chat.page, redact: keep }             # the web chat's page context
+```
+
+- **Sources.** Carrier-neutral, so the engine names no carrier's fields:
+  - `param.<name>`: a custom parameter of the relay's setup (`customParameters`: Twilio's `<Parameter>`, Telnyx's custom parameters).
+  - `setup.<field>`: a field of the setup frame the wire keeps: `forwardedFrom`, `callerName`, `callType`, `direction`, `callStatus`, `parentCallSid`, `accountSid`, and the call ids `callSid`, `sessionId`, `callControlId`, `callSessionId`, `callLegId`. The numbers are app.yaml's `callerNumber` ([The number the caller is calling from](#the-number-the-caller-is-calling-from-callernumber)).
+  - `webhook.<field>`: a field of the carrier's answer webhook, as it posts it (Twilio: `ForwardedFrom`, `CallerName`, `SipHeader_<name>` on a SIP call). The server copies each named one into the start document as a custom parameter, `dw_<key>`, so it comes back with the setup; nothing is held between the webhook and the socket. A reconnect's document writes the same from what the session kept.
+  - `chat.<key>`: a key of the web chat `start` message's `context` ([13.4](#134-web-chat)), which the widget takes from `data-context` or `mount({ context })` ([13.7](#137-the-widget)).
+- **Keeping.** Only the keys named are kept, each only when its source sent a value: a key whose source is absent (or empty, or longer than 500 characters) is absent, never an empty string. A reconnect keeps the first setup's values, as it does the caller's number.
+- **Reading.** App code reads them with `callDataOf(s)` (from `'dialogwright'`): `{ queue: 'priority', accountRef: 'AC-55501234' }`, an empty object for an app without `callData` or a call that came with none, so code written against it is safe anywhere. A form hook, a completion, `callerState` or a check's code may read it; the engine's fixture, Example Callbacks (`packages/dialogwright/src/testing/callback`), tells a call from its priority queue that the callback comes within the hour.
+- **The model never sees it.** No call data is in what the decision model is sent, unless the app's `callerState` passes a value, which is then sent as written (and re-keys a recorded cassette).
+- **Records.** `redact` takes the masks of policy.yaml's `audit:`: `last4` (`...1234`), `mask` (`•`), `length` (`<9 chars>`), `secret` (left out) or `keep`. The default is `mask`, so a key nobody thought about is never written whole. It applies in the trace file (the start event's `callData`, and the setup's own copies of the custom parameters it reads), on the console, in the frame log, and in the `call_started` audit row, which records each key as `callData.<key>`.
+- **The frame log's custom parameters.** Every custom parameter of a setup is written to the frame log as `redacted`, for every app, unless a `callData` key reads it (then as its `redact` says); `locale` is written as sent, and a carrier's copy of a number (`telnyx_call_from`, `telnyx_call_to`) by its last four, as before. Before `callData` they were written as they came. A setup field keeps the frame log's own masking (`forwardedFrom` by its last four, `callerName` as `redacted`, the ids as they are). A field of a webhook a `webhook.` key reads is written to the frame log's `/cr-action` lines by its `redact` too.
+- **Replay.** A replayed call reads its call data from the logged setup, so a value recorded masked stands in as it was recorded (`•`, `...1234`), and the replay says which keys it stood in. A key the app's code branches on (a queue) wants `redact: keep`, or the replay takes the other branch. A frame log written before this change may not replay a masked parameter as it came.
+- **`pnpm check`** refuses a key with no `from`, a source it does not know, a `setup.` field the wire does not keep, a `param.dw_...` (the server's echoes: write `webhook.<field>`), a key that is not a plain word, and a `redact` that is not one of the masks; `validateApp` refuses the same for an app built in code. Which keys an app reads, and how each is recorded, are the app's.
+
+**Parameters out: `startParameters`.** For a call placed from the app's own systems through the carrier, the server can write fixed custom parameters into every start document, which the carrier hands back on the setup (and `param.<name>` can read):
+
+```yaml
+startParameters:
+  line: env.CALLBACK_LINE    # <Parameter name="line" value="..."/>, the value from the environment
+```
+
+A value is always an environment variable (`env.<NAME>`), never written in YAML. The server reads each as it starts and refuses to start, with the fix, when one is unset or longer than 500 characters; the startup line names the parameters, never their values. `locale` and `dw_...` are the engine's own names and are refused.
+
+| Carrier | Custom parameters on the setup | Answer webhook fields | Seen |
+|---|---|---|---|
+| Twilio | `customParameters`, from the document's `<Parameter>` children | form fields (`ForwardedFrom`, `CallerName`, `SipHeader_<name>`) | as documented |
+| Telnyx | `customParameters`, from `<Parameter>` children, beside its own `telnyx_*` keys | form fields with Twilio's names (`CallSessionId`, `Direction`) | `<Parameter>` as documented; a webhook field echoed and read back is not yet seen on a live call ([live-checks.md](live-checks.md)) |
+
+Testing it: a scripted call takes `"callData": { "queue": "priority" }`, the start event's call data as a channel would read it; `App.testing.seed.callData` gives every seeded corpus call the same. The voice conformance kit checks that a custom parameter and a named webhook field reach the session for each carrier.
+
 ## 14. Running it
 
 An app's server is `pnpm --filter <app> serve`, configured by its environment. On a machine you own, a few commands at the repository root do the rest, in the order a developer meets them below: try it with no keys, configure a phone line, start it with a tunnel that needs no account, point the carrier at it, diagnose it, then move it to a machine that stays on. Each command prints what it does, and none sends a key anywhere.
@@ -3182,6 +3228,7 @@ Every option here has a default that keeps the behaviour a deployment had before
 | The key console sessions are signed with | `CONSOLE_SESSION_KEY` (env, token only) | unset: a key made at start, so a restart signs everyone out | To stay signed in across restarts: 32 random bytes or more, hex or base64 (`openssl rand -hex 32`); never echoed. |
 | Where the current sign-in link is written | `CONSOLE_LINK_FILE` (env, token only) | `.console-link/link.json` beside the trace folder | A folder of the server's own account; one others may write in is refused. |
 | Where a console request's address is read | `CONSOLE_CLIENT_ADDRESS` (env, token only): `auto`, `cf-connecting-ip`, `x-forwarded-for` or `remote` | `auto`: `cf-connecting-ip`, else the last `x-forwarded-for` entry, else the socket's | `cf-connecting-ip` behind a Cloudflare tunnel (quick or named); `x-forwarded-for` behind ngrok or another proxy that appends the address it saw; `remote` with no proxy in front. |
+| The custom parameters every start document carries | the variables app.yaml's `startParameters` names (`env.<NAME>`) | none: an app without `startParameters` reads none | When calls are placed from the app's own systems: set each variable it names in the app's `.env`; the server refuses to start, naming it, while one is unset ([13.14](#1314-the-data-a-call-or-chat-comes-with-calldata)). |
 | The document a carrier plays when it cannot reach the server | `pnpm fallback`, a file hosted elsewhere, its URL in the carrier's console | none: the carrier's own error | Always, on a line people rely on ([14.8](#148-when-the-server-is-down-the-carriers-fallback)). |
 
 The options from before Phase 8 that a machine you own may also set (`PUBLIC_HOST`, `PORT`, `TRACE_DIR`, `AUDIT_DIR`, `DASHBOARD`, `CONSOLE_LOCAL_ONLY`, `RECONNECT_LIMIT`, `SESSION_TTL_MS`, `SESSION_MAX_AGE_MS`, `TIMEZONE`) keep their defaults; the carriers' and the chat's are in [13.1](#131-the-options).

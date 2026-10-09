@@ -38,13 +38,14 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`.
 | `position` | `data-position` | `bottom-right` | `bottom-right`, `bottom-left`, or `inline` (inside `container`, always open). |
 | `container` | `data-container` (a CSS selector) | none | Where an `inline` widget goes. |
 | `startOpen` | `data-start-open` (present, `true` or `false`) | `false` | Open the panel, and connect, on load (without taking the page's focus). Otherwise the widget connects when it is first opened, so a page view that never chats opens no chat. |
+| `context` | `data-context` (JSON) | none | The page's own data, sent on each start (`{"page":"/orders"}`): strings by key, at most 50 of at most 500 characters. The app keeps only the keys its `callData` names as `chat.<key>`, and records each as it says. A key or value the chat cannot take is left out, with a warning. |
 | `getToken` | (code only) | none | The site's sign-in token, or null; with it, the panel offers sign-in. |
 | `onTransfer` | (code only) | the panel says `transferred` | What a transfer does on this site (open a live chat, show a number). |
 | `onEvent` | (code only) | none | Every event the client reports (below), after the panel has shown it: for a site that does more on a restart, a sign-in or the end. |
 | `backoffMs` | (code only) | `[500, 1000, 2000, 5000]` | Delays between reconnect attempts, in ms. |
 | `maxReconnects` | (code only) | no limit | Reconnects in a row a dropped chat may try before the panel says `unavailable`. |
 
-An option it cannot read (an unknown position, a word it does not have, `data-strings` that is not a JSON object, a `data-start-open` other than `true` or `false`, a locale that is not a language tag, a container on a widget that is not inline) is warned about in the console and the default is used; a missing or unusable `endpoint`, or an `inline` widget without a container on the page, is an error.
+An option it cannot read (an unknown position, a word it does not have, `data-strings` or `data-context` that is not a JSON object, a `data-start-open` other than `true` or `false`, a locale that is not a language tag, a container on a widget that is not inline) is warned about in the console and the default is used; a missing or unusable `endpoint`, or an `inline` widget without a container on the page, is an error.
 
 **Words.** Every word the widget shows is a key of `strings` (`src/strings.ts`): `open`, `close`, `title`, `log`, `message`, `placeholder`, `send`, `you`, `agent`, `signIn`, `signedIn`, `signInFailed`, `connecting`, `reconnecting`, `restarted`, `unavailable`, `wait`, `tooLong`, `ended`, `transferred`, `error`. The agent's lines are the app's own, in the chat's language; the server's error messages are never shown.
 
@@ -80,6 +81,7 @@ import { createChatClient } from '@dialogwright/widget';
 const chat = createChatClient({
   endpoint: 'wss://chat.example.com/chat',
   locale: 'es',                                  // optional: the language to ask for
+  context: { page: '/orders' },                  // optional: the page's own data, which an app's callData may read
   getToken: async () => mySite.idToken(),        // optional: a sign-in token, or null
   onEvent: (e) => console.log(e),
 });
