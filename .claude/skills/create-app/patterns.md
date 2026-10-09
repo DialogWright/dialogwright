@@ -197,6 +197,11 @@ principals:
   subject: customer
   delegates:
     manager: { roles: [manager] }    # the delegate kind, and the roles a `role` rule may name
+levels:
+  1: { name: verified, factors: [accountId, dob], verify: verifyCustomer, failedPrompt: identity_failed }
+  2: { name: confirmed by code, factors: [{ otp: { length: 6 } }], send: sendCode, verify: verifyCode }
+attempts: 3
+signIn: { level: 2 }
 ```
 
 In `code`:

@@ -162,8 +162,15 @@ export function checkWarnings(c: Omit<FormCheckInput, 'promptExists'>, customRul
   const hooksOf = (form: string): readonly string[] => config.forms.forms[form]?.hooks ?? [];
   for (const [id, form] of Object.entries(config.forms.forms)) {
     (form.checks ?? []).forEach((check, i) => {
+      // The check's own level: at 1 or more its STEP_UP verifies the caller before it runs, so it reads
+      // the value verification matched; below that a factor said on the way is checked as said.
+      const checkLevel = Object.hasOwn(actions, check.action) ? actions[check.action]!.level : undefined;
       check.with.forEach((slot, j) => {
         if (!factors.has(slot)) return;
+        if (checkLevel !== undefined && checkLevel >= 1) {
+          report('forms.yaml', ['forms', id, 'checks', i, 'with', j], `check "${check.action}" reads "${slot}", an identity factor: the caller is asked to verify as soon as the check waits on nothing else (on a web chat, which takes no factor, the form goes to a person), and the check, at level ${checkLevel}, runs on the value verification matched`, 'nothing to do if that is meant (an age check on a date of birth); otherwise check one of the form\'s own slots');
+          return;
+        }
         report('forms.yaml', ['forms', id, 'checks', i, 'with', j], `check "${check.action}" reads "${slot}", an identity factor: the caller is asked to verify as soon as the check waits on nothing else (on a web chat, which takes no factor, the form goes to a person), but a value said on the way, before verification, is checked as said`, 'nothing to do if that is meant (an age check on a date of birth); give the check level: 1 when the value must be verified; otherwise check one of the form\'s own slots');
       });
       const action = Object.hasOwn(actions, check.action) ? actions[check.action]! : undefined;

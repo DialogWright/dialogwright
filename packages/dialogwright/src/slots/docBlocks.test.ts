@@ -14,7 +14,7 @@ import { BUILT_IN_SLOT_TYPES } from './registry';
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
-/** The markdown files whose examples an author copies: the repository's docs, its READMEs and CONTRIBUTING, and each type's README. */
+/** The markdown files whose examples an author copies: the repository's docs, its READMEs and CONTRIBUTING, each type's README, and the create-app skill's pages. */
 function docFiles(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -25,6 +25,7 @@ function docFiles(): string[] {
     }
   };
   walk(join(ROOT, 'docs'));
+  walk(join(ROOT, '.claude', 'skills'));
   for (const file of ['README.md', 'CONTRIBUTING.md', 'packages/dialogwright/src/slots/README.md']) out.push(join(ROOT, file));
   for (const type of Object.keys(BUILT_IN_SLOT_TYPES)) out.push(join(ROOT, 'packages/dialogwright/src/slots', type, 'README.md'));
   return out;
@@ -61,7 +62,7 @@ describe('the slots YAML in the docs', () => {
   it('is found in the guides, the design, the library\'s READMEs and every type\'s page', () => {
     const files = new Set(blocks.map((b) => b.where.split(':')[0]));
     expect(blocks.length).toBeGreaterThan(30);
-    for (const file of ['docs/design.md', 'docs/authoring-an-app.md', 'docs/slots/README.md', 'packages/dialogwright/src/slots/choice/README.md', 'docs/slots/choice.md']) expect(files, file).toContain(file);
+    for (const file of ['docs/design.md', 'docs/authoring-an-app.md', 'docs/slots/README.md', 'packages/dialogwright/src/slots/choice/README.md', 'docs/slots/choice.md', '.claude/skills/create-app/patterns.md']) expect(files, file).toContain(file);
   });
 
   it('builds, every block of it, as written', () => {

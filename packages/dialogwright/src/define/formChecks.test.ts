@@ -199,6 +199,17 @@ describe('the warnings', () => {
     ]);
   });
 
+  it('a check on an identity factor at level 1 is warned without the advice to give it level 1: it already runs on the verified value', async () => {
+    const dir = proposalsFolder({ ...AGE_CHECK, 'policy.yaml': both(AGE_CHECK['policy.yaml']!, replacing('    check: true\n    level: 0\n    rules:\n      - identity\n      - oneOf: { field: dob', '    check: true\n    level: 1\n    rules:\n      - identity\n      - oneOf: { field: dob')) });
+    const { problems, warnings } = await checked(dir, proposalsCode);
+    expect(problems).toEqual([]);
+    const factor = warnings.filter((w) => w.includes('identity factor'));
+    expect(factor).toEqual([
+      'forms.yaml:13:16  forms.report_problem.checks[0].with[0]  check "checkAge" reads "dob", an identity factor: the caller is asked to verify as soon as the check waits on nothing else (on a web chat, which takes no factor, the form goes to a person), and the check, at level 1, runs on the value verification matched  ->  nothing to do if that is meant (an age check on a date of birth); otherwise check one of the form\'s own slots',
+    ]);
+    expect(factor.join('\n')).not.toContain('give the check level: 1');
+  });
+
   it('a check on an identity factor the form also lists in its slots is refused: the form would empty it while the caller stays verified', async () => {
     const dir = proposalsFolder({ ...AGE_CHECK, 'forms.yaml': both(AGE_CHECK['forms.yaml']!, replacing('slots: [place, problem]', 'slots: [place, problem, dob]')) });
     const { problems } = await checked(dir, proposalsCode);

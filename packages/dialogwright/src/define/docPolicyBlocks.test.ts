@@ -28,7 +28,7 @@ const WORLD_IDENTITY = parse(readFileSync(join(ROOT, 'packages/dialogwright/src/
 const POLICY_KEYS = ['actions', 'purposes', 'wording', 'redact', 'audit'];
 const IDENTITY_KEYS = ['principals', 'levels', 'attempts', 'signIn'];
 
-/** The markdown files whose examples an author copies: the repository's docs, READMEs and CONTRIBUTING. */
+/** The markdown files whose examples an author copies: the repository's docs, READMEs and CONTRIBUTING, and the create-app skill's pages. */
 function docFiles(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -41,6 +41,7 @@ function docFiles(): string[] {
   };
   walk(join(ROOT, 'docs'));
   walk(join(ROOT, 'apps'));
+  walk(join(ROOT, '.claude', 'skills'));
   for (const file of ['README.md', 'CONTRIBUTING.md', 'CLAUDE.md']) out.push(join(ROOT, file));
   return out;
 }
@@ -65,14 +66,25 @@ function kindOf(value: unknown): Kind | null {
   return null;
 }
 
+/**
+ * A block that shows a piece of a file under one of its keys, as the create-app skill's patterns do
+ * (a first line `# policy.yaml, under actions:` and the entries indented beneath it), read with that
+ * key put back, so the piece is checked as the file it is part of.
+ */
+function withParentKey(text: string): string {
+  const key = /^#\s+[A-Za-z0-9_./<>-]+\.yaml,?\s+under (actions|intents|forms|prompts):/.exec(text.split('\n')[0] ?? '')?.[1];
+  return key === undefined ? text : `${key}:\n${text}`;
+}
+
 /** Each fenced YAML block that is a policy or an identity file, with where it starts. */
 function blocksOf(file: string): Block[] {
   const text = readFileSync(file, 'utf8');
   const out: Block[] = [];
   for (const m of text.matchAll(/```ya?ml\n([\s\S]*?)```/g)) {
+    const body = withParentKey(m[1]!);
     let value: unknown;
     try {
-      value = parse(m[1]!);
+      value = parse(body);
     } catch {
       continue;
     }
@@ -116,15 +128,28 @@ const standIn = (id: string) => {
   });
 };
 
+/**
+ * The world's identity, with the delegate roles the same markdown file's own identity.yaml blocks
+ * declare (the create-app skill declares a `manager`), as a delegate kind of the doc's own: a policy
+ * block is read beside the identity its page shows. A role neither declares is still refused.
+ */
+function worldWithRoles(roles: readonly string[]): Record<string, unknown> {
+  const principals = WORLD_IDENTITY.principals as { delegates?: Record<string, { roles: string[] }> };
+  const known = new Set(Object.values(principals.delegates ?? {}).flatMap((d) => d.roles));
+  const missing = roles.filter((r) => !known.has(r));
+  if (missing.length === 0) return WORLD_IDENTITY;
+  return { ...WORLD_IDENTITY, principals: { ...principals, delegates: { ...principals.delegates, doc_delegate: { roles: missing } } } };
+}
+
 /** What loading a block says is wrong with it, one line each: its path, the message and the fix. */
-export function problemsOfBlock(block: Pick<Block, 'kind' | 'value'>): string[] {
+export function problemsOfBlock(block: Pick<Block, 'kind' | 'value'>, declaredRoles: readonly string[] = []): string[] {
   try {
     if (block.kind === 'identity') {
       defineIdentity(block.value);
     } else {
       const { customRules, lookups } = namedBy(block.value);
       definePolicy({ actions: {}, ...block.value }, {
-        identity: WORLD_IDENTITY,
+        identity: worldWithRoles(declaredRoles),
         lookups,
         customRules: Object.fromEntries(customRules.map((id) => [id, standIn(id)])),
       });
@@ -141,8 +166,8 @@ describe('the policy and identity YAML in the docs', () => {
 
   it('is found in the authoring guide and the design, in both kinds', () => {
     const where = (kind: Kind) => new Set(blocks.filter((b) => b.kind === kind).map((b) => b.where.split(':')[0]));
-    for (const file of ['docs/authoring-an-app.md', 'docs/design.md']) expect(where('policy'), file).toContain(file);
-    for (const file of ['docs/authoring-an-app.md']) expect(where('identity'), file).toContain(file);
+    for (const file of ['docs/authoring-an-app.md', 'docs/design.md', '.claude/skills/create-app/patterns.md']) expect(where('policy'), file).toContain(file);
+    for (const file of ['docs/authoring-an-app.md', '.claude/skills/create-app/patterns.md']) expect(where('identity'), file).toContain(file);
     expect(blocks.filter((b) => b.kind === 'policy').length).toBeGreaterThanOrEqual(8);
     expect(blocks.filter((b) => b.kind === 'identity').length).toBeGreaterThanOrEqual(2);
   });
@@ -161,7 +186,14 @@ describe('the policy and identity YAML in the docs', () => {
   });
 
   it('builds, every block of it, as written', () => {
-    const failed = blocks.flatMap((b) => problemsOfBlock(b).map((p) => `${b.where}: ${p}`));
+    // The delegate roles each page's own identity blocks declare.
+    const rolesOf = new Map<string, string[]>();
+    for (const b of blocks.filter((x) => x.kind === 'identity')) {
+      const delegates = isMap(b.value.principals) && isMap(b.value.principals.delegates) ? Object.values(b.value.principals.delegates) : [];
+      const file = b.where.split(':')[0]!;
+      for (const d of delegates) if (isMap(d) && Array.isArray(d.roles)) rolesOf.set(file, [...(rolesOf.get(file) ?? []), ...d.roles.map(String)]);
+    }
+    const failed = blocks.flatMap((b) => problemsOfBlock(b, rolesOf.get(b.where.split(':')[0]!)).map((p) => `${b.where}: ${p}`));
     expect(failed).toEqual([]);
   });
 
