@@ -59,7 +59,7 @@ For each **form intent**, eight or more opening lines (`context: "no_form"`), fo
 {"id":"pl-05","text":"I can't pay it all at once","intent":"set_up_plan","context":"no_form","tentative":true}
 ```
 
-One of a form's over-answers gives every slot at once with no request word ("the power's been out on Elm Street since noon, and the whole block is dark"), labelled with the form's intent and every value: the model reads such a line as a request only when the intent's criteria say so ([patterns.md](patterns.md#an-intents-criteria)). Another over-answers slots late in the form ("I own the house, can someone come out on a Saturday morning"), so a scripted call can show they are not asked again.
+One of a form's over-answers gives every slot at once with no request word ("the power's been out on Elm Street since noon, and the whole block is dark"), labelled with the form's intent and every value: the model reads such a line as a request only when the intent's criteria say so ([patterns.md](patterns.md#an-intents-criteria)). Another over-answers slots late in the form ("we've got mice at home, can someone come Saturday morning"), so a scripted call can show they are not asked again.
 
 For each **slot**, five or more answers inside its form:
 
@@ -83,21 +83,21 @@ For each **summary**, four or more answers:
 For a form with **checks** ([patterns.md](patterns.md#qualify-before-you-collect)), a line for each refusal at each point it can be given: asked (the answer to its own question, `prompted` set to the slot), volunteered early (the answer to another question), in one breath with the request (`no_form`, labelled with the form's intent and every value), and at the summary, both as a correction with a no and with a yes:
 
 ```json
-{"id":"ow-01","text":"I rent it","intent":"none","context":"book_inspection","prompted":"ownership","labels":{"ownership":"rent"}}
-{"id":"ow-02","text":"it's in Ashford, but I'm renting","intent":"none","context":"book_inspection","prompted":"town","labels":{"town":"ashford","ownership":"rent"}}
-{"id":"bi-09","text":"I rent a place in Ashford and water is seeping in","intent":"book_inspection","context":"no_form","labels":{"problem":"water","ownership":"rent","town":"ashford"}}
-{"id":"cb-05","text":"no wait, it's my landlord's house","intent":"none","context":"confirm_book_inspection","confirm":"no","labels":{"ownership":"rent"}}
-{"id":"cb-06","text":"yes, but I rent it","intent":"none","context":"confirm_book_inspection","confirm":"yes","labels":{"ownership":"rent"}}
+{"id":"tw-01","text":"we're out in Fairmont","intent":"none","context":"book_treatment","prompted":"town","labels":{"town":"elsewhere"}}
+{"id":"tw-02","text":"it's ants, and we're over in Fairmont","intent":"none","context":"book_treatment","prompted":"pest","labels":{"pest":"ants","town":"elsewhere"}}
+{"id":"bt-09","text":"there are mice in my house in Fairmont","intent":"book_treatment","context":"no_form","labels":{"pest":"rodents","property":"home","town":"elsewhere"}}
+{"id":"ct-05","text":"no wait, the house is in Fairmont","intent":"none","context":"confirm_book_treatment","confirm":"no","labels":{"town":"elsewhere"}}
+{"id":"ct-06","text":"yes, but it's actually in Fairmont","intent":"none","context":"confirm_book_treatment","confirm":"yes","labels":{"town":"elsewhere"}}
 ```
 
 For a **priority intent** with `correctsForm` ([patterns.md](patterns.md#something-that-must-never-wait)), a line at each summary that also contradicts a slot the form holds, labelled with the intent, `change: replacing` and the slot's new value, and a scripted call to that summary whose `expect` names the corrected value (the handoff carries what the session holds):
 
 ```json
-{"id":"cb-07","text":"wait, water is coming through the wall right now","intent":"urgent_repair","context":"confirm_book_inspection","change":"replacing","labels":{"howUrgent":"emergency"}}
+{"id":"cr-07","text":"wait, I can smell gas by the meter right now","intent":"gas_smell","context":"confirm_report_outage","change":"replacing","labels":{"hazard":"gas"}}
 ```
 
 ```json
-"expect": { "decision": "handoff", "reason": "emergency", "form": "urgent_repair", "slots": { "howUrgent": "emergency" } }
+"expect": { "decision": "handoff", "reason": "emergency", "form": "gas_smell", "slots": { "hazard": "gas" } }
 ```
 
 For each **informational and control intent**, eight or more lines, some inside forms (a person asked for mid-form is `"intent":"agent"` with the form as context). For each **delegate**, opening lines with `"as"`.

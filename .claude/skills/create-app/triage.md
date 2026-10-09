@@ -44,7 +44,7 @@ pnpm --filter @dialogwright/example-<name> regress --corpus <id> --json         
 
 Every untagged difference and every failing scripted call goes into exactly one.
 
-**1. The label was wrong, and the model is right.** The line says what the model heard, and your label said something else ("I rent it, but my landlord said to call" is labelled `own`). Fix the label in `fixtures/corpus.jsonl`. The stub's outcome for that line changes with it, so the stub regression shows `~` lines for that entry: check they are exactly the ones you meant, edit the entry in `fixtures/expected/corpus.json` by hand to the new values (`regress --corpus <id> --json` prints them), and log the edit under "Baseline edits" in `DESIGN.md` with the reason. Never `--update`.
+**1. The label was wrong, and the model is right.** The line says what the model heard, and your label said something else ("it's my mum's house, but I live there too" is labelled `business`). Fix the label in `fixtures/corpus.jsonl`. The stub's outcome for that line changes with it, so the stub regression shows `~` lines for that entry: check they are exactly the ones you meant, edit the entry in `fixtures/expected/corpus.json` by hand to the new values (`regress --corpus <id> --json` prints them), and log the edit under "Baseline edits" in `DESIGN.md` with the reason. Never `--update`.
 
 **2. The model misread a borderline line, and the label is the truth.** The caller meant what the label says, and the model reads it otherwise, or on the edge of a threshold. Keep the label, and tag the line with a `knownGap`: the reason, with the model's numbers and what the caller hears because of it, and the outcome fields the model gives instead:
 
@@ -80,7 +80,7 @@ Some findings are not yours to fix: the app cannot change the engine (you never 
 
 | Entry | What the caller says | What the model reads (numbers) | What the caller hears | Whose fix | Candidate |
 |---|---|---|---|---|---|
-| `emergency-mid-form` | "actually, water is pouring in right now", at the ownership question | emergency 0.91, change question answering 0.77 | two more questions before the office | the engine's (the change question's wording) | act on an emergency the turn it is said |
+| `emergency-mid-form` | "actually, I can smell gas right now", at the street question | emergency 0.91, change question answering 0.77 | two more questions before the emergency line | the engine's (the change question's wording) | act on an emergency the turn it is said |
 
 - **An engine gap**: the decision is the engine's (a threshold, a gate, the wording of one of its own questions, what a slot keeps). Give the numbers and the caller impact; the scripted call that shows it stays failing until the engine changes.
 - **A label the paragraph does not settle**: does "power outage" alone mean no power? The owner says what is true; you then label it so, and it falls in bucket 1 or 2.

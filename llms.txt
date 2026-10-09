@@ -19,7 +19,6 @@ Pre-release; APIs will change. The package ships TypeScript source. Requires Nod
 - [Contributing](CONTRIBUTING.md): rules, pull requests, "Adding a slot type", "Adding a built-in policy rule", "Adding a retriever or an embedder", "Adding an extraction format", "Adding a voice provider" (implement `VoiceProvider`, fixtures from the carrier's docs, `runVoiceProviderConformance`, an end-to-end test, the registry) and "Adding a session store" (implement `server/stores/types.ts`, pass `runStoreContract`, register it for `SESSION_STORE`).
 - [apps/clinic](apps/clinic/README.md): the example app to learn from (a fictional clinic's appointment line; no keys needed).
 - [apps/utility](apps/utility/README.md): the second example app, a fictional electric utility's line built by an AI coding assistant from one paragraph: identity, a one-time code, delegates, confirmed writes, range rules, a policy card and a knowledge base (no keys needed; its recorded cassette replays offline).
-- [Trials](docs/trials/README.md): two fresh assistants, given one paragraph each and the create-app skill, built a working app (about 15 and 11 minutes, by their own count); the logs say what each stumble was and what it changed.
 
 ## Slot types
 
