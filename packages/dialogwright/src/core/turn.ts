@@ -79,10 +79,12 @@ export interface TurnContext {
 }
 
 /**
- * What a keypad digit is keyed into, when it is sensitive: a digit of the one-time code, or a digit
- * of the account ID or date of birth keyed at its question. Null for anything else.
+ * What a keypad digit is keyed into, when it is sensitive: a digit of the one-time code, a digit
+ * of the account ID or date of birth keyed at its question, or a `secret`: a digit keyed at the
+ * question of a slot recorded by its length that is no statement (SlotSpec.statement false: a PIN),
+ * since a slot that hides its value hides its keys. Null for anything else.
  */
-export type SensitiveDigit = 'code' | 'identity' | null;
+export type SensitiveDigit = 'code' | 'identity' | 'secret' | null;
 
 /**
  * A keypad digit's class as the server decides it on arrival: its SensitiveDigit on the session as
@@ -103,8 +105,11 @@ export function promptEpoch(session: Session): number {
 }
 
 /**
- * The one predicate for "this keypad event is sensitive": a digit 0-9 keyed at the code prompt, or
- * at an identity factor's question (App.identity.factorSlots; e.g. the account ID or date of birth). Whoever records the event decides it with this, once,
+ * The one predicate for "this keypad event is sensitive": a digit 0-9 keyed at the code prompt, at
+ * an identity factor's question (App.identity.factorSlots; e.g. the account ID or date of birth), or
+ * at the question of a slot that hides its value by its length (a secret, SlotSpec.statement false;
+ * e.g. a PIN). A slot masked by `last4` or `mask` that is no factor keeps its keys as keyed, as it
+ * always has (its keys reach the model's history, so a change there re-keys a recorded call). Whoever records the event decides it with this, once,
  * and passes the answer on; every logged copy of a sensitive digit (the frame log, the trace, the
  * dashboard) is masked. The core itself still receives an identity digit as keyed, since it fills
  * the slot; a code digit is checked and forgotten (lifecycle.ts). `#` and `*` carry nothing.
@@ -118,6 +123,7 @@ export function sensitiveDigitAt(app: App, promptedFor: Session['promptedFor'], 
   if (event.type !== 'user.key' || !/^\d$/.test(event.digit)) return null;
   if (promptedFor === 'otp') return 'code';
   if (promptedFor !== null && identityOf(app).factorSlots.includes(promptedFor)) return 'identity';
+  if (promptedFor !== null && Object.hasOwn(app.slots, promptedFor) && app.slots[promptedFor]!.statement === false && app.slots[promptedFor]!.redact === 'length') return 'secret';
   return null;
 }
 
@@ -2388,7 +2394,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       if (now === 'ignored') return { ...base(), decision: { kind: 'ignore' }, actions: [] };
       // A sensitive digit is not written into the history, even as the last one keyed: the history
       // is part of the state the model is sent.
-      const label = now === 'code' ? 'dtmf:code' : now === 'identity' ? 'dtmf:identity' : `dtmf:${event.digit}`;
+      const label = now === null ? `dtmf:${event.digit}` : `dtmf:${now}`;
       const { decision: handled, rows } = handleDtmf(s, event.digit, io);
       const decision = readSummary(s, handled, io);
       bookkeep(s, decision, label);

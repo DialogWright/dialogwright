@@ -273,3 +273,25 @@ describe('replayFrameLog', () => {
     expect(replay.records).toHaveLength(2);
   });
 });
+
+describe('the caller\'s number the live call kept', () => {
+  /** A frame log of a call set up and then hung up, with the adapter's `{ callerNumber }` line as it wrote it. */
+  const logged = (callerNumber: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'replay-caller-'));
+    const frames = new FrameLog(join(dir, 'CA1.frames.jsonl'), () => 0);
+    frames.write('in', { type: 'setup', sessionId: 'VX1', callSid: 'CA1', from: '+15555550142', to: '+15555550100', customParameters: {} });
+    frames.write('log', { callerNumber });
+    return join(dir, 'CA1.frames.jsonl');
+  };
+  const opts = () => ({ client: new HeuristicStubClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-09-18', now: () => 0, trace: null });
+
+  it('says a number of four digits or fewer, logged as bullets, has no last four to stand in for, so no offer is made', async () => {
+    const replay = await replayFrameLog(logged('••••'), opts(), undefined, { todayIsoOverride: '2026-09-18' });
+    expect(replay.skipped).toEqual(["line 1: the caller's number the call kept had four digits or fewer, which the log keeps only as ••••, so the replay makes no offer"]);
+  });
+
+  it('and one whose last four this app\'s slots take no stand-in for, as before', async () => {
+    const replay = await replayFrameLog(logged('…0142'), opts(), undefined, { todayIsoOverride: '2026-09-18' });
+    expect(replay.skipped).toEqual(["line 1: the caller's number the call kept has no stand-in this app's slot takes, so the replay makes no offer"]);
+  });
+});

@@ -1,6 +1,7 @@
 import type { App, HandoffData, HandoffSend, HandoffUnconfirmed, SlotId } from '../core/app/types';
 import type { SlotSpec } from '../core/slots/types';
 import { maskCollectedSlot } from '../trace/redact';
+import { isSecretByLength } from '../core/decision';
 
 /**
  * What a transfer hands the channel of the collected slots (app.yaml `handoff.data`, HandoffData).
@@ -52,7 +53,8 @@ export function handoffDataSlots(app: HandoffApp, collected: Readonly<Record<str
   for (const [slot, value] of Object.entries(collected)) {
     const send = handoffSendOf(app, slot);
     if (send === 'omit' || omitted?.has(slot) === true) continue;
-    out[slot] = send === 'masked' ? maskCollectedSlot(app, slot, value) : value;
+    // A secret by its length is never sent as it is, whatever `send` says (core/decision.ts handoff already holds its length).
+    out[slot] = send === 'masked' || isSecretByLength(app.slots[slot]) ? maskCollectedSlot(app, slot, value) : value;
   }
   return out;
 }

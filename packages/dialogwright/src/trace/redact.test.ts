@@ -195,6 +195,17 @@ describe('a short secret (four digits or fewer)', () => {
     expect(data.slots).toEqual({ pinLast4: '••••', pin: '<5 chars>', note: 'your note' });
   });
 
+  it('masks a short number calling and called on the start event of an app that keeps the number for its code', () => {
+    const hinted = { slots: {}, callerNumber: { use: 'hint' } } as unknown as Parameters<typeof redactRecordSlots>[2];
+    const start = { ...shortRecord(), event: { type: 'session.start', provider: { from: '4821', to: '+15555550100' }, callerNumber: '4821', calledNumber: '+15555550100' }, callerNumber: 'kept' } as unknown as TraceRecord;
+    for (const mode of ['length', 'keep'] as const) {
+      const r = redactRecordSlots(start, mode, hinted);
+      expect(r.event, mode).toMatchObject({ callerNumber: '••••', calledNumber: '...0100', provider: { from: '••••', to: '...0100' } });
+      expect(JSON.stringify(r.event), mode).not.toContain('4821');
+      expect(redactRecordSlots(r, mode, hinted), mode).toEqual(r);
+    }
+  });
+
   it('keeps a statement as before: its display a stand-in, its words on the live console', () => {
     expect(redactRecordSlots(shortRecord(), 'keep', app).slots.note).toMatchObject({ value: 'left at the side gate', display: 'your note' });
     expect(redactRecordSlots(shortRecord(), 'length', app).slots.note).toMatchObject({ value: '<21 chars>', display: 'your note' });

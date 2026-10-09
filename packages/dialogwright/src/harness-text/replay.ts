@@ -7,6 +7,7 @@ import type { TraceRecord } from '../trace/types';
 import { frameToEvent } from '../channel/relay/map';
 import { serviceResultEvent, keyEvents, silenceEvent, withCallerNumber, type ServiceResult, type SessionEvent } from '../channel/events';
 import { standInCallerNumber } from '../core/callerNumber';
+import { SHORT_MASK } from '../gate/principal';
 import { VOICE_RELAY } from '../channel/caps';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { Continuation, MAX_CONTINUE_WITHIN_MS } from '../run/continuation';
@@ -143,15 +144,17 @@ function loggedContinueWithinMs(lines: readonly ReadFrameLogLine[]): number {
 
 /**
  * The last four digits of the caller's number the live session kept, from the adapter's
- * `{ callerNumber: '…0142' }` log line (server/adapter.ts), or null for a call with none: a log of
- * an app with no slot that offers the caller's number, a call whose number was withheld or did not
- * fit, and a log written before the line.
+ * `{ callerNumber: '…0142' }` log line (server/adapter.ts); 'short' for a number of four digits or
+ * fewer, which the line keeps only as SHORT_MASK (••••), so it has no last four to stand in for; or
+ * null for a call with none: a log of an app with no slot that offers the caller's number, a call
+ * whose number was withheld or did not fit, and a log written before the line.
  */
-function loggedCallerLastFour(lines: readonly ReadFrameLogLine[]): string | null {
+function loggedCallerLastFour(lines: readonly ReadFrameLogLine[]): string | 'short' | null {
   for (const line of lines) {
     if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
     const n = (line.msg as { callerNumber?: unknown }).callerNumber;
     if (typeof n !== 'string') continue;
+    if (n === SHORT_MASK) return 'short';
     const digits = n.replace(/\D/g, '');
     return digits.length === 4 ? digits : null;
   }
@@ -334,7 +337,8 @@ export async function replayFrameLog(
       // The live session kept the caller's number: a made-up one ending in the same four digits makes the
       // same offer (core/callerNumber.ts standInCallerNumber), as the log keeps no more of it.
       const last4 = loggedCallerLastFour(lines);
-      if (last4 !== null) {
+      if (last4 === 'short') skipped.push(`line ${lineNumber}: the caller's number the call kept had four digits or fewer, which the log keeps only as ${SHORT_MASK}, so the replay makes no offer`);
+      else if (last4 !== null) {
         const standIn = standInCallerNumber(appOf(session), last4);
         if (standIn !== undefined) event = withCallerNumber(event, standIn);
         else skipped.push(`line ${lineNumber}: the caller's number the call kept has no stand-in this app's slot takes, so the replay makes no offer`);

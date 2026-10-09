@@ -338,6 +338,18 @@ describe('the gate fails closed on what an app hands it', () => {
     expect(viaOwner).toMatchObject({ verdict: 'BLOCK', reason: 'rule-error' });
   });
 
+  it('names a subject, a record owner and a scope of four characters or fewer as bullets, never whole', () => {
+    const short: GateLookups = { ownerOf: () => '4821', scopeOf: () => ['4821'] };
+    const pat: Party = { ...ANA2, id: '4821' };
+    const bySubject = evaluateCall({ tool: 'readChart', params: { patientId: '4821' } }, pat, facts, short, POLICY, 'patient');
+    expect(bySubject.rules.at(-1)).toMatchObject({ id: 'scope', pass: true, compared: 'subject •••• · caller may see •••• only' });
+    const byRecord = evaluateCall({ tool: 'getVisit', params: { visit: 'V-1' } }, pat, facts, short, POLICY, 'patient');
+    expect(byRecord.rules.at(-1)).toMatchObject({ id: 'scope', pass: true, compared: 'record owner •••• · caller may see •••• only' });
+    const two = evaluateCall({ tool: 'readChart', params: { patientId: '7395' } }, pat, facts, { ...short, scopeOf: () => ['4821', 'P-2002'] }, POLICY, 'patient');
+    expect(two.rules.at(-1)).toMatchObject({ pass: false, compared: 'subject •••• · caller may see ••••, ...2002' });
+    for (const d of [bySubject, byRecord, two]) expect(JSON.stringify(d.rules)).not.toMatch(/4821|7395/);
+  });
+
   it('treats an empty owner or subject as none', () => {
     const blank: GateLookups = { ownerOf: () => '', scopeOf: () => [''] };
     const byRecord = evaluateCall({ tool: 'getVisit', params: { visit: 'V-1' } }, ANA2, facts, blank, POLICY, 'patient');

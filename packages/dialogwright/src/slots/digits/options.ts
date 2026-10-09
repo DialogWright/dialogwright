@@ -90,7 +90,7 @@ export const digitsOptions = z
     redact: z
       .enum(['last4', 'length', 'none'])
       .default('last4')
-      .describe('How the value is masked wherever it leaves the turn (the trace, the console, the audit, a tool call\'s param of the same name): "last4" ("...0417"; a number of four digits or fewer, whose last four would be all of it, as "••••"), "length" (only how many digits, "<4 chars>", its display too and on the live console: for a short secret such as a PIN) or "none".'),
+      .describe('How the value is masked wherever it leaves the turn (the trace, the console, the audit, a tool call\'s param of the same name): "last4" ("...0417"; a number of four digits or fewer, whose last four would be all of it, as "••••"), "length" (only how many digits, "<4 chars>", its display too and on the live console, its keys masked as they are keyed, and a transfer handed only its length: for a short secret such as a PIN) or "none".'),
     callerNumber: z
       .strictObject({
         countryCode: z

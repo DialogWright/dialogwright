@@ -281,7 +281,8 @@ export interface SlotSpec {
    * copies of the slot (its value, display, the turn state the model saw, a readback, a handoff's
    * collected slots, a side effect's params). Absent: the value is kept as it is.
    * - `last4`: an identifier, by its last four digits ("...1234"). A value of four digits or fewer,
-   *   whose last four would be all of it, as four bullets ("••••", SHORT_MASK).
+   *   whose last four would be all of it, as four bullets ("••••", SHORT_MASK); its digits are
+   *   counted, so "MBR1234" is "••••" too.
    * - `mask`: hidden, but for a year it holds ("••/••/1985"); a call's param as "•".
    * - `length`: by its length ("<38 chars>"). For the caller's own words (a statement, the default:
    *   see `statement`), in the trace's value and a call's or effect's params; the slot's display is
@@ -295,7 +296,9 @@ export interface SlotSpec {
    * display is a stand-in ("your description"), kept as it is, and the live console shows the words.
    * `false`: a secret recorded by its length (a PIN, the last four of an identity number: a digits
    * slot's `redact: length`), whose display is the value itself, so the display is masked by its
-   * length too, and the live console masks both.
+   * length too, and the live console masks both. Its keys are masked as it is keyed (core/turn.ts
+   * sensitiveDigitAt, 'secret'), and a handoff carries only its real length, whatever app.yaml's
+   * handoff.data `send` says (core/decision.ts handoff).
    */
   statement?: false;
   /**

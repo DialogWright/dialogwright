@@ -1396,7 +1396,11 @@ export interface TestingHooks {
    * the digit '0' for any.
    */
   replay?: {
-    /** By identity slot: the digits keyed, in order, for a masked digit at that slot's keypad question. */
+    /**
+     * By slot whose keys the frame log masks (an identity factor, or a slot that hides its value by
+     * its length, SlotSpec.statement false: a PIN): the digits keyed, in order, for a masked digit at
+     * that slot's keypad question. A slot not named here replays its masked digits as `codeDigit`.
+     */
     identityKeys?: Readonly<Record<SlotId, string>>;
     /** The digit keyed for a masked one-time-code digit (one the app's verifier accepts). */
     codeDigit?: string;

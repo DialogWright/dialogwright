@@ -1,4 +1,4 @@
-import type { SlotPartial } from './slots/types';
+import type { SlotPartial, SlotSpec } from './slots/types';
 import { handoffUnconfirmedOf, identityOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { FormId, SlotId } from './app/types';
@@ -79,6 +79,11 @@ export const IDENTITY_VERIFIED = 'verified';
 /** A `handoff: 'verified'` slot's handoff value when it was collected but the caller is not verified. */
 export const IDENTITY_UNVERIFIED = 'not verified';
 
+/** A slot recorded by its length that is a secret, not the caller's words (SlotSpec.statement false: a PIN). */
+export function isSecretByLength(spec: Pick<SlotSpec, 'redact' | 'statement'> | undefined): boolean {
+  return spec?.redact === 'length' && spec.statement === false;
+}
+
 export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDecision {
   // Whatever the caller added and the call never got to is the agent's problem now,
   // so it rides along in the handoff data -- together with what the call did collect,
@@ -91,7 +96,10 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
     // A factor the caller-ID match filled, for a caller it did not verify: it came from the number,
     // not from the caller, so the person taking the call is not handed it as if the caller had said it.
     if (slot.by === 'caller-id' && isAnonymous(s.principal)) continue;
-    if (spec.handoff === 'last4') slots[id] = maskId(slot.value.replace(/\D/g, ''));
+    // A secret by its length (a PIN, SlotSpec.statement false) goes by its real length unless it is
+    // handed over only as verified: never its digits, nor a last four that may be most of it.
+    if (spec.handoff !== 'verified' && isSecretByLength(spec)) slots[id] = `<${slot.value.length} chars>`;
+    else if (spec.handoff === 'last4') slots[id] = maskId(slot.value.replace(/\D/g, ''));
     else if (spec.handoff === 'verified') slots[id] = s.principal.kind === identityOf(app).subjectKind ? IDENTITY_VERIFIED : IDENTITY_UNVERIFIED;
     else if (spec.displayFrom === 'said') slots[id] = slot.value;
     else slots[id] = slot.display ?? slot.value;

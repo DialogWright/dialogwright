@@ -60,7 +60,7 @@ pin:
   redact: length
 ```
 
-- `redact: length` records only how many digits it has (`<4 chars>`) wherever it leaves the turn: the trace, the console (live too), the audit, a tool call's param of the same name and a transfer's handoff. Its display is the number, so the display is masked the same.
+- `redact: length` records only how many digits it has (`<4 chars>`) wherever it leaves the turn: the trace, the console (live too), the audit, a tool call's param of the same name and a transfer's handoff (by its length even under `handoff.data` `as-is`). Its display is the number, so the display is masked the same, and its keys are masked as they are keyed.
 - Under `last4` (the default), a value of four digits or fewer is recorded as four bullets (`••••`) anyway, so nothing leaks, but the trace cannot tell a PIN given from one missing a digit; `pnpm check` warns of a `last4` slot that can be that short (its `length`, or a `mask` that lets it) and points to `length`.
 - `mask` keeps the last four digits as a year, so it would not hide a PIN. A slot written in code says `redact: 'length', statement: false`, so its display is masked too.
 - Longer identifiers (an account number, a member ID) keep `last4`: the person taking a transfer reads the last four back to the caller.

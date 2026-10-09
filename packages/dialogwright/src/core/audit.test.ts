@@ -26,6 +26,7 @@ import { signedInEvent, speechEvent, startEvent } from '../channel/events';
 import { resolve, type TurnContext } from './turn';
 import { demoTools } from './tools';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
+import { runTurn } from '../run/turn';
 
 useTestkit();
 
@@ -179,5 +180,14 @@ describe('auditDrafts', () => {
     const r = resolve(web, signedInEvent({ ...customerPrincipal(CUSTOMERS[0]!, 2), id: '4821' }), null, tc);
     expect(r.audit).toContainEqual({ type: 'identity', detail: { factor: 'portal_sign_in', pass: true, level: 2, customer: '••••' } });
     expect(JSON.stringify(r.audit)).not.toContain('4821');
+  });
+
+  it('records the signed-in event in the trace with a short id as bullets', async () => {
+    const tc: TurnContext = { nowMs: 0, todayIso: '2026-09-18', thresholds: { ...DEFAULT_THRESHOLDS }, tools: demoTools() };
+    const web = resolve(newSession('w', 0, WEB_CHAT), startEvent(), null, tc).session;
+    const client = new HeuristicStubClient();
+    const run = await runTurn(web, signedInEvent({ ...customerPrincipal(CUSTOMERS[0]!, 2), id: '4821' }), { client, thresholds: tc.thresholds, todayIso: tc.todayIso, tools: tc.tools, now: () => 0 });
+    expect(run.record.event).toMatchObject({ type: 'auth.signed_in', principal: { id: '••••' } });
+    expect(JSON.stringify(run.record.event)).not.toContain('4821');
   });
 });

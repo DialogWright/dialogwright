@@ -278,9 +278,9 @@ export const ALL_SLOTS: readonly string[];
 /** Each form's slots in the configured app (ConsoleMeta.formSlots). */
 export const FORM_SLOTS: Readonly<Record<string, readonly string[]>>;
 
-/** A form id in words: the app's label (ConsoleMeta.formLabels), or the id with spaces. */
 /** One NOW chip's label for the slot `id` (ConsoleMeta.chipStyle): never an identifier in full. */
 export function nowChipLabel(id: string, slot: { value?: string | null; display?: string | null; window?: unknown }, level: number): string;
+/** A form id in words: the app's label (ConsoleMeta.formLabels), or the id with spaces. */
 export function formLabel(form: string | null | undefined): string;
 /** A handoff reason in words: `live-agent` reads "caller asked for a person"; the app's own from ConsoleMeta.handoffReasons. */
 export function handoffReasonText(reason: string | null | undefined): string;
