@@ -2,9 +2,21 @@
 
 The YAML and TypeScript for what a paragraph usually asks for. Each was built and run in an app scaffolded by `pnpm create-app --identity` (check, type check, tests and regression), with the scaffold's names (`accountId`, `dob`, `verifyCustomer`, `findAccount`, `Systems`, `ACCOUNTS`, `accountIdOf`); use your own. Imports are from `'dialogwright'` unless shown. The reference for every field is [docs/authoring-an-app.md](../../../docs/authoring-an-app.md); the engine's own test app, [the testkit](../../../packages/dialogwright/src/testing/testkit/README.md), uses every hook and is worth reading for a feature these patterns leave out (it is a test fixture, not a model of design).
 
-Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates) · [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back) · [Refusals and handoffs](#refusals-and-handoffs) · [An intent's criteria](#an-intents-criteria) · [Informational answers](#informational-answers) · [Something that must never wait](#something-that-must-never-wait) · [Keypad entry](#keypad-entry) · [A callback number](#a-callback-number-callernumber) · [Texting the caller](#texting-the-caller-onno-ifnone-and-the-callernumber-rule) · [Looking the caller up by number](#looking-the-caller-up-by-number) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
+To find the pattern for a need, start from [the options index](options.md). Each pattern says **when** it fits, the YAML (and code) to write, the scripted calls that **test** it, and its **pitfall**; the guide section it names has the rest.
+
+Contents:
+
+- Who the caller is: [Verification](#verification-level-1) · [A one-time code](#a-one-time-code-level-2) · [Verified by caller ID](#verified-by-caller-id-callerid) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates)
+- Writes and rules: [Confirmed writes](#confirmed-writes) · [Bounds](#bounds-limit-and-dateinrange) · [A value from a list](#a-value-from-a-list-oneof-and-noneof) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back)
+- Forms that rule callers out: [Qualify before you collect](#qualify-before-you-collect) · [Reading an answer back](#reading-an-answer-back-confirm-and-confirmvalues) · [A check that needs identity](#a-check-that-needs-identity) · [Several screeners, one booking](#several-screeners-one-booking-next) · [Where a slot listens](#where-a-slot-listens-listen-and-listenbeforeentered)
+- Ends of a call: [Refusals and handoffs](#refusals-and-handoffs) · [Something that must never wait](#something-that-must-never-wait) · [What a transfer hands over](#what-a-transfer-hands-over-handoffdata)
+- Requests and answers: [An intent's criteria](#an-intents-criteria) · [Informational answers](#informational-answers) · [A knowledge form](#a-knowledge-form) · [Keypad entry](#keypad-entry)
+- The number calling: [A callback number](#a-callback-number-callernumber) · [Texting the caller](#texting-the-caller-onno-ifnone-and-the-callernumber-rule) · [What an offer takes](#what-an-offer-takes-whether-it-may-be-declined-and-consent-for-the-call) · [Looking the caller up by number](#looking-the-caller-up-by-number)
+- The rest: [Switches with a safe default](#switches-with-a-safe-default) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
 
 ## Verification (level 1)
+
+**When:** an action reads or changes something that is one caller's own (an account, a record, a balance). An action anyone may ask for (a report, a booking for a new customer, a general answer) stays at level 0.
 
 `pnpm create-app <name> --identity` writes this already: `identity.yaml` with the factors (`accountId`, a `digits` slot, and `dob`, a `birthdate` slot), the `verifyCustomer` tool that checks them, and a form whose `entry` call needs level 1, so an anonymous caller is asked for the factors before the form's own slots. The pieces:
 
@@ -18,10 +30,12 @@ Contents: [Verification](#verification-level-1) · [A one-time code](#a-one-time
   ```
 
 - A read that needs nothing but verification can be the form's entry call itself, or a form with no slots and only `entry` and `complete`.
+- **Test:** the step-up (an anonymous caller asks, verifies by voice, is served), keypad entry of each factor, and three failed tries ending at a person (`handoff_identity`).
+- **Pitfall:** an action with no `level` needs the highest, so write `level: 0` on every action anyone may use; and list the `identity` rule on every action, since no rule is implied. Never write an `if` on the caller's level in a tool: the gate decides.
 
 ## A one-time code (level 2)
 
-Add level 2 only when an action needs it. `identity.yaml`:
+**When:** the paragraph asks for more than the factors before an action (a payment, a change to the account): "confirm with a code we text you". Add level 2 only when an action needs it. `identity.yaml`:
 
 ```yaml
 # identity.yaml
@@ -84,11 +98,14 @@ entry: (s) => ({ tool: 'findAccount', params: { accountId: accountIdOf(s) }, pur
 
 `pnpm check` then asks for the code's lines: `ask_otp`, `ask_otp_spoken`, `otp_spoken_reissued`, `otp_verified`, `otp_failed`.
 
-Set `testing.seed.caller` to a level 2 principal: corpus lines spoken inside a form are seeded with that caller, and a level 1 caller in a level 2 form hears `ask_otp` on every one of them.
+- **Test:** the code keyed right (`123456`) and wrong (`123457`) until a person, and a person asked for at the code prompt.
+- **Pitfall:** set `testing.seed.caller` to a level 2 principal: corpus lines spoken inside a form are seeded with that caller, and a level 1 caller in a level 2 form hears `ask_otp` on every one of them.
 
 ## Verified by caller ID: `callerId`
 
-"If they call from the number on file, ask only for their date of birth": a caller-ID match stands in for the account number, and the date of birth verifies it. Use it when most callers call from the number on the account and the paragraph asks for the usual "I see an account associated with the number you're calling from" opening; leave it out when one number often serves several accounts and the line cannot tell them apart, or when the paragraph says every caller gives the account number. It is asked before the account number, in its place, never after it.
+"If they call from the number on file, ask only for their date of birth": a caller-ID match stands in for the account number, and the date of birth verifies it.
+
+**When:** most callers phone from the number on their account, and the paragraph asks for the usual "I see an account associated with the number you're calling from" opening (or says callers should not have to find their account number). Leave it out when one number often serves several accounts and the line cannot tell them apart, or when the paragraph says every caller gives the account number. Where the paragraph only wants to save the caller a detail, not to verify them (the address on file), a proposal fits instead ([Looking the caller up by number](#looking-the-caller-up-by-number)). The question is asked before the account number, in its place, never after it.
 
 ```yaml
 # identity.yaml
@@ -130,11 +147,12 @@ callerMatch: (f) => (f.phoneAccounts?.length === 1 ? { accountId: f.phoneAccount
 - **Nothing of the account is said.** The line names no account number, name or street, and the engine never puts the match in a line or a variable. The lookup's tool returns the account ids for the number; keep it to that.
 - **Read the account from the principal**, not the slot (`accountIdOf` above), and the code's `sendCodeParams` too: the principal is the verified one, however it was verified. `after.principal.via` is `caller-id` when the match took part: write it in the verify tool's audit row.
 - **`ask: greeting`** opens the call on `greeting_offer` and `identity_caller_match` (write both greeting lines, `greeting_offer` and `greet_after_offer`); a request said instead goes on, and the question comes back when identity is needed. It wins over a slot's `offerAt: greeting`, which is then proposed at its slot.
-- Scripted calls: a matched number with the right date, with "different account", with a wrong date; a number not on file; a withheld number; a shared number. Corpus lines at the question: a form's context (or `no_form` with `ask: greeting`), `prompted: dob`, with `confirm: no` for "different account" and "no, that's not me", and `confirm: unanswered` for a date (labelled) and words that answer neither; set `testing.seed.callerNumber` to a number the lookup matches. The engine's fixture is `packages/dialogwright/src/testing/recognized` ([authoring guide](../../../docs/authoring-an-app.md#a-caller-id-match-as-the-identifier-callerid)).
+- **Test:** scripted calls from a matched number with the right date, with "different account", with a wrong date; a number not on file; a withheld number; a shared number; with level 2, the code still asked. Corpus lines at the question: a form's context (or `no_form` with `ask: greeting`), `prompted: dob`, with `confirm: no` for "different account" and "no, that's not me", and `confirm: unanswered` for a date (labelled) and words that answer neither (`confirm: yes` is refused there); set `testing.seed.callerNumber` to a number the lookup matches. The engine's fixture is `packages/dialogwright/src/testing/recognized` ([authoring guide](../../../docs/authoring-an-app.md#a-caller-id-match-as-the-identifier-callerid)).
+- **Pitfall:** the lookup's action is level 0 with the `callerNumber` rule and `audit: callerNumber: last4` ([Looking the caller up by number](#looking-the-caller-up-by-number)); `pnpm check` refuses `callerId` without the lookup or without `facts.callerMatch`, and needs `identity_caller_match`.
 
 ## Phone and chat
 
-The same app answers a phone line and a web chat, and they verify differently:
+**When:** the paragraph mentions a chat, a website or a portal, and some action is above level 0. The same app answers a phone line and a web chat, and they verify differently:
 
 - **On the phone**, a caller is anonymous until they say (or key) the identity factors and, for level 2, key the one-time code.
 - **On the chat**, nothing typed is taken as a factor. A subject proves who they are by signing in through the app's portal, which proves the top of the ladder. Without this, a chat caller can never reach an action above level 0.
@@ -163,11 +181,13 @@ The order a chat caller hears them in:
 2. Until they sign in, whatever they type (an account number included: nothing typed is a factor) hears `signin_reminder`.
 3. They sign in: `signin_thanks`, then the waiting request carries on (its next question, or its answer). With nothing waiting, `signin_thanks` and `signin_ready`.
 
-A scripted chat call is `"as": "web"`, with a `{ "signIn": "<subject id>" }` step where the caller signs in. A call that tests the reminder asks first, then types the number: `[{ "say": "what's my balance" }, { "say": "my account number is 55501234" }]` ends at `signin_reminder`. The reminder is never the first sign-in line a caller hears: a first message that is a request (even one that only gives an account number, labelled with the request it means) hears `signin_required`.
+**Test:** a scripted chat call is `"as": "web"`, with a `{ "signIn": "<subject id>" }` step where the caller signs in. A call that tests the reminder asks first, then types the number: `[{ "say": "what's my balance" }, { "say": "my account number is 55501234" }]` ends at `signin_reminder`.
+
+**Pitfall:** the reminder is never the first sign-in line a caller hears: a first message that is a request (even one that only gives an account number, labelled with the request it means) hears `signin_required`. And every phone-only option (an offer of the caller's number, caller ID, consent to text, the keypad) does nothing on a chat: give each a chat call too.
 
 ## Delegates
 
-Someone acting for subjects (a manager of several accounts, a caregiver) is a delegate. A delegate reaches the app signed in on a chat, through the app's portal, already at the level the portal proves; there is no way for a delegate to identify themself on a phone call (a phone caller is anonymous until they verify as a subject). Their scripted calls and their opening corpus lines carry `"as": "<delegate id>"`.
+**When:** the paragraph names people who call for others (a property manager, a caregiver, staff). Someone acting for subjects (a manager of several accounts, a caregiver) is a delegate. A delegate reaches the app signed in on a chat, through the app's portal, already at the level the portal proves; there is no way for a delegate to identify themself on a phone call (a phone caller is anonymous until they verify as a subject). Their scripted calls and their opening corpus lines carry `"as": "<delegate id>"`.
 
 `identity.yaml`:
 
@@ -282,7 +302,7 @@ interface PortalConfig {
 
 ## Confirmed writes
 
-A write the caller must agree to: the form has a summary (`summaryPromptId`), `confirmedParams`, and its action a `confirmed` rule. The caller's yes arms a hash of exactly the values read back, and the gate refuses a write that sends anything else.
+**When:** every write a caller asks for (a booking, a report, a payment plan). A write the caller must agree to: the form has a summary (`summaryPromptId`), `confirmedParams`, and its action a `confirmed` rule. The caller's yes arms a hash of exactly the values read back, and the gate refuses a write that sends anything else. A summary reads every value back once, at the end; an answer that must be heard right before the end (one that ends the call) is [read back on its own](#reading-an-answer-back-confirm-and-confirmvalues).
 
 **One list per app.** Every action with a `confirmed` rule names the same fields in the same order (the read-back's hash is taken over one list; `pnpm check` says so if two differ). With two confirmed writes, list the union, and have each form's `confirmedParams` and its write send every field on the list, `''` for the ones it does not have:
 
@@ -324,11 +344,14 @@ function completeFault(c: CompletionContext): Completion {
 }
 ```
 
-`said` carries on to "anything else?"; `{ kind: 'end', promptId, vars, acks }` ends the call on the line instead. The engine says the `goodbye` line after an `end` completion's line, so a line that ends the call never says goodbye itself, or the caller hears "Goodbye. Goodbye.". The same holds for a polite no that ends the call (`{ kind: 'end', promptId: 'decline_renter', ... }`): end it on the no, and let the engine close.
+`said` carries on to "anything else?"; `{ kind: 'end', promptId, vars, acks }` ends the call on the line instead.
+
+- **Test:** each form start to finish with a yes; a no that names what to change (`changeSlot`); a no with the new value ("no, make it Thursday"); "yes, but Thursday" (refused and read again).
+- **Pitfall:** the engine says the `goodbye` line after an `end` completion's line, so a line that ends the call never says goodbye itself, or the caller hears "Goodbye. Goodbye.". The same holds for a check's `then: end` line.
 
 ## Bounds: `limit` and `dateInRange`
 
-The built-in range rules hold one param to bounds ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)). A bound is a number or a date, `today` (the call's day), or a reference to a lookup, `<lookup>(<param>)`, which the code declares:
+**When:** the paragraph says a date or an amount must fall somewhere ("no earlier than tomorrow", "within thirty days", "no more than what is owed"). The built-in range rules hold one param to bounds ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)). A bound is a number or a date, `today` (the call's day), or a reference to a lookup, `<lookup>(<param>)`, which the code declares:
 
 ```yaml
 # policy.yaml, in an action's rules:
@@ -398,9 +421,12 @@ customRules: { 'first-date-within-30-days': within30Days },
 
 A custom rule's `compared` line goes to the audit as it is: never put a value in it that the app masks (an identifier, a date of birth, free text). Log the custom rule as a gap in the worksheet.
 
+- **Test:** each bound at its edges with the gate directly ([Testing the policy](#testing-the-policy), "The bounds, at their edges"), and a scripted call for each refusal with its line (`blockPromptId`).
+- **Pitfall:** a bound reads the call's day (2026-09-18 in the regression), never the clock; and a refused value needs a line of its own in `blockPromptId`, or the caller goes to a person.
+
 ## A value from a list: `oneOf` and `noneOf`
 
-A param held to a list is a built-in rule, not a custom one ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)):
+**When:** a value must be, or must not be, one of a fixed list: a town in the service area, an owner and not a renter, anything but an emergency. A param held to a list is a built-in rule, not a custom one ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)):
 
 ```yaml
 # policy.yaml, in an action's rules:
@@ -414,7 +440,7 @@ A param held to a list is a built-in rule, not a custom one ([authoring guide, s
 
 ## A value no slot holds, in the read-back
 
-A summary can name a value the code works out (a total from the record, a fee): the form's `onSummaryRead` hook gives it as a variable. Without it the regression stops with `prompt variable missing: <name>`.
+**When:** a summary names a value the code works out (a total from the record, a fee): the form's `onSummaryRead` hook gives it as a variable. Without it the regression stops with `prompt variable missing: <name>`.
 
 ```yaml
 # forms.yaml, under forms:
@@ -434,7 +460,7 @@ The same value goes in `confirmedParams`, so the caller's yes covers it.
 
 ## Qualify before you collect
 
-A paragraph that says who the line is not for ("if they rent, or the home is outside our four towns, say we can't help") is a qualify-then-collect line: some answers rule the caller out, and the caller should hear so before they give a name, a number, an address and a day. Write it as **one form**: the qualifying slots first, then the booking's, one summary over all of them, and a **check** on each qualifying answer. A check asks the gate about an answer as soon as it is given; a refusal ends the form with its line ([authoring guide](../../../docs/authoring-an-app.md#checks-ending-a-form-part-way)). No second form, no intent nobody says, no code that turns the caller away after the rest was asked.
+**When:** the paragraph says who the line is not for ("if they rent, or the home is outside our four towns, say we can't help"; a clinic that sees only adults; a utility that serves only its area; a lead line that takes only some budgets). That is a qualify-then-collect line: some answers rule the caller out, and the caller should hear so before they give a name, a number, an address and a day. The example below is a home repair business; the shape is the same for each. Write it as **one form**: the qualifying slots first, then the booking's, one summary over all of them, and a **check** on each qualifying answer. A check asks the gate about an answer as soon as it is given; a refusal ends the form with its line ([authoring guide](../../../docs/authoring-an-app.md#checks-ending-a-form-part-way)). No second form, no intent nobody says, no code that turns the caller away after the rest was asked.
 
 ```yaml
 # forms.yaml, under forms:
@@ -494,41 +520,181 @@ A paragraph that says who the line is not for ("if they rent, or the home is out
       - dateInRange: { field: visitDate, notBefore: today+1 }
 ```
 
+```yaml
+# slots.yaml: each answer that ends the call is read back first (the skill's recommendation)
+ownership:
+  type: choice
+  options: { own: "you own the home", rent: "you rent the home" }
+  confirmValues: [rent]
+town:
+  type: choice
+  options: { millbrook: Millbrook, cedar_falls: Cedar Falls, ashford: Ashford, riverton: Riverton, elsewhere: "a town outside our area" }
+  confirmValues: [elsewhere]
+```
+
 - **A check action has no tool** (`check: true`): the gate decides and nothing runs, so there is no tool to write and no `params` to list. `calls` does not list it; the form reaches it through `checks`.
 - **The rules are lists, so they are built-in**: `oneOf` (the value is one of those listed: an owner, a town in the area) and `noneOf` (none of them: not an emergency), each with the `reason` the check's `on` maps and, for a person, `verdict: NEEDS_HUMAN` ([authoring guide, section 3.3](../../../docs/authoring-an-app.md#33-the-built-in-rules)). No code, and no examples to write: the policy card says each in words ("town must be one of Millbrook, Cedar Falls, Ashford or Riverton: any other is refused (`out-of-area`), ..."). Write a `defineRule` only for what no list says (an age from a date of birth, say).
 - **Each rule is named twice**: in the check, and in the write. That is defence in depth: the completion still refuses what a check refused, and `pnpm check` warns when a check's rule is missing from every action the form calls. Copy the line as it is, so the two lists cannot drift.
 - **`with` names the slots the check sends**, each as the param of the same name, its value as the slot holds it (`rent`, not "you rent it"; `cedar_falls`, not "Cedar Falls"). So a list names a choice slot's option ids, and `pnpm check` refuses one that is not an option (with the closest) and a rule on a param no check of it sends. The match is exact. A rule fails closed: a missing or empty value refuses, `value-missing`.
 - **One check per answer, or one for the group.** A check per answer refuses on the turn the answer is given, so a renter is told before the town is asked. One check over several slots (`with: [howUrgent, ownership, town]`, one `checkHome` action) runs only once all are filled: use it only when the answers rule a caller out together.
-- **The one form also keeps what the caller says up front.** The turn that opens a form fills every slot of it, so "I own the house, can someone come out on a Saturday morning" on the opener fills the ownership, the day and the time, runs the ownership check, and the day and the time are never asked. Two forms (qualify, then book with `next`, below) keep the qualifying answers but ask the day and the time again once the booking is open. So the booking's slots a caller names in their first sentence belong in the same form, even though they are asked last: one form with checks stays the first choice.
+- **The one form also keeps what the caller says up front.** The turn that opens a form fills every slot of it, so "I own the house, can someone come out on a Saturday morning" on the opener fills the ownership, the day and the time, runs the ownership check, and the day and the time are never asked. Two forms (a screener, then a booking with `next`) would keep the qualifying answers but ask the day and the time again once the booking is open. So one form with checks stays the first choice, with the booking's slots in it even though they are asked last.
 - **The order of `checks` is the order a caller with two reasons hears them.** Put first the one the business cares about most (an emergency, then ownership). All the slots of the form listen from its first turn, so "I rent a place in Ashford and water is pouring in" fills three and runs the checks in order; the first refusal speaks.
-- **The endings**: `end` (the line, then the goodbye), `anything-else` (the line, then "anything else?"), `handoff` (to a person with `handoff_<reason>`, `say` optional before it). Each line is in `prompts.yaml` and renders with the form's slot displays (`{town}`). A reason `on` does not list gets `c.refusal`'s handling. When the check refuses on the turn the form opened, the engine drops "Sure, I can help you ..." for you.
-- **Read back the answer that ends the call.** A check runs on the turn its answer is heard, before the summary has read anything back, so a misheard "I rent" would turn a homeowner away. When the refusing answer is one value of a choice slot, put `confirmValues: [rent]` on the slot: "rent" is read back at once ("Just to check, you rent the home?", `confirm_ownership`), and "own" waits for the summary. For a rule that is not a list of values (several slots together, a `defineRule`), put `confirm: <prompt>` on the check's outcome (`not-owner: { confirm: check_renting, say: decline_renter, then: end }`): the refusal is read back first, a yes ends as written, and a no asks the slot again (or takes the right answer said with it: "no, it's in Ashford"). Script the misheard caller who says no and goes on ([authoring guide](../../../docs/authoring-an-app.md#checks-ending-a-form-part-way)).
-- **A check may need identity.** A check action above the level the form's entry proves (`level: 1` written out, on a check in a form anyone may start) asks the caller to verify when it runs, then runs again; always write `level:` on a check (`check` refuses one without, which would need the highest). A check may read an identity factor (`with: [dob]`, an age check): identity is asked as soon as it waits on nothing else, and on a web chat, which takes no factor, the form goes to a person. Never list the factor in the form's `slots` (`check` refuses it), and give the check `level: 1` when the value must be verified, since a date of birth said on the way is checked as said. `pnpm check` warns of both and refuses neither: write one when the paragraph says only a verified caller qualifies ([authoring guide](../../../docs/authoring-an-app.md#a-check-that-needs-identity)).
+- **The endings**: `end` (the line, then the goodbye), `anything-else` (the line, then "anything else?"), `handoff` (to a person with `handoff_<reason>`, or the line `reason:` names, `say` optional before it). Each line is in `prompts.yaml` and renders with the form's slot displays (`{town}`). A reason `on` does not list gets `c.refusal`'s handling. When the check refuses on the turn the form opened, the engine drops "Sure, I can help you ..." for you, so write each refusal line so it names what it refuses: it may be the first the caller hears of the form.
 - **`checksPassed`** is a line said once, when the last check passes ("Good news, we work in {town}, and the inspection is free."). A correction that re-runs a check does not say it again.
-- **An emergency stays a priority intent** ([above](#something-that-must-never-wait)): said as a request it takes the turn before any slot fills. The urgency check catches the same thing when it is given as the answer to "how urgent is it?", so the question order is free.
-- **Corrections at the summary are checked**: "no, wait, I rent" re-runs the ownership check and ends the call with its line; "yes, but I rent" is caught at completion, before the write. Script both ([corpus.md](corpus.md#what-to-write)).
-- **Several screeners, one booking: `next`.** When the paragraph qualifies callers differently by what they call about (a leak asks other questions than a crack) and then books them all the same way, write a screener form per case, each with its checks, no summary and `next: book_inspection`, and one booking form with `internal: true` and a `label` ("book your free inspection"). The booking is no intent: the model, the keypad and the queue never see it, it has no line in intents.yaml, and the screener needs no `complete` hook. List the screener's slots in the booking too: their values and confirmations carry across, so the caller is never asked them again, and the booking's summary reads them back with its own. A form in the chain drops every slot it does not list, so a middle form between the two must list the slots the booking needs from the screener. The screener's checks still hold in the booking for the slots it lists: a town changed at the booking's summary gets the screener's own line. The engine bridges in with `bridge_next` and the label, ahead of anything queued. Only a `said` completion goes on: a check's refusal ends the call where it is. Keep the chain to two forms; a priority intent mid-booking leaves it, as it leaves any form, and the booking is not resumed ([authoring guide](../../../docs/authoring-an-app.md#a-form-that-goes-on-to-the-next-next-and-internal-forms)).
+- **An emergency stays a priority intent** ([below](#something-that-must-never-wait)): said as a request it takes the turn before any slot fills. The urgency check catches the same thing when it is given as the answer to "how urgent is it?", so the question order is free.
+- **Corrections at the summary are checked**: "no, wait, I rent" re-runs the ownership check and ends the call with its line; "yes, but I rent" is caught at completion, before the write.
+- **Three options build on this one**, each with a pattern of its own: [reading the deciding answer back](#reading-an-answer-back-confirm-and-confirmvalues) before a refusal acts (recommended for every answer that ends the call), [a check that needs identity](#a-check-that-needs-identity) (only a verified caller qualifies, an age from the date of birth), and [several screeners before one booking](#several-screeners-one-booking-next).
+- **Test:** the scripted calls to write are the renter (two questions, then the line), the caller outside the area, everything in one breath with and without a disqualifying answer, a qualifying answer and the day and time on the opener (answer only the rest, then yes: the day and time are not asked again), an emergency both as a request and as the urgency answer, and each summary correction, "no, wait, I rent" and "yes, but I rent" ([corpus.md](corpus.md#what-to-write) has the lines). The engine's own fixture for this shape is `packages/dialogwright/src/testing/screened`.
+- **Pitfall: never write `s.queued` from app code.** The queue is the engine's. Chaining a second form from a completion by putting it on the queue is the shape checks and `next` replace: a form that rules a caller out is one form with checks, and a booking after several screeners is their `next`. Nor turn the caller away in `complete` after every question was asked: that is a check.
 
-  ```yaml
-  # forms.yaml, under forms:
-    screen_leak:
-      slots: [problem, ownership, town, leakWhere]
-      summaryPromptId: null
-      calls: []
-      checks: [...]
-      next: book_inspection
-    book_inspection:
-      internal: true
-      label: book your free inspection
-      slots: [problem, ownership, town, address, name, phone, day, timeOfDay]
-      summaryPromptId: confirm_book_inspection
-      hooks: [confirmedParams, complete]
-      calls: [bookInspection]
-  ```
-- **Which slots listen before their form is open: `listenBeforeEntered`.** An internal form's slots wait for it (the default there is `false`): a day said on the opener is asked again in the booking. That is acceptable when a form's slots don't listen early, and a slot the screener lists too still fills up front. A form intent's slots listen up front (`true`); set `listenBeforeEntered: false` on one whose answers should be heard only once it is open. A slot's own `listen` still wins, and `pnpm check` warns when it says otherwise than every form that lists it.
-- **Never write `s.queued` from app code.** The queue is the engine's. Chaining a second form from a completion by putting it on the queue is the shape checks and `next` replace: a form that rules a caller out is one form with checks, and a booking after several screeners is their `next`.
+## Reading an answer back: `confirm` and `confirmValues`
 
-The scripted calls to write: the renter (two questions, then the line), the caller outside the area, everything in one breath with and without a disqualifying answer, a qualifying answer and the day and time on the opener (answer only the rest, then yes: the day and time are not asked again), an emergency both as a request and as the urgency answer, and each summary correction. With `next`, add a screener that qualifies in one breath (the booking opens on that turn and asks only its own slots) and an emergency mid-booking. The engine's own fixture for this shape is `packages/dialogwright/src/testing/screened`, and its `NEXT` variant (`variant.ts`) for `next`.
+**When:** an answer ends the call or turns the caller away (a renter, a town outside the area, "no, I'm not a patient yet" on a line for patients only), or sends something somewhere it cannot be taken back. A slot's default, `confirm: summary`, reads nothing back until the summary, and a check runs on the turn its answer is heard, so a misheard "I rent" would turn a homeowner away unheard. Recommend a read-back for each such answer, and write the choice in the worksheet; leave it out only where the paragraph says the line should not ask.
+
+Pick by what refuses:
+
+| What refuses | The option | What the caller hears |
+|---|---|---|
+| One value of a choice slot (`rent`, not `own`) | `confirmValues: [rent]` on the slot | "rent" is read back at once (`confirm_<slot>`); "own" waits for the summary |
+| Any value of a slot that must be right before the form goes on (a meter number, a name to look up) | `confirm: always` on the slot (every type) | every value is read back at once |
+| A rule no list of values says (several slots together, a `defineRule`) | `confirm: <prompt>` on the check's outcome | the refusal is read back before it acts |
+
+```yaml
+# slots.yaml
+ownership:
+  type: choice
+  options: { own: "you own the home", rent: "you rent the home" }
+  confirmValues: [rent]     # read back at once with confirm_ownership; "own" waits for the summary
+meterId:
+  type: digits
+  noun: meter number
+  length: 8
+  keypad: true
+  confirm: always           # every value read back at once with confirm_meterId
+```
+
+```yaml
+# forms.yaml, under a form's checks:
+      - action: checkArea
+        with: [town, zip]
+        on:
+          out-of-area: { confirm: check_area, say: decline_out_of_area, then: end }
+```
+
+```yaml
+# prompts.yaml (every locale)
+confirm_ownership:
+  text: Just to check, {ownership}?
+  interruptible: true
+confirm_meterId:
+  text: That's meter {meterId}. Is that right?
+  interruptible: true
+check_area:
+  text: Just to check, the home is in {town}, zip code {zip}?
+  interruptible: true
+```
+
+- **A yes** confirms the value (or a check's `with` slots), and the refusal acts as written. **A no** empties the value, says `ack_declined` and asks the slot again, a step on its ladder; the right answer said with the no ("no, I own it", "no, it's in Ashford") is taken instead, and the check runs again on it. A second no to the same read-back goes to a person, and a read-back nobody answers is asked again, then goes to a person: a refusal never acts on silence.
+- A value is never read back twice: one confirmed at its own read-back is not read back at the check or again at the summary's yes, and a check's `confirm` is skipped when every slot it reads is confirmed already.
+- `confirm_<slot>` is given the slot's display as `{<slot>}` (a choice option's text, so word the options to fit the line); a check's `confirm` line renders with the form's slot displays, as `say` does. `pnpm check` asks for each.
+- **Test:** the refusing answer read back and a yes (the call ends with the refusal); a no and the right answer in the next turn (the form goes on, and the check passes); a no with the right answer in the same breath; a refusing answer read back twice and two nos (a person); silence at the read-back; and the answer that does not refuse ("own"), which is not read back. A read-back has no corpus context of its own: the scripted calls' yes and no are lines of the corpus written at the form's summary (`confirm_<form>`, with `confirm`), and the right answer is the slot's own answer line ([corpus.md](corpus.md#answers-at-a-read-back-the-greeting-and-the-consent-question)).
+- **Pitfall:** `confirm: always` on a `text` slot read back by a stand-in (`say: your note`) is refused, since the caller would hear "your note?": such a slot reads back its own words (`say: null`, `redact: none`). And a read-back is a turn the model is sent, so adding one after a recording re-keys the cassette there: decide it before the first recording.
+
+## A check that needs identity
+
+**When:** only a verified caller qualifies ("existing customers only", "we check your account is in good standing first"), or a check reads an identity factor (an age from the date of birth), in a form anyone may start.
+
+```yaml
+# policy.yaml, under actions:
+  checkAge:
+    say: check the caller is 18 or over
+    check: true
+    level: 1                  # above what the form's entry proves: identity is asked when the check runs
+    rules:
+      - identity
+      - custom: eighteen-or-over
+```
+
+```yaml
+# forms.yaml, under forms:
+  open_service:
+    slots: [service, startDay]          # never the factor: identity asks it
+    summaryPromptId: confirm_open_service
+    hooks: [confirmedParams, complete]
+    calls: [openService]
+    checks:
+      - action: checkAge
+        with: [dob]
+        on:
+          under-age: { say: decline_under_age, then: end }
+```
+
+- A check on any slot works the same way at `level: 1` ("existing customers only": the check's rules hold the slot, and its level asks for identity first). When the check is ready and the gate answers `STEP_UP`, the caller is asked to verify as for an entry call (the factors, then the code where the level needs it, the portal on a chat), the form and what it holds stay as they are, and the check runs again once the caller is verified. A failed verification ends as the identity ladder ends.
+- A check that reads a factor never waits for it: as soon as it waits on nothing else, identity is asked for. A factor said on the way by a caller not yet verified fills it, and a check at `level: 0` would run on it as said: `level: 1` runs it on a verified value. On a web chat, which takes no typed factor, the form goes to a person.
+- **Always write `level:` on a check.** A check with none is refused (it would need the highest, so a forgotten `level: 0` would make every caller verify part-way); a level written out above what the entry proves is a warning, which you accept by writing it.
+- **Test:** an anonymous caller who reaches the check, verifies, and goes on; one who fails verification; one who verifies and is refused (the check's line); a chat caller (the portal, or a person for a check on a factor).
+- **Pitfall:** never list the factor in the form's `slots`: `pnpm check` refuses it, since the form would empty it as it closes while the caller stays verified, and a later form's check would wait forever. The engine's fixture is the checking variant of `packages/dialogwright/src/testing/proposals` ([authoring guide](../../../docs/authoring-an-app.md#a-check-that-needs-identity)).
+
+## Several screeners, one booking: `next`
+
+**When:** the paragraph qualifies callers differently by what they call about (a leak asks other questions than a crack; a new patient other questions than a returning one), and then books them all the same way. One form with checks stays the first choice: use `next` only when one form would have to ask questions that do not apply to the caller.
+
+```yaml
+# forms.yaml, under forms:
+  screen_leak:
+    slots: [problem, ownership, town, leakWhere]
+    summaryPromptId: null
+    calls: []
+    checks:
+      - action: checkOwner
+        with: [ownership]
+        on:
+          not-owner: { say: decline_renter, then: end }
+    next: book_inspection        # no complete hook: the next form is its answer
+  book_inspection:
+    internal: true               # no intent: the model, the keypad menu and the queue never see it
+    label: book your free inspection
+    slots: [problem, ownership, town, address, name, phone, day, timeOfDay]
+    summaryPromptId: confirm_book_inspection
+    hooks: [confirmedParams, complete]
+    calls: [bookInspection]
+```
+
+- Each screener is a form intent with its checks and no summary; the booking has `internal: true`, a `label`, and no line in intents.yaml. The engine bridges in with `bridge_next` and the label ("Now, let's {intentLabel}."), ahead of anything queued. Only a `said` completion goes on: a check's refusal ends the call where it is.
+- **List the screener's slots in the booking too**: their values and confirmations carry across, so the caller is never asked them again, and the booking's summary reads them back with its own. A form in the chain drops every slot it does not list. The screener's checks still hold in the booking for the slots it lists: a town changed at the booking's summary gets the screener's own line.
+- The booking's own slots wait for it to open (an internal form's `listenBeforeEntered` is `false`), so a day said on the opener is asked again in the booking: [Where a slot listens](#where-a-slot-listens-listen-and-listenbeforeentered).
+- **Test:** a screener that qualifies in one breath (the booking opens on that turn and asks only its own slots), a refusal at the screener (no booking), a correction at the booking's summary that a screener's check refuses, a request queued earlier (it waits until the booking is done) and an emergency mid-booking (the booking is left, and not resumed). The engine's fixture is the `NEXT` variant of `packages/dialogwright/src/testing/screened` (`variant.ts`).
+- **Pitfall:** keep the chain to two forms. `pnpm check` refuses a `next` to no form, a loop, an internal form no `next` reaches, one with an intent or with no `label`, and a `label` on a form intent ([authoring guide](../../../docs/authoring-an-app.md#a-form-that-goes-on-to-the-next-next-and-internal-forms)).
+
+## Where a slot listens: `listen` and `listenBeforeEntered`
+
+**When:** a value said early should be kept for a later form, or a value whose words come up in other requests should be heard only in its own form. Inside a form, its slots always listen; these options say what happens outside it.
+
+| What you want | The option |
+|---|---|
+| Values said with the request fill the form it opens (the default) | nothing: `listen: up-front` |
+| A value heard only once its form is open (a first payment date, which "are you open Saturday?" must not fill) | `listen: form` on the slot |
+| A value said before the request (a reference number at the greeting) kept for the form that needs it | `listen: anywhere` on the slot |
+| The caller's own name or date of birth kept for every later form | app.yaml's `carrySlots: [caller]` (the same as `listen: call`) |
+| None of a form's slots taken before it is open | `listenBeforeEntered: false` on the form (the default for an internal form) |
+
+```yaml
+# slots.yaml
+firstDate:
+  type: date
+  range: future
+  listen: form
+```
+
+```yaml
+# forms.yaml, under a form
+    listenBeforeEntered: false
+```
+
+- A slot with no `listen` of its own listens as its forms say: `form` when every form that lists it says `listenBeforeEntered: false`, `up-front` otherwise. So a slot a screener and its internal booking both list still fills up front. A slot's own `listen`, and `carrySlots`, override the forms; `pnpm check` warns when one says otherwise than every form that lists it.
+- An identity factor listens as identity says, and `listen` is refused on it.
+- **Test:** the value said early, and a scripted call that shows where it is used (not asked again) or asked again (with `form`); for a carried slot, two forms in one call, the second not asking it.
+- **Pitfall:** no option keeps a detail for a second request named in the same breath ([Known gaps](#known-gaps)): one form with checks is how a qualify-then-book line keeps the booking's details said up front. A carried value pre-fills the next form, so give that form a summary. Any value but the default changes what the model is sent, so choose before the first recording ([authoring guide](../../../docs/authoring-an-app.md#where-a-slot-listens-listen)).
 
 ## Refusals and handoffs
 
@@ -543,30 +709,32 @@ The scripted calls to write: the renter (two questions, then the line), the call
 - A `role` rule's `person` goes to a person with `handoff_role_person` (or `handoff_<reason>` for its `reason`); `pnpm check` asks for it.
 - A handoff your code makes for its own reason, `handoff(s, '<reason>', acks)` (exported by `'dialogwright'`), says `handoff_<reason>` with hyphens as underscores. Add the line yourself.
 - A person on request is built in: the `agent` control intent, with `handoff_live_agent`. Give `agent` corpus lines both outside and inside forms.
-- An answer that rules the caller out mid-form is a check, not a refusal at completion ([above](#qualify-before-you-collect)). Never write `s.queued` from app code to send the caller on to another form: the queue is the engine's.
+- An answer that rules the caller out mid-form is a check, not a refusal at completion ([above](#qualify-before-you-collect)).
 - Three failed tries at verification hand over with `handoff_identity`.
+- **Test:** each refusal with its line, and a person asked for from every place a caller can be (step 5 of the skill lists them).
+- **Pitfall:** a line named only in code (`blockPromptId`, `handoff(...)`) is one `pnpm check` cannot see: the regression stops with `unknown prompt id` when it is missing. What the person who takes the call is handed is [its own choice](#what-a-transfer-hands-over-handoffdata).
 
 ## An intent's criteria
 
-An intent's `criteria` are what the model reads to choose it, word for word, on every turn. So a change to them re-keys a recorded cassette: get them right before the first recording, and reword them all at once after it ([triage.md](triage.md#the-order-of-the-fixes)).
+**When:** every intent. An intent's `criteria` are what the model reads to choose it, word for word, on every turn. So a change to them re-keys a recorded cassette: get them right before the first recording, and reword them all at once after it ([triage.md](triage.md#the-order-of-the-fixes)).
 
-**A sentence that gives every slot of a form at once is still a request for that form.** A caller who answers all the form's questions in one breath, with no request word ("I own the house in Cedar Falls, there's water in the basement and it's getting worse"), asks for nothing in so many words, and the model may read it as no request (`none`). Say in the form intent's criteria that such a sentence is the request:
+**A sentence that gives every slot of a form at once is still a request for that form.** A caller who answers all the form's questions in one breath, with no request word ("the power's been out on Elm Street since noon, and the whole block is dark"), asks for nothing in so many words, and the model may read it as no request (`none`). Say in the form intent's criteria that such a sentence is the request:
 
 ```yaml
 # intents.yaml, under intents:
-  book_inspection:
-    criteria: Has a problem with their home's foundation or basement, such as water in the basement or cracks, or asks to book an inspection. A caller who describes such a problem is asking for help, however many other details they add in the same breath, such as owning the home, its town, or how long it has been going on
-    label: look into that and set up a free inspection
+  report_outage:
+    criteria: Reports a problem with their power, such as an outage or flickering lights, or asks for someone to look into it. A caller who describes such a problem is reporting it, however many other details they add in the same breath, such as the street, how long it has been out, or whether the neighbours are out too
+    label: report a problem with your power
     kind: form
 ```
 
 Give the corpus a line like it among the form's over-answers ([corpus.md](corpus.md#what-to-write)), labelled with the intent and every slot it fills. The stub reads the labels, not the criteria, so only a recording tests the wording.
 
-When two intents are near each other, say in each which requests are the other's ("asks to go on to choosing the day, after the questions; a request to schedule is book_inspection's").
+When two intents are near each other, say in each which requests are the other's ("asks when the power will be back on an outage already reported; a new outage is report_outage's").
 
 ## Informational answers
 
-An intent that only says something: no form, no tool, no policy.
+**When:** the paragraph gives a fixed answer (hours, an address, a web page to visit). An intent that only says something: no form, no tool, no policy.
 
 ```yaml
 # intents.yaml, under intents:
@@ -583,7 +751,7 @@ A key on the keypad menu may name it: the key plays the line, then offers the me
 
 ## Something that must never wait
 
-When the app has something that must never wait or be missed, an emergency or a safety report, mark its intent `priority: { correctsForm: true }`. Without `priority`, a caller who says "actually, water is pouring in right now" at a form's question is read as answering that question, and the form asks the rest of its questions first; one who says "hold on, the wall just started giving way" half aside is ignored as side speech.
+**When:** the app has something that must never wait or be missed, an emergency or a safety report: mark its intent `priority: { correctsForm: true }` (the skill's default for such an intent). Without `priority`, a caller who says "actually, water is pouring in right now" at a form's question is read as answering that question, and the form asks the rest of its questions first; one who says "hold on, the wall just started giving way" half aside is ignored as side speech.
 
 ```yaml
 # intents.yaml, under intents:
@@ -594,16 +762,7 @@ When the app has something that must never wait or be missed, an emergency or a 
     priority: { correctsForm: true }   # read at PRIORITY_INTENT, as `true` is; and the same words correct the form left
 ```
 
-`correctsForm` is for the handoff: the turn that switches was asked about the open form's slots, so "wait, water is coming through the wall right now", said at the read-back, also sets the urgency the caller gave ten turns earlier to "right now" before the call goes to the office. Without it the office gets the old value. It says nothing (no acknowledgement of the corrected value), runs none of the form's checks on the way out, and changes no question the model is sent. Set the handoff to name the values the caller never confirmed, so the office knows which of them to check:
-
-```yaml
-# app.yaml
-handoff:
-  data:
-    unconfirmed: mark   # everything still goes; the end frame, the console and the audit name the values never confirmed
-```
-
-A value is confirmed when its slot is (a yes to its own read-back, a keyed value) or when the caller said yes to it at a summary and it has not changed since. At a read-back the caller interrupts, none is. The engine's default is `send` (nothing named), and `omit` leaves those values out; prefer `mark` for a new app, since an emergency is when the office most needs the name, the number and the address, confirmed or not.
+`correctsForm` is for the handoff: the turn that switches was asked about the open form's slots, so "wait, water is coming through the wall right now", said at the read-back, also sets the urgency the caller gave ten turns earlier to "right now" before the call goes to the office. Without it the office gets the old value. It says nothing (no acknowledgement of the corrected value), runs none of the form's checks on the way out, and changes no question the model is sent. Pair it with `handoff.data.unconfirmed: mark` ([What a transfer hands over](#what-a-transfer-hands-over-handoffdata)), so the office knows which values to check: at a read-back the caller interrupts, none is confirmed.
 
 Read at `PRIORITY_INTENT` (0.8) or more, the intent is acted on that turn, wherever the call is: the form in hand is left (not queued), a pending confirmation is dropped, and side speech or words read as unintelligible do not stop it. A handoff to a person and the injection screen still win, and its form's actions go through the policy gate as any other's. The usual shape is a form with no slots whose `complete` hook hands off with a line of its own:
 
@@ -632,11 +791,33 @@ const toOffice = (reason: string) => (c: CompletionContext): Completion => ({
 urgent_repair: { complete: toOffice('emergency') },
 ```
 
-and the line `handoff_emergency` in `prompts.yaml` ("That sounds urgent. I'm putting you through to our office right now.", `interruptible: false`). Filter out only `ack_intent`: any other line the turn carries is still said. Only a form intent or an informational one may be priority, and `correctsForm` is for a form intent. Give it corpus lines inside each form a caller could be in (`context: <form>`, `change: replacing`), one said aside ("hold on, ..."), and one at each summary that also contradicts a slot the form holds, labelled with the slot's new value ([corpus.md](corpus.md#what-to-write)), with a scripted call that checks the handoff carries it. The debug table's `priorityIntent` row says when it took the turn (`act:<intent>:over:<gate>`). The whole option is under "Must never wait" in the [authoring guide](../../../docs/authoring-an-app.md#must-never-wait-priority).
+and the line `handoff_emergency` in `prompts.yaml` ("That sounds urgent. I'm putting you through to our office right now.", `interruptible: false`). Filter out only `ack_intent`: any other line the turn carries is still said. Only a form intent or an informational one may be priority, and `correctsForm` is for a form intent.
+
+- **Test:** corpus lines inside each form a caller could be in (`context: <form>`, `change: replacing`), one said aside ("hold on, ..."), and one at each summary that also contradicts a slot the form holds, labelled with the slot's new value ([corpus.md](corpus.md#what-to-write)), with a scripted call that checks the handoff carries it (`expect.slots`). The debug table's `priorityIntent` row says when it took the turn (`act:<intent>:over:<gate>`).
+- **Pitfall:** a priority intent wins over a pending yes, so "yes, and water is coming in" at a proposal or a read-back opens the priority form and the yes is lost; and a corrected value a check would refuse still goes to the office, since the switch wins. Its own threshold, if a recording shows it, is [a switch](#switches-with-a-safe-default). The whole option is under "Must never wait" in the [authoring guide](../../../docs/authoring-an-app.md#must-never-wait-priority).
+
+## What a transfer hands over: `handoff.data`
+
+**When:** every app that hands calls to a person (all of them: `agent` is built in). On a phone call the transfer hands the carrier the slots the call collected; a chat's transfer sends its reason only.
+
+```yaml
+# app.yaml
+handoff:
+  data:
+    unconfirmed: mark       # the skill's default: the values the caller never confirmed are sent and named
+    slots: all              # the default; none, or a list of slot ids
+    send:
+      accountId: masked     # an identity factor goes only when named here: masked (by its last four) or as-is
+```
+
+- **`unconfirmed`**: `send` (the engine's default: nothing named), `mark` (sent, and the end frame, the console's handoff card and the audit's handoff row name the slots never confirmed) or `omit` (left out). A value is confirmed by a yes to its own read-back, a keyed value, or a yes at a summary it has not changed since. Prefer `mark` for a new app: an emergency is when the office most needs the name, the number and the address, confirmed or not.
+- **`slots` and `send`**: by default an identity factor is left out, a slot with a `redact` setting goes masked as the trace masks it, and any other slot goes as it is. Name a slot `as-is` only when the person taking the call needs it in the clear, and write why in the worksheet.
+- **Test:** a scripted call that hands over mid-form, with `expect.slots` naming the values the call holds as it goes; one from a priority switch at a read-back, where none is confirmed.
+- **Pitfall:** `pnpm check` refuses a factor listed in `slots` with no `send`, `masked` for a slot with no `redact`, and warns of `mark` with `slots: none`, which sends nothing to mark ([authoring guide, app.yaml](../../../docs/authoring-an-app.md#appyaml)).
 
 ## A knowledge form
 
-A general question a document answers ("what is the late fee?"), said from a passage a person approved, word for word. The whole feature is section 12 of the [authoring guide](../../../docs/authoring-an-app.md#12-the-knowledge-base); this is the wiring, as built in a running app (the engine's library fixture), and the traps.
+**When:** callers ask general questions a document answers ("what is the late fee?"), more than a fixed line or two can hold. The answer is said from a passage a person approved, word for word. The whole feature is section 12 of the [authoring guide](../../../docs/authoring-an-app.md#12-the-knowledge-base); this is the wiring, as built in a running app (the engine's library fixture), and the traps.
 
 ```yaml
 # slots.yaml
@@ -645,7 +826,7 @@ subject:
 ```
 
 ```yaml
-# forms.yaml, under forms:
+# forms.yaml
 forms:
   ask_library:
     slots: [subject]
@@ -655,7 +836,7 @@ forms:
 ```
 
 ```yaml
-# intents.yaml, under intents:
+# intents.yaml
 intents:
   ask_library:
     criteria: Asks a question about the library, its cards or its fees
@@ -703,6 +884,8 @@ getFees: {
 
 ## Keypad entry
 
+**When:** a value callers may find easier to key than to say (an account number, a date of birth, a choice by number), and a menu for callers the model cannot understand.
+
 - A `digits`, `date`, `birthdate` or `choice` slot takes `keypad: true` and then needs `ask_<slot>_dtmf` (the line that asks for the keys). The keypad is offered after spoken answers miss, and keys are taken whenever the slot was the last thing asked.
 - The one-time code is always keyed.
 - A scripted call's keypad step is `{ "dtmf": "55501234" }`.
@@ -710,7 +893,7 @@ getFees: {
 
 ## A callback number: `callerNumber`
 
-"Take their name and a good callback number": on a phone call the carrier already knows the number, so the line offers it as a yes or no instead of asking for ten digits.
+**When:** "take their name and a good callback number", or any number the form cannot finish without (where to send a one-time code). On a phone call the carrier already knows the number, so the line offers it instead of asking for ten digits. It is a required offer: the defaults, `onNo: ask` and `ifNone: ask`, ask the slot's own question after a no or with no number to offer.
 
 ```yaml
 # slots.yaml
@@ -746,13 +929,13 @@ confirm_request_callback:
 
 - When the form reaches `phone` on a call whose number fits the slot, the line says `offer_phone` in place of `ask_phone`. A yes fills the slot; a no asks `ask_phone` with no attempt counted; "no, use my cell, 555 555 0199" fills the number said. A chat, or a withheld number, is asked `ask_phone` as always.
 - **Give the form a summary that reads `{phone}` back.** The offer says only the last four, so the summary is where the caller hears the whole number; `pnpm check` warns when a form with the slot has none.
-- **Never use the number to verify anyone on its own.** A caller ID can be forged. `pnpm check` refuses `callerNumber` on an identity factor; a gated lookup may propose ([Looking the caller up by number](#looking-the-caller-up-by-number)), and a match may stand in for the account number that a date of birth verifies ([Verified by caller ID](#verified-by-caller-id-callerid)). Here it is a callback number the caller said yes to, nothing more.
+- **Never on an identity factor.** A caller ID can be forged, and a yes to an offer verifies nothing, so `pnpm check` refuses `callerNumber` on a factor. To let the number identify an account, use [caller ID as the identifier](#verified-by-caller-id-callerid), which a knowledge factor verifies.
 - The number is masked as the slot is (`redact: last4`, the default), so the tool param named `phone` is recorded by its last four and needs no `audit` line.
-- A scripted call from a number: `"callerNumber": "+15555550142"` beside `steps` (a withheld one as `"+7378742833"`, Twilio's RESTRICTED); add one with a yes, one with a no and a number said, one withheld, and the chat. A corpus line at the offer: `{"id":"of-01","text":"yes, that's fine","intent":"none","context":"request_callback","prompted":"phone","confirm":"yes"}`.
+- **Test:** a scripted call from a number, `"callerNumber": "+15555550142"` beside `steps` (a withheld one as `"+7378742833"`, Twilio's RESTRICTED): one with a yes, one with a no and a number said, a no and then nothing said (the slot's ladder ends at a person: the offer is required), one withheld, and the chat. A corpus line at the offer: `{"id":"of-01","text":"yes, that's fine","intent":"none","context":"request_callback","prompted":"phone","confirm":"yes"}`.
 
 ## Texting the caller: `onNo`, `ifNone` and the `callerNumber` rule
 
-"Offer to text them updates": the same offer, for a slot the caller may turn down. A no means no text, so the slot is left empty and the form goes on.
+**When:** "offer to text them updates", a reminder, a link: the same offer, for a slot the caller may turn down. A no means no text, so the slot is left empty and the form goes on. Then decide the three choices of [What an offer takes](#what-an-offer-takes-whether-it-may-be-declined-and-consent-for-the-call): what the line takes, required or optional, and consent for the whole call.
 
 ```yaml
 # slots.yaml
@@ -802,11 +985,12 @@ actions:
 - **Refuse a landline in code.** `callerOffer(ctx, slot)` in the app's code returns false to make no offer (the slot then follows `ifNone`); it may read the facts or call a gated line-type lookup through `ctx.callTool`. Without it, every offer is made.
 - **Send only where the caller agreed.** The completion sends the text through its own tool, only when the slot holds a number, and the `callerNumber` rule holds that number to the caller's own (`else: refuse`, the default) or to one they heard read back and said yes to (`else: confirmed`, which needs the field in the action's `confirmed` rule).
 - **The answer is recorded.** Every settled offer writes an `offer` row to the audit with the line as said and the answer (`yes`, `no`, `other`, `none`). Whether that yes is consent to be texted is the owner's legal question; the engine records what was asked and answered, and decides nothing.
-- Scripted calls: a yes, a no, a no with a number, no answer (two silences), a landline, a withheld number and the chat. Corpus lines at the offer: a yes, a bare no, "that's my landline" (`confirm: no`), a no with a number, a number alone (`confirm: unanswered`), and words that answer neither.
+- **Test:** scripted calls with a yes, a no, a no with a number, no answer (two silences), a landline, a withheld number and the chat. Corpus lines at the offer: a yes, a bare no, "that's my landline" (`confirm: no`), a no with a number, a number alone (`confirm: unanswered`), and words that answer neither.
+- **Pitfall:** `onNo: skip` alone leaves `ifNone: ask`, the default, so a chat caller or a withheld number is asked for a number to text they never offered: an optional text sets both to `skip`.
 
 ## What an offer takes, whether it may be declined, and consent for the call
 
-Three choices about every offer, each with a default that is safe, and each the app's to make. Decide them from the paragraph, in this order.
+**When:** every offer of the caller's number and every proposal. Three choices about each, each with a default that is safe, and each the app's to make. Decide them from the paragraph, in this order.
 
 **1. What the offer takes: `answers` (or `offerAnswers` on a proposal).** Read the line as a caller hears it.
 
@@ -862,11 +1046,12 @@ greet_after_offer:
 - It is asked only on a call, right after the greeting, with the caller's number kept; never on the chat. The caller-ID question at the greeting comes first and a proposal at the greeting after it: only one question follows the greeting.
 - Every grant is recorded: a `consent` row for the answer, and an `offer` row with `answer: consent` for each slot filled from it. App code reads the answer with `textConsentOf(s)`; a caller who later asks for no more texts is the app's own intent to handle.
 - With a single text moment, skip it: the slot's own offer is the question.
-- Corpus lines at the consent question: `no_form`, `confirm` (yes, no, unanswered), no `prompted`; write a yes, a yes with a request, a no and a request with neither. Scripted calls: granted (no offer asked after), declined (each offer asked), a request instead, a withheld number and the chat.
+- **Test:** corpus lines at the consent question: `no_form`, `confirm` (yes, no, unanswered), no `prompted`; write a yes, a yes with a request, a no, a yes that names another number and a request with neither, and set `testing.seed.callerNumber`. Scripted calls: granted (no offer asked after), declined (each offer asked), a request instead, a withheld number and the chat. With `answers: yes-no`, a value said at the offer (a no) and the keypad's 1 and 2. For a required offer, a no and then nothing said (a person).
+- **Pitfall:** `consent_texts` must say `{last4}` and nothing else, and `pnpm check` needs `greeting_offer` and `greet_after_offer` with it. Turning `textConsent` on changes what the model is sent at the greeting, so decide it before the first recording.
 
 ## Looking the caller up by number
 
-"If we know the number, start from their account": app.yaml's `callerNumber` keeps the number for the app's code, and may look the caller up once at call start.
+**When:** "if we know the number, start from their account": the line uses what it can find by the number calling (a line type before a text, an address to propose, an account for [caller ID](#verified-by-caller-id-callerid)). app.yaml's `callerNumber` keeps the number for the app's code, and may look the caller up once at call start; `called: true` keeps the number called too, for a line with several numbers (`calledOf(s)`).
 
 ```yaml
 # app.yaml
@@ -888,7 +1073,7 @@ audit:
 
 - The tool lists one param, `callerNumber`, and returns the least that works (a line type, an address to propose), never a balance, a claim or a name: whatever it returns may be said to someone who has proven nothing, since a caller ID can be forged. Its result goes to the facts through `facts.fromCallerLookup` in the app's code; a refusal is silent.
 - App code reads the numbers with `callerOf(s)` and `calledOf(s)` (`called: true` keeps the number called). Both are null on a chat and with no number.
-- **Never to verify on its own; a gated lookup may propose.** A match changes neither who the caller is nor their level. A factor slot never takes the number, and a form that needs identity still asks for the factors, unless identity.yaml lets the match stand in for the account number, verified by the date of birth ([Verified by caller ID](#verified-by-caller-id-callerid)).
+- **A match is no verification.** It changes neither who the caller is nor their level, and a form that needs identity still asks for the factors, unless identity.yaml's `callerId` lets the match stand in for the account number ([Verified by caller ID](#verified-by-caller-id-callerid)).
 
 **Proposing what the lookup found.** "If we know their address, ask whether it's that one": the slot proposes it as a yes or no, at the slot, inside the form (or at the greeting, with `offerAt: greeting`, below).
 
@@ -921,11 +1106,47 @@ offers: (f) => (f.serviceAddress ? { place: { value: f.serviceAddress, display: 
 - `pnpm check` needs `facts.offers`, and `offer_<slot>` saying `{<slot>}` and nothing else. Every settled proposal writes an `offer` row (`source: facts`).
 - **`offerAt: greeting`** on the slot ("if we know the number, ask about that address as soon as they call"): the call opens on `greeting_offer` and `offer_<slot>` in place of the open question; a yes fills the slot for the form that uses it and `greet_after_offer` asks how to help, "yes, I'd like to report a problem" goes straight on, "no, it's 7 Birch Lane" fills the slot as said, and a bare no leaves it to be asked. A priority intent in the same breath wins and the yes is lost. Corpus lines there are `no_form`, `prompted` the slot, with `confirm`. Write both lines; `pnpm check` asks for them ([authoring guide](../../../docs/authoring-an-app.md#at-the-greeting-offerat-greeting)).
 - **Facts loaded after identity propose too**: no `callerNumber` lookup is needed. A form whose `entry` call needs level 1 and whose `onEntry` keeps what it read (the street on the account) can propose it for a later slot, to a caller already verified.
-- Scripted calls: a number on file with a yes, a no, another address and silence; a number not on file; a withheld number; the chat; and a yes followed by a request that needs identity. Corpus lines at the offer as for a callback number: a yes, a bare no, a no with another value, another value alone, words that answer neither.
+- **Test:** scripted calls from a number on file with a yes, a no, another address and silence; a number not on file; a withheld number; the chat; and a yes followed by a request that needs identity. Corpus lines at the offer as for a callback number: a yes, a bare no, a no with another value, another value alone, words that answer neither.
+- **Pitfall:** whatever the lookup returns may be said to someone who has proven nothing; and `offerAt: greeting` with no `callerNumber` lookup proposes nothing at the greeting (nothing has loaded the facts yet), which `pnpm check` warns of.
+
+## Switches with a safe default
+
+**When:** rarely at first. Each switch below has a default that suits most lines; change one only for a reason the paragraph gives, or one a recording shows, and write the reason in the worksheet.
+
+| Switch | Where | Default | Choose otherwise when |
+|---|---|---|---|
+| `unsureIntent`, an intent's own `unsure` | app.yaml, intents.yaml | `confirm`: a request the model reads at 0.4 to 0.6 is asked about ("Just to check, do you want to ...?") | `no-match` where a wrong guess costs more than a second try: intents that sound alike, or a request that should start only when it is understood plainly |
+| `changeSlotWithValue` | app.yaml | `set-aside`: at a summary, a no that also gives a slot a new value applies the value and reads the summary again | `decides` where callers often name one detail as wrong and correct another in one breath |
+| `anythingElseSilence` | app.yaml | `repeat`: silence after "anything else?" hears "anything else?" again | `goodbye` where a caller with nothing more to say has finished; `opener` for the opening question |
+| `thresholds:` and `priority: { threshold: NAME }` | app.yaml, intents.yaml | the engine's (`PRIORITY_INTENT` 0.8, and the rest in the guide) | a recording shows one intent needs its own bar: name a threshold of the app's own and point the intent at it, never a number in code |
+| `voice.continueWithinMs` | app.yaml | `300` | the recognizer breaks a caller's words at longer pauses |
+
+```yaml
+# app.yaml
+unsureIntent: no-match
+changeSlotWithValue: decides
+anythingElseSilence: goodbye
+thresholds:
+  URGENT_SURE: 0.75
+```
+
+```yaml
+# intents.yaml, under intents:
+  urgent_repair:
+    criteria: Water is pouring in right now, or a wall looks like it is giving way right now
+    label: reach the office right away
+    kind: form
+    priority: { correctsForm: true, threshold: URGENT_SURE }
+```
+
+**Settings of the server, not the app.** How the phone line behaves on the carrier is the deployment's, set in the owner's `.env`, never in the app's files: who may talk over a line (`BARGE_IN`: `any`, `speech`, `dtmf` or `none`), how long a silence is waited for (`NO_INPUT_MS`, `NO_INPUT_AFTER_SPEECH_MS`), how long keys at a yes-or-no offer are held before they count as one answer (`KEY_WAIT_MS`, default 2000), and the rest of the [guide's section 13.1](../../../docs/authoring-an-app.md#131-the-options). You set none of them. When the paragraph says something they answer ("callers are often on speakerphone"), write it in the worksheet's choices and the README for the owner, with the setting it points to.
+
+- **Test:** a scripted call for each switch you change (a silence after "anything else?" ending at `goodbye`; a request read as unsure, with its new outcome).
+- **Pitfall:** a switch is a choice about the business, not a fix for a corpus line: change one only for the reason written in the worksheet. `unsure` changes no question the model is sent, so it can be checked on a recording you have ([triage.md](triage.md#the-order-of-the-fixes)); a threshold moves what every recorded answer decides, so try it with `regress --client recorded --threshold NAME=VALUE` before you write it down ([authoring guide](../../../docs/authoring-an-app.md#when-the-model-is-unsure-unsure)).
 
 ## What is recorded: `params` and `audit`
 
-Every call is recorded (the gate event, the trace, the console, the audit), so every value it carries must have a stated way of being recorded. Two parts say it: each tool lists its `params` in code, and `policy.yaml` declares `audit` for each of those that is not a slot with a redact setting.
+**When:** every tool. Every call is recorded (the gate event, the trace, the console, the audit), so every value it carries must have a stated way of being recorded. Two parts say it: each tool lists its `params` in code, and `policy.yaml` declares `audit` for each of those that is not a slot with a redact setting.
 
 ```ts
 // src/app.ts
@@ -1150,5 +1371,5 @@ Found so far, with the workaround each time. Log the ones you meet in the worksh
 - **No slot type for an amount of money or an address** (above).
 - **Delegates only on a signed-in chat**: no phone path for a delegate; scripted calls use `as`, and a corpus line with `as` must be `no_form`. A delegate's answer inside a form comes from a corpus line without `as` that has the same words.
 - **A factor slot does not fill from a delegate's words**: give delegates their own slot for the subject they name (above).
-- **A detail for a second request named in the same breath is lost**: "where is my parcel, and book a delivery window for tomorrow morning" opens the first form and queues the second, and the turn fills only the form it opens, so the queued form asks the day again when it is reached, even with `listen: anywhere` or `call` on the slot ([authoring guide](../../../docs/authoring-an-app.md#where-a-slot-listens-listen)). Let it ask, and pin it with a scripted call. `listen: anywhere` keeps a value said on a turn that opens no form, such as an informational question. A qualify-then-book line does not meet this: it is one form with checks ([above](#qualify-before-you-collect)), so "book me in for a Saturday morning" on the opener fills the day and the time, which are slots of the form the turn opens.
+- **A detail for a second request named in the same breath is lost**: "where is my parcel, and book a delivery window for tomorrow morning" opens the first form and queues the second, and the turn fills only the form it opens, so the queued form asks the day again when it is reached, even with `listen: anywhere` or `call` on the slot ([Where a slot listens](#where-a-slot-listens-listen-and-listenbeforeentered)). Let it ask, and pin it with a scripted call. A qualify-then-book line does not meet this: it is one form with checks ([above](#qualify-before-you-collect)).
 - **`pnpm check` does not check the corpus** beyond every intent having examples, nor the lines named only in code (`blockPromptId`, `handoff(...)`, a completion's line, a summary variable from `onSummaryRead`). The regression finds them, one at a time.

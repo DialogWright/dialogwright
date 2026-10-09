@@ -45,7 +45,7 @@ Each library slot asks the model questions with ids built from the slot's id. A 
 
 A span label must be one of the spans the engine finds in the text, or the regression stops with `span "..." is not a candidate span of the text`. The regression's day is Friday 2026-09-18, so "tomorrow" is 2026-09-19 and "Friday" (ahead) is 2026-09-25.
 
-Every slot listens on every turn (inside a form, the form's slots; outside one, every slot but one that says `listen: form`), so a line can fill several slots at once: label each value it says. That is how over-answering is tested. A line that opens a form fills only that form's slots, so a value it gives for another form's slot is not kept, whatever that slot's `listen` ([patterns.md](patterns.md#known-gaps)): its outcome shows the slot empty.
+Every slot listens on every turn (inside a form, the form's slots; outside one, every slot but one that listens only in its form: `listen: form`, or every form that lists it says `listenBeforeEntered: false`, [patterns.md](patterns.md#where-a-slot-listens-listen-and-listenbeforeentered)), so a line can fill several slots at once: label each value it says. That is how over-answering is tested. A line that opens a form fills only that form's slots, so a value it gives for another form's slot is not kept, whatever that slot's `listen` ([patterns.md](patterns.md#known-gaps)): its outcome shows the slot empty.
 
 ## What to write
 
@@ -59,7 +59,7 @@ For each **form intent**, eight or more opening lines (`context: "no_form"`), fo
 {"id":"pl-05","text":"I can't pay it all at once","intent":"set_up_plan","context":"no_form","tentative":true}
 ```
 
-One of a form's over-answers gives every slot at once with no request word ("I own the house in Cedar Falls, there's water in the basement and it's getting worse"), labelled with the form's intent and every value: the model reads such a line as a request only when the intent's criteria say so ([patterns.md](patterns.md#an-intents-criteria)). Another over-answers slots late in the form ("I own the house, can someone come out on a Saturday morning"), so a scripted call can show they are not asked again.
+One of a form's over-answers gives every slot at once with no request word ("the power's been out on Elm Street since noon, and the whole block is dark"), labelled with the form's intent and every value: the model reads such a line as a request only when the intent's criteria say so ([patterns.md](patterns.md#an-intents-criteria)). Another over-answers slots late in the form ("I own the house, can someone come out on a Saturday morning"), so a scripted call can show they are not asked again.
 
 For each **slot**, five or more answers inside its form:
 
@@ -113,6 +113,20 @@ A line whose context is a form (or a summary) is run in a session seeded as thou
 - A line at `anything_else` needs `seed.anythingElse`: the form just answered, and the call that answered it through the gate (`{ form, call }`), or the form alone (`{ form }`) when its answer was its own line or a write already made. The `done` lines belong there ("no, that's all", "I'm all set", "nothing else", "I don't need anything else", a bare "no" if no other line has it), with one or two at `no_form` too. A line at `offer_transfer` needs `testing.offerTransferForm`. Leave that context out unless you add it.
 
 A slot that offers the number the caller is calling from (`callerNumber`) has its offer answered too: a line in the form's context, `prompted` that slot, with `confirm`, is seeded with the offer just made (the slot's placeholder as the number). Write a yes ("yes, that's fine", "that's the one"), a bare no, a no with a number ("no, use my cell, five five five five five five zero one nine nine", labelled with the number), a number with no yes or no ("my cell is ...", `confirm: unanswered`), "that's my work phone" (labelled as the paragraph means it: a yes when a work phone will do), and something that answers neither (`confirm: unanswered`). An offer to text (`onNo: skip`) gets the same, with "that's my landline" as a no, and a scripted call with two silences at the offer. A slot that proposes a value from the facts (`offer: facts`) is seeded the same way, its placeholder proposed: write a yes, a bare no, a no with another value (labelled as the slot reads it), another value alone (`confirm: unanswered`) and words that answer neither.
+
+## Answers at a read-back, the greeting and the consent question
+
+Some questions are not a slot's own `ask_`, and each has its own way into the corpus:
+
+| Where the caller answers | The corpus line | Seeded from |
+|---|---|---|
+| An offer of the caller's number, or a proposal, at its slot | the form's context, `prompted` the slot, `confirm` | the slot's placeholder, offered (above) |
+| A proposal at the greeting (`offerAt: greeting`) | `no_form`, `prompted` the slot, `confirm` (and the `intent` of a request said with it) | the slot's placeholder, proposed after `greeting_offer` |
+| Consent to text for the call (`textConsent`) | `no_form`, `confirm`, no `prompted` | `testing.seed.callerNumber` and the call-start lookup |
+| The caller-ID question (`callerId`) | a form's context (or `no_form` with `ask: greeting`), `prompted` the factor it asks, `confirm: no` ("different account") or `unanswered` (the factor, or anything else); `yes` is refused | `testing.seed.callerNumber` |
+| A slot's read-back (`confirm: always`, `confirmValues`) or a check's (`confirm`) | no context of its own: test it with scripted calls | |
+
+A scripted call answers a read-back with lines the corpus already has: the yes and the no are lines at a summary (`confirm_<form>`, with `confirm`: "yes, that's right", "no"), and the right answer is the slot's own answer line ("yes, I own it", at `prompted` the slot). A no that gives the right answer in the same breath ("no, I own it") is a line at the summary with `confirm: "no"` and the slot's label. A text is in the corpus once, and any scripted call may use it wherever it is said.
 
 ## Scripted calls
 

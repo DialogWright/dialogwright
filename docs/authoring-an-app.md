@@ -333,6 +333,7 @@ forms:
 - When a check ends the form on the very turn the form was entered ("I'm renting and there's water in the basement", or a value carried from an earlier form), the engine drops the line that started it (its `ack_intent`, or the `bridge_next` into it from the queue), so the caller does not hear "Sure, I can help" and "we can't help" in one breath. Write each refusal line so it names what it refuses ("Our visits are for homeowners, ..."): it may be the first the caller hears of the form.
 - One check per answer refuses on the turn the answer is given. One check over several slots (`with: [howUrgent, ownership, town]`) runs only once all are filled, so a renter is asked the town and the urgency first: use it when the answers only rule a caller out together.
 - What is recorded: each check that runs is a gate event like any call (the trace and the console show it as they show an entry call). A check that ends the form adds the audit row `form_stopped { form, action, reason, then }` before the handoff or the call's end (with `confirmed: true` when its refusal was read back and the caller said yes; a read-back still out writes none, and a no to it writes `check_reconfirmed { form, action, reason }`, so an auditor sees the deciding answer corrected), and the console's NOW panel says "stopped: checkOwner, not-owner". The form is not counted as completed. The session keeps what each check passed with (`checked`), which is absent until a check runs.
+- One form with checks also keeps what the caller says up front. The turn that opens a form fills every slot of it, so "I own the house, can someone come out on a Saturday morning", said on the opener, fills the ownership, the day and the time; the ownership check runs on that turn, and the day and the time are never asked. A line split into a qualifying form and a booking form (`next`, below) keeps the qualifying answers but asks the day and the time again, since the booking's own slots wait for the booking to be open. So one form with checks is the first choice: put the slots a caller names in their first sentence in the same form as the step they open, even when they are asked last.
 - A check never writes the session's queue: a form's hooks never write `s.queued`, which is the engine's.
 
 #### A check that needs identity
@@ -355,7 +356,6 @@ report_problem:
 ```
 
 The engine's fixture is the checking variant of `packages/dialogwright/src/testing/proposals` (`variant.ts`).
-- One form with checks also keeps what the caller says up front. The turn that opens a form fills every slot of it, so "I own the house, can someone come out on a Saturday morning", said on the opener, fills the ownership, the day and the time; the ownership check runs on that turn, and the day and the time are never asked. A line split into a qualifying form and a booking form (`next`, below) keeps the qualifying answers but asks the day and the time again, since the booking's own slots wait for the booking to be open. So one form with checks is the first choice: put the slots a caller names in their first sentence in the same form as the step they open, even when they are asked last.
 
 #### A form that goes on to the next: `next` and internal forms
 
@@ -437,7 +437,7 @@ actions:
     rules: [identity]
 ```
 
-Every tool in the code needs an action here, and an action not listed is refused. [Section 3](#3-policy-and-identity) is the whole treatment: each built-in rule (`identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `dateInRange`, `limit`), rules of your own, purposes, redaction, what is recorded, and how the policy is tested and reviewed.
+Every tool in the code needs an action here, and an action not listed is refused. [Section 3](#3-policy-and-identity) is the whole treatment: each built-in rule (`identity`, `scope`, `role`, `confirmed`, `attempts`, `fields`, `dateInRange`, `limit`, `oneOf`, `noneOf`, `callerNumber`), rules of your own, purposes, redaction, what is recorded, and how the policy is tested and reviewed.
 
 ### identity.yaml (optional)
 
@@ -2165,7 +2165,7 @@ A borderline line the model reads one way in one recording and another way in th
 
 ### Where to start
 
-To build an app from a description (a paragraph of what callers can ask for, who must verify, what is confirmed), follow the create-app skill, [.claude/skills/create-app/SKILL.md](../.claude/skills/create-app/SKILL.md): it plans the app in a worksheet, maps it onto slot types, policy and identity, scaffolds it, and iterates on the checks until green. Its [patterns](../.claude/skills/create-app/patterns.md) and [corpus guide](../.claude/skills/create-app/corpus.md) are useful on their own.
+To build an app from a description (a paragraph of what callers can ask for, who must verify, what is confirmed), follow the create-app skill, [.claude/skills/create-app/SKILL.md](../.claude/skills/create-app/SKILL.md): it plans the app in a worksheet, maps it onto slot types, policy and identity, scaffolds it, and iterates on the checks until green. Its [options index](../.claude/skills/create-app/options.md) (each option by the need it answers), [patterns](../.claude/skills/create-app/patterns.md) and [corpus guide](../.claude/skills/create-app/corpus.md) are useful on their own.
 
 Run `pnpm create-app <name>` (add `--identity` when callers must verify who they are). It writes `apps/<name>` from the template in `packages/dialogwright/templates/`: the five YAML files, `slots.yaml`, `identity.yaml` with `--identity`, `src/app.ts` with one stub tool over fixture data, a corpus and three scripted calls, the launchers, its tests, the policy read back (`policy.matrix`, `POLICY.md` and `APP-MAP.md`, written for the example, with the golden tests that compare them), a README with the recording steps, a `.env.example` and a short `CLAUDE.md`. It runs `pnpm install` so the workspace links the new app (`--no-install` skips that), and the result passes `pnpm check`, its type check, its tests and its stub regression as created. Replace the one example intent, form, slot and tool with your own and add more as above, running `pnpm check` after each change. The scaffold ships the example's stub baseline (`fixtures/expected`); make your own app's first baseline once with `regress --update`, review it in full, and never regenerate it after that.
 
