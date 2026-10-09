@@ -4,6 +4,7 @@ import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS } from '../../channel/voiceProvid
 import { PRONOUNCE_MAX_SAY, PRONOUNCE_MAX_WORD, pronounceProblems } from '../../channel/pronounce';
 import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 import { callDataSourceProblem, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
+import { ENV_REFERENCE } from '../../core/app/envReference';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
@@ -387,8 +388,6 @@ const callDataKey = z
   })
   .describe('One piece of data the call or chat came with, kept for the app\'s code (callDataOf(s)). A key whose source sent nothing is absent.');
 
-/** startParameters: a custom parameter's value, the environment variable that holds it. */
-const ENV_VALUE = /^env\.[A-Z][A-Z0-9_]*$/;
 
 export const appSchema = z
   .strictObject({
@@ -436,7 +435,7 @@ export const appSchema = z
       .optional()
       .describe('The data a call or chat came with that the app may read, by key: a custom parameter of the setup, a field of the setup frame or of the answer webhook, or the web chat\'s page context. Only the keys named here are kept, each recorded as its redact says; app code reads them with callDataOf(s), and the model never sees them unless callerState passes one. Default: none.'),
     startParameters: z
-      .record(identifier(), matching(ENV_VALUE, 'is not an environment variable: it must be env.<NAME>, the name in capitals, digits and underscores', 'write env.<NAME> and set the variable in the server\'s environment (.env); a value is never written in YAML'))
+      .record(identifier(), matching(ENV_REFERENCE, 'is not an environment variable: it must be env.<NAME>, the name in capitals, digits and underscores', 'write env.<NAME> and set the variable in the server\'s environment (.env); a value is never written in YAML'))
       .check(checkAlways((value, ctx) => {
         if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
         for (const name of Object.keys(value)) {

@@ -1,7 +1,8 @@
 import type { App } from './app/types';
 import type { Session } from './session';
 import type { AuditDraft } from '../audit/types';
-import { CALL_DATA_VALUE_MAX, recordedCallDataMap } from '../channel/callData';
+import { callDataSourceOf, recordedCallDataMap, usableCallDataValue } from '../channel/callData';
+import { floorByName } from '../channel/maskByName';
 
 /**
  * The data a call or chat came with that the app names (app.yaml's `callData`, App.callData): the
@@ -14,7 +15,8 @@ const EMPTY: Readonly<Record<string, string>> = Object.freeze({});
 
 /**
  * What the session keeps of the call data a start event carried: the keys the app names, each a
- * string with something in it no longer than the wire takes. Undefined when none is left, and for an
+ * value the channel could have read (channel/callData.ts usableCallDataValue: not empty, no longer
+ * than the wire takes, nothing a start document cannot carry), whoever made the event (a seed, a test). Undefined when none is left, and for an
  * app without `callData`, so every other session is as it was.
  */
 export function keptCallData(app: App, raw: Readonly<Record<string, string>> | undefined): Record<string, string> | undefined {
@@ -23,7 +25,7 @@ export function keptCallData(app: App, raw: Readonly<Record<string, string>> | u
   const out: Record<string, string> = {};
   for (const key of Object.keys(spec)) {
     const v = Object.hasOwn(raw, key) ? raw[key] : undefined;
-    if (typeof v === 'string' && v !== '' && v.length <= CALL_DATA_VALUE_MAX) out[key] = v;
+    if (usableCallDataValue(v)) out[key] = v;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -40,11 +42,18 @@ export function callDataOf(s: Session): Readonly<Record<string, string>> {
 
 /**
  * The call_started audit row's call data: each key as its `redact` says (default `mask`), a `secret`
- * one left out, as `callData.<key>`. Nothing for an app without `callData` or a call that came with
+ * one left out, never less masked than its source's name asks (channel/maskByName.ts), as `callData.<key>`. Nothing for an app without `callData` or a call that came with
  * none, so every other row is as it was.
  */
 export function callDataAuditDetail(app: App, s: Session): AuditDraft['detail'] {
-  if (app.callData === undefined || s.callData === undefined) return {};
-  const shown = recordedCallDataMap(app.callData, s.callData);
-  return Object.fromEntries(Object.entries(shown).map(([k, v]) => [`callData.${k}`, v]));
+  const spec = app.callData;
+  if (spec === undefined || s.callData === undefined) return {};
+  const shown = recordedCallDataMap(spec, s.callData);
+  // The audit holds no number or name whole, whatever a key's redact: the masking by the name its
+  // source has (a number by its last four, a name redacted) is a floor, as in the frame log.
+  return Object.fromEntries(Object.entries(shown).flatMap(([k, v]) => {
+    const source = Object.hasOwn(spec, k) ? callDataSourceOf(spec[k]!.from) : null;
+    const floored = source === null ? v : floorByName(source.name, v);
+    return floored === null ? [] : [[`callData.${k}`, floored]];
+  }));
 }

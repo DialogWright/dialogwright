@@ -23,7 +23,8 @@ import { demoTools } from '../../core/tools';
 import { newSession } from '../../core/session';
 import { WEB_CHAT } from '../../channel/caps';
 import { startEvent, textEvent, type SessionEvent } from '../../channel/events';
-import { actionsToChatMessages, type ServerMessage } from '../../channel/chat/protocol';
+import { actionsToChatMessages, CHAT_CONTEXT_BYTES, type ServerMessage } from '../../channel/chat/protocol';
+import { contextBytes } from '../../channel/callData';
 import { runChatTurnActions, type ChatTurnEntry } from '../chatTurn';
 import type { JevClient } from '../../jev/types';
 import { CHAT_MAX_WAITING, CHAT_TURN_ERROR } from './socket';
@@ -798,6 +799,28 @@ describe('a chat\'s page context (app.yaml callData chat.<key>)', () => {
     expect(trace[0]!.event.callData).toEqual({ page: '/orders/1042' });
     const started = auditEntries(config).find((e) => e.type === 'call_started' && e.callId === ready.session);
     expect(started?.detail).toMatchObject({ 'callData.page': '/orders/1042' });
+  });
+
+  it('refuses a context over its bytes as a malformed start, and says why; a start over the socket\'s frame is closed and logged', async () => {
+    const { url, logs } = await start({}, { client: new HeuristicStubClient({ todayIso: '2026-09-18' }) });
+    // Over the context's cap, within the socket's 16 KiB: refused with a reason, the socket open.
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, context: Object.fromEntries(Array.from({ length: 13 }, (_, i) => [`k${i}`, 'x'.repeat(500)])) });
+    await c.until((r) => r.some((m) => m.type === 'error'));
+    expect(c.received[0]).toMatchObject({ type: 'error', code: 'bad_message' });
+    expect((c.received[0] as Extract<Msg, { type: 'error' }>).message).toContain(`${CHAT_CONTEXT_BYTES} bytes in all`);
+    // At the cap: taken.
+    const at = await ChatClient.connect(url);
+    const fits: Record<string, string> = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`k${i}`, 'x'.repeat(500)]));
+    expect(contextBytes(fits)).toBeLessThanOrEqual(CHAT_CONTEXT_BYTES);
+    at.send({ type: 'start', v: 1, context: fits });
+    await at.until((r) => r.some((m) => m.type === 'ready'));
+    // Over the socket's frame (40 values of 500): the socket is closed as too big, and the server says so.
+    const huge = await ChatClient.connect(url);
+    huge.send({ type: 'start', v: 1, context: Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`k${i}`, 'x'.repeat(500)])) });
+    expect((await huge.closed).code).toBe(1009);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(logs.join('\n')).toMatch(/chat unstarted: socket error .*[Mm]ax payload/);
   });
 
   it('refuses a context that is not an object of short strings, as any malformed start', async () => {

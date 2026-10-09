@@ -2,6 +2,8 @@ import { defaultTimeZone, localDateIso } from '../run/clock';
 import { resolveJevProvider, type JevProvider } from '../jev/provider';
 
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
+import { envVariableOf } from '../core/app/envReference';
+import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
@@ -398,10 +400,11 @@ export type Env = Record<string, string | undefined>;
 export function startParametersFrom(app: { readonly startParameters?: Readonly<Record<string, string>> } | undefined, env: Env): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, ref] of Object.entries(app?.startParameters ?? {})) {
-    const variable = ref.replace(/^env\./, '');
+    const variable = envVariableOf(ref) ?? ref;
     const value = env[variable];
     if (value === undefined || value.trim() === '') throw new Error(`app.yaml's startParameters "${name}" reads ${variable}, which is not set: set ${variable} in the app's .env, or delete "${name}" from startParameters`);
-    if (value.length > 500) throw new Error(`${variable} (app.yaml's startParameters "${name}") is ${value.length} characters long, and a custom parameter is at most 500: shorten it`);
+    if (value.length > CALL_DATA_VALUE_MAX) throw new Error(`${variable} (app.yaml's startParameters "${name}") is ${value.length} characters long, and a custom parameter is at most ${CALL_DATA_VALUE_MAX}: shorten it`);
+    if (!writableValue(value)) throw new Error(`${variable} (app.yaml's startParameters "${name}") has a control character (a tab, a newline, or another a start document cannot carry): write it on one line, with none`);
     out[name] = value;
   }
   return out;

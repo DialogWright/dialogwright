@@ -22,6 +22,9 @@ import { VOICE_RELAY } from '../channel/caps';
 import { useTestkit } from '../testing/apps';
 import type { App } from '../core/app/types';
 import { libraryApp } from '../define/fixture/app';
+import { parseInbound } from '../channel/relay/wire';
+import { frameToEvent } from '../channel/relay/map';
+import { callDataFrom } from '../channel/callData';
 
 useTestkit();
 
@@ -451,6 +454,21 @@ describe('call data in the start document (app.yaml callData webhook keys, start
     expect(r.text).toContain('<Parameter name="locale" value="es"/><Parameter name="line" value="support-east"/><Parameter name="dw_referral" value="partner-7"/></ConversationRelay>');
   });
 
+  it('writes the app\'s start parameters and the echoes on the legacy /voice too', async () => {
+    const base = await listen({ ...deps(), app, startParameters: { line: 'support-east' } });
+    const r = await post(base, '/voice', { CallSid: 'CA1', 'SipHeader_X-Referral': 'partner-7' });
+    expect(r.text).toContain('url="wss://demo.ngrok.app/conversation?token=');
+    expect(r.text).toContain('<Parameter name="locale" value="en-US"/><Parameter name="line" value="support-east"/><Parameter name="dw_referral" value="partner-7"/></ConversationRelay>');
+  });
+
+  it('echoes no field with a control character, which no document can carry as sent', async () => {
+    const base = await listen({ ...deps(), app });
+    for (const bad of ['a\u0001b', 'a\nb', 'a\tb']) {
+      const r = await post(base, '/voice/twilio', { CallSid: 'CA1', 'SipHeader_X-Referral': bad });
+      expect(r.text).not.toContain('dw_referral');
+    }
+  });
+
   it('writes the same echoes on a reconnect, from what the session kept', async () => {
     const d = { ...deps(), app };
     const base = await listen(d);
@@ -495,6 +513,18 @@ describe('Telnyx webhooks', () => {
     expect(r.text).toContain('<Connect action="https://demo.ngrok.app/cr-action/telnyx">');
     const token = /token=([0-9a-f]{32})/.exec(r.text)![1]!;
     expect(d.tokens.verify(token, 'v2:abc', 'telnyx')).toBe(true);
+  });
+
+  it('echoes a webhook field a callData key names into the TeXML document, and the setup reads it back as call data', async () => {
+    const app: App = { ...libraryApp, callData: { session: { from: 'webhook.CallSessionId', redact: 'keep' }, ref: { from: 'param.customer_id' } } };
+    const d = { ...deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY }), app, startParameters: { line: 'support-east' } };
+    const base = await listen(d);
+    const r = await postTelnyx(base, '/voice/telnyx', 'CallSid=v2%3Aabc&From=%2B15555550100&CallSessionId=ff55a038-6f5d-11ef-9692-02420aeffb1f');
+    expect(r.text).toContain('<Parameter name="locale" value="en-US"/><Parameter name="line" value="support-east"/><Parameter name="dw_session" value="ff55a038-6f5d-11ef-9692-02420aeffb1f"/></ConversationRelay>');
+    // Telnyx hands the document's parameters back in its setup's customParameters, beside its own.
+    const setup = parseInbound(JSON.stringify({ type: 'setup', sessionId: 'TX1', callSid: '5e9f', callControlId: 'v2:abc', from: null, to: null, customParameters: { telnyx_call_from: '+15555550100', customer_id: 'C-123', line: 'support-east', dw_session: 'ff55a038-6f5d-11ef-9692-02420aeffb1f' } }));
+    const event = frameToEvent(setup!);
+    expect(event.type === 'session.start' ? callDataFrom(app.callData, event.provider) : null).toEqual({ session: 'ff55a038-6f5d-11ef-9692-02420aeffb1f', ref: 'C-123' });
   });
 
   it('reads a JSON webhook too', async () => {

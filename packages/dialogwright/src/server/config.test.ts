@@ -416,5 +416,6 @@ describe('startParametersFrom (app.yaml startParameters)', () => {
     expect(() => startParametersFrom({ startParameters: { line: 'env.LINE' } }, {})).toThrow('set LINE in the app\'s .env, or delete "line" from startParameters');
     expect(() => startParametersFrom({ startParameters: { line: 'env.LINE' } }, { LINE: ' ' })).toThrow('LINE, which is not set');
     expect(() => startParametersFrom({ startParameters: { line: 'env.LINE' } }, { LINE: 'x'.repeat(501) })).toThrow('a custom parameter is at most 500');
+    expect(() => startParametersFrom({ startParameters: { line: 'env.LINE' } }, { LINE: 'east\nwest' })).toThrow('LINE (app.yaml\'s startParameters "line") has a control character');
   });
 });

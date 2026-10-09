@@ -7,14 +7,13 @@ import type { TraceRecord } from '../trace/types';
 import { frameToEvent } from '../channel/relay/map';
 import { serviceResultEvent, keyEvents, silenceEvent, withCallData, withCallerNumber, type ServiceResult, type SessionEvent } from '../channel/events';
 import { callDataFrom, callDataSourceOf, redactionOf } from '../channel/callData';
+import { frameLogKeepsField } from '../server/dashboard/events';
 import { standInCallerNumber } from '../core/callerNumber';
 import { SHORT_MASK } from '../gate/principal';
 import { VOICE_RELAY } from '../channel/caps';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { Continuation, MAX_CONTINUE_WITHIN_MS } from '../run/continuation';
 
-/** The setup fields the frame log masks by name whatever the app (server/dashboard/events.ts redactDeep). */
-const MASKED_SETUP_FIELDS: readonly string[] = ['forwardedFrom', 'callerName'];
 
 export interface ReplayResult {
   runs: TurnRun[];
@@ -153,6 +152,19 @@ function loggedContinueWithinMs(lines: readonly ReadFrameLogLine[]): number {
  * null for a call with none: a log of an app with no slot that offers the caller's number, a call
  * whose number was withheld or did not fit, and a log written before the line.
  */
+/**
+ * The call data keys the live call came with, by name only (the adapter's `{ callData: [...] }` log
+ * line, server/adapter.ts), or an empty list for a log without the line.
+ */
+function loggedCallDataKeys(lines: readonly ReadFrameLogLine[]): string[] {
+  for (const line of lines) {
+    if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
+    const keys = (line.msg as { callData?: unknown }).callData;
+    if (Array.isArray(keys)) return keys.filter((k): k is string => typeof k === 'string');
+  }
+  return [];
+}
+
 function loggedCallerLastFour(lines: readonly ReadFrameLogLine[]): string | 'short' | null {
   for (const line of lines) {
     if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
@@ -348,19 +360,26 @@ export async function replayFrameLog(
         else skipped.push(`line ${lineNumber}: the caller's number the call kept has no stand-in this app's slot takes, so the replay makes no offer`);
       }
       // The call data the app names, read from the setup as the adapter read it (channel/callData.ts).
-      // The frame log writes each custom parameter a key reads as the key's redact says, and the setup's
-      // forwardedFrom and callerName masked as it always has, so such a value stands in as it was
-      // recorded ("•", "...1234", "…0102"), as the log keeps no more of it; a setup field the log keeps
-      // (the call ids, callType, direction) is as it came.
+      // The frame log writes each custom parameter a key reads as the key's redact says (a `secret` one
+      // not at all), and the setup's fields by its own masking by name (forwardedFrom to its last four,
+      // callerName redacted, accountSid left out: server/dashboard/events.ts frameLogKeepsField), so such
+      // a key stands in as it was recorded ("•", "...1234", "…0102"), or is absent where the log keeps
+      // nothing; a value under a number's or a name's name is masked whatever the key's redact (the floor,
+      // channel/maskByName.ts); a setup field the log keeps (the call ids, callType, direction) is as it came. Each key
+      // the live call had (the adapter logs their names, never their values) that may differ is named.
       const spec = appOf(session).callData;
       if (spec !== undefined && event.type === 'session.start') {
         const data = callDataFrom(spec, event.provider);
         event = withCallData(event, data);
-        const standIns = Object.keys(data).filter((key) => {
+        const came = loggedCallDataKeys(lines);
+        const standIns = Object.keys(spec).filter((key) => {
+          if (!came.includes(key)) return false;
           const source = callDataSourceOf(spec[key]!.from);
-          return source?.kind === 'setup' ? MASKED_SETUP_FIELDS.includes(source.name) : redactionOf(spec[key]) !== 'keep';
+          if (source === null || source.kind === 'chat') return false;
+          // A custom parameter (or a webhook field's echo) a key keeps is still masked by its name's floor.
+          return !frameLogKeepsField(source.name) || (source.kind !== 'setup' && redactionOf(spec[key]) !== 'keep');
         });
-        if (standIns.length > 0) skipped.push(`line ${lineNumber}: call data ${standIns.join(', ')} recorded by redact, so the replay stands in what the log holds`);
+        if (standIns.length > 0) skipped.push(`line ${lineNumber}: call data ${standIns.join(', ')} recorded masked or not at all, so the replay stands in what the log holds, or has none`);
       }
     }
     if (!session) {

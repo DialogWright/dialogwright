@@ -5,10 +5,13 @@ import type { Thresholds } from '../../core/thresholds';
 import type { FrameLogLine } from '../frameLog';
 import type { AuditEntry } from '../../audit/types';
 import { consoleKbSource, redactHandoffData, redactRecordSlots } from '../../trace/redact';
-import { SHORT_MASK } from '../../gate/principal';
 import { defaultAppOrNull } from '../../core/app/registry';
 import type { CallDataKey } from '../../core/app/types';
-import { recordedCustomParameters, UNNAMED_PARAMETER } from '../../channel/callData';
+import { callDataSourceOf, recordedCustomParameters, UNNAMED_PARAMETER } from '../../channel/callData';
+import { DROP_KEYS, DROP_SUFFIXES, floorByName, MASK_KEYS, maskNumber, NAME_KEYS } from '../../channel/maskByName';
+
+// Where the masking by name lives (beside the call data, which the core's audit floors by it too).
+export { floorByName, frameLogKeepsField, maskNumber } from '../../channel/maskByName';
 
 interface Base { callSid: string; at: number }
 
@@ -65,36 +68,6 @@ export type DashboardEventType = DashboardEvent['type'];
  */
 export type DeliveryFact = { kind: string } & { [field: string]: number | boolean | string | null };
 
-/** The last four digits only; the page never shows a whole caller number (one of four digits or fewer: SHORT_MASK). */
-export function maskNumber(n: string | undefined | null): string {
-  if (!n) return 'unknown';
-  // Already masked (the trace's `...0142`, or SHORT_MASK): kept, in the page's own spelling.
-  if (n === SHORT_MASK) return n;
-  const masked = /^(?:\.\.\.|…)(\d{4})$/.exec(n);
-  if (masked) return `…${masked[1]}`;
-  const digits = n.replace(/\D/g, '');
-  if (digits.length > 0 && digits.length <= 4) return SHORT_MASK;
-  return `…${digits.slice(-4)}`;
-}
-
-/**
- * Caller identity travels under a handful of names that Twilio spells differently per surface --
- * `from`/`to` on the setup frame, `From`/`To`/`Caller`/`Called` on the `/cr-action` form post --
- * and the dashboard route is unauthenticated, so redaction works by key name on any object rather
- * than by frame type. These are matched case-insensitively. `callerNumber` is a session start's
- * (SessionStart.callerNumber), for an app with a slot that offers the caller's number or that keeps
- * it for its code, and `calledNumber` the number called (SessionStart.calledNumber), for an app that keeps it. Telnyx's setup
- * has `from` and `to` null and carries the numbers as custom parameters, `telnyx_call_from` and
- * `telnyx_call_to` (server/voice/telnyx.ts): masked by those names, in the setup frame the frame log
- * writes and in a start event's provider details (`param.telnyx_call_from`).
- */
-const MASK_KEYS = new Set(['from', 'to', 'caller', 'called', 'forwardedfrom', 'callernumber', 'callednumber', 'telnyx_call_from', 'telnyx_call_to']);
-/** Masked to a fixed string rather than to digits: a name has nothing worth keeping. */
-const NAME_KEYS = new Set(['callername']);
-/** Dropped outright; the account id identifies the Twilio account, not the call. */
-const DROP_KEYS = new Set(['accountsid']);
-/** `FromCity`, `CallerState`, `ToZip`, `CalledCountry`, ... -- the geo lookup Twilio attaches. */
-const DROP_SUFFIXES = ['city', 'state', 'zip', 'country'];
 /** A session start's provider details carry each Twilio custom parameter under this prefix (channel/relay/map.ts frameToEvent). */
 const PARAM_PREFIX = 'param.';
 /** Real frames and form posts are shallow; the bound is only there so a cycle cannot hang a request. */
@@ -117,7 +90,9 @@ export function redactDeep(value: unknown, depth = 0): unknown {
     // parameter `from` as `param.from` (channel/relay/map.ts frameToEvent).
     const k = key.toLowerCase().split('.').pop()!;
     if (DROP_KEYS.has(k) || DROP_SUFFIXES.some((s) => k.endsWith(s))) continue;
-    if (typeof v === 'string' && NAME_KEYS.has(k)) out[key] = 'redacted';
+    // Already redacted (a custom parameter no one named, trace/redact.ts): nothing is left to mask.
+    if (v === UNNAMED_PARAMETER) out[key] = v;
+    else if (typeof v === 'string' && NAME_KEYS.has(k)) out[key] = 'redacted';
     else if (typeof v === 'string' && MASK_KEYS.has(k)) out[key] = maskNumber(v);
     // Every other custom parameter (`param.*`): the core never reads them, so none is worth showing.
     else if (typeof v === 'string' && key.toLowerCase().startsWith(PARAM_PREFIX)) out[key] = 'redacted';
@@ -140,7 +115,7 @@ export function redactSetupFrame(frame: unknown, spec: CallDataSpec): unknown {
   const out = redactDeep(frame);
   const params = typeof frame === 'object' && frame !== null ? (frame as { customParameters?: unknown }).customParameters : undefined;
   if (typeof out !== 'object' || out === null || typeof params !== 'object' || params === null || Array.isArray(params)) return out;
-  const customParameters = recordedCustomParameters(spec, params as Record<string, unknown>, (name, v) => (MASK_KEYS.has(name.toLowerCase()) ? maskNumber(v) : UNNAMED_PARAMETER));
+  const customParameters = recordedCustomParameters(spec, params as Record<string, unknown>, (name, v) => (MASK_KEYS.has(name.toLowerCase()) ? maskNumber(v) : UNNAMED_PARAMETER), floorByName);
   return { ...(out as Record<string, unknown>), customParameters };
 }
 
@@ -158,10 +133,19 @@ export function redactRecord(record: TraceRecord): TraceRecord {
   const kb = slots.kb ? { kb: consoleKbSource(slots.kb) } : {};
   // The call data the app names is already masked by each key's own redact (redactRecordSlots): its
   // keys are the app's words, not the carrier's, so the masking by key name below is not for them.
+  // Its floor is the console's masking by name, read off the name each key's source has (a number by its last four, a name redacted).
   const event = slots.event;
   if (event.type === 'session.start' && event.callData !== undefined) {
     const { callData, ...rest } = event;
-    return { ...slots, ...kb, event: { ...(redactDeep(rest) as typeof rest), callData } };
+    const spec = defaultAppOrNull()?.callData;
+    const floored: Record<string, string> = {};
+    for (const [key, v] of Object.entries(callData)) {
+      const def = spec !== undefined && Object.hasOwn(spec, key) ? spec[key] : undefined;
+      const source = def === undefined ? null : callDataSourceOf(def.from);
+      const shown = source === null ? v : floorByName(source.name, v);
+      if (shown !== null) floored[key] = shown;
+    }
+    return { ...slots, ...kb, event: { ...(redactDeep(rest) as typeof rest), callData: floored } };
   }
   return { ...slots, ...kb, event: redactDeep(slots.event) as TraceRecord['event'] };
 }

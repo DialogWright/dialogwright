@@ -83,6 +83,24 @@ describe('app.yaml callData', () => {
     expect(from[0]).toContain('app.yaml\'s callerNumber');
   });
 
+  it('refuses the carrier\'s copies of the numbers, wherever they come from, with app.yaml\'s callerNumber as the fix', async () => {
+    for (const from of ['setup.from', 'setup.to', 'param.telnyx_call_from', 'param.telnyx_call_to', 'webhook.From', 'webhook.To', 'webhook.Caller', 'webhook.Called']) {
+      const problems = await problemsOf(replace('from: param.queue', `from: ${from}`));
+      expect(problems, from).toHaveLength(1);
+      expect(problems[0]).toContain(`"${from}" is the number the caller is calling from or the number called`);
+      expect(problems[0]).toContain('->  read the numbers with app.yaml\'s callerNumber (callerOf(s), and calledOf(s) with called: true)');
+    }
+    // Another number-like field is the app's to read, under its own redact (and the frame log's floor).
+    expect(await problemsOf(replace('from: param.queue', 'from: webhook.ForwardedFrom'))).toEqual([]);
+  });
+
+  it('refuses a chat key longer than a context may carry', async () => {
+    expect(await problemsOf(replace('from: chat.page', `from: chat.${'a'.repeat(64)}`))).toEqual([]);
+    const problems = await problemsOf(replace('from: chat.page', `from: chat.${'a'.repeat(65)}`));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('is longer than a web chat context\'s key may be (64 characters), so it could never arrive');
+  });
+
   it('refuses a name with a space or a quote in it, and an echo read as a parameter', async () => {
     const spaced = await problemsOf(replace('from: param.queue', 'from: "param.the queue"'));
     expect(spaced[0]).toContain('"the queue" is not a name a param source has');
@@ -150,7 +168,7 @@ describe('validateApp (an app written in code)', () => {
       'callData key "bad-key" is not a plain word (letters, digits and underscores, starting with a letter)',
       'callData key "nofrom" has no from',
       'callData key "prefix": "header.x" is not a source of call data: it must be one of param.<name>, setup.<name>, webhook.<name>, chat.<name>',
-      'callData key "field": "to" is not a field of the setup frame the wire keeps (callSid, sessionId, accountSid, parentCallSid, forwardedFrom, callType, callerName, direction, callStatus, callControlId, callSessionId, callLegId)',
+      'callData key "field": "setup.to" is the number the caller is calling from or the number called, which call data does not read',
       'callData key "masked" redact "hidden" is not one of last4, mask, length, secret, keep',
       'startParameters "line" is not env.<NAME>',
       'startParameters name "locale" is one the engine writes itself',

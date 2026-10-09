@@ -53,6 +53,45 @@ export const CALL_DATA_VALUE_MAX = 500;
  */
 export const SOURCE_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 
+/** A key of a web chat start's `context` (channel/chat/protocol.ts): a source name of at most 64 characters, so a `chat.<key>` longer than that could never arrive. */
+export const CONTEXT_KEY = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/;
+
+/**
+ * The most a start's `context` may take, as UTF-8 bytes of its JSON: the chat socket takes messages of
+ * at most 16 KiB (server/chat/socket.ts CHAT_MAX_PAYLOAD), and a start may also carry a sign-in token
+ * of up to 8 KiB (CHAT_TOKEN_MAX), so the context gets what is left with room to spare. Without the cap,
+ * 50 values of 500 characters would close the socket with no error the page could read.
+ */
+export const CHAT_CONTEXT_MAX_BYTES = 6 * 1024;
+
+/** The context's size as the cap counts it: the UTF-8 bytes of its JSON. */
+export function contextBytes(context: Readonly<Record<string, unknown>>): number {
+  return new TextEncoder().encode(JSON.stringify(context)).length;
+}
+
+/**
+ * The carrier's copies of the numbers, as sources: the caller's and the called number are app.yaml's
+ * `callerNumber` (callerOf, calledOf), kept and masked by its own rules, so call data never reads them.
+ */
+const NUMBER_SOURCES: Readonly<Record<string, readonly string[]>> = {
+  setup: ['from', 'to'],
+  param: ['telnyx_call_from', 'telnyx_call_to'],
+  webhook: ['From', 'To', 'Caller', 'Called'],
+};
+const NUMBER_FIX = 'read the numbers with app.yaml\'s callerNumber (callerOf(s), and calledOf(s) with called: true)';
+
+/**
+ * Characters a value may not have: the C0 controls (tab and newline included: an XML attribute turns
+ * them into spaces, so the value would not come back as sent), DEL, U+FFFE and U+FFFF, and a lone
+ * surrogate. None can be written into a start document as it is, so a value with one is no value.
+ */
+const UNWRITABLE = /[\u0000-\u001F\u007F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/** Whether `v` can be written into a start document as it is (UNWRITABLE). */
+export function writableValue(v: string): boolean {
+  return !UNWRITABLE.test(v);
+}
+
 /** The custom parameter a key's webhook field is echoed as. */
 export function webhookParameterName(key: string): string {
   return `${WEBHOOK_PARAMETER_PREFIX}${key}`;
@@ -81,8 +120,14 @@ export function callDataSourceProblem(from: string): { message: string; fix: str
   if (!SOURCE_NAME.test(source.name)) {
     return { message: `"${source.name}" is not a name a ${source.kind} source has: it must use only letters, digits, underscores, hyphens and dots`, fix: 'write the name as the carrier (or the chat client) sends it' };
   }
+  if (NUMBER_SOURCES[source.kind]?.includes(source.name)) {
+    return { message: `"${from}" is the number the caller is calling from or the number called, which call data does not read`, fix: NUMBER_FIX };
+  }
+  if (source.kind === 'chat' && !CONTEXT_KEY.test(source.name)) {
+    return { message: `"${source.name}" is longer than a web chat context's key may be (64 characters), so it could never arrive`, fix: 'name a shorter key, as the page sends it' };
+  }
   if (source.kind === 'setup' && !SETUP_FIELDS.includes(source.name)) {
-    return { message: `"${source.name}" is not a field of the setup frame the wire keeps (${SETUP_FIELDS.join(', ')})`, fix: 'name one of those, or read a custom parameter as param.<name>; the numbers are app.yaml\'s callerNumber' };
+    return { message: `"${source.name}" is not a field of the setup frame the wire keeps (${SETUP_FIELDS.join(', ')})`, fix: 'name one of those, or read a custom parameter as param.<name>' };
   }
   if (source.kind === 'param' && source.name.startsWith(WEBHOOK_PARAMETER_PREFIX)) {
     return { message: `custom parameters named "${WEBHOOK_PARAMETER_PREFIX}..." are the server's echoes of webhook fields`, fix: 'read the webhook field as webhook.<field> instead' };
@@ -95,10 +140,16 @@ export function redactionOf(key: CallDataKey | undefined): AuditMask {
   return key?.redact ?? 'mask';
 }
 
-/** A value fit to keep: a string with something in it, no longer than the wire takes. */
-function usable(v: unknown): v is string {
-  return typeof v === 'string' && v !== '' && v.length <= CALL_DATA_VALUE_MAX;
+/**
+ * A value fit to keep: a string with something in it, no longer than the wire takes, that a start
+ * document can carry as it is (writableValue). Anything else is no value: its key is absent. Shared by
+ * the channel's reading, the webhook's echoes and the core's keeping (core/callData.ts), so a chat's
+ * context and a seeded value are held to the same.
+ */
+export function usableCallDataValue(v: unknown): v is string {
+  return typeof v === 'string' && v !== '' && v.length <= CALL_DATA_VALUE_MAX && writableValue(v);
 }
+const usable = usableCallDataValue;
 
 /**
  * The call data a session start carries, by the app's keys: each read from the start's provider
@@ -200,6 +251,18 @@ export function parameterRedactions(spec: Readonly<Record<string, CallDataKey>> 
   return namesRead(spec, (key, source) => (source.kind === 'param' ? source.name : source.kind === 'webhook' ? webhookParameterName(key) : null));
 }
 
+/** The setup fields the app's keys read (`setup.<field>`), with the stricter key's redaction. */
+export function setupRedactions(spec: Readonly<Record<string, CallDataKey>> | undefined): Map<string, AuditMask> {
+  return namesRead(spec, (_key, source) => (source.kind === 'setup' ? source.name : null));
+}
+
+/**
+ * The custom parameters a record keeps by rules of their own, whatever the app reads: `locale` (a
+ * language tag, the engine's), and the carrier's copies of the numbers (`telnyx_call_from`,
+ * `telnyx_call_to`), which the caller's-number rules mask where the app keeps the number.
+ */
+export const OWN_RULE_PARAMETERS: readonly string[] = ['locale', 'telnyx_call_from', 'telnyx_call_to'];
+
 /** The masks from the strictest (left out) to the least (as it is): a name two keys read is recorded by the stricter. */
 const STRICTNESS: readonly AuditMask[] = ['secret', 'mask', 'length', 'last4', 'keep'];
 
@@ -228,8 +291,10 @@ export function recordedCustomParameters(
   spec: Readonly<Record<string, CallDataKey>> | undefined,
   params: Readonly<Record<string, unknown>>,
   unnamed: (name: string, value: string) => string = () => UNNAMED_PARAMETER,
+  floor?: (sourceName: string, recorded: string) => string | null,
 ): Record<string, unknown> {
   const named = parameterRedactions(spec);
+  const sources = parameterSourceNames(spec);
   const out: Record<string, unknown> = {};
   for (const [name, v] of Object.entries(params)) {
     if (name === 'locale' || typeof v !== 'string') {
@@ -242,7 +307,21 @@ export function recordedCustomParameters(
       continue;
     }
     const shown = recordedCallData(how, v);
-    if (shown !== null) out[name] = shown;
+    // The caller's own masking by name is a floor a key's redact never goes under: a value a key keeps
+    // whole is masked still where its name (or, for an echo, its webhook field's) is a number or a name.
+    const floored = shown === null || floor === undefined || shown !== v ? shown : floor(sources.get(name) ?? name, shown);
+    if (floored !== null) out[name] = floored;
+  }
+  return out;
+}
+
+/** By custom parameter name, the name the carrier gave it: a `param.` key's own, a `webhook.` key's echo `dw_<key>` its field. */
+export function parameterSourceNames(spec: Readonly<Record<string, CallDataKey>> | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [key, def] of Object.entries(spec ?? {})) {
+    const source = callDataSourceOf(def.from);
+    if (source?.kind === 'param') out.set(source.name, source.name);
+    else if (source?.kind === 'webhook') out.set(webhookParameterName(key), source.name);
   }
   return out;
 }

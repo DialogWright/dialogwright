@@ -6,7 +6,7 @@ import { recordedValue, spokenValuesScrubber, type Scrub } from '../core/recordi
 import { defaultAppOrNull } from '../core/app/registry';
 import { IDENTITY_UNVERIFIED, IDENTITY_VERIFIED } from '../core/decision';
 import type { TraceRecord } from './types';
-import { parameterRedactions, recordedCallData, recordedCallDataMap } from '../channel/callData';
+import { OWN_RULE_PARAMETERS, parameterRedactions, recordedCallData, recordedCallDataMap, setupRedactions, UNNAMED_PARAMETER } from '../channel/callData';
 
 /**
  * The redacted slots as a trace record may carry them, by each slot's SlotSpec.redact
@@ -348,22 +348,29 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
     const masked = { ...start, provider, ...(raw !== null ? { callerNumber: mask(raw) } : {}), ...(typeof start.calledNumber === 'string' ? { calledNumber: maskLast4(start.calledNumber) } : {}) };
     if (raw !== null || typeof start.calledNumber === 'string') out.event = masked;
   }
-  // The call data the app names (SessionStart.callData), each key as its redact says, in the trace
-  // file and on the console alike; and the setup's own copies of the custom parameters the keys read
-  // (`param.<name>`, a webhook field's echo `param.dw_<key>`) the same. A setup field is the call's
-  // own record (its ids, its type) and the provider details keep it as they always have.
-  if (isObject(out.event) && out.event.type === 'session.start' && app?.callData !== undefined) {
+  // The custom parameters and the call data of a session start, in the trace file and on the console
+  // alike. The call data the app names (SessionStart.callData), each key as its redact says, and the
+  // setup's own copies of what a key reads: a custom parameter (`param.<name>`, a webhook field's echo
+  // `param.dw_<key>`) and a setup field (`<field>`) the same. Every other custom parameter is written
+  // `redacted`, for every app: no one named it as worth keeping (an app's startParameters among them);
+  // `locale` and the carrier's copies of the numbers keep rules of their own (OWN_RULE_PARAMETERS).
+  if (isObject(out.event) && out.event.type === 'session.start') {
     const start = out.event;
-    const named = parameterRedactions(app.callData);
+    const spec = app?.callData;
+    const params = parameterRedactions(spec);
+    const fields = setupRedactions(spec);
     const provider = isObject(start.provider)
       ? Object.fromEntries(Object.entries(start.provider).flatMap(([k, v]) => {
-        const how = k.startsWith('param.') ? named.get(k.slice('param.'.length)) : undefined;
-        if (how === undefined || typeof v !== 'string') return [[k, v]];
+        if (typeof v !== 'string') return [[k, v]];
+        const param = k.startsWith('param.') ? k.slice('param.'.length) : null;
+        if (param !== null && OWN_RULE_PARAMETERS.includes(param)) return [[k, v]];
+        const how = param !== null ? params.get(param) : fields.get(k);
+        if (how === undefined) return [[k, param !== null ? UNNAMED_PARAMETER : v]];
         const shown = recordedCallData(how, v);
         return shown === null ? [] : [[k, shown]];
       }))
       : start.provider;
-    out.event = { ...start, provider, ...(isObject(start.callData) ? { callData: recordedCallDataMap(app.callData, start.callData) } : {}) };
+    out.event = { ...start, provider, ...(spec !== undefined && isObject(start.callData) ? { callData: recordedCallDataMap(spec, start.callData) } : {}) };
   }
   const pc = record.pendingConfirmation;
   if (pc && pc.target === 'slot') out.pendingConfirmation = { ...pc, value: maskValue(app, pc.slot, pc.value, mode) ?? pc.value, display: maskValue(app, pc.slot, pc.display, mode) ?? pc.display };

@@ -69,7 +69,8 @@ describe('redactRecord', () => {
         callerName: 'redacted',
         callSid: CALL_SID,
         callStatus: 'in-progress',
-        'param.from': '…0199',
+        // Every custom parameter no call data key reads is written redacted (trace/redact.ts), a number's name or not.
+        'param.from': 'redacted',
         'param.token': 'redacted',
       },
     });
@@ -81,7 +82,7 @@ describe('redactRecord', () => {
   it('masks every custom parameter of a session start, whatever its name', () => {
     const provider = { sessionId: 's', 'param.token': 'secret-token', 'param.AccountRef': 'A-123', 'param.from': '+15555550199' };
     const redacted = redactRecord(baseRecord({ type: 'session.start', provider })).event as unknown as { provider: Record<string, string> };
-    expect(redacted.provider).toEqual({ sessionId: 's', 'param.token': 'redacted', 'param.AccountRef': 'redacted', 'param.from': '…0199' });
+    expect(redacted.provider).toEqual({ sessionId: 's', 'param.token': 'redacted', 'param.AccountRef': 'redacted', 'param.from': 'redacted' });
   });
 
   it('returns other records unchanged', () => {

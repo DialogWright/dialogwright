@@ -125,8 +125,9 @@ describe('an app without callData', () => {
     const { d, traced } = await setUp('testkit');
     expect(d.store.get('CA1')!.session).not.toHaveProperty('callData');
     expect(traced.event).not.toHaveProperty('callData');
-    // The trace file keeps the custom parameters as it always has (it is PHI-bearing, and the console masks them).
-    expect(traced.event).toMatchObject({ provider: { 'param.callReference': 'bar' } });
+    // A custom parameter no key reads is written redacted in the trace file too, for every app (the second
+    // deliberate change: it used to be kept as sent); locale keeps its own rule.
+    expect(traced.event).toMatchObject({ provider: { 'param.callReference': 'redacted', 'param.locale': 'en-US' } });
   });
 
   it('has its frame log\'s custom parameters redacted, locale and a carrier\'s copy of a number aside (the privacy change)', async () => {
@@ -158,6 +159,93 @@ describe('a replay of the frame log', () => {
     const replay = await replayFrameLog(join(d.dir, 'CA1.frames.jsonl'), { client: new HeuristicStubClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-09' });
     const session = replay.runs[0]!.result.session;
     expect(session.callData).toEqual({ queue: 'priority', accountRef: '...1234', forwardedFrom: '…0102', referral: '•' });
-    expect(replay.skipped).toContain('line 1: call data accountRef, forwardedFrom, referral recorded by redact, so the replay stands in what the log holds');
+    expect(replay.skipped).toEqual(['line 1: call data accountRef, forwardedFrom, referral recorded masked or not at all, so the replay stands in what the log holds, or has none']);
+  });
+});
+
+/** Example Callbacks with keys the review asked about: a kept caller's name and a kept forwarded number, secrets and a dropped field. */
+const strict = {
+  ...callbackApp,
+  callData: {
+    ...callbackApp.callData!,
+    forwardedFrom: { from: 'setup.forwardedFrom', redact: 'keep' as const },
+    name: { from: 'setup.callerName', redact: 'keep' as const },
+    parent: { from: 'setup.parentCallSid', redact: 'secret' as const },
+    account: { from: 'setup.accountSid' },
+    caller: { from: 'param.caller', redact: 'keep' as const },
+    forwardedHook: { from: 'webhook.ForwardedFrom', redact: 'keep' as const },
+    pin: { from: 'param.pin', redact: 'secret' as const },
+  },
+};
+const STRICT_SETUP: SetupFrame = {
+  ...SETUP, callerName: 'Pat Example', parentCallSid: 'CA999', accountSid: 'AC123',
+  customParameters: { ...SETUP.customParameters, caller: '+15555550123', dw_forwardedHook: '+15555550104', pin: '4321', tenant: 'TOKEN-abc', telnyx_call_from: '+15555550142' },
+};
+
+describe('the floor: a key\'s redact never records less than the frame log and the console would by name', () => {
+  beforeEach(() => {
+    resetAppsForTest();
+    registerApp(strict);
+  });
+
+  it('keeps the session\'s values whole', async () => {
+    const { d } = await setUp('callback', STRICT_SETUP);
+    expect(d.store.get('CA1')!.session.callData).toMatchObject({ forwardedFrom: '+15555550102', name: 'Pat Example', caller: '+15555550123', forwardedHook: '+15555550104', pin: '4321' });
+  });
+
+  it('writes a kept number to the frame log by its last four, its echo by its webhook field\'s name, and a secret not at all', async () => {
+    const { frames } = await setUp('callback', STRICT_SETUP);
+    const setup = JSON.parse(frames.split('\n')[0]!) as { msg: SetupFrame };
+    expect(setup.msg.customParameters).toEqual({
+      queue: 'priority', accountRef: '...1234', dw_referral: '•', callReference: 'redacted', locale: 'en-US',
+      caller: '…0123', dw_forwardedHook: '…0104', tenant: 'redacted', telnyx_call_from: '…0142',
+    });
+    expect(frames).not.toMatch(/5555550123|5555550104|4321|TOKEN-abc|Pat Example/);
+  });
+
+  it('shows a kept number and a kept name on the console by the console\'s own masking', async () => {
+    const { events } = await setUp('callback', STRICT_SETUP);
+    const turn = events.find((e) => e.type === 'turn') as Extract<DashboardEvent, { type: 'turn' }>;
+    expect(turn.record.event).toMatchObject({ callData: { forwardedFrom: '…0102', name: 'redacted', caller: '…0123', forwardedHook: '…0104', queue: 'priority' } });
+    expect((turn.record.event as { callData: Record<string, string> }).callData).not.toHaveProperty('pin');
+    expect((turn.record.event as { callData: Record<string, string> }).callData).not.toHaveProperty('account');
+    expect(JSON.stringify(events)).not.toMatch(/5555550123|5555550104|Pat Example|CA999|4321|TOKEN-abc/);
+    // The call_started audit row too: the floor holds in the audit, which holds no number or name whole.
+    expect(turn.record.audit?.find((a) => a.type === 'call_started')?.detail).toMatchObject({ 'callData.forwardedFrom': '…0102', 'callData.name': 'redacted', 'callData.caller': '…0123', 'callData.forwardedHook': '…0104', 'callData.queue': 'priority' });
+  });
+
+  it('writes a setup key\'s own copy in the trace by its redact, and every custom parameter no key reads as redacted', async () => {
+    const { traced, d } = await setUp('callback', STRICT_SETUP);
+    const provider = (traced.event as { provider: Record<string, string> }).provider;
+    // The trace file keeps what a key keeps (it is PHI-bearing); a secret is left out, a masked field masked.
+    expect(provider).toMatchObject({ callerName: 'Pat Example', forwardedFrom: '+15555550102', accountSid: '•', 'param.tenant': 'redacted', 'param.callReference': 'redacted', 'param.locale': 'en-US', 'param.telnyx_call_from': '...0142' });
+    expect(provider).not.toHaveProperty('parentCallSid');
+    expect(provider).not.toHaveProperty('param.pin');
+    const file = readFileSync(join(d.dir, 'CA1.jsonl'), 'utf8');
+    expect(file).not.toMatch(/CA999|4321|TOKEN-abc|AC123/);
+  });
+
+  it('names in a replay every key the log keeps masked or not at all, those the call lacked or the log dropped included', async () => {
+    const { d } = await setUp('callback', STRICT_SETUP);
+    const replay = await replayFrameLog(join(d.dir, 'CA1.frames.jsonl'), { client: new HeuristicStubClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-09' });
+    expect(replay.runs[0]!.result.session.callData).not.toHaveProperty('pin');
+    expect(replay.runs[0]!.result.session.callData).not.toHaveProperty('account');
+    expect(replay.skipped).toEqual(['line 1: call data accountRef, forwardedFrom, referral, name, account, caller, forwardedHook, pin recorded masked or not at all, so the replay stands in what the log holds, or has none']);
+    // The log names the keys the call came with, never their values.
+    expect(readFileSync(join(d.dir, 'CA1.frames.jsonl'), 'utf8')).toContain('"msg":{"callData":["queue","accountRef","forwardedFrom","referral","name","parent","account","caller","forwardedHook","pin"]}');
+  });
+
+  it('names nothing for keys the call did not come with', async () => {
+    const { d } = await setUp('callback', { ...SETUP, customParameters: { queue: 'priority' }, forwardedFrom: undefined as unknown as string });
+    const replay = await replayFrameLog(join(d.dir, 'CA1.frames.jsonl'), { client: new HeuristicStubClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-09' });
+    expect(replay.skipped).toEqual([]);
+    expect(replay.runs[0]!.result.session.callData).toEqual({ queue: 'priority' });
+  });
+});
+
+describe('a value no start document can carry', () => {
+  it('is no value: a control character in a custom parameter leaves its key absent', async () => {
+    const { d } = await setUp('callback', { ...SETUP, customParameters: { queue: 'prio\u0001rity', accountRef: 'AC\n55501234' } });
+    expect(d.store.get('CA1')!.session.callData).toEqual({ forwardedFrom: '+15555550102' });
   });
 });

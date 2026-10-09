@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, type Env, type ServerConfig } from './config';
 import { readEnvFile } from './envFile';
+import { appYamlEnvReferences } from '../define/envReferences';
+import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } from './workspace';
 
@@ -34,7 +36,7 @@ import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } 
  * relies on, for its clock; none with --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'folders' | 'store' | 'space' | 'clock';
+export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'space' | 'clock';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -76,6 +78,11 @@ export interface DoctorOptions {
   cwd: string;
   /** Ask nothing over the network (checks 2, 3 and 9 are skipped). */
   offline?: boolean;
+  /**
+   * The app's folder, whose app.yaml may name environment variables (`env.<NAME>`: startParameters):
+   * each is said set or unset, by its length, never its value. Absent, none is checked.
+   */
+  appDir?: string;
 }
 
 /** A hostname loadConfig takes while PUBLIC_HOST waits for the quick tunnel's, shaped like one. */
@@ -263,6 +270,9 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
       : { id: 'handoff', status: 'ok', message: `HANDOFF_NUMBER ${config.handoffNumber}` },
   );
 
+  // 6b. The variables app.yaml names (env.<NAME>), read from the YAML alone: set or not, and how long, never the value.
+  if (o.appDir !== undefined) results.push(...variableChecks(o.appDir, o.env));
+
   // 7. The folders, read from where the server runs.
   const traceDir = resolve(o.cwd, config.traceDir);
   const auditDir = resolve(o.cwd, config.auditDir);
@@ -333,6 +343,25 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
 const TEMPORARY_ROOTS = ['/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp', '/dev/shm', '/run'];
 
 /** The real path of `dir`, or of the nearest folder above it that exists, with the rest as written. */
+/**
+ * One line per environment variable the app folder's app.yaml names (define/envReferences.ts): set, by
+ * its length, or not set, with the fix. The server refuses to start while one is unset, empty, longer
+ * than a custom parameter may be, or has a control character, so each of those fails here too. None
+ * for an app.yaml that names none, so every other app's diagnosis is as it was.
+ */
+export function variableChecks(appDir: string, env: Env): CheckResult[] {
+  const refs = appYamlEnvReferences(appDir);
+  if (refs === null) return [{ id: 'variables', status: 'skip', message: 'the variables app.yaml names: app.yaml cannot be read (pnpm check says why)' }];
+  return refs.map(({ path, variable }) => {
+    const value = env[variable];
+    const where = `app.yaml's ${path} reads ${variable}`;
+    if (value === undefined || value.trim() === '') return { id: 'variables', status: 'fail', message: `${where}, which is not set: the server will not start`, fix: `set ${variable} in the settings file` };
+    if (value.length > CALL_DATA_VALUE_MAX) return { id: 'variables', status: 'fail', message: `${where}: set, ${value.length} characters, more than the ${CALL_DATA_VALUE_MAX} a custom parameter takes`, fix: `shorten ${variable}` };
+    if (!writableValue(value)) return { id: 'variables', status: 'fail', message: `${where}: set, ${value.length} characters, with a control character a start document cannot carry`, fix: `write ${variable} on one line, with no tab or other control character` };
+    return { id: 'variables', status: 'ok', message: `${where}: set, ${value.length} characters` };
+  });
+}
+
 function realOf(dir: string): string {
   const at = nearestExisting(dir);
   let real = at;
@@ -511,7 +540,7 @@ export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDe
     app = here ?? (apps.length === 1 ? apps[0]! : null);
   }
   io.out(`${app ? `${app.name}: ` : ''}settings from ${file}${offline ? ' (offline)' : ''}`);
-  const results = [settingsFileCheck(file), ...(await runDoctor({ env, cwd: app?.dir ?? io.invokedFrom, offline }, deps))];
+  const results = [settingsFileCheck(file), ...(await runDoctor({ env, cwd: app?.dir ?? io.invokedFrom, offline, ...(app ? { appDir: app.dir } : {}) }, deps))];
   for (const r of results) io.out(formatResult(r));
   const count = (s: CheckStatus) => results.filter((r) => r.status === s).length;
   const skipped = count('skip');

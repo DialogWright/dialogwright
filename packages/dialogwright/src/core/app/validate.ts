@@ -18,6 +18,7 @@ import { pronounceProblems } from '../../channel/pronounce';
 import { MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 import { handoffDataProblems } from '../../handoff/data';
 import { callDataSourceProblem, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
+import { envVariableOf } from './envReference';
 
 /** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
 const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
@@ -467,7 +468,7 @@ export function callDataProblems(app: Pick<App, 'callData' | 'startParameters'>)
   for (const [name, value] of Object.entries(app.startParameters ?? {})) {
     if (!CALL_DATA_NAME.test(name)) out.push(`startParameters name "${name}" is not a plain word (letters, digits and underscores, starting with a letter)`);
     if (name === 'locale' || name.startsWith(WEBHOOK_PARAMETER_PREFIX)) out.push(`startParameters name "${name}" is one the engine writes itself`);
-    if (typeof value !== 'string' || !/^env\.[A-Z][A-Z0-9_]*$/.test(value)) out.push(`startParameters "${name}" is not env.<NAME>`);
+    if (envVariableOf(value) === null) out.push(`startParameters "${name}" is not env.<NAME>`);
   }
   return out;
 }

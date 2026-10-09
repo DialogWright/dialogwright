@@ -1720,6 +1720,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // every other app, whose start event is as it was.
     const setup = frameToEvent(parsed);
     const data = setup.type === 'session.start' ? callDataFrom(appOf(entry.session).callData, setup.provider) : {};
+    // Which keys the call came with, by name only, for replay (harness-text/replay.ts), which then names
+    // those the log holds masked or not at all (a secret one, a field the frame log drops).
+    if (Object.keys(data).length > 0) entry.frames.write('log', { callData: Object.keys(data) });
     const start = withCallData(withCalledNumber(withCallerNumber(setup, offers ? caller : null), called), data);
     await enqueueUnsettled(deps, callId, async (e) => {
       await turn(deps, e, start);

@@ -112,6 +112,36 @@ describe('pnpm diagnose', () => {
     expect(d.seen.fetched).toEqual(['https://ivr.example.com/health', 'https://ivr.example.com/dashboard', 'HEAD https://api.telnyx.com/']);
   });
 
+  describe('6b. the variables app.yaml names (env.<NAME>)', () => {
+    const appDir = (yaml: string): string => {
+      const dir = tempDir();
+      writeFileSync(join(dir, 'app.yaml'), yaml);
+      return dir;
+    };
+
+    it('says each is set by its length, never its value, and fails one that is unset, too long or has a control character', async () => {
+      const dir = appDir('id: lines\nstartParameters:\n  line: env.CALLBACK_LINE\n  site: env.SITE_CODE\n  token: env.LINE_TOKEN\n  tab: env.TABBED\n');
+      const env = { ...goodEnv(dir), CALLBACK_LINE: 'support-east', LINE_TOKEN: 'x'.repeat(501), TABBED: 'a\tb' };
+      const results = (await runDoctor({ env, cwd: dir, appDir: dir, offline: true }, deps())).filter((r) => r.id === 'variables');
+      expect(results).toEqual([
+        { id: 'variables', status: 'ok', message: "app.yaml's startParameters.line reads CALLBACK_LINE: set, 12 characters" },
+        { id: 'variables', status: 'fail', message: "app.yaml's startParameters.site reads SITE_CODE, which is not set: the server will not start", fix: 'set SITE_CODE in the settings file' },
+        { id: 'variables', status: 'fail', message: "app.yaml's startParameters.token reads LINE_TOKEN: set, 501 characters, more than the 500 a custom parameter takes", fix: 'shorten LINE_TOKEN' },
+        { id: 'variables', status: 'fail', message: "app.yaml's startParameters.tab reads TABBED: set, 3 characters, with a control character a start document cannot carry", fix: 'write TABBED on one line, with no tab or other control character' },
+      ]);
+      expect(JSON.stringify(results)).not.toContain('support-east');
+    });
+
+    it('says nothing for an app.yaml that names none, or no app; and skips one it cannot read', async () => {
+      const plain = appDir('id: lines\n');
+      const quiet = await runDoctor({ env: goodEnv(plain), cwd: plain, appDir: plain, offline: true }, deps());
+      expect(quiet.some((r) => r.id === 'variables')).toBe(false);
+      expect((await runDoctor({ env: goodEnv(plain), cwd: plain, offline: true }, deps())).some((r) => r.id === 'variables')).toBe(false);
+      const broken = appDir('id: [unclosed\n');
+      expect(byId(await runDoctor({ env: goodEnv(broken), cwd: broken, appDir: broken, offline: true }, deps()), 'variables')).toMatchObject({ status: 'skip' });
+    });
+  });
+
   describe('1. the config', () => {
     it('fails with the startup message, and skips what needs it', async () => {
       const dir = tempDir();

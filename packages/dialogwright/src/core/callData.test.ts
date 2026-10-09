@@ -67,6 +67,16 @@ describe('callDataFrom: each key from its source', () => {
     expect(callDataFrom({ name: { from: 'setup.callerName' } }, provider)).toEqual({});
   });
 
+  it('takes a value with a character no start document can carry as no value, from any source', () => {
+    for (const bad of ['prio\u0001rity', 'a\nb', 'a\tb', 'a\u007fb', 'a\uFFFEb', 'a\uD800b']) {
+      expect(callDataFrom(SPEC, { 'param.queue': bad }, { page: bad }), JSON.stringify(bad)).toEqual({});
+      expect(webhookParameters(SPEC, { 'SipHeader_X-Referral': bad })).toEqual({});
+      expect(keptCallData(callbackApp, { queue: bad })).toBeUndefined();
+    }
+    // Letters of any script, and a pair of surrogates (an emoji), are values.
+    expect(callDataFrom(SPEC, { 'param.queue': 'prioridad ñ 優先 😀' })).toEqual({ queue: 'prioridad ñ 優先 😀' });
+  });
+
   it('reads nothing for an app without callData, and only the names it gives', () => {
     expect(callDataFrom(undefined, provider)).toEqual({});
     // `param.other` is in the setup, but no key names it.

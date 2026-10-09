@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseClientMessage, serializeServerMessage, actionsToChatMessages, CHAT_CONTEXT_KEYS, CHAT_CONTEXT_VALUE_MAX, CHAT_TEXT_MAX } from './protocol';
+import { contextBytes } from '../callData';
+import { parseClientMessage, serializeServerMessage, actionsToChatMessages, CHAT_CONTEXT_BYTES, CHAT_CONTEXT_KEYS, CHAT_CONTEXT_VALUE_MAX, CHAT_TEXT_MAX } from './protocol';
 
 describe('the chat wire', () => {
   it('reads each client message', () => {
@@ -59,6 +60,25 @@ describe('a start\'s context (the page\'s data, which an app\'s callData reads a
   it('takes an object of short strings, and a start without one as before', () => {
     expect(parseClientMessage(JSON.stringify({ type: 'start', v: 1, context: { page: '/orders/1042', 'utm.source': 'mail-2' } }))).toEqual({ ok: true, message: { type: 'start', v: 1, context: { page: '/orders/1042', 'utm.source': 'mail-2' } } });
     expect(parseClientMessage(JSON.stringify({ type: 'start', v: 1 }))).toEqual({ ok: true, message: { type: 'start', v: 1 } });
+  });
+
+  it('takes one at its bytes, and refuses one over them, counted as UTF-8', () => {
+    const fits = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`k${i}`, 'x'.repeat(500)]));
+    expect(contextBytes(fits)).toBeLessThanOrEqual(CHAT_CONTEXT_BYTES);
+    expect(parseClientMessage(JSON.stringify({ type: 'start', v: 1, context: fits })).ok).toBe(true);
+    expect(parseClientMessage(JSON.stringify({ type: 'start', v: 1, context: { ...fits, k12: 'x'.repeat(500) } })).ok).toBe(false);
+    // 500 characters of three bytes each: few keys, many bytes.
+    const wide = Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`k${i}`, '€'.repeat(500)]));
+    expect(parseClientMessage(JSON.stringify({ type: 'start', v: 1, context: wide })).ok).toBe(false);
+  });
+
+  it('never echoes a key it refuses', () => {
+    const r = parseClientMessage(JSON.stringify({ type: 'start', v: 1, context: { 'bad key<script>': 'x' } }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.message).not.toContain('script');
+      expect(r.message.startsWith('context ')).toBe(true);
+    }
   });
 
   it('refuses one that is not, saying what it must be and never the value', () => {
