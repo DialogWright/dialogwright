@@ -8,7 +8,7 @@ import { DEFAULT_WIDGET_FILE, type Env } from './config';
 import { main as diagnose } from './doctor';
 import { checkSecretOf } from './voice/registry';
 import { resolveJevProvider } from '../jev/provider';
-import { findApp, projectRoot, workspaceApps, appList, type WorkspaceApp } from './workspace';
+import { commandHints, findApp, projectRoot, workspaceApps, appList, type WorkspaceApp } from './workspace';
 
 /**
  * `pnpm configure`: the first hour's settings, asked for and written. It asks, in order: which app; to
@@ -316,6 +316,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     app = apps.find((a) => a.dir === dir)!;
   }
   const short = basename(app.dir);
+  const hint = commandHints(app, root);
   out(`App: ${short} (${app.folder})`);
   const file = join(app.dir, '.env');
   if (existsSync(file) && !flags.force) {
@@ -428,7 +429,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     const webhook = flags.publicHost ? `https://${flags.publicHost}/voice/${carrier}` : `https://<the hostname pnpm start prints>/voice/${carrier}`;
     out('');
     out('Next:');
-    out(`  pnpm start --app ${short}`);
+    out(`  ${hint.command('start')}`);
     out(
       flags.publicHost
         ? `  (PUBLIC_HOST is set: start the named tunnel for ${flags.publicHost} too, or its service)`
@@ -438,10 +439,10 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     for (const line of carrierSteps(carrier, webhook)) out(`  ${line}`);
     out(
       flags.publicHost
-        ? `Then call your number. While it runs, pnpm diagnose --app ${short} checks it end to end, through the tunnel.`
+        ? `Then call your number. While it runs, ${hint.command('diagnose')} checks it end to end, through the tunnel.`
         : 'Then call your number. While it runs, the pnpm diagnose line pnpm start prints checks it end to end, through the tunnel.',
     );
-    out(`To keep the settings elsewhere (outside the repository, for a machine that stays up), move the file and name it: ENV_FILE=<path> pnpm start --app ${short}`);
+    out(`To keep the settings elsewhere (outside the repository, for a machine that stays up), move the file and name it: ENV_FILE=<path> ${hint.command('start')}`);
     return 0;
   }
   out('');
@@ -449,9 +450,9 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
   await check(file, app, io);
   out('');
   out('Next:');
-  out(`  pnpm start --app ${short}`);
+  out(`  ${hint.command('start')}`);
   out(`  then open http://localhost:${port}/dashboard, the console (on this machine only), to watch each call and chat.`);
-  out(`  To type to the app: pnpm --filter ${app.name} cli --client heuristic`);
+  out(`  To type to the app: ${hint.script('cli')} --client heuristic`);
   out(`  An app with a chat page (the utility example's is http://localhost:${port}/chat-demo) shows the widget there.`);
   out('  For a phone line, run pnpm configure --force again and choose one.');
   return 0;

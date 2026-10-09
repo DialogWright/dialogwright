@@ -47,6 +47,16 @@ export function projectRoot(invokedFrom: string, inRepository: boolean = ENGINE_
 }
 
 /**
+ * How the commands' hints name a command: `pnpm <command> --app <name>` in a pnpm workspace (this
+ * repository), `npx dialogwright <command>` in a project of its own, whose one app needs no --app; and
+ * an app's own script, `pnpm --filter <package> <script>` or `npm run <script> --`.
+ */
+export function commandHints(app: WorkspaceApp, root: string): { command(name: string): string; script(name: string): string } {
+  if (existsSync(join(root, 'pnpm-workspace.yaml'))) return { command: (name) => `pnpm ${name} --app ${basename(app.dir)}`, script: (name) => `pnpm --filter ${app.name} ${name}` };
+  return { command: (name) => `npx dialogwright ${name}`, script: (name) => `npm run ${name} --` };
+}
+
+/**
  * How `start` runs an app's server: `pnpm --filter <app> serve` from the root of a pnpm workspace, as
  * before; in a project of its own, the app's `serve` script with npm, which every Node install has.
  */

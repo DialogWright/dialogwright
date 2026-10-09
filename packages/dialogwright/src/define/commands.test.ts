@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { COMMANDS, helpText, main } from './cli';
@@ -108,7 +108,7 @@ describe('dialogwright: one command line', () => {
 
 describe('a project of its own: its folder is its app', () => {
   it('the project is found from where the command runs, and start runs its serve script with npm', async () => {
-    const { projectRoot, serveCommand, workspaceApps } = await import('../server/workspace');
+    const { commandHints, projectRoot, serveCommand, workspaceApps } = await import('../server/workspace');
     const root = mkdtempSync(join(SHORT_TMP, 'dialogwright-project-'));
     scratch.push(root);
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'my-line', scripts: { serve: 'tsx src/serve.ts' } }));
@@ -120,7 +120,10 @@ describe('a project of its own: its folder is its app', () => {
     const apps = workspaceApps(root);
     expect(apps).toEqual([{ name: 'my-line', dir: root, folder: '.' }]);
     expect(serveCommand(apps[0]!, root)).toEqual({ command: 'npm', args: ['run', '--silent', 'serve'], cwd: root });
+    // The hints a command prints name the commands as the project runs them.
+    expect([commandHints(apps[0]!, root).command('start'), commandHints(apps[0]!, root).script('cli')]).toEqual(['npx dialogwright start', 'npm run cli --']);
     writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
     expect(serveCommand(apps[0]!, root)).toEqual({ command: 'pnpm', args: ['--filter', 'my-line', 'serve'], cwd: root });
+    expect([commandHints(apps[0]!, root).command('start'), commandHints(apps[0]!, root).script('cli')]).toEqual([`pnpm start --app ${basename(root)}`, 'pnpm --filter my-line cli']);
   });
 });
