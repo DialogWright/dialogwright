@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { choice, noul, score } from '../testing/answers';
 import { registerApp, resetAppsForTest } from './app/registry';
-import type { App } from './app/types';
+import type { App, CompletionContext } from './app/types';
 import type { SlotSpec } from './slots/types';
 import { DEFAULT_THRESHOLDS } from './thresholds';
 import { newSession, type Session } from './session';
@@ -406,6 +406,58 @@ describe('what follows when a slot runs out (decisions 2 and 4)', () => {
       expect(runs.at(-1)!.decision).toMatchObject({ kind: 'complete', promptId: 'no_number' });
     });
   });
+  describe('with a request queued', () => {
+    const ADDING = choice({ adding: 0.9, answering: 0.05, replacing: 0.05 });
+    /** At the town's question, with a note queued ("and I'll leave a note after"), then `n` misses. */
+    function queuedThenMisses(n: number): TurnResult {
+      let s = atTown();
+      const q = say(s, "and I'll leave a note after", { intent: one('leave_note'), intentChange: ADDING });
+      expect(q.session.queued).toEqual(['leave_note']);
+      s = q.session;
+      let t = q;
+      for (let i = 0; i < n; i++) {
+        t = say(s, 'hmm', MISS);
+        s = t.session;
+      }
+      return t;
+    }
+
+    it('end: the line, then the call goes on to the request, the slot asked afresh', () => {
+      use(withNote('end-queued', { town: { attempts: 1, onMaxAttempts: { say: 'town_unclear', then: 'end' } } }));
+      const t = queuedThenMisses(1);
+      expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_visitDay', acks: [{ promptId: 'town_unclear' }, { promptId: 'bridge_next', vars: { intentLabel: 'leave a note' } }] });
+      expect([t.session.form, t.session.queued, t.session.completed]).toEqual(['leave_note', [], []]);
+      expect(t.session.slots.town).toMatchObject({ value: null, attempts: 0 });
+    });
+
+    it('anything-else: the line, then the request, not "anything else?"', () => {
+      use(withNote('anything-else-queued', { town: { attempts: 1, onMaxAttempts: { say: 'town_unclear', then: 'anything-else' } } }));
+      const t = queuedThenMisses(1);
+      expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_visitDay', acks: [{ promptId: 'town_unclear' }, { promptId: 'bridge_next', vars: { intentLabel: 'leave a note' } }] });
+      expect(t.session.queued).toEqual([]);
+    });
+
+    it('form: the form named is entered first, the request kept for after it', () => {
+      use(withNote('form-queued', { town: { attempts: 1, onMaxAttempts: { say: 'town_unclear', then: 'form', form: 'urgent' } } }));
+      const t = queuedThenMisses(1);
+      // The urgent form has no slots: entered, it completes at once, and its completion hands off; the note stays queued.
+      expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', queued: ['leave_note'] });
+    });
+  });
+
+  it('a slot that several forms list takes its outcome in each, keeping what each shares with the form entered', () => {
+    const app = withNote('several', { visitDay: { attempts: 1, onMaxAttempts: { say: 'day_skipped', then: 'form', form: 'office_call' } } }, {});
+    // The fixture's office's call is reached here by the visit day, in either form that lists it.
+    use({ ...app, forms: { ...app.forms, office_call: screenedApp.forms.office_call! } });
+    const fromNote = say(toNote(), 'hmm', DAY_MISS);
+    expect(fromNote.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_callTime', acks: [{ promptId: 'day_skipped' }, { promptId: 'bridge_next', vars: { intentLabel: 'arrange a call from our office' } }] });
+    expect(fromNote.session.form).toBe('office_call');
+    let s = say(atTown(), 'Riverton', { town: one('riverton') }).session;
+    s = say(s, 'it can wait', { howUrgent: one('routine') }).session;
+    const fromVisit = say(s, 'hmm', DAY_MISS);
+    expect(fromVisit.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_callTime', acks: [{ promptId: 'day_skipped' }, { promptId: 'bridge_next' }] });
+    expect(fromVisit.session.slots.town!.value).toBeNull();
+  });
 });
 
 describe('a check\'s outcome goes to a form the same way (decision 5)', () => {
@@ -419,5 +471,41 @@ describe('a check\'s outcome goes to a form the same way (decision 5)', () => {
     // The urgent form has no slots: entered, it completes at once, and its completion hands off.
     expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', acks: [{ promptId: 'decline_out_of_area' }, { promptId: 'bridge_next', vars: { intentLabel: 'get help right away' } }] });
     expect(t.session.completed).toEqual([]);
+  });
+});
+
+describe('a loop of moves within one turn (review fixes)', () => {
+  /** The booking's area check sends an out-of-area town to a recheck, which checks it again and sends it back. */
+  function looping(): App {
+    const forms = plain.forms;
+    const checks = forms.book_visit!.checks!.map((c) => (c.action === 'checkArea' ? { ...c, on: { 'out-of-area': { then: 'form' as const, form: 'recheck' } } } : c));
+    const recheck = {
+      slots: ['town'], summaryPromptId: null, calls: [], internal: true, label: 'check the town again',
+      checks: [{ action: 'checkArea', with: ['town'], on: { 'out-of-area': { then: 'form' as const, form: 'book_visit' } } }],
+      complete: () => ({ kind: 'said' as const, acks: [] }),
+    };
+    return { ...plain, id: 'loop', forms: { ...forms, book_visit: { ...forms.book_visit!, checks }, recheck } };
+  }
+
+  it('goes to a person, never round for ever, and the trace says which form closed the loop', () => {
+    use(looping());
+    const t = say(atTown(), 'Lakeview', { town: one('elsewhere') });
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'needs-human', promptId: 'handoff_needs_human' });
+    expect(t.formLoop).toEqual({ form: 'book_visit', from: 'recheck' });
+  });
+
+  it('a form with no slots that goes straight back by next closes a loop too', () => {
+    const forms = plain.forms;
+    const checks = forms.book_visit!.checks!.map((c) => (c.action === 'checkArea' ? { ...c, on: { 'out-of-area': { then: 'form' as const, form: 'bounce' } } } : c));
+    const bounce = { slots: [], summaryPromptId: null, calls: [], internal: true, label: 'start again', next: 'book_visit', complete: (c: CompletionContext) => ({ kind: 'said' as const, acks: c.acks }) };
+    use({ ...plain, id: 'bounce', forms: { ...forms, book_visit: { ...forms.book_visit!, checks }, bounce } });
+    const t = say(atTown(), 'Lakeview', { town: one('elsewhere') });
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'needs-human' });
+    expect(t.formLoop).toEqual({ form: 'book_visit', from: 'bounce' });
+  });
+
+  it('a turn with no loop records none', () => {
+    use(plain);
+    expect('formLoop' in say(atTown(), 'Riverton', { town: one('riverton') })).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { checkAlways, identifier, name } from './common';
+import type { Outcome } from '../../core/app/types';
 import { CHECK_THEN, MAX_ATTEMPTS_SHORT, OUTCOME_THEN, SLOT_ATTEMPTS_MAX, SLOT_ATTEMPTS_MIN } from '../../core/slots/types';
 
 /**
@@ -92,12 +93,12 @@ export const ON_MAX_ATTEMPTS_DESCRIPTION =
   'What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). ' +
   '"handoff" (the default): to a person, with handoff_max_attempts. "skip": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form\'s summary names. ' +
   'Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and "anything else?" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. ' +
-  'An offer of the caller\'s number that runs out keeps its own onNo.';
+  'An offer of the caller\'s number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot\'s ladder goes on to it.';
 
 /** What `attempts:` means, as the JSON Schema, the slot pages and an editor say it. */
 export const ATTEMPTS_DESCRIPTION =
   `How many failed answers the slot takes before onMaxAttempts, ${SLOT_ATTEMPTS_MIN} to ${SLOT_ATTEMPTS_MAX}. ` +
-  'Each failure before the last but one re-asks: a missed answer with ask_<slot>_retry, or ask_<slot>_retry2 at the second failure (and so on) where prompts.yaml has it; a silence with ask_<slot>_noinput2 (and so on), else ask_<slot>_noinput, else no_input then the question (ask_<slot>) again. ' +
+  'Each failure before the last but one re-asks: a missed answer with ask_<slot>_retry, or ask_<slot>_retry2 at the second failure (and so on) where prompts.yaml has it; a silence with ask_<slot>_noinput2 (and so on), else ask_<slot>_noinput, else no_input then the question (ask_<slot>) again (at the keypad rung of a slot that takes no keys, on a channel with a keypad, no_input then its retry line). ' +
   'The last but one is the keypad rung (ask_<slot>_dtmf) where the slot takes keys and the channel has a keypad, else another re-ask; the last runs onMaxAttempts. ' +
   'Default: the engine\'s MAX_ATTEMPTS (3).';
 
@@ -130,8 +131,28 @@ const onMaxAttemptsParser = z.unknown().check(checkAlways((value, ctx) => {
 }));
 
 /** A slot's `onMaxAttempts` as written, checked: the short form or the outcome written out. */
-export function parseOnMaxAttempts(value: unknown): { success: true; data: 'handoff' | 'skip' | z.infer<typeof slotOutcomeSchema> } | { success: false; error: z.ZodError } {
+export function parseOnMaxAttempts(value: unknown): { success: true; data: 'handoff' | 'skip' | Outcome } | { success: false; error: z.ZodError } {
   const checked = onMaxAttemptsParser.safeParse(value);
   if (!checked.success) return { success: false, error: checked.error };
-  return { success: true, data: typeof value === 'string' ? (value as 'handoff' | 'skip') : slotOutcomeSchema.parse(value) };
+  return { success: true, data: typeof value === 'string' ? (value as 'handoff' | 'skip') : outcomeFrom(slotOutcomeSchema.parse(value)) };
+}
+
+/**
+ * An outcome as written (a parsed one, whose fields the validator above has held to its `then`) as the
+ * engine's Outcome, discriminated on `then`: only a handoff keeps a `reason` and only `then: form` a
+ * `form`. The keys keep the order they are written in, `say` first.
+ */
+export function outcomeFrom(o: { say?: string; then: OutcomeThen; reason?: string; form?: string }): Outcome {
+  const say = o.say !== undefined ? { say: o.say } : {};
+  switch (o.then) {
+    case 'handoff':
+      return { ...say, then: 'handoff', ...(o.reason !== undefined ? { reason: o.reason } : {}) };
+    case 'form':
+      if (o.form === undefined) throw new Error('then: form names no form (the outcome validator refuses this)');
+      return { ...say, then: 'form', form: o.form };
+    case 'skip':
+      return { ...say, then: 'skip' };
+    default:
+      return { ...say, then: o.then };
+  }
 }

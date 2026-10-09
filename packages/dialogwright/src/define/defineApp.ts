@@ -8,8 +8,9 @@ import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from 
 import { askedQuestionIds, probeContexts } from '../core/app/probeQuestions';
 import { thresholdNamesOf, unknownSlotThresholds, unknownThresholdMessage } from '../core/slotThresholds';
 import { reachOf, unreachedActions } from '../core/app/reach';
-import { formsEnteringByOutcome, formsLeadingTo, nextCycles } from '../core/app/next';
-import { parseOnMaxAttempts, slotAttemptsSchema } from './schema/outcome';
+import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, nextCycles, slotOutcomesOf } from '../core/app/next';
+import { slotOutcomeOf } from '../core/outcome';
+import { outcomeFrom, parseOnMaxAttempts, slotAttemptsSchema } from './schema/outcome';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
@@ -378,7 +379,8 @@ export function crossLink(
     if (form.internal === true) {
       // An internal form is no intent: it is reached only by another form's next.
       if (intent) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, so it is no intent, but intents.yaml has an intent "${id}"`, `delete "${id}:" from intents.yaml (the form is reached by another form's next), or delete "internal: true" to make the form an intent`);
-      if (formsLeadingTo(forms, id).length === 0 && formsEnteringByOutcome(forms, Object.fromEntries(Object.entries(linked.slots).map(([slot, spec]) => [slot, spec?.onMaxAttempts])), id).length === 0) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, and no form goes on to it and no outcome enters it, so nothing can reach it`, `add "next: ${id}" to the form that comes before it, or "then: form, form: ${id}" to a check's outcome or a slot's onMaxAttempts, or delete "internal: true" and give it an intent in intents.yaml`);
+      const outcomes = slotOutcomesOf(linked.slots);
+      if (formsLeadingTo(forms, id).length === 0 && formsEnteringByOutcome(forms, outcomes, id).length === 0 && factorsEnteringByOutcome(config.identity?.levels[1].factors ?? [], outcomes, id).length === 0) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, and no form goes on to it and no outcome enters it, so nothing can reach it`, `add "next: ${id}" to the form that comes before it, or "then: form, form: ${id}" to a check's outcome or a slot's onMaxAttempts, or delete "internal: true" and give it an intent in intents.yaml`);
     } else if (!intent) {
       yaml('forms.yaml', ['forms', id], `form "${id}" has no intent in intents.yaml`, `add "${id}:" under intents in intents.yaml with kind: form, its criteria and its label`);
     } else if (intent.kind !== 'form') {
@@ -667,12 +669,12 @@ export function crossLink(
       }
     }
     const o = spec.onMaxAttempts;
-    const outcome = typeof o === 'string' ? { then: o } : o;
+    const outcome = slotOutcomeOf(spec);
     if (outcome.then === 'skip' && factors.includes(id)) {
       at('onMaxAttempts', [], `the slot "${id}" is an identity factor (identity.yaml), but it is skipped when it runs out of attempts, so verification could never finish`, '"handoff" (the default), or an outcome written out with then: handoff, end, anything-else or form');
     }
-    if (outcome.then === 'form' && typeof o === 'object' && o.form !== undefined) {
-      const to = o.form;
+    if (outcome.then === 'form') {
+      const to = outcome.form;
       if (!has(forms, to)) at('onMaxAttempts', ['form'], `the slot "${id}" goes, when it runs out of attempts, to "${to}", which is not a form in forms.yaml`, `${renameHint(to, Object.keys(forms))}name a form in forms.yaml`);
       else if (forms[to]!.slots.includes(id)) at('onMaxAttempts', ['form'], `the slot "${id}" goes, when it runs out of attempts, to the form "${to}", which asks it too, so it would be asked there again and run out there again`, 'name a form that does not list the slot, or take the slot out of that form');
     }
@@ -686,7 +688,7 @@ export function crossLink(
   // value. A form's summary hook (onSummaryRead) may read another line that names it when it is filled.
   for (const [id, spec] of Object.entries(linked.slots)) {
     const offer = spec?.callerNumber;
-    const why = offer?.onNo === 'skip' ? 'its callerNumber says onNo: skip' : offer?.ifNone === 'skip' ? 'its callerNumber says ifNone: skip' : spec !== undefined && skipsOnMax(spec) ? 'its onMaxAttempts skips it' : null;
+    const why = offer?.onNo === 'skip' ? 'its callerNumber says onNo: skip' : offer?.ifNone === 'skip' ? 'its callerNumber says ifNone: skip' : spec !== undefined && slotOutcomeOf(spec).then === 'skip' ? 'its onMaxAttempts skips it' : null;
     if (why === null) continue;
     for (const [formId, form] of Object.entries(forms)) {
       const summary = form.summaryPromptId;
@@ -1001,7 +1003,7 @@ const goesOn = (c: CompletionContext): Completion => ({ kind: 'said', acks: c.ac
 /** A form's check as forms.yaml writes it, as FormDef carries it. */
 function checkOf(check: NonNullable<LoadedConfig['forms']['forms'][string]['checks']>[number]): FormCheck {
   const on = check.on === undefined ? undefined : Object.fromEntries(Object.entries(check.on).map(([reason, o]) => {
-    const outcome = { ...(o.confirm !== undefined ? { confirm: o.confirm } : {}), ...(o.say !== undefined ? { say: o.say } : {}), then: o.then, ...(o.reason !== undefined ? { reason: o.reason } : {}), ...(o.form !== undefined ? { form: o.form } : {}) } satisfies CheckOutcome;
+    const outcome = { ...(o.confirm !== undefined ? { confirm: o.confirm } : {}), ...outcomeFrom(o) } as CheckOutcome;
     return [reason, outcome];
   }));
   return on === undefined ? { action: check.action, with: check.with } : { action: check.action, with: check.with, on };
@@ -1053,8 +1055,3 @@ function promptsOf(config: LoadedConfig, a: AppYaml): App['prompts'] {
   return prompts;
 }
 
-/** Whether a slot is skipped when it runs out of attempts (SlotSpec.onMaxAttempts `skip`, or then: skip). */
-export function skipsOnMax(spec: Pick<SlotSpec, 'onMaxAttempts'>): boolean {
-  const o = spec.onMaxAttempts;
-  return o === 'skip' || (typeof o === 'object' && o.then === 'skip');
-}

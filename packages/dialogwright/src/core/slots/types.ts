@@ -279,8 +279,9 @@ export interface SlotSpec {
    * a second no to its read-back (core/outcome.ts): `handoff` (the default: to a person, reason
    * `max-attempts`), `skip` (left empty and declined, the form goes on), or an Outcome written out (a
    * line, then `end`, `anything-else`, `handoff` with a reason, `form` with the form entered, or
-   * `skip`). Absent: `handoff`, as it always has been. An offer of the caller's number that runs out
-   * keeps its own `onNo` (callerNumber).
+   * `skip`). Absent: `handoff`, as it always has been. An offer of the caller's number with
+   * `onNo: 'skip'` (callerNumber) that runs out leaves the slot empty whatever this says; with no
+   * `onNo: 'skip'`, the slot's ladder goes on to this.
    */
   onMaxAttempts?: 'handoff' | 'skip' | Outcome;
   /** DTMF fallback: how many digits to collect and how to parse them. Absent: the slot has no

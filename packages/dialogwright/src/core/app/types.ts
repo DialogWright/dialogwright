@@ -225,25 +225,21 @@ export interface FormCheck {
  * - `end`: the call ends (the goodbye follows; with a request queued, the call goes on to it); `say` required;
  * - `anything-else`: the form closes uncounted and the call carries on; `say` required;
  * - `handoff`: to a person, for `reason` (its line handoff_<reason>);
- * - `form`: the form closes uncounted and `form` is entered, as a `next` is, the slots both list kept;
+ * - `form`: the form closes uncounted and `form` (required, and only here) is entered, as a `next` is, the slots both list kept;
  * - `skip` (a slot's only): the slot is left empty and declined (SlotState.declined), and the form goes on.
  */
-export interface Outcome {
-  readonly say?: string;
-  readonly then: 'end' | 'anything-else' | 'handoff' | 'form' | 'skip';
-  readonly reason?: string;
-  readonly form?: FormId;
-}
+export type Outcome =
+  | { readonly then: 'end' | 'anything-else'; readonly say?: string }
+  | { readonly then: 'skip'; readonly say?: string }
+  | { readonly then: 'handoff'; readonly say?: string; readonly reason?: string }
+  | { readonly then: 'form'; readonly say?: string; readonly form: FormId };
 
 /**
  * What a check's refusal does: an Outcome, never `skip`, its handoff `reason` defaulting to the gate's.
  * With `confirm`, a yes-or-no line read first when a slot the check reads is not confirmed
  * (core/turn.ts stopForm): a yes confirms them and the refusal acts, a no empties them and asks again.
  */
-export interface CheckOutcome extends Outcome {
-  readonly confirm?: string;
-  readonly then: 'end' | 'anything-else' | 'handoff' | 'form';
-}
+export type CheckOutcome = Exclude<Outcome, { readonly then: 'skip' }> & { readonly confirm?: string };
 
 /** A form's summary hook (FormDef.onSummaryRead): an AppContext with the acks the summary will follow. */
 export interface SummaryContext extends AppContext {

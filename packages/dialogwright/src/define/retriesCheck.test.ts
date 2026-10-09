@@ -9,6 +9,7 @@ import type { AppCode } from './defineApp';
 import { SCREENED_DIR, screenedApp, screenedCode } from '../testing/screened/app';
 import { PROPOSALS_DIR, proposalsApp, proposalsCode } from '../testing/proposals/app';
 import { validateApp } from '../core/app/validate';
+import { moveCycles } from '../core/app/next';
 import type { App } from '../core/app/types';
 import type { SlotSpec } from '../core/slots/types';
 
@@ -149,6 +150,32 @@ describe('check warns, never refuses', () => {
   });
 });
 
+describe('check warns of forms that send each other round in a loop', () => {
+  it('through a check\'s outcome and a next, beside next alone (which nextCycles refuses)', async () => {
+    const r = await checked({
+      'forms.yaml': (t) => `${replace('out-of-area: { say: decline_out_of_area, then: end }', 'out-of-area: { say: decline_out_of_area, then: form, form: recheck }')(t)}  recheck:\n    internal: true\n    label: check the town again\n    slots: [town]\n    summaryPromptId: null\n    calls: []\n    next: book_visit\n`,
+    });
+    expect(r.problems).toEqual([]);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]).toContain('forms.book_visit  the forms go round in a loop by their outcomes (then: form) and next: book_visit -> recheck -> book_visit');
+  });
+
+  it('moveCycles finds each loop once, and only one that goes by an outcome', () => {
+    const forms = {
+      a: { slots: ['x'], next: 'b' },
+      b: { slots: [], checks: [{ on: { no: { then: 'form', form: 'a' } } }] },
+      c: { slots: ['y'], next: 'd' },
+      d: { slots: [] },
+      e: { slots: [] },
+    };
+    const y = { y: { then: 'form', form: 'e' } };
+    expect(moveCycles(forms, y)).toEqual([['a', 'b']]);
+    expect(moveCycles({ ...forms, e: { slots: [], next: 'c' } }, y)).toEqual([['a', 'b'], ['c', 'e']]);
+    expect(moveCycles({ a: { slots: [], next: 'b' }, b: { slots: [], next: 'a' } }, {})).toEqual([]);
+  });
+
+});
+
 describe('validateApp', () => {
   /** The fixture with its problem slot changed (its town already goes to the office's call). */
   const withProblem = (slot: Partial<SlotSpec>): App => ({ ...screenedApp, id: 'retries-validate', slots: { ...screenedApp.slots, problem: { ...(screenedApp.slots.problem as SlotSpec), ...slot } } });
@@ -165,7 +192,7 @@ describe('validateApp', () => {
     expect(() => validateApp(withProblem({ onMaxAttempts: { then: 'end' } }))).toThrow('slot "problem" ends with end when it runs out of attempts and says no line');
     expect(() => validateApp(withProblem({ onMaxAttempts: { then: 'form', form: 'nowhere' } }))).toThrow('to the unknown form "nowhere"');
     expect(() => validateApp(withProblem({ onMaxAttempts: { then: 'form', form: 'book_visit' } }))).toThrow('to the form "book_visit", which asks it too');
-    expect(() => validateApp(withProblem({ onMaxAttempts: { then: 'skip', reason: 'x' } }))).toThrow('names a handoff reason for an outcome that does not hand off');
+    expect(() => validateApp(withProblem({ onMaxAttempts: { then: 'skip', reason: 'x' } as never }))).toThrow('names a handoff reason for an outcome that does not hand off');
   });
 
   it('refuses a check\'s outcome to a form there is not, or its own', () => {

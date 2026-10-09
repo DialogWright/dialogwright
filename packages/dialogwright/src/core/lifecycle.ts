@@ -97,6 +97,12 @@ export interface TurnOut {
    * so every other turn and every other app is as it was. Absent on every other turn.
    */
   exhausted?: SlotExhausted;
+  /**
+   * A form entered again within one turn by a move (`next`, or an outcome's `then: form`; core/turn.ts
+   * moveLoops), which went to a person rather than round the loop: the form, and the form it was entered
+   * from. Absent on every other turn.
+   */
+  formLoop?: { readonly form: FormId; readonly from?: FormId };
   /** The forms that completed this turn and went on to their next (FormDef.next; core/turn.ts), in order, each for an audit `form_next` row. Absent on every other turn. */
   movedOn?: FormMovedOn[];
   /** The offer of the caller's number this turn settled (core/turn.ts), for the audit's `offer` row. Absent on every other turn. */

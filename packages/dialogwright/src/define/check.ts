@@ -3,7 +3,8 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
-import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, skipsOnMax, type AppCode } from './defineApp';
+import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, type AppCode } from './defineApp';
+import { slotOutcomeOf } from '../core/outcome';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRule } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
@@ -14,7 +15,8 @@ import { CONSENT_PROMPT } from '../core/textConsent';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 import { withoutFallbackWarnings } from '../kb/fallback';
 import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProblems } from './knowledgeUse';
-import { checkPromptReferences, checkWarnings } from './formChecks';
+import { checkPromptReferences, checkWarnings, provenLevel } from './formChecks';
+import { moveCycles, slotOutcomeForm, slotOutcomesOf } from '../core/app/next';
 import { digitsMayBeShort } from '../slots/digits/fill';
 
 /**
@@ -323,9 +325,9 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     }, codeFile);
     retryWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
-      const at = locate(file, path) ?? { line: 1, column: 1 };
-      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
-    });
+      const at = file === codeFile ? { line: 0, column: 0 } : (locate(file, path) ?? { line: 1, column: 1 });
+      warnings.push({ file, line: at.line, column: at.column, path: file === codeFile ? codePath(...path.map(String)) : formatPath(path), message, fix });
+    }, codeFile);
     callerHintWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
       const at = locate(file, path) ?? { line: 1, column: 1 };
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -416,12 +418,14 @@ function shortSecretWarnings(config: LoadedConfig, report: (file: string, path: 
  * The warnings for a slot's retries (SlotSpec.attempts, onMaxAttempts; core/outcome.ts), never refusals:
  * a form's check that reads a slot that may be skipped (its onMaxAttempts, or its callerNumber's onNo or
  * ifNone), which then never runs; and a numbered retry or no-input line (`ask_<slot>_retry<k>`,
- * `ask_<slot>_noinput<k>`) the slot's ladder never reaches: a re-ask is failure 1 to attempts - 1.
+ * `ask_<slot>_noinput<k>`) the slot's ladder never reaches: a re-ask is failure 1 to attempts - 1; forms
+ * that send each other round in a loop through an outcome (moveCycles); and an identity factor whose
+ * outcome enters a form that needs identity, which would ask the factor again.
  */
-function retryWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+function retryWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void, codeFile: string = CODE_FILE): void {
   const skippable = (spec: SlotSpec | undefined): string | null => {
     if (spec === undefined) return null;
-    if (skipsOnMax(spec)) return 'its onMaxAttempts skips it';
+    if (slotOutcomeOf(spec).then === 'skip') return 'its onMaxAttempts skips it';
     if (spec.callerNumber?.onNo === 'skip') return 'its callerNumber says onNo: skip';
     if (spec.callerNumber?.ifNone === 'skip') return 'its callerNumber says ifNone: skip';
     return null;
@@ -434,6 +438,29 @@ function retryWarnings(config: LoadedConfig, slots: Readonly<Record<string, Slot
         report('forms.yaml', ['forms', id, 'checks', i, 'with', j], `check "${check.action}" reads "${slot}", which may be left empty (${why}), and a check runs only once every slot it reads holds a value, so it never runs then`, 'nothing to do if the form may go on unchecked without it; otherwise check a slot that is never skipped, or hand off when it runs out');
       });
     });
+  }
+  // Forms that send each other round in a loop by outcomes (and next): meant, perhaps, where each pass
+  // reads other values; the engine sends a caller who goes round it within one turn to a person.
+  const forms = config.forms.forms;
+  const outcomes = slotOutcomesOf(slots);
+  for (const loop of moveCycles(forms, outcomes)) {
+    report('forms.yaml', ['forms', loop[0]!], `the forms go round in a loop by their outcomes (then: form) and next: ${[...loop, loop[0]!].join(' -> ')}, so a caller can be sent round it, and one sent round it within one turn goes to a person (needs-human)`, 'nothing to do if each pass reads values the caller can change; otherwise end the loop: send one of the outcomes to a form outside it, or end the call there');
+  }
+  // An identity factor that runs out goes on unverified: a form its outcome enters that needs identity
+  // would ask the same factor again (from the start of its ladder), and round again.
+  const actions = config.policy.actions;
+  const levelOf = (tool: string): number => (Object.hasOwn(actions, tool) ? (actions[tool]!.level ?? DEFAULT_ACTION_LEVEL) : 0);
+  const needOf = (form: string): number => {
+    const def = forms[form]!;
+    return Math.max(provenLevel(config, form), ...(def.calls ?? []).map(levelOf), ...(def.checks ?? []).map((c) => levelOf(c.action)));
+  };
+  for (const factor of config.identity?.levels[1].factors ?? []) {
+    const to = slotOutcomeForm(outcomes[factor]);
+    if (to === undefined || !Object.hasOwn(forms, to)) continue;
+    const need = needOf(to);
+    if (need < 1) continue;
+    const library = config.slots !== null && Object.hasOwn(config.slots, factor) && (config.slots[factor] as { type?: unknown }).type !== 'code';
+    report(library ? SLOTS_FILE : codeFile, library ? [factor, 'onMaxAttempts', 'form'] : ['slots', factor, 'onMaxAttempts'], `the identity factor "${factor}" goes, when it runs out of attempts, to the form "${to}", which needs identity level ${need}, so the caller, still not verified, is asked "${factor}" again there, and can be sent round again`, `nothing to do if that is meant; otherwise send it to a form anyone may use (level 0), or hand off`);
   }
   const prompts = config.prompts[config.defaultLocale] ?? {};
   for (const slot of askedSlots(config)) {

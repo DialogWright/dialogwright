@@ -81,7 +81,7 @@ export function endingOf(outcome: Outcome, acks: Ack[], vars: Record<string, str
     case 'handoff':
       return { then: 'handoff', reason: outcome.reason ?? reason, acks: [...acks, ...said] };
     case 'form':
-      return { then: 'form', form: outcome.form!, acks: [...acks, ...said] };
+      return { then: 'form', form: outcome.form, acks: [...acks, ...said] };
     case 'skip':
       return { then: 'skip', acks: [...acks, ...said] };
   }

@@ -131,7 +131,7 @@ export function checkProblems(c: FormCheckInput): void {
 }
 
 /** The level a form's entry call proves before its checks run: its purpose's (policy.yaml `purposes`), for a form with an `entry` hook; 0 otherwise. */
-function provenLevel(config: LoadedConfig, form: string): number {
+export function provenLevel(config: LoadedConfig, form: string): number {
   return config.forms.forms[form]?.hooks?.includes('entry') ? (config.policy.purposes[form]?.level ?? 0) : 0;
 }
 

@@ -138,6 +138,12 @@ export interface TraceRecord {
    */
   slotExhausted?: SlotExhausted;
   /**
+   * A form entered again by a move within one turn (`next`, or an outcome's `then: form`), so the call
+   * went to a person (`needs-human`) rather than round the loop: the form, and the form it was entered
+   * from. Absent on every other turn.
+   */
+  formLoop?: { form: FormId; from?: FormId };
+  /**
    * This turn's audit drafts, in the order they were chained -- before chaining: no `seq` or
    * `hash` yet (those are the sink's, core/audit.ts's `AuditDraft` is what a turn reports). The
    * dashboard's live audit tail (hash and all) comes from the separate `audit` bus event instead;

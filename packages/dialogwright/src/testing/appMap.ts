@@ -1,7 +1,7 @@
 import { dirname, relative } from 'node:path';
 import { gateOf } from '../core/app/lookup';
 import { reachOf, unreachedActions } from '../core/app/reach';
-import { formsEnteringByOutcome, formsLeadingTo } from '../core/app/next';
+import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, slotOutcomesOf } from '../core/app/next';
 import type { App, FormId, IntentDef, Outcome } from '../core/app/types';
 import { slotOutcomeOf } from '../core/outcome';
 import { capitalize, cell, code, expectGeneratedPage, formWords, levelName, mermaidLabel, nodeId, slotNoun, writeGeneratedPage } from './generatedPage';
@@ -83,7 +83,7 @@ function formDiagram(app: App, id: FormId): string[] {
   const out = ['flowchart LR'];
   if (form.internal === true) {
     const byOutcome = enteredByOutcome(app, id);
-    const after = [...formsLeadingTo(app.forms, id).map((from) => `${from}: ${formWords(app, from)}`), ...byOutcome.map((from) => `${from}, as an outcome: ${formWords(app, from)}`)];
+    const after = [...formsLeadingTo(app.forms, id).map((from) => `${from}: ${formWords(app, from)}`), ...byOutcome.map((from) => `${from}, as an outcome: ${formWords(app, from)}`), ...factorsEntering(app, id).map((slot) => `identity, as ${slot} runs out`)];
     out.push(`  after(${mermaidLabel('After', ...after)})`, '  after --> slots');
   } else {
     out.push(`  intent(${mermaidLabel('Intent', id, ...(intent ? [intent.label] : []))})`);
@@ -94,14 +94,7 @@ function formDiagram(app: App, id: FormId): string[] {
   out.push('  end');
   // What a slot does when it runs out of attempts (SlotSpec.onMaxAttempts), where it is not the default
   // handoff: each beside its slot, with its attempts where it has its own.
-  for (const slot of form.slots) {
-    const spec = Object.hasOwn(app.slots, slot) ? app.slots[slot]! : undefined;
-    if (spec === undefined || spec.onMaxAttempts === undefined || spec.onMaxAttempts === 'handoff') continue;
-    const outcome = slotOutcomeOf(spec);
-    if (outcome.then === 'handoff' && outcome.say === undefined && outcome.reason === undefined) continue;
-    const node = nodeId('x', slot);
-    out.push(`  ${node}>${mermaidLabel(spec.attempts === undefined ? 'When it runs out' : `When it runs out, after ${spec.attempts} attempts`, outcomeWords(outcome, 'max-attempts'))}]`, `  ${nodeId('s', slot)} -.->|${mermaidLabel('runs out')}| ${node}`);
-  }
+  for (const slot of form.slots) out.push(...runsOutLines(app, slot));
   if (form.internal !== true) out.push('  intent --> slots');
   let last = 'slots';
   if (form.summaryPromptId !== null) {
@@ -152,7 +145,41 @@ function formDiagram(app: App, id: FormId): string[] {
 
 /** The forms an outcome (a check's, or a slot's when it runs out) goes from to `form`. */
 function enteredByOutcome(app: App, form: FormId): FormId[] {
-  return formsEnteringByOutcome(app.forms, Object.fromEntries(Object.entries(app.slots).map(([slot, spec]) => [slot, spec.onMaxAttempts])), form);
+  return formsEnteringByOutcome(app.forms, slotOutcomesOf(app.slots), form);
+}
+
+/** The identity factors whose outcome, when one runs out, enters `form`: identity's, as no form lists a factor. */
+function factorsEntering(app: App, form: FormId): string[] {
+  return factorsEnteringByOutcome(app.identity?.factorSlots ?? [], slotOutcomesOf(app.slots), form);
+}
+
+/**
+ * What a slot does when it runs out of attempts (SlotSpec.onMaxAttempts), drawn beside its node
+ * (`s_<slot>`) where it is not the default handoff, with its attempts where it has its own; none for
+ * the default.
+ */
+function runsOutLines(app: App, slot: string): string[] {
+  const spec = Object.hasOwn(app.slots, slot) ? app.slots[slot]! : undefined;
+  if (spec === undefined || spec.onMaxAttempts === undefined || spec.onMaxAttempts === 'handoff') return [];
+  const outcome = slotOutcomeOf(spec);
+  if (outcome.then === 'handoff' && outcome.say === undefined && outcome.reason === undefined) return [];
+  const node = nodeId('x', slot);
+  return [`  ${node}>${mermaidLabel(spec.attempts === undefined ? 'When it runs out' : `When it runs out, after ${spec.attempts} attempts`, outcomeWords(outcome, 'max-attempts'))}]`, `  ${nodeId('s', slot)} -.->|${mermaidLabel('runs out')}| ${node}`];
+}
+
+/**
+ * The identity factors that do something other than the default handoff when they run out: identity
+ * asks them, for whichever form needs it, so they are drawn on their own, each to its outcome. Empty
+ * for an app whose factors all hand off, so its map is as it was.
+ */
+function identityDiagram(app: App): string[] {
+  const factors = (app.identity?.factorSlots ?? []).filter((slot) => runsOutLines(app, slot).length > 0);
+  if (factors.length === 0) return [];
+  return [
+    'flowchart LR',
+    `  identity(${mermaidLabel('Identity', 'asked for whichever form needs it')})`,
+    ...factors.flatMap((slot) => [`  ${nodeId('s', slot)}[${mermaidLabel(...slotLines(app, slot))}]`, `  identity --> ${nodeId('s', slot)}`, ...runsOutLines(app, slot)]),
+  ];
 }
 
 /** An outcome in words: its line, then what follows (a handoff's reason, `reason` by default; the form entered). */
@@ -282,10 +309,12 @@ export function appMapText(app: App): string {
   ];
   for (const id of formOrder(app)) {
     const intro = app.forms[id]!.internal === true
-      ? `After ${[...formsLeadingTo(app.forms, id).map(code), ...enteredByOutcome(app, id).map((from) => `${code(from)} (an outcome)`)].join(', ') || 'no form'}: the internal form ${code(id)}, its slots, the summary, the action and its rules.`
+      ? `After ${[...formsLeadingTo(app.forms, id).map(code), ...enteredByOutcome(app, id).map((from) => `${code(from)} (an outcome)`), ...factorsEntering(app, id).map((slot) => `identity (${code(slot)} runs out)`)].join(', ') || 'no form'}: the internal form ${code(id)}, its slots, the summary, the action and its rules.`
       : `Intent ${code(id)} to its slots, the summary, the action and its rules.`;
     lines.push('', `## ${capitalize(formWords(app, id))}`, '', intro, '', '```mermaid', ...formDiagram(app, id), '```');
   }
+  const identity = identityDiagram(app);
+  if (identity.length > 0) lines.push('', '## When an identity factor runs out', '', 'Identity asks its factors for whichever form needs them; each factor below does something other than hand off when it runs out of attempts.', '', '```mermaid', ...identity, '```');
   lines.push('', '## Dangling references', '');
   if (found.length === 0) {
     lines.push(`None: every intent reaches a form or a line, and ${reach.declared ? 'every action is reached by a form or the identity flow.' : 'the forms do not declare which actions they call (`calls`), so which actions are reached is not checked.'}`);

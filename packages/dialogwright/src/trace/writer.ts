@@ -105,6 +105,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     effects: result.effects.map(recordedEffect),
     // Only on a turn a slot with retries of its own ran out: every other record is as it was.
     ...(result.exhausted ? { slotExhausted: { ...result.exhausted } } : {}),
+    // Only on a turn a loop of moves went to a person: every other record is as it was.
+    ...(result.formLoop ? { formLoop: { ...result.formLoop } } : {}),
     audit: [...result.audit],
     timing,
     usage: {

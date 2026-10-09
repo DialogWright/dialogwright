@@ -163,6 +163,8 @@ interface TurnIO {
   kept?: SlotId;
   /** The gates' rows when a turn at the greeting's proposal read its words again as an opening turn (openingAfterOffer), for the debug table. */
   openingRows?: GateRow[];
+  /** The forms this turn left or entered by a move (`next`, or an outcome's `then: form`): one entered again goes to a person (moveLoops). */
+  moved?: Set<FormId>;
 }
 
 export interface Plan {
@@ -195,6 +197,8 @@ export interface TurnResult {
   stopped?: FormStopped;
   /** the slot that ran out of attempts this turn and what followed (core/outcome.ts), for a slot with retries of its own; absent on every other turn */
   exhausted?: SlotExhausted;
+  /** a form entered again by a move within this turn, which went to a person rather than loop (moveLoops); absent on every other turn */
+  formLoop?: { readonly form: FormId; readonly from?: FormId };
   /** the forms that completed this turn and went on to their next (FormDef.next), in order; absent on every other turn */
   movedOn?: FormMovedOn[];
   /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
@@ -567,6 +571,8 @@ function finishForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, completed
  * its own bridge dropped, so one bridge is said. The audit is told of each move (`form_next`).
  */
 function goOn(s: Session, form: FormId, then: FormId, acks: Ack[], io: TurnIO): Decision {
+  const loop = moveLoops(s, form, then, acks, io);
+  if (loop !== null) return loop;
   const next = formOf(io.app, then);
   const keep = formOf(io.app, form).slots.filter((id) => next.slots.includes(id));
   const checked = s.checked ?? {};
@@ -1348,16 +1354,49 @@ function actOn(s: Session, form: FormId | null, ending: Ending, io: TurnIO): Dec
       s.pendingHash = null;
       return { kind: 'complete', form, promptId: ending.line.promptId, vars: ending.line.vars, acks: ending.acks, completed: [...s.completed] };
     case 'anything-else':
-      if (form === null) return prompt('anything_else', 'intent', {}, ending.acks);
+      if (form === null) return withNoForm(s, ending.acks);
       return finishForm(s, form, ending.acks, io, false);
     case 'handoff':
       return handoff(s, ending.reason, ending.acks);
     case 'form':
       return enterByOutcome(s, form, ending.form, ending.acks, io);
     case 'skip':
-      if (form === null) return prompt('anything_else', 'intent', {}, ending.acks);
+      if (form === null) return withNoForm(s, ending.acks);
       return continueForm(s, io, ending.acks, null);
   }
+}
+
+/**
+ * An outcome that goes on with no form open: a factor asked by identity at the greeting (callerId
+ * `ask: greeting`) that ran out. Identity is set aside as closing a form sets it aside (closeForm): the
+ * step-up goes, and a caller-ID match in use goes back to unused. At the greeting, the open question
+ * follows (`greet_after_offer`, as when the greeting's proposal is set aside); anywhere else, "anything
+ * else?".
+ */
+function withNoForm(s: Session, acks: Ack[]): PromptDecision {
+  const atGreeting = s.stepUp?.at === 'greeting';
+  s.stepUp = null;
+  if (s.callerMatch === 'offered') delete s.callerMatch;
+  s.codeReasks = 0;
+  return prompt(atGreeting ? GREET_AFTER_OFFER : 'anything_else', 'intent', {}, acks);
+}
+
+/**
+ * The guard on a loop of moves within one turn: `from` left and `to` entered, by `next` (goOn) or an
+ * outcome's `then: form` (enterByOutcome). A form this turn has already left or entered so is entered
+ * again only by a loop (forms whose checks send each other back, a form that completes at once with a
+ * `next` back), which would never end: the call goes to a person (`needs-human`), and the trace is told
+ * which form closed the loop (TurnOut.formLoop). Null when the move may go on.
+ */
+function moveLoops(s: Session, from: FormId | null, to: FormId, acks: Ack[], io: TurnIO): Decision | null {
+  const moved = io.moved ?? (io.moved = new Set());
+  if (from !== null) moved.add(from);
+  if (moved.has(to)) {
+    io.out.formLoop = { form: to, ...(from !== null ? { from } : {}) };
+    return handoff(s, 'needs-human', acks);
+  }
+  moved.add(to);
+  return null;
 }
 
 /**
@@ -1368,6 +1407,8 @@ function actOn(s: Session, form: FormId | null, ending: Ending, io: TurnIO): Dec
  * nothing (Session.reachedThrough). The audit's `form_stopped` row names `to` as `next` for a check.
  */
 function enterByOutcome(s: Session, from: FormId | null, to: FormId, acks: Ack[], io: TurnIO): Decision {
+  const loop = moveLoops(s, from, to, acks, io);
+  if (loop !== null) return loop;
   const target = formOf(io.app, to);
   const keep = from === null ? [] : formOf(io.app, from).slots.filter((id) => target.slots.includes(id));
   closeForm(s, keep);
@@ -1381,7 +1422,8 @@ function enterByOutcome(s: Session, from: FormId | null, to: FormId, acks: Ack[]
  * acts (core/outcome.ts), after `acks`:
  * - `handoff` (the default): to a person, for `max-attempts` or the outcome's reason, the slot left as
  *   it was, so a handoff hands over what it does today;
- * - `end`: the line, and the call ends, as a check's end;
+ * - `end`: the line, and the call ends, as a check's end; with a request queued the call goes on to it,
+ *   and the slot is emptied as for `anything-else`;
  * - `skip`: the slot is emptied and declined (SlotState.declined: empty, answered), its attempts kept,
  *   and the form goes on to its next question: the completion sees no value;
  * - `anything-else` and `form`: the slot is emptied, its attempts with it (a slot kept past the form,
@@ -1398,7 +1440,7 @@ function slotRunsOut(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decisio
   const pc = s.pendingConfirmation;
   if (ending.then !== 'handoff' && pc?.target === 'slot' && pc.slot === slot) s.pendingConfirmation = null;
   if (ending.then === 'skip') Object.assign(st, emptySlot(), { attempts: st.attempts, declined: true as const });
-  else if (ending.then === 'anything-else' || ending.then === 'form') s.slots[slot] = emptySlot();
+  else if (ending.then === 'anything-else' || ending.then === 'form' || (ending.then === 'end' && s.queued.length > 0 && s.form !== null)) s.slots[slot] = emptySlot();
   return actOn(s, s.form, ending, io);
 }
 

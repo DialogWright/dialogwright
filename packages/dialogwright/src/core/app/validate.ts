@@ -8,7 +8,7 @@ import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, SIGN_IN_CLAIM, topLevelOf } from './lookup';
 import { principalProblems } from './principals';
-import { formsEnteringByOutcome, formsLeadingTo, nextCycles } from './next';
+import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, nextCycles, slotOutcomesOf } from './next';
 import type { App, ConfigHashes } from './types';
 import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
@@ -258,7 +258,8 @@ export function validateApp(app: App): void {
     if (form.internal === true) {
       if (Object.hasOwn(app.intents, id)) fail(`form "${id}" is internal, but there is an intent "${id}": an internal form is no intent`);
       if (form.label === undefined || form.label === '') fail(`internal form "${id}" has no label`);
-      if (formsLeadingTo(app.forms, id).length === 0 && formsEnteringByOutcome(app.forms, onMaxAttemptsOf(app), id).length === 0) fail(`internal form "${id}" is reached by no form's next, and no outcome enters it`);
+      const outcomes = slotOutcomesOf(app.slots);
+      if (formsLeadingTo(app.forms, id).length === 0 && formsEnteringByOutcome(app.forms, outcomes, id).length === 0 && factorsEnteringByOutcome(app.identity?.factorSlots ?? [], outcomes, id).length === 0) fail(`internal form "${id}" is reached by no form's next, and no outcome enters it`);
     } else if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') {
       fail(`form "${id}" has no form intent`);
     }
@@ -439,7 +440,3 @@ export function validateApp(app: App): void {
   }
 }
 
-/** Each slot's onMaxAttempts, by id (what formsEnteringByOutcome reads). */
-function onMaxAttemptsOf(app: App): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(app.slots).map(([id, spec]) => [id, spec.onMaxAttempts]));
-}
