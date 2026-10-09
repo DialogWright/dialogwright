@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { workspaceCopy, type WorkspaceCopy } from './__fixtures__/workspaceCopy';
@@ -45,6 +45,8 @@ describe('dialogwright policy:matrix', () => {
     expect(found).toEqual([...found].sort());
     // create-app's templates ship a matrix with the app's name still to be put in: no app is there.
     expect(found.filter((d) => d.includes('templates'))).toEqual([]);
+    // Nor a package's build, which carries copies of the engine's fixture apps (pnpm -r build).
+    expect(found.filter((d) => d.split(sep).includes('dist'))).toEqual([]);
     expect(await loadMatrixApp(LIBRARY_DIR)).toBe(libraryApp);
   });
 

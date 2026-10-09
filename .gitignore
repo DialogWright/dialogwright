@@ -18,3 +18,8 @@ apps/*/sessions/
 .DS_Store
 coverage/
 *.tmp
+
+# A package build (pnpm -r build): the code, and the pages the engine package carries
+packages/*/dist/
+packages/dialogwright/docs/
+packages/dialogwright/skills/

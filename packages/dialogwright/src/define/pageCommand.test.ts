@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { workspaceCopy, type WorkspaceCopy } from './__fixtures__/workspaceCopy';
@@ -46,6 +46,8 @@ describe('dialogwright policy:card and app:diagram', () => {
     expect(findPageFolders(ROOT, 'APP-MAP.md').map((d) => relative(ROOT, d))).toEqual(expect.arrayContaining(FOLDERS));
     // create-app's templates ship both pages with the app's name still to be put in: no app is there.
     for (const page of ['POLICY.md', 'APP-MAP.md']) expect(findPageFolders(ROOT, page).filter((d) => d.includes('templates'))).toEqual([]);
+    // Nor a package's build, which carries copies of the engine's fixture apps (pnpm -r build).
+    for (const page of ['POLICY.md', 'APP-MAP.md']) expect(findPageFolders(ROOT, page).filter((d) => d.split(sep).includes('dist'))).toEqual([]);
     expect(await loadFolderApp(LIBRARY_DIR)).toBe(libraryApp);
   });
 

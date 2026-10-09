@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { App } from '../core/app/types';
-import { isTemplatePage, MATRIX_APP_MODULES, workspaceRootOf } from './matrixCommand';
+import { isTemplatePage, MATRIX_APP_MODULES, SKIPPED_FOLDERS, workspaceRootOf } from './matrixCommand';
 
 /**
  * The commands that write a page from an app's configuration beside its policy.yaml, as
@@ -34,7 +34,7 @@ export interface PageIo {
   cwd: string;
 }
 
-/** Every folder under `root` with a file of this name, skipping node_modules, hidden folders and create-app's templates. */
+/** Every folder under `root` with a file of this name, skipping node_modules, dist, hidden folders and create-app's templates. */
 export function findPageFolders(root: string, file: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -45,7 +45,7 @@ export function findPageFolders(root: string, file: string): string[] {
       return;
     }
     if (entries.some((e) => e.isFile() && e.name === file) && !isTemplatePage(dir, file)) out.push(dir);
-    for (const e of entries) if (e.isDirectory() && e.name !== 'node_modules' && !e.name.startsWith('.')) walk(join(dir, e.name));
+    for (const e of entries) if (e.isDirectory() && !SKIPPED_FOLDERS.has(e.name) && !e.name.startsWith('.')) walk(join(dir, e.name));
   };
   walk(root);
   return out.sort();

@@ -1,6 +1,6 @@
 {
   "name": "@dialogwright/kb-author",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Builds a DialogWright knowledge base from a folder of documents or a website: extraction by section with provenance, a polite crawler, drafting with a pluggable drafter, a local review page, and refresh.",
@@ -21,9 +21,11 @@
     ".": "./src/index.ts"
   },
   "files": [
-    "src"
+    "dist",
+    "README.md"
   ],
   "scripts": {
+    "build": "node ../../scripts/build-package.mjs --skip __fixtures__",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "kb:ingest": "tsx src/cli.ts kb:ingest",
@@ -34,7 +36,7 @@
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
-    "dialogwright": "workspace:*",
+    "dialogwright": "workspace:^",
     "linkedom": "^0.18.13",
     "mammoth": "^1.13.0",
     "unpdf": "^1.8.1",
@@ -45,5 +47,19 @@
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "bin": {
+      "dialogwright-kb": "./dist/cli.js"
+    },
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
   }
 }

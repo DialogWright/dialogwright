@@ -47,7 +47,10 @@ export function isTemplatePage(dir: string, file: string): boolean {
   }
 }
 
-/** Every folder under `root` with a policy.matrix, skipping node_modules, hidden folders and create-app's templates. */
+/** The folders a search for an app's pages never enters: installed packages, and a package's build (`pnpm -r build` copies the engine's fixture apps into dist/, pages and all). */
+export const SKIPPED_FOLDERS: ReadonlySet<string> = new Set(['node_modules', 'dist']);
+
+/** Every folder under `root` with a policy.matrix, skipping node_modules, dist, hidden folders and create-app's templates. */
 export function findMatrixFolders(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -58,7 +61,7 @@ export function findMatrixFolders(root: string): string[] {
       return;
     }
     if (entries.some((e) => e.isFile() && e.name === 'policy.matrix') && !isTemplatePage(dir, 'policy.matrix')) out.push(dir);
-    for (const e of entries) if (e.isDirectory() && e.name !== 'node_modules' && !e.name.startsWith('.')) walk(join(dir, e.name));
+    for (const e of entries) if (e.isDirectory() && !SKIPPED_FOLDERS.has(e.name) && !e.name.startsWith('.')) walk(join(dir, e.name));
   };
   walk(root);
   return out.sort();

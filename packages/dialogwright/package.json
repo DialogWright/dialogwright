@@ -1,6 +1,6 @@
 {
   "name": "dialogwright",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Voice and chat agents that act safely: a decision model reads, code decides, every action goes through a policy gate.",
@@ -29,11 +29,16 @@
     "./schemas/*.json": "./schemas/*.json"
   },
   "files": [
-    "src",
+    "dist",
+    "bin",
     "schemas",
-    "templates"
+    "templates",
+    "docs",
+    "skills",
+    "README.md"
   ],
   "scripts": {
+    "build": "node ../../scripts/build-package.mjs && tsx scripts/shipDocs.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "regress:testkit": "tsx src/testing/testkit/regress.ts",
@@ -52,24 +57,59 @@
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",
+    "tsx": "^4.19.0",
     "undici": "^8",
     "ws": "^8.18.0",
     "yaml": "^2.9",
     "zod": "^4.6"
   },
   "peerDependencies": {
-    "@huggingface/transformers": ">=3"
+    "@huggingface/transformers": ">=3",
+    "vitest": ">=2.1"
   },
   "peerDependenciesMeta": {
     "@huggingface/transformers": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   },
   "devDependencies": {
     "@types/node": "^22",
     "@types/ws": "^8.5.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "bin": {
+      "dialogwright": "./bin/dialogwright.mjs"
+    },
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./testing": {
+        "types": "./dist/testing/index.d.ts",
+        "default": "./dist/testing/index.js"
+      },
+      "./slot-kit": {
+        "types": "./dist/slots/kit.d.ts",
+        "default": "./dist/slots/kit.js"
+      },
+      "./policy": {
+        "types": "./dist/define/policyEntry.d.ts",
+        "default": "./dist/define/policyEntry.js"
+      },
+      "./kb/onnx": {
+        "types": "./dist/kb/onnx.d.ts",
+        "default": "./dist/kb/onnx.js"
+      },
+      "./schemas/*.json": "./schemas/*.json",
+      "./package.json": "./package.json"
+    }
   }
 }
